@@ -1,5 +1,12 @@
+import type { SelectedDeliveryAddress } from "@/hooks/delivery/delivery-address-selection-store.types"
 import { translate } from "@/i18n/translations"
+import { calculateCdekDelivery } from "@/services/api/delivery"
 import type { CdekDeliveryCalculation } from "@/services/api/delivery.types"
+
+type DoorDeliveryCalculationInput = Pick<
+    SelectedDeliveryAddress,
+    "address" | "city" | "countryCode" | "latitude" | "longitude" | "postalCode"
+>
 
 function formatMoney(amount?: number | null, currency?: string | null) {
     if (amount === null || amount === undefined) {
@@ -72,4 +79,23 @@ export function getDeliveryActionLabel(
 
 export function getPickupPointActionLabel(deliveryCalculation?: CdekDeliveryCalculation | null) {
     return getDeliveryActionLabel(deliveryCalculation, translate("delivery.pickupPointChoose"))
+}
+
+export function calculateDoorDelivery({
+    address,
+    city,
+    countryCode,
+    latitude,
+    longitude,
+    postalCode,
+}: DoorDeliveryCalculationInput): Promise<CdekDeliveryCalculation> {
+    return calculateCdekDelivery({
+        latitude,
+        longitude,
+        mode: "door",
+        countryCode,
+        postalCode,
+        address,
+        city,
+    })
 }

@@ -64,6 +64,7 @@ import type {
     DeliveryPointProvider,
 } from "@/services/api/delivery.types"
 import {
+    DOOR_DELIVERY_PROVIDER,
     DELIVERY_CAMERA_DURATIONS,
     DEFAULT_DELIVERY_REGION,
     PICKUP_POINT_FOCUS_ZOOM,
@@ -74,14 +75,10 @@ import {
     supportsDoorDeliveryForCountry,
 } from "@/screens/delivery/delivery-screen.constants"
 import {
+    calculateDoorDelivery,
     getDeliveryActionLabel,
     getPickupPointActionLabel,
 } from "@/screens/delivery/delivery-calculation"
-import {
-    calculateDoorDelivery,
-    getDoorDeliveryProviderOptions,
-    normalizeDoorDeliveryProvider,
-} from "@/screens/delivery/delivery-door-provider"
 import { useDeliveryLocation, useDeliveryMapCamera } from "@/screens/delivery/delivery-screen.hooks"
 import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
 import type { DeliveryDoorDraft, DeliveryMapMarker } from "@/screens/delivery/delivery-screen.types"
@@ -129,7 +126,6 @@ type DeliveryInfoRow = {
 
 function buildDoorDeliveryDraft(
     geocodeResult: DeliveryGeoCodeResult,
-    provider: DeliveryPointProvider,
     countryCode: DeliveryCountryCode | null,
 ): DeliveryDoorDraft {
     return {
@@ -142,7 +138,7 @@ function buildDoorDeliveryDraft(
         latitude: geocodeResult.lat,
         longitude: geocodeResult.lon,
         postalCode: geocodeResult.postal_code,
-        provider,
+        provider: DOOR_DELIVERY_PROVIDER,
         subtitle: geocodeResult.subtitle,
     }
 }
@@ -400,7 +396,7 @@ export default function DeliveryScreen() {
         selectedDeliveryAddress
             ? {
                   ...selectedDeliveryAddress,
-                  provider: normalizeDoorDeliveryProvider(selectedDeliveryAddress.provider, activeCountryCode),
+                  provider: DOOR_DELIVERY_PROVIDER,
               }
             : null,
     )
@@ -421,10 +417,6 @@ export default function DeliveryScreen() {
     } = useDeliveryLocation()
     const { handleMapLoaded, moveToRegion } = useDeliveryMapCamera(mapRef)
     const supportsDoorDelivery = supportsDoorDeliveryForCountry(activeCountryCode)
-    const doorDeliveryProviderOptions = useMemo(
-        () => getDoorDeliveryProviderOptions(activeCountryCode),
-        [activeCountryCode],
-    )
     const {
         deliveryPointMarkers,
         error: deliveryPointsError,
@@ -718,7 +710,6 @@ export default function DeliveryScreen() {
 
             const nextDraft = buildDoorDeliveryDraft(
                 geocodeResult,
-                normalizeDoorDeliveryProvider(doorDeliveryDraft?.provider, nextCountryCode),
                 nextCountryCode,
             )
             const nextPoint = {
@@ -754,7 +745,7 @@ export default function DeliveryScreen() {
 
             return applyDoorDeliveryDraft()
         },
-        [activeCountryCode, clearResults, doorDeliveryDraft?.provider, getDoorDeliveryCameraRegion, moveToRegion],
+        [activeCountryCode, clearResults, getDoorDeliveryCameraRegion, moveToRegion],
     )
 
     const resolveDoorDeliveryPoint = useCallback(
@@ -924,23 +915,19 @@ export default function DeliveryScreen() {
         const chooseDoorDelivery = async () => {
             try {
                 setSelectionError(null)
-                const normalizedProvider = normalizeDoorDeliveryProvider(
-                    doorDeliveryDraft.provider,
-                    activeCountryCode,
-                )
+                const nextDoorDeliveryDraft = {
+                    ...doorDeliveryDraft,
+                    provider: DOOR_DELIVERY_PROVIDER,
+                }
                 const deliveryCalculation =
                     doorDeliveryDraft.deliveryCalculation
-                    ?? await calculateDoorDelivery({
-                        ...doorDeliveryDraft,
-                        provider: normalizedProvider,
-                    })
+                    ?? await calculateDoorDelivery(nextDoorDeliveryDraft)
 
                 setPickupPointDraft(null)
                 setPickupPointError(null)
                 setSelectedDeliveryPoint(null)
                 setSelectedDeliveryAddress({
-                    ...doorDeliveryDraft,
-                    provider: normalizedProvider,
+                    ...nextDoorDeliveryDraft,
                     deliveryCalculation,
                 })
 
@@ -954,48 +941,7 @@ export default function DeliveryScreen() {
 
         setIsResolvingDoorAddress(true)
         void chooseDoorDelivery()
-    }, [activeCountryCode, doorDeliveryDraft, router])
-
-    const handleSelectDoorDeliveryProvider = useCallback((providerKey: string) => {
-        if (!doorDeliveryDraft) {
-            return
-        }
-
-        const nextProvider = normalizeDoorDeliveryProvider(
-            providerKey as DeliveryPointProvider,
-            activeCountryCode,
-        )
-
-        if (nextProvider === doorDeliveryDraft.provider) {
-            return
-        }
-
-        const nextDraft: DeliveryDoorDraft = {
-            ...doorDeliveryDraft,
-            deliveryCalculation: null,
-            provider: nextProvider,
-        }
-
-        const refreshDoorDeliveryCalculation = async () => {
-            try {
-                setSelectionError(null)
-                setDoorDeliveryDraft(nextDraft)
-                const deliveryCalculation = await calculateDoorDelivery(nextDraft)
-                setDoorDeliveryDraft({
-                    ...nextDraft,
-                    deliveryCalculation,
-                })
-            } catch (deliveryCalculationError) {
-                setDoorDeliveryDraft(nextDraft)
-                setSelectionError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
-            } finally {
-                setIsResolvingDoorAddress(false)
-            }
-        }
-
-        setIsResolvingDoorAddress(true)
-        void refreshDoorDeliveryCalculation()
-    }, [activeCountryCode, doorDeliveryDraft])
+    }, [doorDeliveryDraft, router])
 
     const handleOpenDeliveryPointOfficePage = useCallback(async (code: string) => {
         const officeUrl = `https://www.cdek.ru/ru/offices/view/${encodeURIComponent(code)}/`
@@ -1210,14 +1156,10 @@ export default function DeliveryScreen() {
                                         error={selectionError}
                                         inset
                                         isResolving={isResolvingDoorAddress}
-                                        isProviderSelectionDisabled={isResolvingDoorAddress}
                                         onChoose={handleChooseDoorDelivery}
                                         onClose={handleCloseDoorFooterExtension}
                                         onCopyInfo={handleCopyPickupInfo}
-                                        onSelectProvider={handleSelectDoorDeliveryProvider}
-                                        providerOptions={doorDeliveryProviderOptions}
                                         rows={getDoorDeliveryInfoRows(doorDeliveryDraft)}
-                                        selectedProviderKey={doorDeliveryDraft?.provider ?? "cdek"}
                                         title={
                                             doorDeliveryDraft?.address || translate("delivery.doorDeliveryTitle")
                                         }

@@ -1,6 +1,11 @@
 import { COUNTRY_SELECTOR_CODES } from "@/components/country-flag/country-flag.consts"
 import type { InitialRegion, Point } from "react-native-yamap"
-import type { DeliveryCountryCode, DeliveryGeoBounds, DeliveryGeoCodeResult } from "@/services/api/delivery.types"
+import type {
+    DeliveryCountryCode,
+    DeliveryGeoBounds,
+    DeliveryGeoCodeResult,
+    DeliveryPointProvider,
+} from "@/services/api/delivery.types"
 
 const SUPPORTED_DELIVERY_COUNTRY_CODES = new Set<DeliveryCountryCode>(COUNTRY_SELECTOR_CODES)
 const DOOR_DELIVERY_COUNTRY_CODES = new Set<DeliveryCountryCode>(["RU", "BY", "KZ"])
@@ -78,6 +83,7 @@ export const DEFAULT_DELIVERY_POINT: Point = {
     lon: 37.618423,
 }
 
+export const DOOR_DELIVERY_PROVIDER: DeliveryPointProvider = "cdek"
 export const DEFAULT_DELIVERY_ZOOM = 12
 export const PICKUP_POINT_FOCUS_ZOOM = 17
 export const DELIVERY_CAMERA_DURATIONS = {
