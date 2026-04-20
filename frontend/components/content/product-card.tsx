@@ -1,0 +1,92 @@
+import { Image, Pressable, Text, View } from "react-native"
+import { useRouter } from "expo-router"
+
+import {
+    getProductContentSubtitle,
+    getProductPriceLabel,
+    isProductOutOfStock,
+} from "@/components/content/product-content"
+import { contentStyles } from "@/components/content/content.styles"
+import type { ProductCardProps } from "@/components/content/product-card.types"
+import { getProductRoute } from "@/constants/routes"
+import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-value"
+import { useLanguage } from "@/providers/language-provider"
+
+export function ProductCard({ product, style }: ProductCardProps) {
+    const router = useRouter()
+    const { t } = useLanguage()
+    const { handleCopy } = useCopyableProfileValue({ t })
+    const subtitle = getProductContentSubtitle(product)
+    const priceLabel = getProductPriceLabel(product)
+    const isOutOfStock = isProductOutOfStock(product)
+
+    return (
+        <View style={[contentStyles.productCard, style]}>
+            <Pressable
+                accessibilityLabel={product.name}
+                accessibilityRole="button"
+                onPress={() => router.push(getProductRoute(product.id))}
+                style={({ pressed }) => [
+                    contentStyles.productCardContent,
+                    pressed && contentStyles.productCardPressed,
+                ]}
+            >
+                <View style={contentStyles.productImageWrap}>
+                    <Image
+                        source={{ uri: product.image_url }}
+                        style={contentStyles.productImage}
+                        resizeMode="cover"
+                    />
+                    {isOutOfStock ? (
+                        <View
+                            style={[
+                                contentStyles.productImageOutOfStockOverlay,
+                                { pointerEvents: "none" },
+                            ]}
+                        >
+                            <View style={contentStyles.productImageOutOfStockBadge}>
+                                <Text style={contentStyles.productImageOutOfStockText}>
+                                    {t("product.variantOutOfStock")}
+                                </Text>
+                            </View>
+                        </View>
+                    ) : null}
+                </View>
+
+                <View style={contentStyles.productBody}>
+                    {priceLabel ? (
+                        <Text numberOfLines={1} style={contentStyles.productPrice}>
+                            {priceLabel}
+                        </Text>
+                    ) : null}
+                    <Text numberOfLines={1} style={contentStyles.productTitle}>
+                        {product.name}
+                    </Text>
+                    {subtitle ? (
+                        <Text numberOfLines={1} style={contentStyles.productSubtitle}>
+                            {subtitle}
+                        </Text>
+                    ) : null}
+                </View>
+            </Pressable>
+
+            {product.sku ? (
+                <View style={contentStyles.productMetaWrap}>
+                    <Pressable
+                        accessibilityLabel={product.sku}
+                        accessibilityRole="button"
+                        onPress={() => {
+                            void handleCopy(product.sku)
+                        }}
+                        style={({ pressed }) => [
+                            contentStyles.productMetaBadge,
+                            pressed && contentStyles.productMetaBadgePressed,
+                        ]}
+                    >
+                        <Text style={contentStyles.productMetaBadgeText}>{product.sku}</Text>
+                    </Pressable>
+                </View>
+            ) : null}
+        </View>
+    )
+}

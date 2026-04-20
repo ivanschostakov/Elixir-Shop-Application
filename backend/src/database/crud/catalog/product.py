@@ -1,0 +1,92 @@
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from src.product_media import resolve_product_image_path
+
+from src.database.models import Product, ProductByCategory, Variant
+from src.database.schemas import ProductCreate, ProductUpdate
+
+
+def _in_stock_product_clause():
+    return Product.in_stock.is_(True)
+
+
+def _has_product_image(*, product_id: int | None = None, system_id) -> bool:
+    return resolve_product_image_path(product_id=product_id, system_id=system_id) is not None
+
+
+def _apply_image_priority_guard(payload: dict, *, product_id: int | None = None, system_id) -> dict:
+    if not _has_product_image(product_id=product_id, system_id=payload.get("system_id", system_id)): payload["priority"] = 0
+    return payload
+
+
+async def create_product(session: AsyncSession, data: ProductCreate) -> Product:
+    product = Product(**_apply_image_priority_guard(data.model_dump(), system_id=data.system_id))
+    session.add(product)
+    await session.commit()
+    await session.refresh(product)
+    return product
+
+
+async def get_product_by_id(session: AsyncSession, product_id: int, *, include_out_of_stock: bool = True) -> Product | None:
+    stmt = select(Product).options(selectinload(Product.variants)).where(Product.id == product_id)
+    if not include_out_of_stock:
+        stmt = stmt.where(_in_stock_product_clause())
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def get_product_by_system_id(session: AsyncSession, system_id: str) -> Product | None:
+    return (await session.execute(select(Product).where(Product.system_id == system_id))).scalar_one_or_none()
+
+
+async def get_product_by_sku(session: AsyncSession, sku: str) -> Product | None:
+    return (await session.execute(select(Product).where(Product.sku == sku))).scalar_one_or_none()
+
+
+async def get_products(session: AsyncSession, *, q: str | None = None, sku: str | None = None, min_priority: int | None = None, category_id: int | None = None, offset: int = 0, limit: int = 100, sort: str = None) -> list[Product]:
+    stmt = select(Product).options(selectinload(Product.variants))
+    if category_id is not None: stmt = stmt.join(ProductByCategory, ProductByCategory.product_id == Product.id).where(ProductByCategory.category_id == category_id)
+    if sku is not None: stmt = stmt.where(Product.sku == sku)
+    if min_priority is not None: stmt = stmt.where(Product.priority >= min_priority)
+    if q: stmt = stmt.where(or_(Product.name.ilike(f"%{q}%"), Product.sku.ilike(f"%{q}%")))
+
+    min_variant_price = select(func.min(Variant.price)).where(Variant.product_id == Product.id).correlate(Product).scalar_subquery()
+    max_variant_price = select(func.max(Variant.price)).where(Variant.product_id == Product.id).correlate(Product).scalar_subquery()
+    in_stock_first = Product.in_stock.desc()
+    sort_map = {
+        "newest": (in_stock_first, Product.created_at.desc(), Product.id.desc()),
+        "name_asc": (in_stock_first, func.lower(Product.name).asc(), Product.id.asc()),
+        "name_desc": (in_stock_first, func.lower(Product.name).desc(), Product.id.asc()),
+        "price_asc": (in_stock_first, min_variant_price.is_(None), min_variant_price.asc(), Product.id.asc()),
+        "price_desc": (in_stock_first, max_variant_price.is_(None), max_variant_price.desc(), Product.id.asc()),
+    }
+    if sort in sort_map: stmt = stmt.order_by(*sort_map[sort])
+    else: stmt = stmt.order_by(in_stock_first, Product.priority.desc(), Product.id.desc())
+
+    stmt = stmt.offset(offset).limit(limit)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_priority_products(session: AsyncSession, *, min_priority: int = 1, offset: int = 0, limit: int = 100) -> list[Product]:
+    stmt = (
+        select(Product)
+        .options(selectinload(Product.variants))
+        .where(_in_stock_product_clause(), Product.priority >= min_priority)
+        .order_by(Product.priority.desc(), Product.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def update_product(session: AsyncSession, product: Product, data: ProductUpdate) -> Product:
+    for field, value in _apply_image_priority_guard(data.model_dump(exclude_unset=True), product_id=product.id, system_id=product.system_id).items(): setattr(product, field, value)
+    await session.commit()
+    await session.refresh(product)
+    return product
+
+
+async def delete_product(session: AsyncSession, product: Product) -> None:
+    await session.delete(product)
+    await session.commit()

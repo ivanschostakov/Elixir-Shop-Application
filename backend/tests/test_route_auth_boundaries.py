@@ -1,0 +1,75 @@
+import pytest
+from fastapi.testclient import TestClient
+
+import src.app.modules.product_categories.router as product_categories_router_module
+import src.app.modules.products.router as products_router_module
+from src.app.main import app
+from src.database import get_db
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        ("GET", "/api/v1/favorites/products", None),
+        ("GET", "/api/v1/users/me/basket", None),
+        (
+            "POST",
+            "/api/v1/products",
+            {
+                "sku": "protected-sku",
+                "name": "Protected Product",
+                "description": None,
+                "usage": None,
+                "expiration": None,
+                "priority": 0,
+            },
+        ),
+        ("PATCH", "/api/v1/products/1", {}),
+        ("DELETE", "/api/v1/products/1", None),
+    ],
+)
+def test_protected_routes_require_authentication(client: TestClient, method: str, path: str, payload: dict | None):
+    request_kwargs = {"json": payload} if payload is not None else {}
+    response = client.request(method, path, **request_kwargs)
+
+    assert response.status_code == 401, response.text
+
+
+def test_products_get_is_public(monkeypatch: pytest.MonkeyPatch):
+    async def fake_get_db():
+        yield object()
+
+    async def fake_get_products(*args, **kwargs):
+        return []
+
+    app.dependency_overrides[get_db] = fake_get_db
+    monkeypatch.setattr(products_router_module, "get_products", fake_get_products)
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get("/api/v1/products")
+
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_product_categories_get_is_public(monkeypatch: pytest.MonkeyPatch):
+    async def fake_get_db():
+        yield object()
+
+    async def fake_get_product_categories(*args, **kwargs):
+        return []
+
+    app.dependency_overrides[get_db] = fake_get_db
+    monkeypatch.setattr(product_categories_router_module, "get_product_categories", fake_get_product_categories)
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get("/api/v1/product-categories")
+
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+    finally:
+        app.dependency_overrides.pop(get_db, None)

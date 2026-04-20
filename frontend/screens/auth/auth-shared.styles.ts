@@ -1,0 +1,143 @@
+import { StyleSheet } from "react-native"
+
+import { colors } from "@/theme/colors"
+import { spacing } from "@/theme/spacing"
+
+export const authSharedStyles = StyleSheet.create({
+    keyboard: {
+        flex: 1,
+    },
+    container: {
+        flex: 1,
+        backgroundColor: colors.background,
+    },
+    content: {
+        flexGrow: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.lg,
+        width: "100%",
+    },
+    card: {
+        gap: spacing.md,
+        maxWidth: 420,
+        paddingVertical: spacing.md,
+        width: "100%",
+    },
+    title: {
+        color: colors.text,
+        fontSize: 28,
+        fontWeight: "700",
+        marginBottom: spacing.sm,
+    },
+    primaryButton: {
+        alignItems: "center",
+        backgroundColor: colors.primary,
+        borderRadius: 12,
+        justifyContent: "center",
+        minHeight: 48,
+        paddingHorizontal: spacing.md,
+    },
+    primaryButtonPressed: {
+        opacity: 0.88,
+    },
+    primaryButtonText: {
+        color: "#ffffff",
+        fontSize: 16,
+        fontWeight: "700",
+    },
+    secondaryButton: {
+        alignItems: "center",
+        borderColor: colors.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        justifyContent: "center",
+        minHeight: 48,
+        paddingHorizontal: spacing.md,
+    },
+    secondaryButtonPressed: {
+        opacity: 0.72,
+    },
+    secondaryButtonText: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: "600",
+    },
+    helperRow: {
+        flexDirection: "row",
+        gap: spacing.xs,
+        justifyContent: "center",
+    },
+    helperText: {
+        color: colors.mutedText,
+        fontSize: 14,
+    },
+    helperLink: {
+        color: colors.primary,
+        fontSize: 14,
+        fontWeight: "700",
+    },
+    formGroup: {
+        gap: spacing.sm,
+    },
+    fieldLabel: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "600",
+    },
+    input: {
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        color: colors.text,
+        fontSize: 16,
+        minHeight: 48,
+        paddingHorizontal: spacing.md,
+    },
+    inputRow: {
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        flexDirection: "row",
+        minHeight: 48,
+        paddingLeft: spacing.md,
+        paddingRight: spacing.sm,
+    },
+    inputField: {
+        color: colors.text,
+        flex: 1,
+        fontSize: 16,
+        minHeight: 48,
+        paddingRight: spacing.sm,
+    },
+    visibilityButton: {
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 36,
+        paddingHorizontal: spacing.sm,
+    },
+    visibilityButtonPressed: {
+        opacity: 0.6,
+    },
+    visibilityButtonText: {
+        color: colors.primary,
+        fontSize: 14,
+        fontWeight: "600",
+    },
+    errorBox: {
+        borderColor: "#fecdd3",
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+    errorText: {
+        color: "#be123c",
+        fontSize: 14,
+        lineHeight: 20,
+    },
+})

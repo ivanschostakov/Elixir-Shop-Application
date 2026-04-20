@@ -1,0 +1,2 @@
+class BitrixSyncApiError(RuntimeError):
+    pass

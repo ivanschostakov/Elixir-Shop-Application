@@ -1,0 +1,49 @@
+# Local environment files
+.env
+.env.*
+*.env
+!.env.example
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build artifacts
+build/
+dist/
+.eggs/
+*.egg-info/
+pip-wheel-metadata/
+
+# Runtime data
+logs/
+*.log
+media/
+tmp/
+*.pid
+
+# Local databases
+*.db
+*.sqlite3
+
+# Editor and OS files
+.DS_Store
+.vscode/

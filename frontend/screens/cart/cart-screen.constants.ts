@@ -1,0 +1,1 @@
+export const FULL_SWIPE_REMOVE_TRIGGER = 148

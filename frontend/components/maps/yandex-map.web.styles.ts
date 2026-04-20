@@ -1,0 +1,45 @@
+import type { CSSProperties } from "react"
+
+export const yandexMapWebStyles: Record<string, CSSProperties> = {
+    root: {
+        position: "relative",
+        width: "100%",
+        height: "100%",
+        minHeight: 400,
+        overflow: "hidden",
+    },
+    map: {
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+    },
+    fullscreenButton: {
+        position: "absolute",
+        top: 12,
+        right: 12,
+        zIndex: 10,
+        border: "1px solid rgba(0, 0, 0, 0.12)",
+        background: "#ffffff",
+        color: "#1f1f1f",
+        borderRadius: 10,
+        padding: "8px 12px",
+        fontSize: 14,
+        fontWeight: 600,
+        cursor: "pointer",
+        boxShadow: "0 2px 8px rgba(0, 0, 0, 0.12)",
+    },
+    errorBanner: {
+        position: "absolute",
+        left: 12,
+        right: 12,
+        bottom: 12,
+        zIndex: 10,
+        background: "rgba(190, 31, 31, 0.92)",
+        color: "#ffffff",
+        borderRadius: 10,
+        padding: "10px 12px",
+        fontSize: 13,
+        lineHeight: "18px",
+    },
+}
