@@ -2,25 +2,15 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, TouchableOpa
 import { Path, Svg } from "react-native-svg"
 
 import { DeliverySuggestIcon } from "@/components/delivery/delivery-suggest-icon"
+import type { DeliverySearchPanelProps } from "@/components/delivery/delivery-search-panel.types"
+import {
+    getResultSubtitle,
+    getResultTitle,
+} from "@/components/delivery/delivery-search-panel.utils"
 import { CLOSE_ICON_PATH } from "@/components/header/app-header.constants"
 import { translate } from "@/i18n/translations"
 import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
-import type { DeliveryGeoSuggestResult } from "@/services/api/delivery.types"
 import { colors } from "@/theme/colors"
-
-type DeliverySearchPanelProps = {
-    autoFocus?: boolean
-    error?: string | null
-    isLoading?: boolean
-    onChangeText: (value: string) => void
-    onClose?: () => void
-    onFocusChange?: (isFocused: boolean) => void
-    onSubmitSearch?: () => void
-    onSelectResult: (result: DeliveryGeoSuggestResult) => void
-    results: DeliveryGeoSuggestResult[]
-    value: string
-    variant?: "floating" | "footer"
-}
 
 function DeliverySearchFieldIcon() {
     return (
@@ -34,18 +24,6 @@ function DeliverySearchFieldIcon() {
             />
         </Svg>
     )
-}
-
-function getResultTitle(result: DeliveryGeoSuggestResult) {
-    return result.title || result.full_address
-}
-
-function getResultSubtitle(result: DeliveryGeoSuggestResult) {
-    if (result.display_subtitle) {
-        return result.display_subtitle
-    }
-
-    return result.full_address !== getResultTitle(result) ? result.full_address : ""
 }
 
 export function DeliverySearchPanel({

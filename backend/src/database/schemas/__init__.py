@@ -13,9 +13,10 @@ from .catalog.product import ProductBase, ProductCreate, ProductRead, ProductUpd
 from .catalog.product_category import ProductCategoryBase, ProductCategoryCreate, ProductCategoryRead, ProductCategoryUpdate
 from .catalog.products_by_category import ProductByCategoryBase, ProductByCategoryCreate, ProductByCategoryRead, ProductByCategoryUpdate
 from .catalog.variant import ProductVariantRead, VariantBase, VariantCreate, VariantRead, VariantUpdate
+from .delivery.address import DeliveryAddressBase, DeliveryAddressCreate, DeliveryAddressRead
 from .delivery.cdek_door_address import CdekDoorAddressBase, CdekDoorAddressCreate, CdekDoorAddressRead, CdekDoorAddressUpdate
 from .delivery.cdek_pickup_address import CdekPickupAddressBase, CdekPickupAddressCreate, CdekPickupAddressRead, CdekPickupAddressUpdate
-from .delivery.yandex_door_address import YandexDoorAddressBase, YandexDoorAddressCreate, YandexDoorAddressRead, YandexDoorAddressUpdate
+from .delivery.recipient import DeliveryRecipientBase, DeliveryRecipientCreate, DeliveryRecipientRead
 from .delivery.yandex_pickup_address import YandexPickupAddressBase, YandexPickupAddressCreate, YandexPickupAddressRead, YandexPickupAddressUpdate
 from .favorites.favoured_product import (
     FavouredProductBase,
@@ -35,6 +36,16 @@ from .website.website_identity import (
     WebsiteIdentityUpdate,
     WebsiteReferralProfileRead,
 )
+from .orders.draft import (
+    OrderDraftBase,
+    OrderDraftCheckoutOptionsRead,
+    OrderDraftCreate,
+    OrderDraftItemBase,
+    OrderDraftItemCreate,
+    OrderDraftItemRead,
+    OrderDraftRead,
+    OrderDraftUpdate,
+)
 
 __all__ = [
     "AvatarResponse",
@@ -48,6 +59,12 @@ __all__ = [
     "BasketItemUpdate",
     "BasketProductSummaryRead",
     "BasketVariantSummaryRead",
+    "DeliveryAddressBase",
+    "DeliveryAddressCreate",
+    "DeliveryAddressRead",
+    "DeliveryRecipientBase",
+    "DeliveryRecipientCreate",
+    "DeliveryRecipientRead",
     "CdekDoorAddressBase",
     "CdekDoorAddressCreate",
     "CdekDoorAddressRead",
@@ -61,6 +78,14 @@ __all__ = [
     "FavouredProductRead",
     "FavouredProductUpdate",
     "FavouriteProductStatusRead",
+    "OrderDraftBase",
+    "OrderDraftCheckoutOptionsRead",
+    "OrderDraftCreate",
+    "OrderDraftItemBase",
+    "OrderDraftItemCreate",
+    "OrderDraftItemRead",
+    "OrderDraftRead",
+    "OrderDraftUpdate",
     "ProductBase",
     "ProductCreate",
     "ProductRead",
@@ -95,10 +120,6 @@ __all__ = [
     "WebsiteIdentityRead",
     "WebsiteIdentityUpdate",
     "WebsiteReferralProfileRead",
-    "YandexDoorAddressBase",
-    "YandexDoorAddressCreate",
-    "YandexDoorAddressRead",
-    "YandexDoorAddressUpdate",
     "YandexPickupAddressBase",
     "YandexPickupAddressCreate",
     "YandexPickupAddressRead",

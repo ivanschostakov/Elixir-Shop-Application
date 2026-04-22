@@ -9,11 +9,14 @@ from .catalog.product import Product
 from .catalog.product_category import ProductCategory
 from .catalog.products_by_category import ProductByCategory
 from .catalog.variant import Variant
+from .delivery.address import DeliveryAddress
 from .delivery.cdek_door_address import CdekDoorAddress
 from .delivery.cdek_pickup_address import CdekPickupAddress
-from .delivery.yandex_door_address import YandexDoorAddress
+from .delivery.recipient import DeliveryRecipient
 from .delivery.yandex_pickup_address import YandexPickupAddress
 from .favorites.favoured_product import FavouredProduct
+from .orders.draft import OrderDraft
+from .orders.draft_items import OrderDraftItem
 from .website.website_bonus_account import WebsiteBonusAccount
 from .website.website_coupon import WebsiteCoupon
 from .website.website_discount_entitlement import WebsiteDiscountEntitlement
@@ -26,9 +29,13 @@ __all__ = [
     "Basket",
     "BasketItem",
     "BusinessLedgerEntry",
+    "DeliveryAddress",
     "CdekDoorAddress",
     "CdekPickupAddress",
+    "DeliveryRecipient",
     "FavouredProduct",
+    "OrderDraft",
+    "OrderDraftItem",
     "OrderBenefitApplication",
     "Product",
     "ProductCategory",
@@ -42,6 +49,5 @@ __all__ = [
     "WebsiteIdentity",
     "WebsiteReferralProfile",
     "WebsiteSyncEvent",
-    "YandexDoorAddress",
     "YandexPickupAddress",
 ]

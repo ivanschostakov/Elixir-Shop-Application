@@ -1,23 +1,14 @@
 import { useEffect, useRef } from "react"
-import { CountryFlag } from "@/components/country-flag/country-flag"
-import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
-import type { DeliveryCountryCode } from "@/services/api/delivery.types"
 import { Animated, Easing, Pressable, ScrollView } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 
-type DeliveryCountriesSelectorProps = {
-    countryCodes: readonly DeliveryCountryCode[]
-    value: DeliveryCountryCode
-    onChange: (countryCode: DeliveryCountryCode) => void
-}
-
-const INACTIVE_FLAG_OPACITY = 0.5
-
-type DeliveryCountryButtonProps = {
-    countryCode: DeliveryCountryCode
-    isActive: boolean
-    onPress: (countryCode: DeliveryCountryCode) => void
-}
+import { CountryFlag } from "@/components/country-flag/country-flag"
+import { INACTIVE_FLAG_OPACITY } from "@/components/delivery/delivery-country-selector.constants"
+import type {
+    DeliveryCountriesSelectorProps,
+    DeliveryCountryButtonProps,
+} from "@/components/delivery/delivery-country-selector.types"
+import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
 
 function DeliveryCountryButton({
     countryCode,

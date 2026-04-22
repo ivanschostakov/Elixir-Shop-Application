@@ -12,6 +12,11 @@ from src.database import get_db
     [
         ("GET", "/api/v1/favorites/products", None),
         ("GET", "/api/v1/users/me/basket", None),
+        ("GET", "/api/v1/users/me/order-drafts", None),
+        ("GET", "/api/v1/users/me/order-drafts/latest", None),
+        ("PATCH", "/api/v1/users/me/order-drafts/1", {}),
+        ("DELETE", "/api/v1/users/me/order-drafts/1", None),
+        ("POST", "/api/v1/users/me/basket/restore-draft/1", None),
         (
             "POST",
             "/api/v1/products",

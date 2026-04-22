@@ -86,11 +86,17 @@ export const DEFAULT_DELIVERY_POINT: Point = {
 export const DOOR_DELIVERY_PROVIDER: DeliveryPointProvider = "cdek"
 export const DEFAULT_DELIVERY_ZOOM = 12
 export const PICKUP_POINT_FOCUS_ZOOM = 17
+export const MAX_NATIVE_PICKUP_MARKERS = 80000
+export const DOOR_DELIVERY_LOOKUP_DELAY_MS = 420
 export const DELIVERY_CAMERA_DURATIONS = {
     country: 0.7,
     follow: 1.2,
     search: 0.55,
     startup: 0.8,
+} as const
+export const DELIVERY_CLUSTER_MARKER_ICONS = {
+    cdek: require("@/assets/icons/delivery-services/cdek.png"),
+    yandex: require("@/assets/icons/delivery-services/yandex.png"),
 } as const
 
 const DELIVERY_POINT_FOCUS_KINDS = new Set([

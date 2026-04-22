@@ -8,7 +8,7 @@ export function ProfileQuickActions({ onSignOut }: ProfileQuickActionsProps) {
     const { t } = useLanguage()
 
     return (
-        <View style={ProfileScreenStyles.sectionCard}>
+        <View style={[ProfileScreenStyles.sectionCard, ProfileScreenStyles.sectionCardBottom]}>
             <Text style={ProfileScreenStyles.sectionTitle}>{t("profile.quickActions")}</Text>
             <Text style={ProfileScreenStyles.sectionDescription}>
                 {t("profile.quickActionsSubtitle")}

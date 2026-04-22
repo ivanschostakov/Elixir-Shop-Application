@@ -5,7 +5,7 @@ import { spacing } from "@/theme/spacing"
 export const cartScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: "#F3F5F8",
     },
     emptyContent: {
         alignItems: "center",
@@ -14,19 +14,34 @@ export const cartScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.md,
     },
     loadingContainer: {
-        alignItems: "center",
-        backgroundColor: colors.background,
+        backgroundColor: "#F3F5F8",
         flex: 1,
-        justifyContent: "center",
-        paddingHorizontal: spacing.md,
     },
     errorContainer: {
-        alignItems: "center",
-        backgroundColor: colors.background,
+        backgroundColor: "#F3F5F8",
         flex: 1,
+    },
+    stateScrollContent: {
+        paddingHorizontal: 0,
+        paddingTop: 0,
+        paddingBottom: 0,
+    },
+    stateCard: {
+        backgroundColor: colors.surface,
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+        gap: spacing.md,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.lg,
+        width: "100%",
+    },
+    stateLoadingRow: {
+        alignItems: "center",
         gap: spacing.sm,
         justifyContent: "center",
-        paddingHorizontal: spacing.lg,
+        minHeight: 160,
     },
     errorTitle: {
         color: colors.text,
@@ -54,17 +69,41 @@ export const cartScreenStyles = StyleSheet.create({
         fontSize: 15,
         fontWeight: "700",
     },
+    headerSaveButton: {
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 34,
+        paddingRight: spacing.xs,
+    },
+    headerSaveButtonPressed: {
+        opacity: 0.5,
+    },
+    headerSaveButtonDisabled: {
+        opacity: 0.45,
+    },
     scrollContent: {
-        gap: spacing.sm,
-        paddingHorizontal: spacing.sm,
-        paddingTop: spacing.sm,
-        paddingBottom: spacing.xl,
+        gap: spacing.md,
+        paddingHorizontal: 0,
+        paddingTop: 0,
+        paddingBottom: 0,
+    },
+    sectionTop: {
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+    },
+    sectionBottom: {
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+    },
+    summarySection: {
+        backgroundColor: colors.surface,
+        borderRadius: spacing.lg,
+        overflow: "hidden",
     },
     summaryCard: {
-        backgroundColor: colors.surface,
         gap: spacing.sm,
-        paddingHorizontal: spacing.xs,
-        paddingTop: spacing.xs,
+        paddingHorizontal: spacing.lg,
+        paddingTop: spacing.sm,
         paddingBottom: spacing.sm,
     },
     summaryStats: {
@@ -72,11 +111,12 @@ export const cartScreenStyles = StyleSheet.create({
         gap: spacing.sm,
     },
     summaryFooter: {
-        borderBottomColor: colors.border,
-        borderBottomWidth: 1,
+        borderTopColor: colors.border,
+        borderTopWidth: 1,
         gap: spacing.xs,
-        paddingHorizontal: spacing.xs,
+        paddingHorizontal: spacing.lg,
         paddingBottom: spacing.sm,
+        paddingTop: spacing.sm,
     },
     summaryStat: {
         flex: 1,
@@ -190,17 +230,18 @@ export const cartScreenStyles = StyleSheet.create({
     },
     itemsList: {
         gap: spacing.sm,
+        paddingHorizontal: spacing.lg,
     },
     itemsSection: {
-        gap: spacing.xs,
+        gap: 0,
     },
     itemsSectionCard: {
         backgroundColor: colors.surface,
-        borderRadius: 22,
+        borderRadius: spacing.lg,
         gap: spacing.sm,
         overflow: "hidden",
-        paddingHorizontal: spacing.xs,
-        paddingTop: spacing.md,
+        paddingHorizontal: 0,
+        paddingTop: spacing.sm,
         paddingBottom: spacing.sm,
     },
     itemsSectionCardUnavailable: {
@@ -208,7 +249,8 @@ export const cartScreenStyles = StyleSheet.create({
     },
     itemsSectionHeader: {
         gap: 4,
-        paddingHorizontal: spacing.xs,
+        paddingBottom: spacing.xs,
+        paddingHorizontal: spacing.lg,
     },
     itemsSectionTitle: {
         color: colors.text,

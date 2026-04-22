@@ -1,14 +1,11 @@
-import { createContext, useContext, useState } from "react"
-import type { ReactNode } from "react"
+import { useState } from "react"
 
-type ScreenTitleContextValue = {
-    setTitleOverride: (title: string | null) => void
-    titleOverride: string | null
-}
+import {
+    ScreenTitleContext,
+    type ScreenTitleProviderProps,
+} from "@/providers/screen-title-provider.context"
 
-const ScreenTitleContext = createContext<ScreenTitleContextValue | null>(null)
-
-export function ScreenTitleProvider({ children }: { children: ReactNode }) {
+export function ScreenTitleProvider({ children }: ScreenTitleProviderProps) {
     const [titleOverride, setTitleOverride] = useState<string | null>(null)
 
     return (
@@ -18,12 +15,4 @@ export function ScreenTitleProvider({ children }: { children: ReactNode }) {
     )
 }
 
-export function useScreenTitle() {
-    const context = useContext(ScreenTitleContext)
-
-    if (!context) {
-        throw new Error("useScreenTitle must be used within a ScreenTitleProvider")
-    }
-
-    return context
-}
+export { useScreenTitle } from "@/providers/screen-title-provider.context"

@@ -5,43 +5,13 @@ import {
     Pressable,
     Text,
     View,
-    type ImageSourcePropType,
 } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
+import type { PickupPointFooterExtensionProps } from "@/components/delivery/pickup-point-footer-extension.types"
 import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { translate } from "@/i18n/translations"
 import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
-
-type DeliveryInfoRow = {
-    key: string
-    label: string
-    value: string
-}
-
-type DeliveryProviderOption = {
-    imageAlt?: string
-    imageSource?: ImageSourcePropType
-    key: string
-    label: string
-}
-
-type PickupPointFooterExtensionProps = {
-    actionLabel?: string
-    error?: string | null
-    inset?: boolean
-    isResolving?: boolean
-    isProviderSelectionDisabled?: boolean
-    onChoose: () => void
-    onClose: () => void
-    onCopyInfo: (value: string) => void
-    onOpenOfficePage?: (() => void) | null
-    onSelectProvider?: ((providerKey: string) => void) | null
-    providerOptions?: DeliveryProviderOption[]
-    rows: DeliveryInfoRow[]
-    selectedProviderKey?: string | null
-    title: string
-}
 
 export function PickupPointFooterExtension({
     actionLabel = translate("delivery.pickupPointChoose"),

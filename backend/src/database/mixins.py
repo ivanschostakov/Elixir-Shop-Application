@@ -1,14 +1,14 @@
 import uuid
+
 from datetime import datetime
 from typing import get_args
-
-from sqlalchemy import BigInteger, DateTime, func, ForeignKey, Enum, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Enum, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from config import ufa_now
 from src.database.limits import DELIVERY_ADDRESS_MAX_LENGTH, DELIVERY_LABEL_MAX_LENGTH
-from src.integrations.delivery.schemas import CountryCode, DeliveryProvider
+from src.integrations.delivery.schemas import CountryCode, DeliveryMode, DeliveryProvider
 
 
 class TimestampMixin:
@@ -30,6 +30,7 @@ def _literal_values(type_alias: object) -> tuple[str, ...]:
 
 COUNTRY_CODE_DB_ENUM = Enum(*_literal_values(CountryCode), name="country_code_enum")
 DELIVERY_PROVIDER_DB_ENUM = Enum(*_literal_values(DeliveryProvider), name="delivery_provider_enum")
+DELIVERY_MODE_DB_ENUM = Enum(*_literal_values(DeliveryMode), name="delivery_mode_enum")
 
 
 class DeliveryAddressMixin(IdPkMixin, TimestampMixin):

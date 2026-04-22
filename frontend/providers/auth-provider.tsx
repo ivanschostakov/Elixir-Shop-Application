@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 
 import {
     authenticate,
@@ -9,7 +9,8 @@ import {
     registerAccount,
 } from "@/services/auth/auth"
 import { translate } from "@/i18n/translations"
-import type { AuthContextValue, AuthProviderProps } from "@/providers/auth-provider.types"
+import { AuthContext } from "@/providers/auth-provider.context"
+import type { AuthProviderProps } from "@/providers/auth-provider.types"
 import type { AuthUser, LoginCredentials, RegistrationPayload } from "@/services/auth/auth.types"
 import {
     clearAuthTokens,
@@ -18,8 +19,6 @@ import {
     setRefreshHandler,
     subscribeAuthSession,
 } from "@/services/auth/session"
-
-const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<AuthUser | null>(null)
@@ -122,12 +121,4 @@ export function AuthProvider({ children }: AuthProviderProps) {
     )
 }
 
-export function useAuth() {
-    const context = useContext(AuthContext)
-
-    if (!context) {
-        throw new Error("useAuth must be used within an AuthProvider")
-    }
-
-    return context
-}
+export { useAuth } from "@/providers/auth-provider.context"

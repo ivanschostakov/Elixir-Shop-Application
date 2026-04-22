@@ -1,0 +1,1 @@
+export const INACTIVE_FLAG_OPACITY = 0.5

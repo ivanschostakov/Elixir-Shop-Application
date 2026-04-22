@@ -1,4 +1,5 @@
+from .address import DeliveryAddressBase, DeliveryAddressCreate, DeliveryAddressRead
 from .cdek_door_address import CdekDoorAddressBase, CdekDoorAddressCreate, CdekDoorAddressRead, CdekDoorAddressUpdate
 from .cdek_pickup_address import CdekPickupAddressBase, CdekPickupAddressCreate, CdekPickupAddressRead, CdekPickupAddressUpdate
-from .yandex_door_address import YandexDoorAddressBase, YandexDoorAddressCreate, YandexDoorAddressRead, YandexDoorAddressUpdate
+from .recipient import DeliveryRecipientBase, DeliveryRecipientCreate, DeliveryRecipientRead
 from .yandex_pickup_address import YandexPickupAddressBase, YandexPickupAddressCreate, YandexPickupAddressRead, YandexPickupAddressUpdate

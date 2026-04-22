@@ -1,4 +1,4 @@
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api/client"
+import { apiDelete, apiFetch, apiGet, apiPatch, apiPost } from "@/services/api/client"
 import { basketEndpoint, basketItemsEndpoint } from "@/services/api/basket.constants"
 import type { BasketItemCreate, BasketItemUpdate, BasketRead } from "@/types/basket"
 
@@ -20,4 +20,10 @@ export function removeBasketItem(itemId: number): Promise<BasketRead> {
 
 export function clearBasket(): Promise<BasketRead> {
     return apiDelete<BasketRead>(basketItemsEndpoint)
+}
+
+export function restoreDraftToBasket(draftId: number): Promise<BasketRead> {
+    return apiFetch<BasketRead>(`${basketEndpoint}/restore-draft/${draftId}`, {
+        method: "POST",
+    })
 }

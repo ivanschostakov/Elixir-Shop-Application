@@ -1,8 +1,6 @@
 import { Circle, G, Path, Svg } from "react-native-svg"
 
-type FooterIconProps = {
-    color: string
-}
+import type { FooterIconProps } from "@/components/footer/sticky-footer.icons.types"
 
 export function HomeIcon({ color }: FooterIconProps) {
     return (

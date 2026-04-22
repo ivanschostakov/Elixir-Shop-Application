@@ -57,10 +57,18 @@ async function buildApiError(response: Response): Promise<ApiError> {
             if (
                 typeof body === "object" &&
                 body !== null &&
-                "detail" in body &&
-                typeof body.detail === "string"
+                "detail" in body
             ) {
-                message = body.detail
+                if (typeof body.detail === "string") {
+                    message = body.detail
+                } else if (
+                    typeof body.detail === "object" &&
+                    body.detail !== null &&
+                    "message" in body.detail &&
+                    typeof body.detail.message === "string"
+                ) {
+                    message = body.detail.message
+                }
             }
         } catch {
             body = raw

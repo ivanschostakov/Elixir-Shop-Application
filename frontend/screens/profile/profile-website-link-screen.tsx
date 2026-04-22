@@ -6,18 +6,8 @@ import { useLanguage } from "@/providers/language-provider"
 import AuthFormLayout from "@/screens/auth/auth-form-layout"
 import { authSharedStyles } from "@/screens/auth/auth-shared.styles"
 import PasswordField from "@/screens/auth/password-field"
+import { getErrorMessage } from "@/screens/profile/profile-website-link-screen.utils"
 import { linkMyWebsiteIdentity } from "@/services/api/website-identity"
-import { ApiError } from "@/services/api/client"
-
-function getErrorMessage(error: unknown, fallback: string) {
-    if (error instanceof ApiError && error.message) {
-        return error.message
-    }
-    if (error instanceof Error && error.message) {
-        return error.message
-    }
-    return fallback
-}
 
 export default function ProfileWebsiteLinkScreen() {
     const { t } = useLanguage()

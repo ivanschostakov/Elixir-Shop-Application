@@ -93,6 +93,10 @@ export default function AppHeader({ template }: AppHeaderProps) {
     }
 
     const renderLeftSlot = () => {
+        if (template.slots?.headerLeft) {
+            return template.slots.headerLeft
+        }
+
         if (showBackButton) {
             return (
                 <Pressable

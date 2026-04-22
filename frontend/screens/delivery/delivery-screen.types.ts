@@ -2,6 +2,7 @@ import type { InitialRegion, Point } from "react-native-yamap"
 
 import type { DeliveryCountryCode, DeliveryPointProvider } from "@/services/api/delivery.types"
 import type { SelectedDeliveryAddress } from "@/hooks/delivery/delivery-address-selection-store.types"
+import type { SelectedDeliveryPoint } from "@/hooks/delivery/delivery-point-selection-store.types"
 
 export type DeliveryLocationState = {
     detectedCountryCode: DeliveryCountryCode | null
@@ -31,6 +32,20 @@ export type DeliveryMapMarker =
       }
 
 export type DeliveryDoorDraft = SelectedDeliveryAddress
+
+export type DeliveryPickupDraft = SelectedDeliveryPoint & {
+    nearest_metro_station?: string | null
+    nearest_station?: string | null
+    note?: string | null
+    emails?: string[]
+    phones?: string[]
+}
+
+export type DeliveryInfoRow = {
+    key: string
+    label: string
+    value: string
+}
 
 export type DeliveryCameraCommand =
     | {

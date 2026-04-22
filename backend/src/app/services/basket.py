@@ -1,11 +1,12 @@
 from decimal import Decimal
 
-from fastapi import Request
-from sqlalchemy import select
+from fastapi import HTTPException, Request
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette import status
 
-from src.database.crud import create_basket, get_basket_by_user_id
-from src.database.models import Basket, Variant
+from src.database.crud import get_basket_by_id, get_basket_by_user_id, get_order_draft_by_id
+from src.database.models import Basket, BasketItem, Variant
 from src.database.schemas import BasketCreate, BasketItemRead, BasketProductSummaryRead, BasketRead, BasketVariantSummaryRead
 from src.product_media import build_products_media_url
 
@@ -16,6 +17,10 @@ def _product_image_url(request: Request, product) -> str:
 
 def _variant_image_url(request: Request, variant) -> str:
     return build_products_media_url(str(request.base_url), variant.image_path)
+
+
+def _basket_conflict(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
 def serialize_basket(request: Request, basket: Basket) -> BasketRead:
@@ -79,7 +84,12 @@ def serialize_basket(request: Request, basket: Basket) -> BasketRead:
 async def _ensure_basket(db: AsyncSession, user_id: int):
     basket = await get_basket_by_user_id(db, user_id)
     if basket is None:
-        basket = await create_basket(db, BasketCreate(user_id=user_id))
+        basket = Basket(**BasketCreate(user_id=user_id).model_dump())
+        db.add(basket)
+        await db.commit()
+        basket = await get_basket_by_user_id(db, user_id)
+        if basket is None:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create basket")
     return basket
 
 
@@ -91,3 +101,72 @@ async def _get_variant_for_update(db: AsyncSession, variant_id: int) -> Variant 
 async def _get_serialized_basket(request: Request, db: AsyncSession, user_id: int) -> BasketRead:
     basket = await _ensure_basket(db, user_id)
     return serialize_basket(request, basket)
+
+
+async def _get_or_create_locked_basket(db: AsyncSession, user_id: int) -> Basket:
+    stmt = select(Basket).where(Basket.user_id == user_id).with_for_update()
+    basket = (await db.execute(stmt)).scalar_one_or_none()
+    if basket is not None:
+        return basket
+
+    basket = Basket(user_id=user_id)
+    db.add(basket)
+    await db.flush()
+    return basket
+
+
+async def _lock_basket_items(db: AsyncSession, basket_id: int) -> None:
+    stmt = select(BasketItem.id).where(BasketItem.basket_id == basket_id).with_for_update()
+    await db.execute(stmt)
+
+
+async def _get_locked_variants(db: AsyncSession, variant_ids: set[int]) -> dict[int, Variant]:
+    if not variant_ids:
+        return {}
+
+    stmt = select(Variant).where(Variant.id.in_(variant_ids)).with_for_update()
+    variants = list((await db.execute(stmt)).scalars().all())
+    return {variant.id: variant for variant in variants}
+
+
+async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, user_id: int, draft_id: int) -> BasketRead:
+    draft = await get_order_draft_by_id(db, draft_id, user_id=user_id)
+    if draft is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
+    if not draft.items:
+        raise _basket_conflict("Order draft is empty")
+
+    basket = await _get_or_create_locked_basket(db, user_id)
+    await _lock_basket_items(db, basket.id)
+
+    variants_by_id = await _get_locked_variants(db, {item.variant_id for item in draft.items})
+    restored_items: list[BasketItem] = []
+
+    for draft_item in draft.items:
+        variant = variants_by_id.get(draft_item.variant_id)
+        if variant is None:
+            raise _basket_conflict("Order draft contains unavailable items")
+        if variant.stock <= 0 or draft_item.quantity > variant.stock:
+            raise _basket_conflict("Order draft contains unavailable items")
+
+        restored_items.append(
+            BasketItem(
+                basket_id=basket.id,
+                user_id=user_id,
+                product_id=variant.product_id,
+                variant_id=variant.id,
+                quantity=draft_item.quantity,
+                price=variant.price,
+            )
+        )
+
+    await db.execute(delete(BasketItem).where(BasketItem.basket_id == basket.id))
+    db.add_all(restored_items)
+    await db.flush()
+    await db.commit()
+
+    restored_basket = await get_basket_by_id(db, basket.id)
+    if restored_basket is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load restored basket")
+
+    return serialize_basket(request, restored_basket)

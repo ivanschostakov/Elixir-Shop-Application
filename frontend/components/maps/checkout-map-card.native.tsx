@@ -2,12 +2,8 @@ import { useState } from "react"
 import { NativeSyntheticEvent, Text, View } from "react-native"
 import { Marker, type Point, YaMap } from "react-native-yamap"
 
+import { DEFAULT_POINT } from "@/components/maps/checkout-map-card.native.constants"
 import { checkoutMapCardNativeStyles } from "@/components/maps/checkout-map-card.native.styles"
-
-const DEFAULT_POINT: Point = {
-    lat: 55.751244,
-    lon: 37.618423,
-}
 
 export default function CheckoutMapCard() {
     const [marker, setMarker] = useState<Point | undefined>(undefined)

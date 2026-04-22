@@ -3,11 +3,8 @@ import {
     COUNTRY_FLAG_ASPECT_RATIO,
     COUNTRY_FLAGS,
 } from "@/components/country-flag/country-flag.consts"
-import { StyleSheet, View, type DimensionValue, type ViewStyle } from "react-native"
-
-function isDimensionValue(value: unknown): value is DimensionValue {
-    return typeof value === "number" || typeof value === "string"
-}
+import { isDimensionValue } from "@/components/country-flag/country-flag.utils"
+import { StyleSheet, View, type ViewStyle } from "react-native"
 
 export function CountryFlag(props: CountryFlagProps) {
     const { code, style } = props

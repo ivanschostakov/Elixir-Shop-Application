@@ -15,7 +15,7 @@ import {
     Text,
     View,
 } from "react-native"
-import { useRouter } from "expo-router"
+import { useLocalSearchParams, useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import {
     ClusteredYamap,
@@ -32,6 +32,7 @@ import { CDEK_PICKUP_MARKER_OUTER_COLOR } from "@/components/maps/cdek-pickup-ma
 import { DeliveryPlaceMarker } from "@/components/maps/delivery-place-marker"
 import { MapFlowTemplate } from "@/components/templates/map-flow-template"
 import { ROUTES } from "@/constants/routes"
+import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
 import {
     setSelectedDeliveryAddress,
     useSelectedDeliveryAddress,
@@ -41,7 +42,7 @@ import {
     setSelectedDeliveryPoint,
     useSelectedDeliveryPoint,
 } from "@/hooks/delivery/delivery-point-selection-store"
-import type { SelectedDeliveryPoint } from "@/hooks/delivery/delivery-point-selection-store.types"
+import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useDeliveryGeoSearch } from "@/hooks/delivery/use-delivery-geo-search"
 import { useDeliveryPointMarkers } from "@/hooks/delivery/use-delivery-point-markers"
 import { translate } from "@/i18n/translations"
@@ -56,17 +57,18 @@ import {
 } from "@/services/api/delivery"
 import { ApiError } from "@/services/api/client"
 import type {
-    CdekDeliveryCalculation,
-    DeliveryCountryCode,
     DeliveryGeoCodeResult,
     DeliveryGeoSuggestResult,
-    DeliveryPointDetails,
     DeliveryPointProvider,
 } from "@/services/api/delivery.types"
+import { createOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
 import {
     DOOR_DELIVERY_PROVIDER,
     DELIVERY_CAMERA_DURATIONS,
     DEFAULT_DELIVERY_REGION,
+    DELIVERY_CLUSTER_MARKER_ICONS,
+    DOOR_DELIVERY_LOOKUP_DELAY_MS,
+    MAX_NATIVE_PICKUP_MARKERS,
     PICKUP_POINT_FOCUS_ZOOM,
     getDeliveryCountryViewport,
     getDeliveryRegion,
@@ -81,300 +83,40 @@ import {
 } from "@/screens/delivery/delivery-calculation"
 import { useDeliveryLocation, useDeliveryMapCamera } from "@/screens/delivery/delivery-screen.hooks"
 import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
-import type { DeliveryDoorDraft, DeliveryMapMarker } from "@/screens/delivery/delivery-screen.types"
+import type {
+    DeliveryDoorDraft,
+    DeliveryMapMarker,
+    DeliveryPickupDraft,
+} from "@/screens/delivery/delivery-screen.types"
+import {
+    arePointsClose,
+    areCameraPositionsEquivalent,
+    buildCdekPickupCalculationRequest,
+    buildDoorDeliveryDraft,
+    buildDoorOrderDraftPayload,
+    buildOrderDraftAddressUpdatePayload,
+    buildPickupOrderDraftPayload,
+    buildPickupPointDraft,
+    getClusteredMarkerPayload,
+    getDeliveryCalculationErrorMessage,
+    getDeliveryPointMarkerKey,
+    getDoorDeliveryInfoRows,
+    getDoorDeliveryPoint,
+    getNearestPickupMarkers,
+    getPickupPoint,
+    getPickupPointAddress,
+    getPickupPointInfoRows,
+    parseBooleanSearchParam,
+    parseDraftId,
+} from "@/screens/delivery/delivery-screen.utils"
 import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-const MAX_NATIVE_PICKUP_MARKERS = 80000
-const DOOR_DELIVERY_LOOKUP_DELAY_MS = 420
-const DELIVERY_CLUSTER_MARKER_ICONS = {
-    cdek: require("@/assets/icons/delivery-services/cdek.png"),
-    yandex: require("@/assets/icons/delivery-services/yandex.png"),
-} as const
-
-function getClusteredMarkerPayload(rawData: unknown) {
-    const code =
-        rawData && typeof rawData === "object" && "code" in rawData && typeof rawData.code === "string"
-            ? rawData.code
-            : null
-    const provider: DeliveryPointProvider =
-        rawData && typeof rawData === "object" && "provider" in rawData && rawData.provider === "yandex"
-            ? "yandex"
-            : "cdek"
-
-    return code
-        ? {
-              code,
-              provider,
-          }
-        : null
-}
-
-type DeliveryPickupDraft = SelectedDeliveryPoint & {
-    nearest_metro_station?: string | null
-    nearest_station?: string | null
-    note?: string | null
-    emails?: string[]
-    phones?: string[]
-}
-
-type DeliveryInfoRow = {
-    key: string
-    label: string
-    value: string
-}
-
-function buildDoorDeliveryDraft(
-    geocodeResult: DeliveryGeoCodeResult,
-    countryCode: DeliveryCountryCode | null,
-): DeliveryDoorDraft {
-    return {
-        address:
-            geocodeResult.address
-            || [geocodeResult.title, geocodeResult.subtitle].filter(Boolean).join(", "),
-        city: geocodeResult.city,
-        countryCode,
-        deliveryCalculation: null,
-        latitude: geocodeResult.lat,
-        longitude: geocodeResult.lon,
-        postalCode: geocodeResult.postal_code,
-        provider: DOOR_DELIVERY_PROVIDER,
-        subtitle: geocodeResult.subtitle,
-    }
-}
-
-function buildPickupPointDraft(
-    deliveryPoint:
-        | (DeliveryPointDetails & { provider?: DeliveryPointProvider })
-        | SelectedDeliveryPoint
-        | DeliveryPickupDraft,
-): DeliveryPickupDraft {
-    return {
-        address: deliveryPoint.address,
-        address_full: deliveryPoint.address_full,
-        city: deliveryPoint.city,
-        code: deliveryPoint.code,
-        countryCode:
-            "country_code" in deliveryPoint ? deliveryPoint.country_code : deliveryPoint.countryCode ?? null,
-        latitude: deliveryPoint.latitude,
-        longitude: deliveryPoint.longitude,
-        name: deliveryPoint.name,
-        postalCode:
-            "postal_code" in deliveryPoint ? deliveryPoint.postal_code : deliveryPoint.postalCode ?? null,
-        provider: deliveryPoint.provider ?? "cdek",
-        nearest_metro_station:
-            "nearest_metro_station" in deliveryPoint ? deliveryPoint.nearest_metro_station : null,
-        nearest_station: "nearest_station" in deliveryPoint ? deliveryPoint.nearest_station : null,
-        note: "note" in deliveryPoint ? deliveryPoint.note : null,
-        emails: "emails" in deliveryPoint ? deliveryPoint.emails : [],
-        phones: "phones" in deliveryPoint ? deliveryPoint.phones : [],
-        work_time: deliveryPoint.work_time,
-        deliveryCalculation: "deliveryCalculation" in deliveryPoint ? deliveryPoint.deliveryCalculation : null,
-    }
-}
-
-function buildSelectedDeliveryPoint(
-    pickupPointDraft: DeliveryPickupDraft,
-    deliveryCalculation: CdekDeliveryCalculation | null,
-): SelectedDeliveryPoint {
-    return {
-        address: pickupPointDraft.address,
-        address_full: pickupPointDraft.address_full,
-        city: pickupPointDraft.city,
-        code: pickupPointDraft.code,
-        countryCode: pickupPointDraft.countryCode,
-        latitude: pickupPointDraft.latitude,
-        longitude: pickupPointDraft.longitude,
-        name: pickupPointDraft.name,
-        postalCode: pickupPointDraft.postalCode,
-        work_time: pickupPointDraft.work_time,
-        phones: pickupPointDraft.phones ?? [],
-        emails: pickupPointDraft.emails ?? [],
-        provider: pickupPointDraft.provider,
-        deliveryCalculation,
-    }
-}
-
-function getDeliveryCalculationErrorMessage(deliveryCalculationError: unknown) {
-    return deliveryCalculationError instanceof Error
-        ? deliveryCalculationError.message
-        : translate("delivery.calculateError")
-}
-
-function buildCdekPickupCalculationRequest(
-    pickupPointDraft: DeliveryPickupDraft,
-    fallbackCountryCode: DeliveryCountryCode | null,
-) {
-    return {
-        latitude: pickupPointDraft.latitude,
-        longitude: pickupPointDraft.longitude,
-        mode: "office" as const,
-        countryCode: pickupPointDraft.countryCode ?? fallbackCountryCode,
-        postalCode: pickupPointDraft.postalCode,
-        address: pickupPointDraft.address_full || pickupPointDraft.address,
-        city: pickupPointDraft.city,
-    }
-}
-
-function getDeliveryPointMarkerKey(provider: DeliveryPointProvider, code: string) {
-    return `${provider}:${code}`
-}
-
-function getDoorDeliveryPoint(doorDeliveryDraft: DeliveryDoorDraft | null): Point | null {
-    if (!doorDeliveryDraft) {
-        return null
-    }
-
-    return {
-        lat: doorDeliveryDraft.latitude,
-        lon: doorDeliveryDraft.longitude,
-    }
-}
-
-function getPickupPoint(pickupPointDraft: DeliveryPickupDraft | null): Point | null {
-    if (!pickupPointDraft) {
-        return null
-    }
-
-    return {
-        lat: pickupPointDraft.latitude,
-        lon: pickupPointDraft.longitude,
-    }
-}
-
-function getPickupPointAddress(pickupPointDraft: DeliveryPickupDraft | null) {
-    if (!pickupPointDraft) {
-        return ""
-    }
-
-    return pickupPointDraft.address_full || pickupPointDraft.address
-}
-
-function getDoorDeliveryInfoRows(doorDeliveryDraft: DeliveryDoorDraft | null) {
-    if (!doorDeliveryDraft) {
-        return []
-    }
-
-    const rows: (DeliveryInfoRow | null)[] = [
-        doorDeliveryDraft.subtitle && doorDeliveryDraft.subtitle !== doorDeliveryDraft.address
-            ? {
-                  key: "subtitle",
-                  label: translate("delivery.doorDeliveryTitle"),
-                  value: doorDeliveryDraft.subtitle,
-              }
-            : null,
-        doorDeliveryDraft.postalCode
-            ? {
-                  key: "postal_code",
-                  label: translate("delivery.postalCodeLabel"),
-                  value: `${translate("delivery.postalCodeLabel")}: ${doorDeliveryDraft.postalCode}`,
-              }
-            : null,
-    ]
-
-    if (!rows.some(Boolean) && doorDeliveryDraft.address) {
-        rows.push({
-            key: "address",
-            label: translate("delivery.pickupPointAddressLabel"),
-            value: doorDeliveryDraft.address,
-        })
-    }
-
-    return rows.filter((row): row is DeliveryInfoRow => row !== null && Boolean(row.value))
-}
-
-function getPickupPointInfoRows(pickupPointDraft: DeliveryPickupDraft | null) {
-    if (!pickupPointDraft) {
-        return []
-    }
-
-    const rows: (DeliveryInfoRow | null)[] = [
-        {
-            key: "address",
-            label: translate("delivery.pickupPointAddressLabel"),
-            value: getPickupPointAddress(pickupPointDraft),
-        },
-        pickupPointDraft.work_time
-            ? {
-                  key: "work_time",
-                  label: translate("delivery.pickupPointWorkTimeLabel"),
-                  value: pickupPointDraft.work_time,
-              }
-            : null,
-        pickupPointDraft.phones?.length
-            ? {
-                  key: "phones",
-                  label: translate("delivery.pickupPointPhoneLabel"),
-                  value: pickupPointDraft.phones.join(", "),
-              }
-            : null,
-        pickupPointDraft.emails?.length
-            ? {
-                  key: "emails",
-                  label: translate("delivery.pickupPointEmailLabel"),
-                  value: pickupPointDraft.emails.join(", "),
-              }
-            : null,
-    ]
-
-    return rows.filter((row): row is DeliveryInfoRow => row !== null && Boolean(row.value))
-}
-
-function arePointsClose(left: Point | null, right: Point | null, precision = 0.00005) {
-    if (!left || !right) {
-        return false
-    }
-
-    return (
-        Math.abs(left.lat - right.lat) <= precision
-        && Math.abs(left.lon - right.lon) <= precision
-    )
-}
-
-function areCameraPositionsEquivalent(
-    left: CameraPosition | null,
-    right: CameraPosition | null,
-    precision = 0.00005,
-) {
-    if (!left || !right) {
-        return false
-    }
-
-    return (
-        arePointsClose(left.point, right.point, precision)
-        && Math.abs(left.zoom - right.zoom) <= 0.01
-        && Math.abs(left.azimuth - right.azimuth) <= 0.01
-        && Math.abs(left.tilt - right.tilt) <= 0.01
-        && left.reason === right.reason
-        && left.finished === right.finished
-    )
-}
-
-function getPointDistanceScore(left: Point, right: Point) {
-    const latitudeDelta = left.lat - right.lat
-    const averageLatitudeRadians = (((left.lat + right.lat) / 2) * Math.PI) / 180
-    const longitudeDelta = (left.lon - right.lon) * Math.cos(averageLatitudeRadians)
-
-    return latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta
-}
-
-function getNearestPickupMarkers(markers: DeliveryMapMarker[], center: Point, limit: number) {
-    if (markers.length <= limit) {
-        return markers
-    }
-
-    return [...markers]
-        .sort((left, right) => {
-            return (
-                getPointDistanceScore(left.point, center)
-                - getPointDistanceScore(right.point, center)
-            )
-        })
-        .slice(0, limit)
-}
-
 export default function DeliveryScreen() {
     const router = useRouter()
+    const params = useLocalSearchParams<{ draftId?: string | string[]; syncBasket?: string | string[] }>()
+    const checkoutDraftId = parseDraftId(params.draftId)
+    const shouldSyncBasketItems = parseBooleanSearchParam(params.syncBasket)
     const insets = useSafeAreaInsets()
     const mapRef = useRef<ClusteredYamap | null>(null)
     const pendingDeliveryPointCodeRef = useRef<string | null>(null)
@@ -868,12 +610,32 @@ export default function DeliveryScreen() {
                             ?? await calculateYandexDelivery(pickupPointDraft.code)
                         : null
 
+                if (!deliveryCalculation) {
+                    throw new Error(translate("delivery.calculateError"))
+                }
+
+                const orderDraftPayload = buildPickupOrderDraftPayload(
+                    pickupPointDraft,
+                    deliveryCalculation,
+                    activeCountryCode,
+                )
+                const nextDraft =
+                    checkoutDraftId !== null
+                        ? await updateOrderDraft(
+                              checkoutDraftId,
+                              buildOrderDraftAddressUpdatePayload(orderDraftPayload, shouldSyncBasketItems),
+                          )
+                        : await createOrderDraft(orderDraftPayload)
+
+                setOrderDraftSnapshot(nextDraft)
+                if (checkoutDraftId === null) {
+                    clearBasketSnapshot()
+                }
+                setSelectedDeliveryPoint(null)
                 setSelectedDeliveryAddress(null)
                 setIsDoorFooterExpanded(false)
                 setDoorDeliveryDraft(null)
-                setSelectedDeliveryPoint(
-                    buildSelectedDeliveryPoint(pickupPointDraft, deliveryCalculation),
-                )
+                setPickupPointDraft(null)
 
                 lastFollowedUserPointRef.current = null
                 setSearchFocusPoint(nextPoint)
@@ -886,7 +648,7 @@ export default function DeliveryScreen() {
                     DELIVERY_CAMERA_DURATIONS.search,
                 )
 
-                router.replace(ROUTES.checkout)
+                router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
             } catch (deliveryCalculationError) {
                 setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
             } finally {
@@ -896,7 +658,7 @@ export default function DeliveryScreen() {
 
         setIsResolvingPickupPoint(true)
         void choosePickupPoint()
-    }, [activeCountryCode, clearResults, moveToRegion, pickupPointDraft, router])
+    }, [activeCountryCode, checkoutDraftId, clearResults, moveToRegion, pickupPointDraft, router, shouldSyncBasketItems])
 
     const handleCopyPickupInfo = useCallback(async (value: string) => {
         if (!value) {
@@ -923,15 +685,29 @@ export default function DeliveryScreen() {
                     doorDeliveryDraft.deliveryCalculation
                     ?? await calculateDoorDelivery(nextDoorDeliveryDraft)
 
+                const orderDraftPayload = buildDoorOrderDraftPayload(
+                    nextDoorDeliveryDraft,
+                    deliveryCalculation,
+                    activeCountryCode,
+                )
+                const nextDraft =
+                    checkoutDraftId !== null
+                        ? await updateOrderDraft(
+                              checkoutDraftId,
+                              buildOrderDraftAddressUpdatePayload(orderDraftPayload, shouldSyncBasketItems),
+                          )
+                        : await createOrderDraft(orderDraftPayload)
+
+                setOrderDraftSnapshot(nextDraft)
+                if (checkoutDraftId === null) {
+                    clearBasketSnapshot()
+                }
                 setPickupPointDraft(null)
                 setPickupPointError(null)
                 setSelectedDeliveryPoint(null)
-                setSelectedDeliveryAddress({
-                    ...nextDoorDeliveryDraft,
-                    deliveryCalculation,
-                })
+                setSelectedDeliveryAddress(null)
 
-                router.replace(ROUTES.checkout)
+                router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
             } catch (deliveryCalculationError) {
                 setSelectionError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
             } finally {
@@ -941,7 +717,7 @@ export default function DeliveryScreen() {
 
         setIsResolvingDoorAddress(true)
         void chooseDoorDelivery()
-    }, [doorDeliveryDraft, router])
+    }, [activeCountryCode, checkoutDraftId, doorDeliveryDraft, router, shouldSyncBasketItems])
 
     const handleOpenDeliveryPointOfficePage = useCallback(async (code: string) => {
         const officeUrl = `https://www.cdek.ru/ru/offices/view/${encodeURIComponent(code)}/`

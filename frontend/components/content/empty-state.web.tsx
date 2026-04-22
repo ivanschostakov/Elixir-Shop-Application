@@ -1,35 +1,12 @@
-import { Image, Pressable, Text, View, useWindowDimensions } from "react-native"
-import { LottieView as WebLottieView } from "lottie-react-native/lib/module/LottieView/index.web"
+import { Pressable, Text, View, useWindowDimensions } from "react-native"
 
 import {
     getIllustrationSize,
-    isLottieSticker,
 } from "@/components/content/empty-state.web.const"
+import { renderSticker } from "@/components/content/empty-state.web.utils"
 import { emptyStateWebStyles, WEB_BREAKPOINTS } from "@/components/content/empty-state.web.styles"
 import type { EmptyStateProps } from "@/components/content/empty-state.types"
 import { contentStyles } from "@/components/content/content.styles"
-
-function renderSticker(sticker: NonNullable<EmptyStateProps["sticker"]>, illustrationSize: number) {
-    return isLottieSticker(sticker) ? (
-        <WebLottieView
-            autoPlay
-            loop
-            source={sticker.source}
-            style={emptyStateWebStyles.fill}
-            webStyle={emptyStateWebStyles.fill}
-        />
-    ) : (
-        <Image
-            source={sticker.source}
-            style={[
-                contentStyles.emptyStateIllustration,
-                emptyStateWebStyles.webIllustration,
-                { maxWidth: illustrationSize, maxHeight: illustrationSize },
-            ]}
-            resizeMode="contain"
-        />
-    )
-}
 
 export function EmptyState({
     title,

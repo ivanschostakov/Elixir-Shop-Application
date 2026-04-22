@@ -16,4 +16,5 @@ export type UseBasketMutationsResult = {
     updateItemQuantity: (itemId: number, quantity: number) => Promise<BasketRead>
     removeItem: (itemId: number) => Promise<BasketRead>
     clear: () => Promise<BasketRead>
+    restoreDraft: (draftId: number) => Promise<BasketRead>
 }

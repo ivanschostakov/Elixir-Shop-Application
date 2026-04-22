@@ -1,14 +1,9 @@
 import { View } from "react-native"
 
+import { FULLSCREEN_CHROME_TEMPLATE } from "@/components/templates/map-flow-template.constants"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { screenTemplateStyles } from "@/components/templates/screen-template.styles"
 import type { MapFlowTemplateProps } from "@/components/templates/screen-template.types"
-
-const FULLSCREEN_CHROME_TEMPLATE = {
-    footer: "none",
-    header: "none",
-    mode: "fullscreen",
-} as const
 
 export function MapFlowTemplate({ children, chromeOverlay, overlay, style }: MapFlowTemplateProps) {
     useApplyScreenTemplate("map-flow", FULLSCREEN_CHROME_TEMPLATE)

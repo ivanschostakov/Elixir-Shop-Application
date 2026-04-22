@@ -6,12 +6,8 @@ import {
     DELIVERY_SUGGEST_ICON_SIZE,
     getDeliverySuggestIconName,
 } from "@/components/delivery/delivery-suggest-icon.constants"
+import type { DeliverySuggestIconProps } from "@/components/delivery/delivery-suggest-icon.types"
 import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
-import type { DeliveryGeoSuggestResult } from "@/services/api/delivery.types"
-
-type DeliverySuggestIconProps = {
-    result: DeliveryGeoSuggestResult
-}
 
 export function DeliverySuggestIcon({ result }: DeliverySuggestIconProps) {
     const iconName = getDeliverySuggestIconName(result)

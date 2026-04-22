@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
-from src.app.services.basket import _ensure_basket, _get_serialized_basket, _get_variant_for_update
+from src.app.services.basket import _ensure_basket, _get_serialized_basket, _get_variant_for_update, restore_order_draft_to_basket
 from src.database import get_db
 from src.database.crud import clear_basket, create_basket_item, delete_basket_item, get_basket_item_by_id, update_basket_item
 from src.database.crud.basket.basket_item import get_basket_item_by_basket_and_variant
@@ -102,3 +102,13 @@ async def clear_my_basket(
     basket = await _ensure_basket(db, current_user.id)
     await clear_basket(db, basket.id)
     return await _get_serialized_basket(request, db, current_user.id)
+
+
+@my_basket_router.post("/restore-draft/{draft_id}", response_model=BasketRead, status_code=status.HTTP_200_OK)
+async def restore_my_basket_from_draft(
+    draft_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BasketRead:
+    return await restore_order_draft_to_basket(request, db, user_id=current_user.id, draft_id=draft_id)

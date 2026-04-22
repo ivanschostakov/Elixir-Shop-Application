@@ -6,16 +6,32 @@ import { spacing } from "@/theme/spacing"
 export const homeScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: "#F3F5F8",
     },
     content: {
-        gap: spacing.xl,
-        paddingBottom: spacing.xl,
-        paddingTop: spacing.md,
+        gap: spacing.md,
+        paddingBottom: 0,
+        paddingHorizontal: 0,
+        paddingTop: 0,
+    },
+    sectionBlock: {
+        backgroundColor: colors.surface,
+        borderRadius: spacing.lg,
+        overflow: "hidden",
+        paddingBottom: spacing.md,
+        paddingTop: spacing.sm,
+    },
+    sectionBlockTop: {
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+    },
+    sectionBlockBottom: {
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
     },
     loadingWrap: {
         alignItems: "center",
         justifyContent: "center",
-        minHeight: 120,
+        minHeight: 160,
     },
 })

@@ -1,10 +1,12 @@
 import { ActivityIndicator, View } from "react-native"
 import { router } from "expo-router"
+import type { ReactNode } from "react"
 
 import { ContentRail } from "@/components/content/content-rail"
+import { RecentOrderDraftsRail } from "@/components/content/recent-order-drafts-rail"
 import { FeedTemplate } from "@/components/templates/feed-template"
 import { ROUTES } from "@/constants/routes"
-import { useFavouriteProducts } from "@/hooks/favorites/use-favourite-products"
+import { useRecentOrderDrafts } from "@/hooks/order-draft/use-recent-order-drafts"
 import { useLatestProducts } from "@/hooks/products/use-latest-products"
 import { usePriorityProducts } from "@/hooks/products/use-priority-products"
 import { useLanguage } from "@/providers/language-provider"
@@ -15,14 +17,14 @@ export default function HomeScreen() {
     const { t } = useLanguage()
     const { products: latestProducts, loading: latestLoading } = useLatestProducts(9)
     const { products: priorityProducts, loading: recommendedLoading } = usePriorityProducts(4)
-    const { products: favouriteProducts, loading: favouritesLoading } = useFavouriteProducts()
+    const { orderDrafts: recentOrderDrafts, loading: recentOrderDraftsLoading } = useRecentOrderDrafts(6)
 
-    return (
-        <FeedTemplate
-            contentContainerStyle={homeScreenStyles.content}
-            scrollViewStyle={homeScreenStyles.container}
-        >
-            {latestProducts.length ? (
+    const sections: { key: string, content: ReactNode }[] = []
+
+    if (latestProducts.length) {
+        sections.push({
+            key: "latest",
+            content: (
                 <ContentRail
                     title={t("home.newInTitle")}
                     eyebrow={t("home.newInEyebrow")}
@@ -31,35 +33,80 @@ export default function HomeScreen() {
                     onPressAction={() => router.push(ROUTES.discover)}
                     products={latestProducts}
                 />
-            ) : latestLoading ? (
+            ),
+        })
+    } else if (latestLoading) {
+        sections.push({
+            key: "latest-loading",
+            content: (
                 <View style={homeScreenStyles.loadingWrap}>
                     <ActivityIndicator color={colors.primary} />
                 </View>
-            ) : null}
+            ),
+        })
+    }
 
-            {!favouritesLoading && favouriteProducts.length ? (
-                <ContentRail
-                    title={t("home.savedTitle")}
-                    eyebrow={t("home.savedEyebrow")}
-                    description={t("home.savedDescription")}
-                    actionLabel={t("common.viewAll")}
-                    onPressAction={() => router.push(ROUTES.favorites)}
-                    products={favouriteProducts}
-                />
-            ) : null}
+    if (recentOrderDrafts.length) {
+        sections.push({
+            key: "recent-drafts",
+            content: <RecentOrderDraftsRail drafts={recentOrderDrafts} />,
+        })
+    } else if (recentOrderDraftsLoading) {
+        sections.push({
+            key: "recent-drafts-loading",
+            content: (
+                <View style={homeScreenStyles.loadingWrap}>
+                    <ActivityIndicator color={colors.primary} />
+                </View>
+            ),
+        })
+    }
 
-            {priorityProducts.length ? (
+    if (priorityProducts.length) {
+        sections.push({
+            key: "recommended",
+            content: (
                 <ContentRail
                     title={t("home.recommendedTitle")}
                     eyebrow={t("home.recommendedEyebrow")}
                     description={t("home.recommendedDescription")}
                     products={priorityProducts}
                 />
-            ) : recommendedLoading ? (
+            ),
+        })
+    } else if (recommendedLoading) {
+        sections.push({
+            key: "recommended-loading",
+            content: (
                 <View style={homeScreenStyles.loadingWrap}>
                     <ActivityIndicator color={colors.primary} />
                 </View>
-            ) : null}
+            ),
+        })
+    }
+
+    return (
+        <FeedTemplate
+            contentContainerStyle={homeScreenStyles.content}
+            scrollViewStyle={homeScreenStyles.container}
+        >
+            {sections.map((section, index) => {
+                const isFirst = index === 0
+                const isLast = index === sections.length - 1
+
+                return (
+                    <View
+                        key={section.key}
+                        style={[
+                            homeScreenStyles.sectionBlock,
+                            isFirst && homeScreenStyles.sectionBlockTop,
+                            isLast && homeScreenStyles.sectionBlockBottom,
+                        ]}
+                    >
+                        {section.content}
+                    </View>
+                )
+            })}
         </FeedTemplate>
     )
 }

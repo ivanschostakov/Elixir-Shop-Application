@@ -46,17 +46,20 @@ export default function StickyFooter({ template }: StickyFooterProps) {
     const hasBasketItems = (basket?.total_quantity ?? 0) > 0
     const showProductAction = template.footer === "nav+productAction"
     const showBasketAction = template.footer === "nav+basketAction" && hasBasketItems
+    const showCustomAction = template.footer === "nav+customAction" && Boolean(template.slots?.footer)
 
     if (template.footer === "customSurface") {
         return template.slots?.footer ? <StickyFooterSurface>{template.slots.footer}</StickyFooterSurface> : null
     }
 
-    if (showProductAction || showBasketAction) {
+    if (showProductAction || showBasketAction || showCustomAction) {
         return (
             <View style={[stickyFooterStyles.footerBase, stickyFooterStyles.elevatedSurface]}>
                 <View style={stickyFooterStyles.stack}>
                     <View style={stickyFooterStyles.actionSection}>
-                        <BottomActionTemplate variant={showProductAction ? "product" : "basket"} />
+                        {showCustomAction
+                            ? template.slots?.footer
+                            : <BottomActionTemplate variant={showProductAction ? "product" : "basket"} />}
                     </View>
                     <BottomNavTemplate pathname={pathname} />
                 </View>

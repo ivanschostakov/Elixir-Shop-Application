@@ -55,6 +55,13 @@ from .catalog.products_by_category import (
     update_product_by_category,
 )
 from .catalog.variant import create_variant, delete_variant, get_variant_by_id, get_variant_by_system_id, get_variants, update_variant
+from .delivery.address import create_delivery_address, get_delivery_address_by_fields, get_delivery_address_by_id, get_delivery_addresses
+from .delivery.recipient import (
+    create_delivery_recipient,
+    get_delivery_recipient_by_fields,
+    get_delivery_recipient_by_id,
+    get_delivery_recipients,
+)
 from .delivery.cdek_door_address import (
     create_cdek_door_address,
     delete_cdek_door_address,
@@ -68,13 +75,6 @@ from .delivery.cdek_pickup_address import (
     get_cdek_pickup_address_by_id,
     get_cdek_pickup_addresses,
     update_cdek_pickup_address,
-)
-from .delivery.yandex_door_address import (
-    create_yandex_door_address,
-    delete_yandex_door_address,
-    get_yandex_door_address_by_id,
-    get_yandex_door_addresses,
-    update_yandex_door_address,
 )
 from .delivery.yandex_pickup_address import (
     create_yandex_pickup_address,
@@ -92,6 +92,7 @@ from .favorites.favoured_product import (
     get_favourite_products_for_user,
     update_favoured_product,
 )
+from .orders.draft import create_order_draft, delete_order_draft, get_latest_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
 from .website.website_identity import (
     create_website_identity,
     get_website_identity_by_id,
@@ -120,6 +121,14 @@ __all__ = [
     "get_basket_item_by_id",
     "get_basket_items",
     "update_basket_item",
+    "create_delivery_address",
+    "get_delivery_address_by_fields",
+    "create_delivery_recipient",
+    "get_delivery_address_by_id",
+    "get_delivery_addresses",
+    "get_delivery_recipient_by_fields",
+    "get_delivery_recipient_by_id",
+    "get_delivery_recipients",
     "create_cdek_door_address",
     "delete_cdek_door_address",
     "get_cdek_door_address_by_id",
@@ -136,6 +145,12 @@ __all__ = [
     "get_favoured_product_by_user_and_product",
     "get_favoured_products",
     "get_favourite_products_for_user",
+    "create_order_draft",
+    "delete_order_draft",
+    "get_latest_order_draft_for_user",
+    "get_order_draft_by_id",
+    "get_order_drafts_for_user",
+    "update_order_draft",
     "update_favoured_product",
     "create_product",
     "delete_product",
@@ -189,11 +204,6 @@ __all__ = [
     "sync_website_discount_entitlements",
     "upsert_website_bonus_account",
     "upsert_website_referral_profile",
-    "create_yandex_door_address",
-    "delete_yandex_door_address",
-    "get_yandex_door_address_by_id",
-    "get_yandex_door_addresses",
-    "update_yandex_door_address",
     "create_yandex_pickup_address",
     "delete_yandex_pickup_address",
     "get_yandex_pickup_address_by_id",

@@ -6,22 +6,24 @@ import { spacing } from "@/theme/spacing"
 export const ProfileScreenStyles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: "#F3F5F8",
     },
     container: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: "#F3F5F8",
     },
     content: {
-        paddingHorizontal: spacing.md,
-        paddingTop: spacing.lg,
-        paddingBottom: spacing.xl,
-        gap: spacing.lg,
+        paddingHorizontal: 0,
+        paddingTop: 0,
+        paddingBottom: 0,
+        gap: spacing.md,
     },
     heroCard: {
         position: "relative",
         overflow: "hidden",
-        borderRadius: 28,
+        borderRadius: spacing.lg,
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
         padding: spacing.lg,
         backgroundColor: colors.primary,
         gap: spacing.md,
@@ -172,14 +174,14 @@ export const ProfileScreenStyles = StyleSheet.create({
         lineHeight: 24,
     },
     sectionCard: {
-        borderRadius: 24,
+        borderRadius: spacing.lg,
         padding: spacing.lg,
         backgroundColor: colors.surface,
-        borderWidth: 1,
-        borderColor: colors.border,
         gap: spacing.md,
-        boxShadow: "0px 6px 12px rgba(11, 31, 51, 0.03)",
-        elevation: 1,
+    },
+    sectionCardBottom: {
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
     },
     sectionTitle: {
         color: colors.text,

@@ -1,8 +1,9 @@
 import { useState } from "react"
 
+import { setBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
 import { setBasketSnapshot } from "@/hooks/basket/basket-store"
 import type { UseBasketMutationsResult } from "@/hooks/basket/use-basket.types"
-import { addBasketItem, clearBasket, removeBasketItem, updateBasketItem } from "@/services/api/basket"
+import { addBasketItem, clearBasket, removeBasketItem, restoreDraftToBasket, updateBasketItem } from "@/services/api/basket"
 import type { BasketRead } from "@/types/basket"
 
 function getErrorMessage(error: unknown) {
@@ -65,5 +66,12 @@ export function useBasketMutations(): UseBasketMutationsResult {
             return runMutation(() => removeBasketItem(itemId))
         },
         clear: () => runMutation(() => clearBasket()),
+        restoreDraft: async (draftId) => {
+            assertPositiveInteger(draftId, "draft id")
+
+            const nextBasket = await runMutation(() => restoreDraftToBasket(draftId))
+            setBasketDraftEditingId(draftId)
+            return nextBasket
+        },
     }
 }

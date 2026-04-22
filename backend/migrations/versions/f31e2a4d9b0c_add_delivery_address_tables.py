@@ -10,6 +10,7 @@ from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision: str = "f31e2a4d9b0c"
@@ -43,20 +44,20 @@ COUNTRY_CODES = (
 )
 DELIVERY_PROVIDERS = ("YANDEX", "CDEK")
 
-COUNTRY_CODE_ENUM = sa.Enum(*COUNTRY_CODES, name="country_code_enum", create_type=False)
-DELIVERY_PROVIDER_ENUM = sa.Enum(*DELIVERY_PROVIDERS, name="delivery_provider_enum", create_type=False)
+COUNTRY_CODE_ENUM = postgresql.ENUM(*COUNTRY_CODES, name="country_code_enum", create_type=False)
+DELIVERY_PROVIDER_ENUM = postgresql.ENUM(*DELIVERY_PROVIDERS, name="delivery_provider_enum", create_type=False)
 
 
 def _create_enum_types() -> None:
     bind = op.get_bind()
-    sa.Enum(*COUNTRY_CODES, name="country_code_enum").create(bind, checkfirst=True)
-    sa.Enum(*DELIVERY_PROVIDERS, name="delivery_provider_enum").create(bind, checkfirst=True)
+    postgresql.ENUM(*COUNTRY_CODES, name="country_code_enum").create(bind, checkfirst=True)
+    postgresql.ENUM(*DELIVERY_PROVIDERS, name="delivery_provider_enum").create(bind, checkfirst=True)
 
 
 def _drop_enum_types() -> None:
     bind = op.get_bind()
-    sa.Enum(*DELIVERY_PROVIDERS, name="delivery_provider_enum").drop(bind, checkfirst=True)
-    sa.Enum(*COUNTRY_CODES, name="country_code_enum").drop(bind, checkfirst=True)
+    postgresql.ENUM(*DELIVERY_PROVIDERS, name="delivery_provider_enum").drop(bind, checkfirst=True)
+    postgresql.ENUM(*COUNTRY_CODES, name="country_code_enum").drop(bind, checkfirst=True)
 
 
 def _address_columns(*, include_delivery_point: bool) -> list[sa.Column]:

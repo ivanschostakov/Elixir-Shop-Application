@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
     ActivityIndicator,
     Alert,
@@ -8,18 +8,27 @@ import {
     TextInput,
     View,
 } from "react-native"
-import { router } from "expo-router"
+import { router, useLocalSearchParams } from "expo-router"
 import Swipeable from "react-native-gesture-handler/Swipeable"
+import { Path, Svg } from "react-native-svg"
 
 import { CountryFlag } from "@/components/country-flag/country-flag"
 import { COUNTRY_SELECTOR_CODES } from "@/components/country-flag/country-flag.consts"
 import { formatProductPrice } from "@/components/content/product-content"
 import { EmptyState } from "@/components/content/empty-state"
+import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { getProductRoute, ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
 import { useBasket } from "@/hooks/basket/use-basket"
+import {
+    clearBasketDraftEditingId,
+    setBasketDraftEditingId,
+    useBasketDraftEditingId,
+} from "@/hooks/basket/basket-draft-editing-store"
+import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import {
+    useSelectedDeliveryAddress,
     setSelectedDeliveryAddress,
 } from "@/hooks/delivery/delivery-address-selection-store"
 import { useDeliveryCountryPickerFocusRequest } from "@/hooks/delivery/delivery-country-picker-focus-store"
@@ -28,48 +37,61 @@ import {
     useSelectedDeliveryCountry,
 } from "@/hooks/delivery/delivery-country-selection-store"
 import {
+    useSelectedDeliveryPoint,
     setSelectedDeliveryPoint,
 } from "@/hooks/delivery/delivery-point-selection-store"
+import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useLanguage } from "@/providers/language-provider"
 import { CartBasketItem } from "@/screens/cart/cart-basket-item"
+import {
+    DELIVERY_COUNTRY_NAMES,
+} from "@/screens/cart/cart-screen.constants"
 import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
-import { getBasketErrorMessage } from "@/screens/cart/cart-screen.utils"
-import type { DeliveryCountryCode } from "@/services/api/delivery.types"
+import {
+    buildOrderDraftCalculationPayload,
+    buildPickupPointAddress,
+    formatSavedCartDraftName,
+    getBasketErrorMessage,
+    getOrderDraftProvider,
+} from "@/screens/cart/cart-screen.utils"
+import { ApiError } from "@/services/api/client"
+import type {
+    DeliveryCountryCode,
+} from "@/services/api/delivery.types"
+import { createOrderDraft } from "@/services/api/order-drafts"
+import type { CreateOrderDraftPayload } from "@/services/api/order-drafts.types"
+import { colors } from "@/theme/colors"
 import type { BasketItemRead } from "@/types/basket"
 
-const DELIVERY_COUNTRY_NAMES: Record<DeliveryCountryCode, string> = {
-    AE: "ОАЭ",
-    AM: "Армения",
-    AZ: "Азербайджан",
-    BD: "Бангладеш",
-    BY: "Беларусь",
-    CN: "Китай",
-    GE: "Грузия",
-    ID: "Индонезия",
-    IL: "Израиль",
-    IN: "Индия",
-    JP: "Япония",
-    KG: "Киргизия",
-    KZ: "Казахстан",
-    MD: "Молдова",
-    MN: "Монголия",
-    RS: "Сербия",
-    RU: "Россия",
-    TH: "Таиланд",
-    US: "США",
-    UZ: "Узбекистан",
-    VN: "Вьетнам",
-}
-
 export default function CartScreen() {
+    const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()
     const { basket, error: basketLoadError, loading, reload } = useBasket()
     const { error: basketActionError, removeItem, updateItemQuantity, updating } = useBasketMutations()
+    const basketDraftEditingId = useBasketDraftEditingId()
+    const selectedDeliveryAddress = useSelectedDeliveryAddress()
+    const selectedDeliveryPoint = useSelectedDeliveryPoint()
     const selectedDeliveryCountry = useSelectedDeliveryCountry()
     const deliveryCountryPickerFocusRequest = useDeliveryCountryPickerFocusRequest()
     const [promoCode, setPromoCode] = useState("")
+    const [isSavingDraft, setIsSavingDraft] = useState(false)
     const cartScrollRef = useRef<ScrollView | null>(null)
     const swipeableRefs = useRef<Record<number, Swipeable | null>>({})
+    const routeDraftIdParam = Array.isArray(params.draftId) ? params.draftId[0] : params.draftId
+
+    useEffect(() => {
+        const nextDraftId = routeDraftIdParam ? Number(routeDraftIdParam) : NaN
+        const parsedDraftId = Number.isInteger(nextDraftId) && nextDraftId > 0 ? nextDraftId : null
+
+        if (parsedDraftId !== null) {
+            setBasketDraftEditingId(parsedDraftId)
+            return
+        }
+
+        if (basketDraftEditingId !== null) {
+            clearBasketDraftEditingId()
+        }
+    }, [basketDraftEditingId, routeDraftIdParam])
 
     useEffect(() => {
         if (selectedDeliveryCountry || deliveryCountryPickerFocusRequest === 0) {
@@ -146,17 +168,149 @@ export default function CartScreen() {
         router.push(getProductRoute(productId))
     }
 
+    const resolveCreateDraftPayload = useCallback(async (): Promise<CreateOrderDraftPayload> => {
+        if (selectedDeliveryPoint?.deliveryCalculation) {
+            return {
+                mode: "pickup",
+                provider: getOrderDraftProvider(selectedDeliveryPoint.provider),
+                country_code: selectedDeliveryPoint.countryCode ?? selectedDeliveryCountry ?? "RU",
+                name: selectedDeliveryPoint.name,
+                full_address: buildPickupPointAddress(
+                    selectedDeliveryPoint.address_full,
+                    selectedDeliveryPoint.address,
+                ),
+                details: selectedDeliveryPoint.work_time || null,
+                city: selectedDeliveryPoint.city,
+                postal_code: selectedDeliveryPoint.postalCode,
+                latitude: selectedDeliveryPoint.latitude,
+                longitude: selectedDeliveryPoint.longitude,
+                provider_reference: selectedDeliveryPoint.code,
+                delivery_calculation: buildOrderDraftCalculationPayload(selectedDeliveryPoint.deliveryCalculation),
+            }
+        }
+
+        if (selectedDeliveryAddress?.deliveryCalculation) {
+            return {
+                mode: "door",
+                provider: getOrderDraftProvider(selectedDeliveryAddress.provider),
+                country_code: selectedDeliveryAddress.countryCode ?? selectedDeliveryCountry ?? "RU",
+                name: selectedDeliveryAddress.address,
+                full_address: selectedDeliveryAddress.address,
+                details: selectedDeliveryAddress.subtitle || null,
+                city: selectedDeliveryAddress.city,
+                postal_code: selectedDeliveryAddress.postalCode,
+                latitude: selectedDeliveryAddress.latitude,
+                longitude: selectedDeliveryAddress.longitude,
+                provider_reference: null,
+                delivery_calculation: buildOrderDraftCalculationPayload(selectedDeliveryAddress.deliveryCalculation),
+            }
+        }
+
+        return {}
+    }, [selectedDeliveryAddress, selectedDeliveryCountry, selectedDeliveryPoint])
+
+    const handleSaveDraft = useCallback(async () => {
+        if (isSavingDraft) {
+            return
+        }
+
+        setIsSavingDraft(true)
+
+        try {
+            const payload = await resolveCreateDraftPayload()
+            const createdDraft = await createOrderDraft({
+                ...payload,
+                draft_name: formatSavedCartDraftName(new Date()),
+            })
+
+            setOrderDraftSnapshot(createdDraft)
+            clearBasketSnapshot()
+            Alert.alert(t("cart.saveDraftSuccessTitle"), t("cart.saveDraftSuccessMessage"))
+        } catch (saveError) {
+            Alert.alert(
+                saveError instanceof ApiError && saveError.message
+                    ? saveError.message
+                    : t("cart.saveDraftFailed"),
+            )
+        } finally {
+            setIsSavingDraft(false)
+        }
+    }, [isSavingDraft, resolveCreateDraftPayload, t])
+
+    const cartChromeTemplate = useMemo(() => {
+        if (!basket?.items.length) {
+            return null
+        }
+
+        return {
+            slots: {
+                headerLeft: (
+                    <Pressable
+                        accessibilityLabel={t("cart.saveDraftCta")}
+                        accessibilityRole="button"
+                        disabled={isSavingDraft}
+                        onPress={() => {
+                            void handleSaveDraft()
+                        }}
+                        style={({ pressed }) => [
+                            cartScreenStyles.headerSaveButton,
+                            isSavingDraft && cartScreenStyles.headerSaveButtonDisabled,
+                            pressed && cartScreenStyles.headerSaveButtonPressed,
+                        ]}
+                    >
+                        <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+                            <Path
+                                d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"
+                                stroke={colors.primary}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                            />
+                            <Path
+                                d="M17 21 17 13 7 13 7 21"
+                                stroke={colors.primary}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                            />
+                            <Path
+                                d="M7 3 7 8 15 8"
+                                stroke={colors.primary}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                            />
+                        </Svg>
+                    </Pressable>
+                ),
+            },
+        }
+    }, [basket?.items.length, handleSaveDraft, isSavingDraft, t])
+    useApplyScreenTemplate("feed", cartChromeTemplate)
+
+    const renderStateScreen = (content: ReactNode) => (
+        <View style={cartScreenStyles.container}>
+            <ScrollView
+                contentContainerStyle={cartScreenStyles.stateScrollContent}
+                showsVerticalScrollIndicator={false}
+                style={cartScreenStyles.loadingContainer}
+            >
+                <View style={cartScreenStyles.stateCard}>{content}</View>
+            </ScrollView>
+        </View>
+    )
+
     if (loading && !basket) {
-        return (
-            <View style={cartScreenStyles.loadingContainer}>
+        return renderStateScreen(
+            <View style={cartScreenStyles.stateLoadingRow}>
                 <ActivityIndicator />
-            </View>
+            </View>,
         )
     }
 
     if (basketLoadError && !basket) {
-        return (
-            <View style={cartScreenStyles.errorContainer}>
+        return renderStateScreen(
+            <>
                 <Text style={cartScreenStyles.errorTitle}>{t("cart.loadFailedTitle")}</Text>
                 <Text style={cartScreenStyles.errorText}>{t("cart.loadFailedMessage")}</Text>
                 <Pressable
@@ -172,7 +326,7 @@ export default function CartScreen() {
                 >
                     <Text style={cartScreenStyles.retryButtonText}>{t("cart.retry")}</Text>
                 </Pressable>
-            </View>
+            </>,
         )
     }
 
@@ -196,6 +350,7 @@ export default function CartScreen() {
     const totalAmountLabel = formatProductPrice(basket.total_amount)
     const availableItems = basket.items.filter((item) => item.is_available)
     const unavailableItems = basket.items.filter((item) => !item.is_available)
+    const hasUnavailableItems = unavailableItems.length > 0
 
     return (
         <View style={cartScreenStyles.container}>
@@ -204,93 +359,100 @@ export default function CartScreen() {
                 contentContainerStyle={cartScreenStyles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                <View style={cartScreenStyles.summaryCard}>
-                    <ScrollView
-                        bounces={false}
-                        contentContainerStyle={cartScreenStyles.deliveryCountryCarouselContent}
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={cartScreenStyles.deliveryCountryCarousel}
-                    >
-                        {COUNTRY_SELECTOR_CODES.map((countryCode) => {
-                            const isActive = selectedDeliveryCountry === countryCode
-
-                            return (
-                                <Pressable
-                                    key={countryCode}
-                                    accessibilityLabel={DELIVERY_COUNTRY_NAMES[countryCode]}
-                                    accessibilityRole="button"
-                                    onPress={() => {
-                                        handleSelectDeliveryCountry(countryCode)
-                                    }}
-                                    style={({ pressed }) => [
-                                        cartScreenStyles.deliveryCountryButton,
-                                        !isActive && cartScreenStyles.deliveryCountryButtonInactive,
-                                        pressed && cartScreenStyles.deliveryCountryButtonPressed,
-                                    ]}
-                                >
-                                    <CountryFlag
-                                        code={countryCode}
-                                        style={cartScreenStyles.deliveryCountryFlag}
-                                    />
-                                </Pressable>
-                            )
-                        })}
-                    </ScrollView>
-
-                    <TextInput
-                        autoCapitalize="characters"
-                        autoCorrect={false}
-                        onChangeText={setPromoCode}
-                        placeholder={t("cart.promoCodePlaceholder")}
-                        style={cartScreenStyles.promoInput}
-                        value={promoCode}
-                    />
-                </View>
-
-                <View style={cartScreenStyles.summaryFooter}>
-                    <View style={cartScreenStyles.summaryStats}>
-                        <View
-                            style={[
-                                cartScreenStyles.summaryStat,
-                                cartScreenStyles.summaryStatStart,
-                            ]}
+                <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
+                    <View style={cartScreenStyles.summaryCard}>
+                        <ScrollView
+                            bounces={false}
+                            contentContainerStyle={cartScreenStyles.deliveryCountryCarouselContent}
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={cartScreenStyles.deliveryCountryCarousel}
                         >
-                            <Text style={cartScreenStyles.summaryStatLabel}>{t("cart.positionsLabel")}</Text>
-                            <Text style={cartScreenStyles.summaryStatValue}>{basket.items_count}</Text>
-                        </View>
+                            {COUNTRY_SELECTOR_CODES.map((countryCode) => {
+                                const isActive = selectedDeliveryCountry === countryCode
 
-                        <View
-                            style={[
-                                cartScreenStyles.summaryStat,
-                                cartScreenStyles.summaryStatEnd,
-                            ]}
-                        >
-                            <Text style={cartScreenStyles.summaryStatLabel}>{t("cart.totalAmountLabel")}</Text>
-                            <Text
-                                style={[
-                                    cartScreenStyles.summaryStatValue,
-                                    cartScreenStyles.summaryStatValuePrice,
-                                ]}
-                            >
-                                {totalAmountLabel ?? "—"}
-                            </Text>
-                        </View>
+                                return (
+                                    <Pressable
+                                        key={countryCode}
+                                        accessibilityLabel={DELIVERY_COUNTRY_NAMES[countryCode]}
+                                        accessibilityRole="button"
+                                        onPress={() => {
+                                            handleSelectDeliveryCountry(countryCode)
+                                        }}
+                                        style={({ pressed }) => [
+                                            cartScreenStyles.deliveryCountryButton,
+                                            !isActive && cartScreenStyles.deliveryCountryButtonInactive,
+                                            pressed && cartScreenStyles.deliveryCountryButtonPressed,
+                                        ]}
+                                    >
+                                        <CountryFlag
+                                            code={countryCode}
+                                            style={cartScreenStyles.deliveryCountryFlag}
+                                        />
+                                    </Pressable>
+                                )
+                            })}
+                        </ScrollView>
+
+                        <TextInput
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                            onChangeText={setPromoCode}
+                            placeholder={t("cart.promoCodePlaceholder")}
+                            style={cartScreenStyles.promoInput}
+                            value={promoCode}
+                        />
                     </View>
 
-                    {basket.has_unavailable_items ? (
-                        <Text style={cartScreenStyles.summaryWarning}>{t("cart.unavailableNotice")}</Text>
-                    ) : null}
+                    <View style={cartScreenStyles.summaryFooter}>
+                        <View style={cartScreenStyles.summaryStats}>
+                            <View
+                                style={[
+                                    cartScreenStyles.summaryStat,
+                                    cartScreenStyles.summaryStatStart,
+                                ]}
+                            >
+                                <Text style={cartScreenStyles.summaryStatLabel}>{t("cart.positionsLabel")}</Text>
+                                <Text style={cartScreenStyles.summaryStatValue}>{basket.items_count}</Text>
+                            </View>
+
+                            <View
+                                style={[
+                                    cartScreenStyles.summaryStat,
+                                    cartScreenStyles.summaryStatEnd,
+                                ]}
+                            >
+                                <Text style={cartScreenStyles.summaryStatLabel}>{t("cart.totalAmountLabel")}</Text>
+                                <Text
+                                    style={[
+                                        cartScreenStyles.summaryStatValue,
+                                        cartScreenStyles.summaryStatValuePrice,
+                                    ]}
+                                >
+                                    {totalAmountLabel ?? "—"}
+                                </Text>
+                            </View>
+                        </View>
+
+                        {basket.has_unavailable_items ? (
+                            <Text style={cartScreenStyles.summaryWarning}>{t("cart.unavailableNotice")}</Text>
+                        ) : null}
+                    </View>
                 </View>
 
                 {availableItems.length ? (
                     <View style={cartScreenStyles.itemsSection}>
-                        <View style={cartScreenStyles.itemsSectionHeader}>
-                            <Text style={cartScreenStyles.itemsSectionTitle}>
-                                {t("cart.availableItemsTitle")}
-                            </Text>
-                        </View>
-                        <View style={cartScreenStyles.itemsSectionCard}>
+                        <View
+                            style={[
+                                cartScreenStyles.itemsSectionCard,
+                                !hasUnavailableItems && cartScreenStyles.sectionBottom,
+                            ]}
+                        >
+                            <View style={cartScreenStyles.itemsSectionHeader}>
+                                <Text style={cartScreenStyles.itemsSectionTitle}>
+                                    {t("cart.availableItemsTitle")}
+                                </Text>
+                            </View>
                             <View style={cartScreenStyles.itemsList}>
                                 {availableItems.map((item) => (
                                     <CartBasketItem
@@ -317,20 +479,21 @@ export default function CartScreen() {
 
                 {unavailableItems.length ? (
                     <View style={cartScreenStyles.itemsSection}>
-                        <View style={cartScreenStyles.itemsSectionHeader}>
-                            <Text style={cartScreenStyles.itemsSectionTitle}>
-                                {t("cart.unavailableItemsTitle")}
-                            </Text>
-                            <Text style={cartScreenStyles.itemsSectionDescription}>
-                                {t("cart.unavailableItemsDescription")}
-                            </Text>
-                        </View>
                         <View
                             style={[
                                 cartScreenStyles.itemsSectionCard,
                                 cartScreenStyles.itemsSectionCardUnavailable,
+                                cartScreenStyles.sectionBottom,
                             ]}
                         >
+                            <View style={cartScreenStyles.itemsSectionHeader}>
+                                <Text style={cartScreenStyles.itemsSectionTitle}>
+                                    {t("cart.unavailableItemsTitle")}
+                                </Text>
+                                <Text style={cartScreenStyles.itemsSectionDescription}>
+                                    {t("cart.unavailableItemsDescription")}
+                                </Text>
+                            </View>
                             <View style={cartScreenStyles.itemsList}>
                                 {unavailableItems.map((item) => (
                                     <CartBasketItem

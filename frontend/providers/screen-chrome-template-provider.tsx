@@ -1,16 +1,12 @@
-import type { ReactNode } from "react"
-import { createContext, useCallback, useContext, useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
 import type { ScreenChromeTemplateOverride } from "@/components/templates/screen-template.types"
+import {
+    ScreenChromeTemplateContext,
+    type ScreenChromeTemplateProviderProps,
+} from "@/providers/screen-chrome-template-provider.context"
 
-type ScreenChromeTemplateContextValue = {
-    screenChromeTemplate: ScreenChromeTemplateOverride | null
-    setScreenChromeTemplate: (screenChromeTemplate: ScreenChromeTemplateOverride | null) => void
-}
-
-const ScreenChromeTemplateContext = createContext<ScreenChromeTemplateContextValue | null>(null)
-
-export function ScreenChromeTemplateProvider({ children }: { children: ReactNode }) {
+export function ScreenChromeTemplateProvider({ children }: ScreenChromeTemplateProviderProps) {
     const [screenChromeTemplate, setScreenChromeTemplateState] =
         useState<ScreenChromeTemplateOverride | null>(null)
 
@@ -33,12 +29,4 @@ export function ScreenChromeTemplateProvider({ children }: { children: ReactNode
     )
 }
 
-export function useScreenChromeTemplate() {
-    const context = useContext(ScreenChromeTemplateContext)
-
-    if (!context) {
-        throw new Error("useScreenChromeTemplate must be used within a ScreenChromeTemplateProvider")
-    }
-
-    return context
-}
+export { useScreenChromeTemplate } from "@/providers/screen-chrome-template-provider.context"

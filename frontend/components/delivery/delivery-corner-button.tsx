@@ -1,16 +1,9 @@
 import { Pressable, Text } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
+import type { DeliveryCornerButtonProps } from "@/components/delivery/delivery-corner-button.types"
 import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
 import { colors } from "@/theme/colors"
-
-type DeliveryCornerButtonProps = {
-    accessibilityLabel: string
-    iconPath?: string
-    isActive?: boolean
-    label?: string
-    onPress: () => void
-}
 
 export function DeliveryCornerButton({
     accessibilityLabel,

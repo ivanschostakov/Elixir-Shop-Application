@@ -5,9 +5,9 @@ from typing import Any
 from fastapi import HTTPException
 
 from config import YANDEX_DELIVERY_TOKEN, YANDEX_DELIVERY_BASE_URL, YANDEX_DELIVERY_WAREHOUSE_ID
-from integrations.delivery.yandex.schemas.calculated_delivery import YandexCalculatedDelivery
-from normalize import is_valid_uuid
 from src.integrations.delivery.schemas import DeliveryPointMarker, DeliveryPoint, YandexDeliveryMode
+from src.integrations.delivery.yandex.schemas.calculated_delivery import YandexCalculatedDelivery
+from src.normalize import is_valid_uuid
 
 
 class YandexDeliveryClient:

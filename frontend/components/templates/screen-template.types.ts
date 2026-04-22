@@ -2,13 +2,20 @@ import type { ReactNode } from "react"
 import type { StyleProp, ViewStyle } from "react-native"
 
 export type AppChromeHeaderTemplate = "title" | "tabs" | "search" | "overlay" | "none"
-export type AppChromeFooterTemplate = "nav" | "nav+productAction" | "nav+basketAction" | "customSurface" | "none"
+export type AppChromeFooterTemplate =
+    | "nav"
+    | "nav+productAction"
+    | "nav+basketAction"
+    | "nav+customAction"
+    | "customSurface"
+    | "none"
 export type AppChromeMode = "standard" | "fullscreen"
 
 export type ScreenTemplateKind = "feed" | "catalog" | "detail" | "map-flow"
 
 export type ScreenChromeTemplateSlots = {
     footer?: ReactNode
+    headerLeft?: ReactNode
     headerCenter?: ReactNode
     headerRight?: ReactNode
 }
