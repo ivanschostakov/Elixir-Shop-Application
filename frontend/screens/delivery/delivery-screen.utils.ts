@@ -13,8 +13,6 @@ import type {
 } from "@/services/api/delivery.types"
 import type {
     CreateOrderDraftPayload,
-    DeliveryCalculationPayload,
-    OrderDraftDeliveryProvider,
     UpdateOrderDraftPayload,
 } from "@/services/api/order-drafts.types"
 import { DOOR_DELIVERY_PROVIDER } from "@/screens/delivery/delivery-screen.constants"
@@ -25,6 +23,8 @@ import type {
     DeliveryPickupDraft,
 } from "@/screens/delivery/delivery-screen.types"
 import type { SelectedDeliveryPoint } from "@/hooks/delivery/delivery-point-selection-store.types"
+import { buildOrderDraftCalculationPayload, getOrderDraftProvider, getPickupPointAddressValue } from "@/utils/order-drafts"
+export { parseBooleanSearchParam, parseDraftId } from "@/utils/route-params"
 
 type PointLike = Pick<Point, "lat" | "lon">
 type DeliveryPointWithProvider = DeliveryPointDetails & { provider?: DeliveryPointProvider }
@@ -136,21 +136,6 @@ export function buildCdekPickupCalculationRequest(
     }
 }
 
-export function getOrderDraftProvider(provider: DeliveryPointProvider): OrderDraftDeliveryProvider {
-    return provider === "yandex" ? "YANDEX" : "CDEK"
-}
-
-export function buildOrderDraftCalculationPayload(
-    deliveryCalculation: CdekDeliveryCalculation,
-): DeliveryCalculationPayload {
-    return {
-        delivery_sum: deliveryCalculation.delivery_sum,
-        period_min: deliveryCalculation.period_min,
-        period_max: deliveryCalculation.period_max,
-        currency: deliveryCalculation.currency,
-    }
-}
-
 export function buildPickupOrderDraftPayload(
     pickupPointDraft: DeliveryPickupDraft,
     deliveryCalculation: CdekDeliveryCalculation,
@@ -209,32 +194,6 @@ export function buildOrderDraftAddressUpdatePayload(
           }
 }
 
-export function parseDraftId(rawDraftId: string | string[] | undefined) {
-    if (Array.isArray(rawDraftId)) {
-        return parseDraftId(rawDraftId[0])
-    }
-
-    if (!rawDraftId) {
-        return null
-    }
-
-    const draftId = Number(rawDraftId)
-    return Number.isInteger(draftId) && draftId > 0 ? draftId : null
-}
-
-export function parseBooleanSearchParam(rawValue: string | string[] | undefined) {
-    if (Array.isArray(rawValue)) {
-        return parseBooleanSearchParam(rawValue[0])
-    }
-
-    if (!rawValue) {
-        return false
-    }
-
-    const normalized = rawValue.toLowerCase()
-    return normalized === "1" || normalized === "true" || normalized === "yes"
-}
-
 export function getDeliveryPointMarkerKey(provider: DeliveryPointProvider, code: string) {
     return `${provider}:${code}`
 }
@@ -266,7 +225,7 @@ export function getPickupPointAddress(pickupPointDraft: DeliveryPickupDraft | nu
         return ""
     }
 
-    return pickupPointDraft.address_full || pickupPointDraft.address
+    return getPickupPointAddressValue(pickupPointDraft.address_full, pickupPointDraft.address)
 }
 
 export function getDoorDeliveryInfoRows(doorDeliveryDraft: DeliveryDoorDraft | null) {

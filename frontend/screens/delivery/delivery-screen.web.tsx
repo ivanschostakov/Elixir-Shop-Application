@@ -276,7 +276,7 @@ export default function DeliveryScreen() {
             lat: nextRegion.lat,
             lon: nextRegion.lon,
         })
-        setMapZoom(nextRegion.zoom)
+        setMapZoom(nextRegion.zoom ?? DEFAULT_DELIVERY_ZOOM)
     }, [clearResults, selectedDeliveryCountry])
 
     const applyDoorDeliveryGeocodeResult = useCallback(

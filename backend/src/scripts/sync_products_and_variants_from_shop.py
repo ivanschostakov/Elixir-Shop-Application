@@ -1,5 +1,4 @@
 import asyncio
-import os
 import sys
 from dataclasses import dataclass
 from decimal import Decimal
@@ -25,6 +24,7 @@ from src.database.limits import (
 from src.database.models import Product, Variant
 from src.database.product_text import normalize_product_text
 from src.normalize import coerce_decimal, coerce_int, coerce_uuid, fit_text
+from src.scripts.remote_shop import remote_shop_database_url
 
 
 @dataclass(frozen=True)
@@ -47,17 +47,8 @@ class RemoteFeatureRow:
     balance: int
 
 
-def _remote_database_url() -> str:
-    user = os.environ["SHOP_POSTGRES_USER"]
-    password = os.environ["SHOP_POSTGRES_PASSWORD"]
-    host = os.environ["SHOP_POSTGRES_HOST"]
-    port = os.environ.get("SHOP_POSTGRES_PORT", "5432")
-    database = os.environ["SHOP_POSTGRES_DB"]
-    return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
-
-
 async def fetch_remote_products_and_features() -> tuple[list[RemoteProductRow], list[RemoteFeatureRow]]:
-    remote_engine = create_async_engine(_remote_database_url(), pool_pre_ping=True)
+    remote_engine = create_async_engine(remote_shop_database_url(), pool_pre_ping=True)
     try:
         async with remote_engine.connect() as conn:
             product_rows = await conn.execute(

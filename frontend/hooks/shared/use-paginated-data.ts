@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
+import { getErrorMessage } from "@/utils/errors"
+
 type LoadPageArgs = {
     limit: number
     offset: number
@@ -11,10 +13,6 @@ type UsePaginatedDataOptions<TItem> = {
     fetchPage: (args: LoadPageArgs) => Promise<TItem[]>
     getKey?: (item: TItem) => number | string
     pageSize: number
-}
-
-function getErrorMessage(error: unknown) {
-    return error instanceof Error ? error.message : "Unknown error"
 }
 
 export function usePaginatedData<TItem>({

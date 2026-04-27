@@ -1,3 +1,4 @@
+from .auth.admin import Admin
 from .auth.user import User
 from .auth.user_push_token import UserPushToken
 from .auth.user_session import UserSession
@@ -31,6 +32,7 @@ from .website.website_sync_event import WebsiteSyncEvent
 
 __all__ = [
     "AppPromo",
+    "Admin",
     "Basket",
     "BasketItem",
     "BusinessLedgerEntry",

@@ -32,6 +32,7 @@ class User(Base, IdPkMixin, TimestampMixin):
     contact_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    admin: Mapped["Admin | None"] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True, uselist=False)
     website_identity: Mapped["WebsiteIdentity | None"] = relationship(back_populates="user", cascade="all, delete-orphan", uselist=False)
     delivery_addresses: Mapped[list["DeliveryAddress"]] = relationship(
         back_populates="user",

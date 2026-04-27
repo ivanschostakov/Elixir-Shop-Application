@@ -1,5 +1,5 @@
 import { ENDPOINTS } from "@/services/api/constants"
-import { ApiError, apiGet, apiPost } from "@/services/api/client"
+import { apiGet, apiPost } from "@/services/api/client"
 import {
     clearAuthTokens,
     getAuthTokens,
@@ -18,6 +18,7 @@ import type {
 } from "@/services/auth/auth.types"
 
 export type { AuthUser, LoginCredentials, RegistrationPayload } from "@/services/auth/auth.types"
+export { getErrorMessage as getAuthErrorMessage } from "@/utils/errors"
 
 function authPath(path: string) {
     return `${ENDPOINTS.AUTH}${path}`
@@ -45,18 +46,6 @@ function mapUser(user: BackendAuthUser): AuthUser {
         isVerified: user.is_verified,
         displayName: displayName || user.username,
     }
-}
-
-export function getAuthErrorMessage(error: unknown, fallback: string) {
-    if (error instanceof ApiError && error.message) {
-        return error.message
-    }
-
-    if (error instanceof Error && error.message) {
-        return error.message
-    }
-
-    return fallback
 }
 
 export async function authenticate(credentials: LoginCredentials): Promise<AuthUser> {

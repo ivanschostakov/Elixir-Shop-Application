@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { Dispatch, SetStateAction } from "react"
 
+import { getErrorMessage } from "@/utils/errors"
+
 type ReloadOptions = {
     showLoading?: boolean
 }
@@ -12,10 +14,6 @@ type UseAsyncDataOptions<TData> = {
     fetcher: () => Promise<TData>
     initialData: TData
     resetOnLoad?: boolean
-}
-
-function getErrorMessage(error: unknown) {
-    return error instanceof Error ? error.message : "Unknown error"
 }
 
 export function useAsyncData<TData>({

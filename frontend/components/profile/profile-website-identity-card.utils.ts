@@ -2,26 +2,9 @@ import type {
     WebsiteCoupon,
     WebsiteDiscountEntitlement,
 } from "@/services/api/website-identity.types"
+import { formatMoney } from "@/utils/formatting"
 
-export function formatMoney(amount?: number | null, currency?: string | null) {
-    if (amount === null || amount === undefined) {
-        return null
-    }
-
-    if (currency) {
-        try {
-            return new Intl.NumberFormat("kz.svg-RU", {
-                style: "currency",
-                currency,
-                maximumFractionDigits: 2,
-            }).format(amount)
-        } catch {
-            return `${amount.toFixed(2)} ${currency}`
-        }
-    }
-
-    return amount.toFixed(2)
-}
+export { formatMoney }
 
 export function formatEntitlementValue(entitlement: WebsiteDiscountEntitlement, fallback: string) {
     if (entitlement.discount_percent !== null && entitlement.discount_percent !== undefined) {

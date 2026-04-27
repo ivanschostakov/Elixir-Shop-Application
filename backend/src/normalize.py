@@ -66,6 +66,13 @@ def normalize_email(value: Any) -> str | None:
     return str(validated).lower()[:EMAIL_MAX_LENGTH]
 
 
+def normalize_phone(value: Any) -> str | None:
+    normalized = optional_str(value)
+    if normalized is None: return None
+    normalized = re.sub(r"[\s()-]", "", normalized)
+    return normalized or None
+
+
 def parse_iso_datetime(value: Any) -> datetime | None:
     normalized = optional_str(value)
     if not normalized: return None

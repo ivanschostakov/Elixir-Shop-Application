@@ -1,12 +1,6 @@
-import re
-
 from typing import Any
 
-
-def normalize_phone(value: str | None) -> str | None:
-    if value is None: return None
-    normalized = re.sub(r"[\s()-]", "", value.strip())
-    return normalized or None
+from src.normalize import normalize_phone
 
 
 def extract_email_from_contact_obj(contact: dict[str, Any]) -> str | None:

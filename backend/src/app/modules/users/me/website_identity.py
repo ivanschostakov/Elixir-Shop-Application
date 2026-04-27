@@ -28,11 +28,5 @@ async def link_my_website_identity(
     db: AsyncSession = Depends(get_db),
     website_identity_client: WebsiteIdentityClient = Depends(get_website_identity_client),
 ) -> WebsiteIdentityRead:
-    website_identity = await link_website_identity_to_user(
-        db,
-        user=current_user,
-        login=payload.login,
-        password=payload.password,
-        website_identity_client=website_identity_client,
-    )
+    website_identity = await link_website_identity_to_user(db, user=current_user, login=payload.login, password=payload.password, website_identity_client=website_identity_client)
     return WebsiteIdentityRead.model_validate(website_identity)

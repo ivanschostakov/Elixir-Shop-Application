@@ -13,12 +13,16 @@ import {
     calculateYandexDelivery,
 } from "@/services/api/delivery"
 import type { CdekDeliveryCalculation } from "@/services/api/delivery.types"
+import { buildOrderDraftCalculationPayload } from "@/utils/order-drafts"
 
 import type {
     OrderDraftWithLegacyRecipientFields,
     RecipientFormErrors,
     RecipientFormState,
 } from "@/screens/checkout/checkout-screen.types"
+export { formatMoney, formatSavedCartDraftName } from "@/utils/formatting"
+export { parseDraftId } from "@/utils/route-params"
+export { getErrorMessage as getDraftUpdateErrorMessage } from "@/utils/errors"
 
 export function createEmptyRecipientForm(): RecipientFormState {
     return {
@@ -113,39 +117,6 @@ export function hasRecipientErrors(errors: RecipientFormErrors) {
     return Object.values(errors).some(Boolean)
 }
 
-export function formatMoney(amount?: number | null, currency?: string | null) {
-    if (amount === null || amount === undefined) {
-        return null
-    }
-
-    if (currency) {
-        try {
-            return new Intl.NumberFormat("ru-RU", {
-                style: "currency",
-                currency,
-                maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-            }).format(amount)
-        } catch {
-            return `${amount.toFixed(2)} ${currency}`
-        }
-    }
-
-    return amount.toFixed(2)
-}
-
-export function parseDraftId(rawDraftId: string | string[] | undefined) {
-    if (Array.isArray(rawDraftId)) {
-        return parseDraftId(rawDraftId[0])
-    }
-
-    if (!rawDraftId) {
-        return null
-    }
-
-    const draftId = Number(rawDraftId)
-    return Number.isInteger(draftId) && draftId > 0 ? draftId : null
-}
-
 export function normalizeTextInputValue(value: string) {
     const normalized = value.trim()
     return normalized ? normalized : null
@@ -160,14 +131,6 @@ export function titleCaseWords(value: string | null | undefined) {
     return normalized
         .toLocaleLowerCase("ru-RU")
         .replace(/\S+/g, (part) => part.charAt(0).toLocaleUpperCase("ru-RU") + part.slice(1))
-}
-
-export function getDraftUpdateErrorMessage(error: unknown, fallback: string) {
-    if (error instanceof Error && error.message) {
-        return error.message
-    }
-
-    return fallback
 }
 
 export function formatRecipientName(recipient: DeliveryRecipientRead | null | undefined) {
@@ -245,17 +208,6 @@ export function buildDraftPayloadFromOrderDraft(orderDraft: OrderDraftRead): Cre
     }
 }
 
-export function buildDeliveryCalculationPayload(
-    deliveryCalculation: CdekDeliveryCalculation,
-) {
-    return {
-        delivery_sum: deliveryCalculation.delivery_sum,
-        period_min: deliveryCalculation.period_min,
-        period_max: deliveryCalculation.period_max,
-        currency: deliveryCalculation.currency,
-    }
-}
-
 export async function calculateDeliveryForSavedAddress(
     deliveryAddress: DeliveryAddressRead,
 ): Promise<CdekDeliveryCalculation> {
@@ -298,15 +250,6 @@ export function buildAddressUpdatePayloadWithCalculation(
         latitude: deliveryAddress.latitude,
         longitude: deliveryAddress.longitude,
         provider_reference: deliveryAddress.provider_reference,
-        delivery_calculation: buildDeliveryCalculationPayload(deliveryCalculation),
+        delivery_calculation: buildOrderDraftCalculationPayload(deliveryCalculation),
     }
-}
-
-export function formatSavedCartDraftName(date: Date) {
-    const hours = String(date.getHours()).padStart(2, "0")
-    const minutes = String(date.getMinutes()).padStart(2, "0")
-    const day = String(date.getDate()).padStart(2, "0")
-    const month = String(date.getMonth() + 1).padStart(2, "0")
-
-    return `Корзина от ${hours}:${minutes} ${day}.${month}`
 }

@@ -1,3 +1,4 @@
+from .auth.admin import is_admin_user
 from .auth.user import (
     create_user,
     delete_user,
@@ -117,6 +118,7 @@ __all__ = [
     "get_basket_by_id",
     "get_basket_by_user_id",
     "get_baskets",
+    "is_admin_user",
     "update_basket",
     "create_basket_item",
     "delete_basket_item",

@@ -2,31 +2,12 @@ import type { SelectedDeliveryAddress } from "@/hooks/delivery/delivery-address-
 import { translate } from "@/i18n/translations"
 import { calculateCdekDelivery } from "@/services/api/delivery"
 import type { CdekDeliveryCalculation } from "@/services/api/delivery.types"
+import { formatMoney } from "@/utils/formatting"
 
 type DoorDeliveryCalculationInput = Pick<
     SelectedDeliveryAddress,
     "address" | "city" | "countryCode" | "latitude" | "longitude" | "postalCode"
 >
-
-function formatMoney(amount?: number | null, currency?: string | null) {
-    if (amount === null || amount === undefined) {
-        return null
-    }
-
-    if (currency) {
-        try {
-            return new Intl.NumberFormat("ru-RU", {
-                style: "currency",
-                currency,
-                maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-            }).format(amount)
-        } catch {
-            return `${amount.toFixed(2)} ${currency}`
-        }
-    }
-
-    return amount.toFixed(2)
-}
 
 function getDayDeclension(days: number) {
     const mod10 = days % 10

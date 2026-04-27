@@ -1,0 +1,355 @@
+import logging
+import socket
+
+from datetime import datetime, timedelta, timezone
+from typing import Any
+from urllib.parse import urlsplit
+
+from fastapi import HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette import status
+
+from config import APP_PAYMENT_RETURN_BASE_URL
+from src.database.crud import update_order
+from src.database.models import Order
+from src.database.schemas import OrderUpdate
+from src.integrations.intellectmoney import IntellectMoneyError, intellectmoney
+
+from .crm import _move_lead_to_payment_result_status, _move_lead_to_pending_payment
+from .payment_qr_storage import build_order_payment_qr_url, find_order_payment_qr_path, save_order_payment_qr
+
+log = logging.getLogger(__name__)
+
+PAYMENT_STATUS_BY_CODE = {
+    3: "created",
+    4: "canceled",
+    5: "paid",
+    6: "hold",
+    7: "partial",
+    8: "refunded",
+}
+PENDING_PAYMENT_STEPS = {"", "Created", "InProcess", "SendTo3DS"}
+FINAL_PAYMENT_STATUSES = {"paid", "canceled", "error", "refunded"}
+
+
+def _payment_status_from_step(payment_step: str | None) -> str:
+    step = (payment_step or "").strip()
+    if step == "OK":
+        return "paid"
+    if step == "Error":
+        return "error"
+    if step in PENDING_PAYMENT_STEPS:
+        return "pending"
+    return step.lower() if step else "pending"
+
+
+def _payment_status_from_code(payment_status_code: int | None) -> str | None:
+    if payment_status_code is None:
+        return None
+    return PAYMENT_STATUS_BY_CODE.get(int(payment_status_code))
+
+
+def _parse_payment_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _payment_error_text(payment_status: str | None, payment_step: str | None = None) -> str | None:
+    if payment_status == "canceled":
+        return "Платеж был отменен"
+    if payment_status == "error":
+        return "Ошибка оплаты"
+    if payment_status == "refunded":
+        return "Платеж возвращен"
+    if payment_status == "hold":
+        return "Платеж захолдирован"
+    if payment_status == "partial":
+        return "Платеж оплачен частично"
+    if payment_step and payment_step not in PENDING_PAYMENT_STEPS:
+        return payment_step
+    return None
+
+def _base_return_url(request: Request) -> str:
+    configured = (APP_PAYMENT_RETURN_BASE_URL or "").strip().rstrip("/")
+    if configured:
+        return configured
+    return str(request.base_url).rstrip("/")
+
+
+def _intellectmoney_urls(request: Request, order_number: int) -> dict[str, str]:
+    base = _base_return_url(request)
+    api_base = str(request.base_url).rstrip("/")
+    fallback_url = f"{base}/payment?orderId={order_number}"
+    return {
+        "success_url": fallback_url,
+        "fail_url": fallback_url,
+        "back_url": fallback_url,
+        "result_url": f"{api_base}/api/v1/webhooks/intellectmoney",
+    }
+
+
+def _detect_request_ip(request: Request) -> str:
+    host = urlsplit(_base_return_url(request)).hostname
+    if host:
+        try:
+            return socket.gethostbyname(host)
+        except OSError:
+            log.warning("Unable to resolve return base host %s for IntellectMoney; falling back", host)
+    if request.client and request.client.host:
+        return request.client.host
+    return "127.0.0.1"
+
+def _payment_status_payload(
+    order: Order,
+    *,
+    payment_step: str | None = None,
+    qr_url: str | None = None,
+    qr_image: str | None = None,
+    expires_at: datetime | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "status": "success",
+        "order_id": order.id,
+        "order_number": order.order_number,
+        "payment_method": order.payment_method,
+        "payment_status": order.payment_status,
+        "payment_step": payment_step,
+        "invoice_id": order.payment_invoice_id,
+        "qr_url": qr_url,
+        "qr_image": qr_image,
+        "is_paid": bool(order.is_paid or order.payment_status == "paid"),
+        "can_retry": order.payment_status in {"canceled", "error"},
+    }
+    if expires_at is not None:
+        payload["expires_at"] = expires_at.replace(microsecond=0).isoformat()
+    return payload
+
+
+async def _resolve_payment_qr_image(
+    request: Request,
+    order: Order,
+    *,
+    qr_image: str | None,
+    qr_url: str | None,
+) -> str | None:
+    try:
+        saved_path = await save_order_payment_qr(
+            order.user_id,
+            order.id,
+            qr_image=qr_image,
+            qr_url=qr_url,
+        )
+    except Exception:
+        log.exception("Failed to save SBP QR for order %s", order.order_number)
+        saved_path = find_order_payment_qr_path(order.user_id, order.id)
+
+    return build_order_payment_qr_url(request, saved_path)
+
+async def reconcile_sbp_payment(
+    session: AsyncSession,
+    order: Order,
+    *,
+    payment_step: str | None = None,
+    payment_status_code: int | None = None,
+    payment_data: str | None = None,
+    invoice_id: str | None = None,
+) -> Order:
+    payment_status = _payment_status_from_code(payment_status_code) or _payment_status_from_step(payment_step)
+    patch: dict[str, Any] = {}
+    if invoice_id:
+        patch["payment_invoice_id"] = str(invoice_id)
+
+    if payment_status == "paid":
+        order = await _move_lead_to_payment_result_status(session, order, payment_status=payment_status)
+        patch["payment_status"] = "paid"
+        patch["payment_paid_at"] = _parse_payment_timestamp(payment_data) or datetime.now(timezone.utc)
+        patch["payment_error"] = ""
+    else:
+        if payment_status in {"canceled", "error", "refunded", "hold", "partial"}:
+            order = await _move_lead_to_payment_result_status(session, order, payment_status=payment_status)
+        patch["payment_status"] = payment_status
+        error_text = _payment_error_text(payment_status, payment_step)
+        if error_text:
+            patch["payment_error"] = error_text
+
+    updated_order = await update_order(session, order, OrderUpdate(**patch), commit=True)
+    return updated_order
+
+
+async def create_payment_for_order(session: AsyncSession, *, request: Request, order: Order) -> dict[str, Any]:
+    payment_method = (order.payment_method or "later").strip().lower()
+    if payment_method == "later":
+        order = await update_order(
+            session,
+            order,
+            OrderUpdate(
+                payment_method="later",
+                payment_provider="manager",
+                payment_status="pending",
+                payment_error="",
+            ),
+            commit=True,
+        )
+        return _payment_status_payload(order)
+
+    if payment_method != "sbp":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment method")
+
+    urls = _intellectmoney_urls(request, order.order_number)
+    ip_address = _detect_request_ip(request)
+    user_name = " ".join(part for part in [order.recipient.name, order.recipient.surname] if part).strip() or f"Заказ {order.order_number}"
+    order = await update_order(
+        session,
+        order,
+        OrderUpdate(
+            payment_method="sbp",
+            payment_provider="intellectmoney",
+            payment_status="created",
+            payment_error="",
+        ),
+        commit=True,
+    )
+
+    try:
+        expires_at = datetime.now() + timedelta(minutes=30)
+        create_invoice_result = await intellectmoney.create_invoice(
+            order_id=str(order.order_number),
+            service_name=f"Заказ №{order.order_number}",
+            amount_rub=order.grand_total,
+            user_name=user_name,
+            email=order.recipient.email,
+            success_url=urls["success_url"],
+            fail_url=urls["fail_url"],
+            back_url=urls["back_url"],
+            result_url=urls["result_url"],
+            preference="Sbp",
+        )
+
+        result_payload = create_invoice_result.get("Result") or {}
+        invoice_id = str(
+            result_payload.get("InvoiceId")
+            or result_payload.get("invoiceId")
+            or create_invoice_result.get("InvoiceId")
+            or ""
+        )
+        if not invoice_id:
+            raise IntellectMoneyError("IntellectMoney createInvoice succeeded without InvoiceId")
+
+        order = await update_order(session, order, OrderUpdate(payment_invoice_id=invoice_id), commit=True)
+        sbp_result = await intellectmoney.sbp_payment(
+            invoice_id=invoice_id,
+            success_url=urls["success_url"],
+            fail_url=urls["fail_url"],
+            ip_address=ip_address,
+        )
+        parsed_sbp = intellectmoney.parse_payment_state(sbp_result)
+        state_result = await intellectmoney.get_bank_card_payment_state(invoice_id=invoice_id)
+        parsed_state = intellectmoney.parse_payment_state(state_result)
+        payment_step = parsed_state["payment_step"] or parsed_sbp["payment_step"]
+        qr_url = parsed_state["qr_url"] or parsed_sbp["qr_url"]
+        qr_image = parsed_state["qr_image"] or parsed_sbp["qr_image"]
+        saved_qr_image = await _resolve_payment_qr_image(
+            request,
+            order,
+            qr_image=qr_image,
+            qr_url=qr_url,
+        )
+
+        if payment_step not in PENDING_PAYMENT_STEPS:
+            order = await reconcile_sbp_payment(
+                session,
+                order,
+                payment_step=payment_step,
+                invoice_id=invoice_id,
+            )
+        else:
+            order = await update_order(
+                session,
+                order,
+                OrderUpdate(payment_status=_payment_status_from_step(payment_step)),
+                commit=True,
+            )
+            if saved_qr_image or qr_image or qr_url:
+                order = await _move_lead_to_pending_payment(session, order)
+
+        return _payment_status_payload(
+            order,
+            payment_step=payment_step,
+            qr_url=qr_url,
+            qr_image=saved_qr_image or qr_image,
+            expires_at=expires_at,
+        )
+    except IntellectMoneyError as exc:
+        await update_order(session, order, OrderUpdate(payment_status="error", payment_error=str(exc)), commit=True)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        log.exception("Failed to initialize SBP payment for order %s", order.order_number)
+        await update_order(
+            session,
+            order,
+            OrderUpdate(payment_status="error", payment_error="Не удалось инициализировать СБП"),
+            commit=True,
+        )
+        raise HTTPException(status_code=502, detail="Failed to initialize SBP payment") from exc
+
+
+async def get_payment_status_for_order(session: AsyncSession, *, request: Request, order: Order) -> dict[str, Any]:
+    payment_step = None
+    qr_url = None
+    qr_image = None
+
+    if (
+        (order.payment_method or "").lower() == "sbp"
+        and order.payment_invoice_id
+        and (order.payment_status or "") not in FINAL_PAYMENT_STATUSES
+    ):
+        try:
+            state_result = await intellectmoney.get_bank_card_payment_state(invoice_id=str(order.payment_invoice_id))
+            parsed_state = intellectmoney.parse_payment_state(state_result)
+            payment_step = parsed_state["payment_step"]
+            qr_url = parsed_state["qr_url"]
+            qr_image = parsed_state["qr_image"]
+            if payment_step:
+                order = await reconcile_sbp_payment(
+                    session,
+                    order,
+                    payment_step=payment_step,
+                    invoice_id=str(order.payment_invoice_id),
+                )
+                if payment_step in PENDING_PAYMENT_STEPS:
+                    order = await update_order(
+                        session,
+                        order,
+                        OrderUpdate(payment_status=_payment_status_from_step(payment_step)),
+                        commit=True,
+                    )
+        except IntellectMoneyError as exc:
+            log.warning("IntellectMoney status check failed for order %s: %s", order.order_number, exc)
+
+    saved_qr_image = await _resolve_payment_qr_image(
+        request,
+        order,
+        qr_image=qr_image,
+        qr_url=qr_url,
+    )
+    if payment_step in PENDING_PAYMENT_STEPS and (saved_qr_image or qr_image or qr_url):
+        order = await _move_lead_to_pending_payment(session, order)
+    return _payment_status_payload(
+        order,
+        payment_step=payment_step,
+        qr_url=qr_url,
+        qr_image=saved_qr_image or qr_image,
+    )

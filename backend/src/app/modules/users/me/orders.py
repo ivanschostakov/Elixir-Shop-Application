@@ -1,6 +1,6 @@
 from datetime import datetime
-
-from fastapi import APIRouter, Depends, Query, Request
+from starlette import status
+from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.modules.auth.dependencies import get_current_user
@@ -27,13 +27,7 @@ async def create_my_order(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> OrderRead:
-    order = await create_order_from_draft_for_user(
-        db,
-        request=request,
-        user=current_user,
-        draft_id=payload.draft_id,
-        payment_method=payload.payment_method,
-    )
+    order = await create_order_from_draft_for_user(db, request=request, user=current_user, draft_id=payload.draft_id, payment_method=payload.payment_method)
     return await serialize_order(request, db, order)
 
 
@@ -49,16 +43,7 @@ async def list_my_orders(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[OrderRead]:
-    orders = await get_orders_history_for_user(
-        db,
-        user_id=current_user.id,
-        history_bucket=history_bucket,
-        status_code=status_code,
-        created_from=created_from,
-        created_to=created_to,
-        limit=limit,
-        offset=offset,
-    )
+    orders = await get_orders_history_for_user(db, user_id=current_user.id, history_bucket=history_bucket, status_code=status_code, created_from=created_from, created_to=created_to, limit=limit, offset=offset)
     return await serialize_orders(request, db, orders)
 
 
@@ -70,9 +55,5 @@ async def get_my_order(
     current_user: User = Depends(get_current_user),
 ) -> OrderRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=order_id)
-    if order is None:
-        from fastapi import HTTPException
-        from starlette import status
-
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     return await serialize_order(request, db, order)

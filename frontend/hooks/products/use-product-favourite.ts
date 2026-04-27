@@ -7,10 +7,7 @@ import {
 } from "@/services/api/favourites"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import type { UseProductFavouriteResult } from "@/hooks/products/use-product-favourite.types"
-
-function getErrorMessage(error: unknown) {
-    return error instanceof Error ? error.message : "Unknown error"
-}
+import { getErrorMessage } from "@/utils/errors"
 
 export function useProductFavourite(productId: number): UseProductFavouriteResult {
     const [updating, setUpdating] = useState(false)

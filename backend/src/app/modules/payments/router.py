@@ -19,8 +19,7 @@ async def create_payment(
     current_user: User = Depends(get_current_user),
 ) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=payload.order_id)
-    if order is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     return PaymentStatusRead.model_validate(await create_payment_for_order(db, request=request, order=order))
 
 
@@ -32,6 +31,5 @@ async def get_payment_status(
     current_user: User = Depends(get_current_user),
 ) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=order_id)
-    if order is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     return PaymentStatusRead.model_validate(await get_payment_status_for_order(db, request=request, order=order))

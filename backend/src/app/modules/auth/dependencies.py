@@ -5,6 +5,7 @@ from starlette import status
 
 from src.app.services.security import decode_access_token
 from src.database import get_db
+from src.database.crud.auth.admin import is_admin_user
 from src.database.crud.auth.user import get_user_by_id
 from src.database.crud.auth.user_session import get_user_session_by_id
 from src.database.models.auth.user import User
@@ -13,6 +14,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def unauthorized_exception(detail: str = "Could not validate credentials") -> HTTPException: return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=detail, headers={"WWW-Authenticate": "Bearer"})
+def forbidden_exception(detail: str = "Admin privileges required") -> HTTPException: return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=detail)
 async def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme), db: AsyncSession = Depends(get_db)) -> User:
     if credentials is None or credentials.scheme.lower() != "bearer":  raise unauthorized_exception()
     payload = decode_access_token(credentials.credentials)
@@ -29,3 +31,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
     if user is None or not user.is_active: raise unauthorized_exception()
 
     return user
+
+
+async def get_current_admin_user(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> User:
+    if not await is_admin_user(db, current_user.id): raise forbidden_exception()
+    return current_user

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import and_, not_, or_
@@ -61,7 +59,7 @@ KNOWN_NON_CREATED_ACTIVE_LABELS = frozenset(
 )
 
 
-def _normalized_status(value: str | None) -> str:
+def normalize_order_status(value: str | None) -> str:
     return (value or "").strip()
 
 
@@ -123,7 +121,7 @@ def build_status_code_clause(
 
 
 def get_order_status_code(order: "Order") -> OrderStatusCode:
-    status = _normalized_status(order.status)
+    status = normalize_order_status(order.status)
 
     for status_code in ORDER_STATUS_CODE_VALUES:
         if status in STATUS_LABELS_BY_CODE[status_code]:

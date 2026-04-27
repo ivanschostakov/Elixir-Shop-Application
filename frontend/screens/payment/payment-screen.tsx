@@ -27,30 +27,19 @@ import {
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
 import { paymentScreenStyles } from "@/screens/payment/payment-screen.styles"
-import { ApiError } from "@/services/api/client"
 import { createOrder, getOrder } from "@/services/api/orders"
 import type { OrderItemRead, OrderRead } from "@/services/api/orders.types"
 import { createPayment, getPaymentStatus } from "@/services/api/payments"
 import type { PaymentStatusRead } from "@/services/api/payments.types"
 import type { OrderDraftItemRead } from "@/services/api/order-drafts.types"
+import { getErrorMessage } from "@/utils/errors"
+import { parsePositiveRouteId } from "@/utils/route-params"
 
 type PaymentMethod = "later" | "sbp"
 type SummarySection = "contact" | "items"
 
 const FINAL_STOP_STATUSES = new Set(["error", "canceled", "refunded", "hold", "partial"])
 const PAYMENT_CHROME_TEMPLATE = { footer: "none" } as const
-
-function getErrorMessage(error: unknown, fallback: string) {
-    if (error instanceof ApiError) {
-        return error.message || fallback
-    }
-
-    if (error instanceof Error && error.message) {
-        return error.message
-    }
-
-    return fallback
-}
 
 function getPaymentStateError(payment: PaymentStatusRead | null, fallback: string) {
     if (!payment?.payment_status) {
@@ -98,23 +87,13 @@ function mergePaymentState(previous: PaymentStatusRead | null, next: PaymentStat
     }
 }
 
-function parseOrderId(value: string | string[] | undefined) {
-    const rawValue = Array.isArray(value) ? value[0] : value
-    if (!rawValue) {
-        return null
-    }
-
-    const parsed = Number.parseInt(rawValue, 10)
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
-}
-
 export default function PaymentScreen() {
     const { user } = useAuth()
     const { t } = useLanguage()
     const params = useLocalSearchParams<{ draftId?: string | string[]; paymentMethod?: string | string[]; orderId?: string | string[] }>()
     const draftId = parseDraftId(params.draftId)
     const routePaymentMethod = parsePaymentMethod(params.paymentMethod)
-    const routeOrderId = parseOrderId(params.orderId)
+    const routeOrderId = parsePositiveRouteId(params.orderId)
     const { orderDraft, error, loading } = useOrderDraft(draftId)
     const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(routePaymentMethod ?? "sbp")
     const [order, setOrder] = useState<OrderRead | null>(null)

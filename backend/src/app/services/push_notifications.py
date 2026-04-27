@@ -1,17 +1,13 @@
-from __future__ import annotations
-
 import logging
-
-from typing import Any
-
 import httpx
 
+from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import EXPO_PUSH_API_URL, EXPO_PUSH_TIMEOUT_SECONDS
 from src.database.crud import delete_user_push_token, get_user_push_tokens
 from src.database.models import Order
-from src.database.models.orders.history import get_order_history_bucket, get_order_status_code
+from src.database.models.orders.history import get_order_history_bucket, get_order_status_code, normalize_order_status
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +23,6 @@ ORDER_STATUS_NOTIFICATION_BODIES = {
     "completed": "Заказ завершен.",
     "refund_declined": "Возврат по заказу отклонен.",
 }
-
-
-def _normalized_status(value: str | None) -> str:
-    return (value or "").strip()
 
 
 def _build_order_status_body(order: Order) -> str:
@@ -50,8 +42,7 @@ def _build_order_status_data(order: Order) -> dict[str, Any]:
 
 
 async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> set[str]:
-    if not messages:
-        return set()
+    if not messages: return set()
 
     async with httpx.AsyncClient(timeout=EXPO_PUSH_TIMEOUT_SECONDS) as client:
         response = await client.post(
@@ -68,29 +59,25 @@ async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> set[str]:
 
     invalid_tokens: set[str] = set()
     tickets = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(tickets, list):
-        return invalid_tokens
+    if not isinstance(tickets, list): return invalid_tokens
 
     for message, ticket in zip(messages, tickets, strict=False):
-        if not isinstance(ticket, dict):
-            continue
+        if not isinstance(ticket, dict): continue
         details = ticket.get("details")
         error_code = details.get("error") if isinstance(details, dict) else None
         if error_code == "DeviceNotRegistered":
             token = message.get("to")
-            if isinstance(token, str):
-                invalid_tokens.add(token)
+            if isinstance(token, str): invalid_tokens.add(token)
             continue
-        if ticket.get("status") == "error":
-            log.warning("Expo push notification error for order message: %s", ticket)
+
+        if ticket.get("status") == "error": log.warning("Expo push notification error for order message: %s", ticket)
 
     return invalid_tokens
 
 
 async def send_order_status_change_notification(session: AsyncSession, order: Order) -> None:
     push_tokens = await get_user_push_tokens(session, user_id=order.user_id)
-    if not push_tokens:
-        return
+    if not push_tokens: return None
 
     messages = [
         {
@@ -104,33 +91,22 @@ async def send_order_status_change_notification(session: AsyncSession, order: Or
         for push_token in push_tokens
     ]
 
-    try:
-        invalid_tokens = await _send_expo_push_messages(messages)
-    except Exception:
-        log.exception("Failed to send order status notification for order %s", order.order_number)
-        return
+    try: invalid_tokens = await _send_expo_push_messages(messages)
+    except Exception: return log.exception("Failed to send order status notification for order %s", order.order_number)
 
-    if not invalid_tokens:
-        return
+
+    if not invalid_tokens: return None
 
     removed_any = False
     for push_token in push_tokens:
-        if push_token.expo_push_token not in invalid_tokens:
-            continue
+        if push_token.expo_push_token not in invalid_tokens: continue
         await delete_user_push_token(session, push_token, commit=False)
         removed_any = True
 
-    if removed_any:
-        await session.commit()
+    if removed_any: await session.commit()
+    return None
 
 
-async def send_order_status_change_notification_if_needed(
-    session: AsyncSession,
-    *,
-    previous_status: str | None,
-    order: Order,
-) -> None:
-    if _normalized_status(previous_status) == _normalized_status(order.status):
-        return
-
+async def send_order_status_change_notification_if_needed(session: AsyncSession, *, previous_status: str | None, order: Order) -> None:
+    if normalize_order_status(previous_status) == normalize_order_status(order.status): return
     await send_order_status_change_notification(session, order)

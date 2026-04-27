@@ -127,12 +127,14 @@ class AsyncAmoCRM:
         if contact_id:
             existing_contact = await self.get_contact(contact_id)
             if existing_contact: await self.update_contact(contact_id, name=lead_name, phone=normalized_phone, email=normalized_email); refreshed_contact = await self.get_contact(contact_id); return refreshed_contact or existing_contact
+
         candidates: dict[int, dict[str, Any]] = {}
         queries = [candidate for candidate in [normalized_phone, phone, normalized_email] if candidate]
         for query in queries:
             for candidate in await self.search_contacts(query):
                 raw_id = candidate.get("id")
                 if raw_id: candidates[int(raw_id)] = candidate
+
         for candidate_id, candidate in candidates.items():
             full_contact = candidate if candidate.get("custom_fields_values") else await self.get_contact(candidate_id)
             if not full_contact: continue
@@ -140,6 +142,7 @@ class AsyncAmoCRM:
             candidate_email = extract_email_from_contact_obj(full_contact)
             if normalized_phone and candidate_phone == normalized_phone: await self.update_contact(candidate_id, name=lead_name, phone=normalized_phone, email=normalized_email); refreshed_contact = await self.get_contact(candidate_id); return refreshed_contact or full_contact
             if normalized_email and candidate_email == normalized_email: await self.update_contact(candidate_id, name=lead_name, phone=normalized_phone, email=normalized_email); refreshed_contact = await self.get_contact(candidate_id); return refreshed_contact or full_contact
+
         return await self.create_contact(name=lead_name, phone=normalized_phone, email=normalized_email)
 
     async def find_lead_by_order_number(self, order_number: str | int) -> dict[str, Any] | None:
@@ -151,12 +154,14 @@ class AsyncAmoCRM:
             data = await self._get("/api/v4/leads", params={"query": needle, "limit": limit, "page": page})
             leads = (data.get("_embedded") or {}).get("leads") or []
             if not leads: return None
+
             for lead in leads:
                 name = lead.get("name") or ""
                 if not pattern.search(name): continue
                 pipeline_id = lead.get("pipeline_id")
                 if pipeline_id is not None and pipeline_id != self.PIPELINE_ID: continue
                 return lead
+
             page += 1
         return None
 

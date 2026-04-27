@@ -65,19 +65,8 @@ async def intellectmoney_webhook(request: Request, db: AsyncSession = Depends(ge
     if order is None and payload.get("PaymentId"): order = await get_order_by_invoice_id(db, str(payload["PaymentId"]))
     if order is None: return PlainTextResponse("ERROR", status_code=404)
 
-    order = await update_order(
-        db,
-        order,
-        OrderUpdate(payment_provider="intellectmoney", payment_invoice_id=payload.get("PaymentId") or None),
-        commit=True,
-    )
+    order = await update_order(db, order, OrderUpdate(payment_provider="intellectmoney", payment_invoice_id=payload.get("PaymentId") or None), commit=True)
     payment_status_raw = payload.get("PaymentStatus")
     payment_status_code = int(payment_status_raw) if payment_status_raw and payment_status_raw.isdigit() else None
-    await reconcile_sbp_payment(
-        db,
-        order,
-        payment_status_code=payment_status_code,
-        payment_data=payload.get("PaymentData"),
-        invoice_id=payload.get("PaymentId"),
-    )
+    await reconcile_sbp_payment(db, order, payment_status_code=payment_status_code, payment_data=payload.get("PaymentData"), invoice_id=payload.get("PaymentId"))
     return PlainTextResponse("OK")

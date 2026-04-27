@@ -23,12 +23,7 @@ async def create_my_recommendation_view(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    await record_product_view(
-        db,
-        user_id=current_user.id,
-        product_id=payload.product_id,
-        variant_id=payload.variant_id,
-    )
+    await record_product_view(db, user_id=current_user.id, product_id=payload.product_id, variant_id=payload.variant_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -38,11 +33,7 @@ async def create_my_recommendation_category_view(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Response:
-    await record_category_view(
-        db,
-        user_id=current_user.id,
-        category_id=payload.category_id,
-    )
+    await record_category_view(db, user_id=current_user.id, category_id=payload.category_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -57,13 +48,5 @@ async def list_my_recommendations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[ProductWithVariantsRead]:
-    products = await get_recommended_products_for_user(
-        db,
-        user_id=current_user.id,
-        surface=surface,
-        product_id=product_id,
-        draft_id=draft_id,
-        limit=limit,
-        offset=offset,
-    )
+    products = await get_recommended_products_for_user(db, user_id=current_user.id, surface=surface, product_id=product_id, draft_id=draft_id, limit=limit, offset=offset)
     return serialize_products_with_variants(request, products)

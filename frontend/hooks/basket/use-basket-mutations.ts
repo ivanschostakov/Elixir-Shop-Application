@@ -5,10 +5,7 @@ import { setBasketSnapshot } from "@/hooks/basket/basket-store"
 import type { UseBasketMutationsResult } from "@/hooks/basket/use-basket.types"
 import { addBasketItem, clearBasket, removeBasketItem, restoreDraftToBasket, updateBasketItem } from "@/services/api/basket"
 import type { BasketRead } from "@/types/basket"
-
-function getErrorMessage(error: unknown) {
-    return error instanceof Error ? error.message : "Unknown error"
-}
+import { getErrorMessage } from "@/utils/errors"
 
 function assertPositiveInteger(value: number, label: string) {
     if (!Number.isInteger(value) || value < 1) {

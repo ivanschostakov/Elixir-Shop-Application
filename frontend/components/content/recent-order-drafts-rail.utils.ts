@@ -3,26 +3,8 @@ import type { ViewStyle } from "react-native"
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
 
 import { DRAFT_DESCRIPTION_VISIBLE_ITEMS } from "@/components/content/recent-order-drafts-rail.constants"
-
-export function formatMoney(amount?: number | null, currency?: string | null) {
-    if (amount === null || amount === undefined) {
-        return null
-    }
-
-    if (currency) {
-        try {
-            return new Intl.NumberFormat("ru-RU", {
-                style: "currency",
-                currency,
-                maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,
-            }).format(amount)
-        } catch {
-            return `${amount.toFixed(2)} ${currency}`
-        }
-    }
-
-    return amount.toFixed(2)
-}
+export { formatMoney } from "@/utils/formatting"
+export { getErrorMessage as getDraftUpdateErrorMessage } from "@/utils/errors"
 
 export function getPositionsLabel(count: number) {
     const mod10 = count % 10
@@ -155,12 +137,4 @@ export function getModeBadgeStyle(count: number, index: number): ViewStyle {
 export function normalizeDraftText(value: string) {
     const normalized = value.trim()
     return normalized ? normalized : null
-}
-
-export function getDraftUpdateErrorMessage(error: unknown, fallback: string) {
-    if (error instanceof Error && error.message) {
-        return error.message
-    }
-
-    return fallback
 }

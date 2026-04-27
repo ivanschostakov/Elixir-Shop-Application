@@ -1,5 +1,4 @@
 import asyncio
-import os
 from dataclasses import dataclass
 
 from sqlalchemy import select, text
@@ -8,6 +7,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from src.database import SessionLocal
 from src.database.models import Product, ProductByCategory, ProductCategory
 from src.normalize import casefold_optional_str, lower_optional_str, optional_str
+from src.scripts.remote_shop import remote_shop_database_url
 
 
 @dataclass(frozen=True)
@@ -23,15 +23,6 @@ class RemoteProductCategoryLinkRow:
     remote_category_id: int
 
 
-def _remote_database_url() -> str:
-    user = os.environ["SHOP_POSTGRES_USER"]
-    password = os.environ["SHOP_POSTGRES_PASSWORD"]
-    host = os.environ["SHOP_POSTGRES_HOST"]
-    port = os.environ.get("SHOP_POSTGRES_PORT", "5432")
-    database = os.environ["SHOP_POSTGRES_DB"]
-    return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
-
-
 def _normalize_category_name(value: str | None) -> str | None:
     normalized = optional_str(value)
     if normalized is None or normalized == "<Без категории>":
@@ -40,7 +31,7 @@ def _normalize_category_name(value: str | None) -> str | None:
 
 
 async def fetch_remote_product_categories() -> tuple[list[RemoteTgCategoryRow], list[RemoteProductCategoryLinkRow]]:
-    remote_engine = create_async_engine(_remote_database_url(), pool_pre_ping=True)
+    remote_engine = create_async_engine(remote_shop_database_url(), pool_pre_ping=True)
     try:
         async with remote_engine.connect() as conn:
             category_rows = await conn.execute(

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import base64
 import binascii
 from io import BytesIO
@@ -24,9 +22,7 @@ def build_order_payment_qr_path(user_id: int, order_id: int) -> Path:
 
 def find_order_payment_qr_path(user_id: int, order_id: int) -> Path | None:
     candidate = ORDERS_MEDIA_DIR / str(user_id) / f"qr-{order_id}{QR_EXTENSION}"
-    if candidate.exists():
-        return candidate
-    return None
+    return candidate if candidate.exists() else None
 
 
 def build_order_payment_qr_url(request: Request, image_path: Path | None) -> str | None:
@@ -82,13 +78,7 @@ def _convert_qr_to_png(content: bytes) -> bytes:
         return output.getvalue()
 
 
-async def save_order_payment_qr(
-    user_id: int,
-    order_id: int,
-    *,
-    qr_image: str | None,
-    qr_url: str | None,
-) -> Path | None:
+async def save_order_payment_qr(user_id: int, order_id: int, *, qr_image: str | None, qr_url: str | None) -> Path | None:
     errors: list[str] = []
     for source_name, source_value in (("qr_image", qr_image), ("qr_url", qr_url)):
         if not source_value:
@@ -101,15 +91,13 @@ async def save_order_payment_qr(
             if target_path.exists():
                 async with aiofiles.open(target_path, "rb") as existing_file:
                     existing_content = await existing_file.read()
-                if existing_content == png_content:
-                    return target_path
+                if existing_content == png_content: return target_path
             async with aiofiles.open(target_path, "wb") as target_file:
                 await target_file.write(png_content)
             return target_path
         except (ValueError, binascii.Error, UnidentifiedImageError, httpx.HTTPError) as exc:
             errors.append(f"{source_name}: {exc}")
 
-    if errors:
-        raise RuntimeError("; ".join(errors))
+    if errors: raise RuntimeError("; ".join(errors))
 
     return find_order_payment_qr_path(user_id, order_id)
