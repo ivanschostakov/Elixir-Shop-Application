@@ -10,6 +10,7 @@ export const API_BASE_URL = apiBaseUrl
 export const ENDPOINTS = {
     AUTH: "/v1/auth",
     DELIVERY: "/v1/delivery",
+    PAYMENTS: "/v1/payments",
     PRODUCT_CATEGORIES: "/v1/product-categories",
     PRODUCTS: "/v1/products",
     USERS: "/v1/users",

@@ -58,6 +58,13 @@ export type CreateOrderDraftPayload = {
     delivery_calculation?: DeliveryCalculationPayload | null
 }
 
+export type GetOrderDraftsQuery = {
+    limit?: number
+    offset?: number
+    created_from?: string | null
+    created_to?: string | null
+}
+
 export type DeliveryAddressRead = {
     id: number
     user_id: number

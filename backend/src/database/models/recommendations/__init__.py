@@ -1,0 +1,4 @@
+from .user_category_recommendation_signal import UserCategoryRecommendationSignal
+from .user_product_recommendation_signal import UserProductRecommendationSignal
+
+__all__ = ["UserCategoryRecommendationSignal", "UserProductRecommendationSignal"]

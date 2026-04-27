@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -36,11 +38,21 @@ async def create_my_order_draft(
 @my_order_drafts_router.get("", response_model=list[OrderDraftRead], status_code=status.HTTP_200_OK)
 async def list_my_order_drafts(
     request: Request,
-    limit: int = Query(default=6, ge=1, le=20),
+    limit: int = Query(default=6, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    created_from: datetime | None = Query(default=None),
+    created_to: datetime | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[OrderDraftRead]:
-    drafts = await get_recent_order_drafts_for_user(db, user_id=current_user.id, limit=limit)
+    drafts = await get_recent_order_drafts_for_user(
+        db,
+        user_id=current_user.id,
+        limit=limit,
+        offset=offset,
+        created_from=created_from,
+        created_to=created_to,
+    )
     return await serialize_order_drafts(request, db, drafts)
 
 

@@ -37,6 +37,7 @@ class DeliveryAddress(Base, IdPkMixin, TimestampMixin):
 
     user: Mapped["User"] = relationship(back_populates="delivery_addresses")
     drafts: Mapped[list["OrderDraft"]] = relationship(back_populates="delivery_address")
+    orders: Mapped[list["Order"]] = relationship(back_populates="delivery_address", passive_deletes="all")
 
 
 Index(

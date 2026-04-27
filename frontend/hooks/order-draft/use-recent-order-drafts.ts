@@ -12,7 +12,7 @@ type UseRecentOrderDraftsResult = {
 export function useRecentOrderDrafts(limit = 6): UseRecentOrderDraftsResult {
     const { data, error, loading, reload } = useAsyncData<OrderDraftRead[]>({
         deps: [limit],
-        fetcher: () => getOrderDrafts(limit),
+        fetcher: () => getOrderDrafts({ limit }),
         initialData: [],
     })
 

@@ -1,12 +1,10 @@
 import "expo-dev-client"
 
-import { useEffect } from "react"
 import { Platform, StyleSheet, Text, View } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 
 import AppShell from "@/components/navigation/app-shell"
 import { AuthProvider } from "@/providers/auth-provider"
-import { warmupYandexMapKit } from "@/services/maps/yandex-mapkit"
 
 function WebTemporarilyDisabledScreen() {
     return (
@@ -23,14 +21,6 @@ function WebTemporarilyDisabledScreen() {
 }
 
 export default function RootLayout() {
-    useEffect(() => {
-        if (Platform.OS === "web") {
-            return
-        }
-
-        warmupYandexMapKit()
-    }, [])
-
     if (Platform.OS === "web") {
         return (
             <GestureHandlerRootView style={styles.root}>

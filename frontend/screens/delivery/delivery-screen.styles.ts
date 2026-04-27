@@ -15,6 +15,20 @@ export const deliveryScreenStyles = StyleSheet.create({
         width: "100%",
         position: "static",
     },
+    mapFallback: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#edf3fb",
+        paddingHorizontal: spacing.lg,
+    },
+    mapFallbackText: {
+        color: colors.mutedText,
+        fontSize: 14,
+        fontWeight: "600",
+        lineHeight: 20,
+        textAlign: "center",
+    },
     doorDeliveryMarkerOverlay: {
         ...StyleSheet.absoluteFillObject,
         alignItems: "center",
@@ -418,11 +432,52 @@ export const deliveryScreenStyles = StyleSheet.create({
     topMapControlsDock: {
         alignItems: "center",
         flexDirection: "row",
-        justifyContent: "space-between",
+        gap: spacing.sm,
         left: spacing.md,
         position: "absolute",
         right: spacing.md,
         zIndex: 3,
+    },
+    topMapCountrySelectorWrap: {
+        flex: 1,
+        minWidth: 0,
+        width: 0,
+    },
+    topMapCountrySelectorScroll: {
+        flexGrow: 0,
+        width: "100%",
+    },
+    topMapCountrySelectorContent: {
+        gap: spacing.sm,
+        paddingHorizontal: 0,
+    },
+    countrySelectorDock: {
+        left: 0,
+        position: "absolute",
+        right: 0,
+        zIndex: 3,
+    },
+    countrySelectorScroll: {
+        flexGrow: 0,
+    },
+    countrySelectorContent: {
+        gap: spacing.sm,
+        paddingHorizontal: spacing.md,
+    },
+    countrySelectorButton: {
+        alignItems: "center",
+        justifyContent: "center",
+        opacity: 1,
+    },
+    countrySelectorButtonInactive: {
+        opacity: 0.38,
+    },
+    countrySelectorButtonPressed: {
+        opacity: 0.7,
+    },
+    countrySelectorFlag: {
+        height: 32,
+        width: 32,
     },
     searchPanelDock: {
         flex: 1,

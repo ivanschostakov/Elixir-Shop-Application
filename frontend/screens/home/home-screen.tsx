@@ -5,10 +5,10 @@ import type { ReactNode } from "react"
 import { ContentRail } from "@/components/content/content-rail"
 import { RecentOrderDraftsRail } from "@/components/content/recent-order-drafts-rail"
 import { FeedTemplate } from "@/components/templates/feed-template"
+import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { ROUTES } from "@/constants/routes"
 import { useRecentOrderDrafts } from "@/hooks/order-draft/use-recent-order-drafts"
 import { useLatestProducts } from "@/hooks/products/use-latest-products"
-import { usePriorityProducts } from "@/hooks/products/use-priority-products"
 import { useLanguage } from "@/providers/language-provider"
 import { colors } from "@/theme/colors"
 import { homeScreenStyles } from "./home-screen.styles"
@@ -16,7 +16,10 @@ import { homeScreenStyles } from "./home-screen.styles"
 export default function HomeScreen() {
     const { t } = useLanguage()
     const { products: latestProducts, loading: latestLoading } = useLatestProducts(9)
-    const { products: priorityProducts, loading: recommendedLoading } = usePriorityProducts(4)
+    const { products: recommendedProducts, loading: recommendedLoading } = useRecommendations({
+        surface: "home",
+        limit: 8,
+    })
     const { orderDrafts: recentOrderDrafts, loading: recentOrderDraftsLoading } = useRecentOrderDrafts(6)
 
     const sections: { key: string, content: ReactNode }[] = []
@@ -62,7 +65,7 @@ export default function HomeScreen() {
         })
     }
 
-    if (priorityProducts.length) {
+    if (recommendedProducts.length) {
         sections.push({
             key: "recommended",
             content: (
@@ -70,7 +73,7 @@ export default function HomeScreen() {
                     title={t("home.recommendedTitle")}
                     eyebrow={t("home.recommendedEyebrow")}
                     description={t("home.recommendedDescription")}
-                    products={priorityProducts}
+                    products={recommendedProducts}
                 />
             ),
         })

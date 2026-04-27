@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import DeliveryRecipient
@@ -46,8 +46,8 @@ async def get_delivery_recipient_by_fields(
     stmt = (
         select(DeliveryRecipient)
         .where(DeliveryRecipient.user_id == user_id)
-        .where(DeliveryRecipient.name == name)
-        .where(DeliveryRecipient.surname == surname)
+        .where(func.lower(DeliveryRecipient.name) == name.lower())
+        .where(func.lower(DeliveryRecipient.surname) == surname.lower())
         .where(DeliveryRecipient.phone == phone)
         .where(DeliveryRecipient.email == email)
         .limit(1)

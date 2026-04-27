@@ -1,4 +1,4 @@
-import type { ProductRead } from "@/types/product"
+import type { ProductWithVariantsRead } from "@/types/product"
 
 export type ContentRailProps = {
     title: string
@@ -6,5 +6,10 @@ export type ContentRailProps = {
     description?: string
     actionLabel?: string
     onPressAction?: () => void
-    products: ProductRead[]
+    products: ProductWithVariantsRead[]
+    layout?: "carousel" | "grid"
+    gridVariant?: "default" | "discover"
+    mergeHeaderWithFirstRow?: boolean
+    carouselEdgeInset?: number
+    loadingMore?: boolean
 }

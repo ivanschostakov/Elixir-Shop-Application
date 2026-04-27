@@ -114,6 +114,14 @@ export const checkoutScreenStyles = StyleSheet.create({
         maxWidth: "100%",
         textAlign: "right",
     },
+    detailsSheetDisabledText: {
+        color: colors.mutedText,
+        fontSize: 14,
+        fontWeight: "600",
+        lineHeight: 17,
+        maxWidth: "100%",
+        textAlign: "right",
+    },
     detailsSheetInput: {
         color: colors.text,
         fontSize: 14,
@@ -275,7 +283,6 @@ export const checkoutScreenStyles = StyleSheet.create({
     sectionHeader: {
         alignItems: "center",
         flexDirection: "row",
-        justifyContent: "space-between",
         marginBottom: spacing.xs,
         paddingHorizontal: spacing.lg,
     },
@@ -311,6 +318,27 @@ export const checkoutScreenStyles = StyleSheet.create({
         gap: 12,
         paddingHorizontal: spacing.lg,
     },
+    positionAddCard: {
+        alignItems: "center",
+        backgroundColor: "#EAF3FF",
+        borderRadius: 18,
+        height: 208,
+        justifyContent: "center",
+        width: 156,
+    },
+    positionAddCardPressed: {
+        opacity: 0.82,
+    },
+    positionAddCardDisabled: {
+        opacity: 0.5,
+    },
+    positionAddCardText: {
+        color: colors.primary,
+        fontSize: 52,
+        fontWeight: "700",
+        lineHeight: 56,
+        marginTop: -4,
+    },
     positionCard: {
         backgroundColor: "transparent",
         width: 156,
@@ -341,6 +369,43 @@ export const checkoutScreenStyles = StyleSheet.create({
         fontWeight: "800",
         lineHeight: 18,
         marginTop: 2,
+    },
+    positionQuantityControl: {
+        alignItems: "center",
+        backgroundColor: "#F3F5F8",
+        borderRadius: 999,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        marginTop: spacing.sm,
+        minHeight: 34,
+        paddingHorizontal: 6,
+    },
+    positionQuantityButton: {
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderRadius: 999,
+        height: 24,
+        justifyContent: "center",
+        width: 24,
+    },
+    positionQuantityButtonPressed: {
+        opacity: 0.82,
+    },
+    positionQuantityButtonDisabled: {
+        opacity: 0.45,
+    },
+    positionQuantityButtonText: {
+        color: colors.text,
+        fontSize: 17,
+        fontWeight: "700",
+        lineHeight: 18,
+        marginTop: -1,
+    },
+    positionQuantityValue: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: "700",
+        lineHeight: 16,
     },
     totalsList: {
         gap: spacing.sm,

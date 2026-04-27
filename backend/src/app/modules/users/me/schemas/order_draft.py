@@ -18,6 +18,7 @@ from src.database.limits import (
     WEBSITE_PHONE_MAX_LENGTH,
 )
 from src.integrations.delivery.schemas import CountryCode, DeliveryMode, DeliveryProvider
+from src.normalize import normalize_person_name
 
 RECIPIENT_PHONE_RE = re.compile(r"^\+?\d{10,15}$")
 RECIPIENT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
@@ -70,7 +71,7 @@ class UpdateOrderDraftRecipientPayload(BaseModel):
     @field_validator("name", "surname")
     @classmethod
     def _validate_name_parts(cls, value: str) -> str:
-        normalized = value.strip()
+        normalized = normalize_person_name(value, max_length=PERSON_NAME_MAX_LENGTH)
         if not normalized:
             raise ValueError("Name fields must not be empty")
         return normalized

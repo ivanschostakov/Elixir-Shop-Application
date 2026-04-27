@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
     ActivityIndicator,
     Alert,
+    type NativeScrollEvent,
+    type NativeSyntheticEvent,
     Pressable,
     ScrollView,
     Text,
@@ -12,8 +14,7 @@ import { router, useLocalSearchParams } from "expo-router"
 import Swipeable from "react-native-gesture-handler/Swipeable"
 import { Path, Svg } from "react-native-svg"
 
-import { CountryFlag } from "@/components/country-flag/country-flag"
-import { COUNTRY_SELECTOR_CODES } from "@/components/country-flag/country-flag.consts"
+import { ContentRail } from "@/components/content/content-rail"
 import { formatProductPrice } from "@/components/content/product-content"
 import { EmptyState } from "@/components/content/empty-state"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
@@ -29,23 +30,17 @@ import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import {
     useSelectedDeliveryAddress,
-    setSelectedDeliveryAddress,
 } from "@/hooks/delivery/delivery-address-selection-store"
-import { useDeliveryCountryPickerFocusRequest } from "@/hooks/delivery/delivery-country-picker-focus-store"
 import {
-    setSelectedDeliveryCountry,
     useSelectedDeliveryCountry,
 } from "@/hooks/delivery/delivery-country-selection-store"
 import {
     useSelectedDeliveryPoint,
-    setSelectedDeliveryPoint,
 } from "@/hooks/delivery/delivery-point-selection-store"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
+import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useLanguage } from "@/providers/language-provider"
 import { CartBasketItem } from "@/screens/cart/cart-basket-item"
-import {
-    DELIVERY_COUNTRY_NAMES,
-} from "@/screens/cart/cart-screen.constants"
 import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
 import {
     buildOrderDraftCalculationPayload,
@@ -55,9 +50,6 @@ import {
     getOrderDraftProvider,
 } from "@/screens/cart/cart-screen.utils"
 import { ApiError } from "@/services/api/client"
-import type {
-    DeliveryCountryCode,
-} from "@/services/api/delivery.types"
 import { createOrderDraft } from "@/services/api/order-drafts"
 import type { CreateOrderDraftPayload } from "@/services/api/order-drafts.types"
 import { colors } from "@/theme/colors"
@@ -72,12 +64,21 @@ export default function CartScreen() {
     const selectedDeliveryAddress = useSelectedDeliveryAddress()
     const selectedDeliveryPoint = useSelectedDeliveryPoint()
     const selectedDeliveryCountry = useSelectedDeliveryCountry()
-    const deliveryCountryPickerFocusRequest = useDeliveryCountryPickerFocusRequest()
     const [promoCode, setPromoCode] = useState("")
     const [isSavingDraft, setIsSavingDraft] = useState(false)
-    const cartScrollRef = useRef<ScrollView | null>(null)
     const swipeableRefs = useRef<Record<number, Swipeable | null>>({})
     const routeDraftIdParam = Array.isArray(params.draftId) ? params.draftId[0] : params.draftId
+    const {
+        hasMore: hasMoreRecommendations,
+        loadMore: loadMoreRecommendations,
+        loadingMore: recommendationsLoadingMore,
+        products: recommendedProducts,
+    } = useRecommendations({
+        surface: "cart",
+        limit: 6,
+        enabled: Boolean(basket?.items.length),
+        deps: [basket?.updated_at ?? null, basket?.items.length ?? 0],
+    })
 
     useEffect(() => {
         const nextDraftId = routeDraftIdParam ? Number(routeDraftIdParam) : NaN
@@ -92,27 +93,6 @@ export default function CartScreen() {
             clearBasketDraftEditingId()
         }
     }, [basketDraftEditingId, routeDraftIdParam])
-
-    useEffect(() => {
-        if (selectedDeliveryCountry || deliveryCountryPickerFocusRequest === 0) {
-            return
-        }
-
-        cartScrollRef.current?.scrollTo({
-            animated: true,
-            y: 0,
-        })
-    }, [deliveryCountryPickerFocusRequest, selectedDeliveryCountry])
-
-    const handleSelectDeliveryCountry = (countryCode: DeliveryCountryCode) => {
-        if (selectedDeliveryCountry === countryCode) {
-            return
-        }
-
-        setSelectedDeliveryCountry(countryCode)
-        setSelectedDeliveryAddress(null)
-        setSelectedDeliveryPoint(null)
-    }
 
     const handleRemoveItem = async (itemId: number) => {
         try {
@@ -167,6 +147,20 @@ export default function CartScreen() {
     const handleOpenProduct = (productId: number) => {
         router.push(getProductRoute(productId))
     }
+
+    const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        if (!hasMoreRecommendations || recommendationsLoadingMore) {
+            return
+        }
+
+        const distanceFromBottom =
+            event.nativeEvent.contentSize.height -
+            (event.nativeEvent.contentOffset.y + event.nativeEvent.layoutMeasurement.height)
+
+        if (distanceFromBottom <= 240) {
+            void loadMoreRecommendations()
+        }
+    }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
 
     const resolveCreateDraftPayload = useCallback(async (): Promise<CreateOrderDraftPayload> => {
         if (selectedDeliveryPoint?.deliveryCalculation) {
@@ -332,15 +326,15 @@ export default function CartScreen() {
 
     if (!basket || basket.items.length === 0) {
         return (
-            <View style={cartScreenStyles.container}>
+            <View style={[cartScreenStyles.container, cartScreenStyles.emptyContainer]}>
                 <View style={cartScreenStyles.emptyContent}>
                     <EmptyState
+                        actionVariant="link"
                         sticker={STICKERS.cartEmpty}
-                        eyebrow={t("cart.emptyEyebrow")}
-                        title={t("cart.emptyTitle")}
                         description={t("cart.emptyDescription")}
                         actionLabel={t("cart.primaryCta")}
                         onPressAction={() => router.push(ROUTES.discover)}
+                        variant="plain"
                     />
                 </View>
             </View>
@@ -355,45 +349,13 @@ export default function CartScreen() {
     return (
         <View style={cartScreenStyles.container}>
             <ScrollView
-                ref={cartScrollRef}
                 contentContainerStyle={cartScreenStyles.scrollContent}
+                onScroll={handleRecommendationsScroll}
+                scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
             >
                 <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
                     <View style={cartScreenStyles.summaryCard}>
-                        <ScrollView
-                            bounces={false}
-                            contentContainerStyle={cartScreenStyles.deliveryCountryCarouselContent}
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={cartScreenStyles.deliveryCountryCarousel}
-                        >
-                            {COUNTRY_SELECTOR_CODES.map((countryCode) => {
-                                const isActive = selectedDeliveryCountry === countryCode
-
-                                return (
-                                    <Pressable
-                                        key={countryCode}
-                                        accessibilityLabel={DELIVERY_COUNTRY_NAMES[countryCode]}
-                                        accessibilityRole="button"
-                                        onPress={() => {
-                                            handleSelectDeliveryCountry(countryCode)
-                                        }}
-                                        style={({ pressed }) => [
-                                            cartScreenStyles.deliveryCountryButton,
-                                            !isActive && cartScreenStyles.deliveryCountryButtonInactive,
-                                            pressed && cartScreenStyles.deliveryCountryButtonPressed,
-                                        ]}
-                                    >
-                                        <CountryFlag
-                                            code={countryCode}
-                                            style={cartScreenStyles.deliveryCountryFlag}
-                                        />
-                                    </Pressable>
-                                )
-                            })}
-                        </ScrollView>
-
                         <TextInput
                             autoCapitalize="characters"
                             autoCorrect={false}
@@ -516,6 +478,18 @@ export default function CartScreen() {
                             </View>
                         </View>
                     </View>
+                ) : null}
+
+                {recommendedProducts.length ? (
+                    <ContentRail
+                        title={t("recommendations.title")}
+                        description={t("recommendations.productDescription")}
+                        layout="grid"
+                        gridVariant="discover"
+                        mergeHeaderWithFirstRow
+                        loadingMore={recommendationsLoadingMore}
+                        products={recommendedProducts}
+                    />
                 ) : null}
             </ScrollView>
         </View>

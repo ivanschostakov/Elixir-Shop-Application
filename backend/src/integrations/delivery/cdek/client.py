@@ -7,7 +7,15 @@ from decimal import Decimal
 from typing import Any
 from fastapi import HTTPException
 
-from config import CDEK_SECURE_PASSWORD, CDEK_ACCOUNT, CDEK_API_URL
+from config import (
+    CDEK_ACCOUNT,
+    CDEK_API_URL,
+    CDEK_SECURE_PASSWORD,
+    CDEK_SENDER_ADDRESS,
+    CDEK_SENDER_CITY,
+    CDEK_SENDER_CITY_CODE,
+    CDEK_SENDER_POSTAL_CODE,
+)
 from .schemas import CDEKCalculatedDelivery
 from src.integrations.delivery.schemas import CountryCode, DeliveryPointMarker, DeliveryPoint, CdekDeliveryMode
 
@@ -31,11 +39,11 @@ class AsyncCDEKClient:
     @property
     def from_location(self) -> dict[str, Any]:
         return {
-            "city": "Уфа",
-            "code": 256,
-            "address": "ул. Революционная, 98/1 блок А",
+            "city": CDEK_SENDER_CITY,
+            "code": CDEK_SENDER_CITY_CODE,
+            "address": CDEK_SENDER_ADDRESS,
             "country_code": "RU",
-            "postal_code": 450078,
+            "postal_code": CDEK_SENDER_POSTAL_CODE,
             "coords": [54.72922108153469, 55.987779811665256],
         }
 
@@ -133,6 +141,20 @@ class AsyncCDEKClient:
             )
 
         return DeliveryPoint.from_cdek_dict(delivery_point)
+
+    async def create_order(self, order: dict[str, Any]) -> dict[str, Any]:
+        response = await self._request("POST", "/v2/orders", json=order)
+        if not isinstance(response, dict):
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "service": "cdek",
+                    "path": "/v2/orders",
+                    "error": "Unexpected order creation response shape",
+                    "body": response,
+                },
+            )
+        return response
 
     async def get_city_code_by_coordinates(self, latitude: float, longitude: float) -> int:
         city_candidates = await self._request("GET", "/v2/location/cities", params={

@@ -7,7 +7,14 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.database import get_db
-from src.database.crud import create_product, delete_product, get_product_by_id, get_products, update_product
+from src.database.crud import (
+    create_product,
+    delete_product,
+    get_product_by_id,
+    get_products,
+    get_similar_products,
+    update_product,
+)
 from src.database.models import User
 from src.database.schemas import ProductCreate, ProductUpdate, ProductWithVariantsRead
 
@@ -21,6 +28,22 @@ async def products_get_by_id(request: Request, product_id: int, db: AsyncSession
     product = await get_product_by_id(db, product_id)
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     return serialize_product_with_variants(request, product)
+
+
+@products_router.get("/{product_id}/similar", response_model=list[ProductWithVariantsRead])
+async def products_get_similar(
+    request: Request,
+    product_id: int,
+    limit: int = Query(default=6, ge=1, le=20),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    product = await get_product_by_id(db, product_id)
+    if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return serialize_products_with_variants(
+        request,
+        await get_similar_products(db, product_id=product_id, offset=offset, limit=limit),
+    )
 
 
 @products_router.get("", response_model=list[ProductWithVariantsRead])

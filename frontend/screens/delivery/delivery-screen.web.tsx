@@ -1,13 +1,15 @@
 import { BlurView } from "expo-blur"
 import * as Clipboard from "expo-clipboard"
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Alert, Linking, Pressable, View, useWindowDimensions } from "react-native"
+import { Alert, Linking, Pressable, ScrollView, View, useWindowDimensions } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
 
 import { DeliveryCornerButton } from "@/components/delivery/delivery-corner-button"
 import { PickupPointFooterExtension } from "@/components/delivery/pickup-point-footer-extension"
 import { DeliverySearchPanel } from "@/components/delivery/delivery-search-panel"
+import { CountryFlag } from "@/components/country-flag/country-flag"
+import { COUNTRY_SELECTOR_CODES } from "@/components/country-flag/country-flag.consts"
 import { StickyFooterSurface } from "@/components/footer/sticky-footer"
 import { BACK_ARROW_PATH, SEARCH_ICON_PATH } from "@/components/header/app-header.constants"
 import {
@@ -24,6 +26,7 @@ import {
     useSelectedDeliveryAddress,
 } from "@/hooks/delivery/delivery-address-selection-store"
 import {
+    setSelectedDeliveryCountry,
     useSelectedDeliveryCountry,
 } from "@/hooks/delivery/delivery-country-selection-store"
 import {
@@ -55,6 +58,7 @@ import {
     DEFAULT_DELIVERY_POINT,
     DEFAULT_DELIVERY_ZOOM,
     PICKUP_POINT_FOCUS_ZOOM,
+    getDeliveryCountryViewport,
     getDeliverySelectionZoom,
     getSupportedDeliveryCountryCode,
     supportsDoorDeliveryForCountry,
@@ -98,6 +102,7 @@ export default function DeliveryScreen() {
     const selectedDeliveryPoint = useSelectedDeliveryPoint()
     const selectedDeliveryCountry = useSelectedDeliveryCountry()
     const activeCountryCode = selectedDeliveryCountry ?? DEFAULT_DELIVERY_COUNTRY_CODE
+    const initialCountryRegion = getDeliveryCountryViewport(activeCountryCode).region
     const [doorDeliveryDraft, setDoorDeliveryDraft] = useState<DeliveryDoorDraft | null>(
         selectedDeliveryAddress
             ? {
@@ -111,14 +116,17 @@ export default function DeliveryScreen() {
         selectedDeliveryPoint ? buildPickupPointDraft(selectedDeliveryPoint) : null,
     )
     const [isPickupFooterExpanded, setIsPickupFooterExpanded] = useState(Boolean(selectedDeliveryPoint))
-    const [point, setPoint] = useState(DEFAULT_DELIVERY_POINT)
+    const [point, setPoint] = useState({
+        lat: initialCountryRegion.lat,
+        lon: initialCountryRegion.lon,
+    })
     const [userPoint, setUserPoint] = useState(DEFAULT_DELIVERY_POINT)
     const [searchFocusPoint, setSearchFocusPoint] = useState<typeof DEFAULT_DELIVERY_POINT | null>(null)
     const [hasUserLocation, setHasUserLocation] = useState(false)
     const [isResolvingDoorAddress, setIsResolvingDoorAddress] = useState(false)
     const [isResolvingPickupPoint, setIsResolvingPickupPoint] = useState(false)
     const [removedDeliveryPointKeys, setRemovedDeliveryPointKeys] = useState<Set<string>>(() => new Set())
-    const [mapZoom, setMapZoom] = useState(DEFAULT_DELIVERY_ZOOM)
+    const [mapZoom, setMapZoom] = useState(initialCountryRegion.zoom ?? DEFAULT_DELIVERY_ZOOM)
     const [isSearchOpen, setIsSearchOpen] = useState(false)
     const [isSearchFocused, setIsSearchFocused] = useState(false)
     const [search, setSearch] = useState("")
@@ -144,7 +152,11 @@ export default function DeliveryScreen() {
     const isSearchActive = isSearchOpen || isSearchFocused
     const hasVisibleSearchFeedback = isLoading || Boolean(error) || results.length > 0
     const shouldFollowUser =
-        hasUserLocation && searchFocusPoint === null && doorDeliveryPoint === null && pickupPoint === null
+        hasUserLocation
+        && selectedDeliveryCountry === null
+        && searchFocusPoint === null
+        && doorDeliveryPoint === null
+        && pickupPoint === null
     const shouldShowPickupFooterExtension =
         isPickupFooterExpanded &&
         !hasVisibleSearchFeedback &&
@@ -237,6 +249,35 @@ export default function DeliveryScreen() {
 
         setPoint(userPoint)
     }, [shouldFollowUser, userPoint])
+
+    const handleSelectDeliveryCountry = useCallback((countryCode: (typeof COUNTRY_SELECTOR_CODES)[number]) => {
+        if (selectedDeliveryCountry === countryCode) {
+            return
+        }
+
+        const nextRegion = getDeliveryCountryViewport(countryCode).region
+
+        setSelectedDeliveryCountry(countryCode)
+        setSelectedDeliveryAddress(null)
+        setSelectedDeliveryPoint(null)
+        setDoorDeliveryDraft(null)
+        setPickupPointDraft(null)
+        setIsDoorFooterExpanded(false)
+        setIsPickupFooterExpanded(false)
+        setSelectionError(null)
+        setPickupPointError(null)
+        setSearch("")
+        setSearchEnabled(true)
+        setIsSearchOpen(false)
+        setIsSearchFocused(false)
+        setSearchFocusPoint(null)
+        clearResults()
+        setPoint({
+            lat: nextRegion.lat,
+            lon: nextRegion.lon,
+        })
+        setMapZoom(nextRegion.zoom)
+    }, [clearResults, selectedDeliveryCountry])
 
     const applyDoorDeliveryGeocodeResult = useCallback(
         async (geocodeResult: DeliveryGeoCodeResult) => {
@@ -710,6 +751,40 @@ export default function DeliveryScreen() {
                                       : null,
                             ]}
                         >
+                            <ScrollView
+                                bounces={false}
+                                contentContainerStyle={deliveryScreenStyles.countrySelectorContent}
+                                horizontal
+                                keyboardShouldPersistTaps="handled"
+                                showsHorizontalScrollIndicator={false}
+                                style={deliveryScreenStyles.countrySelectorScroll}
+                            >
+                                {COUNTRY_SELECTOR_CODES.map((countryCode) => {
+                                    const isActive = activeCountryCode === countryCode
+
+                                    return (
+                                        <Pressable
+                                            key={countryCode}
+                                            accessibilityLabel={countryCode}
+                                            accessibilityRole="button"
+                                            onPress={() => {
+                                                handleSelectDeliveryCountry(countryCode)
+                                            }}
+                                            style={({ pressed }) => [
+                                                deliveryScreenStyles.countrySelectorButton,
+                                                !isActive && deliveryScreenStyles.countrySelectorButtonInactive,
+                                                pressed && deliveryScreenStyles.countrySelectorButtonPressed,
+                                            ]}
+                                        >
+                                            <CountryFlag
+                                                code={countryCode}
+                                                style={deliveryScreenStyles.countrySelectorFlag}
+                                            />
+                                        </Pressable>
+                                    )
+                                })}
+                            </ScrollView>
+
                             <StickyFooterSurface
                                 contentStyle={[
                                     deliveryScreenStyles.webMapFooterContent,

@@ -19,6 +19,7 @@ export type BackendAuthUser = {
     email: string
     name: string
     surname: string
+    phone_number: string | null
     is_active: boolean
     is_verified: boolean
 }
@@ -50,6 +51,7 @@ export type AuthUser = {
     email: string
     name: string
     surname: string
+    phoneNumber: string | null
     isActive: boolean
     isVerified: boolean
     displayName: string

@@ -1,12 +1,15 @@
-import { useMemo } from "react"
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from "react-native"
+import { useCallback, useEffect, useMemo, useRef } from "react"
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
+import { ContentRail } from "@/components/content/content-rail"
 import { SavedIcon } from "@/components/footer/sticky-footer.icons"
 import { formatProductPrice } from "@/components/content/product-content"
 import { SHARE_ICON_PATH } from "@/components/header/app-header.constants"
 import { DetailTemplate } from "@/components/templates/detail-template"
 import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-value"
+import { useSimilarProducts } from "@/hooks/products/use-similar-products"
+import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useProductFavourite } from "@/hooks/products/use-product-favourite"
 import { useProduct } from "@/hooks/products/use-product"
 import { useLanguage } from "@/providers/language-provider"
@@ -20,6 +23,7 @@ import { ProductInfoTabs } from "@/screens/product/product-info-tabs"
 import { productScreenStyle } from "@/screens/product/product-screen.styles"
 import { ProductScreenProps } from "@/screens/product/product-screen.types"
 import { getVariantStockLabel } from "@/screens/product/product-screen.utils"
+import { trackRecommendationView } from "@/services/api/recommendations"
 import { colors } from "@/theme/colors"
 
 export default function ProductScreen({ productId }: ProductScreenProps) {
@@ -34,6 +38,7 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
     const { t } = useLanguage()
     const { handleCopy } = useCopyableProfileValue({ t })
     const { handleVariantSelect, selectedVariant } = useSelectedProductVariant(product)
+    const { products: similarProducts } = useSimilarProducts(product?.id ?? null, 6)
     const {
         activeInfoTab,
         handleInfoTabChange,
@@ -49,6 +54,41 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
         t,
         toggleFavourite,
     })
+    const trackedProductIdRef = useRef<number | null>(null)
+    const {
+        hasMore: hasMoreRecommendations,
+        loadMore: loadMoreRecommendations,
+        loadingMore: recommendationsLoadingMore,
+        products: recommendedProducts,
+    } = useRecommendations({
+        surface: "product",
+        productId: product?.id ?? null,
+        limit: 6,
+        enabled: Boolean(product?.id),
+    })
+
+    useEffect(() => {
+        if (!product?.id || trackedProductIdRef.current === product.id) {
+            return
+        }
+
+        trackedProductIdRef.current = product.id
+        void trackRecommendationView({ product_id: product.id }).catch(() => undefined)
+    }, [product?.id])
+
+    const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        if (!hasMoreRecommendations || recommendationsLoadingMore) {
+            return
+        }
+
+        const distanceFromBottom =
+            event.nativeEvent.contentSize.height -
+            (event.nativeEvent.contentOffset.y + event.nativeEvent.layoutMeasurement.height)
+
+        if (distanceFromBottom <= 240) {
+            void loadMoreRecommendations()
+        }
+    }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
 
     const chromeTemplate = useMemo(
         () => ({
@@ -132,6 +172,8 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
             <ScrollView
                 style={productScreenStyle.container}
                 contentContainerStyle={productScreenStyle.content}
+                onScroll={handleRecommendationsScroll}
+                scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
             >
                 <View style={productScreenStyle.imageCard}>
@@ -211,6 +253,33 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
                             t={t}
                         />
                     </View>
+
+                    {similarProducts.length || recommendedProducts.length ? (
+                        <View style={productScreenStyle.recommendationStack}>
+                            {similarProducts.length ? (
+                                <View style={productScreenStyle.similarRailCard}>
+                                    <ContentRail
+                                        title={t("similarProducts.title")}
+                                        description={t("similarProducts.description")}
+                                        products={similarProducts}
+                                        carouselEdgeInset={16}
+                                    />
+                                </View>
+                            ) : null}
+
+                            {recommendedProducts.length ? (
+                                <ContentRail
+                                    title={t("recommendations.title")}
+                                    description={t("recommendations.productDescription")}
+                                    layout="grid"
+                                    gridVariant="discover"
+                                    mergeHeaderWithFirstRow
+                                    loadingMore={recommendationsLoadingMore}
+                                    products={recommendedProducts}
+                                />
+                            ) : null}
+                        </View>
+                    ) : null}
                 </View>
             </ScrollView>
         </DetailTemplate>

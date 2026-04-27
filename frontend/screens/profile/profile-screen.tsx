@@ -1,9 +1,8 @@
+import { Pressable, Text, View } from "react-native"
 import { router } from "expo-router"
 
-import { ProfileAccountDetails } from "@/components/profile/profile-account-details"
 import { ProfileHeroCard } from "@/components/profile/profile-hero-card"
 import { ProfileQuickActions } from "@/components/profile/profile-quick-actions"
-import { ProfileWebsiteIdentityCard } from "@/components/profile/profile-website-identity-card"
 import { FeedTemplate } from "@/components/templates/feed-template"
 import { ROUTES } from "@/constants/routes"
 import { useProfileAvatar } from "@/hooks/profile/use-profile-avatar"
@@ -52,12 +51,28 @@ export default function ProfileScreen() {
                 onRemovePhoto={handleRemovePhoto}
             />
 
-            <ProfileAccountDetails
-                email={user?.email}
-                username={user?.username}
-            />
+            <Pressable
+                accessibilityLabel={t("profile.history.open")}
+                accessibilityRole="button"
+                onPress={() => router.push(ROUTES.profileHistory)}
+                style={({ pressed }) => [
+                    ProfileScreenStyles.historyCardButton,
+                    pressed && ProfileScreenStyles.historyCardButtonPressed,
+                ]}
+            >
+                <View style={ProfileScreenStyles.sectionCard}>
+                    <View style={ProfileScreenStyles.historyCardHeader}>
+                        <View style={ProfileScreenStyles.historyCardCopy}>
+                            <Text style={ProfileScreenStyles.historyCardTitle}>{t("profile.history.title")}</Text>
+                            <Text style={ProfileScreenStyles.historyCardSubtitle}>{t("profile.history.subtitle")}</Text>
+                        </View>
 
-            <ProfileWebsiteIdentityCard />
+                        <Text style={ProfileScreenStyles.historyCardArrow}>
+                            {">"}
+                        </Text>
+                    </View>
+                </View>
+            </Pressable>
 
             <ProfileQuickActions onSignOut={handleSignOut} />
         </FeedTemplate>

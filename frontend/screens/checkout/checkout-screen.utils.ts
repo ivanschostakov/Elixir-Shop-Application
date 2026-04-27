@@ -1,10 +1,18 @@
 import type {
     CreateOrderDraftPayload,
+    DeliveryAddressRead,
     DeliveryRecipientRead,
+    NewDeliveryAddressPayload,
     OrderDraftCheckoutOptionsRead,
     OrderDraftRead,
 } from "@/services/api/order-drafts.types"
+import type { AuthUser } from "@/services/auth/auth.types"
 import type { BasketRead } from "@/types/basket"
+import {
+    calculateCdekDelivery,
+    calculateYandexDelivery,
+} from "@/services/api/delivery"
+import type { CdekDeliveryCalculation } from "@/services/api/delivery.types"
 
 import type {
     OrderDraftWithLegacyRecipientFields,
@@ -71,6 +79,23 @@ export function getDraftRecipient(orderDraft: OrderDraftRead | null | undefined)
     }
 }
 
+export function getSelfRecipient(user: AuthUser | null | undefined): DeliveryRecipientRead | null {
+    if (!user) {
+        return null
+    }
+
+    return {
+        id: 0,
+        user_id: user.id,
+        name: user.name,
+        surname: user.surname,
+        phone: user.phoneNumber ?? "",
+        email: user.email,
+        created_at: "",
+        updated_at: "",
+    }
+}
+
 export function normalizePhoneValue(value: string) {
     return value.replace(/[\s()-]/g, "")
 }
@@ -126,6 +151,17 @@ export function normalizeTextInputValue(value: string) {
     return normalized ? normalized : null
 }
 
+export function titleCaseWords(value: string | null | undefined) {
+    const normalized = value?.trim()
+    if (!normalized) {
+        return ""
+    }
+
+    return normalized
+        .toLocaleLowerCase("ru-RU")
+        .replace(/\S+/g, (part) => part.charAt(0).toLocaleUpperCase("ru-RU") + part.slice(1))
+}
+
 export function getDraftUpdateErrorMessage(error: unknown, fallback: string) {
     if (error instanceof Error && error.message) {
         return error.message
@@ -139,7 +175,7 @@ export function formatRecipientName(recipient: DeliveryRecipientRead | null | un
         return "Покупатель"
     }
 
-    const fullName = [recipient.name, recipient.surname].filter(Boolean).join(" ").trim()
+    const fullName = [titleCaseWords(recipient.name), titleCaseWords(recipient.surname)].filter(Boolean).join(" ").trim()
     return fullName || "Покупатель"
 }
 
@@ -206,6 +242,63 @@ export function buildDraftPayloadFromOrderDraft(orderDraft: OrderDraftRead): Cre
             period_max: orderDraft.delivery_period_max ?? 0,
             currency: orderDraft.currency,
         },
+    }
+}
+
+export function buildDeliveryCalculationPayload(
+    deliveryCalculation: CdekDeliveryCalculation,
+) {
+    return {
+        delivery_sum: deliveryCalculation.delivery_sum,
+        period_min: deliveryCalculation.period_min,
+        period_max: deliveryCalculation.period_max,
+        currency: deliveryCalculation.currency,
+    }
+}
+
+export async function calculateDeliveryForSavedAddress(
+    deliveryAddress: DeliveryAddressRead,
+): Promise<CdekDeliveryCalculation> {
+    if (deliveryAddress.provider === "CDEK") {
+        return calculateCdekDelivery({
+            latitude: deliveryAddress.latitude,
+            longitude: deliveryAddress.longitude,
+            mode: deliveryAddress.mode === "pickup" ? "office" : "door",
+            countryCode: deliveryAddress.country_code,
+            postalCode: deliveryAddress.postal_code,
+            address: deliveryAddress.full_address,
+            city: deliveryAddress.city,
+        })
+    }
+
+    if (deliveryAddress.provider === "YANDEX") {
+        return calculateYandexDelivery(
+            deliveryAddress.mode === "pickup"
+                ? (deliveryAddress.provider_reference ?? deliveryAddress.full_address)
+                : deliveryAddress.full_address,
+        )
+    }
+
+    throw new Error(`Unsupported delivery provider: ${deliveryAddress.provider}`)
+}
+
+export function buildAddressUpdatePayloadWithCalculation(
+    deliveryAddress: DeliveryAddressRead,
+    deliveryCalculation: CdekDeliveryCalculation,
+): NewDeliveryAddressPayload {
+    return {
+        mode: deliveryAddress.mode,
+        provider: deliveryAddress.provider,
+        country_code: deliveryAddress.country_code,
+        name: deliveryAddress.name,
+        full_address: deliveryAddress.full_address,
+        details: deliveryAddress.details,
+        city: deliveryAddress.city,
+        postal_code: deliveryAddress.postal_code,
+        latitude: deliveryAddress.latitude,
+        longitude: deliveryAddress.longitude,
+        provider_reference: deliveryAddress.provider_reference,
+        delivery_calculation: buildDeliveryCalculationPayload(deliveryCalculation),
     }
 }
 

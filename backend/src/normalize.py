@@ -47,6 +47,17 @@ def fit_text(value: Any, max_length: int) -> str | None:
     return normalized[:max_length]
 
 
+def normalize_person_name(value: Any, *, max_length: int | None = None) -> str | None:
+    normalized = optional_str(value)
+    if normalized is None:
+        return None
+
+    normalized = re.sub(r"\s+", " ", normalized).title()
+    if max_length is not None:
+        return normalized[:max_length]
+    return normalized
+
+
 def normalize_email(value: Any) -> str | None:
     normalized = optional_str(value)
     if not normalized: return None

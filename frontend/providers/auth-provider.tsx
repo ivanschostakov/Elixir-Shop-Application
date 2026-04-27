@@ -11,6 +11,11 @@ import {
 import { translate } from "@/i18n/translations"
 import { AuthContext } from "@/providers/auth-provider.context"
 import type { AuthProviderProps } from "@/providers/auth-provider.types"
+import {
+    resetOrderStatusNotifications,
+    syncOrderStatusNotifications,
+    unregisterOrderStatusNotifications,
+} from "@/services/notifications/order-status-notifications"
 import type { AuthUser, LoginCredentials, RegistrationPayload } from "@/services/auth/auth.types"
 import {
     clearAuthTokens,
@@ -27,10 +32,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
     useEffect(() => {
         return subscribeAuthSession((tokens) => {
             if (!tokens) {
+                resetOrderStatusNotifications()
                 setUser(null)
             }
         })
     }, [])
+
+    useEffect(() => {
+        if (!user) {
+            resetOrderStatusNotifications()
+            return
+        }
+
+        void syncOrderStatusNotifications()
+    }, [user])
 
     useEffect(() => {
         let isMounted = true
@@ -96,9 +111,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const signOut = async () => {
         try {
+            await unregisterOrderStatusNotifications()
             await logout()
         } finally {
             clearAuthTokens()
+            resetOrderStatusNotifications()
             setUser(null)
         }
     }

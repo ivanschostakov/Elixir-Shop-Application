@@ -1,4 +1,4 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -65,6 +65,47 @@ async def get_products(session: AsyncSession, *, q: str | None = None, sku: str 
     else: stmt = stmt.order_by(in_stock_first, Product.priority.desc(), Product.id.desc())
 
     stmt = stmt.offset(offset).limit(limit)
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_similar_products(
+    session: AsyncSession,
+    *,
+    product_id: int,
+    offset: int = 0,
+    limit: int = 6,
+) -> list[Product]:
+    category_ids_stmt = select(ProductByCategory.category_id).where(ProductByCategory.product_id == product_id)
+    category_ids = [int(category_id) for category_id in (await session.execute(category_ids_stmt)).scalars().all()]
+    if not category_ids:
+        return []
+
+    shared_category_counts = (
+        select(
+            ProductByCategory.product_id.label("product_id"),
+            func.count(distinct(ProductByCategory.category_id)).label("shared_category_count"),
+        )
+        .where(
+            ProductByCategory.category_id.in_(category_ids),
+            ProductByCategory.product_id != product_id,
+        )
+        .group_by(ProductByCategory.product_id)
+        .subquery()
+    )
+
+    stmt = (
+        select(Product)
+        .options(selectinload(Product.variants))
+        .join(shared_category_counts, shared_category_counts.c.product_id == Product.id)
+        .where(_in_stock_product_clause())
+        .order_by(
+            shared_category_counts.c.shared_category_count.desc(),
+            Product.created_at.desc(),
+            Product.id.desc(),
+        )
+        .offset(offset)
+        .limit(limit)
+    )
     return list((await session.execute(stmt)).scalars().all())
 
 

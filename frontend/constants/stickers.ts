@@ -11,7 +11,10 @@ export type StickerConfig =
         source: AnimationObject
     }
 
-export const STICKERS: Record<"cartEmpty" | "favoritesEmpty" | "noProducts" | "cherryCongrats", StickerConfig> = {
+export const STICKERS: Record<
+    "cartEmpty" | "favoritesEmpty" | "noProducts" | "cherryCongrats" | "orderHistoryEmpty",
+    StickerConfig
+> = {
     cartEmpty: {
         kind: "lottie",
         source: require("../assets/stickers/rabby-shop.json") as AnimationObject,
@@ -27,5 +30,9 @@ export const STICKERS: Record<"cartEmpty" | "favoritesEmpty" | "noProducts" | "c
     cherryCongrats: {
         kind: "lottie",
         source: require("../assets/stickers/cherry-congrats.json") as AnimationObject,
+    },
+    orderHistoryEmpty: {
+        kind: "lottie",
+        source: require("../assets/stickers/utya-shop.json") as AnimationObject,
     },
 }

@@ -1,6 +1,7 @@
 import sys
 import types
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -103,6 +104,15 @@ def _get_delivery_recipient_count(user_id: int) -> int:
     with Session(sync_engine) as session:
         stmt = select(DeliveryRecipient).where(DeliveryRecipient.user_id == user_id)
         return len(list(session.execute(stmt).scalars().all()))
+
+
+def _update_order_draft(draft_id: int, **fields) -> None:
+    with Session(sync_engine) as session:
+        draft = session.get(OrderDraft, draft_id)
+        assert draft is not None
+        for field, value in fields.items():
+            setattr(draft, field, value)
+        session.commit()
 
 
 def _build_pickup_payload() -> dict:
@@ -789,7 +799,7 @@ def test_get_order_draft_options_returns_previous_addresses_and_recipients(clien
     options_payload = options_response.json()
     assert len(options_payload["addresses"]) == 2
     assert len(options_payload["recipients"]) == 1
-    assert any(recipient["name"] == "Другой" and recipient["surname"] == "получатель" for recipient in options_payload["recipients"])
+    assert any(recipient["name"] == "Другой" and recipient["surname"] == "Получатель" for recipient in options_payload["recipients"])
 
 
 def test_update_order_draft_can_switch_address_and_save_new_checkout_details(client: TestClient, registered_user, variant_factory):
@@ -1053,3 +1063,64 @@ def test_get_order_draft_rejects_cross_user_access(client: TestClient, registere
     )
 
     assert forbidden_patch_response.status_code == 404, forbidden_patch_response.text
+
+
+def test_list_order_drafts_supports_offset_and_created_filters(
+    client: TestClient,
+    registered_user,
+    second_registered_user,
+    variant_factory,
+):
+    def create_draft(headers: dict[str, str], variant_id: int, quantity: int) -> dict:
+        add_item_response = client.post(
+            "/api/v1/users/me/basket/items",
+            headers=headers,
+            json={"variant_id": variant_id, "quantity": quantity},
+        )
+        assert add_item_response.status_code == 200, add_item_response.text
+
+        create_response = client.post(
+            "/api/v1/users/me/order-drafts",
+            headers=headers,
+            json=_build_pickup_payload(),
+        )
+        assert create_response.status_code == 201, create_response.text
+        return create_response.json()
+
+    first_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("12.00"))["variant_id"], 1)
+    second_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("14.00"))["variant_id"], 1)
+    third_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("16.00"))["variant_id"], 1)
+    other_user_draft = create_draft(second_registered_user["headers"], variant_factory(stock=5, price=Decimal("18.00"))["variant_id"], 1)
+
+    _update_order_draft(first_draft["id"], created_at=datetime(2026, 4, 10, 9, 0, tzinfo=timezone.utc))
+    _update_order_draft(second_draft["id"], created_at=datetime(2026, 4, 11, 9, 0, tzinfo=timezone.utc))
+    _update_order_draft(third_draft["id"], created_at=datetime(2026, 4, 12, 9, 0, tzinfo=timezone.utc))
+    _update_order_draft(other_user_draft["id"], created_at=datetime(2026, 4, 13, 9, 0, tzinfo=timezone.utc))
+
+    response = client.get(
+        "/api/v1/users/me/order-drafts",
+        headers=registered_user["headers"],
+        params={"limit": 10},
+    )
+    assert response.status_code == 200, response.text
+    assert [item["id"] for item in response.json()] == [third_draft["id"], second_draft["id"], first_draft["id"]]
+
+    paginated_response = client.get(
+        "/api/v1/users/me/order-drafts",
+        headers=registered_user["headers"],
+        params={"limit": 1, "offset": 1},
+    )
+    assert paginated_response.status_code == 200, paginated_response.text
+    assert [item["id"] for item in paginated_response.json()] == [second_draft["id"]]
+
+    dated_response = client.get(
+        "/api/v1/users/me/order-drafts",
+        headers=registered_user["headers"],
+        params={
+            "created_from": datetime(2026, 4, 11, 0, 0, tzinfo=timezone.utc).isoformat(),
+            "created_to": datetime(2026, 4, 11, 23, 59, tzinfo=timezone.utc).isoformat(),
+            "limit": 10,
+        },
+    )
+    assert dated_response.status_code == 200, dated_response.text
+    assert [item["id"] for item in dated_response.json()] == [second_draft["id"]]

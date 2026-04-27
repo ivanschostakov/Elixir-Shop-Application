@@ -11,6 +11,7 @@ import {
     Linking,
     Platform,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     View,
@@ -26,6 +27,8 @@ import {
 import { DeliveryCornerButton } from "@/components/delivery/delivery-corner-button"
 import { PickupPointFooterExtension } from "@/components/delivery/pickup-point-footer-extension"
 import { DeliverySearchPanel } from "@/components/delivery/delivery-search-panel"
+import { CountryFlag } from "@/components/country-flag/country-flag"
+import { COUNTRY_SELECTOR_CODES } from "@/components/country-flag/country-flag.consts"
 import { StickyFooterSurface } from "@/components/footer/sticky-footer"
 import { BACK_ARROW_PATH, MY_LOCATION_ICON_PATH } from "@/components/header/app-header.constants"
 import { CDEK_PICKUP_MARKER_OUTER_COLOR } from "@/components/maps/cdek-pickup-marker.constants"
@@ -37,7 +40,10 @@ import {
     setSelectedDeliveryAddress,
     useSelectedDeliveryAddress,
 } from "@/hooks/delivery/delivery-address-selection-store"
-import { useSelectedDeliveryCountry } from "@/hooks/delivery/delivery-country-selection-store"
+import {
+    setSelectedDeliveryCountry,
+    useSelectedDeliveryCountry,
+} from "@/hooks/delivery/delivery-country-selection-store"
 import {
     setSelectedDeliveryPoint,
     useSelectedDeliveryPoint,
@@ -62,6 +68,7 @@ import type {
     DeliveryPointProvider,
 } from "@/services/api/delivery.types"
 import { createOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
+import { initializeYandexMapKit } from "@/services/maps/yandex-mapkit"
 import {
     DOOR_DELIVERY_PROVIDER,
     DELIVERY_CAMERA_DURATIONS,
@@ -112,6 +119,8 @@ import {
 import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
+type MapKitStatus = "loading" | "ready" | "error"
+
 export default function DeliveryScreen() {
     const router = useRouter()
     const params = useLocalSearchParams<{ draftId?: string | string[]; syncBasket?: string | string[] }>()
@@ -152,6 +161,7 @@ export default function DeliveryScreen() {
     const [removedDeliveryPointKeys, setRemovedDeliveryPointKeys] = useState<Set<string>>(() => new Set())
     const [selectionError, setSelectionError] = useState<string | null>(null)
     const [pickupPointError, setPickupPointError] = useState<string | null>(null)
+    const [mapKitStatus, setMapKitStatus] = useState<MapKitStatus>("loading")
     const {
         hasUserLocation,
         requestUserLocation,
@@ -180,8 +190,10 @@ export default function DeliveryScreen() {
     )
     const isSearchActive = isSearchFocused
     const hasVisibleSearchFeedback = isLoading || Boolean(error) || results.length > 0
-    const isMapLoading = isDeliveryPointsLoading && deliveryPointMarkers.length === 0
-    const shouldRenderMap = true
+    const isMapKitInitializing = mapKitStatus === "loading"
+    const isMapKitReady = mapKitStatus === "ready"
+    const isMapLoading = isMapKitInitializing || (isDeliveryPointsLoading && deliveryPointMarkers.length === 0)
+    const shouldRenderMap = isMapKitReady
     const shouldFollowUser =
         hasUserLocation
         && selectedDeliveryCountry === null
@@ -198,7 +210,8 @@ export default function DeliveryScreen() {
         !hasVisibleSearchFeedback &&
         Boolean(isResolvingDoorAddress || doorDeliveryDraft || selectionError)
     const shouldShowDoorDeliveryMarker =
-        supportsDoorDelivery
+        isMapKitReady
+        && supportsDoorDelivery
         && !hasVisibleSearchFeedback
         && !shouldShowPickupFooterExtension
         && isDoorFooterExpanded
@@ -261,6 +274,28 @@ export default function DeliveryScreen() {
     }, [])
 
     useEffect(() => {
+        let isMounted = true
+
+        initializeYandexMapKit()
+            .then(() => {
+                if (isMounted) {
+                    setMapKitStatus("ready")
+                }
+            })
+            .catch((mapKitError) => {
+                console.error("[delivery] Failed to initialize Yandex MapKit.", mapKitError)
+
+                if (isMounted) {
+                    setMapKitStatus("error")
+                }
+            })
+
+        return () => {
+            isMounted = false
+        }
+    }, [])
+
+    useEffect(() => {
         setRemovedDeliveryPointKeys(new Set())
     }, [activeCountryCode])
 
@@ -281,6 +316,39 @@ export default function DeliveryScreen() {
             clearPendingDoorResolution()
         }
     }, [clearPendingDoorResolution])
+
+    const handleSelectDeliveryCountry = useCallback((countryCode: (typeof COUNTRY_SELECTOR_CODES)[number]) => {
+        if (selectedDeliveryCountry === countryCode) {
+            return
+        }
+
+        Keyboard.dismiss()
+        clearPendingDoorResolution()
+        setSelectedDeliveryCountry(countryCode)
+        setSelectedDeliveryAddress(null)
+        setSelectedDeliveryPoint(null)
+        setDoorDeliveryDraft(null)
+        setPickupPointDraft(null)
+        setIsDoorFooterExpanded(false)
+        setIsPickupFooterExpanded(false)
+        setSelectionError(null)
+        setPickupPointError(null)
+        setSearch("")
+        setSearchEnabled(true)
+        setIsSearchFocused(false)
+        setSearchFocusPoint(null)
+        clearResults()
+        lastFollowedUserPointRef.current = null
+        moveToRegion(
+            getDeliveryCountryViewport(countryCode).region,
+            DELIVERY_CAMERA_DURATIONS.country,
+        )
+    }, [
+        clearPendingDoorResolution,
+        clearResults,
+        moveToRegion,
+        selectedDeliveryCountry,
+    ])
 
     const getDoorDeliveryCameraRegion = useCallback(
         (point: Point) => {
@@ -891,6 +959,42 @@ export default function DeliveryScreen() {
                             onPress={handleGoBack}
                         />
 
+                        <View style={deliveryScreenStyles.topMapCountrySelectorWrap}>
+                            <ScrollView
+                                bounces={false}
+                                contentContainerStyle={deliveryScreenStyles.topMapCountrySelectorContent}
+                                horizontal
+                                keyboardShouldPersistTaps="handled"
+                                showsHorizontalScrollIndicator={false}
+                                style={deliveryScreenStyles.topMapCountrySelectorScroll}
+                            >
+                                {COUNTRY_SELECTOR_CODES.map((countryCode) => {
+                                    const isActive = activeCountryCode === countryCode
+
+                                    return (
+                                        <Pressable
+                                            key={countryCode}
+                                            accessibilityLabel={countryCode}
+                                            accessibilityRole="button"
+                                            onPress={() => {
+                                                handleSelectDeliveryCountry(countryCode)
+                                            }}
+                                            style={({ pressed }) => [
+                                                deliveryScreenStyles.countrySelectorButton,
+                                                !isActive && deliveryScreenStyles.countrySelectorButtonInactive,
+                                                pressed && deliveryScreenStyles.countrySelectorButtonPressed,
+                                            ]}
+                                        >
+                                            <CountryFlag
+                                                code={countryCode}
+                                                style={deliveryScreenStyles.countrySelectorFlag}
+                                            />
+                                        </Pressable>
+                                    )
+                                })}
+                            </ScrollView>
+                        </View>
+
                         <DeliveryCornerButton
                             accessibilityLabel={translate("nav.myLocation")}
                             iconPath={MY_LOCATION_ICON_PATH}
@@ -985,7 +1089,9 @@ export default function DeliveryScreen() {
                         <View style={deliveryScreenStyles.loadingCard}>
                             <ActivityIndicator color={colors.primary} size="large" />
                             <Text style={deliveryScreenStyles.loadingText}>
-                                {"Загружаем пункты выдачи"}
+                                {isMapKitInitializing
+                                    ? translate("delivery.initializingMap")
+                                    : "Загружаем пункты выдачи"}
                             </Text>
                         </View>
                     </View>
@@ -1077,6 +1183,12 @@ export default function DeliveryScreen() {
                         showUserPosition={hasUserLocation}
                         style={StyleSheet.absoluteFillObject}
                     />
+                ) : mapKitStatus === "error" ? (
+                    <View style={deliveryScreenStyles.mapFallback}>
+                        <Text style={deliveryScreenStyles.mapFallbackText}>
+                            {translate("delivery.mapUnavailable")}
+                        </Text>
+                    </View>
                 ) : null}
 
                 {shouldShowDoorDeliveryMarker ? (

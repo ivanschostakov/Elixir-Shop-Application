@@ -40,6 +40,7 @@ function mapUser(user: BackendAuthUser): AuthUser {
         email: user.email,
         name: user.name,
         surname: user.surname,
+        phoneNumber: user.phone_number,
         isActive: user.is_active,
         isVerified: user.is_verified,
         displayName: displayName || user.username,

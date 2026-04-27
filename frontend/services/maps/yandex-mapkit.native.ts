@@ -1,19 +1,19 @@
 import { Platform } from "react-native"
-import { Geocoder, YaMap } from "react-native-yamap"
 
 const MAPKIT_API_KEY = process.env.EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY?.trim()
-const GEOCODER_API_KEY = process.env.EXPO_PUBLIC_YANDEX_GEOCODER_API_KEY?.trim()
 
-let geocoderInitialized = false
 let initializationPromise: Promise<void> | null = null
 
-function initializeGeocoder() {
-    if (!GEOCODER_API_KEY || geocoderInitialized) {
-        return
+type YandexMapModule = typeof import("react-native-yamap")
+
+let yandexMapModulePromise: Promise<YandexMapModule> | null = null
+
+function getYandexMapModule() {
+    if (!yandexMapModulePromise) {
+        yandexMapModulePromise = import("react-native-yamap")
     }
 
-    Geocoder.init(GEOCODER_API_KEY)
-    geocoderInitialized = true
+    return yandexMapModulePromise
 }
 
 export function initializeYandexMapKit() {
@@ -22,20 +22,18 @@ export function initializeYandexMapKit() {
     }
 
     initializationPromise = (async () => {
+        if (Platform.OS === "ios") {
+            // iOS receives the MapKit key and lifecycle calls from AppDelegate.
+            return
+        }
+
         if (!MAPKIT_API_KEY) {
             throw new Error("Missing EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY.")
         }
 
-        // iOS receives the MapKit key from the Expo config plugin in AppDelegate.
-        if (Platform.OS === "android") {
-            await YaMap.init(MAPKIT_API_KEY)
-            await YaMap.resetLocale()
-        } else {
-            // iOS locale must be set before the first map render.
-            await YaMap.resetLocale()
-        }
-
-        initializeGeocoder()
+        const { YaMap } = await getYandexMapModule()
+        await YaMap.init(MAPKIT_API_KEY)
+        await YaMap.resetLocale()
     })().catch((error) => {
         initializationPromise = null
         throw error

@@ -13,6 +13,7 @@ class AuthUserRead(BaseModel):
     email: str
     name: str
     surname: str
+    phone_number: str | None = None
     is_active: bool
     is_verified: bool
 

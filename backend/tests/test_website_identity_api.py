@@ -132,16 +132,71 @@ def _website_payload(*, website_user_id: int, login: str, email: str, name: str 
             "personal_city": "Ufa",
             "date_register": "2026-04-01T12:00:00+05:00",
             "last_login": "2026-04-08T20:15:00+05:00",
-            "group_ids": [3, 7],
-            "group_names": ["Discount 5%", "VIP"],
-            "custom_fields": {"UF_PROMO": "WELCOME"},
+            "group_ids": [3, 33],
+            "group_names": ["Website Customers", "Заказы больше 100 т. р."],
+            "custom_fields": {
+                "UF_PROMO": "WELCOME",
+                "UF_PARENT_ID": "7",
+                "UF_PERCENT": "19",
+                "UF_ORDER_SUMM": "3060.33|RUB",
+            },
         },
         "discounts": {
-            "referral_program": {"promo_code": "WELCOME"},
-            "bonus_account": {"id": website_user_id, "balance": 125.5, "active": True},
-            "discount_groups": [{"id": 7, "name": "VIP"}],
-            "active_coupons": [{"coupon": "APRIL-10"}],
-            "recent_used_coupons": [{"coupon": "MARCH-5"}],
+            "referral_program": {
+                "promo_code": "WELCOME",
+                "parent_user_id": 7,
+                "percent": 19,
+                "order_sum": {"raw": "3060.33|RUB", "amount": 3060.33, "currency": "RUB"},
+            },
+            "referral_tier": {"group_id": 33, "group_name": "Заказы больше 100 т. р."},
+            "bonus_account": {
+                "id": website_user_id,
+                "user_id": website_user_id,
+                "balance": 125.5,
+                "currency": "RUB",
+                "active": True,
+                "date_create": "2026-04-01T12:00:00+05:00",
+            },
+            "personal_discounts": [
+                {
+                    "id": 7,
+                    "source_kind": "group",
+                    "name": "VIP",
+                    "discount_type": "percent",
+                    "discount_value": 5.0,
+                    "currency": "RUB",
+                    "priority": 10,
+                    "is_stackable": False,
+                    "is_active": True,
+                }
+            ],
+            "discount_groups": [{"id": 33, "name": "Заказы больше 100 т. р."}],
+            "active_coupons": [
+                {
+                    "id": website_user_id + 5000,
+                    "coupon": "APRIL-10",
+                    "max_use": 1,
+                    "use_count": 0,
+                    "discount": {
+                        "id": 901,
+                        "name": "April 10%",
+                        "discount_type": "percent",
+                        "discount_value": 10.0,
+                        "value": 10.0,
+                        "currency": "RUB",
+                    },
+                }
+            ],
+            "recent_used_coupons": [
+                {
+                    "coupon": "MARCH-5",
+                    "discount_id": 902,
+                    "discount_name": "March 5",
+                    "discount_type": "fixed_amount",
+                    "discount_value": 5.0,
+                    "currency": "RUB",
+                }
+            ],
         },
     }
 
@@ -175,13 +230,18 @@ def test_link_my_website_identity_creates_link_and_syncs_user(client: TestClient
     assert payload["website_user_id"] == website_user_id
     assert payload["website_login"] == "linked-site-user"
     assert payload["website_email"] == website_data["user"]["email"]
-    assert payload["group_ids"] == [3, 7]
-    assert payload["discount_groups"] == [{"id": 7, "name": "VIP"}]
-    assert payload["active_coupons"] == [{"coupon": "APRIL-10"}]
+    assert payload["group_ids"] == [3, 33]
+    assert payload["discount_groups"] == [{"id": 33, "name": "Заказы больше 100 т. р."}]
+    assert payload["active_coupons"][0]["coupon"] == "APRIL-10"
     assert payload["referral_profile"]["own_promo_code"] == "WELCOME"
+    assert payload["referral_profile"]["tier_group_id"] == 33
+    assert payload["referral_profile"]["tier_group_name"] == "Заказы больше 100 т. р."
     assert payload["bonus_account_snapshot"]["website_bonus_account_external_id"] == website_user_id
+    assert payload["bonus_account_snapshot"]["currency"] == "RUB"
     assert payload["discount_entitlements"][0]["source_name"] == "VIP"
     assert payload["coupon_snapshots"][0]["coupon_code"] == "APRIL-10"
+    assert payload["coupon_snapshots"][0]["discount_type"] == "percent"
+    assert payload["coupon_snapshots"][0]["discount_value"] == 10.0
 
     get_response = client.get("/api/v1/users/me/website-identity", headers=registered_user["headers"])
     assert get_response.status_code == 200, get_response.text
@@ -227,8 +287,10 @@ def test_website_login_creates_local_user_and_identity(client: TestClient, monke
         assert payload["website_identity"]["user_id"] == user_id
         assert payload["website_identity"]["website_user_id"] == website_user_id
         assert payload["website_identity"]["website_login"] == f"site-login-{website_user_id}"
-        assert payload["website_identity"]["bonus_account"] == {"id": website_user_id, "balance": 125.5, "active": True}
+        assert payload["website_identity"]["bonus_account"]["id"] == website_user_id
+        assert payload["website_identity"]["bonus_account"]["currency"] == "RUB"
         assert payload["website_identity"]["bonus_account_snapshot"]["balance"] == 125.5
+        assert payload["website_identity"]["bonus_account_snapshot"]["currency"] == "RUB"
         assert payload["website_identity"]["coupon_snapshots"][0]["coupon_code"] == "APRIL-10"
         assert payload["access_token"]
         assert payload["refresh_token"]
@@ -248,15 +310,26 @@ def test_relink_preserves_snapshot_row_ids_and_marks_missing_rows_inactive(
         name="Stable",
         surname="Snapshot",
     )
-    first_payload["discounts"]["discount_groups"] = [{"id": 7, "name": "VIP", "discount_percent": 5.0}]
+    first_payload["discounts"]["personal_discounts"] = [
+        {
+            "id": 7,
+            "source_kind": "group",
+            "name": "VIP",
+            "discount_type": "percent",
+            "discount_value": 5.0,
+            "currency": "RUB",
+            "priority": 10,
+            "is_stackable": False,
+            "is_active": True,
+        }
+    ]
     first_payload["discounts"]["active_coupons"] = [
         {
             "id": website_user_id + 100,
             "coupon": "APRIL-10",
-            "discount_type": "percent",
             "max_use": 3,
             "use_count": 0,
-            "discount": {"id": 901, "name": "April 10%", "value": 10.0},
+            "discount": {"id": 901, "name": "April 10%", "discount_type": "percent", "discount_value": 10.0, "value": 10.0},
         }
     ]
 
@@ -288,15 +361,14 @@ def test_relink_preserves_snapshot_row_ids_and_marks_missing_rows_inactive(
         name="Stable",
         surname="Snapshot",
     )
-    second_payload["discounts"]["discount_groups"] = []
+    second_payload["discounts"]["personal_discounts"] = []
     second_payload["discounts"]["active_coupons"] = [
         {
             "id": website_user_id + 100,
             "coupon": "APRIL-10",
-            "discount_type": "percent",
             "max_use": 3,
             "use_count": 1,
-            "discount": {"id": 901, "name": "April 10%", "value": 10.0},
+            "discount": {"id": 901, "name": "April 10%", "discount_type": "percent", "discount_value": 10.0, "value": 10.0},
         }
     ]
     second_payload["discounts"]["recent_used_coupons"] = [
@@ -304,7 +376,10 @@ def test_relink_preserves_snapshot_row_ids_and_marks_missing_rows_inactive(
             "id": website_user_id + 101,
             "coupon": "MARCH-5",
             "discount_type": "fixed_amount",
-            "discount": {"id": 902, "name": "March 5", "value": 5.0, "currency": "RUB"},
+            "discount_id": 902,
+            "discount_name": "March 5",
+            "discount_value": 5.0,
+            "currency": "RUB",
         }
     ]
 
@@ -334,6 +409,70 @@ def test_relink_preserves_snapshot_row_ids_and_marks_missing_rows_inactive(
     assert stale_entitlement["id"] == first_entitlement["id"]
     assert stale_entitlement["is_active"] is False
     assert used_coupon["is_active"] is False
+
+
+def test_link_website_identity_handles_empty_custom_fields_and_defaults_bonus_currency(
+    client: TestClient, registered_user, monkeypatch: pytest.MonkeyPatch
+):
+    website_user_id = 91000 + (uuid.uuid4().int % 1000000)
+    website_data = _website_payload(
+        website_user_id=website_user_id,
+        login="empty-fields-site-user",
+        email=f"empty_fields_{uuid.uuid4().hex[:8]}@example.com",
+    )
+    website_data["user"]["custom_fields"] = []
+    website_data["discounts"]["referral_program"] = {"promo_code": "WELCOME"}
+    website_data["discounts"]["bonus_account"] = {"id": website_user_id, "balance": 125.5, "active": True}
+
+    async def fake_authenticate(*, login: str, password: str) -> dict:
+        assert login == "site-login"
+        assert password == "site-password"
+        return website_data
+
+    monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
+
+    response = client.post(
+        "/api/v1/users/me/website-identity/link",
+        headers=registered_user["headers"],
+        json={"login": "site-login", "password": "site-password"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["custom_fields"] == {}
+    assert payload["referral_profile"]["own_promo_code"] == "WELCOME"
+    assert payload["bonus_account_snapshot"]["currency"] == "RUB"
+
+
+def test_link_website_identity_keeps_referral_tier_informational_without_personal_discount(
+    client: TestClient, registered_user, monkeypatch: pytest.MonkeyPatch
+):
+    website_user_id = 91000 + (uuid.uuid4().int % 1000000)
+    website_data = _website_payload(
+        website_user_id=website_user_id,
+        login="tier-only-site-user",
+        email=f"tier_only_{uuid.uuid4().hex[:8]}@example.com",
+    )
+    website_data["discounts"]["personal_discounts"] = []
+
+    async def fake_authenticate(*, login: str, password: str) -> dict:
+        assert login == "site-login"
+        assert password == "site-password"
+        return website_data
+
+    monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
+
+    response = client.post(
+        "/api/v1/users/me/website-identity/link",
+        headers=registered_user["headers"],
+        json={"login": "site-login", "password": "site-password"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["referral_profile"]["tier_group_id"] == 33
+    assert payload["referral_profile"]["tier_group_name"] == "Заказы больше 100 т. р."
+    assert payload["discount_entitlements"] == []
 
 
 def test_link_website_identity_rolls_back_when_relationship_sync_fails(

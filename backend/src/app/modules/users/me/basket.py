@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
+from src.app.services.recommendations import record_cart_add
 from src.app.services.basket import _ensure_basket, _get_serialized_basket, _get_variant_for_update, restore_order_draft_to_basket
 from src.database import get_db
 from src.database.crud import clear_basket, create_basket_item, delete_basket_item, get_basket_item_by_id, update_basket_item
@@ -48,6 +49,12 @@ async def create_my_basket_item(
         quantity=payload.quantity,
         price=variant.price,
     )
+    await record_cart_add(
+        db,
+        user_id=current_user.id,
+        product_id=variant.product_id,
+        quantity=payload.quantity,
+    )
     return await _get_serialized_basket(request, db, current_user.id)
 
 
@@ -70,6 +77,7 @@ async def update_my_basket_item(
     if payload.quantity > variant.stock:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
 
+    quantity_delta = payload.quantity - basket_item.quantity
     await update_basket_item(
         db,
         basket_item,
@@ -79,6 +87,13 @@ async def update_my_basket_item(
         quantity=payload.quantity,
         price=variant.price,
     )
+    if quantity_delta > 0:
+        await record_cart_add(
+            db,
+            user_id=current_user.id,
+            product_id=variant.product_id,
+            quantity=quantity_delta,
+        )
     return await _get_serialized_basket(request, db, current_user.id)
 
 

@@ -10,7 +10,9 @@ export const ROUTES = {
     favorites: "/favorites",
     register: "/register",
     login: "/login",
+    payment: "/payment",
     profile: "/profile",
+    profileHistory: "/profile-history",
     websiteAccount: "/website-account",
 } as const
 
@@ -23,7 +25,9 @@ const headerTitleKeys: Record<string, TranslationKey> = {
     [ROUTES.checkout]: "route.checkout",
     [ROUTES.delivery]: "route.delivery",
     [ROUTES.favorites]: "route.favorites",
+    [ROUTES.payment]: "route.payment",
     [ROUTES.profile]: "route.profile",
+    [ROUTES.profileHistory]: "route.profileHistory",
     [ROUTES.websiteAccount]: "route.websiteAccount",
 }
 

@@ -1,8 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.database.limits import EMAIL_MAX_LENGTH, PERSON_NAME_MAX_LENGTH, WEBSITE_PHONE_MAX_LENGTH
+from src.normalize import normalize_person_name
 
 
 class DeliveryRecipientBase(BaseModel):
@@ -11,6 +12,14 @@ class DeliveryRecipientBase(BaseModel):
     surname: str = Field(min_length=1, max_length=PERSON_NAME_MAX_LENGTH)
     phone: str = Field(default="", max_length=WEBSITE_PHONE_MAX_LENGTH)
     email: str = Field(default="", max_length=EMAIL_MAX_LENGTH)
+
+    @field_validator("name", "surname")
+    @classmethod
+    def _normalize_name_parts(cls, value: str) -> str:
+        normalized = normalize_person_name(value, max_length=PERSON_NAME_MAX_LENGTH)
+        if normalized is None:
+            raise ValueError("Name fields must not be empty")
+        return normalized
 
 
 class DeliveryRecipientCreate(DeliveryRecipientBase):

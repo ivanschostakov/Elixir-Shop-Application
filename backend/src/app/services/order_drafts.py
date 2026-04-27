@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
@@ -50,7 +51,7 @@ from src.database.schemas import (
     OrderDraftUpdate,
 )
 from src.product_media import build_products_media_url
-from src.normalize import fit_text, optional_str
+from src.normalize import fit_text, normalize_person_name, optional_str
 
 
 def _checkout_conflict(detail: str | dict[str, Any]) -> HTTPException:
@@ -68,7 +69,7 @@ def _build_image_url(request: Request, *, product: Product | None, variant: Vari
 
 
 def _normalize_required_recipient_text(value: str | None, *, max_length: int, field_name: str) -> str:
-    normalized = fit_text(optional_str(value), max_length)
+    normalized = normalize_person_name(value, max_length=max_length)
     if normalized is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{field_name} is required")
     return normalized
@@ -585,8 +586,23 @@ async def get_latest_order_draft_for_checkout(session: AsyncSession, *, user_id:
     return await get_latest_order_draft_for_user(session, user_id)
 
 
-async def get_recent_order_drafts_for_user(session: AsyncSession, *, user_id: int, limit: int = 10) -> list[OrderDraft]:
-    return await get_order_drafts_for_user(session, user_id, limit=limit)
+async def get_recent_order_drafts_for_user(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    limit: int = 10,
+    offset: int = 0,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> list[OrderDraft]:
+    return await get_order_drafts_for_user(
+        session,
+        user_id,
+        limit=limit,
+        offset=offset,
+        created_from=created_from,
+        created_to=created_to,
+    )
 
 
 async def delete_order_draft_for_user(session: AsyncSession, *, user_id: int, draft_id: int) -> bool:

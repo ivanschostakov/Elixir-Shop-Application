@@ -6,7 +6,7 @@ import { ImageCarouselStyles } from "./image-carousel.styles"
 import { useLoopedCarousel } from "./image-carousel.hooks"
 import type { ImageCarouselProps } from "./image-carousel.types"
 
-export default function ImageCarousel({ products }: ImageCarouselProps) {
+export default function ImageCarousel({ products, edgeInset }: ImageCarouselProps) {
     const router = useRouter()
 
     const {
@@ -14,7 +14,7 @@ export default function ImageCarousel({ products }: ImageCarouselProps) {
         snapOffsets,
         products: visibleProducts,
         viewportWidth,
-    } = useLoopedCarousel(products)
+    } = useLoopedCarousel(products, edgeInset)
 
     return (
         <ScrollView

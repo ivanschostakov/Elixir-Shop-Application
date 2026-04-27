@@ -16,9 +16,13 @@ export function EmptyState({
     onPressAction,
     sticker,
     illustration,
+    variant = "card",
+    actionVariant = "button",
 }: EmptyStateProps) {
     const { width: windowWidth } = useWindowDimensions()
-    const illustrationSize = getIllustrationSize(windowWidth)
+    const illustrationSize = variant === "plain"
+        ? Math.max(getIllustrationSize(windowWidth), 180)
+        : getIllustrationSize(windowWidth)
     const isDesktop = windowWidth >= WEB_BREAKPOINTS.md
 
     return (
@@ -26,8 +30,12 @@ export function EmptyState({
             style={[
                 contentStyles.emptyState,
                 emptyStateWebStyles.webEmptyState,
-                isDesktop && emptyStateWebStyles.webEmptyStateDesktop,
-                sticker ? contentStyles.emptyStateBorderless : null,
+                isDesktop && variant !== "plain" && emptyStateWebStyles.webEmptyStateDesktop,
+                variant === "plain"
+                    ? contentStyles.emptyStatePlain
+                    : sticker
+                        ? contentStyles.emptyStateBorderless
+                        : null,
             ]}
         >
             {illustration ? (
@@ -52,8 +60,8 @@ export function EmptyState({
                 </View>
             ) : null}
             {eyebrow ? <Text style={contentStyles.emptyStateEyebrow}>{eyebrow}</Text> : null}
-            <Text style={contentStyles.emptyStateTitle}>{title}</Text>
-            <Text style={contentStyles.emptyStateDescription}>{description}</Text>
+            {title ? <Text style={contentStyles.emptyStateTitle}>{title}</Text> : null}
+            {description ? <Text style={contentStyles.emptyStateDescription}>{description}</Text> : null}
 
             {actionLabel && onPressAction ? (
                 <Pressable
@@ -61,11 +69,21 @@ export function EmptyState({
                     accessibilityRole="button"
                     onPress={onPressAction}
                     style={({ pressed }) => [
-                        contentStyles.emptyStateAction,
+                        actionVariant === "link"
+                            ? contentStyles.emptyStateActionLink
+                            : contentStyles.emptyStateAction,
                         pressed && contentStyles.emptyStateActionPressed,
                     ]}
                 >
-                    <Text style={contentStyles.emptyStateActionText}>{actionLabel}</Text>
+                    <Text
+                        style={
+                            actionVariant === "link"
+                                ? contentStyles.emptyStateActionLinkText
+                                : contentStyles.emptyStateActionText
+                        }
+                    >
+                        {actionLabel}
+                    </Text>
                 </Pressable>
             ) : null}
         </View>

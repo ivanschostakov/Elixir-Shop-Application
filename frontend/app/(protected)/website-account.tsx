@@ -1,5 +1,7 @@
-import ProfileWebsiteLinkScreen from "@/screens/profile/profile-website-link-screen"
+import { Redirect } from "expo-router"
+
+import { ROUTES } from "@/constants/routes"
 
 export default function WebsiteAccountRoute() {
-    return <ProfileWebsiteLinkScreen />
+    return <Redirect href={ROUTES.profile} />
 }

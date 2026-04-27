@@ -2,6 +2,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api/client"
 import { latestOrderDraftEndpoint, orderDraftOptionsEndpoint, orderDraftsEndpoint } from "@/services/api/order-drafts.constants"
 import type {
     CreateOrderDraftPayload,
+    GetOrderDraftsQuery,
     OrderDraftCheckoutOptionsRead,
     OrderDraftRead,
     UpdateOrderDraftPayload,
@@ -11,8 +12,8 @@ export function createOrderDraft(payload: CreateOrderDraftPayload): Promise<Orde
     return apiPost<OrderDraftRead, CreateOrderDraftPayload>(orderDraftsEndpoint, payload)
 }
 
-export function getOrderDrafts(limit = 6): Promise<OrderDraftRead[]> {
-    return apiGet<OrderDraftRead[]>(orderDraftsEndpoint, { limit })
+export function getOrderDrafts(query: GetOrderDraftsQuery = {}): Promise<OrderDraftRead[]> {
+    return apiGet<OrderDraftRead[]>(orderDraftsEndpoint, query)
 }
 
 export function getLatestOrderDraft(): Promise<OrderDraftRead> {

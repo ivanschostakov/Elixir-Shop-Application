@@ -12,12 +12,18 @@ export function EmptyState({
     onPressAction,
     sticker,
     illustration,
+    variant = "card",
+    actionVariant = "button",
 }: EmptyStateProps) {
     return (
         <View
             style={[
                 contentStyles.emptyState,
-                sticker ? contentStyles.emptyStateBorderless : null,
+                variant === "plain"
+                    ? contentStyles.emptyStatePlain
+                    : sticker
+                        ? contentStyles.emptyStateBorderless
+                        : null,
             ]}
         >
             {illustration ? (
@@ -28,19 +34,25 @@ export function EmptyState({
                         autoPlay
                         loop
                         source={sticker.source}
-                        style={contentStyles.emptyStateIllustration}
+                        style={[
+                            contentStyles.emptyStateIllustration,
+                            variant === "plain" && contentStyles.emptyStateIllustrationLarge,
+                        ]}
                     />
                 ) : (
                     <Image
                         source={sticker.source}
-                        style={contentStyles.emptyStateIllustration}
+                        style={[
+                            contentStyles.emptyStateIllustration,
+                            variant === "plain" && contentStyles.emptyStateIllustrationLarge,
+                        ]}
                         resizeMode="contain"
                     />
                 )
             ) : null}
             {eyebrow ? <Text style={contentStyles.emptyStateEyebrow}>{eyebrow}</Text> : null}
-            <Text style={contentStyles.emptyStateTitle}>{title}</Text>
-            <Text style={contentStyles.emptyStateDescription}>{description}</Text>
+            {title ? <Text style={contentStyles.emptyStateTitle}>{title}</Text> : null}
+            {description ? <Text style={contentStyles.emptyStateDescription}>{description}</Text> : null}
 
             {actionLabel && onPressAction ? (
                 <Pressable
@@ -48,11 +60,21 @@ export function EmptyState({
                     accessibilityRole="button"
                     onPress={onPressAction}
                     style={({ pressed }) => [
-                        contentStyles.emptyStateAction,
+                        actionVariant === "link"
+                            ? contentStyles.emptyStateActionLink
+                            : contentStyles.emptyStateAction,
                         pressed && contentStyles.emptyStateActionPressed,
                     ]}
                 >
-                    <Text style={contentStyles.emptyStateActionText}>{actionLabel}</Text>
+                    <Text
+                        style={
+                            actionVariant === "link"
+                                ? contentStyles.emptyStateActionLinkText
+                                : contentStyles.emptyStateActionText
+                        }
+                    >
+                        {actionLabel}
+                    </Text>
                 </Pressable>
             ) : null}
         </View>

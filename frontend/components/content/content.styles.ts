@@ -7,6 +7,55 @@ export const contentStyles = StyleSheet.create({
     railSection: {
         gap: spacing.md,
     },
+    railGrid: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: spacing.sm,
+        paddingHorizontal: spacing.md,
+    },
+    railGridDiscover: {
+        gap: spacing.sm,
+    },
+    railGridDiscoverRow: {
+        backgroundColor: colors.surface,
+        borderRadius: 28,
+        flexDirection: "row",
+        justifyContent: "space-between",
+        overflow: "hidden",
+        width: "100%",
+    },
+    railGridDiscoverMergedCard: {
+        backgroundColor: colors.surface,
+        borderRadius: 28,
+        overflow: "hidden",
+        width: "100%",
+    },
+    railGridDiscoverMergedHeader: {
+        paddingBottom: spacing.sm,
+        paddingTop: spacing.md,
+    },
+    railGridDiscoverMergedFirstRow: {
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+    },
+    railGridDiscoverItem: {
+        flex: 1,
+    },
+    railGridDiscoverSpacer: {
+        flex: 1,
+    },
+    railGridDiscoverCard: {
+        borderRadius: 0,
+        overflow: "visible",
+    },
+    railGridItem: {
+        width: "47.5%",
+    },
+    railLoaderWrap: {
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 48,
+    },
     sectionHeader: {
         alignItems: "flex-end",
         flexDirection: "row",
@@ -96,7 +145,7 @@ export const contentStyles = StyleSheet.create({
     browseSectionCompact: {
         flex: 1,
         flexShrink: 1,
-        gap: spacing.xs,
+        gap: 2,
         minWidth: 112,
     },
     browseSectionCompactEnd: {
@@ -106,9 +155,9 @@ export const contentStyles = StyleSheet.create({
     },
     browseSectionLabel: {
         color: "#6f7e8f",
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: "700",
-        letterSpacing: 1.2,
+        letterSpacing: 1,
         textTransform: "uppercase",
     },
     browseSectionLabelEnd: {
@@ -116,9 +165,9 @@ export const contentStyles = StyleSheet.create({
     },
     browseTrigger: {
         alignSelf: "flex-start",
-        borderBottomColor: "#d7e3ec",
-        borderBottomWidth: 2,
-        paddingBottom: 6,
+        borderBottomColor: "transparent",
+        borderBottomWidth: 0,
+        paddingBottom: 0,
     },
     browseTriggerEnd: {
         alignSelf: "flex-end",
@@ -127,11 +176,11 @@ export const contentStyles = StyleSheet.create({
         opacity: 0.72,
     },
     browseTriggerActive: {
-        borderBottomColor: colors.primary,
+        borderBottomColor: "transparent",
     },
     browseTriggerValue: {
         color: colors.text,
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: "700",
     },
     browseTriggerValueActive: {
@@ -378,10 +427,21 @@ export const contentStyles = StyleSheet.create({
     emptyStateBorderless: {
         borderWidth: 0,
     },
+    emptyStatePlain: {
+        backgroundColor: "transparent",
+        borderWidth: 0,
+        marginHorizontal: 0,
+        paddingHorizontal: 0,
+        paddingVertical: 0,
+    },
     emptyStateIllustration: {
         height: 132,
         marginBottom: spacing.xs,
         width: 132,
+    },
+    emptyStateIllustrationLarge: {
+        height: 180,
+        width: 180,
     },
     emptyStateIllustrationWrap: {
         alignItems: "center",
@@ -421,6 +481,17 @@ export const contentStyles = StyleSheet.create({
     },
     emptyStateActionText: {
         color: "#ffffff",
+        fontSize: 15,
+        fontWeight: "700",
+    },
+    emptyStateActionLink: {
+        alignItems: "center",
+        justifyContent: "center",
+        marginTop: spacing.xs,
+        minHeight: 28,
+    },
+    emptyStateActionLinkText: {
+        color: colors.primary,
         fontSize: 15,
         fontWeight: "700",
     },

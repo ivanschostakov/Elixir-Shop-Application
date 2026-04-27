@@ -6,6 +6,7 @@ from .product import (
     get_product_by_sku,
     get_product_by_system_id,
     get_products,
+    get_similar_products,
     update_product,
 )
 from .product_category import (

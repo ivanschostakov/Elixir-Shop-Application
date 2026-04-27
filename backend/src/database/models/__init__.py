@@ -1,4 +1,5 @@
 from .auth.user import User
+from .auth.user_push_token import UserPushToken
 from .auth.user_session import UserSession
 from .basket.basket import Basket
 from .basket.basket_item import BasketItem
@@ -17,6 +18,10 @@ from .delivery.yandex_pickup_address import YandexPickupAddress
 from .favorites.favoured_product import FavouredProduct
 from .orders.draft import OrderDraft
 from .orders.draft_items import OrderDraftItem
+from .orders.order import Order
+from .orders.order_item import OrderItem
+from .recommendations.user_category_recommendation_signal import UserCategoryRecommendationSignal
+from .recommendations.user_product_recommendation_signal import UserProductRecommendationSignal
 from .website.website_bonus_account import WebsiteBonusAccount
 from .website.website_coupon import WebsiteCoupon
 from .website.website_discount_entitlement import WebsiteDiscountEntitlement
@@ -36,11 +41,16 @@ __all__ = [
     "FavouredProduct",
     "OrderDraft",
     "OrderDraftItem",
+    "Order",
+    "OrderItem",
     "OrderBenefitApplication",
     "Product",
     "ProductCategory",
     "ProductByCategory",
+    "UserCategoryRecommendationSignal",
+    "UserProductRecommendationSignal",
     "User",
+    "UserPushToken",
     "UserSession",
     "Variant",
     "WebsiteBonusAccount",

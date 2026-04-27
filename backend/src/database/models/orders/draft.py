@@ -44,6 +44,7 @@ class OrderDraft(Base, IdPkMixin, TimestampMixin):
     user: Mapped["User"] = relationship(back_populates="order_drafts")
     delivery_address: Mapped["DeliveryAddress | None"] = relationship(back_populates="drafts")
     recipient: Mapped["DeliveryRecipient | None"] = relationship(back_populates="drafts")
+    orders: Mapped[list["Order"]] = relationship(back_populates="draft", passive_deletes="all")
     items: Mapped[list["OrderDraftItem"]] = relationship(
         back_populates="draft",
         cascade="all, delete-orphan",

@@ -47,17 +47,16 @@ export default function FavoritesScreen() {
     if (!isProductsTab) {
         return (
             <CatalogTemplate style={favoritesScreenStyles.screen}>
-                <ScrollView
-                    contentContainerStyle={favoritesScreenStyles.stateContent}
-                    showsVerticalScrollIndicator={false}
-                >
+                <View style={favoritesScreenStyles.emptyContent}>
                     <EmptyState
+                        actionVariant="link"
                         sticker={STICKERS.favoritesEmpty}
-                        eyebrow={t("common.articles")}
-                        title={t("favorites.articlesEmptyTitle")}
                         description={t("favorites.articlesEmptyDescription")}
+                        actionLabel={t("favorites.openCatalog")}
+                        onPressAction={() => router.push(ROUTES.discover)}
+                        variant="plain"
                     />
-                </ScrollView>
+                </View>
             </CatalogTemplate>
         )
     }
@@ -101,12 +100,12 @@ export default function FavoritesScreen() {
             <CatalogTemplate style={favoritesScreenStyles.emptyContainer}>
                 <View style={favoritesScreenStyles.emptyContent}>
                     <EmptyState
+                        actionVariant="link"
                         sticker={STICKERS.favoritesEmpty}
-                        eyebrow={t("favorites.productsTab")}
-                        title={t("favorites.emptyMessage")}
-                        description={t("favorites.subtitle")}
-                        actionLabel={t("home.heroPrimaryCta")}
+                        description={t("favorites.emptyDescription")}
+                        actionLabel={t("favorites.openCatalog")}
                         onPressAction={() => router.push(ROUTES.discover)}
+                        variant="plain"
                     />
                 </View>
             </CatalogTemplate>

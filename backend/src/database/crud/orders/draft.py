@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -76,14 +78,29 @@ async def get_latest_order_draft_for_user(session: AsyncSession, user_id: int) -
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_order_drafts_for_user(session: AsyncSession, user_id: int, *, limit: int | None = 10) -> list[OrderDraft]:
+async def get_order_drafts_for_user(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    limit: int | None = 10,
+    offset: int = 0,
+    created_from: datetime | None = None,
+    created_to: datetime | None = None,
+) -> list[OrderDraft]:
     stmt = (
         select(OrderDraft)
         .options(*_order_draft_load_options())
         .where(OrderDraft.user_id == user_id)
         .order_by(OrderDraft.created_at.desc(), OrderDraft.id.desc())
+        .offset(offset)
         .execution_options(populate_existing=True)
     )
+
+    if created_from is not None:
+        stmt = stmt.where(OrderDraft.created_at >= created_from)
+
+    if created_to is not None:
+        stmt = stmt.where(OrderDraft.created_at <= created_to)
 
     if limit is not None:
         stmt = stmt.limit(limit)

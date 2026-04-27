@@ -29,11 +29,20 @@ class User(Base, IdPkMixin, TimestampMixin):
 
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     phone_number: Mapped[str | None] = mapped_column(String(length=PHONE_NUMBER_MAX_LENGTH), nullable=True)
+    contact_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     website_identity: Mapped["WebsiteIdentity | None"] = relationship(back_populates="user", cascade="all, delete-orphan", uselist=False)
-    delivery_addresses: Mapped[list["DeliveryAddress"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    delivery_recipients: Mapped[list["DeliveryRecipient"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    delivery_addresses: Mapped[list["DeliveryAddress"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    delivery_recipients: Mapped[list["DeliveryRecipient"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     cdek_pickup_addresses: Mapped[list["CdekPickupAddress"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     yandex_pickup_addresses: Mapped[list["YandexPickupAddress"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     cdek_door_addresses: Mapped[list["CdekDoorAddress"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -41,6 +50,8 @@ class User(Base, IdPkMixin, TimestampMixin):
     basket: Mapped["Basket | None"] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True, uselist=False)
     basket_items: Mapped[list["BasketItem"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
     order_drafts: Mapped[list["OrderDraft"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    orders: Mapped[list["Order"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    push_tokens: Mapped[list["UserPushToken"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
     app_promos_created: Mapped[list["AppPromo"]] = relationship(back_populates="created_by")
     order_benefit_applications: Mapped[list["OrderBenefitApplication"]] = relationship(back_populates="user")
     business_ledger_entries: Mapped[list["BusinessLedgerEntry"]] = relationship(back_populates="user")

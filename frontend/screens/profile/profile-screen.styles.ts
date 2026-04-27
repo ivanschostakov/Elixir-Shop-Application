@@ -391,6 +391,40 @@ export const ProfileScreenStyles = StyleSheet.create({
         fontSize: 14,
         fontWeight: "700",
     },
+    historyCardButton: {
+        borderRadius: spacing.lg,
+        overflow: "hidden",
+    },
+    historyCardButtonPressed: {
+        opacity: 0.88,
+        transform: [{ scale: 0.99 }],
+    },
+    historyCardHeader: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: spacing.md,
+        justifyContent: "space-between",
+    },
+    historyCardCopy: {
+        flex: 1,
+        gap: spacing.xs,
+    },
+    historyCardTitle: {
+        color: colors.text,
+        fontSize: 20,
+        fontWeight: "800",
+    },
+    historyCardSubtitle: {
+        color: colors.mutedText,
+        fontSize: 14,
+        lineHeight: 22,
+    },
+    historyCardArrow: {
+        color: colors.primary,
+        fontSize: 24,
+        fontWeight: "700",
+        lineHeight: 24,
+    },
     signOutButton: {
         minHeight: 50,
         borderRadius: 16,

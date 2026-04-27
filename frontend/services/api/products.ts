@@ -18,6 +18,11 @@ export type GetProductsOptions = {
     sort?: ProductApiSort
 }
 
+export type GetSimilarProductsOptions = {
+    limit?: number
+    offset?: number
+}
+
 export function getProducts({
     categoryId,
     q,
@@ -38,6 +43,16 @@ export function getProducts({
 
 export function getProduct(productId: number): Promise<ProductWithVariantsRead> {
     return apiGet<ProductWithVariantsRead>(`${ENDPOINTS.PRODUCTS}/${productId}`)
+}
+
+export function getSimilarProducts(
+    productId: number,
+    { limit, offset }: GetSimilarProductsOptions = {},
+): Promise<ProductWithVariantsRead[]> {
+    return apiGet<ProductWithVariantsRead[]>(`${ENDPOINTS.PRODUCTS}/${productId}/similar`, {
+        limit,
+        offset,
+    })
 }
 
 export function createProduct(data: ProductCreate): Promise<ProductWithVariantsRead> {

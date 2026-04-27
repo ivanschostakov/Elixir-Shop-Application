@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, FlatList, Platform, View, useWindowDimensions } from "react-native"
 import { useLocalSearchParams } from "expo-router"
 
@@ -12,6 +12,7 @@ import type { ProductBrowseSort } from "@/hooks/products/product-browse"
 import { useInfiniteProductCatalog } from "@/hooks/products/use-infinite-product-catalog"
 import { useProductCategories } from "@/hooks/products/use-product-categories"
 import { useLanguage } from "@/providers/language-provider"
+import { trackRecommendationCategoryView } from "@/services/api/recommendations"
 import { discoverScreenStyles } from "@/screens/discover/discover-screen.styles"
 import { colors } from "@/theme/colors"
 
@@ -33,6 +34,7 @@ export default function DiscoverScreen() {
     const isTablet = isWeb && windowWidth >= 760
     const [categoryId, setCategoryId] = useState<number | null>(() => discoverBrowseMemory.categoryId)
     const [sort, setSort] = useState<ProductBrowseSort>(() => discoverBrowseMemory.sort)
+    const trackedCategoryIdRef = useRef<number | null>(null)
     const { categories } = useProductCategories(isProductsTab)
     const {
         products: catalogProducts,
@@ -47,8 +49,7 @@ export default function DiscoverScreen() {
     })
     const displayedProducts = isProductsTab ? catalogProducts : []
     const numColumns = isDesktop ? 3 : 2
-    const pagePadding = isDesktop ? 24 : isTablet ? 18 : 12
-    const gridGap = isDesktop ? 14 : 10
+    const rowGap = isDesktop ? 16 : 12
     const maxContentWidth = isDesktop ? 1180 : isTablet ? 960 : undefined
 
     useEffect(() => {
@@ -66,6 +67,24 @@ export default function DiscoverScreen() {
         }
     }, [categories, categoryId])
 
+    useEffect(() => {
+        if (
+            !isProductsTab ||
+            categoryId === null ||
+            !categories.some((category) => category.id === categoryId)
+        ) {
+            trackedCategoryIdRef.current = null
+            return
+        }
+
+        if (trackedCategoryIdRef.current === categoryId) {
+            return
+        }
+
+        trackedCategoryIdRef.current = categoryId
+        void trackRecommendationCategoryView({ category_id: categoryId }).catch(() => undefined)
+    }, [categories, categoryId, isProductsTab])
+
     return (
         <CatalogTemplate style={discoverScreenStyles.screen}>
             <FlatList
@@ -74,17 +93,9 @@ export default function DiscoverScreen() {
                 numColumns={numColumns}
                 columnWrapperStyle={[
                     discoverScreenStyles.gridRow,
-                    {
-                        gap: gridGap,
-                        paddingHorizontal: pagePadding,
-                    },
+                    { marginBottom: rowGap },
                 ]}
-                contentContainerStyle={[
-                    discoverScreenStyles.listContent,
-                    {
-                        paddingTop: isDesktop ? 20 : 16,
-                    },
-                ]}
+                contentContainerStyle={discoverScreenStyles.listContent}
                 keyboardShouldPersistTaps="handled"
                 style={[
                     discoverScreenStyles.list,
@@ -97,10 +108,7 @@ export default function DiscoverScreen() {
                 ListHeaderComponent={
                     isProductsTab ? (
                         <View
-                            style={[
-                                discoverScreenStyles.controlsWrap,
-                                { paddingHorizontal: pagePadding },
-                            ]}
+                            style={discoverScreenStyles.controlsWrap}
                         >
                             <ProductBrowseControls
                                 categories={categories}
@@ -148,8 +156,8 @@ export default function DiscoverScreen() {
                     )
                 }
                 renderItem={({ item }) => (
-                    <View style={[discoverScreenStyles.gridItem, { marginBottom: gridGap }]}>
-                        <ProductCard product={item} />
+                    <View style={discoverScreenStyles.gridItem}>
+                        <ProductCard product={item} style={discoverScreenStyles.gridItemCard} />
                     </View>
                 )}
                 showsVerticalScrollIndicator={false}

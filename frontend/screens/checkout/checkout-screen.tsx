@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Picker } from "@react-native-picker/picker"
 import {
     ActivityIndicator,
@@ -6,6 +6,8 @@ import {
     Image,
     Keyboard,
     Modal,
+    type NativeScrollEvent,
+    type NativeSyntheticEvent,
     Pressable,
     ScrollView,
     Text,
@@ -15,10 +17,12 @@ import {
 } from "react-native"
 import { router, useLocalSearchParams } from "expo-router"
 
+import { ContentRail } from "@/components/content/content-rail"
 import { contentStyles } from "@/components/content/content.styles"
 import {
     setSelectedDeliveryAddress,
 } from "@/hooks/delivery/delivery-address-selection-store"
+import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { setBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
@@ -26,9 +30,11 @@ import { setSelectedDeliveryCountry } from "@/hooks/delivery/delivery-country-se
 import { setSelectedDeliveryPoint } from "@/hooks/delivery/delivery-point-selection-store"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useOrderDraft } from "@/hooks/order-draft/use-order-draft"
+import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { ROUTES } from "@/constants/routes"
+import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { getBasketErrorMessage } from "@/screens/cart/cart-screen.utils"
 import {
@@ -43,8 +49,10 @@ import type {
     RecipientFormState,
 } from "@/screens/checkout/checkout-screen.types"
 import {
+    buildAddressUpdatePayloadWithCalculation,
     basketMatchesDraft,
     buildAvailableAddresses,
+    calculateDeliveryForSavedAddress,
     buildAvailableRecipients,
     buildDraftPayloadFromOrderDraft,
     createEmptyRecipientForm,
@@ -52,6 +60,7 @@ import {
     formatRecipientName,
     formatSavedCartDraftName,
     getDraftRecipient,
+    getSelfRecipient,
     getDraftUpdateErrorMessage,
     getRecipientFormFromRecipient,
     hasRecipientErrors,
@@ -61,21 +70,36 @@ import {
     normalizeTextInputValue,
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
+import { restoreDraftToBasket, updateBasketItem } from "@/services/api/basket"
 import { createOrderDraft, getOrderDraftOptions, updateOrderDraft } from "@/services/api/order-drafts"
 import type {
     DeliveryRecipientRead,
     OrderDraftCheckoutOptionsRead,
+    OrderDraftItemRead,
     OrderDraftRead,
 } from "@/services/api/order-drafts.types"
 import { colors } from "@/theme/colors"
 
 export default function CheckoutScreen() {
+    const { user } = useAuth()
     const { t } = useLanguage()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const draftId = parseDraftId(params.draftId)
     const { basket } = useBasket()
     const { error: basketError, restoreDraft, updating: isRestoringDraft } = useBasketMutations()
     const { orderDraft, error, loading, reload } = useOrderDraft(draftId)
+    const {
+        hasMore: hasMoreRecommendations,
+        loadMore: loadMoreRecommendations,
+        loadingMore: recommendationsLoadingMore,
+        products: recommendedProducts,
+    } = useRecommendations({
+        surface: "draft",
+        draftId: orderDraft?.id ?? null,
+        limit: 6,
+        enabled: Boolean(orderDraft?.id && orderDraft.items.length),
+        deps: [orderDraft?.updated_at ?? null, orderDraft?.items.length ?? 0],
+    })
     const { data: checkoutOptions, loading: optionsLoading, reload: reloadCheckoutOptions } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
         deps: [orderDraft?.id ?? null],
         enabled: Boolean(orderDraft?.id),
@@ -89,7 +113,6 @@ export default function CheckoutScreen() {
         initialData: null,
         resetOnLoad: true,
     })
-    const [promoCode, setPromoCode] = useState("")
     const [openPickerSection, setOpenPickerSection] = useState<ExpandedSection>(null)
     const [isRecipientEditorOpen, setIsRecipientEditorOpen] = useState(false)
     const [isSavingRecipient, setIsSavingRecipient] = useState(false)
@@ -110,6 +133,9 @@ export default function CheckoutScreen() {
         setRecipientFormErrors({})
     }, [orderDraft])
 
+    const savedRecipient = getDraftRecipient(orderDraft)
+    const selfRecipient = getSelfRecipient(user)
+    const currentRecipient = savedRecipient ?? selfRecipient
     const deliveryCost = orderDraft
         ? formatMoney(Number(orderDraft.delivery_total), orderDraft.currency)
         : null
@@ -120,11 +146,69 @@ export default function CheckoutScreen() {
         ? formatMoney(Number(orderDraft.grand_total), orderDraft.currency)
         : null
     const hasDeliveryAddress = Boolean(orderDraft?.delivery_address)
+    const hasRecipient = Boolean(currentRecipient)
     const payCtaLabel = grandTotal
         ? `${t("checkout.payCta")} ${grandTotal}`
         : t("checkout.payCta")
-    const checkoutFooterCtaLabel = hasDeliveryAddress ? payCtaLabel : t("checkout.openDelivery")
-    const isCheckoutFooterCtaDisabled = !hasDeliveryAddress
+    const checkoutFooterCtaLabel = !hasDeliveryAddress
+        ? t("checkout.openDelivery")
+        : !hasRecipient
+            ? t("checkout.selectRecipient")
+            : payCtaLabel
+    const isCheckoutFooterCtaDisabled = !hasDeliveryAddress || !hasRecipient
+    const [isUpdatingPositions, setIsUpdatingPositions] = useState(false)
+    const isPositionsBusy = isRestoringDraft || isUpdatingPositions
+    const isAddProductsBusy = isRestoringDraft
+    const openPaymentFlow = useCallback((paymentMethod: "later" | "sbp") => {
+        if (!orderDraft) {
+            return
+        }
+
+        router.push({
+            pathname: ROUTES.payment,
+            params: {
+                draftId: String(orderDraft.id),
+                paymentMethod,
+            },
+        })
+    }, [orderDraft])
+
+    const handlePressPay = useCallback(() => {
+        Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
+            {
+                text: t("checkout.paymentMethodCancel"),
+                style: "cancel",
+            },
+            {
+                text: t("payment.methodLaterTitle"),
+                style: "destructive",
+                onPress: () => {
+                    openPaymentFlow("later")
+                },
+            },
+            {
+                text: t("payment.methodSbpTitle"),
+                onPress: () => {
+                    openPaymentFlow("sbp")
+                },
+            },
+        ])
+    }, [openPaymentFlow, t])
+
+    const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        if (!hasMoreRecommendations || recommendationsLoadingMore) {
+            return
+        }
+
+        const distanceFromBottom =
+            event.nativeEvent.contentSize.height -
+            (event.nativeEvent.contentOffset.y + event.nativeEvent.layoutMeasurement.height)
+
+        if (distanceFromBottom <= 240) {
+            void loadMoreRecommendations()
+        }
+    }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
+
     const checkoutChromeTemplate = useMemo(() => {
         if (!orderDraft) {
             return null
@@ -160,7 +244,7 @@ export default function CheckoutScreen() {
                             accessibilityLabel={checkoutFooterCtaLabel}
                             accessibilityRole="button"
                             disabled={isCheckoutFooterCtaDisabled}
-                            onPress={() => {}}
+                            onPress={handlePressPay}
                             style={({ pressed }) => [
                                 checkoutScreenStyles.footerCtaButton,
                                 isCheckoutFooterCtaDisabled && checkoutScreenStyles.footerCtaButtonDisabled,
@@ -180,10 +264,9 @@ export default function CheckoutScreen() {
                 ),
             },
         }
-    }, [basketSubtotal, checkoutFooterCtaLabel, deliveryCost, grandTotal, isCheckoutFooterCtaDisabled, orderDraft, t])
+    }, [basketSubtotal, checkoutFooterCtaLabel, deliveryCost, grandTotal, handlePressPay, isCheckoutFooterCtaDisabled, orderDraft, t])
     useApplyScreenTemplate("feed", checkoutChromeTemplate)
-    const currentRecipient = getDraftRecipient(orderDraft)
-    const recipientPrimaryText = currentRecipient ? formatRecipientName(currentRecipient) : t("checkout.recipientForMyself")
+    const recipientPrimaryText = savedRecipient ? formatRecipientName(savedRecipient) : t("checkout.recipientForMyself")
     const availableRecipients = useMemo(() => {
         return orderDraft ? buildAvailableRecipients(orderDraft, checkoutOptions) : []
     }, [checkoutOptions, orderDraft])
@@ -211,17 +294,17 @@ export default function CheckoutScreen() {
             return
         }
 
-        if (!currentRecipient) {
+        if (!savedRecipient) {
             const selfRecipientKey = SELF_RECIPIENT_VALUE
             setSelectedRecipientKey(selfRecipientKey)
             setDraftRecipientKey(selfRecipientKey)
             return
         }
 
-        const activeRecipient = availableRecipients.find((option) => option.id === currentRecipient.id)
-        setSelectedRecipientKey(activeRecipient?.id ?? currentRecipient.id)
-        setDraftRecipientKey(activeRecipient?.id ?? currentRecipient.id)
-    }, [availableRecipients, currentRecipient, orderDraft])
+        const activeRecipient = availableRecipients.find((option) => option.id === savedRecipient.id)
+        setSelectedRecipientKey(activeRecipient?.id ?? savedRecipient.id)
+        setDraftRecipientKey(activeRecipient?.id ?? savedRecipient.id)
+    }, [availableRecipients, orderDraft, savedRecipient])
 
     useEffect(() => {
         if (!orderDraft) {
@@ -332,7 +415,7 @@ export default function CheckoutScreen() {
     const handleOpenPicker = (section: Exclude<ExpandedSection, null>) => {
         Keyboard.dismiss()
         if (section === "recipient") {
-            setDraftRecipientKey(selectedRecipientKey ?? currentRecipient?.id ?? SELF_RECIPIENT_VALUE)
+            setDraftRecipientKey(selectedRecipientKey ?? savedRecipient?.id ?? SELF_RECIPIENT_VALUE)
         } else {
             setDraftAddressValue(selectedAddressValue ?? orderDraft.delivery_address?.id ?? ADD_NEW_ADDRESS_VALUE)
         }
@@ -341,7 +424,11 @@ export default function CheckoutScreen() {
 
     const handleOpenRecipientEditor = () => {
         Keyboard.dismiss()
-        setRecipientForm(createEmptyRecipientForm())
+        setRecipientForm(
+            savedRecipient
+                ? createEmptyRecipientForm()
+                : getRecipientFormFromRecipient(selfRecipient),
+        )
         setRecipientFormErrors({})
         setIsRecipientEditorOpen(true)
     }
@@ -357,6 +444,15 @@ export default function CheckoutScreen() {
         await reloadCheckoutOptions({ showLoading: false })
     }
 
+    const syncDraftItemsFromBasket = async () => {
+        const updatedDraft = await updateOrderDraft(orderDraft.id, {
+            sync_basket_items: true,
+        })
+
+        clearBasketSnapshot()
+        await applyUpdatedDraft(updatedDraft)
+    }
+
     const openDraftDiscoverForEditing = () => {
         setBasketDraftEditingId(orderDraft.id)
         setOrderDraftSnapshot(orderDraft)
@@ -367,7 +463,7 @@ export default function CheckoutScreen() {
     }
 
     const handleAddProductsToDraft = async (options?: { saveCurrentCart?: boolean }) => {
-        if (isRestoringDraft) {
+        if (isPositionsBusy) {
             return
         }
 
@@ -379,7 +475,18 @@ export default function CheckoutScreen() {
                 })
             }
             await restoreDraft(orderDraft.id)
-            openDraftDiscoverForEditing()
+            Alert.alert(
+                t("checkout.editViaBasketTitle"),
+                t("checkout.editViaBasketMessage"),
+                [
+                    {
+                        text: t("checkout.openCatalog"),
+                        onPress: () => {
+                            openDraftDiscoverForEditing()
+                        },
+                    },
+                ],
+            )
         } catch (restoreError) {
             Alert.alert(
                 options?.saveCurrentCart
@@ -419,6 +526,83 @@ export default function CheckoutScreen() {
                     style: "destructive",
                     onPress: () => {
                         void handleAddProductsToDraft()
+                    },
+                },
+            ],
+        )
+    }
+
+    const handleDraftItemQuantityCommit = async (
+        item: OrderDraftItemRead,
+        nextQuantity: number,
+        options?: { saveCurrentCart?: boolean },
+    ) => {
+        if (nextQuantity < 1 || isPositionsBusy) {
+            return
+        }
+
+        setIsUpdatingPositions(true)
+
+        try {
+            if (options?.saveCurrentCart) {
+                await createOrderDraft({
+                    ...buildDraftPayloadFromOrderDraft(orderDraft),
+                    draft_name: formatSavedCartDraftName(new Date()),
+                })
+            }
+
+            const editableBasket = basketMatchesDraft(basket, orderDraft)
+                ? basket
+                : await restoreDraftToBasket(orderDraft.id)
+            const basketItem = editableBasket?.items.find((basketPosition) => basketPosition.variant_id === item.variant_id)
+
+            if (!basketItem) {
+                throw new Error(t("cart.itemMissing"))
+            }
+
+            await updateBasketItem(basketItem.id, { quantity: nextQuantity })
+            await syncDraftItemsFromBasket()
+        } catch (updateError) {
+            Alert.alert(getBasketErrorMessage(updateError, basketError, t))
+        } finally {
+            setIsUpdatingPositions(false)
+        }
+    }
+
+    const handleDraftItemQuantityChange = (item: OrderDraftItemRead, delta: -1 | 1) => {
+        if (isPositionsBusy) {
+            return
+        }
+
+        const nextQuantity = item.quantity + delta
+        if (nextQuantity < 1) {
+            return
+        }
+
+        if (basketMatchesDraft(basket, orderDraft) || !basket?.items.length) {
+            void handleDraftItemQuantityCommit(item, nextQuantity)
+            return
+        }
+
+        Alert.alert(
+            t("checkout.addProductsConfirmTitle"),
+            t("checkout.addProductsConfirmMessage"),
+            [
+                {
+                    text: t("common.cancel"),
+                    style: "cancel",
+                },
+                {
+                    text: t("checkout.saveCurrentCart"),
+                    onPress: () => {
+                        void handleDraftItemQuantityCommit(item, nextQuantity, { saveCurrentCart: true })
+                    },
+                },
+                {
+                    text: t("checkout.clearCurrentCart"),
+                    style: "destructive",
+                    onPress: () => {
+                        void handleDraftItemQuantityCommit(item, nextQuantity)
                     },
                 },
             ],
@@ -507,8 +691,18 @@ export default function CheckoutScreen() {
         setIsSavingAddress(true)
 
         try {
+            const selectedAddress = availableAddresses.find((address) => address.id === deliveryAddressId)
+
+            if (!selectedAddress) {
+                throw new Error(t("checkout.saveDraftMetaFailed"))
+            }
+
+            const deliveryCalculation = await calculateDeliveryForSavedAddress(selectedAddress)
             const updatedDraft = await updateOrderDraft(orderDraft.id, {
-                delivery_address_id: deliveryAddressId,
+                new_delivery_address: buildAddressUpdatePayloadWithCalculation(
+                    selectedAddress,
+                    deliveryCalculation,
+                ),
             })
             await applyUpdatedDraft(updatedDraft)
         } catch (saveError) {
@@ -573,6 +767,8 @@ export default function CheckoutScreen() {
                 <ScrollView
                     contentContainerStyle={checkoutScreenStyles.content}
                     keyboardShouldPersistTaps="handled"
+                    onScroll={handleRecommendationsScroll}
+                    scrollEventThrottle={16}
                     style={checkoutScreenStyles.scrollView}
                 >
                     <View style={checkoutScreenStyles.detailsSheetCard}>
@@ -630,16 +826,9 @@ export default function CheckoutScreen() {
                             </Text>
                             <View style={checkoutScreenStyles.detailsSheetTrailing}>
                                 <View style={checkoutScreenStyles.detailsSheetTextBlock}>
-                                    <TextInput
-                                        autoCapitalize="characters"
-                                        autoCorrect={false}
-                                        onChangeText={setPromoCode}
-                                        placeholder={t("cart.promoCodePlaceholder")}
-                                        placeholderTextColor={colors.mutedText}
-                                        style={checkoutScreenStyles.detailsSheetInput}
-                                        textAlign="right"
-                                        value={promoCode}
-                                    />
+                                    <Text numberOfLines={1} style={checkoutScreenStyles.detailsSheetDisabledText}>
+                                        {t("checkout.promoCodeComingSoon")}
+                                    </Text>
                                 </View>
                             </View>
                         </View>
@@ -650,28 +839,34 @@ export default function CheckoutScreen() {
                             <Text style={checkoutScreenStyles.sectionHeaderTitle}>
                                 {t("checkout.positionsTitle")}
                             </Text>
+                        </View>
+                        <ScrollView
+                            alwaysBounceVertical={false}
+                            directionalLockEnabled
+                            horizontal
+                            nestedScrollEnabled
+                            contentContainerStyle={checkoutScreenStyles.positionsCarouselContent}
+                            keyboardShouldPersistTaps="handled"
+                            scrollEnabled
+                            showsHorizontalScrollIndicator={false}
+                            style={checkoutScreenStyles.positionsCarousel}
+                        >
                             <Pressable
                                 accessibilityLabel={t("checkout.addProductsToDraft")}
                                 accessibilityRole="button"
-                                disabled={isRestoringDraft}
+                                disabled={isAddProductsBusy}
                                 onPress={() => {
                                     handleAddProductsPress()
                                 }}
                                 style={({ pressed }) => [
-                                    checkoutScreenStyles.sectionHeaderActionButton,
-                                    isRestoringDraft && checkoutScreenStyles.sectionHeaderActionButtonDisabled,
-                                    pressed && checkoutScreenStyles.sectionHeaderActionButtonPressed,
+                                    checkoutScreenStyles.positionAddCard,
+                                    isAddProductsBusy && checkoutScreenStyles.positionAddCardDisabled,
+                                    pressed && !isAddProductsBusy && checkoutScreenStyles.positionAddCardPressed,
                                 ]}
                             >
-                                <Text style={checkoutScreenStyles.sectionHeaderActionButtonText}>+</Text>
+                                <Text style={checkoutScreenStyles.positionAddCardText}>+</Text>
                             </Pressable>
-                        </View>
-                        <ScrollView
-                            horizontal
-                            contentContainerStyle={checkoutScreenStyles.positionsCarouselContent}
-                            showsHorizontalScrollIndicator={false}
-                            style={checkoutScreenStyles.positionsCarousel}
-                        >
+
                             {orderDraft.items.map((item) => {
                                 const lineTotalLabel = formatMoney(Number(item.line_total), orderDraft.currency)
 
@@ -687,19 +882,72 @@ export default function CheckoutScreen() {
                                                 {item.product_name}
                                             </Text>
                                             <Text style={checkoutScreenStyles.positionSubtitle}>
-                                                {item.quantity} {t("checkout.positionQuantitySuffix")}
+                                                {item.variant_name || item.product_sku}
                                             </Text>
                                             {lineTotalLabel ? (
                                                 <Text style={checkoutScreenStyles.positionPrice}>
                                                     {lineTotalLabel}
                                                 </Text>
                                             ) : null}
+                                            <View style={checkoutScreenStyles.positionQuantityControl}>
+                                                <Pressable
+                                                    accessibilityLabel={t("cart.decreaseQuantity")}
+                                                    accessibilityRole="button"
+                                                    disabled={isPositionsBusy || item.quantity <= 1}
+                                                    onPress={() => {
+                                                        handleDraftItemQuantityChange(item, -1)
+                                                    }}
+                                                    style={({ pressed }) => [
+                                                        checkoutScreenStyles.positionQuantityButton,
+                                                        (isPositionsBusy || item.quantity <= 1) &&
+                                                            checkoutScreenStyles.positionQuantityButtonDisabled,
+                                                        pressed &&
+                                                            !(isPositionsBusy || item.quantity <= 1) &&
+                                                            checkoutScreenStyles.positionQuantityButtonPressed,
+                                                    ]}
+                                                >
+                                                    <Text style={checkoutScreenStyles.positionQuantityButtonText}>−</Text>
+                                                </Pressable>
+
+                                                <Text style={checkoutScreenStyles.positionQuantityValue}>
+                                                    {item.quantity}
+                                                </Text>
+
+                                                <Pressable
+                                                    accessibilityLabel={t("cart.increaseQuantity")}
+                                                    accessibilityRole="button"
+                                                    disabled={isPositionsBusy}
+                                                    onPress={() => {
+                                                        handleDraftItemQuantityChange(item, 1)
+                                                    }}
+                                                    style={({ pressed }) => [
+                                                        checkoutScreenStyles.positionQuantityButton,
+                                                        isPositionsBusy && checkoutScreenStyles.positionQuantityButtonDisabled,
+                                                        pressed &&
+                                                            !isPositionsBusy &&
+                                                            checkoutScreenStyles.positionQuantityButtonPressed,
+                                                    ]}
+                                                >
+                                                    <Text style={checkoutScreenStyles.positionQuantityButtonText}>+</Text>
+                                                </Pressable>
+                                            </View>
                                         </View>
                                     </View>
                                 )
                             })}
                         </ScrollView>
                     </View>
+
+                    {recommendedProducts.length ? (
+                        <ContentRail
+                            title={t("recommendations.title")}
+                            eyebrow={t("recommendations.eyebrow")}
+                            description={t("recommendations.description")}
+                            layout="grid"
+                            loadingMore={recommendationsLoadingMore}
+                            products={recommendedProducts}
+                        />
+                    ) : null}
 
                 </ScrollView>
 

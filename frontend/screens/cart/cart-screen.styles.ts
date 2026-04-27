@@ -7,6 +7,9 @@ export const cartScreenStyles = StyleSheet.create({
         flex: 1,
         backgroundColor: "#F3F5F8",
     },
+    emptyContainer: {
+        backgroundColor: colors.surface,
+    },
     emptyContent: {
         alignItems: "center",
         flex: 1,

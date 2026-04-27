@@ -112,6 +112,29 @@ export const productScreenStyle = StyleSheet.create({
         gap: 1,
         width: "100%",
     },
+    recommendationStack: {
+        gap: spacing.xl,
+        paddingTop: spacing.md,
+        width: "100%",
+    },
+    similarRailCard: {
+        backgroundColor: "#FFFFFF",
+        borderRadius: spacing.lg,
+        overflow: "hidden",
+        paddingVertical: spacing.md,
+        ...Platform.select({
+            web: {
+                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
+            },
+            default: {
+                shadowColor: "#000000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.04,
+                shadowRadius: 16,
+            },
+        }),
+        width: "100%",
+    },
     variantCard: {
         backgroundColor: "#FFFFFF",
         borderRadius: spacing.lg,

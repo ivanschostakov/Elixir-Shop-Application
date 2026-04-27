@@ -32,6 +32,7 @@ class UserUpdate(BaseModel):
     last_active_at: datetime | None = None
     is_verified: bool | None = None
     phone_number: str | None = Field(default=None, max_length=PHONE_NUMBER_MAX_LENGTH)
+    contact_id: int | None = Field(default=None, ge=1)
 
 
 class UserRead(UserBase):

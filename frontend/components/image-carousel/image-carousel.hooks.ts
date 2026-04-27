@@ -13,9 +13,9 @@ function getCarouselOffset(index: number, step: number): number {
     return Math.max(index * step, 0)
 }
 
-export function useLoopedCarousel(products: ProductRead[]) {
+export function useLoopedCarousel(products: ProductRead[], edgeInset: number = spacing.md) {
     const { width: windowWidth } = useWindowDimensions()
-    const viewportLimit = Math.max(windowWidth - spacing.md * 2, 0)
+    const viewportLimit = Math.max(windowWidth - edgeInset * 2, 0)
     const totalGapWidth = IMAGE_CAROUSEL_CARD_GAP * Math.max(IMAGE_CAROUSEL_VISIBLE_CARD_COUNT - 1, 0)
     const maxCardWidth = (viewportLimit - totalGapWidth) / IMAGE_CAROUSEL_VISIBLE_CARD_COUNT
     const cardWidth = Math.max(Math.floor(Math.min(maxCardWidth, IMAGE_CAROUSEL_MAX_CARD_WIDTH)), 1)
