@@ -11,3 +11,8 @@ class UserLoginPayload(BaseModel):
             TypeAdapter(EmailStr).validate_python(self.login)
             return True
         except ValidationError: return False
+
+
+class UserLoginVerifyPayload(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")

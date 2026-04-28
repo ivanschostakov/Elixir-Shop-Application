@@ -241,20 +241,15 @@ def _create_ready_draft(client: TestClient, headers: dict[str, str], variant_id:
 
 
 @pytest.fixture()
-def registered_user(client: TestClient):
+def registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": f"u{token}",
-            "email": f"recommendations_{token}@example.com",
-            "password": "test-password",
-            "name": "Recommendations",
-            "surname": "Tester",
-        },
-    )
-    assert response.status_code == 201, response.text
-    payload = response.json()
+    payload = register_verified_user({
+        "username": f"u{token}",
+        "email": f"recommendations_{token}@example.com",
+        "password": "test-password",
+        "name": "Recommendations",
+        "surname": "Tester",
+    })
     user_id = payload["user"]["id"]
 
     try:

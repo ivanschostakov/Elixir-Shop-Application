@@ -84,6 +84,19 @@ export const deliveryScreenStyles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         backgroundColor: "rgba(255,255,255,0.2)",
     },
+    pickupMarkersLoadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 4,
+    },
+    pickupMarkersBlur: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: "rgba(255,255,255,0.16)",
+    },
+    pickupMarkersLoadingCard: {
+        zIndex: 1,
+    },
     floatingControlsSafeArea: {
         ...StyleSheet.absoluteFillObject,
         zIndex: 10,

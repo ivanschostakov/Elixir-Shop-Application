@@ -140,4 +140,99 @@ export const authSharedStyles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 20,
     },
+    infoBox: {
+        borderColor: "#bfdbfe",
+        borderRadius: 12,
+        borderWidth: 1,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+    infoText: {
+        color: "#1d4ed8",
+        fontSize: 14,
+        lineHeight: 20,
+    },
+    mutedText: {
+        color: colors.mutedText,
+        fontSize: 14,
+        lineHeight: 20,
+    },
+    verificationPanel: {
+        gap: spacing.lg,
+    },
+    verificationText: {
+        color: colors.mutedText,
+        fontSize: 14,
+        lineHeight: 21,
+        textAlign: "center",
+    },
+    verificationEmail: {
+        color: colors.text,
+        fontWeight: "700",
+    },
+    verificationBackButton: {
+        alignItems: "center",
+        alignSelf: "flex-start",
+        borderRadius: 20,
+        height: 40,
+        justifyContent: "center",
+        width: 40,
+    },
+    verificationBackButtonPressed: {
+        backgroundColor: colors.surfaceMuted,
+    },
+    verificationCodeGroup: {
+        gap: spacing.sm,
+    },
+    codeCells: {
+        flexDirection: "row",
+        gap: spacing.xs,
+        justifyContent: "center",
+        width: "100%",
+    },
+    codeCell: {
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: 8,
+        borderWidth: 1,
+        height: 50,
+        justifyContent: "center",
+        width: 44,
+    },
+    codeCellActive: {
+        borderColor: colors.text,
+        borderWidth: 2,
+    },
+    codeCellFilled: {
+        borderColor: colors.text,
+    },
+    codeCellText: {
+        color: colors.text,
+        fontSize: 22,
+        fontWeight: "700",
+        lineHeight: 28,
+        textAlign: "center",
+    },
+    hiddenCodeInput: {
+        height: 1,
+        opacity: 0,
+        position: "absolute",
+        width: 1,
+    },
+    verificationCheckingRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: spacing.sm,
+        justifyContent: "center",
+        minHeight: 24,
+    },
+    verificationCheckingText: {
+        color: colors.primary,
+        fontSize: 14,
+        fontWeight: "600",
+    },
+    textLinkDisabled: {
+        opacity: 0.55,
+    },
 })

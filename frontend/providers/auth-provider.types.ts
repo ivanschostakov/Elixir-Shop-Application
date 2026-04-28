@@ -1,13 +1,28 @@
 import type { ReactNode } from "react"
 
-import type { AuthUser, LoginCredentials, RegistrationPayload } from "@/services/auth/auth.types"
+import type {
+    AuthUser,
+    LoginCredentials,
+    LoginResult,
+    LoginVerificationRequiredResponse,
+    LoginVerifyPayload,
+    RegistrationCodeResendPayload,
+    RegistrationCodeSentResponse,
+    RegistrationPayload,
+    RegistrationStartedResponse,
+    RegistrationVerifyPayload,
+} from "@/services/auth/auth.types"
 
 export type AuthContextValue = {
     isReady: boolean
     isAuthenticated: boolean
     user: AuthUser | null
-    signIn: (credentials: LoginCredentials) => Promise<void>
-    register: (payload: RegistrationPayload) => Promise<void>
+    signIn: (credentials: LoginCredentials) => Promise<LoginResult>
+    verifyLogin: (payload: LoginVerifyPayload) => Promise<void>
+    resendLoginCode: (payload: LoginCredentials) => Promise<LoginVerificationRequiredResponse>
+    register: (payload: RegistrationPayload) => Promise<RegistrationStartedResponse>
+    verifyRegistration: (payload: RegistrationVerifyPayload) => Promise<void>
+    resendRegistrationCode: (payload: RegistrationCodeResendPayload) => Promise<RegistrationCodeSentResponse>
     signOut: () => Promise<void>
 }
 

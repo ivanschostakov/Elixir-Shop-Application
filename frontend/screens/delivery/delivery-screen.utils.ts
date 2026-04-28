@@ -19,7 +19,6 @@ import { DOOR_DELIVERY_PROVIDER } from "@/screens/delivery/delivery-screen.const
 import type {
     DeliveryDoorDraft,
     DeliveryInfoRow,
-    DeliveryMapMarker,
     DeliveryPickupDraft,
 } from "@/screens/delivery/delivery-screen.types"
 import type { SelectedDeliveryPoint } from "@/hooks/delivery/delivery-point-selection-store.types"
@@ -326,24 +325,4 @@ export function areCameraPositionsEquivalent(
         && left.reason === right.reason
         && left.finished === right.finished
     )
-}
-
-function getPointDistanceScore(left: Point, right: Point) {
-    const latitudeDelta = left.lat - right.lat
-    const averageLatitudeRadians = (((left.lat + right.lat) / 2) * Math.PI) / 180
-    const longitudeDelta = (left.lon - right.lon) * Math.cos(averageLatitudeRadians)
-
-    return latitudeDelta * latitudeDelta + longitudeDelta * longitudeDelta
-}
-
-export function getNearestPickupMarkers(markers: DeliveryMapMarker[], center: Point, limit: number) {
-    if (markers.length <= limit) {
-        return markers
-    }
-
-    return [...markers]
-        .sort((left, right) => {
-            return getPointDistanceScore(left.point, center) - getPointDistanceScore(right.point, center)
-        })
-        .slice(0, limit)
 }

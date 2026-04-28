@@ -47,6 +47,14 @@ class AsyncIntellectMoney:
         raw = "::".join(cls._as_str(part) for part in parts)
         return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
+    @classmethod
+    def _md5_hash_encoded(cls, *parts: Any, encoding: str = "utf-8") -> str | None:
+        raw = "::".join(cls._as_str(part) for part in parts)
+        try:
+            return hashlib.md5(raw.encode(encoding)).hexdigest()
+        except UnicodeEncodeError:
+            return None
+
     @staticmethod
     def amount(value: Decimal | float | int | str) -> str:
         return f"{Decimal(str(value)):.2f}"
@@ -88,17 +96,61 @@ class AsyncIntellectMoney:
         text = str(exc).lower()
         return "param: hash" in text or '"hash"' in text
 
+    @staticmethod
+    def _safe_form_value_for_log(key: str, value: Any) -> str:
+        normalized_key = str(key).lower()
+        if normalized_key in {"hash", "secretkey"} or "token" in normalized_key or "secret" in normalized_key:
+            return "<redacted>" if value else ""
+        if normalized_key in {"email", "useremail"}:
+            raw = str(value or "")
+            if "@" not in raw:
+                return "<masked>" if raw else ""
+            local, domain = raw.split("@", 1)
+            local_mask = f"{local[:2]}***" if len(local) > 2 else "***"
+            return f"{local_mask}@{domain}"
+        return str(value)
+
+    @classmethod
+    def _safe_form_for_log(cls, form_data: dict[str, Any]) -> dict[str, str]:
+        return {
+            str(key): cls._safe_form_value_for_log(str(key), value)
+            for key, value in sorted(form_data.items())
+        }
+
+    @staticmethod
+    def _response_body_for_log(response: httpx.Response) -> str:
+        try:
+            return response.text
+        except UnicodeDecodeError:
+            return response.content.decode("utf-8", "replace")
+
     async def _post_form(self, path: str, form_data: dict[str, Any], *sign_parts: Any) -> dict[str, Any]:
         headers = self._headers(*sign_parts)
+        self.logger.info(
+            "IntellectMoney POST request path=%s form=%s",
+            path,
+            self._safe_form_for_log(form_data),
+        )
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(f"{self.api_base}{path}", data=form_data, headers=headers)
+
+        self.logger.info(
+            "IntellectMoney POST response path=%s status_code=%s headers=%s body=%s",
+            path,
+            response.status_code,
+            dict(response.headers),
+            self._response_body_for_log(response),
+        )
 
         try:
             response.raise_for_status()
         except httpx.HTTPError as exc:
             raise IntellectMoneyError(str(exc)) from exc
 
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise IntellectMoneyError(f"IntellectMoney returned non-JSON response: {self._response_body_for_log(response)}") from exc
         operation = data.get("OperationState") or {}
         if int(operation.get("Code") or 0) != 0:
             raise IntellectMoneyError(str(operation.get("Desc") or "IntellectMoney operation failed"))
@@ -269,27 +321,38 @@ class AsyncIntellectMoney:
         assert last_exc is not None
         raise last_exc
 
+    @staticmethod
+    def _webhook_payload_value(payload: dict[str, Any], key: str) -> Any:
+        if key in payload:
+            return payload.get(key)
+        normalized_key = key.lower()
+        for payload_key, value in payload.items():
+            if str(payload_key).lower() == normalized_key:
+                return value
+        return None
+
     def verify_webhook_hash(self, payload: dict[str, Any]) -> bool:
-        actual = str(payload.get("Hash") or "")
+        actual = str(self._webhook_payload_value(payload, "Hash") or "")
         if not actual:
             return False
 
+        hash_parts = [
+            self._webhook_payload_value(payload, "EshopId"),
+            self._webhook_payload_value(payload, "OrderId"),
+            self._webhook_payload_value(payload, "ServiceName"),
+            self._webhook_payload_value(payload, "EshopAccount"),
+            self._webhook_payload_value(payload, "RecipientAmount"),
+            self._webhook_payload_value(payload, "RecipientCurrency"),
+            self._webhook_payload_value(payload, "PaymentStatus"),
+            self._webhook_payload_value(payload, "UserName"),
+            self._webhook_payload_value(payload, "UserEmail"),
+            self._webhook_payload_value(payload, "PaymentData"),
+        ]
         for hash_secret in self._hash_secrets():
-            expected = self._md5_hash(
-                payload.get("EshopId"),
-                payload.get("OrderId"),
-                payload.get("ServiceName"),
-                payload.get("EshopAccount"),
-                payload.get("RecipientAmount"),
-                payload.get("RecipientCurrency"),
-                payload.get("PaymentStatus"),
-                payload.get("UserName"),
-                payload.get("UserEmail"),
-                payload.get("PaymentData"),
-                hash_secret,
-            )
-            if actual.lower() == expected.lower():
-                return True
+            for encoding in ("utf-8", "cp1251"):
+                expected = self._md5_hash_encoded(*hash_parts, hash_secret, encoding=encoding)
+                if expected and actual.lower() == expected.lower():
+                    return True
         return False
 
     @staticmethod

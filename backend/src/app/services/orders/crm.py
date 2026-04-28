@@ -44,13 +44,23 @@ def _payment_status_to_amocrm_status_id(payment_status: str | None) -> int | Non
     normalized = (payment_status or "").strip().lower()
     if not normalized: return None
     if normalized == "paid": return amocrm_client.STATUS_IDS["check_paid"]
-    if normalized in {"hold", "partial"}: return amocrm_client.STATUS_IDS.get("waiting_response")
-    if normalized in {"canceled", "error"}: return amocrm_client.STATUS_IDS.get("canceled")
+    if normalized in {"hold", "partial", "error"}: return amocrm_client.STATUS_IDS.get("waiting_response")
+    if normalized == "canceled": return amocrm_client.STATUS_IDS.get("canceled")
     if normalized == "refunded": return amocrm_client.STATUS_IDS.get("refund_declined")
     return None
 
+def _is_delivery_data_error(exc: HTTPException) -> bool:
+    if exc.status_code < 500:
+        return True
+    detail = exc.detail if isinstance(exc.detail, dict) else {}
+    downstream_status = detail.get("status_code")
+    try:
+        return int(downstream_status) < 500
+    except (TypeError, ValueError):
+        return False
+
 def _format_order_for_amocrm(
-    order_number: int,
+    order_number: str,
     payload: dict[str, Any],
     delivery_service: str,
     tariff: str | None,
@@ -221,7 +231,20 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
     order = await update_order(session, order, OrderUpdate(**_order_state_patch_for_amocrm_status(status_id)), commit=False)
 
     if status_id in amocrm_client.PAID_STATUS_IDS and order.delivery_created_at is None:
-        delivery_patch = await create_delivery_for_order(order)
+        try:
+            delivery_patch = await create_delivery_for_order(order)
+        except HTTPException as exc:
+            if not _is_delivery_data_error(exc):
+                raise
+            log.exception(
+                "Skipping automatic delivery creation after amoCRM paid status because order data is incomplete order_id=%s order_number=%s delivery_service=%s delivery_payload=%s detail=%s",
+                order.id,
+                order.order_number,
+                order.selected_delivery_service,
+                order.selected_delivery_payload,
+                exc.detail,
+            )
+            delivery_patch = {}
         if delivery_patch:
             delivery_patch["delivery_created_at"] = datetime.now(timezone.utc)
             order = await update_order(session, order, OrderUpdate(**delivery_patch), commit=False)

@@ -12,10 +12,9 @@ import {
     ScrollView,
     Text,
     TextInput,
-    TouchableWithoutFeedback,
     View,
 } from "react-native"
-import { router, useLocalSearchParams } from "expo-router"
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router"
 
 import { ContentRail } from "@/components/content/content-rail"
 import { contentStyles } from "@/components/content/content.styles"
@@ -132,6 +131,15 @@ export default function CheckoutScreen() {
         setRecipientForm(getRecipientFormFromRecipient(getDraftRecipient(orderDraft)))
         setRecipientFormErrors({})
     }, [orderDraft])
+
+    useFocusEffect(
+        useCallback(() => (
+            () => {
+                setOpenPickerSection(null)
+                setIsRecipientEditorOpen(false)
+            }
+        ), []),
+    )
 
     const savedRecipient = getDraftRecipient(orderDraft)
     const selfRecipient = getSelfRecipient(user)
@@ -414,12 +422,17 @@ export default function CheckoutScreen() {
 
     const handleOpenPicker = (section: Exclude<ExpandedSection, null>) => {
         Keyboard.dismiss()
+
         if (section === "recipient") {
             setDraftRecipientKey(selectedRecipientKey ?? savedRecipient?.id ?? SELF_RECIPIENT_VALUE)
         } else {
             setDraftAddressValue(selectedAddressValue ?? orderDraft.delivery_address?.id ?? ADD_NEW_ADDRESS_VALUE)
         }
         setOpenPickerSection(section)
+    }
+
+    const closeCheckoutPicker = () => {
+        setOpenPickerSection(null)
     }
 
     const handleOpenRecipientEditor = () => {
@@ -460,6 +473,13 @@ export default function CheckoutScreen() {
         setSelectedDeliveryAddress(null)
         setSelectedDeliveryPoint(null)
         router.push(ROUTES.discover)
+    }
+
+    const openDeliveryFromCheckout = () => {
+        router.push({
+            params: { draftId: String(orderDraft.id) },
+            pathname: ROUTES.delivery,
+        })
     }
 
     const handleAddProductsToDraft = async (options?: { saveCurrentCart?: boolean }) => {
@@ -714,7 +734,7 @@ export default function CheckoutScreen() {
 
     const handlePickerDone = async () => {
         if (openPickerSection === "recipient") {
-            setOpenPickerSection(null)
+            closeCheckoutPicker()
 
             if (draftRecipientKey === ADD_NEW_RECIPIENT_VALUE) {
                 handleOpenRecipientEditor()
@@ -742,15 +762,15 @@ export default function CheckoutScreen() {
         }
 
         if (openPickerSection === "address") {
-            setOpenPickerSection(null)
-
             if (draftAddressValue === ADD_NEW_ADDRESS_VALUE) {
                 setSelectedDeliveryCountry(orderDraft.delivery_address?.country_code ?? null)
                 setSelectedDeliveryAddress(null)
                 setSelectedDeliveryPoint(null)
-                router.push(`${ROUTES.delivery}?draftId=${orderDraft.id}`)
+                openDeliveryFromCheckout()
                 return
             }
+
+            closeCheckoutPicker()
 
             if (draftAddressValue === null) {
                 return
@@ -762,13 +782,15 @@ export default function CheckoutScreen() {
     }
 
     return (
-        <TouchableWithoutFeedback accessible={false} onPress={Keyboard.dismiss}>
-            <View style={checkoutScreenStyles.container}>
+        <View style={checkoutScreenStyles.container}>
                 <ScrollView
+                    alwaysBounceVertical
                     contentContainerStyle={checkoutScreenStyles.content}
+                    keyboardDismissMode="on-drag"
                     keyboardShouldPersistTaps="handled"
                     onScroll={handleRecommendationsScroll}
                     scrollEventThrottle={16}
+                    scrollEnabled
                     style={checkoutScreenStyles.scrollView}
                 >
                     <View style={checkoutScreenStyles.detailsSheetCard}>
@@ -941,9 +963,10 @@ export default function CheckoutScreen() {
                     {recommendedProducts.length ? (
                         <ContentRail
                             title={t("recommendations.title")}
-                            eyebrow={t("recommendations.eyebrow")}
-                            description={t("recommendations.description")}
+                            description={t("recommendations.productDescription")}
                             layout="grid"
+                            gridVariant="discover"
+                            mergeHeaderWithFirstRow
                             loadingMore={recommendationsLoadingMore}
                             products={recommendedProducts}
                         />
@@ -953,14 +976,14 @@ export default function CheckoutScreen() {
 
                 <Modal
                     animationType="fade"
-                    onRequestClose={() => setOpenPickerSection(null)}
+                    onRequestClose={closeCheckoutPicker}
                     transparent
                     visible={openPickerSection !== null}
                 >
                     <View style={contentStyles.browsePickerBackdrop}>
                         <Pressable
                             accessibilityRole="button"
-                            onPress={() => setOpenPickerSection(null)}
+                            onPress={closeCheckoutPicker}
                             style={contentStyles.browsePickerDismissArea}
                         />
 
@@ -976,7 +999,7 @@ export default function CheckoutScreen() {
                                     <Pressable
                                         accessibilityLabel={t("common.cancel")}
                                         accessibilityRole="button"
-                                        onPress={() => setOpenPickerSection(null)}
+                                        onPress={closeCheckoutPicker}
                                         style={({ pressed }) => [
                                             contentStyles.browsePickerAction,
                                             pressed && contentStyles.browsePickerActionPressed,
@@ -1022,7 +1045,7 @@ export default function CheckoutScreen() {
                                         setDraftRecipientKey(nextValue)
 
                                         if (nextValue === ADD_NEW_RECIPIENT_VALUE) {
-                                            setOpenPickerSection(null)
+                                            closeCheckoutPicker()
                                             setTimeout(() => {
                                                 handleOpenRecipientEditor()
                                             }, 0)
@@ -1031,7 +1054,7 @@ export default function CheckoutScreen() {
 
                                         if (nextValue === SELF_RECIPIENT_VALUE) {
                                             setSelectedRecipientKey(SELF_RECIPIENT_VALUE)
-                                            setOpenPickerSection(null)
+                                            closeCheckoutPicker()
                                             setTimeout(() => {
                                                 void handleSelectRecipient(null)
                                             }, 0)
@@ -1242,6 +1265,5 @@ export default function CheckoutScreen() {
                     </View>
                 </Modal>
             </View>
-        </TouchableWithoutFeedback>
     )
 }

@@ -66,20 +66,15 @@ def _delete_order_benefit_application(application_id: int) -> None:
 
 
 @pytest.fixture()
-def registered_user(client: TestClient):
+def registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": f"u{token}",
-            "email": f"benefits_{token}@example.com",
-            "password": "test-password",
-            "name": "Benefit",
-            "surname": "Tester",
-        },
-    )
-    assert response.status_code == 201, response.text
-    payload = response.json()
+    payload = register_verified_user({
+        "username": f"u{token}",
+        "email": f"benefits_{token}@example.com",
+        "password": "test-password",
+        "name": "Benefit",
+        "surname": "Tester",
+    })
     user_id = payload["user"]["id"]
 
     try:

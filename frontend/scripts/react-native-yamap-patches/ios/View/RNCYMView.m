@@ -16,6 +16,30 @@
 static NSString *const RNCYMDefaultIconKey = @"cdek";
 static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
 
+static inline void RNCYMDispatchToMain(dispatch_block_t block) {
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), block);
+    }
+}
+
+static inline NSString *RNCYMThreadName(void) {
+    return [NSThread isMainThread] ? @"main" : @"background";
+}
+
+static inline NSTimeInterval RNCYMNow(void) {
+    return [[NSDate date] timeIntervalSince1970];
+}
+
+@interface RNYMView (RNCYMInheritedCallbacks)
+- (void)onCameraPositionChangedWithMap:(nonnull YMKMap*)map
+                        cameraPosition:(nonnull YMKCameraPosition*)cameraPosition
+                    cameraUpdateReason:(YMKCameraUpdateReason)cameraUpdateReason
+                              finished:(BOOL)finished;
+- (void)onMapLoadedWithStatistics:(YMKMapLoadStatistics*)statistics;
+@end
+
 @implementation RNCYMView {
     YMKMasstransitSession *masstransitSession;
     YMKMasstransitSession *walkSession;
@@ -44,59 +68,107 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
     NSMutableDictionary<NSString *, UIImage *> *clusteredMarkerOriginalIconCache;
     NSMutableDictionary<NSString *, UIImage *> *clusteredMarkerDisplayIconCache;
     CGFloat clusteredMarkerDisplaySize;
+    NSUInteger clusteredMarkersApplyToken;
+    NSUInteger clusterAddedLogCount;
+    NSUInteger cameraPositionEventCount;
+    NSUInteger mapLoadedEventCount;
     Boolean initializedRegion;
 }
 
 - (instancetype)init {
+    NSLog(@"[delivery-flow][yamap] RNCYMView init requested thread=%@", RNCYMThreadName());
     self = [super init];
+    NSLog(@"[delivery-flow][yamap] RNCYMView super init returned self=%p thread=%@", self, RNCYMThreadName());
     placemarks = [[NSMutableArray alloc] init];
     placemarkPayloads = [[NSMutableArray alloc] init];
     clusteredMarkerIconSources = [[NSMutableDictionary alloc] init];
     clusteredMarkerOriginalIconCache = [[NSMutableDictionary alloc] init];
     clusteredMarkerDisplayIconCache = [[NSMutableDictionary alloc] init];
     clusteredMarkerDisplaySize = RNCYMDefaultClusteredMarkerDisplaySize;
+    clusteredMarkersApplyToken = 0;
+    clusterAddedLogCount = 0;
+    cameraPositionEventCount = 0;
+    mapLoadedEventCount = 0;
     clusterColor = nil;
+    NSLog(@"[delivery-flow][yamap] cluster collection creation started thread=%@", RNCYMThreadName());
     clusterCollection = [self.mapWindow.map.mapObjects addClusterizedPlacemarkCollectionWithClusterListener:self];
+    NSLog(@"[delivery-flow][yamap] cluster collection creation finished thread=%@", RNCYMThreadName());
     initializedRegion = NO;
+    NSLog(@"[delivery-flow][yamap] RNCYMView initialized thread=%@", RNCYMThreadName());
     return self;
 }
 
 - (void)setClusterColor:(UIColor *)color {
+    if (![NSThread isMainThread]) {
+        RNCYMDispatchToMain(^{
+            [self setClusterColor:color];
+        });
+        return;
+    }
+
     clusterColor = color;
+    NSLog(@"[delivery-flow][yamap] cluster color updated thread=%@", RNCYMThreadName());
     [clusterCollection clusterPlacemarksWithClusterRadius:50 minZoom:12];
 }
 
 - (void)setClusteredMarkerIcons:(NSDictionary<NSString *,NSString *> *)icons {
+    NSDictionary<NSString *, NSString *> *iconsSnapshot = [icons isKindOfClass:[NSDictionary class]]
+        ? [icons copy]
+        : nil;
+
+    if (![NSThread isMainThread]) {
+        RNCYMDispatchToMain(^{
+            [self setClusteredMarkerIcons:iconsSnapshot];
+        });
+        return;
+    }
+
     [clusteredMarkerIconSources removeAllObjects];
     [clusteredMarkerOriginalIconCache removeAllObjects];
     [clusteredMarkerDisplayIconCache removeAllObjects];
 
-    if (![icons isKindOfClass:[NSDictionary class]]) {
+    NSLog(@"[delivery-flow][yamap] marker icons update started count=%lu thread=%@",
+          (unsigned long)iconsSnapshot.count,
+          RNCYMThreadName());
+
+    if (![iconsSnapshot isKindOfClass:[NSDictionary class]]) {
         [self applyClusteredMarkerIcons];
         return;
     }
 
-    [clusteredMarkerIconSources addEntriesFromDictionary:icons];
+    [clusteredMarkerIconSources addEntriesFromDictionary:iconsSnapshot];
 
     for (NSString *iconKey in clusteredMarkerIconSources) {
         NSString *source = clusteredMarkerIconSources[iconKey];
         [self loadClusteredMarkerIconForKey:iconKey source:source];
     }
-
-    [self applyClusteredMarkerIcons];
 }
 
-- (void)setClusteredMarkers:(NSArray *)markers {
+- (void)applyClusteredMarkersOnMain:(NSArray *)markers applyToken:(NSUInteger)applyToken {
+    NSAssert([NSThread isMainThread], @"Clustered Yamap markers must be applied on the main thread.");
+    NSTimeInterval startedAt = RNCYMNow();
+    NSUInteger inputCount = [markers isKindOfClass:[NSArray class]] ? markers.count : 0;
+    NSLog(@"[delivery-flow][yamap] clustered markers apply started token=%lu inputCount=%lu thread=%@",
+          (unsigned long)applyToken,
+          (unsigned long)inputCount,
+          RNCYMThreadName());
+
     [placemarks removeAllObjects];
     [placemarkPayloads removeAllObjects];
     [clusterCollection clear];
 
     if (![markers isKindOfClass:[NSArray class]] || markers.count == 0) {
+        NSLog(@"[delivery-flow][yamap] clustered markers cleared token=%lu durationMs=%.0f",
+              (unsigned long)applyToken,
+              (RNCYMNow() - startedAt) * 1000.0);
         return;
     }
 
     NSMutableArray<YMKPoint *> *points = [[NSMutableArray alloc] init];
     NSMutableArray<NSDictionary *> *normalizedMarkers = [[NSMutableArray alloc] init];
+    NSMutableArray<NSString *> *orderedIconKeys = [[NSMutableArray alloc] init];
+    NSMutableDictionary<NSString *, NSMutableArray<YMKPoint *> *> *pointsByIconKey = [[NSMutableDictionary alloc] init];
+    NSMutableDictionary<NSString *, NSMutableArray<NSDictionary *> *> *payloadsByIconKey = [[NSMutableDictionary alloc] init];
 
     for (id markerLike in markers) {
         if (![markerLike isKindOfClass:[NSDictionary class]]) {
@@ -122,37 +194,123 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
             ? marker[@"data"]
             : nil;
 
-        [points addObject:[YMKPoint pointWithLatitude:[latitude doubleValue] longitude:[longitude doubleValue]]];
-        [normalizedMarkers addObject:@{
+        YMKPoint *point = [YMKPoint pointWithLatitude:[latitude doubleValue] longitude:[longitude doubleValue]];
+        NSDictionary *normalizedMarker = @{
             @"point": @{
                 @"lat": latitude,
                 @"lon": longitude,
             },
             @"iconKey": iconKey,
             @"data": data ?: @{},
-        }];
+        };
+        NSMutableArray<YMKPoint *> *iconPoints = pointsByIconKey[iconKey];
+        NSMutableArray<NSDictionary *> *iconPayloads = payloadsByIconKey[iconKey];
+
+        if (iconPoints == nil || iconPayloads == nil) {
+            iconPoints = [[NSMutableArray alloc] init];
+            iconPayloads = [[NSMutableArray alloc] init];
+            pointsByIconKey[iconKey] = iconPoints;
+            payloadsByIconKey[iconKey] = iconPayloads;
+            [orderedIconKeys addObject:iconKey];
+        }
+
+        [points addObject:point];
+        [normalizedMarkers addObject:normalizedMarker];
+        [iconPoints addObject:point];
+        [iconPayloads addObject:normalizedMarker];
     }
 
     if (points.count == 0) {
+        NSLog(@"[delivery-flow][yamap] clustered markers normalized empty token=%lu inputCount=%lu durationMs=%.0f",
+              (unsigned long)applyToken,
+              (unsigned long)inputCount,
+              (RNCYMNow() - startedAt) * 1000.0);
         return;
     }
 
-    NSString *firstIconKey = normalizedMarkers.firstObject[@"iconKey"];
-    UIImage *placeholderImage = [self markerImageForIconKey:firstIconKey];
-    NSArray<YMKPlacemarkMapObject *>* newPlacemarks = [clusterCollection addPlacemarksWithPoints:points image:placeholderImage style:[self markerIconStyle]];
+    NSLog(@"[delivery-flow][yamap] clustered markers normalized token=%lu normalizedCount=%lu durationMs=%.0f",
+          (unsigned long)applyToken,
+          (unsigned long)points.count,
+          (RNCYMNow() - startedAt) * 1000.0);
 
-    [placemarks addObjectsFromArray:newPlacemarks];
-    [placemarkPayloads addObjectsFromArray:normalizedMarkers];
+    NSTimeInterval addStartedAt = RNCYMNow();
+    NSLog(@"[delivery-flow][yamap] clustered markers addPlacemarks started token=%lu count=%lu iconGroups=%lu",
+          (unsigned long)applyToken,
+          (unsigned long)points.count,
+          (unsigned long)orderedIconKeys.count);
+
+    NSUInteger addedPlacemarkCount = 0;
+    for (NSString *iconKey in orderedIconKeys) {
+        NSArray<YMKPoint *> *iconPoints = pointsByIconKey[iconKey];
+        NSArray<NSDictionary *> *iconPayloads = payloadsByIconKey[iconKey];
+
+        if (iconPoints.count == 0 || iconPayloads.count == 0) {
+            continue;
+        }
+
+        UIImage *iconImage = [self markerImageForIconKey:iconKey];
+        NSArray<YMKPlacemarkMapObject *>* newPlacemarks = [clusterCollection addPlacemarksWithPoints:iconPoints image:iconImage style:[self markerIconStyle]];
+        [placemarks addObjectsFromArray:newPlacemarks];
+        [placemarkPayloads addObjectsFromArray:iconPayloads];
+        addedPlacemarkCount += newPlacemarks.count;
+    }
+
+    NSLog(@"[delivery-flow][yamap] clustered markers addPlacemarks finished token=%lu count=%lu durationMs=%.0f",
+          (unsigned long)applyToken,
+          (unsigned long)addedPlacemarkCount,
+          (RNCYMNow() - addStartedAt) * 1000.0);
 
     for (YMKPlacemarkMapObject *placemark in placemarks) {
         [placemark addTapListenerWithTapListener:self];
     }
 
-    [self applyClusteredMarkerIcons];
+    NSTimeInterval clusterStartedAt = RNCYMNow();
+    NSLog(@"[delivery-flow][yamap] clusterPlacemarks started token=%lu count=%lu",
+          (unsigned long)applyToken,
+          (unsigned long)placemarks.count);
     [clusterCollection clusterPlacemarksWithClusterRadius:50 minZoom:12];
+    NSLog(@"[delivery-flow][yamap] clusterPlacemarks finished token=%lu durationMs=%.0f totalDurationMs=%.0f",
+          (unsigned long)applyToken,
+          (RNCYMNow() - clusterStartedAt) * 1000.0,
+          (RNCYMNow() - startedAt) * 1000.0);
+}
+
+- (void)setClusteredMarkers:(NSArray *)markers {
+    NSArray *markersSnapshot = [markers isKindOfClass:[NSArray class]] ? [markers copy] : nil;
+    __block NSUInteger applyToken = 0;
+
+    @synchronized (self) {
+        clusteredMarkersApplyToken += 1;
+        applyToken = clusteredMarkersApplyToken;
+    }
+
+    NSLog(@"[delivery-flow][yamap] clustered markers apply queued token=%lu inputCount=%lu callerThread=%@",
+          (unsigned long)applyToken,
+          (unsigned long)markersSnapshot.count,
+          RNCYMThreadName());
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        @synchronized (self) {
+            if (applyToken != self->clusteredMarkersApplyToken) {
+                NSLog(@"[delivery-flow][yamap] clustered markers apply skipped stale token=%lu latestToken=%lu",
+                      (unsigned long)applyToken,
+                      (unsigned long)self->clusteredMarkersApplyToken);
+                return;
+            }
+        }
+
+        [self applyClusteredMarkersOnMain:markersSnapshot applyToken:applyToken];
+    });
 }
 
 - (void)setMarkerSize:(CGFloat)markerSize {
+    if (![NSThread isMainThread]) {
+        RNCYMDispatchToMain(^{
+            [self setMarkerSize:markerSize];
+        });
+        return;
+    }
+
     CGFloat resolvedMarkerSize = markerSize > 0.0 ? markerSize : RNCYMDefaultClusteredMarkerDisplaySize;
     if (fabs(clusteredMarkerDisplaySize - resolvedMarkerSize) < 0.5) {
         return;
@@ -160,6 +318,9 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
 
     clusteredMarkerDisplaySize = resolvedMarkerSize;
     [clusteredMarkerDisplayIconCache removeAllObjects];
+    NSLog(@"[delivery-flow][yamap] marker size updated size=%.2f thread=%@",
+          clusteredMarkerDisplaySize,
+          RNCYMThreadName());
     [self applyClusteredMarkerIcons];
 }
 
@@ -168,6 +329,10 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
 
 - (void)onMapTapWithMap:(nonnull YMKMap *)map
                   point:(nonnull YMKPoint *)point {
+    NSLog(@"[delivery-flow][yamap] map tap lat=%.6f lon=%.6f thread=%@",
+          point.latitude,
+          point.longitude,
+          RNCYMThreadName());
     if (self.onMapPress) {
         NSDictionary *data = @{
             @"lat": @(point.latitude),
@@ -179,6 +344,10 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
 
 - (void)onMapLongTapWithMap:(nonnull YMKMap *)map
                       point:(nonnull YMKPoint *)point {
+    NSLog(@"[delivery-flow][yamap] map long tap lat=%.6f lon=%.6f thread=%@",
+          point.latitude,
+          point.longitude,
+          RNCYMThreadName());
     if (self.onMapLongPress) {
         NSDictionary *data = @{
             @"lat": @(point.latitude),
@@ -323,18 +492,48 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
     return [self fallbackMarkerImageForIconKey:resolvedIconKey];
 }
 
-- (void)applyClusteredMarkerIcons {
+- (void)applyClusteredMarkerIconsForIconKey:(NSString *)requestedIconKey {
+    if (![NSThread isMainThread]) {
+        RNCYMDispatchToMain(^{
+            [self applyClusteredMarkerIconsForIconKey:requestedIconKey];
+        });
+        return;
+    }
+
+    NSTimeInterval startedAt = RNCYMNow();
     NSUInteger markerCount = MIN(placemarks.count, placemarkPayloads.count);
+    NSUInteger updatedCount = 0;
+    NSLog(@"[delivery-flow][yamap] apply marker icons started count=%lu iconKey=%@ thread=%@",
+          (unsigned long)markerCount,
+          requestedIconKey ?: @"all",
+          RNCYMThreadName());
+
     for (NSUInteger index = 0; index < markerCount; index++) {
         YMKPlacemarkMapObject *placemark = placemarks[index];
         NSDictionary *payload = placemarkPayloads[index];
         NSString *iconKey = [payload[@"iconKey"] isKindOfClass:[NSString class]]
             ? payload[@"iconKey"]
             : RNCYMDefaultIconKey;
+
+        if (requestedIconKey.length > 0 && ![iconKey isEqualToString:requestedIconKey]) {
+            continue;
+        }
+
         UIImage *iconImage = [self markerImageForIconKey:iconKey];
         [placemark setIconWithImage:iconImage];
         [placemark setIconStyleWithStyle:[self markerIconStyle]];
+        updatedCount += 1;
     }
+
+    NSLog(@"[delivery-flow][yamap] apply marker icons finished count=%lu updatedCount=%lu iconKey=%@ durationMs=%.0f",
+          (unsigned long)markerCount,
+          (unsigned long)updatedCount,
+          requestedIconKey ?: @"all",
+          (RNCYMNow() - startedAt) * 1000.0);
+}
+
+- (void)applyClusteredMarkerIcons {
+    [self applyClusteredMarkerIconsForIconKey:nil];
 }
 
 - (void)loadClusteredMarkerIconForKey:(NSString *)iconKey source:(NSString *)source {
@@ -342,31 +541,51 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
         return;
     }
 
+    NSLog(@"[delivery-flow][yamap] marker icon load started iconKey=%@ sourceLength=%lu",
+          iconKey,
+          (unsigned long)source.length);
+
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSTimeInterval startedAt = RNCYMNow();
         NSURL *url = [NSURL URLWithString:source];
         if (url == nil) {
+            NSLog(@"[delivery-flow][yamap] marker icon load failed iconKey=%@ reason=invalid_url", iconKey);
             return;
         }
 
         NSData *imageData = [NSData dataWithContentsOfURL:url];
         if (imageData == nil) {
+            NSLog(@"[delivery-flow][yamap] marker icon load failed iconKey=%@ reason=no_data durationMs=%.0f",
+                  iconKey,
+                  (RNCYMNow() - startedAt) * 1000.0);
             return;
         }
 
         UIImage *image = [UIImage imageWithData:imageData];
         if (image == nil) {
+            NSLog(@"[delivery-flow][yamap] marker icon load failed iconKey=%@ reason=decode_failed bytes=%lu durationMs=%.0f",
+                  iconKey,
+                  (unsigned long)imageData.length,
+                  (RNCYMNow() - startedAt) * 1000.0);
             return;
         }
 
         dispatch_async(dispatch_get_main_queue(), ^{
             NSString *currentSource = self->clusteredMarkerIconSources[iconKey];
             if (![currentSource isEqualToString:source]) {
+                NSLog(@"[delivery-flow][yamap] marker icon load ignored stale iconKey=%@ durationMs=%.0f",
+                      iconKey,
+                      (RNCYMNow() - startedAt) * 1000.0);
                 return;
             }
 
+            NSLog(@"[delivery-flow][yamap] marker icon load finished iconKey=%@ bytes=%lu durationMs=%.0f",
+                  iconKey,
+                  (unsigned long)imageData.length,
+                  (RNCYMNow() - startedAt) * 1000.0);
             self->clusteredMarkerOriginalIconCache[iconKey] = image;
             [self->clusteredMarkerDisplayIconCache removeObjectForKey:iconKey];
-            [self applyClusteredMarkerIcons];
+            [self applyClusteredMarkerIconsForIconKey:iconKey];
         });
     });
 }
@@ -416,21 +635,58 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
 }
 
 - (void)onClusterAddedWithCluster:(nonnull YMKCluster *)cluster {
+    if (![NSThread isMainThread]) {
+        RNCYMDispatchToMain(^{
+            [self onClusterAddedWithCluster:cluster];
+        });
+        return;
+    }
+
+    clusterAddedLogCount += 1;
     NSNumber *clusterSize = @([cluster size]);
+    BOOL shouldLogCluster = clusterAddedLogCount <= 20 || clusterAddedLogCount % 100 == 0;
+    if (shouldLogCluster) {
+        NSLog(@"[delivery-flow][yamap] cluster appearance update started sequence=%lu clusterSize=%@ thread=%@",
+              (unsigned long)clusterAddedLogCount,
+              clusterSize,
+              RNCYMThreadName());
+    }
     [[cluster appearance] setIconWithImage:[self clusterImage:clusterSize]];
     [cluster addClusterTapListenerWithClusterTapListener:self];
+    if (shouldLogCluster) {
+        NSLog(@"[delivery-flow][yamap] cluster appearance update finished sequence=%lu clusterSize=%@",
+              (unsigned long)clusterAddedLogCount,
+              clusterSize);
+    }
 }
 
 - (BOOL)onClusterTapWithCluster:(nonnull YMKCluster *)cluster {
+    if (![NSThread isMainThread]) {
+        RNCYMDispatchToMain(^{
+            [self onClusterTapWithCluster:cluster];
+        });
+        return YES;
+    }
+
     NSMutableArray<YMKPoint*>* lastKnownMarkers = [[NSMutableArray alloc] init];
     for (YMKPlacemarkMapObject *placemark in [cluster placemarks]) {
         [lastKnownMarkers addObject:[placemark geometry]];
     }
+    NSLog(@"[delivery-flow][yamap] cluster tapped placemarkCount=%lu thread=%@",
+          (unsigned long)lastKnownMarkers.count,
+          RNCYMThreadName());
     [self fitMarkers:lastKnownMarkers];
     return YES;
 }
 
 - (BOOL)onMapObjectTapWithMapObject:(nonnull YMKMapObject *)mapObject point:(nonnull YMKPoint *)point {
+    if (![NSThread isMainThread]) {
+        RNCYMDispatchToMain(^{
+            [self onMapObjectTapWithMapObject:mapObject point:point];
+        });
+        return YES;
+    }
+
     if (!self.onMarkerPress || ![mapObject isKindOfClass:[YMKPlacemarkMapObject class]]) {
         return YES;
     }
@@ -458,8 +714,45 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
         event[@"data"] = data;
     }
 
+    NSLog(@"[delivery-flow][yamap] marker tapped iconKey=%@ code=%@ provider=%@ thread=%@",
+          iconKey ?: @"unknown",
+          [data[@"code"] isKindOfClass:[NSString class]] ? data[@"code"] : @"unknown",
+          [data[@"provider"] isKindOfClass:[NSString class]] ? data[@"provider"] : @"unknown",
+          RNCYMThreadName());
     self.onMarkerPress(event);
     return YES;
+}
+
+- (void)onCameraPositionChangedWithMap:(nonnull YMKMap*)map
+                        cameraPosition:(nonnull YMKCameraPosition*)cameraPosition
+                    cameraUpdateReason:(YMKCameraUpdateReason)cameraUpdateReason
+                              finished:(BOOL)finished {
+    cameraPositionEventCount += 1;
+    if (finished || cameraPositionEventCount <= 20 || cameraPositionEventCount % 120 == 0) {
+        NSLog(@"[delivery-flow][yamap] camera position event sequence=%lu lat=%.6f lon=%.6f zoom=%.2f reason=%@ finished=%d thread=%@",
+              (unsigned long)cameraPositionEventCount,
+              cameraPosition.target.latitude,
+              cameraPosition.target.longitude,
+              cameraPosition.zoom,
+              cameraUpdateReason == 0 ? @"GESTURES" : @"APPLICATION",
+              finished,
+              RNCYMThreadName());
+    }
+
+    [super onCameraPositionChangedWithMap:map cameraPosition:cameraPosition cameraUpdateReason:cameraUpdateReason finished:finished];
+}
+
+- (void)onMapLoadedWithStatistics:(YMKMapLoadStatistics*)statistics {
+    mapLoadedEventCount += 1;
+    NSLog(@"[delivery-flow][yamap] map loaded sequence=%lu renderObjectCount=%lu fullyLoaded=%d fullyAppeared=%d tileMemoryUsage=%lu thread=%@",
+          (unsigned long)mapLoadedEventCount,
+          (unsigned long)statistics.renderObjectCount,
+          statistics.fullyLoaded,
+          statistics.fullyAppeared,
+          (unsigned long)statistics.tileMemoryUsage,
+          RNCYMThreadName());
+
+    [super onMapLoadedWithStatistics:statistics];
 }
 
 - (void)onTrafficChangedWithTrafficLevel:(nullable YMKTrafficLevel *)trafficLevel {
@@ -472,6 +765,16 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
 }
 
 - (void)setInitialRegion:(NSDictionary *)initialParams {
+    if (![NSThread isMainThread]) {
+        NSDictionary *initialParamsSnapshot = [initialParams isKindOfClass:[NSDictionary class]]
+            ? [initialParams copy]
+            : nil;
+        RNCYMDispatchToMain(^{
+            [self setInitialRegion:initialParamsSnapshot];
+        });
+        return;
+    }
+
     if (initializedRegion) return;
     if ([initialParams valueForKey:@"lat"] == nil || [initialParams valueForKey:@"lon"] == nil) return;
 
@@ -485,8 +788,14 @@ static CGFloat const RNCYMDefaultClusteredMarkerDisplaySize = 34.0;
 
     YMKPoint *initialRegionCenter = [RCTConvert YMKPoint:@{@"lat" : [initialParams valueForKey:@"lat"], @"lon" : [initialParams valueForKey:@"lon"]}];
     YMKCameraPosition *initialRegionPosition = [YMKCameraPosition cameraPositionWithTarget:initialRegionCenter zoom:initialZoom azimuth:initialAzimuth tilt:initialTilt];
+    NSLog(@"[delivery-flow][yamap] initial region move started lat=%.6f lon=%.6f zoom=%.2f thread=%@",
+          initialRegionCenter.latitude,
+          initialRegionCenter.longitude,
+          initialZoom,
+          RNCYMThreadName());
     [self.mapWindow.map moveWithCameraPosition:initialRegionPosition];
     initializedRegion = YES;
+    NSLog(@"[delivery-flow][yamap] initial region move finished");
 }
 
 @synthesize reactTag;

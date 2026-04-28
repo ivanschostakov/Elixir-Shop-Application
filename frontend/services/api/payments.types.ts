@@ -5,7 +5,8 @@ export type CreatePaymentPayload = {
 export type PaymentStatusRead = {
     status: string
     order_id: number
-    order_number: number
+    order_code: string
+    order_number: string
     payment_method: string | null
     payment_status: string | null
     payment_step: string | null

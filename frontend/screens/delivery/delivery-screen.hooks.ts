@@ -14,11 +14,17 @@ import type {
 } from "@/screens/delivery/delivery-screen.types"
 import type { DeliveryCountryCode } from "@/services/api/delivery.types"
 import { DEFAULT_DELIVERY_COUNTRY_CODE, reverseGeocodeDeliveryPoint } from "@/services/api/delivery"
+import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
+
+const DELIVERY_FLOW_LOG_PREFIX = "[delivery-flow]"
+
+const getLocationLogErrorMessage = (error: unknown) =>
+    error instanceof Error ? error.message : "Unknown location error"
 
 export function useDeliveryLocation(): DeliveryLocationState {
     const [detectedCountryCode, setDetectedCountryCode] = useState<DeliveryCountryCode | null>(null)
     const [hasUserLocation, setHasUserLocation] = useState(false)
-    const [isResolvingLocation, setIsResolvingLocation] = useState(true)
+    const [isResolvingLocation, setIsResolvingLocation] = useState(false)
     const [userPoint, setUserPoint] = useState(DEFAULT_DELIVERY_POINT)
     const hasUserLocationRef = useRef(false)
     const isMountedRef = useRef(true)
@@ -46,9 +52,11 @@ export function useDeliveryLocation(): DeliveryLocationState {
 
     const ensureLocationWatch = useCallback(async () => {
         if (locationSubscriptionRef.current) {
+            logDeliveryFlow("location watch already active")
             return
         }
 
+        logDeliveryFlow("location watch start requested")
         locationSubscriptionRef.current = await Location.watchPositionAsync(
             {
                 accuracy: Location.Accuracy.Balanced,
@@ -60,6 +68,7 @@ export function useDeliveryLocation(): DeliveryLocationState {
                     return
                 }
 
+                const hadUserLocation = hasUserLocationRef.current
                 hasUserLocationRef.current = true
                 setHasUserLocation(true)
                 setUserPoint({
@@ -67,23 +76,36 @@ export function useDeliveryLocation(): DeliveryLocationState {
                     lon: position.coords.longitude,
                 })
                 setIsResolvingLocation(false)
+
+                if (!hadUserLocation) {
+                    logDeliveryFlow("location watch first position received")
+                }
             },
         )
+        logDeliveryFlow("location watch started")
     }, [])
 
     const ensureLocationWatchSafely = useCallback(async () => {
         try {
             await ensureLocationWatch()
         } catch (watchError) {
-            console.warn("[delivery] Failed to start user location watch.", watchError)
+            logDeliveryFlow("location watch failed", {
+                error: getLocationLogErrorMessage(watchError),
+            })
+            console.warn(`${DELIVERY_FLOW_LOG_PREFIX} location watch failed`, {
+                error: getLocationLogErrorMessage(watchError),
+            })
         }
     }, [ensureLocationWatch])
 
     const resolveCountryForPoint = useCallback(
         async (nextPoint: InitialRegion) => {
+            logDeliveryFlow("location country resolution started")
+
             try {
                 const geocodeResult = await reverseGeocodeDeliveryPoint(nextPoint)
                 if (!isMountedRef.current) {
+                    logDeliveryFlow("location country resolution ignored after unmount")
                     return
                 }
 
@@ -91,9 +113,17 @@ export function useDeliveryLocation(): DeliveryLocationState {
                     getSupportedDeliveryCountryCode(geocodeResult.country_code)
                     ?? DEFAULT_DELIVERY_COUNTRY_CODE
 
+                logDeliveryFlow("location country resolved", {
+                    countryCode: nextCountryCode,
+                })
                 finishCountryResolution(nextCountryCode)
             } catch (error) {
-                console.warn("[delivery] Failed to resolve startup country.", error)
+                logDeliveryFlow("location country resolution failed", {
+                    error: getLocationLogErrorMessage(error),
+                })
+                console.warn(`${DELIVERY_FLOW_LOG_PREFIX} location country resolution failed`, {
+                    error: getLocationLogErrorMessage(error),
+                })
                 finishCountryResolution(DEFAULT_DELIVERY_COUNTRY_CODE)
             }
         },
@@ -101,13 +131,22 @@ export function useDeliveryLocation(): DeliveryLocationState {
     )
 
     const requestUserLocation = useCallback(async () => {
+        logDeliveryFlow("user location request started", {
+            hasUserLocation: hasUserLocationRef.current,
+        })
+
         try {
             const { status } = await Location.requestForegroundPermissionsAsync()
+            logDeliveryFlow("user location permission result", {
+                status,
+            })
+
             if (status !== Location.PermissionStatus.GRANTED) {
                 if (!hasUserLocationRef.current) {
                     finishCountryResolution(DEFAULT_DELIVERY_COUNTRY_CODE)
                 }
 
+                logDeliveryFlow("user location request denied")
                 return null
             }
 
@@ -121,6 +160,7 @@ export function useDeliveryLocation(): DeliveryLocationState {
                 applyResolvedUserPoint(nextPoint)
                 void ensureLocationWatchSafely()
                 void resolveCountryForPoint(nextPoint)
+                logDeliveryFlow("user location resolved from last known position")
                 return nextPoint
             }
 
@@ -130,6 +170,7 @@ export function useDeliveryLocation(): DeliveryLocationState {
                     finishCountryResolution(DEFAULT_DELIVERY_COUNTRY_CODE)
                 }
 
+                logDeliveryFlow("user location services disabled")
                 return null
             }
 
@@ -145,8 +186,15 @@ export function useDeliveryLocation(): DeliveryLocationState {
                 applyResolvedUserPoint(nextPoint)
                 void ensureLocationWatchSafely()
                 void resolveCountryForPoint(nextPoint)
+                logDeliveryFlow("user location resolved from current position")
                 return nextPoint
-            } catch {
+            } catch (currentPositionError) {
+                logDeliveryFlow("current user location request failed", {
+                    error: getLocationLogErrorMessage(currentPositionError),
+                })
+                console.warn(`${DELIVERY_FLOW_LOG_PREFIX} current user location request failed`, {
+                    error: getLocationLogErrorMessage(currentPositionError),
+                })
                 void ensureLocationWatchSafely()
 
                 if (!hasUserLocationRef.current) {
@@ -156,7 +204,12 @@ export function useDeliveryLocation(): DeliveryLocationState {
                 return null
             }
         } catch (error) {
-            console.warn("[delivery] Failed to initialize user location.", error)
+            logDeliveryFlow("user location request failed", {
+                error: getLocationLogErrorMessage(error),
+            })
+            console.warn(`${DELIVERY_FLOW_LOG_PREFIX} user location request failed`, {
+                error: getLocationLogErrorMessage(error),
+            })
 
             if (!hasUserLocationRef.current) {
                 finishCountryResolution(DEFAULT_DELIVERY_COUNTRY_CODE)
@@ -168,14 +221,19 @@ export function useDeliveryLocation(): DeliveryLocationState {
 
     useEffect(() => {
         isMountedRef.current = true
-        void requestUserLocation()
+        logDeliveryFlow("location hook mounted", {
+            passiveStartupDisabled: true,
+        })
 
         return () => {
+            logDeliveryFlow("location hook unmounted", {
+                hadLocationWatch: Boolean(locationSubscriptionRef.current),
+            })
             isMountedRef.current = false
             locationSubscriptionRef.current?.remove()
             locationSubscriptionRef.current = null
         }
-    }, [requestUserLocation])
+    }, [])
 
     return {
         detectedCountryCode,

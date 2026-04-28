@@ -1,3 +1,5 @@
+import logging
+
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -5,6 +7,8 @@ from fastapi import HTTPException
 
 from config import CDEK_SENDER_NAME, CDEK_SENDER_PHONE, YANDEX_DELIVERY_WAREHOUSE_ID
 from src.database.models import Order
+
+log = logging.getLogger(__name__)
 
 
 def normalize_address_for_cf(address: object) -> str | None:
@@ -122,6 +126,24 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
     delivery_mode = (selected_delivery.get("deliveryMode") or "").strip().lower()
 
     city_code = await cdek_client.get_city_code_by_coordinates(order.delivery_address.latitude, order.delivery_address.longitude)
+    log.info(
+        "Building CDEK order body order_number=%s delivery_mode=%s city_code=%s selected_address=%s db_address=%s",
+        order.order_number,
+        delivery_mode,
+        city_code,
+        address,
+        {
+            "mode": order.delivery_address.mode,
+            "provider": order.delivery_address.provider,
+            "country_code": order.delivery_address.country_code,
+            "city": order.delivery_address.city,
+            "postal_code": order.delivery_address.postal_code,
+            "full_address": order.delivery_address.full_address,
+            "latitude": order.delivery_address.latitude,
+            "longitude": order.delivery_address.longitude,
+            "provider_reference": order.delivery_address.provider_reference,
+        },
+    )
     package = {"number": "1", "weight": 357, "length": 18, "width": 7, "height": 24, "items": _build_cdek_order_items(order)}
     order_body: dict[str, Any] = {
         "type": 1,
@@ -146,13 +168,29 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
     postal_code = address.get("postal_code") or order.delivery_address.postal_code
     country_code = address.get("country_code") or order.delivery_address.country_code
     formatted = address.get("formatted") or address.get("address") or order.delivery_address.full_address
+    if not formatted:
+        raise HTTPException(status_code=400, detail="CDEK door delivery requires address")
     if not city or not postal_code:
-        raise HTTPException(status_code=400, detail="CDEK door delivery requires city and postal code")
-    order_body["to_location"] = {
-        "city": city,
-        "postal_code": postal_code,
-        "country_code": country_code,
-        "address": formatted,
+        log.warning(
+            "CDEK door delivery missing city/postal_code; using resolved city_code order_number=%s city=%s postal_code=%s city_code=%s address=%s",
+            order.order_number,
+            city,
+            postal_code,
+            city_code,
+            formatted,
+        )
+
+    to_location: dict[str, Any] = {
         "code": city_code,
+        "address": formatted,
     }
+    if city:
+        to_location["city"] = city
+    if postal_code:
+        to_location["postal_code"] = postal_code
+    if country_code:
+        to_location["country_code"] = country_code
+
+    order_body["to_location"] = to_location
+    log.info("Built CDEK order body order_number=%s body=%s", order.order_number, order_body)
     return order_body

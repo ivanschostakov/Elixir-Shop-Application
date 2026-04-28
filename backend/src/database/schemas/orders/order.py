@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.database.limits import (
     CURRENCY_CODE_MAX_LENGTH,
     EXTERNAL_ID_MAX_LENGTH,
+    ORDER_CODE_MAX_LENGTH,
     ORDER_DELIVERY_STRING_MAX_LENGTH,
     ORDER_DRAFT_COMMENT_MAX_LENGTH,
     PAYMENT_METHOD_MAX_LENGTH,
@@ -68,6 +69,7 @@ class OrderBase(BaseModel):
     user_id: int = Field(ge=1)
     delivery_address_id: int = Field(ge=1)
     recipient_id: int = Field(ge=1)
+    order_code: str = Field(min_length=1, max_length=ORDER_CODE_MAX_LENGTH)
     status: str = Field(min_length=1, max_length=STATUS_MAX_LENGTH)
     items_count: int = Field(ge=0)
     total_quantity: int = Field(ge=0)
@@ -137,7 +139,7 @@ class OrderRead(OrderBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    order_number: int
+    order_number: str
     status_code: OrderStatusCode
     history_bucket: OrderHistoryBucket
     delivery_address: DeliveryAddressRead

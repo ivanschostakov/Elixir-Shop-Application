@@ -5,12 +5,56 @@ export type LoginCredentials = {
     password: string
 }
 
+export type LoginVerifyPayload = {
+    email: string
+    code: string
+}
+
+export type LoginVerificationRequiredResponse = {
+    email: string
+    verification_required: boolean
+    message: string
+}
+
+export type LoginResult =
+    | {
+          verificationRequired: false
+          user: AuthUser
+      }
+    | {
+          verificationRequired: true
+          email: string
+          message: string
+      }
+
 export type RegistrationPayload = {
     username: string
     email: string
     password: string
     name: string
     surname: string
+}
+
+export type RegistrationStartedResponse = {
+    user_id: number
+    email: string
+    verification_required: boolean
+    message: string
+}
+
+export type RegistrationVerifyPayload = {
+    email: string
+    code: string
+}
+
+export type RegistrationCodeResendPayload = {
+    email: string
+}
+
+export type RegistrationCodeSentResponse = {
+    email: string
+    verification_required: boolean
+    message: string
 }
 
 export type BackendAuthUser = {
@@ -34,6 +78,8 @@ export type BackendAuthTokens = {
 export type AuthTokensWithUserResponse = BackendAuthTokens & {
     user: BackendAuthUser
 }
+
+export type BackendLoginResponse = AuthTokensWithUserResponse | LoginVerificationRequiredResponse
 
 export type AuthLogoutResponse = {
     ok: boolean

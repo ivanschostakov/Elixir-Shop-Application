@@ -10,6 +10,7 @@ from src.database import Base
 from src.database.limits import (
     CURRENCY_CODE_MAX_LENGTH,
     EXTERNAL_ID_MAX_LENGTH,
+    ORDER_CODE_MAX_LENGTH,
     ORDER_DELIVERY_STRING_MAX_LENGTH,
     ORDER_DRAFT_COMMENT_MAX_LENGTH,
     PAYMENT_METHOD_MAX_LENGTH,
@@ -27,6 +28,7 @@ class Order(Base, IdPkMixin, TimestampMixin):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     delivery_address_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("delivery_addresses.id"), nullable=False, index=True)
     recipient_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("delivery_recipients.id"), nullable=False, index=True)
+    order_code: Mapped[str] = mapped_column(String(length=ORDER_CODE_MAX_LENGTH), nullable=False, unique=True, index=True)
     status: Mapped[str] = mapped_column(String(length=STATUS_MAX_LENGTH), nullable=False, default="Создан", index=True)
     items_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -68,5 +70,5 @@ class Order(Base, IdPkMixin, TimestampMixin):
     )
 
     @property
-    def order_number(self) -> int:
-        return self.id
+    def order_number(self) -> str:
+        return self.order_code or str(self.id)

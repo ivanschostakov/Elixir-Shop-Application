@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.database.limits import EXTERNAL_ID_MAX_LENGTH, PAYMENT_METHOD_MAX_LENGTH, PAYMENT_STATUS_MAX_LENGTH
+from src.database.limits import EXTERNAL_ID_MAX_LENGTH, ORDER_CODE_MAX_LENGTH, PAYMENT_METHOD_MAX_LENGTH, PAYMENT_STATUS_MAX_LENGTH
 
 PaymentMethod = Literal["later", "sbp"]
 
@@ -20,7 +20,8 @@ class CreatePaymentPayload(BaseModel):
 class PaymentStatusRead(BaseModel):
     status: str = "success"
     order_id: int = Field(ge=1)
-    order_number: int = Field(ge=1)
+    order_code: str = Field(min_length=1, max_length=ORDER_CODE_MAX_LENGTH)
+    order_number: str = Field(min_length=1, max_length=ORDER_CODE_MAX_LENGTH)
     payment_method: str | None = Field(default=None, max_length=PAYMENT_METHOD_MAX_LENGTH)
     payment_status: str | None = Field(default=None, max_length=PAYMENT_STATUS_MAX_LENGTH)
     payment_step: str | None = None

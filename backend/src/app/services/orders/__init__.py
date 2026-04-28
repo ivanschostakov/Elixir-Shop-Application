@@ -36,7 +36,7 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
 
 async def create_order_from_draft_for_user(session: AsyncSession, *, request: Request, user: User, draft_id: int, payment_method: str) -> Order:
     _sync_runtime_dependencies()
-    return await _order_creation.create_order_from_draft_for_user(session, request=request, user=user, draft_id=draft_id, payment_method=payment_method)
+    return await _order_creation.create_order_from_draft_for_user(session, user=user, draft_id=draft_id, payment_method=payment_method)
 
 
 async def get_order_for_user(session: AsyncSession, *, user_id: int, order_id: int) -> Order | None:

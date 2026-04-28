@@ -79,20 +79,15 @@ def _update_variant_stock(variant_id: int, stock: int) -> None:
 
 
 @pytest.fixture()
-def registered_user(client: TestClient):
+def registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": f"u{token}",
-            "email": f"basket_{token}@example.com",
-            "password": "test-password",
-            "name": "Basket",
-            "surname": "Tester",
-        },
-    )
-    assert response.status_code == 201, response.text
-    payload = response.json()
+    payload = register_verified_user({
+        "username": f"u{token}",
+        "email": f"basket_{token}@example.com",
+        "password": "test-password",
+        "name": "Basket",
+        "surname": "Tester",
+    })
     user_id = payload["user"]["id"]
 
     try:

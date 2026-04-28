@@ -52,6 +52,7 @@ async def serialize_orders(request: Request, session: AsyncSession, orders: list
         serialized_orders.append(
             OrderRead(
                 id=order.id,
+                order_code=order.order_code,
                 order_number=order.order_number,
                 draft_id=order.draft_id,
                 user_id=order.user_id,

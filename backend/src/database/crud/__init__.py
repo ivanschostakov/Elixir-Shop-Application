@@ -96,7 +96,7 @@ from .favorites.favoured_product import (
     update_favoured_product,
 )
 from .orders.draft import create_order_draft, delete_order_draft, get_latest_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
-from .orders.order import create_order, get_order_by_amocrm_lead_id, get_order_by_draft_id, get_order_by_id, get_order_by_invoice_id, get_orders_for_user, update_order
+from .orders.order import create_order, get_order_by_amocrm_lead_id, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_by_invoice_id, get_orders_for_user, update_order
 from .website.website_identity import (
     create_website_identity,
     get_website_identity_by_id,
@@ -155,6 +155,7 @@ __all__ = [
     "delete_order_draft",
     "get_latest_order_draft_for_user",
     "get_order_by_amocrm_lead_id",
+    "get_order_by_code",
     "get_order_by_draft_id",
     "get_order_draft_by_id",
     "get_order_drafts_for_user",

@@ -33,7 +33,8 @@ export type OrderItemRead = {
 
 export type OrderRead = {
     id: number
-    order_number: number
+    order_code: string
+    order_number: string
     draft_id: number | null
     user_id: number
     delivery_address_id: number

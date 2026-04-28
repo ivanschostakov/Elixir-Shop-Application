@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from src.database.schemas.website.website_identity import WebsiteIdentityRead
 
@@ -32,6 +32,12 @@ class AuthTokensWithUserResponse(AuthTokensBase):
 class AuthTokensWithWebsiteIdentityResponse(AuthTokensBase):
     user: AuthUserRead
     website_identity: WebsiteIdentityRead
+
+
+class AuthVerificationRequiredResponse(BaseModel):
+    email: EmailStr
+    verification_required: bool = True
+    message: str
 
 
 class AuthRefreshResponse(AuthTokensBase):

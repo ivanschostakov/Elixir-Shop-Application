@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
+import secrets
 from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -7,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.services.recommendations import record_purchase
-from src.database.crud import create_delivery_recipient, create_order, delete_order_draft, get_delivery_recipient_by_fields, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id, get_orders_for_user as get_orders_for_user_crud
+from src.database.crud import create_delivery_recipient, create_order, delete_order_draft, get_delivery_recipient_by_fields, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id, get_orders_for_user as get_orders_for_user_crud
 from src.database.models import Order, OrderDraft, OrderItem, User
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode
 from src.database.schemas import DeliveryRecipientCreate, OrderCreate
@@ -17,6 +18,17 @@ from src.integrations.delivery.cdek import get_cdek_client
 from .common import _delivery_string, _normalize_phone
 from .crm import ensure_order_has_amocrm_lead
 from .fulfillment import normalize_address_for_cf
+
+ORDER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+
+async def _generate_order_code(session: AsyncSession) -> str:
+    for _ in range(20):
+        suffix = "".join(secrets.choice(ORDER_CODE_ALPHABET) for _ in range(8))
+        order_code = f"EP-{suffix}"
+        if await get_order_by_code(session, order_code) is None:
+            return order_code
+    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate order code")
 
 
 async def _get_or_create_self_recipient(session: AsyncSession, *, user: User):
@@ -91,7 +103,8 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     checkout_snapshot = _build_checkout_snapshot(draft, payment_method=payment_method, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload)
     delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
 
-    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=draft.delivery_address_id, recipient_id=draft.recipient_id, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=draft.items_count, total_quantity=draft.total_quantity, basket_subtotal=draft.basket_subtotal, delivery_total=draft.delivery_total, grand_total=draft.grand_total, currency=draft.currency, delivery_period_min=draft.delivery_period_min, delivery_period_max=draft.delivery_period_max, comment=draft.comment, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
+    order_code = await _generate_order_code(session)
+    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=draft.delivery_address_id, recipient_id=draft.recipient_id, order_code=order_code, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=draft.items_count, total_quantity=draft.total_quantity, basket_subtotal=draft.basket_subtotal, delivery_total=draft.delivery_total, grand_total=draft.grand_total, currency=draft.currency, delivery_period_min=draft.delivery_period_min, delivery_period_max=draft.delivery_period_max, comment=draft.comment, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
 
     order_items = [OrderItem(user_id=user.id, order_id=order.id, product_id=item.product_id, variant_id=item.variant_id, product_name=item.product_name, product_sku=item.product_sku, variant_name=item.variant_name, variant_sku=item.variant_sku, quantity=item.quantity, unit_price=item.unit_price, line_total=item.line_total) for item in draft.items]
     session.add_all(order_items)

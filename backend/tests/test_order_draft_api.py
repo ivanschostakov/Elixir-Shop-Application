@@ -160,21 +160,16 @@ def _build_door_payload() -> dict:
 
 
 @pytest.fixture()
-def registered_user(client: TestClient):
+def registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
     email = f"draft_{token}@example.com"
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": f"u{token}",
-            "email": email,
-            "password": "test-password",
-            "name": "Draft",
-            "surname": "Tester",
-        },
-    )
-    assert response.status_code == 201, response.text
-    payload = response.json()
+    payload = register_verified_user({
+        "username": f"u{token}",
+        "email": email,
+        "password": "test-password",
+        "name": "Draft",
+        "surname": "Tester",
+    })
     user_id = payload["user"]["id"]
 
     try:
@@ -184,21 +179,16 @@ def registered_user(client: TestClient):
 
 
 @pytest.fixture()
-def second_registered_user(client: TestClient):
+def second_registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
     email = f"draft_second_{token}@example.com"
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": f"u{token}",
-            "email": email,
-            "password": "test-password",
-            "name": "Second",
-            "surname": "Tester",
-        },
-    )
-    assert response.status_code == 201, response.text
-    payload = response.json()
+    payload = register_verified_user({
+        "username": f"u{token}",
+        "email": email,
+        "password": "test-password",
+        "name": "Second",
+        "surname": "Tester",
+    })
     user_id = payload["user"]["id"]
 
     try:

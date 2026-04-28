@@ -10,6 +10,18 @@
 #import <NSObjCRuntime.h>
 #endif
 
+static inline void RNCYMManagerDispatchToMain(dispatch_block_t block) {
+    if ([NSThread isMainThread]) {
+        block();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), block);
+    }
+}
+
+static inline NSString *RNCYMManagerThreadName(void) {
+    return [NSThread isMainThread] ? @"main" : @"background";
+}
+
 @implementation ClusteredYamapView
 
 RCT_EXPORT_MODULE()
@@ -39,11 +51,20 @@ RCT_EXPORT_MODULE()
 }
 
 - (UIView *_Nullable)view {
+    NSLog(@"[delivery-flow][yamap-manager] native clustered map view creation requested thread=%@", RNCYMManagerThreadName());
     RNCYMView* map = [[RNCYMView alloc] init];
+    NSLog(@"[delivery-flow][yamap-manager] native clustered map view created thread=%@", RNCYMManagerThreadName());
     return map;
 }
 
 - (void)setCenterForMap:(RNCYMView*)map center:(NSDictionary*)_center zoom:(float)zoom azimuth:(float)azimuth tilt:(float)tilt duration:(float)duration animation:(int)animation {
+    NSLog(@"[delivery-flow][yamap-manager] setCenter requested lat=%@ lon=%@ zoom=%.2f duration=%.2f animation=%d thread=%@",
+          _center[@"lat"],
+          _center[@"lon"],
+          zoom,
+          duration,
+          animation,
+          RNCYMManagerThreadName());
     YMKPoint *center = [RCTConvert YMKPoint:_center];
     YMKCameraPosition *pos = [YMKCameraPosition cameraPositionWithTarget:center zoom:zoom azimuth:azimuth tilt:tilt];
     [map setCenter:pos withDuration:duration withAnimation:animation];
@@ -64,28 +85,60 @@ RCT_EXPORT_VIEW_PROPERTY(onScreenToWorldPointsReceived, RCTBubblingEventBlock)
 
 RCT_CUSTOM_VIEW_PROPERTY(initialRegion, NSDictionary, RNYMView) {
     if (json && view) {
-        [view setInitialRegion:json];
+        NSDictionary *initialRegion = [json isKindOfClass:[NSDictionary class]] ? [json copy] : nil;
+        NSLog(@"[delivery-flow][yamap-manager] initialRegion prop received lat=%@ lon=%@ zoom=%@ thread=%@",
+              initialRegion[@"lat"],
+              initialRegion[@"lon"],
+              initialRegion[@"zoom"],
+              RNCYMManagerThreadName());
+        RNCYMManagerDispatchToMain(^{
+            [view setInitialRegion:initialRegion];
+        });
     }
 }
 RCT_CUSTOM_VIEW_PROPERTY(userLocationAccuracyFillColor, NSNumber, RNCYMView) {
-    [view setUserLocationAccuracyFillColor:[RCTConvert UIColor:json]];
+    UIColor *color = [RCTConvert UIColor:json];
+    RNCYMManagerDispatchToMain(^{
+        [view setUserLocationAccuracyFillColor:color];
+    });
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(clusterColor, NSNumber, RNCYMView) {
-    [view setClusterColor:[RCTConvert UIColor:json]];
+    UIColor *color = [RCTConvert UIColor:json];
+    NSLog(@"[delivery-flow][yamap-manager] clusterColor prop received hasColor=%d thread=%@",
+          color != nil,
+          RNCYMManagerThreadName());
+    RNCYMManagerDispatchToMain(^{
+        [view setClusterColor:color];
+    });
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(markerSize, NSNumber, RNCYMView) {
-    [view setMarkerSize:json ? [json floatValue] : 34.0f];
+    CGFloat markerSize = json ? [json floatValue] : 34.0f;
+    NSLog(@"[delivery-flow][yamap-manager] markerSize prop received size=%.2f thread=%@",
+          markerSize,
+          RNCYMManagerThreadName());
+    RNCYMManagerDispatchToMain(^{
+        [view setMarkerSize:markerSize];
+    });
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(clusteredMarkers, NSArray<YMKRequestPoint*>*_Nonnull, RNCYMView) {
-    [view setClusteredMarkers:[RCTConvert NSArray:json]];
+    NSArray *markers = [RCTConvert NSArray:json];
+    NSLog(@"[delivery-flow][yamap-manager] clusteredMarkers prop received count=%lu thread=%@",
+          (unsigned long)markers.count,
+          RNCYMManagerThreadName());
+    [view setClusteredMarkers:markers];
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(clusteredMarkerIcons, NSDictionary, RNCYMView) {
+    NSLog(@"[delivery-flow][yamap-manager] clusteredMarkerIcons prop received valid=%d count=%lu thread=%@",
+          json && [json isKindOfClass:[NSDictionary class]],
+          json && [json isKindOfClass:[NSDictionary class]] ? (unsigned long)((NSDictionary *)json).count : 0,
+          RNCYMManagerThreadName());
     if (json && [json isKindOfClass:[NSDictionary class]]) {
-        [view setClusteredMarkerIcons:(NSDictionary *)json];
+        NSDictionary *icons = [(NSDictionary *)json copy];
+        [view setClusteredMarkerIcons:icons];
         return;
     }
 
@@ -93,81 +146,135 @@ RCT_CUSTOM_VIEW_PROPERTY(clusteredMarkerIcons, NSDictionary, RNCYMView) {
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(userLocationAccuracyStrokeColor, NSNumber, RNCYMView) {
-    [view setUserLocationAccuracyStrokeColor:[RCTConvert UIColor:json]];
+    UIColor *color = [RCTConvert UIColor:json];
+    RNCYMManagerDispatchToMain(^{
+        [view setUserLocationAccuracyStrokeColor:color];
+    });
 }
 
 
 RCT_CUSTOM_VIEW_PROPERTY(userLocationAccuracyStrokeWidth, NSNumber, RNCYMView) {
-    [view setUserLocationAccuracyStrokeWidth:[json floatValue]];
+    CGFloat strokeWidth = json ? [json floatValue] : 0.0f;
+    RNCYMManagerDispatchToMain(^{
+        [view setUserLocationAccuracyStrokeWidth:strokeWidth];
+    });
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(userLocationIcon, NSString, RNCYMView) {
     if (json && view) {
-        [view setUserLocationIcon:json];
+        NSString *icon = [json copy];
+        RNCYMManagerDispatchToMain(^{
+            [view setUserLocationIcon:icon];
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(userLocationIconScale, NSNumber, RNCYMView) {
     if (json && view) {
-        [view setUserLocationIconScale:json];
+        NSNumber *iconScale = [json copy];
+        RNCYMManagerDispatchToMain(^{
+            [view setUserLocationIconScale:iconScale];
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(showUserPosition, BOOL, RNCYMView) {
     if (view) {
-        [view setListenUserLocation: json ? [json boolValue] : NO];
+        BOOL showUserPosition = json ? [json boolValue] : NO;
+        NSLog(@"[delivery-flow][yamap-manager] showUserPosition prop received value=%d thread=%@",
+              showUserPosition,
+              RNCYMManagerThreadName());
+        RNCYMManagerDispatchToMain(^{
+            [view setListenUserLocation:showUserPosition];
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(followUser, BOOL, RNCYMView) {
-    [view setFollowUser: json ? [json boolValue] : NO];
+    BOOL followUser = json ? [json boolValue] : NO;
+    NSLog(@"[delivery-flow][yamap-manager] followUser prop received value=%d thread=%@",
+          followUser,
+          RNCYMManagerThreadName());
+    RNCYMManagerDispatchToMain(^{
+        [view setFollowUser:followUser];
+    });
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(nightMode, BOOL, RNCYMView) {
     if (view) {
-        [view setNightMode: json ? [json boolValue]: NO];
+        BOOL nightMode = json ? [json boolValue]: NO;
+        RNCYMManagerDispatchToMain(^{
+            [view setNightMode:nightMode];
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(mapStyle, NSString, RNCYMView) {
     if (json && view) {
-        [view.mapWindow.map setMapStyleWithStyle:json];
+        NSString *mapStyle = [json copy];
+        NSLog(@"[delivery-flow][yamap-manager] mapStyle prop received length=%lu thread=%@",
+              (unsigned long)mapStyle.length,
+              RNCYMManagerThreadName());
+        RNCYMManagerDispatchToMain(^{
+            [view.mapWindow.map setMapStyleWithStyle:mapStyle];
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(zoomGesturesEnabled, BOOL, RNCYMView) {
     if (view) {
-        view.mapWindow.map.zoomGesturesEnabled = json ? [json boolValue] : YES;
+        BOOL enabled = json ? [json boolValue] : YES;
+        RNCYMManagerDispatchToMain(^{
+            view.mapWindow.map.zoomGesturesEnabled = enabled;
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(scrollGesturesEnabled, BOOL, RNCYMView) {
     if (view) {
-        view.mapWindow.map.scrollGesturesEnabled = json ? [json boolValue] : YES;
+        BOOL enabled = json ? [json boolValue] : YES;
+        RNCYMManagerDispatchToMain(^{
+            view.mapWindow.map.scrollGesturesEnabled = enabled;
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(tiltGesturesEnabled, BOOL, RNCYMView) {
     if (view) {
-        view.mapWindow.map.tiltGesturesEnabled = json ? [json boolValue] : YES;
+        BOOL enabled = json ? [json boolValue] : YES;
+        RNCYMManagerDispatchToMain(^{
+            view.mapWindow.map.tiltGesturesEnabled = enabled;
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(rotateGesturesEnabled, BOOL, RNCYMView) {
     if (view) {
-        view.mapWindow.map.rotateGesturesEnabled = json ? [json boolValue] : YES;
+        BOOL enabled = json ? [json boolValue] : YES;
+        RNCYMManagerDispatchToMain(^{
+            view.mapWindow.map.rotateGesturesEnabled = enabled;
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(fastTapEnabled, BOOL, RNCYMView) {
     if (view) {
-        view.mapWindow.map.fastTapEnabled = json ? [json boolValue] : YES;
+        BOOL enabled = json ? [json boolValue] : YES;
+        RNCYMManagerDispatchToMain(^{
+            view.mapWindow.map.fastTapEnabled = enabled;
+        });
     }
 }
 
 RCT_CUSTOM_VIEW_PROPERTY(mapType, NSString, RNCYMView) {
     if (view) {
-        [view setMapType:json];
+        NSString *mapType = [json copy];
+        NSLog(@"[delivery-flow][yamap-manager] mapType prop received value=%@ thread=%@",
+              mapType,
+              RNCYMManagerThreadName());
+        RNCYMManagerDispatchToMain(^{
+            [view setMapType:mapType];
+        });
     }
 }
 

@@ -7,6 +7,10 @@ import {
     logout,
     refreshSession,
     registerAccount,
+    resendLoginCode as resendLoginCodeRequest,
+    resendRegistrationCode as resendRegistrationCodeRequest,
+    verifyLogin as verifyLoginRequest,
+    verifyRegistration as verifyRegistrationRequest,
 } from "@/services/auth/auth"
 import { translate } from "@/i18n/translations"
 import { AuthContext } from "@/providers/auth-provider.context"
@@ -16,7 +20,15 @@ import {
     syncOrderStatusNotifications,
     unregisterOrderStatusNotifications,
 } from "@/services/notifications/order-status-notifications"
-import type { AuthUser, LoginCredentials, RegistrationPayload } from "@/services/auth/auth.types"
+import type {
+    AuthUser,
+    LoginCredentials,
+    LoginResult,
+    LoginVerifyPayload,
+    RegistrationCodeResendPayload,
+    RegistrationPayload,
+    RegistrationVerifyPayload,
+} from "@/services/auth/auth.types"
 import {
     clearAuthTokens,
     getAuthTokens,
@@ -89,10 +101,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     }, [])
 
-    const signIn = async (credentials: LoginCredentials) => {
+    const signIn = async (credentials: LoginCredentials): Promise<LoginResult> => {
         try {
-            const nextUser = await authenticate(credentials)
-            setUser(nextUser)
+            const result = await authenticate(credentials)
+            if (!result.verificationRequired) {
+                setUser(result.user)
+            }
+            return result
         } catch (error) {
             clearAuthTokens()
             throw new Error(getAuthErrorMessage(error, translate("auth.error.loginFallback")))
@@ -101,11 +116,46 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     const register = async (payload: RegistrationPayload) => {
         try {
-            const nextUser = await registerAccount(payload)
-            setUser(nextUser)
+            return await registerAccount(payload)
         } catch (error) {
             clearAuthTokens()
             throw new Error(getAuthErrorMessage(error, translate("auth.error.registerFallback")))
+        }
+    }
+
+    const verifyLogin = async (payload: LoginVerifyPayload) => {
+        try {
+            const nextUser = await verifyLoginRequest(payload)
+            setUser(nextUser)
+        } catch (error) {
+            clearAuthTokens()
+            throw new Error(getAuthErrorMessage(error, translate("auth.error.verifyFallback")))
+        }
+    }
+
+    const resendLoginCode = async (payload: LoginCredentials) => {
+        try {
+            return await resendLoginCodeRequest(payload)
+        } catch (error) {
+            throw new Error(getAuthErrorMessage(error, translate("auth.error.resendCodeFallback")))
+        }
+    }
+
+    const verifyRegistration = async (payload: RegistrationVerifyPayload) => {
+        try {
+            const nextUser = await verifyRegistrationRequest(payload)
+            setUser(nextUser)
+        } catch (error) {
+            clearAuthTokens()
+            throw new Error(getAuthErrorMessage(error, translate("auth.error.verifyFallback")))
+        }
+    }
+
+    const resendRegistrationCode = async (payload: RegistrationCodeResendPayload) => {
+        try {
+            return await resendRegistrationCodeRequest(payload)
+        } catch (error) {
+            throw new Error(getAuthErrorMessage(error, translate("auth.error.resendCodeFallback")))
         }
     }
 
@@ -129,7 +179,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 isAuthenticated,
                 user,
                 signIn,
+                verifyLogin,
+                resendLoginCode,
                 register,
+                verifyRegistration,
+                resendRegistrationCode,
                 signOut,
             }}
         >

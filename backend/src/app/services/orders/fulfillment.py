@@ -1,3 +1,5 @@
+import logging
+
 from typing import Any
 
 import httpx
@@ -8,6 +10,8 @@ from src.database.models import Order
 from src.integrations.delivery.cdek import get_cdek_client
 
 from .fulfillment_payloads import build_cdek_order_body, build_yandex_delivery_request, normalize_address_for_cf
+
+log = logging.getLogger(__name__)
 
 YANDEX_HEADERS = {"Authorization": f"Bearer {YANDEX_DELIVERY_TOKEN}", "Accept": "application/json", "Content-Type": "application/json", "Accept-Language": "ru"}
 
@@ -84,7 +88,9 @@ def _extract_cdek_provider_ref(response: dict[str, Any], order: Order) -> str:
 async def _create_cdek_delivery(order: Order) -> dict[str, Any]:
     cdek_client = get_cdek_client()
     order_body = await build_cdek_order_body(order, cdek_client)
+    log.info("CDEK create_order request order_number=%s body=%s", order.order_number, order_body)
     response = await cdek_client.create_order(order_body)
+    log.info("CDEK create_order response order_number=%s response=%s", order.order_number, response)
     return {"delivery_provider_ref": _extract_cdek_provider_ref(response, order)}
 
 

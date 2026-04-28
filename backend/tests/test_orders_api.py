@@ -176,20 +176,15 @@ def _create_order_for_history(
 
 
 @pytest.fixture()
-def registered_user(client: TestClient):
+def registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": f"u{token}",
-            "email": f"orders_{token}@example.com",
-            "password": "test-password",
-            "name": "Orders",
-            "surname": "Tester",
-        },
-    )
-    assert response.status_code == 201, response.text
-    payload = response.json()
+    payload = register_verified_user({
+        "username": f"u{token}",
+        "email": f"orders_{token}@example.com",
+        "password": "test-password",
+        "name": "Orders",
+        "surname": "Tester",
+    })
     user_id = payload["user"]["id"]
     email = payload["user"]["email"]
 
@@ -204,20 +199,15 @@ def registered_user(client: TestClient):
 
 
 @pytest.fixture()
-def second_registered_user(client: TestClient):
+def second_registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": f"u{token}",
-            "email": f"orders_second_{token}@example.com",
-            "password": "test-password",
-            "name": "Orders",
-            "surname": "Second",
-        },
-    )
-    assert response.status_code == 201, response.text
-    payload = response.json()
+    payload = register_verified_user({
+        "username": f"u{token}",
+        "email": f"orders_second_{token}@example.com",
+        "password": "test-password",
+        "name": "Orders",
+        "surname": "Second",
+    })
     user_id = payload["user"]["id"]
 
     try:
@@ -440,6 +430,62 @@ def test_create_payment_sbp_returns_qr_payload(client: TestClient, registered_us
     assert stored_order.payment_invoice_id == "invoice-1"
 
 
+def test_create_payment_sbp_error_keeps_order_retryable(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
+    catalog = variant_factory(stock=5, price=Decimal("25.00"))
+    draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
+
+    order_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=registered_user["headers"],
+        json={"draft_id": draft["id"], "payment_method": "sbp"},
+    )
+    assert order_response.status_code == 200, order_response.text
+    order_id = order_response.json()["id"]
+
+    async def fake_create_invoice(**kwargs):
+        return {"Result": {"InvoiceId": "invoice-error-1"}}
+
+    async def fake_sbp_payment(**kwargs):
+        return {"Result": {"State": {"Code": 0, "Desc": "Успешно обработан"}}}
+
+    async def fake_get_bank_card_payment_state(**kwargs):
+        return {
+            "Result": {
+                "PaymentStep": "Error",
+                "Message": "Операция просрочена",
+                "State": {"Code": 0, "Desc": "Успешно обработан"},
+            }
+        }
+
+    async def fake_resolve_payment_qr_image(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.create_invoice", fake_create_invoice)
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.sbp_payment", fake_sbp_payment)
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.get_bank_card_payment_state", fake_get_bank_card_payment_state)
+    monkeypatch.setattr("src.app.services.orders._resolve_payment_qr_image", fake_resolve_payment_qr_image)
+
+    payment_response = client.post(
+        "/api/v1/payments/create",
+        headers=registered_user["headers"],
+        json={"order_id": order_id},
+    )
+
+    assert payment_response.status_code == 200, payment_response.text
+    payload = payment_response.json()
+    assert payload["payment_status"] == "error"
+    assert payload["can_retry"] is True
+    assert stub_amocrm["status_updates"][-1] == {
+        "lead_id": 67890,
+        "status_id": amocrm_client.STATUS_IDS["waiting_response"],
+    }
+
+    stored_order = _get_order(order_id)
+    assert stored_order.payment_status == "error"
+    assert stored_order.is_active is True
+    assert stored_order.is_canceled is False
+
+
 def test_amocrm_paid_webhook_creates_delivery_once(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
     catalog = variant_factory(stock=5, price=Decimal("17.00"))
     draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
@@ -451,13 +497,14 @@ def test_amocrm_paid_webhook_creates_delivery_once(client: TestClient, registere
     )
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
+    order_number = order_response.json()["order_number"]
 
     calls = {"count": 0}
 
     async def fake_get_lead(lead_id):
         return {
             "id": lead_id,
-            "name": f"Заказ №{order_id} с Приложения",
+            "name": f"Заказ №{order_number} с Приложения",
             "status_id": amocrm_client.STATUS_IDS["check_paid"],
             "pipeline_id": amocrm_client.PIPELINE_ID,
         }
@@ -525,6 +572,7 @@ def test_intellectmoney_webhook_updates_amocrm_status_for_non_paid_results(
     )
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
+    order_number = order_response.json()["order_number"]
 
     monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.verify_webhook_hash", lambda payload: True)
 
@@ -532,8 +580,8 @@ def test_intellectmoney_webhook_updates_amocrm_status_for_non_paid_results(
         "/api/v1/webhooks/intellectmoney",
         data={
             "EshopId": "shop-id",
-            "OrderId": str(order_id),
-            "ServiceName": f"Заказ №{order_id}",
+            "OrderId": order_number,
+            "ServiceName": f"Заказ №{order_number}",
             "EshopAccount": "",
             "RecipientAmount": "21.00",
             "RecipientCurrency": "RUB",
@@ -735,6 +783,7 @@ def test_amocrm_webhook_sends_push_notification_on_order_status_change(
     )
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
+    order_number = order_response.json()["order_number"]
 
     token_response = client.post(
         "/api/v1/users/me/push-tokens",
@@ -752,7 +801,7 @@ def test_amocrm_webhook_sends_push_notification_on_order_status_change(
     async def fake_get_lead(lead_id):
         return {
             "id": lead_id,
-            "name": f"Заказ №{order_id} с Приложения",
+            "name": f"Заказ №{order_number} с Приложения",
             "status_id": amocrm_client.STATUS_IDS["package_sent"],
             "pipeline_id": amocrm_client.PIPELINE_ID,
         }
@@ -774,7 +823,7 @@ def test_amocrm_webhook_sends_push_notification_on_order_status_change(
     assert webhook_response.status_code == 200, webhook_response.text
     assert len(sent_messages) == 1
     assert sent_messages[0]["to"] == "ExponentPushToken[notify-me]"
-    assert sent_messages[0]["title"] == f"Заказ №{order_id}"
+    assert sent_messages[0]["title"] == f"Заказ №{order_number}"
     assert sent_messages[0]["data"]["order_id"] == order_id
     assert sent_messages[0]["data"]["status_code"] == "sent"
     assert sent_messages[0]["data"]["history_bucket"] == "active"
@@ -797,6 +846,7 @@ def test_amocrm_webhook_skips_push_notification_when_status_does_not_change(
     )
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
+    order_number = order_response.json()["order_number"]
 
     token_response = client.post(
         "/api/v1/users/me/push-tokens",
@@ -814,7 +864,7 @@ def test_amocrm_webhook_skips_push_notification_when_status_does_not_change(
     async def fake_get_lead(lead_id):
         return {
             "id": lead_id,
-            "name": f"Заказ №{order_id} с Приложения",
+            "name": f"Заказ №{order_number} с Приложения",
             "status_id": amocrm_client.STATUS_IDS["main"],
             "pipeline_id": amocrm_client.PIPELINE_ID,
         }

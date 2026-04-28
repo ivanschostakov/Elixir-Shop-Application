@@ -2,6 +2,7 @@ import logging
 import socket
 
 from datetime import datetime, timedelta, timezone
+from ipaddress import ip_address
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -9,7 +10,7 @@ from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from config import APP_PAYMENT_RETURN_BASE_URL
+from config import APP_PAYMENT_RETURN_BASE_URL, INTELLECTMONEY_IP_ADDRESS
 from src.database.crud import update_order
 from src.database.models import Order
 from src.database.schemas import OrderUpdate
@@ -89,10 +90,10 @@ def _base_return_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
-def _intellectmoney_urls(request: Request, order_number: int) -> dict[str, str]:
+def _intellectmoney_urls(request: Request, order_id: int) -> dict[str, str]:
     base = _base_return_url(request)
     api_base = str(request.base_url).rstrip("/")
-    fallback_url = f"{base}/payment?orderId={order_number}"
+    fallback_url = f"{base}/payment?orderId={order_id}"
     return {
         "success_url": fallback_url,
         "fail_url": fallback_url,
@@ -101,15 +102,51 @@ def _intellectmoney_urls(request: Request, order_number: int) -> dict[str, str]:
     }
 
 
+def _ipv4_from_value(value: str | None) -> str | None:
+    if not value:
+        return None
+    for raw_candidate in str(value).split(","):
+        candidate = raw_candidate.strip().strip('"').strip("'")
+        if not candidate:
+            continue
+        if candidate.lower().startswith("for="):
+            candidate = candidate[4:].strip().strip('"').strip("'")
+        if candidate.startswith("[") and "]" in candidate:
+            candidate = candidate[1:candidate.index("]")]
+        elif candidate.count(":") == 1 and "." in candidate:
+            candidate = candidate.rsplit(":", 1)[0]
+        try:
+            parsed = ip_address(candidate)
+        except ValueError:
+            continue
+        if parsed.version == 4:
+            return str(parsed)
+    return None
+
+
 def _detect_request_ip(request: Request) -> str:
+    configured_ip = _ipv4_from_value(INTELLECTMONEY_IP_ADDRESS)
+    if configured_ip:
+        return configured_ip
+    if INTELLECTMONEY_IP_ADDRESS:
+        log.warning("Ignoring invalid INTELLECTMONEY_IP_ADDRESS=%s; expected IPv4", INTELLECTMONEY_IP_ADDRESS)
+
+    for header_name in ("cf-connecting-ip", "x-real-ip", "x-forwarded-for", "forwarded"):
+        header_ip = _ipv4_from_value(request.headers.get(header_name))
+        if header_ip:
+            return header_ip
+
+    if request.client and request.client.host:
+        client_ip = _ipv4_from_value(request.client.host)
+        if client_ip:
+            return client_ip
+
     host = urlsplit(_base_return_url(request)).hostname
     if host:
         try:
             return socket.gethostbyname(host)
         except OSError:
             log.warning("Unable to resolve return base host %s for IntellectMoney; falling back", host)
-    if request.client and request.client.host:
-        return request.client.host
     return "127.0.0.1"
 
 def _payment_status_payload(
@@ -123,6 +160,7 @@ def _payment_status_payload(
     payload = {
         "status": "success",
         "order_id": order.id,
+        "order_code": order.order_code,
         "order_number": order.order_number,
         "payment_method": order.payment_method,
         "payment_status": order.payment_status,
@@ -136,6 +174,12 @@ def _payment_status_payload(
     if expires_at is not None:
         payload["expires_at"] = expires_at.replace(microsecond=0).isoformat()
     return payload
+
+
+def _qr_debug(value: str | None) -> dict[str, Any]:
+    if not value:
+        return {"present": False, "length": 0, "prefix": None}
+    return {"present": True, "length": len(value), "prefix": value[:120]}
 
 
 async def _resolve_payment_qr_image(
@@ -208,7 +252,7 @@ async def create_payment_for_order(session: AsyncSession, *, request: Request, o
     if payment_method != "sbp":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment method")
 
-    urls = _intellectmoney_urls(request, order.order_number)
+    urls = _intellectmoney_urls(request, order.id)
     ip_address = _detect_request_ip(request)
     user_name = " ".join(part for part in [order.recipient.name, order.recipient.surname] if part).strip() or f"Заказ {order.order_number}"
     order = await update_order(
@@ -245,6 +289,12 @@ async def create_payment_for_order(session: AsyncSession, *, request: Request, o
             or create_invoice_result.get("InvoiceId")
             or ""
         )
+        log.info(
+            "IntellectMoney createInvoice parsed order_number=%s invoice_id=%s result_keys=%s",
+            order.order_number,
+            invoice_id,
+            sorted(result_payload.keys()) if isinstance(result_payload, dict) else [],
+        )
         if not invoice_id:
             raise IntellectMoneyError("IntellectMoney createInvoice succeeded without InvoiceId")
 
@@ -261,11 +311,37 @@ async def create_payment_for_order(session: AsyncSession, *, request: Request, o
         payment_step = parsed_state["payment_step"] or parsed_sbp["payment_step"]
         qr_url = parsed_state["qr_url"] or parsed_sbp["qr_url"]
         qr_image = parsed_state["qr_image"] or parsed_sbp["qr_image"]
+        log.info(
+            "IntellectMoney SBP parsed order_number=%s invoice_id=%s parsed_sbp=%s parsed_state=%s selected_payment_step=%s selected_qr_url=%s selected_qr_image=%s",
+            order.order_number,
+            invoice_id,
+            {
+                "payment_step": parsed_sbp["payment_step"],
+                "qr_url": parsed_sbp["qr_url"],
+                "qr_image": _qr_debug(parsed_sbp["qr_image"]),
+            },
+            {
+                "payment_step": parsed_state["payment_step"],
+                "qr_url": parsed_state["qr_url"],
+                "qr_image": _qr_debug(parsed_state["qr_image"]),
+            },
+            payment_step,
+            qr_url,
+            _qr_debug(qr_image),
+        )
         saved_qr_image = await _resolve_payment_qr_image(
             request,
             order,
             qr_image=qr_image,
             qr_url=qr_url,
+        )
+        log.info(
+            "IntellectMoney SBP QR resolved order_number=%s invoice_id=%s saved_qr_image=%s returned_qr_image=%s returned_qr_url=%s",
+            order.order_number,
+            invoice_id,
+            saved_qr_image,
+            _qr_debug(qr_image),
+            qr_url,
         )
 
         if payment_step not in PENDING_PAYMENT_STEPS:
@@ -322,6 +398,14 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
             payment_step = parsed_state["payment_step"]
             qr_url = parsed_state["qr_url"]
             qr_image = parsed_state["qr_image"]
+            log.info(
+                "IntellectMoney status parsed order_number=%s invoice_id=%s payment_step=%s qr_url=%s qr_image=%s",
+                order.order_number,
+                order.payment_invoice_id,
+                payment_step,
+                qr_url,
+                _qr_debug(qr_image),
+            )
             if payment_step:
                 order = await reconcile_sbp_payment(
                     session,

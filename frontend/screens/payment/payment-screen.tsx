@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     ActivityIndicator,
+    Animated,
+    Easing,
     Image,
     LayoutChangeEvent,
     Linking,
@@ -40,6 +42,17 @@ type SummarySection = "contact" | "items"
 
 const FINAL_STOP_STATUSES = new Set(["error", "canceled", "refunded", "hold", "partial"])
 const PAYMENT_CHROME_TEMPLATE = { footer: "none" } as const
+const CONFETTI_COLORS = ["#E94E77", "#F6C85F", "#3CAEA3", "#20639B", "#F17300", "#7B61FF"] as const
+const CONFETTI_PIECES = Array.from({ length: 30 }, (_, index) => ({
+    color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
+    delay: (index % 6) * 24,
+    drift: ((index % 7) - 3) * 12,
+    left: 5 + ((index * 31) % 90),
+    rotation: index % 2 === 0 ? "210deg" : "-180deg",
+    size: 6 + (index % 4),
+    top: -24 - (index % 5) * 10,
+    travel: 260 + (index % 6) * 28,
+}))
 
 function getPaymentStateError(payment: PaymentStatusRead | null, fallback: string) {
     if (!payment?.payment_status) {
@@ -110,6 +123,7 @@ export default function PaymentScreen() {
     const [isContactExpanded, setIsContactExpanded] = useState(true)
     const [isItemsExpanded, setIsItemsExpanded] = useState(true)
     const scrollRef = useRef<ScrollView>(null)
+    const confettiProgress = useRef(new Animated.Value(0)).current
     const paymentStatusRequestIdRef = useRef(0)
     const sectionPositionsRef = useRef<Record<SummarySection, number>>({
         contact: 0,
@@ -504,6 +518,7 @@ export default function PaymentScreen() {
                 {
                     status: "success",
                     order_id: order.id,
+                    order_code: order.order_code,
                     order_number: order.order_number,
                     payment_method: order.payment_method,
                     payment_status: order.payment_status,
@@ -603,6 +618,13 @@ export default function PaymentScreen() {
         }
 
         setIsSuccessVisualReady(false)
+        confettiProgress.setValue(0)
+        Animated.timing(confettiProgress, {
+            toValue: 1,
+            duration: 1500,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+        }).start()
         const timeoutId = setTimeout(() => {
             setIsSuccessVisualReady(true)
         }, 1200)
@@ -610,7 +632,50 @@ export default function PaymentScreen() {
         return () => {
             clearTimeout(timeoutId)
         }
-    }, [phase])
+    }, [confettiProgress, phase])
+
+    const renderConfettiOverlay = () => (
+        <View pointerEvents="none" style={paymentScreenStyles.confettiLayer}>
+            {CONFETTI_PIECES.map((piece, index) => {
+                const inputStart = Math.max(0.001, piece.delay / 1500)
+                const inputMid = Math.min(inputStart + 0.2, 0.85)
+                const translateY = confettiProgress.interpolate({
+                    inputRange: [0, inputStart, 1],
+                    outputRange: [0, 0, piece.travel],
+                })
+                const translateX = confettiProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0, piece.drift],
+                })
+                const rotate = confettiProgress.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["0deg", piece.rotation],
+                })
+                const opacity = confettiProgress.interpolate({
+                    inputRange: [0, inputStart, inputMid, 1],
+                    outputRange: [0, 0, 1, 0],
+                })
+
+                return (
+                    <Animated.View
+                        key={`${piece.left}-${index}`}
+                        style={[
+                            paymentScreenStyles.confettiPiece,
+                            {
+                                backgroundColor: piece.color,
+                                height: piece.size * 1.6,
+                                left: `${piece.left}%`,
+                                opacity,
+                                top: piece.top,
+                                transform: [{ translateX }, { translateY }, { rotate }],
+                                width: piece.size,
+                            },
+                        ]}
+                    />
+                )
+            })}
+        </View>
+    )
 
     const renderVisualCard = () => {
         if (phase === "sbp") {
@@ -649,13 +714,18 @@ export default function PaymentScreen() {
         }
 
         if (phase === "success") {
+            const successMessage = resolvedPaymentMethod === "later"
+                ? t("payment.successLaterMessage")
+                : t("payment.successPaidMessage")
+
             return (
                 <View style={paymentScreenStyles.visualCard}>
-                    <View style={paymentScreenStyles.visualWrap}>
+                    {renderConfettiOverlay()}
+                    <View style={[paymentScreenStyles.visualWrap, paymentScreenStyles.successVisualWrap]}>
                         {STICKERS.cherryCongrats.kind === "lottie" ? (
                             <LottieView
                                 autoPlay
-                                loop
+                                loop={false}
                                 onAnimationLoaded={() => {
                                     setIsSuccessVisualReady(true)
                                 }}
@@ -665,6 +735,17 @@ export default function PaymentScreen() {
                         ) : (
                             <View style={paymentScreenStyles.visualPlaceholder} />
                         )}
+                        <View style={paymentScreenStyles.successCopy}>
+                            <Text style={paymentScreenStyles.successBadge}>{t("payment.successEyebrow")}</Text>
+                            <Text style={paymentScreenStyles.successTitle}>{t("payment.successTitle")}</Text>
+                            <Text style={paymentScreenStyles.successMessage}>{successMessage}</Text>
+                            {resolvedOrderNumber ? (
+                                <View style={paymentScreenStyles.successOrderBox}>
+                                    <Text style={paymentScreenStyles.successOrderLabel}>{t("payment.orderNumber")}</Text>
+                                    <Text style={paymentScreenStyles.successOrderValue}>#{resolvedOrderNumber}</Text>
+                                </View>
+                            ) : null}
+                        </View>
                     </View>
                 </View>
             )

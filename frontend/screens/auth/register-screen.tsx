@@ -7,23 +7,30 @@ import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import AuthFormLayout from "@/screens/auth/auth-form-layout"
 import { authSharedStyles } from "@/screens/auth/auth-shared.styles"
+import EmailVerificationStep from "@/screens/auth/email-verification-step"
 import PasswordField from "@/screens/auth/password-field"
 import { useAuthFormScroll } from "@/screens/auth/use-auth-form-scroll"
 
+type RegistrationStep = "details" | "verification"
+
 export default function RegisterScreen() {
-    const { register } = useAuth()
+    const { register, resendRegistrationCode, verifyRegistration } = useAuth()
     const { t } = useLanguage()
     const { handleFieldLayout, scrollRef, scrollToField } = useAuthFormScroll(
         ["username", "name", "surname", "email", "password", "confirmPassword"] as const,
     )
+    const [step, setStep] = useState<RegistrationStep>("details")
     const [username, setUsername] = useState("")
     const [name, setName] = useState("")
     const [surname, setSurname] = useState("")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [confirmPassword, setConfirmPassword] = useState("")
+    const [pendingEmail, setPendingEmail] = useState("")
     const [error, setError] = useState("")
+    const [statusMessage, setStatusMessage] = useState("")
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [isResending, setIsResending] = useState(false)
 
     const handleSubmit = async () => {
         if (
@@ -62,19 +69,81 @@ export default function RegisterScreen() {
         setIsSubmitting(true)
 
         try {
-            await register({
-                username,
-                name,
-                surname,
-                email,
+            const response = await register({
+                username: username.trim(),
+                name: name.trim(),
+                surname: surname.trim(),
+                email: email.trim(),
                 password,
             })
-            router.replace(ROUTES.home)
+            setPendingEmail(response.email)
+            setStatusMessage("")
+            setStep("verification")
         } catch (submitError) {
             setError(submitError instanceof Error ? submitError.message : t("auth.error.registerFallback"))
         } finally {
             setIsSubmitting(false)
         }
+    }
+
+    const handleVerify = async (code: string) => {
+        if (code.length !== 6) {
+            setError(t("auth.error.codeRequired"))
+            return false
+        }
+
+        setError("")
+        setStatusMessage("")
+        setIsSubmitting(true)
+
+        try {
+            await verifyRegistration({
+                email: pendingEmail,
+                code,
+            })
+            router.replace(ROUTES.home)
+            return true
+        } catch (submitError) {
+            setError(submitError instanceof Error ? submitError.message : t("auth.error.verifyFallback"))
+            return false
+        } finally {
+            setIsSubmitting(false)
+        }
+    }
+
+    const handleResend = async () => {
+        setError("")
+        setStatusMessage("")
+        setIsResending(true)
+
+        try {
+            await resendRegistrationCode({ email: pendingEmail })
+            setStatusMessage(t("auth.verify.resendSuccess"))
+        } catch (resendError) {
+            setError(resendError instanceof Error ? resendError.message : t("auth.error.resendCodeFallback"))
+        } finally {
+            setIsResending(false)
+        }
+    }
+
+    if (step === "verification") {
+        return (
+            <AuthFormLayout error={error} scrollRef={scrollRef} title={t("auth.verify.title")}>
+                <EmailVerificationStep
+                    email={pendingEmail}
+                    isChecking={isSubmitting}
+                    isResending={isResending}
+                    onEditEmail={() => {
+                        setStep("details")
+                        setError("")
+                        setStatusMessage("")
+                    }}
+                    onResend={handleResend}
+                    onVerify={handleVerify}
+                    statusMessage={statusMessage}
+                />
+            </AuthFormLayout>
+        )
     }
 
     return (

@@ -11,13 +11,31 @@ import type {
     AuthRefreshPayload,
     AuthTokensWithUserResponse,
     AuthUser,
+    BackendLoginResponse,
     BackendAuthTokens,
     BackendAuthUser,
     LoginCredentials,
+    LoginResult,
+    LoginVerificationRequiredResponse,
+    LoginVerifyPayload,
+    RegistrationCodeResendPayload,
+    RegistrationCodeSentResponse,
     RegistrationPayload,
+    RegistrationStartedResponse,
+    RegistrationVerifyPayload,
 } from "@/services/auth/auth.types"
 
-export type { AuthUser, LoginCredentials, RegistrationPayload } from "@/services/auth/auth.types"
+export type {
+    AuthUser,
+    LoginCredentials,
+    LoginResult,
+    LoginVerificationRequiredResponse,
+    LoginVerifyPayload,
+    RegistrationCodeResendPayload,
+    RegistrationPayload,
+    RegistrationStartedResponse,
+    RegistrationVerifyPayload,
+} from "@/services/auth/auth.types"
 export { getErrorMessage as getAuthErrorMessage } from "@/utils/errors"
 
 function authPath(path: string) {
@@ -48,10 +66,36 @@ function mapUser(user: BackendAuthUser): AuthUser {
     }
 }
 
-export async function authenticate(credentials: LoginCredentials): Promise<AuthUser> {
-    const response = await apiPost<AuthTokensWithUserResponse, LoginCredentials>(
+function isLoginVerificationRequired(response: BackendLoginResponse): response is Extract<BackendLoginResponse, { verification_required: boolean }> {
+    return "verification_required" in response && response.verification_required
+}
+
+export async function authenticate(credentials: LoginCredentials): Promise<LoginResult> {
+    const response = await apiPost<BackendLoginResponse, LoginCredentials>(
         authPath("/login"),
         credentials,
+        { auth: false, retryOnUnauthorized: false },
+    )
+
+    if (isLoginVerificationRequired(response)) {
+        return {
+            verificationRequired: true,
+            email: response.email,
+            message: response.message,
+        }
+    }
+
+    setAuthTokens(mapTokens(response))
+    return {
+        verificationRequired: false,
+        user: mapUser(response.user),
+    }
+}
+
+export async function verifyLogin(payload: LoginVerifyPayload): Promise<AuthUser> {
+    const response = await apiPost<AuthTokensWithUserResponse, LoginVerifyPayload>(
+        authPath("/login/verify"),
+        payload,
         { auth: false, retryOnUnauthorized: false },
     )
 
@@ -59,15 +103,39 @@ export async function authenticate(credentials: LoginCredentials): Promise<AuthU
     return mapUser(response.user)
 }
 
-export async function registerAccount(payload: RegistrationPayload): Promise<AuthUser> {
-    const response = await apiPost<AuthTokensWithUserResponse, RegistrationPayload>(
+export async function resendLoginCode(payload: LoginCredentials): Promise<LoginVerificationRequiredResponse> {
+    return apiPost<LoginVerificationRequiredResponse, LoginCredentials>(
+        authPath("/login/resend-code"),
+        payload,
+        { auth: false, retryOnUnauthorized: false },
+    )
+}
+
+export async function registerAccount(payload: RegistrationPayload): Promise<RegistrationStartedResponse> {
+    return apiPost<RegistrationStartedResponse, RegistrationPayload>(
         authPath("/register"),
+        payload,
+        { auth: false, retryOnUnauthorized: false },
+    )
+}
+
+export async function verifyRegistration(payload: RegistrationVerifyPayload): Promise<AuthUser> {
+    const response = await apiPost<AuthTokensWithUserResponse, RegistrationVerifyPayload>(
+        authPath("/register/verify"),
         payload,
         { auth: false, retryOnUnauthorized: false },
     )
 
     setAuthTokens(mapTokens(response))
     return mapUser(response.user)
+}
+
+export async function resendRegistrationCode(payload: RegistrationCodeResendPayload): Promise<RegistrationCodeSentResponse> {
+    return apiPost<RegistrationCodeSentResponse, RegistrationCodeResendPayload>(
+        authPath("/register/resend-code"),
+        payload,
+        { auth: false, retryOnUnauthorized: false },
+    )
 }
 
 export async function refreshSession(): Promise<AuthTokens | null> {

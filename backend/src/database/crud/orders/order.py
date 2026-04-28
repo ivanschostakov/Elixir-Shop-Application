@@ -65,6 +65,18 @@ async def get_order_by_id(session: AsyncSession, order_id: int, *, user_id: int 
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def get_order_by_code(session: AsyncSession, order_code: str, *, user_id: int | None = None) -> Order | None:
+    stmt = (
+        select(Order)
+        .options(*_order_load_options())
+        .where(Order.order_code == order_code)
+        .execution_options(populate_existing=True)
+    )
+    if user_id is not None:
+        stmt = stmt.where(Order.user_id == user_id)
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 async def get_order_by_draft_id(session: AsyncSession, draft_id: int, *, user_id: int | None = None) -> Order | None:
     stmt = (
         select(Order)

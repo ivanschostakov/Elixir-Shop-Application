@@ -91,20 +91,15 @@ def _get_website_identity_snapshot(user_id: int) -> dict | None:
 
 
 @pytest.fixture()
-def registered_user(client: TestClient):
+def registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
-    response = client.post(
-        "/api/v1/auth/register",
-        json={
-            "username": f"u{token}",
-            "email": f"website_identity_{token}@example.com",
-            "password": "test-password",
-            "name": "Plain",
-            "surname": "User",
-        },
-    )
-    assert response.status_code == 201, response.text
-    payload = response.json()
+    payload = register_verified_user({
+        "username": f"u{token}",
+        "email": f"website_identity_{token}@example.com",
+        "password": "test-password",
+        "name": "Plain",
+        "surname": "User",
+    })
     user_id = payload["user"]["id"]
 
     try:
