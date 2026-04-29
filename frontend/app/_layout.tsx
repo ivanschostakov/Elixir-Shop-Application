@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler"
 
 import AppShell from "@/components/navigation/app-shell"
 import { AuthProvider } from "@/providers/auth-provider"
+import { ThemeProvider } from "@/providers/theme-provider"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
 
 type GlobalErrorHandler = (error: unknown, isFatal?: boolean) => void
@@ -77,16 +78,20 @@ export default function RootLayout() {
     if (Platform.OS === "web") {
         return (
             <GestureHandlerRootView style={styles.root}>
-                <WebTemporarilyDisabledScreen />
+                <ThemeProvider>
+                    <WebTemporarilyDisabledScreen />
+                </ThemeProvider>
             </GestureHandlerRootView>
         )
     }
 
     return (
         <GestureHandlerRootView style={styles.root}>
-            <AuthProvider>
-                <AppShell />
-            </AuthProvider>
+            <ThemeProvider>
+                <AuthProvider>
+                    <AppShell />
+                </AuthProvider>
+            </ThemeProvider>
         </GestureHandlerRootView>
     )
 }

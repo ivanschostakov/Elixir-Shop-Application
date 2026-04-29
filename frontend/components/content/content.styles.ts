@@ -102,18 +102,14 @@ export const contentStyles = StyleSheet.create({
         alignSelf: "center",
         flexDirection: "row",
         gap: spacing.md,
+        position: "relative",
     },
     topTabButton: {
         alignItems: "center",
-        borderBottomColor: "transparent",
-        borderBottomWidth: 1.5,
         minWidth: 76,
         paddingBottom: 6,
         paddingHorizontal: spacing.xs,
         paddingTop: 2,
-    },
-    topTabButtonActive: {
-        borderBottomColor: colors.text,
     },
     topTabButtonPressed: {
         opacity: 0.72,
@@ -126,6 +122,14 @@ export const contentStyles = StyleSheet.create({
     topTabLabelActive: {
         color: colors.text,
         fontWeight: "800",
+    },
+    topTabIndicator: {
+        backgroundColor: colors.primary,
+        borderRadius: 999,
+        bottom: 0,
+        height: 3,
+        left: 0,
+        position: "absolute",
     },
     browseControls: {
         flexDirection: "row",
@@ -154,7 +158,7 @@ export const contentStyles = StyleSheet.create({
         marginLeft: "auto",
     },
     browseSectionLabel: {
-        color: "#6f7e8f",
+        color: colors.stateText,
         fontSize: 11,
         fontWeight: "700",
         letterSpacing: 1,
@@ -187,7 +191,7 @@ export const contentStyles = StyleSheet.create({
         color: colors.primary,
     },
     browseTriggerPlaceholderValue: {
-        color: "#7b8795",
+        color: colors.mutedText,
     },
     browsePickerBackdrop: {
         backgroundColor: "rgba(17, 24, 39, 0.38)",
@@ -198,7 +202,7 @@ export const contentStyles = StyleSheet.create({
         flex: 1,
     },
     browsePickerSheet: {
-        backgroundColor: colors.background,
+        backgroundColor: colors.surface,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
         paddingBottom: spacing.lg,
@@ -228,7 +232,7 @@ export const contentStyles = StyleSheet.create({
     },
     browsePickerPrimaryAction: {
         alignItems: "center",
-        backgroundColor: "#edf4fb",
+        backgroundColor: colors.primaryMuted,
         borderRadius: 999,
         justifyContent: "center",
         minHeight: 36,
@@ -269,7 +273,7 @@ export const contentStyles = StyleSheet.create({
     },
     productImage: {
         aspectRatio: 1,
-        backgroundColor: "#eef4fa",
+        backgroundColor: colors.surfaceMuted,
         width: "100%",
     },
     productImageOutOfStockOverlay: {
@@ -284,7 +288,7 @@ export const contentStyles = StyleSheet.create({
     },
     productImageOutOfStockBadge: {
         alignItems: "center",
-        backgroundColor: "rgba(255, 255, 255, 0.88)",
+        backgroundColor: colors.surfaceOverlaySoft,
         borderRadius: 999,
         justifyContent: "center",
         maxWidth: "82%",
@@ -333,7 +337,7 @@ export const contentStyles = StyleSheet.create({
     },
     productMetaBadge: {
         alignSelf: "flex-start",
-        backgroundColor: "#edf4fb",
+        backgroundColor: colors.primaryMuted,
         borderRadius: 999,
         paddingHorizontal: 6,
         paddingVertical: 4,
@@ -372,7 +376,7 @@ export const contentStyles = StyleSheet.create({
         opacity: 0.82,
     },
     listCardImage: {
-        backgroundColor: "#eef4fa",
+        backgroundColor: colors.surfaceMuted,
         borderRadius: 18,
         height: 84,
         width: 84,

@@ -36,7 +36,7 @@ export function DeliveryCornerButton({
                 </Text>
             ) : iconPath ? (
                 <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                    <Path d={iconPath} fill={isActive ? colors.background : colors.primary} />
+                    <Path d={iconPath} fill={isActive ? colors.onPrimary : colors.primary} />
                 </Svg>
             ) : null}
         </Pressable>

@@ -50,7 +50,7 @@ export function HeaderSearchPanel({
                             ? t("discover.searchPlaceholder")
                             : t("home.searchInputPlaceholder")
                     }
-                    placeholderTextColor="#6B7280"
+                    placeholderTextColor={colors.mutedText}
                     returnKeyType="search"
                     style={styles.searchInput}
                     value={query}

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef } from "react"
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import * as ScreenCapture from "expo-screen-capture"
+import { ActivityIndicator, Animated, Image, Platform, Pressable, ScrollView, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
 import { ContentRail } from "@/components/content/content-rail"
@@ -47,7 +48,7 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
         infoTabIndicatorX,
         showIndicator,
     } = useProductInfoTabs(product?.id ?? null)
-    const { handleBookmarkPress, handleSharePress } = useProductScreenActions({
+    const { handleBookmarkPress, handleCopyShareLink, handleSharePress } = useProductScreenActions({
         favouriteError,
         isFavourite,
         productId,
@@ -55,6 +56,10 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
         toggleFavourite,
     })
     const trackedProductIdRef = useRef<number | null>(null)
+    const screenshotPromptProgress = useRef(new Animated.Value(0)).current
+    const screenshotPromptHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const [isScreenshotPromptVisible, setIsScreenshotPromptVisible] = useState(false)
+    const [hasCopiedScreenshotLink, setHasCopiedScreenshotLink] = useState(false)
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,
@@ -75,6 +80,85 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
         trackedProductIdRef.current = product.id
         void trackRecommendationView({ product_id: product.id }).catch(() => undefined)
     }, [product?.id])
+
+    const clearScreenshotPromptTimeout = useCallback(() => {
+        if (!screenshotPromptHideTimeoutRef.current) {
+            return
+        }
+
+        clearTimeout(screenshotPromptHideTimeoutRef.current)
+        screenshotPromptHideTimeoutRef.current = null
+    }, [])
+
+    const hideScreenshotSharePrompt = useCallback(() => {
+        clearScreenshotPromptTimeout()
+        screenshotPromptProgress.stopAnimation()
+        Animated.timing(screenshotPromptProgress, {
+            duration: 180,
+            toValue: 0,
+            useNativeDriver: true,
+        }).start(({ finished }) => {
+            if (finished) {
+                setIsScreenshotPromptVisible(false)
+            }
+        })
+    }, [clearScreenshotPromptTimeout, screenshotPromptProgress])
+
+    const showScreenshotSharePrompt = useCallback(() => {
+        clearScreenshotPromptTimeout()
+        setHasCopiedScreenshotLink(false)
+        setIsScreenshotPromptVisible(true)
+        screenshotPromptProgress.stopAnimation()
+        Animated.timing(screenshotPromptProgress, {
+            duration: 220,
+            toValue: 1,
+            useNativeDriver: true,
+        }).start()
+        screenshotPromptHideTimeoutRef.current = setTimeout(hideScreenshotSharePrompt, 7000)
+    }, [clearScreenshotPromptTimeout, hideScreenshotSharePrompt, screenshotPromptProgress])
+
+    useEffect(() => {
+        if (Platform.OS === "web") {
+            return undefined
+        }
+
+        let isMounted = true
+        let subscription: ScreenCapture.Subscription | null = null
+
+        void ScreenCapture.isAvailableAsync()
+            .then((isAvailable) => {
+                if (!isMounted || !isAvailable) {
+                    return
+                }
+
+                try {
+                    subscription = ScreenCapture.addScreenshotListener(showScreenshotSharePrompt)
+                } catch {
+                    subscription = null
+                }
+            })
+            .catch(() => undefined)
+
+        return () => {
+            isMounted = false
+            subscription?.remove()
+        }
+    }, [showScreenshotSharePrompt])
+
+    useEffect(() => () => {
+        clearScreenshotPromptTimeout()
+    }, [clearScreenshotPromptTimeout])
+
+    const handleScreenshotShareLinkCopy = useCallback(async () => {
+        try {
+            await handleCopyShareLink()
+            setHasCopiedScreenshotLink(true)
+            clearScreenshotPromptTimeout()
+            screenshotPromptHideTimeoutRef.current = setTimeout(hideScreenshotSharePrompt, 1800)
+        } catch {
+            setHasCopiedScreenshotLink(false)
+        }
+    }, [clearScreenshotPromptTimeout, handleCopyShareLink, hideScreenshotSharePrompt])
 
     const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         if (!hasMoreRecommendations || recommendationsLoadingMore) {
@@ -109,7 +193,7 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
                               >
                                   <View style={productScreenStyle.shareIcon}>
                                       <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                                          <Path d={SHARE_ICON_PATH} fill="#6B7280" />
+                                          <Path d={SHARE_ICON_PATH} fill={colors.mutedText} />
                                       </Svg>
                                   </View>
                               </Pressable>
@@ -166,6 +250,10 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
         selectedVariant?.image_url ||
         product.variants.find((variant) => Boolean(variant.image_url))?.image_url ||
         product.image_url
+    const screenshotPromptTranslateY = screenshotPromptProgress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [112, 0],
+    })
 
     return (
         <DetailTemplate chromeTemplate={chromeTemplate} style={productScreenStyle.screen}>
@@ -282,6 +370,44 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
                     ) : null}
                 </View>
             </ScrollView>
+
+            {isScreenshotPromptVisible ? (
+                <Animated.View
+                    style={[
+                        productScreenStyle.screenshotSharePrompt,
+                        {
+                            opacity: screenshotPromptProgress,
+                            transform: [{ translateY: screenshotPromptTranslateY }],
+                        },
+                    ]}
+                >
+                    <View style={productScreenStyle.screenshotSharePromptCopy}>
+                        <Text style={productScreenStyle.screenshotSharePromptTitle}>
+                            {t("product.screenshotSharePromptTitle")}
+                        </Text>
+                        <Text style={productScreenStyle.screenshotSharePromptDescription}>
+                            {t("product.screenshotSharePromptDescription")}
+                        </Text>
+                    </View>
+                    <Pressable
+                        accessibilityLabel={t("product.screenshotSharePromptCta")}
+                        accessibilityRole="button"
+                        onPress={() => {
+                            void handleScreenshotShareLinkCopy()
+                        }}
+                        style={({ pressed }) => [
+                            productScreenStyle.screenshotSharePromptButton,
+                            pressed && productScreenStyle.screenshotSharePromptButtonPressed,
+                        ]}
+                    >
+                        <Text style={productScreenStyle.screenshotSharePromptButtonText}>
+                            {hasCopiedScreenshotLink
+                                ? t("product.screenshotSharePromptCopied")
+                                : t("product.screenshotSharePromptCta")}
+                        </Text>
+                    </Pressable>
+                </Animated.View>
+            ) : null}
         </DetailTemplate>
     )
 }

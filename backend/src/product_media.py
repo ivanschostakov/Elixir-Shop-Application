@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from config import PRODUCTS_MEDIA_DIR
+from config import PRODUCTS_MEDIA_DIR, PUBLIC_API_BASE_URL
 from src.normalize import optional_str
 
 PRODUCT_IMAGE_PLACEHOLDER = "product.png"
@@ -48,7 +48,7 @@ def products_media_relative_path(image_path: Path) -> str:
 
 
 def build_products_media_url(base_url: str, image_path: Path | None) -> str:
-    base = base_url.rstrip("/")
+    base = (PUBLIC_API_BASE_URL or base_url).rstrip("/")
     if image_path is None or not image_path.exists():
         return f"{base}/media/products/{PRODUCT_IMAGE_PLACEHOLDER}"
 

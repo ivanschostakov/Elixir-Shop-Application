@@ -23,6 +23,7 @@ import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { useContentTabs } from "@/hooks/navigation/use-content-tabs"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
 import { colors } from "@/theme/colors"
 
 export default function AppHeader({ template }: AppHeaderProps) {
@@ -31,6 +32,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const topInset = useSafeAreaInsets().top
     const { height: windowHeight } = useWindowDimensions()
     const styles = getHeaderStyles(topInset, windowHeight)
+    const { isDark, themeName, toggleTheme } = useTheme()
     const { signOut } = useAuth()
     const { basket } = useBasket()
     const { clear, error: basketError, updating: basketUpdating } = useBasketMutations()
@@ -165,9 +167,11 @@ export default function AppHeader({ template }: AppHeaderProps) {
                 isOpen={isMenuOpen}
                 onClose={() => setIsMenuOpen(false)}
                 onSignOut={signOut}
+                onToggleTheme={toggleTheme}
                 onToggle={() => setIsMenuOpen((currentValue) => !currentValue)}
                 styles={styles}
                 t={t}
+                themeName={themeName}
             />
         )
     }
@@ -216,13 +220,13 @@ export default function AppHeader({ template }: AppHeaderProps) {
                     <BlurView
                         intensity={SEARCH_BACKDROP_BLUR_INTENSITY}
                         style={styles.searchBackdropBlur}
-                        tint="light"
+                        tint={isDark ? "dark" : "light"}
                     />
                 </Pressable>
             ) : null}
 
             <View style={styles.content}>
-                {renderLeftSlot()}
+                <View style={styles.leftSlot}>{renderLeftSlot()}</View>
 
                 <View style={styles.centerSlot}>{renderCenterSlot()}</View>
 

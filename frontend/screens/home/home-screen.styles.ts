@@ -6,7 +6,7 @@ import { spacing } from "@/theme/spacing"
 export const homeScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     content: {
         gap: spacing.md,

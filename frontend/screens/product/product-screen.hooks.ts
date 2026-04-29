@@ -1,5 +1,6 @@
 import { createURL } from "expo-linking"
-import { useCallback, useEffect, useRef, useState } from "react"
+import * as Clipboard from "expo-clipboard"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Alert, Animated, Share } from "react-native"
 
 import { getProductRoute } from "@/constants/routes"
@@ -173,6 +174,8 @@ export function useProductScreenActions({
     t,
     toggleFavourite,
 }: UseProductScreenActionsParams) {
+    const productShareUrl = useMemo(() => createURL(String(getProductRoute(productId))), [productId])
+
     const handleBookmarkToggle = useCallback(async () => {
         try {
             const nextIsFavourite = await toggleFavourite()
@@ -201,12 +204,10 @@ export function useProductScreenActions({
 
     const handleSharePress = useCallback(async () => {
         try {
-            const shareUrl = createURL(String(getProductRoute(productId)))
-
             await Share.share({
-                message: `${t("product.shareMessage")}\n${shareUrl}`,
+                message: `${t("product.shareMessage")}\n${productShareUrl}`,
                 title: t("route.product"),
-                url: shareUrl,
+                url: productShareUrl,
             })
         } catch (shareError) {
             Alert.alert(
@@ -214,10 +215,17 @@ export function useProductScreenActions({
                 shareError instanceof Error ? shareError.message : t("product.shareFailedMessage"),
             )
         }
-    }, [productId, t])
+    }, [productShareUrl, t])
+
+    const handleCopyShareLink = useCallback(async () => {
+        await Clipboard.setStringAsync(productShareUrl)
+        return productShareUrl
+    }, [productShareUrl])
 
     return {
         handleBookmarkPress,
+        handleCopyShareLink,
         handleSharePress,
+        productShareUrl,
     }
 }

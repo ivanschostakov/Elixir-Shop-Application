@@ -8,7 +8,7 @@ export const deliveryScreenStyles = StyleSheet.create({
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#fff",
+        backgroundColor: colors.pageBackground,
     },
     mapBox: {
         height: 400,
@@ -19,7 +19,7 @@ export const deliveryScreenStyles = StyleSheet.create({
         ...StyleSheet.absoluteFillObject,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#edf3fb",
+        backgroundColor: colors.surfaceMuted,
         paddingHorizontal: spacing.lg,
     },
     mapFallbackText: {
@@ -40,7 +40,7 @@ export const deliveryScreenStyles = StyleSheet.create({
         zIndex: 30,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "rgba(255,255,255,0.42)",
+        backgroundColor: colors.veil,
     },
     loadingCard: {
         minWidth: 160,
@@ -50,7 +50,7 @@ export const deliveryScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
         borderRadius: spacing.xl,
-        backgroundColor: "rgba(255,255,255,0.88)",
+        backgroundColor: colors.surfaceOverlaySoft,
         borderWidth: 1,
         borderColor: "rgba(17,24,39,0.06)",
         ...Platform.select({
@@ -82,7 +82,7 @@ export const deliveryScreenStyles = StyleSheet.create({
     },
     searchMapBlur: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: "rgba(255,255,255,0.2)",
+        backgroundColor: colors.veilSoft,
     },
     pickupMarkersLoadingOverlay: {
         ...StyleSheet.absoluteFillObject,
@@ -92,7 +92,7 @@ export const deliveryScreenStyles = StyleSheet.create({
     },
     pickupMarkersBlur: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: "rgba(255,255,255,0.16)",
+        backgroundColor: colors.veilSoft,
     },
     pickupMarkersLoadingCard: {
         zIndex: 1,
@@ -113,7 +113,7 @@ export const deliveryScreenStyles = StyleSheet.create({
     },
     deliveryModeCard: {
         alignSelf: "center",
-        backgroundColor: "rgba(255,255,255,0.96)",
+        backgroundColor: colors.surfaceOverlay,
         borderColor: "rgba(17,24,39,0.08)",
         borderRadius: 999,
         borderWidth: 1,
@@ -161,10 +161,10 @@ export const deliveryScreenStyles = StyleSheet.create({
         fontWeight: "700",
     },
     deliveryModeButtonTextActive: {
-        color: colors.surface,
+        color: colors.onPrimary,
     },
     doorDeliveryCard: {
-        backgroundColor: "rgba(255,255,255,0.96)",
+        backgroundColor: colors.surfaceOverlay,
         borderColor: "rgba(17,24,39,0.08)",
         borderRadius: spacing.xl,
         borderWidth: 1,
@@ -267,7 +267,7 @@ export const deliveryScreenStyles = StyleSheet.create({
         minWidth: 0,
     },
     pickupFooterTitle: {
-        color: "#111111",
+        color: colors.text,
         fontSize: 18,
         fontWeight: "800",
         lineHeight: 22,
@@ -285,7 +285,7 @@ export const deliveryScreenStyles = StyleSheet.create({
     },
     pickupFooterProviderButton: {
         alignItems: "center",
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderColor: "rgba(17,17,17,0.1)",
         borderRadius: 20,
         borderWidth: 1,
@@ -369,15 +369,15 @@ export const deliveryScreenStyles = StyleSheet.create({
         gap: spacing.xs,
     },
     pickupFooterErrorBox: {
-        backgroundColor: "#FFFFFF",
-        borderColor: "#111111",
+        backgroundColor: colors.surface,
+        borderColor: colors.text,
         borderRadius: 16,
         borderWidth: 1,
         paddingHorizontal: spacing.sm + 2,
         paddingVertical: spacing.sm,
     },
     pickupFooterErrorText: {
-        color: "#111111",
+        color: colors.text,
         fontSize: 13,
         fontWeight: "600",
         lineHeight: 18,
@@ -403,7 +403,7 @@ export const deliveryScreenStyles = StyleSheet.create({
         opacity: 0.5,
     },
     doorDeliveryButtonText: {
-        color: colors.surface,
+        color: colors.onPrimary,
         fontSize: 14,
         fontWeight: "700",
     },
@@ -604,7 +604,7 @@ export const deliveryScreenStyles = StyleSheet.create({
         minWidth: 0,
     },
     resultTitle: {
-        color: "#111",
+        color: colors.text,
         fontSize: 14,
         fontWeight: "600",
     },
@@ -646,7 +646,7 @@ export const deliveryScreenStyles = StyleSheet.create({
     },
     cornerButton: {
         alignItems: "center",
-        backgroundColor: "rgba(255,255,255,0.94)",
+        backgroundColor: colors.surfaceOverlay,
         borderColor: "rgba(17,24,39,0.08)",
         borderRadius: 999,
         borderWidth: 1,

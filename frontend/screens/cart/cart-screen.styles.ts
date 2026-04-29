@@ -5,7 +5,7 @@ import { spacing } from "@/theme/spacing"
 export const cartScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     emptyContainer: {
         backgroundColor: colors.surface,
@@ -17,11 +17,11 @@ export const cartScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.md,
     },
     loadingContainer: {
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
         flex: 1,
     },
     errorContainer: {
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
         flex: 1,
     },
     stateScrollContent: {
@@ -68,7 +68,7 @@ export const cartScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
     },
     retryButtonText: {
-        color: colors.surface,
+        color: colors.onPrimary,
         fontSize: 15,
         fontWeight: "700",
     },
@@ -148,7 +148,7 @@ export const cartScreenStyles = StyleSheet.create({
         color: colors.text,
     },
     promoInput: {
-        backgroundColor: "#f8fafc",
+        backgroundColor: colors.surfaceElevated,
         borderRadius: 10,
         color: colors.text,
         fontSize: 14,
@@ -178,7 +178,7 @@ export const cartScreenStyles = StyleSheet.create({
         width: 32,
     },
     deliveryPointCard: {
-        backgroundColor: "#F8FAFC",
+        backgroundColor: colors.surfaceElevated,
         borderColor: colors.border,
         borderRadius: 16,
         borderWidth: 1,
@@ -221,12 +221,12 @@ export const cartScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.md,
     },
     deliveryPointButtonText: {
-        color: colors.surface,
+        color: colors.onPrimary,
         fontSize: 13,
         fontWeight: "700",
     },
     summaryWarning: {
-        color: "#b45309",
+        color: colors.warning,
         fontSize: 13,
         fontWeight: "600",
         lineHeight: 18,
@@ -248,7 +248,7 @@ export const cartScreenStyles = StyleSheet.create({
         paddingBottom: spacing.sm,
     },
     itemsSectionCardUnavailable: {
-        backgroundColor: "#F8FAFC",
+        backgroundColor: colors.surfaceElevated,
     },
     itemsSectionHeader: {
         gap: 4,
@@ -274,7 +274,7 @@ export const cartScreenStyles = StyleSheet.create({
         padding: spacing.sm,
     },
     itemCardUnavailable: {
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         opacity: 0.9,
     },
     itemMediaColumn: {
@@ -286,7 +286,7 @@ export const cartScreenStyles = StyleSheet.create({
     },
     itemImage: {
         aspectRatio: 0.86,
-        backgroundColor: "#eef4fa",
+        backgroundColor: colors.surfaceMuted,
         borderRadius: 16,
         width: "100%",
     },
@@ -299,7 +299,7 @@ export const cartScreenStyles = StyleSheet.create({
     },
     iconActionButton: {
         alignItems: "center",
-        backgroundColor: "#F8FAFC",
+        backgroundColor: colors.surfaceElevated,
         borderRadius: 12,
         height: 30,
         justifyContent: "center",
@@ -351,14 +351,14 @@ export const cartScreenStyles = StyleSheet.create({
         fontWeight: "700",
     },
     itemAvailability: {
-        color: "#b91c1c",
+        color: colors.danger,
         fontSize: 12,
         fontWeight: "700",
         marginTop: spacing.xs,
     },
     quantityControl: {
         alignItems: "center",
-        backgroundColor: "#F8FAFC",
+        backgroundColor: colors.surfaceElevated,
         borderRadius: 12,
         flexDirection: "row",
         height: 30,
@@ -397,7 +397,7 @@ export const cartScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.sm,
     },
     inlineRemoveButtonText: {
-        color: "#B91C1C",
+        color: colors.danger,
         fontSize: 12,
         fontWeight: "700",
     },

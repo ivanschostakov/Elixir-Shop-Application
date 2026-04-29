@@ -6,11 +6,11 @@ import { spacing } from "@/theme/spacing"
 export const ProfileScreenStyles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     container: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     content: {
         paddingHorizontal: 0,
@@ -64,7 +64,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         overflow: "hidden",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#eef7ff",
+        backgroundColor: colors.primaryMuted,
     },
     avatarImage: {
         width: "100%",
@@ -125,7 +125,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         paddingVertical: spacing.sm,
     },
     badgeText: {
-        color: "#0f6a37",
+        color: colors.success,
         fontSize: 13,
         fontWeight: "700",
     },
@@ -212,7 +212,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         backgroundColor: "#dff7e8",
     },
     statusBadgeMuted: {
-        backgroundColor: "#eef2f7",
+        backgroundColor: colors.surfaceMuted,
     },
     statusBadgeText: {
         fontSize: 12,
@@ -221,7 +221,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         letterSpacing: 0.6,
     },
     statusBadgeTextSuccess: {
-        color: "#0f6a37",
+        color: colors.success,
     },
     statusBadgeTextMuted: {
         color: colors.mutedText,
@@ -239,7 +239,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         paddingVertical: spacing.sm,
     },
     detailRowButtonPressed: {
-        backgroundColor: "#edf4fb",
+        backgroundColor: colors.primaryMuted,
     },
     detailLabel: {
         color: colors.mutedText,
@@ -282,9 +282,9 @@ export const ProfileScreenStyles = StyleSheet.create({
     },
     websiteChip: {
         borderRadius: 18,
-        backgroundColor: "#f3f7fc",
+        backgroundColor: colors.surfaceElevated,
         borderWidth: 1,
-        borderColor: "#d7e2f0",
+        borderColor: colors.borderSoft,
         minWidth: 96,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
@@ -307,7 +307,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         borderRadius: 18,
         borderWidth: 1,
         borderColor: colors.border,
-        backgroundColor: "#fbfcfe",
+        backgroundColor: colors.surfaceSoft,
         gap: 4,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
@@ -349,13 +349,13 @@ export const ProfileScreenStyles = StyleSheet.create({
         borderRadius: 16,
         borderWidth: 1,
         borderColor: "#fecdd3",
-        backgroundColor: "#fff4f6",
+        backgroundColor: colors.dangerMuted,
         gap: spacing.sm,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
     },
     errorText: {
-        color: "#be123c",
+        color: colors.danger,
         fontSize: 14,
         lineHeight: 20,
     },
@@ -387,7 +387,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         opacity: 0.8,
     },
     secondaryInlineButtonText: {
-        color: "#be123c",
+        color: colors.danger,
         fontSize: 14,
         fontWeight: "700",
     },
@@ -502,7 +502,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         borderRadius: 16,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#ffffff",
+        backgroundColor: colors.surface,
         paddingHorizontal: spacing.md,
     },
     avatarViewerPrimaryActionText: {

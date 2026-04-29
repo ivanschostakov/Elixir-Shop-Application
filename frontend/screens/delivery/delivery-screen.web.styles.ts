@@ -1,9 +1,11 @@
 import { StyleSheet } from "react-native"
 
+import { colors } from "@/theme/colors"
+
 export const deliveryScreenWebStyles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#fff",
+        backgroundColor: colors.pageBackground,
         position: "relative",
     },
     mapLayer: {
@@ -36,7 +38,7 @@ export const deliveryScreenWebStyles = StyleSheet.create({
     },
     searchBlur: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: "rgba(255,255,255,0.2)",
+        backgroundColor: colors.veilSoft,
     },
     searchDismissOverlay: {
         ...StyleSheet.absoluteFillObject,

@@ -1410,9 +1410,6 @@ export default function DeliveryScreen() {
                     <View style={deliveryScreenStyles.loadingOverlay}>
                         <View style={deliveryScreenStyles.loadingCard}>
                             <ActivityIndicator color={colors.primary} size="large" />
-                            <Text style={deliveryScreenStyles.loadingText}>
-                                {translate("delivery.initializingMap")}
-                            </Text>
                         </View>
                     </View>
                 ) : null

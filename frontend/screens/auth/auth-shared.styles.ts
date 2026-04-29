@@ -136,7 +136,7 @@ export const authSharedStyles = StyleSheet.create({
         paddingVertical: spacing.sm,
     },
     errorText: {
-        color: "#be123c",
+        color: colors.danger,
         fontSize: 14,
         lineHeight: 20,
     },

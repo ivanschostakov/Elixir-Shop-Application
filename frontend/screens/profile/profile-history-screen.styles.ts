@@ -6,7 +6,7 @@ import { spacing } from "@/theme/spacing"
 export const profileHistoryScreenStyles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     headerTabsSlot: {
         minWidth: 220,
@@ -51,12 +51,12 @@ export const profileHistoryScreenStyles = StyleSheet.create({
     },
     historyCardCollage: {
         aspectRatio: 1,
-        backgroundColor: "#edf3f8",
+        backgroundColor: colors.surfaceMuted,
         borderRadius: 24,
         overflow: "hidden",
     },
     historyCardCollageTile: {
-        backgroundColor: "#dbe6ef",
+        backgroundColor: colors.railTile,
         overflow: "hidden",
         position: "absolute",
     },
@@ -98,10 +98,10 @@ export const profileHistoryScreenStyles = StyleSheet.create({
         paddingVertical: spacing.sm,
     },
     historyCardBadgeActive: {
-        backgroundColor: "#eef4fb",
+        backgroundColor: colors.primaryMuted,
     },
     historyCardBadgeCompleted: {
-        backgroundColor: "#e4f6ea",
+        backgroundColor: colors.successMuted,
     },
     historyCardBadgeText: {
         fontSize: 12,
@@ -113,7 +113,7 @@ export const profileHistoryScreenStyles = StyleSheet.create({
         color: colors.primary,
     },
     historyCardBadgeTextCompleted: {
-        color: "#0f6a37",
+        color: colors.success,
     },
     historyCardMetaGrid: {
         gap: spacing.sm,

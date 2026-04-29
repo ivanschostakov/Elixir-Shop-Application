@@ -6,11 +6,11 @@ import { spacing } from "@/theme/spacing"
 export const paymentScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     scrollView: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     content: {
         paddingVertical: spacing.md,
@@ -98,11 +98,11 @@ export const paymentScreenStyles = StyleSheet.create({
         borderColor: "rgba(17,17,17,0.08)",
         padding: spacing.md,
         gap: 6,
-        backgroundColor: "#FAFBFD",
+        backgroundColor: colors.surfaceElevated,
     },
     methodCardActive: {
         borderColor: colors.primary,
-        backgroundColor: "#EDF4FB",
+        backgroundColor: colors.primaryMuted,
     },
     methodCardDangerActive: {
         borderColor: "#F04438",
@@ -153,7 +153,7 @@ export const paymentScreenStyles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         paddingHorizontal: spacing.lg,
-        backgroundColor: "#FAFBFD",
+        backgroundColor: colors.surfaceElevated,
     },
     secondaryButtonPressed: {
         opacity: 0.82,
@@ -180,7 +180,7 @@ export const paymentScreenStyles = StyleSheet.create({
         alignSelf: "center",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: 32,
         paddingHorizontal: spacing.md,
     },
@@ -197,7 +197,7 @@ export const paymentScreenStyles = StyleSheet.create({
         aspectRatio: 1,
         alignSelf: "center",
         borderRadius: 24,
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
     },
     qrImage: {
         width: "84%",
@@ -205,13 +205,13 @@ export const paymentScreenStyles = StyleSheet.create({
         aspectRatio: 1,
         alignSelf: "center",
         borderRadius: 24,
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
     },
     qrPlaceholder: {
         width: "100%",
         minHeight: 240,
         borderRadius: 20,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
         alignItems: "center",
         justifyContent: "center",
         padding: spacing.md,
@@ -303,7 +303,7 @@ export const paymentScreenStyles = StyleSheet.create({
     },
     successOrderBox: {
         alignItems: "center",
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: 18,
         marginTop: spacing.xs,
         paddingHorizontal: spacing.lg,
@@ -325,7 +325,7 @@ export const paymentScreenStyles = StyleSheet.create({
         textAlign: "center",
     },
     infoPanel: {
-        backgroundColor: "#F8FAFC",
+        backgroundColor: colors.surfaceElevated,
         borderRadius: 20,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.md,
@@ -364,7 +364,7 @@ export const paymentScreenStyles = StyleSheet.create({
         width: 60,
         height: 60,
         borderRadius: 16,
-        backgroundColor: "#EEF4FA",
+        backgroundColor: colors.surfaceMuted,
     },
     compositionBody: {
         flex: 1,
@@ -401,7 +401,7 @@ export const paymentScreenStyles = StyleSheet.create({
         gap: spacing.md,
     },
     summarySectionCard: {
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: spacing.lg,
         gap: spacing.xs,
         paddingHorizontal: spacing.lg,
@@ -549,7 +549,7 @@ export const paymentScreenStyles = StyleSheet.create({
         width: 48,
         height: 48,
         borderRadius: 12,
-        backgroundColor: "#EEF4FA",
+        backgroundColor: colors.surfaceMuted,
     },
     footerCompositionBody: {
         flex: 1,
@@ -616,7 +616,7 @@ export const paymentScreenStyles = StyleSheet.create({
     loadingOverlayCard: {
         minWidth: 180,
         borderRadius: 20,
-        backgroundColor: "rgba(255,255,255,0.96)",
+        backgroundColor: colors.surfaceOverlay,
         alignItems: "center",
         justifyContent: "center",
         paddingHorizontal: spacing.lg,

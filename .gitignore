@@ -2,3 +2,9 @@
 **/.DS_Store
 .idea/
 **/.idea/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+!.env.docker.example

@@ -6,11 +6,11 @@ import { spacing } from "@/theme/spacing"
 export const discoverScreenStyles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     list: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
         width: "100%",
     },
     listContent: {

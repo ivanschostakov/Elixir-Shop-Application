@@ -229,7 +229,7 @@ export default function PaymentScreen() {
         return formatMoney(Number(deliveryTotal), currency)
     }, [order?.currency, order?.delivery_total, orderDraft?.currency, orderDraft?.delivery_total])
     const qrSourceUri = payment?.qr_image ?? payment?.qr_url ?? null
-    const qrLinkTarget = payment?.qr_url ?? payment?.qr_image ?? null
+    const qrLinkTarget = payment?.qr_url?.trim() || null
     const qrImageSource = useMemo(
         () => (qrSourceUri ? { uri: qrSourceUri, cache: "force-cache" as const } : null),
         [qrSourceUri],

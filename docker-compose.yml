@@ -1,0 +1,83 @@
+name: elixir-shop
+
+services:
+  redis:
+    image: redis:7-bookworm
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: host.docker.internal
+      PUBLIC_API_BASE_URL: ${BACKEND_PUBLIC_API_BASE_URL:-https://api-elixirshop.devsivanschostakov.org}
+      REDIS_URL: redis://redis:6379/0
+    restart: unless-stopped
+    command: ["sh", "-c", "alembic upgrade head && python run.py"]
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app/backend
+      - backend-logs:/app/backend/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    command: ["npm", "run", "start", "--", "--dev-client", "--host", "lan", "--port", "8081"]
+    environment:
+      BROWSER: none
+      EXPO_NO_DOTENV: 1
+      EXPO_NO_TELEMETRY: 1
+      API_BASE_URL: ${FRONTEND_API_BASE_URL:-https://api-elixirshop.devsivanschostakov.org/api}
+      EXPO_PUBLIC_API_BASE_URL: ${EXPO_PUBLIC_API_BASE_URL:-https://api-elixirshop.devsivanschostakov.org/api}
+      EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY: ${EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY:-}
+      EXPO_PUBLIC_YANDEX_GEOCODER_API_KEY: ${EXPO_PUBLIC_YANDEX_GEOCODER_API_KEY:-}
+      EXPO_PACKAGER_PROXY_URL: ${EXPO_PACKAGER_PROXY_URL:-https://elixirshop.devsivanschostakov.org}
+      EXPO_DEV_SERVER_ORIGIN: ${EXPO_DEV_SERVER_ORIGIN:-https://elixirshop.devsivanschostakov.org}
+      REACT_NATIVE_PACKAGER_HOSTNAME: ${REACT_NATIVE_PACKAGER_HOSTNAME:-elixirshop.devsivanschostakov.org}
+      CHOKIDAR_USEPOLLING: ${CHOKIDAR_USEPOLLING:-false}
+      WATCHPACK_POLLING: ${WATCHPACK_POLLING:-false}
+    ports:
+      - "${EXPO_METRO_PORT:-8081}:8081"
+      - "${EXPO_MANIFEST_PORT:-19000}:19000"
+      - "${EXPO_DEV_SERVER_PORT:-19001}:19001"
+      - "${EXPO_DEVTOOLS_PORT:-19002}:19002"
+    volumes:
+      - ./frontend:/app/frontend
+      - frontend-node-modules:/app/frontend/node_modules
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./frontend/cloudflared/elixirshop.docker.yml:/etc/cloudflared/config.yml:ro
+      - ${CLOUDFLARED_CREDENTIALS_FILE:-/Users/paylakurusyan/.cloudflared/6513940a-5450-480c-8d7d-7960c27bd310.json}:/etc/cloudflared/credentials.json:ro
+    depends_on:
+      - backend
+      - frontend
+
+volumes:
+  redis-data:
+  backend-logs:
+  frontend-node-modules:

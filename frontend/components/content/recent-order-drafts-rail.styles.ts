@@ -29,12 +29,12 @@ export const recentOrderDraftsRailStyles = StyleSheet.create({
     },
     collage: {
         aspectRatio: 1,
-        backgroundColor: "#edf3f8",
+        backgroundColor: colors.surfaceMuted,
         borderRadius: 24,
         overflow: "hidden",
     },
     collageTile: {
-        backgroundColor: "#dbe6ef",
+        backgroundColor: colors.railTile,
         overflow: "hidden",
         position: "absolute",
     },
@@ -112,7 +112,7 @@ export const recentOrderDraftsRailStyles = StyleSheet.create({
         opacity: 0.68,
     },
     cardCtaButtonText: {
-        color: colors.surface,
+        color: colors.onPrimary,
         fontSize: 16,
         fontWeight: "900",
     },
@@ -124,7 +124,7 @@ export const recentOrderDraftsRailStyles = StyleSheet.create({
     },
     cardDeleteBadge: {
         alignItems: "center",
-        backgroundColor: "rgba(255,255,255,0.94)",
+        backgroundColor: colors.surfaceOverlay,
         borderRadius: 999,
         height: 32,
         justifyContent: "center",

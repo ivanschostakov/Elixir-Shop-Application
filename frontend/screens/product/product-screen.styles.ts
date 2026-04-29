@@ -6,11 +6,12 @@ import { spacing } from "@/theme/spacing"
 export const productScreenStyle = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
+        position: "relative",
     },
     container: {
         flex: 1,
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
     },
     content: {
         flexGrow: 1,
@@ -19,7 +20,7 @@ export const productScreenStyle = StyleSheet.create({
         paddingBottom: 0,
     },
     imageCard: {
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: spacing.lg,
         overflow: "hidden",
         width: "100%",
@@ -39,7 +40,7 @@ export const productScreenStyle = StyleSheet.create({
     image: {
         width: "100%",
         aspectRatio: 1,
-        backgroundColor: "#eef4fa",
+        backgroundColor: colors.surfaceMuted,
         borderRadius: spacing.md,
     },
     priceInlineWrap: {
@@ -71,7 +72,7 @@ export const productScreenStyle = StyleSheet.create({
     },
     headerActionButton: {
         alignItems: "center",
-        backgroundColor: "rgba(255, 255, 255, 0.96)",
+        backgroundColor: colors.surfaceOverlay,
         borderRadius: 12,
         height: 34,
         justifyContent: "center",
@@ -87,7 +88,7 @@ export const productScreenStyle = StyleSheet.create({
         zIndex: 2,
     },
     imageActionButton: {
-        backgroundColor: "rgba(255, 255, 255, 0.96)",
+        backgroundColor: colors.surfaceOverlay,
         borderRadius: 12,
         height: 34,
         width: 34,
@@ -101,6 +102,51 @@ export const productScreenStyle = StyleSheet.create({
     },
     bookmarkButtonDisabled: {
         opacity: 0.5,
+    },
+    screenshotSharePrompt: {
+        backgroundColor: colors.surface,
+        borderColor: colors.borderSoft,
+        borderRadius: 18,
+        borderWidth: 1,
+        bottom: spacing.md,
+        gap: spacing.sm,
+        left: spacing.md,
+        padding: spacing.md,
+        position: "absolute",
+        right: spacing.md,
+        zIndex: 20,
+    },
+    screenshotSharePromptCopy: {
+        gap: 4,
+    },
+    screenshotSharePromptTitle: {
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: "800",
+        lineHeight: 20,
+    },
+    screenshotSharePromptDescription: {
+        color: colors.mutedText,
+        fontSize: 13,
+        fontWeight: "600",
+        lineHeight: 18,
+    },
+    screenshotSharePromptButton: {
+        alignItems: "center",
+        alignSelf: "flex-start",
+        backgroundColor: colors.primary,
+        borderRadius: 999,
+        justifyContent: "center",
+        minHeight: 36,
+        paddingHorizontal: spacing.md,
+    },
+    screenshotSharePromptButtonPressed: {
+        opacity: 0.76,
+    },
+    screenshotSharePromptButtonText: {
+        color: colors.onPrimary,
+        fontSize: 13,
+        fontWeight: "800",
     },
     sectionStack: {
         flex: 1,
@@ -118,7 +164,7 @@ export const productScreenStyle = StyleSheet.create({
         width: "100%",
     },
     similarRailCard: {
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: spacing.lg,
         overflow: "hidden",
         paddingVertical: spacing.md,
@@ -136,7 +182,7 @@ export const productScreenStyle = StyleSheet.create({
         width: "100%",
     },
     variantCard: {
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: spacing.lg,
         gap: 2,
         overflow: "hidden",
@@ -217,7 +263,7 @@ export const productScreenStyle = StyleSheet.create({
         opacity: 0.8,
     },
     variantImage: {
-        backgroundColor: "#eef4fa",
+        backgroundColor: colors.surfaceMuted,
         borderRadius: 14,
         height: 72,
         width: 72,
@@ -234,7 +280,7 @@ export const productScreenStyle = StyleSheet.create({
         borderWidth: 1,
     },
     sectionCard: {
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: spacing.lg,
         gap: spacing.xs,
         paddingHorizontal: spacing.lg,

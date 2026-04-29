@@ -5,11 +5,11 @@ import { spacing } from "@/theme/spacing"
 
 export const checkoutScreenStyles = StyleSheet.create({
     container: {
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
         flex: 1,
     },
     scrollView: {
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
         flex: 1,
     },
     content: {
@@ -144,7 +144,7 @@ export const checkoutScreenStyles = StyleSheet.create({
         minHeight: 28,
     },
     selectorPickerWrap: {
-        backgroundColor: "#f7f9fc",
+        backgroundColor: colors.surfaceElevated,
         borderRadius: 14,
         marginTop: 2,
         overflow: "hidden",
@@ -158,7 +158,7 @@ export const checkoutScreenStyles = StyleSheet.create({
         marginTop: 2,
     },
     selectorInput: {
-        backgroundColor: "#f7f9fc",
+        backgroundColor: colors.surfaceElevated,
         borderRadius: 12,
         color: colors.text,
         fontSize: 13,
@@ -222,7 +222,7 @@ export const checkoutScreenStyles = StyleSheet.create({
         gap: 6,
     },
     recipientEditorInput: {
-        backgroundColor: "#f4f7fb",
+        backgroundColor: colors.surfaceElevated,
         borderRadius: 20,
         color: colors.text,
         fontSize: 16,
@@ -232,11 +232,11 @@ export const checkoutScreenStyles = StyleSheet.create({
         paddingVertical: 18,
     },
     recipientEditorInputError: {
-        borderColor: "#dc4a4a",
+        borderColor: colors.danger,
         borderWidth: 1,
     },
     recipientEditorFieldError: {
-        color: "#dc4a4a",
+        color: colors.danger,
         fontSize: 13,
         fontWeight: "600",
         lineHeight: 16,
@@ -257,7 +257,7 @@ export const checkoutScreenStyles = StyleSheet.create({
         opacity: 0.88,
     },
     recipientEditorSubmitButtonText: {
-        color: colors.surface,
+        color: colors.onPrimary,
         fontSize: 16,
         fontWeight: "700",
         lineHeight: 20,
@@ -269,7 +269,7 @@ export const checkoutScreenStyles = StyleSheet.create({
         gap: spacing.sm,
     },
     sectionCard: {
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: spacing.lg,
         gap: spacing.sm,
         paddingHorizontal: 0,
@@ -320,7 +320,7 @@ export const checkoutScreenStyles = StyleSheet.create({
     },
     positionAddCard: {
         alignItems: "center",
-        backgroundColor: "#EAF3FF",
+        backgroundColor: colors.primaryMuted,
         borderRadius: 18,
         height: 208,
         justifyContent: "center",
@@ -372,7 +372,7 @@ export const checkoutScreenStyles = StyleSheet.create({
     },
     positionQuantityControl: {
         alignItems: "center",
-        backgroundColor: "#F3F5F8",
+        backgroundColor: colors.pageBackground,
         borderRadius: 999,
         flexDirection: "row",
         justifyContent: "space-between",
@@ -482,7 +482,7 @@ export const checkoutScreenStyles = StyleSheet.create({
     },
     secondaryButton: {
         alignItems: "center",
-        backgroundColor: "#F7F9FC",
+        backgroundColor: colors.surfaceElevated,
         borderColor: "rgba(17,17,17,0.12)",
         borderRadius: 18,
         borderWidth: 1,
@@ -526,7 +526,7 @@ export const checkoutScreenStyles = StyleSheet.create({
         opacity: 0.88,
     },
     footerCtaButtonText: {
-        color: colors.surface,
+        color: colors.onPrimary,
         fontSize: 18,
         fontWeight: "800",
         lineHeight: 22,
