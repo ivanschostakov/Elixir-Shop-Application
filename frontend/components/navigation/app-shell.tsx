@@ -1,6 +1,6 @@
 import { Stack, usePathname } from "expo-router"
-import { View } from "react-native"
-import { SafeAreaView } from "react-native-safe-area-context"
+import { Image, Text, View } from "react-native"
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import StickyFooter from "@/components/footer/sticky-footer"
 import AppHeader from "@/components/header/app-header"
@@ -15,6 +15,7 @@ import { ScreenTemplateProvider } from "@/providers/screen-template-provider"
 
 function AppShellContent() {
     const pathname = usePathname()
+    const { top: topInset } = useSafeAreaInsets()
     const { isAuthenticated, isReady } = useAuth()
     const { screenChromeTemplate } = useScreenChromeTemplate()
 
@@ -25,17 +26,36 @@ function AppShellContent() {
 
     const shellEdges: ("top" | "bottom" | "left" | "right")[] =
         chromeTemplate.mode === "fullscreen" ? [] : ["top"]
+    const brandLabelTop = Math.max(2, topInset - 44)
 
     return (
-        <SafeAreaView style={appShellStyles.container} edges={shellEdges}>
-            {chromeTemplate.header !== "none" ? <AppHeader template={chromeTemplate} /> : null}
-
-            <View style={appShellStyles.content}>
-                <Stack screenOptions={{ headerShown: false }} />
+        <View style={appShellStyles.container}>
+            <View
+                pointerEvents="none"
+                style={[appShellStyles.brandLabelOverlay, { top: brandLabelTop }]}
+            >
+                <View style={appShellStyles.brandLabelPill}>
+                    <Image
+                        source={require("@/assets/icons/dynamic-island.png")}
+                        resizeMode="contain"
+                        style={appShellStyles.brandLabelImage}
+                    />
+                    <Text numberOfLines={1} style={appShellStyles.brandLabelText}>
+                        ElixirPeptide
+                    </Text>
+                </View>
             </View>
 
-            {chromeTemplate.footer !== "none" ? <StickyFooter template={chromeTemplate} /> : null}
-        </SafeAreaView>
+            <SafeAreaView style={appShellStyles.safeArea} edges={shellEdges}>
+                {chromeTemplate.header !== "none" ? <AppHeader template={chromeTemplate} /> : null}
+
+                <View style={appShellStyles.content}>
+                    <Stack screenOptions={{ headerShown: false }} />
+                </View>
+
+                {chromeTemplate.footer !== "none" ? <StickyFooter template={chromeTemplate} /> : null}
+            </SafeAreaView>
+        </View>
     )
 }
 

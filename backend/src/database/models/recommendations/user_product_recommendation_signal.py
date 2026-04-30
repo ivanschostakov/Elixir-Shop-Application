@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
@@ -29,9 +29,9 @@ class UserProductRecommendationSignal(Base, IdPkMixin, TimestampMixin):
         nullable=False,
         index=True,
     )
-    view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    cart_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    purchase_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    view_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    cart_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    purchase_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     last_viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_carted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_purchased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

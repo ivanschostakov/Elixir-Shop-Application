@@ -104,7 +104,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
                 <Pressable
                     accessibilityLabel={t("nav.back")}
                     accessibilityRole="button"
-                    onPress={() => (router.canGoBack() ? router.back() : router.push(ROUTES.home))}
+                    onPress={() => (router.canGoBack() ? router.back() : router.push(ROUTES.discover))}
                     style={({ pressed }) => [styles.sideButton, pressed && styles.sideButtonPressed]}
                     hitSlop={12}
                 >

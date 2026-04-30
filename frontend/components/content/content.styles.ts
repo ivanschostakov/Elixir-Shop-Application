@@ -330,6 +330,21 @@ export const contentStyles = StyleSheet.create({
         fontSize: 14,
         fontWeight: "800",
     },
+    productRatingRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 4,
+    },
+    productRatingValue: {
+        color: colors.text,
+        fontSize: 11,
+        fontWeight: "700",
+    },
+    productRatingCount: {
+        color: colors.mutedText,
+        fontSize: 10,
+        fontWeight: "600",
+    },
     productSubtitle: {
         color: colors.mutedText,
         fontSize: 12,
@@ -402,6 +417,21 @@ export const contentStyles = StyleSheet.create({
         color: colors.mutedText,
         fontSize: 14,
         lineHeight: 20,
+    },
+    listCardRatingRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 4,
+    },
+    listCardRatingValue: {
+        color: colors.text,
+        fontSize: 12,
+        fontWeight: "700",
+    },
+    listCardRatingCount: {
+        color: colors.mutedText,
+        fontSize: 11,
+        fontWeight: "600",
     },
     listCardMeta: {
         color: colors.primary,

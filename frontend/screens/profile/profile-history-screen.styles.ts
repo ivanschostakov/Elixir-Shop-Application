@@ -6,16 +6,18 @@ import { spacing } from "@/theme/spacing"
 export const profileHistoryScreenStyles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
     },
     headerTabsSlot: {
         minWidth: 220,
     },
     list: {
+        backgroundColor: colors.surface,
         flex: 1,
         width: "100%",
     },
     listContent: {
+        backgroundColor: colors.pageBackground,
         paddingBottom: spacing.lg,
         paddingTop: 0,
     },

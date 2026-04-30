@@ -101,7 +101,7 @@ export default function RegisterScreen() {
                 email: pendingEmail,
                 code,
             })
-            router.replace(ROUTES.home)
+            router.replace(ROUTES.discover)
             return true
         } catch (submitError) {
             setError(submitError instanceof Error ? submitError.message : t("auth.error.verifyFallback"))

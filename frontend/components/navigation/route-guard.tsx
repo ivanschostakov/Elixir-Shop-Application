@@ -19,7 +19,7 @@ export function ProtectedRoute({ children, redirectTo = ROUTES.home }: RouteGuar
     return children
 }
 
-export function GuestRoute({ children, redirectTo = ROUTES.home }: RouteGuardProps) {
+export function GuestRoute({ children, redirectTo = ROUTES.discover }: RouteGuardProps) {
     const { isAuthenticated, isReady } = useAuth()
 
     if (!isReady) {

@@ -1,12 +1,12 @@
 import sys
 import types
 import uuid
+import pytest
 
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
-import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session

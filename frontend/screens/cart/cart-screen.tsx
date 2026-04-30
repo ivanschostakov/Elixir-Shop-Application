@@ -326,17 +326,23 @@ export default function CartScreen() {
 
     if (!basket || basket.items.length === 0) {
         return (
-            <View style={[cartScreenStyles.container, cartScreenStyles.emptyContainer]}>
-                <View style={cartScreenStyles.emptyContent}>
-                    <EmptyState
-                        actionVariant="link"
-                        sticker={STICKERS.cartEmpty}
-                        description={t("cart.emptyDescription")}
-                        actionLabel={t("cart.primaryCta")}
-                        onPressAction={() => router.push(ROUTES.discover)}
-                        variant="plain"
-                    />
-                </View>
+            <View style={cartScreenStyles.container}>
+                <ScrollView
+                    contentContainerStyle={cartScreenStyles.emptyScrollContent}
+                    showsVerticalScrollIndicator={false}
+                    style={cartScreenStyles.loadingContainer}
+                >
+                    <View style={cartScreenStyles.emptyContent}>
+                        <EmptyState
+                            actionVariant="link"
+                            sticker={STICKERS.cartEmpty}
+                            description={t("cart.emptyDescription")}
+                            actionLabel={t("cart.primaryCta")}
+                            onPressAction={() => router.push(ROUTES.discover)}
+                            variant="plain"
+                        />
+                    </View>
+                </ScrollView>
             </View>
         )
     }
@@ -354,143 +360,147 @@ export default function CartScreen() {
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
             >
-                <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
-                    <View style={cartScreenStyles.summaryCard}>
-                        <TextInput
-                            autoCapitalize="characters"
-                            autoCorrect={false}
-                            onChangeText={setPromoCode}
-                            placeholder={t("cart.promoCodePlaceholder")}
-                            style={cartScreenStyles.promoInput}
-                            value={promoCode}
-                        />
-                    </View>
+                <View style={cartScreenStyles.contentSurface}>
+                    <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
+                        <View style={cartScreenStyles.summaryCard}>
+                            <TextInput
+                                autoCapitalize="characters"
+                                autoCorrect={false}
+                                onChangeText={setPromoCode}
+                                placeholder={t("cart.promoCodePlaceholder")}
+                                style={cartScreenStyles.promoInput}
+                                value={promoCode}
+                            />
+                        </View>
 
-                    <View style={cartScreenStyles.summaryFooter}>
-                        <View style={cartScreenStyles.summaryStats}>
-                            <View
-                                style={[
-                                    cartScreenStyles.summaryStat,
-                                    cartScreenStyles.summaryStatStart,
-                                ]}
-                            >
-                                <Text style={cartScreenStyles.summaryStatLabel}>{t("cart.positionsLabel")}</Text>
-                                <Text style={cartScreenStyles.summaryStatValue}>{basket.items_count}</Text>
-                            </View>
-
-                            <View
-                                style={[
-                                    cartScreenStyles.summaryStat,
-                                    cartScreenStyles.summaryStatEnd,
-                                ]}
-                            >
-                                <Text style={cartScreenStyles.summaryStatLabel}>{t("cart.totalAmountLabel")}</Text>
-                                <Text
+                        <View style={cartScreenStyles.summaryFooter}>
+                            <View style={cartScreenStyles.summaryStats}>
+                                <View
                                     style={[
-                                        cartScreenStyles.summaryStatValue,
-                                        cartScreenStyles.summaryStatValuePrice,
+                                        cartScreenStyles.summaryStat,
+                                        cartScreenStyles.summaryStatStart,
                                     ]}
                                 >
-                                    {totalAmountLabel ?? "—"}
-                                </Text>
+                                    <Text style={cartScreenStyles.summaryStatLabel}>{t("cart.positionsLabel")}</Text>
+                                    <Text style={cartScreenStyles.summaryStatValue}>{basket.items_count}</Text>
+                                </View>
+
+                                <View
+                                    style={[
+                                        cartScreenStyles.summaryStat,
+                                        cartScreenStyles.summaryStatEnd,
+                                    ]}
+                                >
+                                    <Text style={cartScreenStyles.summaryStatLabel}>{t("cart.totalAmountLabel")}</Text>
+                                    <Text
+                                        style={[
+                                            cartScreenStyles.summaryStatValue,
+                                            cartScreenStyles.summaryStatValuePrice,
+                                        ]}
+                                    >
+                                        {totalAmountLabel ?? "—"}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {basket.has_unavailable_items ? (
+                                <Text style={cartScreenStyles.summaryWarning}>{t("cart.unavailableNotice")}</Text>
+                            ) : null}
+                        </View>
+                    </View>
+
+                    {availableItems.length ? (
+                        <View style={cartScreenStyles.itemsSection}>
+                            <View
+                                style={[
+                                    cartScreenStyles.itemsSectionCard,
+                                    !hasUnavailableItems && cartScreenStyles.sectionBottom,
+                                ]}
+                            >
+                                <View style={cartScreenStyles.itemsSectionHeader}>
+                                    <Text style={cartScreenStyles.itemsSectionTitle}>
+                                        {t("cart.availableItemsTitle")}
+                                    </Text>
+                                </View>
+                                <View style={cartScreenStyles.itemsList}>
+                                    {availableItems.map((item) => (
+                                        <CartBasketItem
+                                            key={item.id}
+                                            item={item}
+                                            onConfirmRemove={handleConfirmRemoveItem}
+                                            onDecrease={(nextItem) => {
+                                                void handleQuantityDecrease(nextItem)
+                                            }}
+                                            onIncrease={(nextItem) => {
+                                                void handleQuantityIncrease(nextItem)
+                                            }}
+                                            onOpenProduct={handleOpenProduct}
+                                            swipeableRef={(instance) => {
+                                                swipeableRefs.current[item.id] = instance
+                                            }}
+                                            updating={updating}
+                                        />
+                                    ))}
+                                </View>
                             </View>
                         </View>
+                    ) : null}
 
-                        {basket.has_unavailable_items ? (
-                            <Text style={cartScreenStyles.summaryWarning}>{t("cart.unavailableNotice")}</Text>
-                        ) : null}
-                    </View>
+                    {unavailableItems.length ? (
+                        <View style={cartScreenStyles.itemsSection}>
+                            <View
+                                style={[
+                                    cartScreenStyles.itemsSectionCard,
+                                    cartScreenStyles.itemsSectionCardUnavailable,
+                                    cartScreenStyles.sectionBottom,
+                                ]}
+                            >
+                                <View style={cartScreenStyles.itemsSectionHeader}>
+                                    <Text style={cartScreenStyles.itemsSectionTitle}>
+                                        {t("cart.unavailableItemsTitle")}
+                                    </Text>
+                                    <Text style={cartScreenStyles.itemsSectionDescription}>
+                                        {t("cart.unavailableItemsDescription")}
+                                    </Text>
+                                </View>
+                                <View style={cartScreenStyles.itemsList}>
+                                    {unavailableItems.map((item) => (
+                                        <CartBasketItem
+                                            key={item.id}
+                                            item={item}
+                                            onConfirmRemove={handleConfirmRemoveItem}
+                                            onDecrease={(nextItem) => {
+                                                void handleQuantityDecrease(nextItem)
+                                            }}
+                                            onIncrease={(nextItem) => {
+                                                void handleQuantityIncrease(nextItem)
+                                            }}
+                                            onOpenProduct={handleOpenProduct}
+                                            swipeableRef={(instance) => {
+                                                swipeableRefs.current[item.id] = instance
+                                            }}
+                                            updating={updating}
+                                        />
+                                    ))}
+                                </View>
+                            </View>
+                        </View>
+                    ) : null}
+
+                    {recommendedProducts.length ? (
+                        <View style={cartScreenStyles.recommendationsSection}>
+                            <ContentRail
+                                title={t("recommendations.title")}
+                                description={t("recommendations.productDescription")}
+                                layout="grid"
+                                gridVariant="discover"
+                                mergeHeaderWithFirstRow
+                                loadingMore={recommendationsLoadingMore}
+                                products={recommendedProducts}
+                            />
+                        </View>
+                    ) : null}
                 </View>
-
-                {availableItems.length ? (
-                    <View style={cartScreenStyles.itemsSection}>
-                        <View
-                            style={[
-                                cartScreenStyles.itemsSectionCard,
-                                !hasUnavailableItems && cartScreenStyles.sectionBottom,
-                            ]}
-                        >
-                            <View style={cartScreenStyles.itemsSectionHeader}>
-                                <Text style={cartScreenStyles.itemsSectionTitle}>
-                                    {t("cart.availableItemsTitle")}
-                                </Text>
-                            </View>
-                            <View style={cartScreenStyles.itemsList}>
-                                {availableItems.map((item) => (
-                                    <CartBasketItem
-                                        key={item.id}
-                                        item={item}
-                                        onConfirmRemove={handleConfirmRemoveItem}
-                                        onDecrease={(nextItem) => {
-                                            void handleQuantityDecrease(nextItem)
-                                        }}
-                                        onIncrease={(nextItem) => {
-                                            void handleQuantityIncrease(nextItem)
-                                        }}
-                                        onOpenProduct={handleOpenProduct}
-                                        swipeableRef={(instance) => {
-                                            swipeableRefs.current[item.id] = instance
-                                        }}
-                                        updating={updating}
-                                    />
-                                ))}
-                            </View>
-                        </View>
-                    </View>
-                ) : null}
-
-                {unavailableItems.length ? (
-                    <View style={cartScreenStyles.itemsSection}>
-                        <View
-                            style={[
-                                cartScreenStyles.itemsSectionCard,
-                                cartScreenStyles.itemsSectionCardUnavailable,
-                                cartScreenStyles.sectionBottom,
-                            ]}
-                        >
-                            <View style={cartScreenStyles.itemsSectionHeader}>
-                                <Text style={cartScreenStyles.itemsSectionTitle}>
-                                    {t("cart.unavailableItemsTitle")}
-                                </Text>
-                                <Text style={cartScreenStyles.itemsSectionDescription}>
-                                    {t("cart.unavailableItemsDescription")}
-                                </Text>
-                            </View>
-                            <View style={cartScreenStyles.itemsList}>
-                                {unavailableItems.map((item) => (
-                                    <CartBasketItem
-                                        key={item.id}
-                                        item={item}
-                                        onConfirmRemove={handleConfirmRemoveItem}
-                                        onDecrease={(nextItem) => {
-                                            void handleQuantityDecrease(nextItem)
-                                        }}
-                                        onIncrease={(nextItem) => {
-                                            void handleQuantityIncrease(nextItem)
-                                        }}
-                                        onOpenProduct={handleOpenProduct}
-                                        swipeableRef={(instance) => {
-                                            swipeableRefs.current[item.id] = instance
-                                        }}
-                                        updating={updating}
-                                    />
-                                ))}
-                            </View>
-                        </View>
-                    </View>
-                ) : null}
-
-                {recommendedProducts.length ? (
-                    <ContentRail
-                        title={t("recommendations.title")}
-                        description={t("recommendations.productDescription")}
-                        layout="grid"
-                        gridVariant="discover"
-                        mergeHeaderWithFirstRow
-                        loadingMore={recommendationsLoadingMore}
-                        products={recommendedProducts}
-                    />
-                ) : null}
             </ScrollView>
         </View>
     )

@@ -13,8 +13,9 @@ import { useSimilarProducts } from "@/hooks/products/use-similar-products"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useProductFavourite } from "@/hooks/products/use-product-favourite"
 import { useProduct } from "@/hooks/products/use-product"
+import { useProductReviewEligibility } from "@/hooks/products/use-product-review-eligibility"
+import { useProductReviews } from "@/hooks/products/use-product-reviews"
 import { useLanguage } from "@/providers/language-provider"
-import { PRODUCT_REVIEW_COUNT, PRODUCT_REVIEW_RATING } from "@/screens/product/product-screen.constants"
 import {
     useProductInfoTabs,
     useProductScreenActions,
@@ -24,11 +25,14 @@ import { ProductInfoTabs } from "@/screens/product/product-info-tabs"
 import { productScreenStyle } from "@/screens/product/product-screen.styles"
 import { ProductScreenProps } from "@/screens/product/product-screen.types"
 import { getVariantStockLabel } from "@/screens/product/product-screen.utils"
+import { createProductReview } from "@/services/api/products"
 import { trackRecommendationView } from "@/services/api/recommendations"
 import { colors } from "@/theme/colors"
 
 export default function ProductScreen({ productId }: ProductScreenProps) {
     const { product, loading, error } = useProduct(productId)
+    const { reviews, loading: reviewsLoading, error: reviewsError, setReviews } = useProductReviews(productId)
+    const { canReview, loading: reviewEligibilityLoading } = useProductReviewEligibility(productId)
     const {
         error: favouriteError,
         isFavourite,
@@ -60,6 +64,7 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
     const screenshotPromptHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [isScreenshotPromptVisible, setIsScreenshotPromptVisible] = useState(false)
     const [hasCopiedScreenshotLink, setHasCopiedScreenshotLink] = useState(false)
+    const [reviewsSubmitting, setReviewsSubmitting] = useState(false)
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,
@@ -173,6 +178,16 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
             void loadMoreRecommendations()
         }
     }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
+
+    const handleSubmitReview = useCallback(async (value: number, text: string | null) => {
+        setReviewsSubmitting(true)
+        try {
+            const createdReview = await createProductReview(productId, { text, value })
+            setReviews((currentReviews) => [createdReview, ...currentReviews])
+        } finally {
+            setReviewsSubmitting(false)
+        }
+    }, [productId, setReviews])
 
     const chromeTemplate = useMemo(
         () => ({
@@ -333,10 +348,15 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
                             indicatorX={infoTabIndicatorX}
                             onChangeTab={handleInfoTabChange}
                             onCopySku={handleCopy}
+                            onSubmitReview={handleSubmitReview}
                             onTabLayout={handleInfoTabLayout}
                             product={product}
-                            reviewCount={PRODUCT_REVIEW_COUNT}
-                            reviewRating={PRODUCT_REVIEW_RATING}
+                            reviewEligibilityLoading={reviewEligibilityLoading}
+                            reviews={reviews}
+                            reviewsCanSubmit={canReview}
+                            reviewsError={reviewsError}
+                            reviewsLoading={reviewsLoading}
+                            reviewsSubmitting={reviewsSubmitting}
                             showIndicator={showIndicator}
                             t={t}
                         />

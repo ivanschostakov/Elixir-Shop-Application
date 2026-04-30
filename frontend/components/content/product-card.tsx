@@ -1,5 +1,6 @@
 import { Image, Pressable, Text, View } from "react-native"
 import { useRouter } from "expo-router"
+import { Path, Svg } from "react-native-svg"
 
 import {
     getProductContentSubtitle,
@@ -11,6 +12,8 @@ import type { ProductCardProps } from "@/components/content/product-card.types"
 import { getProductRoute } from "@/constants/routes"
 import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-value"
 import { useLanguage } from "@/providers/language-provider"
+
+const STAR_PATH = "M12 2.5L14.86 8.28L21.24 9.21L16.62 13.71L17.71 20.07L12 17.07L6.29 20.07L7.38 13.71L2.76 9.21L9.14 8.28L12 2.5Z"
 
 export function ProductCard({ product, style }: ProductCardProps) {
     const router = useRouter()
@@ -58,6 +61,15 @@ export function ProductCard({ product, style }: ProductCardProps) {
                         <Text numberOfLines={1} style={contentStyles.productPrice}>
                             {priceLabel}
                         </Text>
+                    ) : null}
+                    {product.rating_count > 0 ? (
+                        <View style={contentStyles.productRatingRow}>
+                            <Svg width={12} height={12} viewBox="0 0 24 24">
+                                <Path d={STAR_PATH} fill="#FFC83D" />
+                            </Svg>
+                            <Text style={contentStyles.productRatingValue}>{product.rating_avg.toFixed(1)}</Text>
+                            <Text style={contentStyles.productRatingCount}>({product.rating_count})</Text>
+                        </View>
                     ) : null}
                     <Text numberOfLines={1} style={contentStyles.productTitle}>
                         {product.name}

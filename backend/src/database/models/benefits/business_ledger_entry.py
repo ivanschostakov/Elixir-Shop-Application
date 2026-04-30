@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -33,7 +33,9 @@ class BusinessLedgerEntry(Base, IdPkMixin, TimestampMixin):
     currency: Mapped[str] = mapped_column(String(length=CURRENCY_CODE_MAX_LENGTH), nullable=False)
     source_system: Mapped[str] = mapped_column(String(length=SOURCE_KIND_MAX_LENGTH), nullable=False)
     source_code: Mapped[str | None] = mapped_column(String(length=PROMO_CODE_MAX_LENGTH), nullable=True)
-    status: Mapped[str] = mapped_column(String(length=STATUS_MAX_LENGTH), nullable=False, default="posted")
+    status: Mapped[str] = mapped_column(
+        String(length=STATUS_MAX_LENGTH), nullable=False, default="posted", server_default=text("'posted'")
+    )
     effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     note: Mapped[str | None] = mapped_column(String(length=LEDGER_NOTE_MAX_LENGTH), nullable=True)
     idempotency_key: Mapped[str | None] = mapped_column(String(length=EXTERNAL_ID_MAX_LENGTH), nullable=True, unique=True)

@@ -5,14 +5,15 @@ import { spacing } from "@/theme/spacing"
 
 export const checkoutScreenStyles = StyleSheet.create({
     container: {
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
         flex: 1,
     },
     scrollView: {
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
         flex: 1,
     },
     content: {
+        backgroundColor: colors.pageBackground,
         gap: spacing.md,
         paddingHorizontal: 0,
         paddingTop: 0,

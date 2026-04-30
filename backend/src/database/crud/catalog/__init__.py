@@ -9,6 +9,7 @@ from .product import (
     get_similar_products,
     update_product,
 )
+from .review import create_product_review, get_product_review_stats, get_product_reviews, has_user_purchased_product
 from .product_category import (
     create_product_category,
     delete_product_category,

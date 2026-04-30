@@ -1,0 +1,87 @@
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.database.models.orders.order import Order
+from src.database.models.orders.order_item import OrderItem
+from src.database.models.catalog.review import Review
+from src.database.schemas import ReviewCreate
+
+
+async def get_product_reviews(
+    session: AsyncSession,
+    *,
+    product_id: int,
+    offset: int = 0,
+    limit: int = 20,
+) -> list[Review]:
+    stmt = (
+        select(Review)
+        .where(Review.product_id == product_id)
+        .order_by(Review.created_at.desc(), Review.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def create_product_review(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    product_id: int,
+    data: ReviewCreate,
+) -> Review:
+    review = Review(
+        user_id=user_id,
+        product_id=product_id,
+        value=data.value,
+        text=data.text,
+    )
+    session.add(review)
+    await session.commit()
+    await session.refresh(review)
+    return review
+
+
+async def has_user_purchased_product(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    product_id: int,
+) -> bool:
+    stmt = (
+        select(OrderItem.id)
+        .join(Order, Order.id == OrderItem.order_id)
+        .where(
+            Order.user_id == user_id,
+            OrderItem.product_id == product_id,
+            Order.is_paid.is_(True),
+            Order.is_canceled.is_(False),
+        )
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none() is not None
+
+
+async def get_product_review_stats(
+    session: AsyncSession,
+    *,
+    product_ids: list[int],
+) -> dict[int, tuple[float, int]]:
+    if not product_ids:
+        return {}
+
+    stmt = (
+        select(
+            Review.product_id,
+            func.avg(Review.value).label("rating_avg"),
+            func.count(Review.id).label("rating_count"),
+        )
+        .where(Review.product_id.in_(product_ids))
+        .group_by(Review.product_id)
+    )
+    rows = (await session.execute(stmt)).all()
+    return {
+        int(product_id): (float(rating_avg or 0.0), int(rating_count or 0))
+        for product_id, rating_avg, rating_count in rows
+    }

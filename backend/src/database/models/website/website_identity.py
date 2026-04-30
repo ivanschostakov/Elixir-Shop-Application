@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, String
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -23,14 +23,22 @@ class WebsiteIdentity(Base, IdPkMixin, TimestampMixin):
     website_city: Mapped[str | None] = mapped_column(String(length=WEBSITE_CITY_MAX_LENGTH), nullable=True)
     website_registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     website_last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    group_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
-    group_names: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    custom_fields: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False, default=dict)
+    group_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    group_names: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'::json"))
+    custom_fields: Mapped[dict[str, str]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'::json")
+    )
     referral_program: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     bonus_account: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    discount_groups: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
-    active_coupons: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
-    recent_used_coupons: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    discount_groups: Mapped[list[dict]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'::json")
+    )
+    active_coupons: Mapped[list[dict]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'::json")
+    )
+    recent_used_coupons: Mapped[list[dict]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'::json")
+    )
     raw_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

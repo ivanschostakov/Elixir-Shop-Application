@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, String
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -20,7 +20,9 @@ class WebsiteSyncEvent(Base, IdPkMixin, TimestampMixin):
     external_order_id: Mapped[str | None] = mapped_column(String(length=EXTERNAL_ID_MAX_LENGTH), nullable=True, index=True)
     request_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     response_payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    status: Mapped[str] = mapped_column(String(length=STATUS_MAX_LENGTH), nullable=False, default="pending", index=True)
+    status: Mapped[str] = mapped_column(
+        String(length=STATUS_MAX_LENGTH), nullable=False, default="pending", server_default=text("'pending'"), index=True
+    )
     error_message: Mapped[str | None] = mapped_column(String(length=LEDGER_NOTE_MAX_LENGTH), nullable=True)
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

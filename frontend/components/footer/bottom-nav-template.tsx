@@ -3,10 +3,10 @@ import { router } from "expo-router"
 
 import {
     BasketIcon,
-    HomeIcon,
     ProfileIcon,
     SavedIcon,
     SearchIcon,
+    SmileBubbleIcon,
 } from "@/components/footer/sticky-footer.icons"
 import type { BottomNavTemplateProps } from "@/components/footer/bottom-nav-template.types"
 import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
@@ -26,13 +26,6 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
 
     const footerItems = [
         {
-            key: ROUTES.home,
-            accessibilityLabel: t("nav.home"),
-            icon: <HomeIcon color={pathname === ROUTES.home ? colors.primary : colors.mutedText} />,
-            isActive: pathname === ROUTES.home,
-            route: ROUTES.home,
-        },
-        {
             key: ROUTES.discover,
             accessibilityLabel: t("nav.discover"),
             icon: <SearchIcon color={pathname === ROUTES.discover ? colors.primary : colors.mutedText} />,
@@ -45,6 +38,13 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
             icon: <SavedIcon color={pathname === ROUTES.favorites ? colors.favorite : colors.mutedText} />,
             isActive: pathname === ROUTES.favorites,
             route: ROUTES.favorites,
+        },
+        {
+            key: ROUTES.chat,
+            accessibilityLabel: t("nav.chat"),
+            icon: <SmileBubbleIcon color={pathname === ROUTES.chat ? colors.primary : colors.mutedText} />,
+            isActive: pathname === ROUTES.chat,
+            route: ROUTES.chat,
         },
         {
             key: ROUTES.basket,

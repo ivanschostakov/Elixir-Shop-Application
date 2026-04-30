@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -16,8 +16,10 @@ class WebsiteBonusAccount(Base, IdPkMixin, TimestampMixin):
         BigInteger, ForeignKey("website_identities.id", ondelete="CASCADE"), nullable=False, unique=True
     )
     website_bonus_account_external_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    balance: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=Decimal("0.00"), server_default=text("0.00")
+    )
     currency: Mapped[str | None] = mapped_column(String(length=CURRENCY_CODE_MAX_LENGTH), nullable=True)
     website_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

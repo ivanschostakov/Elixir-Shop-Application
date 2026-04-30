@@ -1,7 +1,7 @@
 from decimal import Decimal
 from pathlib import Path
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, Numeric, String
+from sqlalchemy import BigInteger, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from config import API_BASE_URL
@@ -19,7 +19,7 @@ class Variant(Base, SystemMixin):
 
     sku: Mapped[str | None] = mapped_column(String(length=VARIANT_SKU_MAX_LENGTH), nullable=True)
     name: Mapped[str] = mapped_column(String(length=VARIANT_NAME_MAX_LENGTH), nullable=False)
-    stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
     product: Mapped["Product"] = relationship("Product", back_populates="variants")

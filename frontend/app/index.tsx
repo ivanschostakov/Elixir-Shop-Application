@@ -1,8 +1,9 @@
+import { Redirect } from "expo-router"
+
 import AuthLoadingScreen from "@/components/navigation/auth-loading-screen"
 import AuthEntryScreen from "@/screens/auth/auth-entry-screen"
+import { ROUTES } from "@/constants/routes"
 import { useAuth } from "@/providers/auth-provider"
-
-import HomeScreen from "../screens/home/home-screen"
 
 export default function Index() {
     const { isAuthenticated, isReady } = useAuth()
@@ -15,5 +16,5 @@ export default function Index() {
         return <AuthEntryScreen />
     }
 
-    return <HomeScreen />
+    return <Redirect href={ROUTES.discover} />
 }

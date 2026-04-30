@@ -3,9 +3,18 @@ import { StyleSheet } from "react-native"
 import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
+const DRAFTS_RAIL_MIN_HEIGHT = 548
+
 export const recentOrderDraftsRailStyles = StyleSheet.create({
     section: {
-        gap: spacing.md,
+        backgroundColor: colors.surface,
+        borderTopColor: colors.divider,
+        borderTopWidth: 1,
+        gap: spacing.sm,
+        minHeight: DRAFTS_RAIL_MIN_HEIGHT,
+        overflow: "hidden",
+        paddingBottom: spacing.md,
+        paddingTop: spacing.md,
     },
     scrollView: {
         flexGrow: 0,

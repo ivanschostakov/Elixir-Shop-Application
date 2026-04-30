@@ -6,13 +6,14 @@ import { spacing } from "@/theme/spacing"
 export const paymentScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
     },
     scrollView: {
         flex: 1,
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
     },
     content: {
+        backgroundColor: colors.pageBackground,
         paddingVertical: spacing.md,
         paddingBottom: spacing.xl,
         gap: spacing.md,

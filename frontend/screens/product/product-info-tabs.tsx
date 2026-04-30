@@ -1,4 +1,5 @@
-import { Animated, Pressable, Text, View } from "react-native"
+import { useState } from "react"
+import { Animated, Pressable, Text, TextInput, View } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
 import { HtmlContent, hasRenderableHtmlContent } from "@/components/content/html-content"
@@ -8,16 +9,53 @@ import {
 import { productScreenStyle } from "@/screens/product/product-screen.styles"
 import type { ProductInfoTabsProps } from "@/screens/product/product-info-tabs.types"
 
+function StarRating({
+    rating,
+    size = 16,
+}: {
+    rating: number
+    size?: number
+}) {
+    const clampedRating = Math.max(0, Math.min(5, rating))
+
+    return (
+        <View style={productScreenStyle.ratingStarsRow}>
+            {[0, 1, 2, 3, 4].map((index) => {
+                const fill = Math.max(0, Math.min(1, clampedRating - index))
+                const filledWidth = size * fill
+
+                return (
+                    <View key={index} style={[productScreenStyle.ratingStarSlot, { height: size, width: size }]}>
+                        <Svg width={size} height={size} viewBox="0 0 24 24">
+                            <Path d={REVIEW_STAR_PATH} fill="#D1D5DB" />
+                        </Svg>
+                        <View style={[productScreenStyle.ratingStarFillOverlay, { width: filledWidth }]}>
+                            <Svg width={size} height={size} viewBox="0 0 24 24">
+                                <Path d={REVIEW_STAR_PATH} fill="#FFC83D" />
+                            </Svg>
+                        </View>
+                    </View>
+                )
+            })}
+        </View>
+    )
+}
+
 export function ProductInfoTabs({
     activeInfoTab,
     indicatorWidth,
     indicatorX,
     onChangeTab,
     onCopySku,
+    onSubmitReview,
     onTabLayout,
     product,
-    reviewCount,
-    reviewRating,
+    reviewEligibilityLoading,
+    reviews,
+    reviewsCanSubmit,
+    reviewsError,
+    reviewsLoading,
+    reviewsSubmitting,
     showIndicator,
     t,
 }: ProductInfoTabsProps) {
@@ -26,6 +64,15 @@ export function ProductInfoTabs({
     const usageHtml = hasRenderableHtmlContent(product.usage) ? product.usage : null
     const expirationHtml = hasRenderableHtmlContent(product.expiration) ? product.expiration : null
     const productSku = product.sku?.trim() || null
+    const reviewCount = reviews.length
+    const reviewRatingValue =
+        reviewCount > 0
+            ? reviews.reduce((total, review) => total + review.value, 0) / reviewCount
+            : 0
+    const reviewRating = reviewRatingValue.toFixed(1)
+    const [draftReviewValue, setDraftReviewValue] = useState(5)
+    const [draftReviewText, setDraftReviewText] = useState("")
+    const [submitError, setSubmitError] = useState<string | null>(null)
     const infoTabs = [
         {
             key: "reviews" as const,
@@ -107,12 +154,108 @@ export function ProductInfoTabs({
         return (
             <View style={productScreenStyle.reviewsPlaceholder}>
                 <View style={productScreenStyle.reviewsSummaryRow}>
-                    <Svg width={16} height={16} viewBox="0 0 24 24">
-                        <Path d={REVIEW_STAR_PATH} fill="#FFC83D" />
-                    </Svg>
+                    <StarRating rating={reviewRatingValue} size={16} />
                     <Text style={productScreenStyle.reviewsSummaryValue}>{reviewRating}</Text>
                 </View>
-                <Text style={productScreenStyle.detailRichText}>{detailsFallback}</Text>
+                <Text style={productScreenStyle.reviewWriteLabel}>{t("product.writeReview")}</Text>
+                {reviewEligibilityLoading ? (
+                    <Text style={productScreenStyle.detailRichText}>{t("product.reviewEligibilityLoading")}</Text>
+                ) : null}
+                {!reviewEligibilityLoading && !reviewsCanSubmit ? (
+                    <Text style={productScreenStyle.detailRichText}>{t("product.reviewRequiresPurchase")}</Text>
+                ) : null}
+                {!reviewEligibilityLoading && reviewsCanSubmit ? (
+                    <View style={productScreenStyle.reviewComposer}>
+                        <View style={productScreenStyle.reviewRatingOptionsRow}>
+                            {[1, 2, 3, 4, 5].map((rating) => {
+                                const isActive = draftReviewValue === rating
+
+                                return (
+                                    <Pressable
+                                        key={rating}
+                                        accessibilityRole="button"
+                                        accessibilityState={{ selected: isActive, disabled: reviewsSubmitting }}
+                                        disabled={reviewsSubmitting}
+                                        onPress={() => {
+                                            setDraftReviewValue(rating)
+                                        }}
+                                        style={({ pressed }) => [
+                                            productScreenStyle.reviewRatingOption,
+                                            isActive && productScreenStyle.reviewRatingOptionActive,
+                                            pressed && productScreenStyle.reviewRatingOptionPressed,
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                productScreenStyle.reviewRatingOptionText,
+                                                isActive && productScreenStyle.reviewRatingOptionTextActive,
+                                            ]}
+                                        >
+                                            {rating}
+                                        </Text>
+                                    </Pressable>
+                                )
+                            })}
+                        </View>
+                        <TextInput
+                            editable={!reviewsSubmitting}
+                            maxLength={1000}
+                            multiline
+                            onChangeText={setDraftReviewText}
+                            placeholder={t("product.reviewTextPlaceholder")}
+                            style={productScreenStyle.reviewComposerInput}
+                            value={draftReviewText}
+                        />
+                        <Pressable
+                            accessibilityRole="button"
+                            disabled={reviewsSubmitting}
+                            onPress={() => {
+                                setSubmitError(null)
+                                void onSubmitReview(draftReviewValue, draftReviewText.trim() || null)
+                                    .then(() => {
+                                        setDraftReviewText("")
+                                        setDraftReviewValue(5)
+                                    })
+                                    .catch((error: unknown) => {
+                                        setSubmitError(error instanceof Error ? error.message : t("product.reviewSubmitFailed"))
+                                    })
+                            }}
+                            style={({ pressed }) => [
+                                productScreenStyle.reviewSubmitButton,
+                                reviewsSubmitting && productScreenStyle.reviewSubmitButtonDisabled,
+                                pressed && productScreenStyle.reviewSubmitButtonPressed,
+                            ]}
+                        >
+                            <Text style={productScreenStyle.reviewSubmitButtonText}>
+                                {reviewsSubmitting ? t("product.reviewSubmitLoading") : t("product.reviewSubmit")}
+                            </Text>
+                        </Pressable>
+                        {submitError ? <Text style={productScreenStyle.reviewSubmitError}>{submitError}</Text> : null}
+                    </View>
+                ) : null}
+                {reviewsLoading ? <Text style={productScreenStyle.detailRichText}>{t("product.reviewsLoading")}</Text> : null}
+                {reviewsError ? <Text style={productScreenStyle.detailRichText}>{reviewsError}</Text> : null}
+                {!reviewsLoading && !reviewsError && !reviews.length ? (
+                    <Text style={productScreenStyle.detailRichText}>{t("product.reviewsEmpty")}</Text>
+                ) : null}
+                {!reviewsLoading && !reviewsError && reviews.length
+                    ? reviews.map((review) => (
+                          <View key={review.id} style={productScreenStyle.reviewCard}>
+                              <View style={productScreenStyle.reviewCardHeader}>
+                                  <Text style={productScreenStyle.reviewCardAuthor}>
+                                      ID {review.user_id}
+                                  </Text>
+                                  <View style={productScreenStyle.reviewCardRatingRow}>
+                                      <StarRating rating={review.value} size={14} />
+                                      <Text style={productScreenStyle.reviewCardRating}>{review.value.toFixed(1)}</Text>
+                                  </View>
+                              </View>
+                              <Text style={productScreenStyle.reviewCardText}>
+                                  {review.text?.trim() || detailsFallback}
+                              </Text>
+                          </View>
+                      ))
+                    : null}
             </View>
         )
     }

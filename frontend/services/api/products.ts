@@ -1,6 +1,13 @@
 import { ENDPOINTS } from "@/services/api/constants"
 import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api/client"
-import type { ProductCreate, ProductUpdate, ProductWithVariantsRead } from "@/types/product"
+import type {
+    ProductCreate,
+    ProductReviewCreate,
+    ProductReviewEligibilityRead,
+    ProductReviewRead,
+    ProductUpdate,
+    ProductWithVariantsRead,
+} from "@/types/product"
 
 export type ProductApiSort =
     | "newest"
@@ -19,6 +26,11 @@ export type GetProductsOptions = {
 }
 
 export type GetSimilarProductsOptions = {
+    limit?: number
+    offset?: number
+}
+
+export type GetProductReviewsOptions = {
     limit?: number
     offset?: number
 }
@@ -53,6 +65,27 @@ export function getSimilarProducts(
         limit,
         offset,
     })
+}
+
+export function getProductReviews(
+    productId: number,
+    { limit, offset }: GetProductReviewsOptions = {},
+): Promise<ProductReviewRead[]> {
+    return apiGet<ProductReviewRead[]>(`${ENDPOINTS.PRODUCTS}/${productId}/reviews`, {
+        limit,
+        offset,
+    })
+}
+
+export function createProductReview(
+    productId: number,
+    data: ProductReviewCreate,
+): Promise<ProductReviewRead> {
+    return apiPost<ProductReviewRead, ProductReviewCreate>(`${ENDPOINTS.PRODUCTS}/${productId}/reviews`, data)
+}
+
+export function getProductReviewEligibility(productId: number): Promise<ProductReviewEligibilityRead> {
+    return apiGet<ProductReviewEligibilityRead>(`${ENDPOINTS.PRODUCTS}/${productId}/reviews/eligibility`)
 }
 
 export function createProduct(data: ProductCreate): Promise<ProductWithVariantsRead> {

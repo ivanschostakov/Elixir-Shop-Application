@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -29,8 +29,8 @@ class WebsiteCoupon(Base, IdPkMixin, TimestampMixin):
     discount_value: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     discount_currency: Mapped[str | None] = mapped_column(String(length=CURRENCY_CODE_MAX_LENGTH), nullable=True)
     max_use: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     description: Mapped[str | None] = mapped_column(String(length=LEDGER_NOTE_MAX_LENGTH), nullable=True)
     website_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     website_applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

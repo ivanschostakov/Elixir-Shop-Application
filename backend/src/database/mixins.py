@@ -2,7 +2,7 @@ import uuid
 
 from datetime import datetime
 from typing import get_args
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Enum, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Enum, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,8 +12,12 @@ from src.integrations.delivery.schemas import CountryCode, DeliveryMode, Deliver
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=ufa_now)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=ufa_now, onupdate=ufa_now)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=ufa_now, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=ufa_now, onupdate=ufa_now, server_default=func.now()
+    )
 
 
 class IdPkMixin:

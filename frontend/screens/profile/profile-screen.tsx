@@ -74,6 +74,29 @@ export default function ProfileScreen() {
                 </View>
             </Pressable>
 
+            <Pressable
+                accessibilityLabel={t("profile.drafts.open")}
+                accessibilityRole="button"
+                onPress={() => router.push(ROUTES.profileDrafts)}
+                style={({ pressed }) => [
+                    ProfileScreenStyles.historyCardButton,
+                    pressed && ProfileScreenStyles.historyCardButtonPressed,
+                ]}
+            >
+                <View style={ProfileScreenStyles.sectionCard}>
+                    <View style={ProfileScreenStyles.historyCardHeader}>
+                        <View style={ProfileScreenStyles.historyCardCopy}>
+                            <Text style={ProfileScreenStyles.historyCardTitle}>{t("profile.drafts.title")}</Text>
+                            <Text style={ProfileScreenStyles.historyCardSubtitle}>{t("profile.drafts.subtitle")}</Text>
+                        </View>
+
+                        <Text style={ProfileScreenStyles.historyCardArrow}>
+                            {">"}
+                        </Text>
+                    </View>
+                </View>
+            </Pressable>
+
             <ProfileQuickActions onSignOut={handleSignOut} />
         </FeedTemplate>
     )

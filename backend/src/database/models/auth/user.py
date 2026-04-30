@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String
+from sqlalchemy import BigInteger, Boolean, DateTime, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -24,10 +24,10 @@ class User(Base, IdPkMixin, TimestampMixin):
     name: Mapped[str] = mapped_column(String(length=PERSON_NAME_MAX_LENGTH), nullable=False)
     surname: Mapped[str] = mapped_column(String(length=PERSON_NAME_MAX_LENGTH), nullable=False)
 
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     phone_number: Mapped[str | None] = mapped_column(String(length=PHONE_NUMBER_MAX_LENGTH), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
 
@@ -58,3 +58,10 @@ class User(Base, IdPkMixin, TimestampMixin):
     order_benefit_applications: Mapped[list["OrderBenefitApplication"]] = relationship(back_populates="user")
     business_ledger_entries: Mapped[list["BusinessLedgerEntry"]] = relationship(back_populates="user")
     website_sync_events: Mapped[list["WebsiteSyncEvent"]] = relationship(back_populates="user")
+    ai_chat: Mapped["AIChat | None"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    ai_messages: Mapped[list["AIMessage"]] = relationship(back_populates="user", passive_deletes=True)

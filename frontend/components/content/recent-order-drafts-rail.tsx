@@ -117,7 +117,7 @@ function RecentOrderDraftCard({ draft, onDraftUpdated, onDraftDeleted }: RecentO
             }
             onDraftDeleted(draft.id)
         } catch (deleteError) {
-            Alert.alert(getDraftUpdateErrorMessage(deleteError, t("home.recentDraftsDeleteFailed")))
+            Alert.alert(getDraftUpdateErrorMessage(deleteError, t("cart.recentDraftsDeleteFailed")))
         } finally {
             setIsDeletingDraft(false)
         }
@@ -125,15 +125,15 @@ function RecentOrderDraftCard({ draft, onDraftUpdated, onDraftDeleted }: RecentO
 
     const handleConfirmDeleteDraft = () => {
         Alert.alert(
-            t("home.recentDraftsDeleteConfirmTitle"),
-            t("home.recentDraftsDeleteConfirmMessage"),
+            t("cart.recentDraftsDeleteConfirmTitle"),
+            t("cart.recentDraftsDeleteConfirmMessage"),
             [
                 {
                     text: t("common.cancel"),
                     style: "cancel",
                 },
                 {
-                    text: t("home.recentDraftsDeleteAction"),
+                    text: t("cart.recentDraftsDeleteAction"),
                     style: "destructive",
                     onPress: () => {
                         void handleDeleteDraft()
@@ -145,7 +145,7 @@ function RecentOrderDraftCard({ draft, onDraftUpdated, onDraftDeleted }: RecentO
 
     return (
         <Pressable
-            accessibilityLabel={`${t("home.recentDraftsOpenDraft")}: ${draftTitle}`}
+            accessibilityLabel={`${t("cart.recentDraftsOpenDraft")}: ${draftTitle}`}
             accessibilityRole="button"
             onPress={handleOpenDraft}
             style={({ pressed }) => [
@@ -154,7 +154,7 @@ function RecentOrderDraftCard({ draft, onDraftUpdated, onDraftDeleted }: RecentO
             ]}
         >
             <Pressable
-                accessibilityLabel={t("home.recentDraftsDeleteAction")}
+                accessibilityLabel={t("cart.recentDraftsDeleteAction")}
                 accessibilityRole="button"
                 disabled={isDeletingDraft}
                 hitSlop={10}
@@ -319,9 +319,9 @@ export function RecentOrderDraftsRail({ drafts }: RecentOrderDraftsRailProps) {
     return (
         <View style={recentOrderDraftsRailStyles.section}>
             <SectionHeader
-                title={t("home.recentDraftsTitle")}
-                eyebrow={t("home.recentDraftsEyebrow")}
-                description={t("home.recentDraftsDescription")}
+                title={t("cart.recentDraftsTitle")}
+                eyebrow={t("cart.recentDraftsEyebrow")}
+                description={t("cart.recentDraftsDescription")}
             />
 
             <ScrollView

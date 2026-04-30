@@ -745,7 +745,7 @@ export default function DeliveryScreen() {
             return
         }
 
-        router.push(ROUTES.home)
+        router.push(ROUTES.discover)
     }
 
     const handleDismissSearchFocus = () => {

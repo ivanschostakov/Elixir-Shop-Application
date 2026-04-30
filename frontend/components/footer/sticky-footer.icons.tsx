@@ -2,17 +2,6 @@ import { Circle, G, Path, Svg } from "react-native-svg"
 
 import type { FooterIconProps } from "@/components/footer/sticky-footer.icons.types"
 
-export function HomeIcon({ color }: FooterIconProps) {
-    return (
-        <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-            <Path
-                d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-5.5h-5V21H5a1 1 0 0 1-1-1v-9.5Z"
-                fill={color}
-            />
-        </Svg>
-    )
-}
-
 export function SearchIcon({ color }: FooterIconProps) {
     return (
         <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
@@ -30,6 +19,41 @@ export function SavedIcon({ color }: FooterIconProps) {
             <Path
                 d="M12 20.5 4.9 13.8a4.8 4.8 0 0 1 6.8-6.8L12 7.3l.3-.3a4.8 4.8 0 0 1 6.8 6.8L12 20.5Z"
                 fill={color}
+            />
+        </Svg>
+    )
+}
+
+export function SmileBubbleIcon({ color }: FooterIconProps) {
+    return (
+        <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
+            <Path
+                d="M3 5V20.7929C3 21.2383 3.53857 21.4614 3.85355 21.1464L7.70711 17.2929C7.89464 17.1054 8.149 17 8.41421 17H19C20.1046 17 21 16.1046 21 15V5C21 3.89543 20.1046 3 19 3H5C3.89543 3 3 3.89543 3 5Z"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+            />
+            <Path
+                d="M15 12C14.2005 12.6224 13.1502 13 12 13C10.8498 13 9.79952 12.6224 9 12"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+            />
+            <Path
+                d="M9 8.01953V8"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+            />
+            <Path
+                d="M15 8.01953V8"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
             />
         </Svg>
     )

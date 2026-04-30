@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -33,7 +33,9 @@ class OrderBenefitApplication(Base, IdPkMixin, TimestampMixin):
     discount_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     bonus_spent_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     currency: Mapped[str | None] = mapped_column(String(length=CURRENCY_CODE_MAX_LENGTH), nullable=True)
-    status: Mapped[str] = mapped_column(String(length=STATUS_MAX_LENGTH), nullable=False, default="applied", index=True)
+    status: Mapped[str] = mapped_column(
+        String(length=STATUS_MAX_LENGTH), nullable=False, default="applied", server_default=text("'applied'"), index=True
+    )
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User | None"] = relationship(back_populates="order_benefit_applications")

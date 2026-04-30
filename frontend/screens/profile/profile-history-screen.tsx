@@ -231,7 +231,7 @@ function PickerSheetField<TValue extends string>({
     )
 }
 
-function DateRangeSheetField({
+export function DateRangeSheetField({
     label,
     onChange,
     selectedRange,

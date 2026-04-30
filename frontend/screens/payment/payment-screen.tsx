@@ -130,8 +130,8 @@ export default function PaymentScreen() {
         items: 0,
     })
 
-    const openHome = useCallback(() => {
-        router.replace(ROUTES.home)
+    const openDiscover = useCallback(() => {
+        router.replace(ROUTES.discover)
     }, [])
 
     const openCheckout = useCallback(() => {
@@ -140,8 +140,8 @@ export default function PaymentScreen() {
             return
         }
 
-        openHome()
-    }, [draftId, openHome, order])
+        openDiscover()
+    }, [draftId, openDiscover, order])
 
     useEffect(() => {
         if (routePaymentMethod) {
@@ -387,7 +387,7 @@ export default function PaymentScreen() {
                 busy: false,
                 disabled: false,
                 label: t("payment.goHome"),
-                onPress: openHome,
+                onPress: openDiscover,
             }
         }
 
@@ -407,7 +407,7 @@ export default function PaymentScreen() {
                 busy: false,
                 disabled: false,
                 label: t("payment.goHome"),
-                onPress: openHome,
+                onPress: openDiscover,
             }
         }
 
@@ -423,7 +423,7 @@ export default function PaymentScreen() {
         isQrVisualReady,
         loading,
         loadingOrder,
-        openHome,
+        openDiscover,
         order,
         phase,
         isSuccessVisualReady,

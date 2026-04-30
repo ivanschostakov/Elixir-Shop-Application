@@ -54,6 +54,8 @@ class ProductRead(ProductBase):
     system_id: uuid.UUID
     in_stock: bool
     image_url: str
+    rating_avg: float = 0.0
+    rating_count: int = 0
     created_at: datetime
     updated_at: datetime
 

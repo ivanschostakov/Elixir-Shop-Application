@@ -6,14 +6,15 @@ import { spacing } from "@/theme/spacing"
 export const productScreenStyle = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
         position: "relative",
     },
     container: {
         flex: 1,
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
     },
     content: {
+        backgroundColor: colors.pageBackground,
         flexGrow: 1,
         gap: spacing.md,
         paddingTop: spacing.md,
@@ -411,10 +412,136 @@ export const productScreenStyle = StyleSheet.create({
     reviewsPlaceholder: {
         gap: spacing.sm,
     },
+    reviewWriteLabel: {
+        alignSelf: "flex-start",
+        color: colors.primary,
+        fontSize: 14,
+        fontWeight: "700",
+        textTransform: "uppercase",
+    },
+    reviewComposer: {
+        backgroundColor: colors.surfaceMuted,
+        borderRadius: spacing.md,
+        gap: spacing.sm,
+        padding: spacing.sm,
+    },
+    reviewRatingOptionsRow: {
+        flexDirection: "row",
+        gap: spacing.xs,
+    },
+    reviewRatingOption: {
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: 999,
+        borderWidth: 1,
+        minWidth: 34,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 6,
+    },
+    reviewRatingOptionActive: {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+    },
+    reviewRatingOptionPressed: {
+        opacity: 0.8,
+    },
+    reviewRatingOptionText: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: "700",
+    },
+    reviewRatingOptionTextActive: {
+        color: colors.onPrimary,
+    },
+    reviewComposerInput: {
+        backgroundColor: colors.surface,
+        borderColor: colors.border,
+        borderRadius: spacing.sm,
+        borderWidth: 1,
+        color: colors.text,
+        fontSize: 14,
+        minHeight: 90,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
+        textAlignVertical: "top",
+    },
+    reviewSubmitButton: {
+        alignItems: "center",
+        alignSelf: "flex-start",
+        backgroundColor: colors.primary,
+        borderRadius: 999,
+        justifyContent: "center",
+        minHeight: 36,
+        paddingHorizontal: spacing.md,
+    },
+    reviewSubmitButtonDisabled: {
+        opacity: 0.6,
+    },
+    reviewSubmitButtonPressed: {
+        opacity: 0.82,
+    },
+    reviewSubmitButtonText: {
+        color: colors.onPrimary,
+        fontSize: 13,
+        fontWeight: "800",
+    },
+    reviewSubmitError: {
+        color: colors.danger,
+        fontSize: 12,
+        fontWeight: "600",
+        lineHeight: 16,
+    },
+    reviewCard: {
+        backgroundColor: colors.surfaceMuted,
+        borderRadius: spacing.md,
+        gap: spacing.xs,
+        padding: spacing.sm,
+    },
+    reviewCardHeader: {
+        alignItems: "center",
+        flexDirection: "row",
+        justifyContent: "space-between",
+    },
+    reviewCardAuthor: {
+        color: colors.text,
+        fontSize: 12,
+        fontWeight: "700",
+    },
+    reviewCardRating: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "700",
+    },
+    reviewCardRatingRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 6,
+    },
+    reviewCardText: {
+        color: colors.text,
+        fontSize: 14,
+        lineHeight: 20,
+    },
     reviewsSummaryRow: {
         alignItems: "center",
         flexDirection: "row",
         gap: 6,
+    },
+    ratingStarsRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 2,
+    },
+    ratingStarSlot: {
+        overflow: "hidden",
+        position: "relative",
+    },
+    ratingStarFillOverlay: {
+        left: 0,
+        overflow: "hidden",
+        position: "absolute",
+        top: 0,
     },
     reviewsSummaryValue: {
         color: colors.text,

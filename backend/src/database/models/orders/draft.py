@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, ForeignKey, Integer, Numeric, String
+from sqlalchemy import BigInteger, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -29,13 +29,23 @@ class OrderDraft(Base, IdPkMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
-    status: Mapped[str] = mapped_column(String(length=STATUS_MAX_LENGTH), nullable=False, default="draft", index=True)
-    items_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    total_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    basket_subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
-    delivery_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
-    grand_total: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=Decimal("0.00"))
-    currency: Mapped[str] = mapped_column(String(length=CURRENCY_CODE_MAX_LENGTH), nullable=False, default="RUB")
+    status: Mapped[str] = mapped_column(
+        String(length=STATUS_MAX_LENGTH), nullable=False, default="draft", server_default=text("'draft'"), index=True
+    )
+    items_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    total_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    basket_subtotal: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default=text("0.00")
+    )
+    delivery_total: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default=text("0.00")
+    )
+    grand_total: Mapped[Decimal] = mapped_column(
+        Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default=text("0.00")
+    )
+    currency: Mapped[str] = mapped_column(
+        String(length=CURRENCY_CODE_MAX_LENGTH), nullable=False, default="RUB", server_default=text("'RUB'")
+    )
     delivery_period_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delivery_period_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     draft_name: Mapped[str | None] = mapped_column(String(length=ORDER_DRAFT_NAME_MAX_LENGTH), nullable=True)

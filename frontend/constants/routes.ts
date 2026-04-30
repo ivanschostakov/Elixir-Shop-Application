@@ -4,6 +4,7 @@ import { Href } from "expo-router"
 export const ROUTES = {
     home: "/",
     discover: "/discover",
+    chat: "/chat",
     basket: "/basket",
     checkout: "/checkout",
     delivery: "/delivery",
@@ -12,6 +13,7 @@ export const ROUTES = {
     login: "/login",
     payment: "/payment",
     profile: "/profile",
+    profileDrafts: "/profile-drafts",
     profileHistory: "/profile-history",
     websiteAccount: "/website-account",
 } as const
@@ -19,22 +21,23 @@ export const ROUTES = {
 const PRODUCT_ROUTE_PREFIX = "/products/"
 
 const headerTitleKeys: Record<string, TranslationKey> = {
-    [ROUTES.home]: "app.name",
     [ROUTES.discover]: "route.discover",
+    [ROUTES.chat]: "route.chat",
     [ROUTES.basket]: "route.basket",
     [ROUTES.checkout]: "route.checkout",
     [ROUTES.delivery]: "route.delivery",
     [ROUTES.favorites]: "route.favorites",
     [ROUTES.payment]: "route.payment",
     [ROUTES.profile]: "route.profile",
+    [ROUTES.profileDrafts]: "route.profileDrafts",
     [ROUTES.profileHistory]: "route.profileHistory",
     [ROUTES.websiteAccount]: "route.websiteAccount",
 }
 
 export const PRIMARY_APP_ROUTES = [
-    ROUTES.home,
     ROUTES.discover,
     ROUTES.favorites,
+    ROUTES.chat,
     ROUTES.basket,
     ROUTES.profile,
 ] as const
@@ -81,5 +84,5 @@ export function getRouteTitle(pathname: string) {
         return translate("route.product")
     }
 
-    return translate(headerTitleKeys[pathname] ?? headerTitleKeys[ROUTES.home])
+    return translate(headerTitleKeys[pathname] ?? headerTitleKeys[ROUTES.discover])
 }

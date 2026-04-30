@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import Boolean, Integer, String
+from sqlalchemy import Boolean, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from config import API_BASE_URL
@@ -26,8 +26,8 @@ class Product(Base, SystemMixin):
     description: Mapped[str | None] = mapped_column(String(length=PRODUCT_DESCRIPTION_MAX_LENGTH), nullable=True)
     usage: Mapped[str | None] = mapped_column(String(length=PRODUCT_USAGE_MAX_LENGTH), nullable=True)
     expiration: Mapped[str | None] = mapped_column(String(length=PRODUCT_EXPIRATION_MAX_LENGTH), nullable=True)
-    in_stock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    in_stock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
     variants: Mapped[list["Variant"]] = relationship(
         "Variant",

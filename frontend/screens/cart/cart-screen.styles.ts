@@ -5,23 +5,32 @@ import { spacing } from "@/theme/spacing"
 export const cartScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
     },
     emptyContainer: {
         backgroundColor: colors.surface,
     },
+    emptyScrollContent: {
+        flexGrow: 1,
+        justifyContent: "center",
+        paddingBottom: 0,
+    },
     emptyContent: {
         alignItems: "center",
-        flex: 1,
+        backgroundColor: colors.surface,
         justifyContent: "center",
+        flexGrow: 1,
+        minHeight: 360,
         paddingHorizontal: spacing.md,
+        paddingVertical: spacing.lg,
+        width: "100%",
     },
     loadingContainer: {
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
         flex: 1,
     },
     errorContainer: {
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
         flex: 1,
     },
     stateScrollContent: {
@@ -85,10 +94,15 @@ export const cartScreenStyles = StyleSheet.create({
         opacity: 0.45,
     },
     scrollContent: {
-        gap: spacing.md,
         paddingHorizontal: 0,
         paddingTop: 0,
         paddingBottom: 0,
+    },
+    contentSurface: {
+        backgroundColor: colors.surface,
+        flexGrow: 1,
+        overflow: "hidden",
+        width: "100%",
     },
     sectionTop: {
         borderTopLeftRadius: 0,
@@ -100,7 +114,6 @@ export const cartScreenStyles = StyleSheet.create({
     },
     summarySection: {
         backgroundColor: colors.surface,
-        borderRadius: spacing.lg,
         overflow: "hidden",
     },
     summaryCard: {
@@ -236,11 +249,13 @@ export const cartScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
     },
     itemsSection: {
+        backgroundColor: colors.surface,
+        borderTopColor: colors.divider,
+        borderTopWidth: 1,
         gap: 0,
     },
     itemsSectionCard: {
         backgroundColor: colors.surface,
-        borderRadius: spacing.lg,
         gap: spacing.sm,
         overflow: "hidden",
         paddingHorizontal: 0,
@@ -248,7 +263,14 @@ export const cartScreenStyles = StyleSheet.create({
         paddingBottom: spacing.sm,
     },
     itemsSectionCardUnavailable: {
-        backgroundColor: colors.surfaceElevated,
+        backgroundColor: colors.surface,
+    },
+    recommendationsSection: {
+        backgroundColor: colors.surface,
+        borderTopColor: colors.divider,
+        borderTopWidth: 1,
+        paddingBottom: spacing.md,
+        paddingTop: spacing.md,
     },
     itemsSectionHeader: {
         gap: 4,

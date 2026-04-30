@@ -1,3 +1,6 @@
+from .ai.attachment import Attachment
+from .ai.chat import AIChat
+from .ai.message import AIMessage
 from .auth.admin import Admin
 from .auth.email_verification_code import EmailVerificationCode
 from .auth.user import User
@@ -11,6 +14,7 @@ from .benefits.order_benefit_application import OrderBenefitApplication
 from .catalog.product import Product
 from .catalog.product_category import ProductCategory
 from .catalog.products_by_category import ProductByCategory
+from .catalog.review import Review
 from .catalog.variant import Variant
 from .delivery.address import DeliveryAddress
 from .delivery.cdek_door_address import CdekDoorAddress
@@ -34,6 +38,9 @@ from .website.website_sync_event import WebsiteSyncEvent
 __all__ = [
     "AppPromo",
     "Admin",
+    "AIChat",
+    "AIMessage",
+    "Attachment",
     "Basket",
     "BasketItem",
     "BusinessLedgerEntry",
@@ -51,6 +58,7 @@ __all__ = [
     "Product",
     "ProductCategory",
     "ProductByCategory",
+    "Review",
     "UserCategoryRecommendationSignal",
     "UserProductRecommendationSignal",
     "User",

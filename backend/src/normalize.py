@@ -140,6 +140,7 @@ def extract_money(value: Any) -> tuple[Decimal | None, str | None]:
     if raw and "|" in raw:
         raw_amount, raw_currency = raw.split("|", 1)
         return coerce_decimal(raw_amount), optional_str(raw_currency)
+
     return coerce_decimal(value), None
 
 

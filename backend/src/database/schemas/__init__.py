@@ -1,3 +1,18 @@
+from .ai import (
+    AIAttachmentBase,
+    AIAttachmentCreate,
+    AIAttachmentRead,
+    AIAttachmentUpdate,
+    AIChatBase,
+    AIChatCreate,
+    AIChatRead,
+    AIChatUpdate,
+    AIChatWithMessagesRead,
+    AIMessageBase,
+    AIMessageCreate,
+    AIMessageRead,
+    AIMessageUpdate,
+)
 from .auth.user import UserBase, UserCreate, UserRead, UserUpdate
 from .auth.user_session import UserSessionBase, UserSessionCreate, UserSessionRead, UserSessionUpdate
 from .basket.basket import BasketBase, BasketCreate, BasketRead, BasketUpdate
@@ -12,6 +27,7 @@ from .basket.basket_item import (
 from .catalog.product import ProductBase, ProductCreate, ProductRead, ProductUpdate, ProductWithVariantsRead
 from .catalog.product_category import ProductCategoryBase, ProductCategoryCreate, ProductCategoryRead, ProductCategoryUpdate
 from .catalog.products_by_category import ProductByCategoryBase, ProductByCategoryCreate, ProductByCategoryRead, ProductByCategoryUpdate
+from .catalog.review import ReviewCreate, ReviewEligibilityRead, ReviewRead
 from .catalog.variant import ProductVariantRead, VariantBase, VariantCreate, VariantRead, VariantUpdate
 from .delivery.address import DeliveryAddressBase, DeliveryAddressCreate, DeliveryAddressRead
 from .delivery.cdek_door_address import CdekDoorAddressBase, CdekDoorAddressCreate, CdekDoorAddressRead, CdekDoorAddressUpdate
@@ -66,6 +82,19 @@ from .orders.order import (
 )
 
 __all__ = [
+    "AIAttachmentBase",
+    "AIAttachmentCreate",
+    "AIAttachmentRead",
+    "AIAttachmentUpdate",
+    "AIChatBase",
+    "AIChatCreate",
+    "AIChatRead",
+    "AIChatUpdate",
+    "AIChatWithMessagesRead",
+    "AIMessageBase",
+    "AIMessageCreate",
+    "AIMessageRead",
+    "AIMessageUpdate",
     "AvatarResponse",
     "BasketBase",
     "BasketCreate",
@@ -127,6 +156,9 @@ __all__ = [
     "ProductByCategoryCreate",
     "ProductByCategoryRead",
     "ProductByCategoryUpdate",
+    "ReviewCreate",
+    "ReviewEligibilityRead",
+    "ReviewRead",
     "UserBase",
     "UserCreate",
     "UserRead",

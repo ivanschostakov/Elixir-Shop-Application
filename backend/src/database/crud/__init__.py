@@ -1,3 +1,22 @@
+from .ai import (
+    create_ai_attachment,
+    create_ai_chat,
+    create_ai_message,
+    delete_ai_attachment,
+    delete_ai_chat,
+    delete_ai_message,
+    get_ai_attachment_by_id,
+    get_ai_attachments,
+    get_ai_chat_by_conversation_id,
+    get_ai_chat_by_id,
+    get_ai_chat_by_user_id,
+    get_ai_chats,
+    get_ai_message_by_id,
+    get_ai_messages,
+    update_ai_attachment,
+    update_ai_chat,
+    update_ai_message,
+)
 from .auth.admin import is_admin_user
 from .auth.user import (
     create_user,
@@ -39,6 +58,10 @@ from .catalog.product import (
     get_similar_products,
     update_product,
 )
+from .catalog.review import get_product_reviews
+from .catalog.review import create_product_review
+from .catalog.review import get_product_review_stats
+from .catalog.review import has_user_purchased_product
 from .catalog.product_category import (
     create_product_category,
     delete_product_category,
@@ -113,13 +136,30 @@ from .website.website_identity_relationships import (
 
 __all__ = [
     "clear_basket",
+    "create_ai_attachment",
+    "create_ai_chat",
+    "create_ai_message",
     "create_basket",
     "delete_basket",
+    "delete_ai_attachment",
+    "delete_ai_chat",
+    "delete_ai_message",
     "get_basket_by_id",
+    "get_ai_attachment_by_id",
+    "get_ai_attachments",
+    "get_ai_chat_by_conversation_id",
+    "get_ai_chat_by_id",
+    "get_ai_chat_by_user_id",
+    "get_ai_chats",
+    "get_ai_message_by_id",
+    "get_ai_messages",
     "get_basket_by_user_id",
     "get_baskets",
     "is_admin_user",
     "update_basket",
+    "update_ai_attachment",
+    "update_ai_chat",
+    "update_ai_message",
     "create_basket_item",
     "delete_basket_item",
     "get_basket_item_by_basket_and_variant",
@@ -172,6 +212,10 @@ __all__ = [
     "get_product_by_sku",
     "get_product_by_system_id",
     "get_products",
+    "get_product_reviews",
+    "get_product_review_stats",
+    "create_product_review",
+    "has_user_purchased_product",
     "get_similar_products",
     "update_product",
     "create_product_category",

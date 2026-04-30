@@ -6,13 +6,14 @@ import { spacing } from "@/theme/spacing"
 export const ProfileScreenStyles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
     },
     container: {
         flex: 1,
-        backgroundColor: colors.pageBackground,
+        backgroundColor: colors.surface,
     },
     content: {
+        backgroundColor: colors.pageBackground,
         paddingHorizontal: 0,
         paddingTop: 0,
         paddingBottom: 0,
