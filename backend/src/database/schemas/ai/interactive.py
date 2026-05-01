@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-AIActionType = Literal["open_product", "ask_ai", "add_to_basket"]
+AIActionType = Literal["open_product", "open_checkout", "ask_ai", "add_to_basket"]
 AIActionStyle = Literal["primary", "secondary", "link"]
 AIProductIntent = Literal["recommend", "compare", "alternative"]
 
@@ -37,6 +37,12 @@ class AIInteractiveVariant(BaseModel):
     in_stock: bool
 
 
+class AIInteractiveActionRow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_ids: list[str] = Field(default_factory=list, min_length=1, max_length=3)
+
+
 class AIInteractiveProductCard(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -48,7 +54,8 @@ class AIInteractiveProductCard(BaseModel):
     image_url: str
     in_stock: bool
     variants: list[AIInteractiveVariant] = Field(default_factory=list, max_length=6)
-    actions: list[AIInteractiveAction] = Field(default_factory=list, max_length=6)
+    actions: list[AIInteractiveAction] = Field(default_factory=list, max_length=8)
+    action_rows: list[AIInteractiveActionRow] = Field(default_factory=list, max_length=8)
 
 
 class AIInteractivePayload(BaseModel):

@@ -3,7 +3,7 @@ import type { BasketRead } from "@/types/basket"
 export type BotModel = "free" | "premium"
 export type MessageSender = "user" | "ai"
 export type AttachmentType = "document" | "image"
-export type AIActionType = "open_product" | "ask_ai" | "add_to_basket"
+export type AIActionType = "open_product" | "open_checkout" | "ask_ai" | "add_to_basket"
 export type AIActionStyle = "primary" | "secondary" | "link"
 export type AIProductIntent = "recommend" | "compare" | "alternative"
 
@@ -31,6 +31,10 @@ export type AIInteractiveVariant = {
     in_stock: boolean
 }
 
+export type AIInteractiveActionRow = {
+    action_ids: string[]
+}
+
 export type AIInteractiveProductCard = {
     id: string
     product_id: number
@@ -41,6 +45,7 @@ export type AIInteractiveProductCard = {
     in_stock: boolean
     variants: AIInteractiveVariant[]
     actions: AIInteractiveAction[]
+    action_rows?: AIInteractiveActionRow[]
 }
 
 export type AIInteractivePayload = {

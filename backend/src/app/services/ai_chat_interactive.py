@@ -17,13 +17,14 @@ from config import AI_CHAT_ACTION_SECRET, AI_CHAT_ACTION_TOKEN_TTL_SECONDS
 from src.database.models import Product, Variant
 from src.database.schemas import (
     AIInteractiveAction,
+    AIInteractiveActionRow,
     AIInteractivePayload,
     AIInteractiveProductCard,
     AIInteractiveVariant,
 )
 
 
-ProductRequestedAction = Literal["open_product", "compare", "alternatives"]
+ProductRequestedAction = Literal["open_product", "compare", "alternatives", "checkout"]
 ProductRefIntent = Literal["recommend", "compare", "alternative"]
 
 
@@ -34,7 +35,8 @@ class StructuredProductRef(BaseModel):
     variant_id: int | None = Field(default=None, gt=0)
     intent: ProductRefIntent = "recommend"
     reason: str = Field(min_length=1, max_length=500)
-    requested_actions: list[ProductRequestedAction] = Field(default_factory=list, max_length=3)
+    requested_actions: list[ProductRequestedAction] = Field(default_factory=list, max_length=4)
+    button_rows: list[list[str]] = Field(default_factory=list, max_length=6)
 
 
 class StructuredBasketItem(BaseModel):
@@ -182,6 +184,66 @@ def _variant_image_url(variant: Variant) -> str:
     return variant.image_url or variant.product.image_url
 
 
+def _normalize_button_key(value: str) -> str:
+    return str(value or "").strip().lower().replace("_", "-")
+
+
+def _button_key_aliases(value: str) -> list[str]:
+    normalized = _normalize_button_key(value)
+    aliases = [normalized]
+    if normalized in {"open", "product", "open-product"}:
+        aliases.append("open_product")
+    if normalized in {"compare", "comparison"}:
+        aliases.append("compare")
+    if normalized in {"alternative", "alternatives"}:
+        aliases.append("alternatives")
+    if normalized in {"checkout", "open-checkout", "go-checkout", "order", "finish"}:
+        aliases.append("checkout")
+    if normalized.startswith("variant-"):
+        aliases.append(f"variant:{normalized.removeprefix('variant-')}")
+    return aliases
+
+
+def _action_rows_from_button_rows(
+    *,
+    actions: list[AIInteractiveAction],
+    button_rows: list[list[str]],
+    action_id_by_key: dict[str, str],
+) -> list[AIInteractiveActionRow]:
+    action_ids = {action.id for action in actions}
+    used_ids: set[str] = set()
+    rows: list[AIInteractiveActionRow] = []
+
+    for row in button_rows:
+        row_ids: list[str] = []
+        for raw_key in row[:3]:
+            action_id = next(
+                (
+                    action_id_by_key.get(alias)
+                    for alias in _button_key_aliases(raw_key)
+                    if action_id_by_key.get(alias) in action_ids
+                ),
+                None,
+            )
+            if action_id is None or action_id in used_ids or action_id in row_ids:
+                continue
+            row_ids.append(action_id)
+        if row_ids:
+            used_ids.update(row_ids)
+            rows.append(AIInteractiveActionRow(action_ids=row_ids))
+
+    remaining_actions = [action for action in actions if action.id not in used_ids]
+    add_actions = [action for action in remaining_actions if action.type == "add_to_basket"]
+    other_actions = [action for action in remaining_actions if action.type != "add_to_basket"]
+
+    if other_actions:
+        rows.append(AIInteractiveActionRow(action_ids=[action.id for action in other_actions[:3]]))
+    for index in range(0, len(add_actions), 2):
+        rows.append(AIInteractiveActionRow(action_ids=[action.id for action in add_actions[index:index + 2]]))
+
+    return rows[:8]
+
+
 async def _load_products(session: AsyncSession, product_ids: set[int]) -> dict[int, Product]:
     if not product_ids:
         return {}
@@ -209,6 +271,13 @@ async def _load_variants(session: AsyncSession, variant_ids: set[int]) -> dict[i
 def _build_product_card(product: Product, ref: StructuredProductRef) -> AIInteractiveProductCard:
     in_stock_variants = [variant for variant in product.variants if variant.stock > 0]
     shown_variants = in_stock_variants[:6]
+    action_id_by_key: dict[str, str] = {}
+    requested_button_keys = {
+        alias
+        for row in ref.button_rows
+        for key in row
+        for alias in _button_key_aliases(key)
+    }
     variant_rows = [
         AIInteractiveVariant(
             id=variant.id,
@@ -230,19 +299,20 @@ def _build_product_card(product: Product, ref: StructuredProductRef) -> AIIntera
             product_id=product.id,
         )
     ]
+    action_id_by_key["open_product"] = actions[0].id
 
     for variant in shown_variants[:3]:
-        actions.append(
-            AIInteractiveAction(
-                id=_make_action_id("product", product.id, "variant", variant.id),
-                type="add_to_basket",
-                label=f"Выбрать {variant.name}",
-                style="secondary",
-                product_id=product.id,
-                variant_id=variant.id,
-                quantity=1,
-            )
+        action = AIInteractiveAction(
+            id=_make_action_id("product", product.id, "variant", variant.id),
+            type="add_to_basket",
+            label=f"В корзину {variant.name}",
+            style="primary",
+            product_id=product.id,
+            variant_id=variant.id,
+            quantity=1,
         )
+        actions.append(action)
+        action_id_by_key[f"variant:{variant.id}"] = action.id
 
     if "compare" in ref.requested_actions:
         actions.append(
@@ -253,6 +323,7 @@ def _build_product_card(product: Product, ref: StructuredProductRef) -> AIIntera
                 prompt=f"Сравни {product.name} с похожими товарами из каталога.",
             )
         )
+        action_id_by_key["compare"] = actions[-1].id
     if "alternatives" in ref.requested_actions:
         actions.append(
             AIInteractiveAction(
@@ -262,6 +333,24 @@ def _build_product_card(product: Product, ref: StructuredProductRef) -> AIIntera
                 prompt=f"Подбери 2-3 альтернативы для {product.name} из каталога.",
             )
         )
+        action_id_by_key["alternatives"] = actions[-1].id
+    if "checkout" in ref.requested_actions or "checkout" in requested_button_keys:
+        actions.append(
+            AIInteractiveAction(
+                id=_make_action_id("product", product.id, "checkout"),
+                type="open_checkout",
+                label="Перейти к оформлению",
+                style="primary",
+            )
+        )
+        action_id_by_key["checkout"] = actions[-1].id
+
+    actions = actions[:8]
+    action_rows = _action_rows_from_button_rows(
+        actions=actions,
+        button_rows=ref.button_rows,
+        action_id_by_key=action_id_by_key,
+    )
 
     return AIInteractiveProductCard(
         id=_make_action_id("product", product.id),
@@ -272,7 +361,8 @@ def _build_product_card(product: Product, ref: StructuredProductRef) -> AIIntera
         image_url=product.image_url,
         in_stock=bool(in_stock_variants),
         variants=variant_rows,
-        actions=actions[:6],
+        actions=actions,
+        action_rows=action_rows,
     )
 
 

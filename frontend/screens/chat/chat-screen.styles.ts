@@ -388,6 +388,22 @@ export const chatScreenStyles = StyleSheet.create({
         width: "100%",
         alignItems: "stretch",
     },
+    aiActionKeyboard: {
+        gap: 6,
+        width: "100%",
+    },
+    aiActionKeyboardRow: {
+        flexDirection: "row",
+        gap: 6,
+        width: "100%",
+        alignItems: "stretch",
+    },
+    aiActionKeyboardCell: {
+        flex: 1,
+        minWidth: 0,
+        gap: 4,
+        alignItems: "stretch",
+    },
     aiVariantActionRow: {
         flexBasis: "48%",
         flexGrow: 1,
@@ -433,6 +449,9 @@ export const chatScreenStyles = StyleSheet.create({
     aiVariantActionButton: {
         width: "100%",
     },
+    aiKeyboardActionButton: {
+        width: "100%",
+    },
     aiFullWidthActionButton: {
         flexBasis: "48%",
         flexGrow: 1,
@@ -463,6 +482,7 @@ export const chatScreenStyles = StyleSheet.create({
         fontSize: 12,
         lineHeight: 15,
         fontWeight: "800",
+        textAlign: "center",
     },
     aiActionButtonPrimaryText: {
         color: colors.onPrimary,

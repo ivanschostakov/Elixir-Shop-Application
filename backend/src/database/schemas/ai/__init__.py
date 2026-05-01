@@ -2,6 +2,7 @@ from .attachment import AIAttachmentBase, AIAttachmentCreate, AIAttachmentRead, 
 from .chat import AIChatBase, AIChatCreate, AIChatRead, AIChatUpdate, AIChatWithMessagesRead
 from .interactive import (
     AIInteractiveAction,
+    AIInteractiveActionRow,
     AIInteractivePayload,
     AIInteractiveProductCard,
     AIInteractiveVariant,
@@ -19,6 +20,7 @@ __all__ = [
     "AIChatUpdate",
     "AIChatWithMessagesRead",
     "AIInteractiveAction",
+    "AIInteractiveActionRow",
     "AIInteractivePayload",
     "AIInteractiveProductCard",
     "AIInteractiveVariant",

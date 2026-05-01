@@ -368,6 +368,15 @@ function AIProductCard({
 }) {
     const visibleVariants = card.variants.slice(0, 2)
     const [actionQuantities, setActionQuantities] = useState<Record<string, number>>({})
+    const actionsById = useMemo(() => new Map(card.actions.map((action) => [action.id, action])), [card.actions])
+    const fallbackActionRows = useMemo(() => {
+        const rows: { action_ids: string[] }[] = []
+        for (let index = 0; index < card.actions.length; index += 2) {
+            rows.push({ action_ids: card.actions.slice(index, index + 2).map((action) => action.id) })
+        }
+        return rows
+    }, [card.actions])
+    const actionRows = card.action_rows?.length ? card.action_rows : fallbackActionRows
     const getActionQuantity = (action: AIInteractiveAction) => actionQuantities[action.id] ?? action.quantity ?? 1
     const getActionMaxQuantity = (action: AIInteractiveAction) => {
         const variantStock = card.variants.find((variant) => variant.id === action.variant_id)?.stock
@@ -379,6 +388,35 @@ function AIProductCard({
             ...currentQuantities,
             [action.id]: Math.max(1, Math.min(maxQuantity, nextQuantity)),
         }))
+    }
+    const renderActionControl = (action: AIInteractiveAction) => {
+        if (action.type === "add_to_basket" && action.variant_id && !action.completed) {
+            const selectedQuantity = getActionQuantity(action)
+            return (
+                <>
+                    <AIQuantityStepper
+                        max={getActionMaxQuantity(action)}
+                        onChange={(nextQuantity) => updateActionQuantity(action, nextQuantity)}
+                        value={selectedQuantity}
+                    />
+                    <AIActionButton
+                        action={action}
+                        activeActionId={activeActionId}
+                        containerStyle={chatScreenStyles.aiKeyboardActionButton}
+                        onPress={() => onActionPress(action, selectedQuantity)}
+                    />
+                </>
+            )
+        }
+
+        return (
+            <AIActionButton
+                action={action}
+                activeActionId={activeActionId}
+                containerStyle={chatScreenStyles.aiKeyboardActionButton}
+                onPress={() => onActionPress(action)}
+            />
+        )
     }
 
     return (
@@ -410,35 +448,23 @@ function AIProductCard({
                     ))}
                 </View>
             ) : null}
-            <View style={chatScreenStyles.aiActionRow}>
-                {card.actions.map((action) => {
-                    if (action.type === "add_to_basket" && action.variant_id && !action.completed) {
-                        const selectedQuantity = getActionQuantity(action)
-                        return (
-                            <View key={action.id} style={chatScreenStyles.aiVariantActionRow}>
-                                <AIQuantityStepper
-                                    max={getActionMaxQuantity(action)}
-                                    onChange={(nextQuantity) => updateActionQuantity(action, nextQuantity)}
-                                    value={selectedQuantity}
-                                />
-                                <AIActionButton
-                                    action={action}
-                                    activeActionId={activeActionId}
-                                    containerStyle={chatScreenStyles.aiVariantActionButton}
-                                    onPress={() => onActionPress(action, selectedQuantity)}
-                                />
-                            </View>
-                        )
+            <View style={chatScreenStyles.aiActionKeyboard}>
+                {actionRows.map((row, rowIndex) => {
+                    const rowActions = row.action_ids
+                        .map((actionId) => actionsById.get(actionId))
+                        .filter((action): action is AIInteractiveAction => Boolean(action))
+                    if (!rowActions.length) {
+                        return null
                     }
 
                     return (
-                        <AIActionButton
-                            action={action}
-                            activeActionId={activeActionId}
-                            containerStyle={chatScreenStyles.aiFullWidthActionButton}
-                            key={action.id}
-                            onPress={() => onActionPress(action)}
-                        />
+                        <View key={`${card.id}-row-${rowIndex}`} style={chatScreenStyles.aiActionKeyboardRow}>
+                            {rowActions.map((action) => (
+                                <View key={action.id} style={chatScreenStyles.aiActionKeyboardCell}>
+                                    {renderActionControl(action)}
+                                </View>
+                            ))}
+                        </View>
                     )
                 })}
             </View>
@@ -519,7 +545,7 @@ function AIActionButton({
                 <ActivityIndicator color={isPrimary ? colors.onPrimary : colors.primary} size="small" />
             ) : (
                 <Text
-                    numberOfLines={1}
+                    numberOfLines={2}
                     style={[
                         chatScreenStyles.aiActionButtonText,
                         isPrimary ? chatScreenStyles.aiActionButtonPrimaryText : null,
@@ -1772,6 +1798,11 @@ export default function ChatScreen() {
 
         if (action.type === "open_product" && action.product_id) {
             router.push(getProductRoute(action.product_id))
+            return
+        }
+
+        if (action.type === "open_checkout") {
+            router.push(ROUTES.checkout)
             return
         }
 
