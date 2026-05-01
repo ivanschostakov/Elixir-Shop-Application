@@ -9,6 +9,7 @@ from src.database.schemas import ProductRead, ProductVariantRead, ProductWithVar
 from src.product_media import build_products_media_url
 
 ReviewStatsByProductId = dict[int, tuple[float, int]]
+PLACEHOLDER_SITE_REVIEW_AUTHOR = "С сайта"
 
 
 def build_product_image_url(request: Request, product: Product) -> str:
@@ -112,7 +113,7 @@ def serialize_review(request: Request, review: Review) -> ReviewRead:
     ]
     return ReviewRead(
         id=review.id,
-        author_username=review.user.username,
+        author_username=PLACEHOLDER_SITE_REVIEW_AUTHOR if review.user_id == 0 else review.user.username,
         product_id=review.product_id,
         value=review.value,
         text=review.text,

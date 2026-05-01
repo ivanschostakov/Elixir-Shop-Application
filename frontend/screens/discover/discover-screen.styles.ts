@@ -8,6 +8,16 @@ export const discoverScreenStyles = StyleSheet.create({
         flex: 1,
         backgroundColor: colors.surface,
     },
+    articleEmptyScreen: {
+        flex: 1,
+        backgroundColor: colors.background,
+    },
+    emptyContent: {
+        alignItems: "center",
+        flex: 1,
+        justifyContent: "center",
+        paddingHorizontal: spacing.md,
+    },
     list: {
         flex: 1,
         backgroundColor: colors.surface,
@@ -26,9 +36,6 @@ export const discoverScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.md,
         width: "100%",
-    },
-    introBlock: {
-        height: spacing.xs,
     },
     gridRow: {
         backgroundColor: colors.surface,

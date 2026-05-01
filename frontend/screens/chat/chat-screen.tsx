@@ -43,6 +43,8 @@ import { EdgeBlur } from "@/components/effects/edge-blur"
 import { EmptyState } from "@/components/content/empty-state"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { ROUTES, getProductRoute } from "@/constants/routes"
+import { useBasket } from "@/hooks/basket/use-basket"
+import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { useAiChat, type ChatDisplayMessage } from "@/hooks/chat/use-ai-chat"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
@@ -53,8 +55,10 @@ import type {
     AIInteractiveAction,
     AIInteractivePayload,
     AIInteractiveProductCard,
+    AIInteractiveVariant,
     UploadableChatAttachment,
 } from "@/services/api/ai-chat.types"
+import type { BasketItemRead, BasketRead } from "@/types/basket"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { colors } from "@/theme/colors"
 import { motion } from "@/theme/motion"
@@ -329,13 +333,52 @@ function formatCommerceMoney(value: string | number, currency = "RUB") {
     }
 }
 
+function getPreferredAiVariantId(variants: AIInteractiveVariant[], basket: BasketRead | null) {
+    const basketVariant = variants.find((variant) =>
+        basket?.items.some((item) => item.variant_id === variant.id),
+    )
+
+    if (basketVariant) {
+        return basketVariant.id
+    }
+
+    const firstAvailableVariant = variants.find((variant) => variant.in_stock && variant.stock > 0)
+    return firstAvailableVariant?.id ?? variants[0]?.id ?? null
+}
+
+function getAiVariantStockLabel(variant: AIInteractiveVariant | null) {
+    if (!variant) {
+        return ""
+    }
+
+    if (!variant.in_stock || variant.stock <= 0) {
+        return "Нет в наличии"
+    }
+
+    if (variant.stock <= 3) {
+        return "Мало в наличии"
+    }
+
+    return "В наличии"
+}
+
 function AIInteractiveContent({
     activeActionId,
+    activeBasketVariantId,
+    basket,
+    onAddVariantToBasket,
     onActionPress,
+    onBasketItemQuantityChange,
+    onOpenProduct,
     payload,
 }: {
     activeActionId: string | null
+    activeBasketVariantId: number | null
+    basket: BasketRead | null
+    onAddVariantToBasket: (variant: AIInteractiveVariant) => void
     onActionPress: (action: AIInteractiveAction, quantity?: number) => void
+    onBasketItemQuantityChange: (item: BasketItemRead, nextQuantity: number) => void
+    onOpenProduct: (productId: number) => void
     payload: AIInteractivePayload
 }) {
     const hasContent = payload.cards.length > 0
@@ -348,9 +391,14 @@ function AIInteractiveContent({
             {payload.cards.map((card) => (
                 <AIProductCard
                     activeActionId={activeActionId}
+                    activeBasketVariantId={activeBasketVariantId}
+                    basket={basket}
                     card={card}
                     key={card.id}
+                    onAddVariantToBasket={onAddVariantToBasket}
                     onActionPress={onActionPress}
+                    onBasketItemQuantityChange={onBasketItemQuantityChange}
+                    onOpenProduct={onOpenProduct}
                 />
             ))}
         </View>
@@ -359,157 +407,289 @@ function AIInteractiveContent({
 
 function AIProductCard({
     activeActionId,
+    activeBasketVariantId,
+    basket,
     card,
+    onAddVariantToBasket,
     onActionPress,
+    onBasketItemQuantityChange,
+    onOpenProduct,
 }: {
     activeActionId: string | null
+    activeBasketVariantId: number | null
+    basket: BasketRead | null
     card: AIInteractiveProductCard
+    onAddVariantToBasket: (variant: AIInteractiveVariant) => void
     onActionPress: (action: AIInteractiveAction, quantity?: number) => void
+    onBasketItemQuantityChange: (item: BasketItemRead, nextQuantity: number) => void
+    onOpenProduct: (productId: number) => void
 }) {
-    const visibleVariants = card.variants.slice(0, 2)
-    const [actionQuantities, setActionQuantities] = useState<Record<string, number>>({})
-    const actionsById = useMemo(() => new Map(card.actions.map((action) => [action.id, action])), [card.actions])
+    const basketItemByVariantId = useMemo(
+        () => new Map((basket?.items ?? []).map((item) => [item.variant_id, item])),
+        [basket?.items],
+    )
+    const preferredVariantId = useMemo(
+        () => getPreferredAiVariantId(card.variants, basket),
+        [basket, card.variants],
+    )
+    const [selectedVariantId, setSelectedVariantId] = useState<number | null>(preferredVariantId)
+    const visibleActions = useMemo(
+        () => card.actions.filter((action) => action.type === "open_checkout"),
+        [card.actions],
+    )
+    const actionsById = useMemo(() => new Map(visibleActions.map((action) => [action.id, action])), [visibleActions])
     const fallbackActionRows = useMemo(() => {
         const rows: { action_ids: string[] }[] = []
-        for (let index = 0; index < card.actions.length; index += 2) {
-            rows.push({ action_ids: card.actions.slice(index, index + 2).map((action) => action.id) })
+        for (let index = 0; index < visibleActions.length; index += 2) {
+            rows.push({ action_ids: visibleActions.slice(index, index + 2).map((action) => action.id) })
         }
         return rows
-    }, [card.actions])
-    const actionRows = card.action_rows?.length ? card.action_rows : fallbackActionRows
-    const getActionQuantity = (action: AIInteractiveAction) => actionQuantities[action.id] ?? action.quantity ?? 1
-    const getActionMaxQuantity = (action: AIInteractiveAction) => {
-        const variantStock = card.variants.find((variant) => variant.id === action.variant_id)?.stock
-        return Math.max(1, Math.min(variantStock ?? 100, 100))
-    }
-    const updateActionQuantity = (action: AIInteractiveAction, nextQuantity: number) => {
-        const maxQuantity = getActionMaxQuantity(action)
-        setActionQuantities((currentQuantities) => ({
-            ...currentQuantities,
-            [action.id]: Math.max(1, Math.min(maxQuantity, nextQuantity)),
-        }))
-    }
-    const renderActionControl = (action: AIInteractiveAction) => {
-        if (action.type === "add_to_basket" && action.variant_id && !action.completed) {
-            const selectedQuantity = getActionQuantity(action)
-            return (
-                <>
-                    <AIQuantityStepper
-                        max={getActionMaxQuantity(action)}
-                        onChange={(nextQuantity) => updateActionQuantity(action, nextQuantity)}
-                        value={selectedQuantity}
-                    />
-                    <AIActionButton
-                        action={action}
-                        activeActionId={activeActionId}
-                        containerStyle={chatScreenStyles.aiKeyboardActionButton}
-                        onPress={() => onActionPress(action, selectedQuantity)}
-                    />
-                </>
-            )
+    }, [visibleActions])
+    const actionRows = useMemo(() => {
+        const rows = card.action_rows?.length ? card.action_rows : fallbackActionRows
+        return rows
+            .map((row) => ({
+                action_ids: row.action_ids.filter((actionId) => actionsById.has(actionId)),
+            }))
+            .filter((row) => row.action_ids.length > 0)
+    }, [actionsById, card.action_rows, fallbackActionRows])
+    const selectedVariant = card.variants.find((variant) => variant.id === selectedVariantId) ?? card.variants[0] ?? null
+    const selectedBasketItem = selectedVariant ? basketItemByVariantId.get(selectedVariant.id) ?? null : null
+
+    useEffect(() => {
+        setSelectedVariantId((currentVariantId) => {
+            if (currentVariantId !== null && card.variants.some((variant) => variant.id === currentVariantId)) {
+                return currentVariantId
+            }
+
+            return preferredVariantId
+        })
+    }, [card.variants, preferredVariantId])
+
+    const handleVariantSelect = useCallback((variant: AIInteractiveVariant) => {
+        if (!variant.in_stock || variant.stock <= 0) {
+            return
         }
 
-        return (
-            <AIActionButton
-                action={action}
-                activeActionId={activeActionId}
-                containerStyle={chatScreenStyles.aiKeyboardActionButton}
-                onPress={() => onActionPress(action)}
-            />
-        )
-    }
+        setSelectedVariantId(variant.id)
+    }, [])
 
     return (
-        <View style={chatScreenStyles.aiProductCard}>
+        <Pressable
+            accessibilityLabel={card.title}
+            accessibilityRole="button"
+            onPress={() => onOpenProduct(card.product_id)}
+            style={({ pressed }) => [
+                chatScreenStyles.aiProductCard,
+                pressed ? chatScreenStyles.aiProductCardPressed : null,
+            ]}
+        >
             <View style={chatScreenStyles.aiProductHeader}>
-                <Image source={{ uri: card.image_url }} style={chatScreenStyles.aiProductImage} />
                 <View style={chatScreenStyles.aiProductTextWrap}>
                     <Text numberOfLines={2} style={chatScreenStyles.aiProductTitle}>
                         {card.title}
                     </Text>
-                    {card.reason ? (
-                        <Text numberOfLines={2} style={chatScreenStyles.aiProductReason}>
-                            {card.reason}
-                        </Text>
-                    ) : null}
                 </View>
             </View>
-            {visibleVariants.length > 0 ? (
-                <View style={chatScreenStyles.aiVariantList}>
-                    {visibleVariants.map((variant) => (
-                        <View key={variant.id} style={chatScreenStyles.aiVariantRow}>
-                            <Text numberOfLines={1} style={chatScreenStyles.aiVariantName}>
-                                {variant.name}
+            {card.variants.length > 0 ? (
+                <View style={chatScreenStyles.aiVariantSelectorCard}>
+                    <ScrollView
+                        contentContainerStyle={chatScreenStyles.aiVariantSelectorRow}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                    >
+                        {card.variants.map((variant) => {
+                            const isSelected = variant.id === selectedVariant?.id
+                            const isDisabled = !variant.in_stock || variant.stock <= 0
+
+                            return (
+                                <Pressable
+                                    accessibilityLabel={variant.name}
+                                    accessibilityRole="button"
+                                    disabled={isDisabled}
+                                    key={variant.id}
+                                    onPress={(event) => {
+                                        event.stopPropagation()
+                                        handleVariantSelect(variant)
+                                    }}
+                                    style={({ pressed }) => [
+                                        chatScreenStyles.aiVariantSelectorOption,
+                                        isSelected ? chatScreenStyles.aiVariantSelectorOptionSelected : null,
+                                        isDisabled ? chatScreenStyles.aiVariantSelectorOptionDisabled : null,
+                                        pressed ? chatScreenStyles.aiVariantSelectorOptionPressed : null,
+                                    ]}
+                                >
+                                    <Image
+                                        resizeMode="cover"
+                                        source={{ uri: variant.image_url || card.image_url }}
+                                        style={[
+                                            chatScreenStyles.aiVariantSelectorImage,
+                                            isSelected ? chatScreenStyles.aiVariantSelectorImageSelected : null,
+                                        ]}
+                                    />
+                                </Pressable>
+                            )
+                        })}
+                    </ScrollView>
+                    <View style={chatScreenStyles.aiSelectedVariantMetaRow}>
+                        <View style={chatScreenStyles.aiSelectedVariantMetaCopy}>
+                            <Text numberOfLines={1} style={chatScreenStyles.aiSelectedVariantName}>
+                                {selectedVariant?.name ?? ""}
                             </Text>
-                            <Text style={chatScreenStyles.aiVariantPrice}>
-                                {formatCommerceMoney(variant.price)}
+                            <Text numberOfLines={1} style={chatScreenStyles.aiSelectedVariantStock}>
+                                {getAiVariantStockLabel(selectedVariant)}
                             </Text>
                         </View>
-                    ))}
+                        {selectedVariant ? (
+                            <Text style={chatScreenStyles.aiSelectedVariantPrice}>
+                                {formatCommerceMoney(selectedVariant.price)}
+                            </Text>
+                        ) : null}
+                    </View>
+                    <AISelectedVariantBasketControl
+                        active={selectedVariant ? activeBasketVariantId === selectedVariant.id : false}
+                        basketItem={selectedBasketItem}
+                        onAdd={() => {
+                            if (selectedVariant) {
+                                onAddVariantToBasket(selectedVariant)
+                            }
+                        }}
+                        onQuantityChange={(item, nextQuantity) => onBasketItemQuantityChange(item, nextQuantity)}
+                        variant={selectedVariant}
+                    />
                 </View>
             ) : null}
-            <View style={chatScreenStyles.aiActionKeyboard}>
-                {actionRows.map((row, rowIndex) => {
-                    const rowActions = row.action_ids
-                        .map((actionId) => actionsById.get(actionId))
-                        .filter((action): action is AIInteractiveAction => Boolean(action))
-                    if (!rowActions.length) {
-                        return null
-                    }
+            {actionRows.length > 0 ? (
+                <View style={chatScreenStyles.aiActionKeyboard}>
+                    {actionRows.map((row, rowIndex) => {
+                        const rowActions = row.action_ids
+                            .map((actionId) => actionsById.get(actionId))
+                            .filter((action): action is AIInteractiveAction => Boolean(action))
+                        if (!rowActions.length) {
+                            return null
+                        }
 
-                    return (
-                        <View key={`${card.id}-row-${rowIndex}`} style={chatScreenStyles.aiActionKeyboardRow}>
-                            {rowActions.map((action) => (
-                                <View key={action.id} style={chatScreenStyles.aiActionKeyboardCell}>
-                                    {renderActionControl(action)}
-                                </View>
-                            ))}
-                        </View>
-                    )
-                })}
-            </View>
-        </View>
+                        return (
+                            <View key={`${card.id}-row-${rowIndex}`} style={chatScreenStyles.aiActionKeyboardRow}>
+                                {rowActions.map((action) => (
+                                    <View key={action.id} style={chatScreenStyles.aiActionKeyboardCell}>
+                                        <AIActionButton
+                                            action={action}
+                                            activeActionId={activeActionId}
+                                            containerStyle={chatScreenStyles.aiKeyboardActionButton}
+                                            onPress={() => onActionPress(action)}
+                                        />
+                                    </View>
+                                ))}
+                            </View>
+                        )
+                    })}
+                </View>
+            ) : null}
+        </Pressable>
     )
 }
 
-function AIQuantityStepper({
-    max,
-    onChange,
-    value,
+function AISelectedVariantBasketControl({
+    active,
+    basketItem,
+    onAdd,
+    onQuantityChange,
+    variant,
 }: {
-    max: number
-    onChange: (quantity: number) => void
-    value: number
+    active: boolean
+    basketItem: BasketItemRead | null
+    onAdd: () => void
+    onQuantityChange: (item: BasketItemRead, nextQuantity: number) => void
+    variant: AIInteractiveVariant | null
 }) {
-    const decreaseDisabled = value <= 1
-    const increaseDisabled = value >= max
+    const isUnavailable = !variant || !variant.in_stock || variant.stock <= 0
+    const maxQuantity = basketItem
+        ? Math.max(
+            1,
+            Math.min(
+                basketItem.available_quantity || variant?.stock || 1,
+                variant?.stock || basketItem.available_quantity || 1,
+            ),
+        )
+        : Math.max(1, variant?.stock || 1)
+    const increaseDisabled = active || !basketItem || basketItem.quantity >= maxQuantity
+
+    if (basketItem) {
+        return (
+            <View style={[chatScreenStyles.aiSelectedVariantQuantityControl, active ? chatScreenStyles.aiVariantControlDisabled : null]}>
+                <Pressable
+                    accessibilityRole="button"
+                    disabled={active}
+                    onPress={(event) => {
+                        event.stopPropagation()
+                        onQuantityChange(basketItem, basketItem.quantity - 1)
+                    }}
+                    style={({ pressed }) => [
+                        chatScreenStyles.aiSelectedVariantQuantityButton,
+                        pressed && !active ? chatScreenStyles.aiSelectedVariantQuantityButtonPressed : null,
+                    ]}
+                >
+                    <Text style={chatScreenStyles.aiSelectedVariantQuantityButtonText}>-</Text>
+                </Pressable>
+
+                <View style={chatScreenStyles.aiSelectedVariantQuantityValueWrap}>
+                    {active ? (
+                        <ActivityIndicator color={colors.onPrimary} size="small" />
+                    ) : (
+                        <Text numberOfLines={1} style={chatScreenStyles.aiSelectedVariantQuantityValue}>
+                            {basketItem.quantity}
+                        </Text>
+                    )}
+                </View>
+
+                <Pressable
+                    accessibilityRole="button"
+                    disabled={increaseDisabled}
+                    onPress={(event) => {
+                        event.stopPropagation()
+                        onQuantityChange(basketItem, basketItem.quantity + 1)
+                    }}
+                    style={({ pressed }) => [
+                        chatScreenStyles.aiSelectedVariantQuantityButton,
+                        increaseDisabled ? chatScreenStyles.aiSelectedVariantQuantityButtonDisabled : null,
+                        pressed && !increaseDisabled ? chatScreenStyles.aiSelectedVariantQuantityButtonPressed : null,
+                    ]}
+                >
+                    <Text style={chatScreenStyles.aiSelectedVariantQuantityButtonText}>+</Text>
+                </Pressable>
+            </View>
+        )
+    }
 
     return (
-        <View style={chatScreenStyles.aiQuantityStepper}>
-            <Pressable
-                accessibilityRole="button"
-                disabled={decreaseDisabled}
-                onPress={() => onChange(value - 1)}
-                style={[
-                    chatScreenStyles.aiQuantityButton,
-                    decreaseDisabled ? chatScreenStyles.aiQuantityButtonDisabled : null,
-                ]}
-            >
-                <Text style={chatScreenStyles.aiQuantityButtonText}>-</Text>
-            </Pressable>
-            <Text style={chatScreenStyles.aiQuantityValue}>{value} шт.</Text>
-            <Pressable
-                accessibilityRole="button"
-                disabled={increaseDisabled}
-                onPress={() => onChange(value + 1)}
-                style={[
-                    chatScreenStyles.aiQuantityButton,
-                    increaseDisabled ? chatScreenStyles.aiQuantityButtonDisabled : null,
-                ]}
-            >
-                <Text style={chatScreenStyles.aiQuantityButtonText}>+</Text>
-            </Pressable>
-        </View>
+        <Pressable
+            accessibilityRole="button"
+            disabled={active || isUnavailable}
+            onPress={(event) => {
+                event.stopPropagation()
+                onAdd()
+            }}
+            style={({ pressed }) => [
+                chatScreenStyles.aiSelectedVariantBasketButton,
+                (active || isUnavailable) ? chatScreenStyles.aiVariantControlDisabled : null,
+                pressed && !(active || isUnavailable) ? chatScreenStyles.aiSelectedVariantBasketButtonPressed : null,
+            ]}
+        >
+            {active ? (
+                <ActivityIndicator color={colors.onPrimary} size="small" />
+            ) : (
+                <Text
+                    numberOfLines={1}
+                    style={[
+                        chatScreenStyles.aiSelectedVariantBasketButtonText,
+                        isUnavailable ? chatScreenStyles.aiSelectedVariantBasketButtonTextDisabled : null,
+                    ]}
+                >
+                    {isUnavailable ? "Нет в наличии" : "В корзину"}
+                </Text>
+            )}
+        </Pressable>
     )
 }
 
@@ -532,7 +712,10 @@ function AIActionButton({
         <Pressable
             accessibilityRole="button"
             disabled={disabled}
-            onPress={onPress}
+            onPress={(event) => {
+                event.stopPropagation()
+                onPress()
+            }}
             style={({ pressed }) => [
                 chatScreenStyles.aiActionButton,
                 isPrimary ? chatScreenStyles.aiActionButtonPrimary : chatScreenStyles.aiActionButtonSecondary,
@@ -542,7 +725,7 @@ function AIActionButton({
             ]}
         >
             {busy ? (
-                <ActivityIndicator color={isPrimary ? colors.onPrimary : colors.primary} size="small" />
+                <ActivityIndicator color={colors.onPrimary} size="small" />
             ) : (
                 <Text
                     numberOfLines={2}
@@ -1339,6 +1522,7 @@ export default function ChatScreen() {
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [activeActionId, setActiveActionId] = useState<string | null>(null)
+    const [activeBasketVariantId, setActiveBasketVariantId] = useState<number | null>(null)
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [albumSelectorVisible, setAlbumSelectorVisible] = useState(false)
@@ -1370,6 +1554,12 @@ export default function ChatScreen() {
         () => photoAlbums.find((album) => album.id === selectedPhotoAlbumId)?.title ?? t("chat.attachmentsPhotoTitle"),
         [photoAlbums, selectedPhotoAlbumId, t],
     )
+    const { basket } = useBasket()
+    const {
+        addItem: addBasketItem,
+        removeItem: removeBasketItem,
+        updateItemQuantity: updateBasketItemQuantity,
+    } = useBasketMutations()
 
     useApplyScreenTemplate("feed", {
         header: "none",
@@ -1854,6 +2044,46 @@ export default function ChatScreen() {
         }
     }, [activeActionId, performAction, router, sendMessage, sending, t])
 
+    const handleAddVariantToBasket = useCallback(async (variant: AIInteractiveVariant) => {
+        if (activeBasketVariantId || activeActionId) {
+            return
+        }
+
+        setActiveBasketVariantId(variant.id)
+        try {
+            await addBasketItem(variant.id, 1)
+        } catch (basketError) {
+            Alert.alert(
+                t("chat.sendFailedTitle"),
+                basketError instanceof Error ? basketError.message : t("chat.sendFailedMessage"),
+            )
+        } finally {
+            setActiveBasketVariantId(null)
+        }
+    }, [activeActionId, activeBasketVariantId, addBasketItem, t])
+
+    const handleBasketItemQuantityChange = useCallback(async (item: BasketItemRead, nextQuantity: number) => {
+        if (activeBasketVariantId || activeActionId) {
+            return
+        }
+
+        setActiveBasketVariantId(item.variant_id)
+        try {
+            if (nextQuantity < 1) {
+                await removeBasketItem(item.id)
+            } else {
+                await updateBasketItemQuantity(item.id, nextQuantity)
+            }
+        } catch (basketError) {
+            Alert.alert(
+                t("chat.sendFailedTitle"),
+                basketError instanceof Error ? basketError.message : t("chat.sendFailedMessage"),
+            )
+        } finally {
+            setActiveBasketVariantId(null)
+        }
+    }, [activeActionId, activeBasketVariantId, removeBasketItem, t, updateBasketItemQuantity])
+
     const hasDraft = Boolean(draft.trim())
     const hasComposerContent = hasDraft || attachments.length > 0
     if (loading && !chat) {
@@ -2052,8 +2282,15 @@ export default function ChatScreen() {
                                                     {!isUserMessage && message.interactive ? (
                                                         <AIInteractiveContent
                                                             activeActionId={activeActionId}
+                                                            activeBasketVariantId={activeBasketVariantId}
+                                                            basket={basket}
+                                                            onAddVariantToBasket={handleAddVariantToBasket}
                                                             onActionPress={(action, quantity) => {
                                                                 void handleInteractiveAction(message, action, quantity)
+                                                            }}
+                                                            onBasketItemQuantityChange={handleBasketItemQuantityChange}
+                                                            onOpenProduct={(productId) => {
+                                                                router.push(getProductRoute(productId))
                                                             }}
                                                             payload={message.interactive}
                                                         />

@@ -12,7 +12,7 @@ export type StickerConfig =
     }
 
 export const STICKERS: Record<
-    "cartEmpty" | "favoritesEmpty" | "noProducts" | "cherryCongrats" | "orderHistoryEmpty",
+    "cartEmpty" | "favoritesEmpty" | "noArticles" | "noProducts" | "cherryCongrats" | "orderHistoryEmpty",
     StickerConfig
 > = {
     cartEmpty: {
@@ -22,6 +22,10 @@ export const STICKERS: Record<
     favoritesEmpty: {
         kind: "lottie",
         source: require("../assets/stickers/utya-fav.json") as AnimationObject,
+    },
+    noArticles: {
+        kind: "lottie",
+        source: require("../assets/stickers/no-articles.json") as AnimationObject,
     },
     noProducts: {
         kind: "image",

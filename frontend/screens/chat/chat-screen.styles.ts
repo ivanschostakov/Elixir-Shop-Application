@@ -330,10 +330,13 @@ export const chatScreenStyles = StyleSheet.create({
         padding: 10,
         gap: 8,
     },
+    aiProductCardPressed: {
+        opacity: 0.9,
+    },
     aiProductHeader: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 10,
+        gap: 0,
     },
     aiProductImage: {
         width: 54,
@@ -343,12 +346,12 @@ export const chatScreenStyles = StyleSheet.create({
     },
     aiProductTextWrap: {
         flex: 1,
-        gap: 3,
+        gap: 0,
     },
     aiProductTitle: {
         color: "#15191E",
-        fontSize: 14,
-        lineHeight: 18,
+        fontSize: 16,
+        lineHeight: 20,
         fontWeight: "800",
     },
     aiProductReason: {
@@ -356,31 +359,132 @@ export const chatScreenStyles = StyleSheet.create({
         fontSize: 12,
         lineHeight: 16,
     },
-    aiVariantList: {
-        gap: 4,
-    },
-    aiVariantRow: {
-        minHeight: 24,
+    aiVariantSelectorCard: {
         borderRadius: 7,
-        backgroundColor: "rgba(21,151,223,0.07)",
+        backgroundColor: "transparent",
+        gap: 7,
+        padding: 0,
+    },
+    aiVariantSelectorRow: {
+        gap: 7,
+    },
+    aiVariantSelectorOption: {
+        alignItems: "center",
+        width: 52,
+    },
+    aiVariantSelectorOptionSelected: {
+        opacity: 1,
+    },
+    aiVariantSelectorOptionDisabled: {
+        opacity: 0.42,
+    },
+    aiVariantSelectorOptionPressed: {
+        opacity: 0.8,
+    },
+    aiVariantSelectorImage: {
+        width: 52,
+        height: 52,
+        borderRadius: 10,
+        backgroundColor: "rgba(245,247,249,0.92)",
+    },
+    aiVariantSelectorImageSelected: {
+        borderWidth: 1.5,
+        borderColor: colors.primary,
+    },
+    aiSelectedVariantMetaRow: {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
         gap: 8,
-        paddingHorizontal: 8,
     },
-    aiVariantName: {
+    aiSelectedVariantMetaCopy: {
         flex: 1,
-        color: "#25313A",
-        fontSize: 12,
-        lineHeight: 16,
-        fontWeight: "600",
+        minWidth: 0,
+        gap: 1,
     },
-    aiVariantPrice: {
+    aiSelectedVariantName: {
+        color: "#15191E",
+        fontSize: 14,
+        lineHeight: 18,
+        fontWeight: "800",
+    },
+    aiSelectedVariantStock: {
+        color: "rgba(36,43,47,0.58)",
+        fontSize: 11,
+        lineHeight: 14,
+        fontWeight: "700",
+    },
+    aiSelectedVariantPrice: {
         color: "#15191E",
         fontSize: 12,
         lineHeight: 16,
-        fontWeight: "800",
+        fontWeight: "900",
+    },
+    aiSelectedVariantBasketButton: {
+        width: "100%",
+        minHeight: 34,
+        borderRadius: 8,
+        backgroundColor: colors.primary,
+        alignItems: "center",
+        justifyContent: "center",
+        paddingHorizontal: 10,
+    },
+    aiSelectedVariantBasketButtonPressed: {
+        opacity: 0.84,
+    },
+    aiSelectedVariantBasketButtonText: {
+        color: colors.onPrimary,
+        fontSize: 13,
+        lineHeight: 17,
+        fontWeight: "900",
+        textAlign: "center",
+    },
+    aiSelectedVariantBasketButtonTextDisabled: {
+        color: "rgba(255,255,255,0.86)",
+    },
+    aiSelectedVariantQuantityControl: {
+        width: "100%",
+        minHeight: 34,
+        borderRadius: 8,
+        backgroundColor: colors.primary,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        overflow: "hidden",
+    },
+    aiSelectedVariantQuantityButton: {
+        width: 44,
+        minHeight: 34,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    aiSelectedVariantQuantityButtonPressed: {
+        backgroundColor: "rgba(255,255,255,0.14)",
+    },
+    aiSelectedVariantQuantityButtonDisabled: {
+        opacity: 0.38,
+    },
+    aiSelectedVariantQuantityButtonText: {
+        color: colors.onPrimary,
+        fontSize: 22,
+        lineHeight: 24,
+        fontWeight: "900",
+    },
+    aiSelectedVariantQuantityValueWrap: {
+        flex: 1,
+        minHeight: 34,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    aiSelectedVariantQuantityValue: {
+        color: colors.onPrimary,
+        fontSize: 14,
+        lineHeight: 18,
+        fontWeight: "900",
+        textAlign: "center",
+    },
+    aiVariantControlDisabled: {
+        opacity: 0.62,
     },
     aiActionRow: {
         flexDirection: "row",
@@ -467,7 +571,7 @@ export const chatScreenStyles = StyleSheet.create({
         paddingVertical: 6,
     },
     aiActionButtonSecondary: {
-        backgroundColor: "rgba(21,151,223,0.1)",
+        backgroundColor: colors.primary,
     },
     aiActionButtonPrimary: {
         backgroundColor: colors.primary,
@@ -479,7 +583,7 @@ export const chatScreenStyles = StyleSheet.create({
         opacity: 0.62,
     },
     aiActionButtonText: {
-        color: colors.primary,
+        color: colors.onPrimary,
         fontSize: 12,
         lineHeight: 15,
         fontWeight: "800",

@@ -85,6 +85,22 @@ export default function DiscoverScreen() {
         void trackRecommendationCategoryView({ category_id: categoryId }).catch(() => undefined)
     }, [categories, categoryId, isProductsTab])
 
+    if (!isProductsTab) {
+        return (
+            <CatalogTemplate style={discoverScreenStyles.articleEmptyScreen}>
+                <View style={discoverScreenStyles.emptyContent}>
+                    <EmptyState
+                        sticker={STICKERS.noArticles}
+                        eyebrow={t("common.articles")}
+                        title={t("discover.articlesTitle")}
+                        description={t("discover.articlesDescription")}
+                        variant="plain"
+                    />
+                </View>
+            </CatalogTemplate>
+        )
+    }
+
     return (
         <CatalogTemplate style={discoverScreenStyles.screen}>
             <FlatList
@@ -106,30 +122,20 @@ export default function DiscoverScreen() {
                 }}
                 onEndReachedThreshold={0.6}
                 ListHeaderComponent={
-                    isProductsTab ? (
-                        <View
-                            style={discoverScreenStyles.controlsWrap}
-                        >
-                            <ProductBrowseControls
-                                categories={categories}
-                                categoryId={categoryId}
-                                onChangeCategoryId={setCategoryId}
-                                onChangeSort={setSort}
-                                sort={sort}
-                            />
-                        </View>
-                    ) : (
-                        <View style={discoverScreenStyles.introBlock} />
-                    )
+                    <View
+                        style={discoverScreenStyles.controlsWrap}
+                    >
+                        <ProductBrowseControls
+                            categories={categories}
+                            categoryId={categoryId}
+                            onChangeCategoryId={setCategoryId}
+                            onChangeSort={setSort}
+                            sort={sort}
+                        />
+                    </View>
                 }
                 ListEmptyComponent={
-                    !isProductsTab ? (
-                        <EmptyState
-                            eyebrow={t("common.articles")}
-                            title={t("discover.articlesTitle")}
-                            description={t("discover.articlesDescription")}
-                        />
-                    ) : isLoading ? (
+                    isLoading ? (
                         <View style={discoverScreenStyles.loaderWrap}>
                             <ActivityIndicator color={colors.primary} />
                         </View>

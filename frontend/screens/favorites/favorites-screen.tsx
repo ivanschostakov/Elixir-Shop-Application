@@ -50,7 +50,7 @@ export default function FavoritesScreen() {
                 <View style={favoritesScreenStyles.emptyContent}>
                     <EmptyState
                         actionVariant="link"
-                        sticker={STICKERS.favoritesEmpty}
+                        sticker={STICKERS.noArticles}
                         description={t("favorites.articlesEmptyDescription")}
                         actionLabel={t("favorites.openCatalog")}
                         onPressAction={() => router.push(ROUTES.discover)}
