@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react"
+import { usePathname } from "expo-router"
+import { AppState, type AppStateStatus } from "react-native"
 
 import {
     authenticate,
@@ -17,6 +19,7 @@ import { AuthContext } from "@/providers/auth-provider.context"
 import type { AuthProviderProps } from "@/providers/auth-provider.types"
 import {
     resetOrderStatusNotifications,
+    setOrderStatusNotificationCurrentPath,
     syncOrderStatusNotifications,
     unregisterOrderStatusNotifications,
 } from "@/services/notifications/order-status-notifications"
@@ -40,6 +43,7 @@ import {
 export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<AuthUser | null>(null)
     const [isReady, setIsReady] = useState(false)
+    const pathname = usePathname()
 
     useEffect(() => {
         return subscribeAuthSession((tokens) => {
@@ -53,11 +57,47 @@ export function AuthProvider({ children }: AuthProviderProps) {
     useEffect(() => {
         if (!user) {
             resetOrderStatusNotifications()
+            setOrderStatusNotificationCurrentPath(null)
             return
         }
 
         void syncOrderStatusNotifications()
     }, [user])
+
+    useEffect(() => {
+        if (!user) {
+            setOrderStatusNotificationCurrentPath(null)
+            return
+        }
+
+        setOrderStatusNotificationCurrentPath(pathname)
+        void syncOrderStatusNotifications()
+    }, [pathname, user])
+
+    useEffect(() => {
+        if (!user) {
+            return
+        }
+
+        let previousAppState: AppStateStatus = AppState.currentState
+        const appStateSubscription = AppState.addEventListener("change", (nextAppState) => {
+            if (previousAppState === nextAppState) {
+                return
+            }
+            previousAppState = nextAppState
+
+            if (nextAppState === "active") {
+                setOrderStatusNotificationCurrentPath(pathname)
+            } else {
+                setOrderStatusNotificationCurrentPath(null)
+            }
+            void syncOrderStatusNotifications()
+        })
+
+        return () => {
+            appStateSubscription.remove()
+        }
+    }, [pathname, user])
 
     useEffect(() => {
         let isMounted = true

@@ -7,6 +7,7 @@ export type PushTokenPlatform = "ios" | "android"
 export type UpsertMyPushTokenPayload = {
     expo_push_token: string
     platform: PushTokenPlatform
+    current_path?: string | null
 }
 
 export type DeleteMyPushTokenPayload = {
@@ -18,6 +19,7 @@ export type MyPushTokenResponse = {
     user_id: number
     expo_push_token: string
     platform: PushTokenPlatform | null
+    current_path: string | null
     created_at: string
     updated_at: string
 }

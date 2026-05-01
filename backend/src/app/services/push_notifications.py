@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,7 @@ ORDER_STATUS_NOTIFICATION_BODIES = {
     "completed": "Заказ завершен.",
     "refund_declined": "Возврат по заказу отклонен.",
 }
+ORDER_STATUS_PAYMENT_CODES = {"created", "invoice_sent"}
 
 
 def _build_order_status_body(order: Order) -> str:
@@ -39,6 +41,72 @@ def _build_order_status_data(order: Order) -> dict[str, Any]:
         "status_code": get_order_status_code(order),
         "history_bucket": get_order_history_bucket(order),
     }
+
+
+def _normalize_route_path(path: str | None) -> str | None:
+    if not path:
+        return None
+
+    normalized = path.strip()
+    if not normalized:
+        return None
+
+    if "://" in normalized:
+        parsed = urlsplit(normalized)
+        normalized = parsed.path or "/"
+    else:
+        normalized = normalized.split("?", maxsplit=1)[0].split("#", maxsplit=1)[0]
+
+    if not normalized.startswith("/"):
+        normalized = f"/{normalized}"
+
+    normalized = normalized.rstrip("/") or "/"
+    return normalized
+
+
+def _as_positive_int(value: Any) -> int | None:
+    parsed_number = None
+    if isinstance(value, int):
+        parsed_number = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed_number = int(value)
+        except ValueError:
+            parsed_number = None
+
+    if parsed_number is None or parsed_number <= 0:
+        return None
+    return parsed_number
+
+
+def _resolve_notification_redirect_path(data: dict[str, Any]) -> str | None:
+    notification_type = data.get("type")
+    if notification_type == "order_status_changed":
+        status_code = data.get("status_code")
+        if isinstance(status_code, str) and status_code in ORDER_STATUS_PAYMENT_CODES and _as_positive_int(data.get("order_id")):
+            return "/payment"
+        return "/profile-history"
+
+    if notification_type in {"restock", "review_reminder"}:
+        product_id = _as_positive_int(data.get("product_id"))
+        if product_id is not None:
+            return f"/products/{product_id}"
+        return "/discover"
+
+    if notification_type == "inactive_customer":
+        return "/discover"
+    if notification_type == "abandoned_cart":
+        return "/basket"
+    if notification_type == "ai_reply":
+        return "/chat"
+    return None
+
+
+def _should_skip_push_for_current_path(*, current_path: str | None, data: dict[str, Any]) -> bool:
+    redirect_path = _normalize_route_path(_resolve_notification_redirect_path(data))
+    if redirect_path is None:
+        return False
+    return _normalize_route_path(current_path) == redirect_path
 
 
 def _build_push_messages(
@@ -129,15 +197,23 @@ async def send_push_to_user(
     if not push_tokens:
         return False
 
+    target_push_tokens = [
+        push_token
+        for push_token in push_tokens
+        if not _should_skip_push_for_current_path(current_path=push_token.current_path, data=data)
+    ]
+    if not target_push_tokens:
+        return False
+
     messages = _build_push_messages(
-        push_tokens,
+        target_push_tokens,
         title=title,
         body=body,
         data=data,
         channel_id=channel_id,
     )
     invalid_tokens = await _send_expo_push_messages(messages)
-    await _delete_invalid_push_tokens(session, push_tokens=push_tokens, invalid_tokens=invalid_tokens)
+    await _delete_invalid_push_tokens(session, push_tokens=target_push_tokens, invalid_tokens=invalid_tokens)
     return True
 
 

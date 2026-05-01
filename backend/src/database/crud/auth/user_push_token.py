@@ -32,11 +32,13 @@ async def upsert_user_push_token(
             user_id=user_id,
             expo_push_token=data.expo_push_token,
             platform=data.platform,
+            current_path=data.current_path,
         )
         session.add(push_token)
     else:
         push_token.user_id = user_id
         push_token.platform = data.platform
+        push_token.current_path = data.current_path
 
     await session.flush()
 

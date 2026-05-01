@@ -10,12 +10,34 @@ const DEFAULT_ANDROID_CHANNEL_ID = "default"
 
 let notificationsConfigured = false
 let registeredExpoPushToken: string | null = null
+let registeredRoutePath: string | null = null
+let currentRoutePath: string | null = null
 let syncRequest: Promise<string | null> | null = null
 
 type PushNotificationData = Record<string, unknown>
 type PushNotificationNavigate = (target: Href) => void
 
 const ORDER_STATUS_PAYMENT_CODES = new Set(["created", "invoice_sent"])
+
+function normalizeRoutePath(pathname: string | null | undefined) {
+    if (!pathname) {
+        return null
+    }
+    const normalized = pathname.trim()
+    if (!normalized) {
+        return null
+    }
+    if (normalized === "/") {
+        return "/"
+    }
+    const normalizedWithoutQuery = normalized.split("?")[0].split("#")[0]
+    const normalizedPath = normalizedWithoutQuery.endsWith("/") ? normalizedWithoutQuery.slice(0, -1) : normalizedWithoutQuery
+    return normalizedPath.startsWith("/") ? normalizedPath : `/${normalizedPath}`
+}
+
+export function setOrderStatusNotificationCurrentPath(pathname: string | null) {
+    currentRoutePath = normalizeRoutePath(pathname)
+}
 
 function getProjectId() {
     return Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId ?? undefined
@@ -87,15 +109,18 @@ async function performPushTokenSync() {
             return null
         }
 
-        if (registeredExpoPushToken === expoPushToken) {
+        const normalizedRoutePath = normalizeRoutePath(currentRoutePath)
+        if (registeredExpoPushToken === expoPushToken && registeredRoutePath === normalizedRoutePath) {
             return expoPushToken
         }
 
         await registerMyPushToken({
             expo_push_token: expoPushToken,
             platform,
+            current_path: normalizedRoutePath,
         })
         registeredExpoPushToken = expoPushToken
+        registeredRoutePath = normalizedRoutePath
         return expoPushToken
     } catch (error) {
         if (__DEV__) {
@@ -127,6 +152,7 @@ export async function unregisterOrderStatusNotifications() {
 
     const expoPushToken = registeredExpoPushToken
     registeredExpoPushToken = null
+    registeredRoutePath = null
 
     try {
         await deleteMyPushToken({ expo_push_token: expoPushToken })
@@ -139,6 +165,7 @@ export async function unregisterOrderStatusNotifications() {
 
 export function resetOrderStatusNotifications() {
     registeredExpoPushToken = null
+    registeredRoutePath = null
 }
 
 function asString(value: unknown): string | null {

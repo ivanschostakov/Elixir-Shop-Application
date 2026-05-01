@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from src.database.limits import EXTERNAL_ID_MAX_LENGTH, STATUS_MAX_LENGTH
+from src.database.limits import EXTERNAL_ID_MAX_LENGTH, ROUTE_PATH_MAX_LENGTH, STATUS_MAX_LENGTH
 
 PushTokenPlatform = Literal["ios", "android"]
 
@@ -11,6 +11,7 @@ PushTokenPlatform = Literal["ios", "android"]
 class UserPushTokenUpsert(BaseModel):
     expo_push_token: str = Field(min_length=1, max_length=EXTERNAL_ID_MAX_LENGTH)
     platform: PushTokenPlatform | None = Field(default=None)
+    current_path: str | None = Field(default=None, max_length=ROUTE_PATH_MAX_LENGTH)
 
     @field_validator("expo_push_token")
     @classmethod
@@ -18,6 +19,16 @@ class UserPushTokenUpsert(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("expo_push_token must not be empty")
+        return normalized
+
+    @field_validator("current_path")
+    @classmethod
+    def normalize_current_path(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
         return normalized
 
 
@@ -40,6 +51,7 @@ class UserPushTokenRead(BaseModel):
     user_id: int
     expo_push_token: str = Field(max_length=EXTERNAL_ID_MAX_LENGTH)
     platform: str | None = Field(default=None, max_length=STATUS_MAX_LENGTH)
+    current_path: str | None = Field(default=None, max_length=ROUTE_PATH_MAX_LENGTH)
     created_at: datetime
     updated_at: datetime
 
