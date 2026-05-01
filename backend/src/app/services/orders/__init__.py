@@ -47,6 +47,10 @@ async def get_orders_history_for_user(session: AsyncSession, *, user_id: int, hi
     return await _order_creation.get_orders_history_for_user(session, user_id=user_id, history_bucket=history_bucket, status_code=status_code, created_from=created_from, created_to=created_to, limit=limit, offset=offset)
 
 
+async def repeat_order_as_draft_for_user(session: AsyncSession, *, user_id: int, order_id: int):
+    return await _order_creation.repeat_order_as_draft_for_user(session, user_id=user_id, order_id=order_id)
+
+
 async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_step: str | None = None, payment_status_code: int | None = None, payment_data: str | None = None, invoice_id: str | None = None) -> Order:
     _sync_runtime_dependencies()
     return await _order_payments.reconcile_sbp_payment(session, order, payment_step=payment_step, payment_status_code=payment_status_code, payment_data=payment_data, invoice_id=invoice_id)
@@ -82,6 +86,7 @@ __all__ = [
     "get_payment_status_for_order",
     "intellectmoney",
     "reconcile_sbp_payment",
+    "repeat_order_as_draft_for_user",
     "serialize_order",
     "serialize_orders",
 ]

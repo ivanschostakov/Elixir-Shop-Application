@@ -1,4 +1,4 @@
-from .ai_chat import AIChatResponse, AIChatTranscriptionResponse, AIChatTurnMetaRead
+from .ai_chat import AIChatActionPayload, AIChatActionResponse, AIChatResponse, AIChatTranscriptionResponse, AIChatTurnMetaRead
 from .benefits import BenefitBonusRead, BenefitCheckPayload, BenefitCheckRead, BenefitOptionRead
 from .order_draft import CreateOrderDraftPayload, DeliveryCalculationPayload, UpdateOrderDraftPayload
 from .order import CreateOrderPayload, CreatePaymentPayload, PaymentMethod, PaymentStatusRead
@@ -6,6 +6,8 @@ from .recommendations import RecommendationCategoryViewPayload, RecommendationSu
 
 __all__ = [
     "AIChatResponse",
+    "AIChatActionPayload",
+    "AIChatActionResponse",
     "AIChatTranscriptionResponse",
     "AIChatTurnMetaRead",
     "BenefitBonusRead",

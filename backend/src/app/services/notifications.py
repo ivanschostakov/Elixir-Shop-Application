@@ -15,6 +15,7 @@ from config import (
     NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS,
     NOTIFICATION_INACTIVE_CUSTOMER_ENABLED,
     NOTIFICATION_RESTOCK_ENABLED,
+    NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD,
     NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS,
     NOTIFICATION_REVIEW_REMINDER_ENABLED,
     NOTIFICATIONS_ENABLED,
@@ -24,6 +25,7 @@ from src.app.services.push_notifications import send_push_to_user
 from src.database.models import (
     Basket,
     BasketItem,
+    FavouredProduct,
     NotificationDispatch,
     Order,
     OrderItem,
@@ -39,6 +41,14 @@ DISPATCH_TYPE_INACTIVE_CUSTOMER = "inactive_customer"
 DISPATCH_TYPE_ABANDONED_CART = "abandoned_cart"
 DISPATCH_TYPE_REVIEW_REMINDER = "review_reminder"
 DISPATCH_TYPE_AI_REPLY = "ai_reply"
+
+
+def _normalize_stock(stock: int | None) -> int:
+    return max(0, int(stock or 0))
+
+
+def _is_low_stock(stock: int | None) -> bool:
+    return _normalize_stock(stock) <= NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD
 
 
 async def _was_notification_sent_recently(
@@ -137,18 +147,171 @@ async def _send_and_record(
     return True
 
 
+async def activate_stock_notifications_for_favourite_product(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    product_id: int,
+) -> int:
+    variants = list(
+        (
+            await session.execute(
+                select(Variant)
+                .where(Variant.product_id == product_id)
+                .order_by(Variant.id.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not variants:
+        return 0
+
+    variant_ids = [variant.id for variant in variants]
+    existing_subscriptions = list(
+        (
+            await session.execute(
+                select(StockNotificationSubscription).where(
+                    StockNotificationSubscription.user_id == user_id,
+                    StockNotificationSubscription.variant_id.in_(variant_ids),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    subscriptions_by_variant_id = {
+        subscription.variant_id: subscription
+        for subscription in existing_subscriptions
+    }
+
+    changed_count = 0
+    for variant in variants:
+        current_stock = _normalize_stock(variant.stock)
+        subscription = subscriptions_by_variant_id.get(variant.id)
+
+        if not _is_low_stock(current_stock):
+            if subscription is not None and subscription.is_active:
+                subscription.is_active = False
+                subscription.last_seen_stock = current_stock
+                changed_count += 1
+            continue
+
+        if subscription is None:
+            session.add(
+                StockNotificationSubscription(
+                    user_id=user_id,
+                    variant_id=variant.id,
+                    is_active=True,
+                    last_seen_stock=current_stock,
+                    notified_at=None,
+                )
+            )
+            changed_count += 1
+            continue
+
+        subscription.is_active = True
+        subscription.last_seen_stock = current_stock
+        subscription.notified_at = None
+        changed_count += 1
+
+    if changed_count:
+        await session.commit()
+
+    return changed_count
+
+
+async def deactivate_stock_notifications_for_favourite_product(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    product_id: int,
+) -> int:
+    subscriptions = list(
+        (
+            await session.execute(
+                select(StockNotificationSubscription)
+                .join(Variant, Variant.id == StockNotificationSubscription.variant_id)
+                .where(
+                    StockNotificationSubscription.user_id == user_id,
+                    Variant.product_id == product_id,
+                    StockNotificationSubscription.is_active.is_(True),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    for subscription in subscriptions:
+        subscription.is_active = False
+
+    if subscriptions:
+        await session.commit()
+
+    return len(subscriptions)
+
+
+async def sync_favourite_stock_notification_subscriptions(session: AsyncSession) -> int:
+    rows = (
+        await session.execute(
+            select(FavouredProduct.user_id, Variant, StockNotificationSubscription)
+            .join(Variant, Variant.product_id == FavouredProduct.product_id)
+            .outerjoin(
+                StockNotificationSubscription,
+                (StockNotificationSubscription.user_id == FavouredProduct.user_id)
+                & (StockNotificationSubscription.variant_id == Variant.id),
+            )
+            .where(
+                Variant.stock <= NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD,
+                (StockNotificationSubscription.id.is_(None))
+                | (StockNotificationSubscription.is_active.is_(False)),
+            )
+            .order_by(FavouredProduct.id.asc(), Variant.id.asc())
+            .limit(NOTIFICATION_BATCH_SIZE)
+        )
+    ).all()
+
+    synced_count = 0
+    for user_id, variant, subscription in rows:
+        current_stock = _normalize_stock(variant.stock)
+        if subscription is None:
+            session.add(
+                StockNotificationSubscription(
+                    user_id=int(user_id),
+                    variant_id=variant.id,
+                    is_active=True,
+                    last_seen_stock=current_stock,
+                    notified_at=None,
+                )
+            )
+        else:
+            subscription.is_active = True
+            subscription.last_seen_stock = current_stock
+            subscription.notified_at = None
+        synced_count += 1
+
+    if synced_count:
+        await session.flush()
+
+    return synced_count
+
+
 async def process_restock_notifications(session: AsyncSession, *, now: datetime | None = None) -> int:
     if not NOTIFICATIONS_ENABLED or not NOTIFICATION_RESTOCK_ENABLED:
         return 0
 
     current_time = now or ufa_now()
+    await sync_favourite_stock_notification_subscriptions(session)
+
     rows = (
         await session.execute(
             select(StockNotificationSubscription, Variant)
             .join(Variant, Variant.id == StockNotificationSubscription.variant_id)
             .where(
                 StockNotificationSubscription.is_active.is_(True),
-                Variant.stock > 0,
+                StockNotificationSubscription.last_seen_stock <= NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD,
+                Variant.stock > StockNotificationSubscription.last_seen_stock,
             )
             .order_by(StockNotificationSubscription.id.asc())
             .limit(NOTIFICATION_BATCH_SIZE)
@@ -175,8 +338,26 @@ async def process_restock_notifications(session: AsyncSession, *, now: datetime 
             continue
 
         subscription.is_active = False
+        subscription.last_seen_stock = _normalize_stock(variant.stock)
         subscription.notified_at = current_time
         sent_count += 1
+
+    low_stock_rows = (
+        await session.execute(
+            select(StockNotificationSubscription, Variant)
+            .join(Variant, Variant.id == StockNotificationSubscription.variant_id)
+            .where(
+                StockNotificationSubscription.is_active.is_(True),
+                Variant.stock <= NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD,
+                Variant.stock < StockNotificationSubscription.last_seen_stock,
+            )
+            .order_by(StockNotificationSubscription.id.asc())
+            .limit(NOTIFICATION_BATCH_SIZE)
+        )
+    ).all()
+
+    for subscription, variant in low_stock_rows:
+        subscription.last_seen_stock = _normalize_stock(variant.stock)
 
     await session.commit()
     return sent_count

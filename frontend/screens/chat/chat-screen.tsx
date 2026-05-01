@@ -13,10 +13,12 @@ import {
     Pressable,
     RefreshControl,
     ScrollView,
+    type StyleProp,
     Text,
     TextInput,
     useWindowDimensions,
     View,
+    type ViewStyle,
 } from "react-native"
 import * as Clipboard from "expo-clipboard"
 import { CameraView, useCameraPermissions } from "expo-camera"
@@ -40,13 +42,19 @@ import MicrophoneSvgIcon from "@/assets/icons/chat/microphone-alt-svgrepo-com.sv
 import { EdgeBlur } from "@/components/effects/edge-blur"
 import { EmptyState } from "@/components/content/empty-state"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
-import { ROUTES } from "@/constants/routes"
+import { ROUTES, getProductRoute } from "@/constants/routes"
 import { useAiChat, type ChatDisplayMessage } from "@/hooks/chat/use-ai-chat"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { API_BASE_URL } from "@/services/api/constants"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
-import type { AIAttachmentRead, UploadableChatAttachment } from "@/services/api/ai-chat.types"
+import type {
+    AIAttachmentRead,
+    AIInteractiveAction,
+    AIInteractivePayload,
+    AIInteractiveProductCard,
+    UploadableChatAttachment,
+} from "@/services/api/ai-chat.types"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { colors } from "@/theme/colors"
 import { motion } from "@/theme/motion"
@@ -66,6 +74,7 @@ const MESSAGE_IMAGE_MAX_ASPECT_RATIO = 1.7
 const CHAT_IMAGE_ATTACHMENT_EXTENSIONS = new Set(["gif", "heic", "heif", "jpeg", "jpg", "png", "webp"])
 const DIRECT_ATTACHMENT_URI_PATTERN = /^(asset|content|data|file|http|https|ph):/i
 const SAFE_LINK_PROTOCOL_PATTERN = /^(https?:\/\/|mailto:)/i
+const INTERNAL_PRODUCT_LINK_PATTERN = /^\/products\/(\d+)(?:[/?#].*)?$/
 const CHAT_RECORDING_AUDIO_MODE = {
     allowsRecording: true,
     interruptionMode: "doNotMix",
@@ -179,11 +188,13 @@ function MessageMarkdown({
     hasImageAttachments,
     isUserMessage,
     markdown,
+    onOpenLink,
     width,
 }: {
     hasImageAttachments: boolean
     isUserMessage: boolean
     markdown: string
+    onOpenLink?: (href: string) => void
     width: number
 }) {
     const htmlSource = useMemo(() => ({ html: markdownToHtml(markdown) }), [markdown])
@@ -204,7 +215,14 @@ function MessageMarkdown({
                 renderersProps={{
                     a: {
                         onPress: (_event, href) => {
-                            if (href && SAFE_LINK_PROTOCOL_PATTERN.test(href)) {
+                            if (!href) {
+                                return
+                            }
+                            if (onOpenLink) {
+                                onOpenLink(href)
+                                return
+                            }
+                            if (SAFE_LINK_PROTOCOL_PATTERN.test(href)) {
                                 void Linking.openURL(href).catch(() => undefined)
                             }
                         },
@@ -291,6 +309,226 @@ function MessageMarkdown({
                 }}
             />
         </View>
+    )
+}
+
+function formatCommerceMoney(value: string | number, currency = "RUB") {
+    const numericValue = Number(value)
+    if (!Number.isFinite(numericValue)) {
+        return `${value} ${currency}`.trim()
+    }
+
+    try {
+        return new Intl.NumberFormat([], {
+            currency,
+            maximumFractionDigits: Number.isInteger(numericValue) ? 0 : 2,
+            style: "currency",
+        }).format(numericValue)
+    } catch {
+        return `${numericValue.toLocaleString()} ${currency}`.trim()
+    }
+}
+
+function AIInteractiveContent({
+    activeActionId,
+    onActionPress,
+    payload,
+}: {
+    activeActionId: string | null
+    onActionPress: (action: AIInteractiveAction, quantity?: number) => void
+    payload: AIInteractivePayload
+}) {
+    const hasContent = payload.cards.length > 0
+    if (!hasContent) {
+        return null
+    }
+
+    return (
+        <View style={chatScreenStyles.aiInteractiveWrap}>
+            {payload.cards.map((card) => (
+                <AIProductCard
+                    activeActionId={activeActionId}
+                    card={card}
+                    key={card.id}
+                    onActionPress={onActionPress}
+                />
+            ))}
+        </View>
+    )
+}
+
+function AIProductCard({
+    activeActionId,
+    card,
+    onActionPress,
+}: {
+    activeActionId: string | null
+    card: AIInteractiveProductCard
+    onActionPress: (action: AIInteractiveAction, quantity?: number) => void
+}) {
+    const visibleVariants = card.variants.slice(0, 2)
+    const [actionQuantities, setActionQuantities] = useState<Record<string, number>>({})
+    const getActionQuantity = (action: AIInteractiveAction) => actionQuantities[action.id] ?? action.quantity ?? 1
+    const getActionMaxQuantity = (action: AIInteractiveAction) => {
+        const variantStock = card.variants.find((variant) => variant.id === action.variant_id)?.stock
+        return Math.max(1, Math.min(variantStock ?? 100, 100))
+    }
+    const updateActionQuantity = (action: AIInteractiveAction, nextQuantity: number) => {
+        const maxQuantity = getActionMaxQuantity(action)
+        setActionQuantities((currentQuantities) => ({
+            ...currentQuantities,
+            [action.id]: Math.max(1, Math.min(maxQuantity, nextQuantity)),
+        }))
+    }
+
+    return (
+        <View style={chatScreenStyles.aiProductCard}>
+            <View style={chatScreenStyles.aiProductHeader}>
+                <Image source={{ uri: card.image_url }} style={chatScreenStyles.aiProductImage} />
+                <View style={chatScreenStyles.aiProductTextWrap}>
+                    <Text numberOfLines={2} style={chatScreenStyles.aiProductTitle}>
+                        {card.title}
+                    </Text>
+                    {card.reason ? (
+                        <Text numberOfLines={2} style={chatScreenStyles.aiProductReason}>
+                            {card.reason}
+                        </Text>
+                    ) : null}
+                </View>
+            </View>
+            {visibleVariants.length > 0 ? (
+                <View style={chatScreenStyles.aiVariantList}>
+                    {visibleVariants.map((variant) => (
+                        <View key={variant.id} style={chatScreenStyles.aiVariantRow}>
+                            <Text numberOfLines={1} style={chatScreenStyles.aiVariantName}>
+                                {variant.name}
+                            </Text>
+                            <Text style={chatScreenStyles.aiVariantPrice}>
+                                {formatCommerceMoney(variant.price)}
+                            </Text>
+                        </View>
+                    ))}
+                </View>
+            ) : null}
+            <View style={chatScreenStyles.aiActionRow}>
+                {card.actions.map((action) => {
+                    if (action.type === "add_to_basket" && action.variant_id && !action.completed) {
+                        const selectedQuantity = getActionQuantity(action)
+                        return (
+                            <View key={action.id} style={chatScreenStyles.aiVariantActionRow}>
+                                <AIQuantityStepper
+                                    max={getActionMaxQuantity(action)}
+                                    onChange={(nextQuantity) => updateActionQuantity(action, nextQuantity)}
+                                    value={selectedQuantity}
+                                />
+                                <AIActionButton
+                                    action={action}
+                                    activeActionId={activeActionId}
+                                    containerStyle={chatScreenStyles.aiVariantActionButton}
+                                    onPress={() => onActionPress(action, selectedQuantity)}
+                                />
+                            </View>
+                        )
+                    }
+
+                    return (
+                        <AIActionButton
+                            action={action}
+                            activeActionId={activeActionId}
+                            containerStyle={chatScreenStyles.aiFullWidthActionButton}
+                            key={action.id}
+                            onPress={() => onActionPress(action)}
+                        />
+                    )
+                })}
+            </View>
+        </View>
+    )
+}
+
+function AIQuantityStepper({
+    max,
+    onChange,
+    value,
+}: {
+    max: number
+    onChange: (quantity: number) => void
+    value: number
+}) {
+    const decreaseDisabled = value <= 1
+    const increaseDisabled = value >= max
+
+    return (
+        <View style={chatScreenStyles.aiQuantityStepper}>
+            <Pressable
+                accessibilityRole="button"
+                disabled={decreaseDisabled}
+                onPress={() => onChange(value - 1)}
+                style={[
+                    chatScreenStyles.aiQuantityButton,
+                    decreaseDisabled ? chatScreenStyles.aiQuantityButtonDisabled : null,
+                ]}
+            >
+                <Text style={chatScreenStyles.aiQuantityButtonText}>-</Text>
+            </Pressable>
+            <Text style={chatScreenStyles.aiQuantityValue}>{value} шт.</Text>
+            <Pressable
+                accessibilityRole="button"
+                disabled={increaseDisabled}
+                onPress={() => onChange(value + 1)}
+                style={[
+                    chatScreenStyles.aiQuantityButton,
+                    increaseDisabled ? chatScreenStyles.aiQuantityButtonDisabled : null,
+                ]}
+            >
+                <Text style={chatScreenStyles.aiQuantityButtonText}>+</Text>
+            </Pressable>
+        </View>
+    )
+}
+
+function AIActionButton({
+    action,
+    activeActionId,
+    containerStyle,
+    onPress,
+}: {
+    action: AIInteractiveAction
+    activeActionId: string | null
+    containerStyle?: StyleProp<ViewStyle>
+    onPress: () => void
+}) {
+    const busy = activeActionId === action.id
+    const disabled = busy || (action.type === "add_to_basket" && !action.action_token && !action.created_basket_item_id)
+    const isPrimary = action.style === "primary" && !action.completed
+
+    return (
+        <Pressable
+            accessibilityRole="button"
+            disabled={disabled}
+            onPress={onPress}
+            style={({ pressed }) => [
+                chatScreenStyles.aiActionButton,
+                isPrimary ? chatScreenStyles.aiActionButtonPrimary : chatScreenStyles.aiActionButtonSecondary,
+                containerStyle,
+                disabled ? chatScreenStyles.aiActionButtonDisabled : null,
+                pressed ? chatScreenStyles.aiActionButtonPressed : null,
+            ]}
+        >
+            {busy ? (
+                <ActivityIndicator color={isPrimary ? colors.onPrimary : colors.primary} size="small" />
+            ) : (
+                <Text
+                    numberOfLines={1}
+                    style={[
+                        chatScreenStyles.aiActionButtonText,
+                        isPrimary ? chatScreenStyles.aiActionButtonPrimaryText : null,
+                    ]}
+                >
+                    {action.label}
+                </Text>
+            )}
+        </Pressable>
     )
 }
 
@@ -1071,9 +1309,10 @@ export default function ChatScreen() {
     const [cameraPermission, requestCameraPermission] = useCameraPermissions()
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
-    const { aiTyping, chat, error, loading, messages, refresh, refreshing, sending, sendMessage } = useAiChat()
+    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat()
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
+    const [activeActionId, setActiveActionId] = useState<string | null>(null)
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [albumSelectorVisible, setAlbumSelectorVisible] = useState(false)
@@ -1512,6 +1751,78 @@ export default function ChatScreen() {
         }
     }, [])
 
+    const handleOpenMessageLink = useCallback((href: string) => {
+        const normalizedHref = href.trim()
+        const productMatch = normalizedHref.match(INTERNAL_PRODUCT_LINK_PATTERN)
+
+        if (productMatch?.[1]) {
+            router.push(getProductRoute(productMatch[1]))
+            return
+        }
+
+        if (SAFE_LINK_PROTOCOL_PATTERN.test(normalizedHref)) {
+            void Linking.openURL(normalizedHref).catch(() => undefined)
+        }
+    }, [router])
+
+    const handleInteractiveAction = useCallback(async (message: ChatDisplayMessage, action: AIInteractiveAction, quantity?: number) => {
+        if (activeActionId) {
+            return
+        }
+
+        if (action.type === "open_product" && action.product_id) {
+            router.push(getProductRoute(action.product_id))
+            return
+        }
+
+        if (action.type === "ask_ai") {
+            const prompt = action.prompt?.trim()
+            if (!prompt || sending) {
+                return
+            }
+
+            try {
+                await sendMessage(prompt)
+            } catch (sendError) {
+                Alert.alert(
+                    t("chat.sendFailedTitle"),
+                    sendError instanceof Error ? sendError.message : t("chat.sendFailedMessage"),
+                )
+            }
+            return
+        }
+
+        if (action.type !== "add_to_basket") {
+            return
+        }
+
+        if (action.completed && action.created_basket_item_id) {
+            return
+        }
+
+        if (!action.action_token) {
+            Alert.alert(t("chat.sendFailedTitle"), t("chat.sendFailedMessage"))
+            return
+        }
+
+        setActiveActionId(action.id)
+        try {
+            await performAction({
+                action_id: action.id,
+                action_token: action.action_token,
+                message_id: message.id,
+                quantity,
+            })
+        } catch (actionError) {
+            Alert.alert(
+                t("chat.sendFailedTitle"),
+                actionError instanceof Error ? actionError.message : t("chat.sendFailedMessage"),
+            )
+        } finally {
+            setActiveActionId(null)
+        }
+    }, [activeActionId, performAction, router, sendMessage, sending, t])
+
     const hasDraft = Boolean(draft.trim())
     const hasComposerContent = hasDraft || attachments.length > 0
     if (loading && !chat) {
@@ -1694,6 +2005,7 @@ export default function ChatScreen() {
                                                                 hasImageAttachments={hasImageAttachments}
                                                                 isUserMessage={isUserMessage}
                                                                 markdown={displayText}
+                                                                onOpenLink={handleOpenMessageLink}
                                                                 width={messageTextWidth}
                                                             />
                                                         ) : null}
@@ -1712,6 +2024,15 @@ export default function ChatScreen() {
                                                             {getMessageMeta(message)}
                                                         </Text>
                                                     </Pressable>
+                                                    {!isUserMessage && message.interactive ? (
+                                                        <AIInteractiveContent
+                                                            activeActionId={activeActionId}
+                                                            onActionPress={(action, quantity) => {
+                                                                void handleInteractiveAction(message, action, quantity)
+                                                            }}
+                                                            payload={message.interactive}
+                                                        />
+                                                    ) : null}
                                                 </View>
                                             </AnimatedMessageBlock>
                                         )

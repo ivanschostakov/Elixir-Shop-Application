@@ -70,6 +70,23 @@ export const paymentScreenStyles = StyleSheet.create({
         lineHeight: 22,
         color: colors.mutedText,
     },
+    headerTitleButton: {
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 34,
+        paddingHorizontal: 6,
+        width: "100%",
+    },
+    headerTitleButtonPressed: {
+        opacity: 0.62,
+    },
+    headerTitleText: {
+        color: colors.text,
+        fontSize: 18,
+        fontWeight: "700",
+        textAlign: "center",
+        width: "100%",
+    },
     summaryRow: {
         flexDirection: "row",
         justifyContent: "space-between",
@@ -310,6 +327,9 @@ export const paymentScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.lg,
         paddingVertical: spacing.sm,
         width: "100%",
+    },
+    successOrderBoxPressed: {
+        opacity: 0.76,
     },
     successOrderLabel: {
         color: colors.mutedText,

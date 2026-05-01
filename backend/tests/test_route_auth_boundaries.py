@@ -23,11 +23,13 @@ from src.database.models import User
         ("GET", "/api/v1/users/me/order-drafts/latest", None),
         ("GET", "/api/v1/users/me/ai-chat", None),
         ("POST", "/api/v1/users/me/ai-chat", {"text": "hello"}),
+        ("POST", "/api/v1/users/me/ai-chat/actions", {"message_id": 1, "action_id": "a", "action_token": "t"}),
         ("POST", "/api/v1/users/me/stock-subscriptions", {"variant_id": 1}),
         ("DELETE", "/api/v1/users/me/stock-subscriptions/1", None),
         ("PATCH", "/api/v1/users/me/order-drafts/1", {}),
         ("DELETE", "/api/v1/users/me/order-drafts/1", None),
         ("POST", "/api/v1/users/me/basket/restore-draft/1", None),
+        ("POST", "/api/v1/users/me/orders/1/repeat", None),
         (
             "POST",
             "/api/v1/products",
@@ -164,6 +166,9 @@ def test_product_create_allows_admin(monkeypatch: pytest.MonkeyPatch):
     async def fake_get_product_by_id(*args, **kwargs):
         return SimpleNamespace(id=777)
 
+    async def fake_get_product_review_stats(*args, **kwargs):
+        return {}
+
     def fake_serialize_product_with_variants(*args, **kwargs):
         now = datetime.now(timezone.utc).isoformat()
         return {
@@ -187,6 +192,7 @@ def test_product_create_allows_admin(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(auth_dependencies, "is_admin_user", fake_is_admin_user)
     monkeypatch.setattr(products_router_module, "create_product", fake_create_product)
     monkeypatch.setattr(products_router_module, "get_product_by_id", fake_get_product_by_id)
+    monkeypatch.setattr(products_router_module, "get_product_review_stats", fake_get_product_review_stats)
     monkeypatch.setattr(products_router_module, "serialize_product_with_variants", fake_serialize_product_with_variants)
 
     try:

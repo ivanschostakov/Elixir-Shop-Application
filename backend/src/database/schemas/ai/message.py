@@ -1,8 +1,10 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.database.schemas.ai.attachment import AIAttachmentRead
+from src.database.schemas.ai.interactive import AIInteractivePayload
 from src.integrations.ai.enums import BotModel, MessageSender
 
 
@@ -16,7 +18,7 @@ class AIMessageBase(BaseModel):
 
 
 class AIMessageCreate(AIMessageBase):
-    pass
+    context_json: dict[str, Any] | None = None
 
 
 class AIMessageUpdate(BaseModel):
@@ -25,6 +27,7 @@ class AIMessageUpdate(BaseModel):
     sender: MessageSender | None = None
     bot_model: BotModel | None = None
     tokens: int | None = Field(default=None, ge=0)
+    context_json: dict[str, Any] | None = None
 
 
 class AIMessageRead(AIMessageBase):
@@ -32,5 +35,6 @@ class AIMessageRead(AIMessageBase):
 
     id: int
     attachments: list[AIAttachmentRead] = Field(default_factory=list)
+    interactive: AIInteractivePayload | None = None
     created_at: datetime
     updated_at: datetime

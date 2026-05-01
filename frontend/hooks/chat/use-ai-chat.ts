@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react"
 import { useIsFocused } from "@react-navigation/native"
 
+import { setBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
-import { getMyAiChat, sendMyAiChatMessage } from "@/services/api/ai-chat"
+import { getMyAiChat, performAiChatAction, sendMyAiChatMessage } from "@/services/api/ai-chat"
 import type {
     AIAttachmentRead,
+    AIChatActionPayload,
+    AIChatActionResponse,
     AIChatResponse,
     AIMessageRead,
     UploadableChatAttachment,
@@ -25,6 +28,7 @@ type UseAiChatResult = {
     messages: ChatDisplayMessage[]
     refreshing: boolean
     sending: boolean
+    performAction: (payload: AIChatActionPayload) => Promise<AIChatActionResponse>
     refresh: () => Promise<void>
     sendMessage: (text: string, attachments?: UploadableChatAttachment[]) => Promise<AIChatResponse>
 }
@@ -151,6 +155,9 @@ export function useAiChat(): UseAiChatResult {
 
         try {
             const nextChat = await sendMyAiChatMessage(text, attachments)
+            if (nextChat.basket) {
+                setBasketSnapshot(nextChat.basket)
+            }
             setChat(nextChat)
             setOptimisticMessages([])
             return nextChat
@@ -169,6 +176,15 @@ export function useAiChat(): UseAiChatResult {
         }
     }
 
+    const performAction = async (payload: AIChatActionPayload) => {
+        const nextChat = await performAiChatAction(payload)
+        if (nextChat.basket) {
+            setBasketSnapshot(nextChat.basket)
+        }
+        setChat(nextChat)
+        return nextChat
+    }
+
     const messages = [
         ...(chat?.chat.messages ?? []),
         ...optimisticMessages,
@@ -180,6 +196,7 @@ export function useAiChat(): UseAiChatResult {
         error,
         loading,
         messages,
+        performAction,
         refreshing,
         sending,
         refresh,
@@ -233,6 +250,7 @@ function createOptimisticUserMessage({
         created_at: createdAt,
         delivery_status: "pending",
         id,
+        interactive: null,
         sender: "user",
         text,
         tokens: 0,

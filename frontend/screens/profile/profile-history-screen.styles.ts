@@ -66,6 +66,10 @@ export const profileHistoryScreenStyles = StyleSheet.create({
         height: "100%",
         width: "100%",
     },
+    historyCardBody: {
+        gap: spacing.md,
+        paddingTop: spacing.xs,
+    },
     historyCardHeader: {
         alignItems: "flex-start",
         flexDirection: "row",
@@ -94,8 +98,15 @@ export const profileHistoryScreenStyles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 22,
     },
+    historyCardStatusMessage: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "600",
+        lineHeight: 21,
+    },
     historyCardBadge: {
         borderRadius: 999,
+        maxWidth: "48%",
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.sm,
     },
@@ -145,6 +156,7 @@ export const profileHistoryScreenStyles = StyleSheet.create({
     historyCardFooter: {
         alignItems: "center",
         flexDirection: "row",
+        gap: spacing.md,
         justifyContent: "space-between",
     },
     historyCardFooterLabel: {
@@ -154,8 +166,10 @@ export const profileHistoryScreenStyles = StyleSheet.create({
     },
     historyCardFooterValue: {
         color: colors.text,
+        flexShrink: 1,
         fontSize: 16,
         fontWeight: "800",
+        textAlign: "right",
     },
     loaderWrap: {
         alignItems: "center",

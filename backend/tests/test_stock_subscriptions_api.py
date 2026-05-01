@@ -77,6 +77,37 @@ def _create_product_variant(*, stock: int, price: Decimal) -> dict[str, int]:
         return {"product_id": product.id, "variant_id": variant.id}
 
 
+def _create_product_with_variant_stocks(stocks: list[int], *, price: Decimal) -> dict[str, object]:
+    token = uuid.uuid4().hex
+    with Session(sync_engine) as session:
+        product = Product(
+            sku=f"stock-sub-product-{token[:20]}",
+            name=f"Stock Sub Product {token[:12]}",
+            description=None,
+            usage=None,
+            expiration=None,
+            priority=0,
+        )
+        session.add(product)
+        session.flush()
+
+        variant_ids: list[int] = []
+        for index, stock in enumerate(stocks):
+            variant = Variant(
+                product_id=product.id,
+                sku=f"stock-sub-var-{token[:16]}-{index}",
+                name=f"Stock Sub Variant {token[:8]} {index}",
+                stock=stock,
+                price=price,
+            )
+            session.add(variant)
+            session.flush()
+            variant_ids.append(variant.id)
+
+        session.commit()
+        return {"product_id": product.id, "variant_ids": variant_ids}
+
+
 def _get_stock_subscription(user_id: int, variant_id: int) -> StockNotificationSubscription | None:
     with Session(sync_engine) as session:
         stmt = select(StockNotificationSubscription).where(
@@ -131,10 +162,51 @@ def test_upsert_stock_subscription_is_idempotent(client: TestClient, registered_
         second_payload = second.json()
         assert second_payload["id"] == first_payload["id"]
         assert second_payload["is_active"] is True
+        assert second_payload["last_seen_stock"] == 0
         assert second_payload["notified_at"] is None
         assert second_payload["variant_id"] == catalog["variant_id"]
     finally:
         _delete_product(catalog["product_id"])
+
+
+def test_favouriting_product_activates_low_stock_variant_subscriptions(client: TestClient, registered_user):
+    catalog = _create_product_with_variant_stocks([0, 4, 11], price=_decimal("12.00"))
+    product_id = int(catalog["product_id"])
+    variant_ids = list(catalog["variant_ids"])
+
+    try:
+        favourite_response = client.post(
+            f"/api/v1/users/me/favorites/products/{product_id}",
+            headers=registered_user["headers"],
+        )
+        assert favourite_response.status_code == 201, favourite_response.text
+
+        out_of_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[0])
+        low_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[1])
+        in_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[2])
+
+        assert out_of_stock_subscription is not None
+        assert out_of_stock_subscription.is_active is True
+        assert out_of_stock_subscription.last_seen_stock == 0
+        assert low_stock_subscription is not None
+        assert low_stock_subscription.is_active is True
+        assert low_stock_subscription.last_seen_stock == 4
+        assert in_stock_subscription is None
+
+        delete_response = client.delete(
+            f"/api/v1/users/me/favorites/products/{product_id}",
+            headers=registered_user["headers"],
+        )
+        assert delete_response.status_code == 204, delete_response.text
+
+        out_of_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[0])
+        low_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[1])
+        assert out_of_stock_subscription is not None
+        assert out_of_stock_subscription.is_active is False
+        assert low_stock_subscription is not None
+        assert low_stock_subscription.is_active is False
+    finally:
+        _delete_product(product_id)
 
 
 def test_delete_stock_subscription_soft_disables(client: TestClient, registered_user):

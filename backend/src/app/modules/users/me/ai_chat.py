@@ -1,13 +1,20 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
-from src.app.modules.users.me.schemas import AIChatResponse, AIChatTranscriptionResponse, AIChatTurnMetaRead
-from src.app.services.ai_chat import get_or_create_user_chat, send_user_chat_message
+from src.app.modules.users.me.schemas import (
+    AIChatActionPayload,
+    AIChatActionResponse,
+    AIChatResponse,
+    AIChatTranscriptionResponse,
+    AIChatTurnMetaRead,
+)
+from src.app.services.ai_chat import get_or_create_user_chat, perform_user_ai_chat_action, send_user_chat_message
+from src.app.services.basket import _get_serialized_basket
 from src.database import get_db
 from src.database.models import User
-from src.integrations.ai import ProfessorClient, get_professor_client
+from src.integrations.ai.client import ProfessorClient, get_professor_client
 
 ai_chat_router = APIRouter(prefix="/ai-chat", tags=["ai_chat"])
 
@@ -24,6 +31,7 @@ async def get_my_ai_chat(
 
 @ai_chat_router.post("", response_model=AIChatResponse, status_code=status.HTTP_200_OK)
 async def send_my_ai_chat_message(
+    request: Request,
     text: str = Form(...),
     attachments: list[UploadFile] | None = File(default=None),
     db: AsyncSession = Depends(get_db),
@@ -34,14 +42,39 @@ async def send_my_ai_chat_message(
     if not normalized_text:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="text must not be empty")
 
-    chat, turn_meta = await send_user_chat_message(
+    result = await send_user_chat_message(
         db,
         user=current_user,
         text=normalized_text,
         attachments=attachments,
         professor_client=professor_client,
     )
-    return AIChatResponse(chat=chat, last_turn=AIChatTurnMetaRead(**turn_meta))
+    basket = await _get_serialized_basket(request, db, current_user.id) if result.basket_updated else None
+    return AIChatResponse(chat=result.chat, last_turn=AIChatTurnMetaRead(**result.turn_meta), basket=basket)
+
+
+@ai_chat_router.post("/actions", response_model=AIChatActionResponse, status_code=status.HTTP_200_OK)
+async def perform_my_ai_chat_action(
+    payload: AIChatActionPayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> AIChatActionResponse:
+    result = await perform_user_ai_chat_action(
+        db,
+        user=current_user,
+        message_id=payload.message_id,
+        action_id=payload.action_id,
+        action_token=payload.action_token,
+        quantity=payload.quantity,
+    )
+    basket = await _get_serialized_basket(request, db, current_user.id) if result.basket_updated else None
+    return AIChatActionResponse(
+        chat=result.chat,
+        last_turn=None,
+        basket=basket,
+        basket_item_id=result.basket_item_id,
+    )
 
 
 @ai_chat_router.post("/transcribe", response_model=AIChatTranscriptionResponse, status_code=status.HTTP_200_OK)

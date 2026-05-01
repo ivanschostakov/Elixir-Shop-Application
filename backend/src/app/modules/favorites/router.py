@@ -4,6 +4,10 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.products.helpers import serialize_products
+from src.app.services.notifications import (
+    activate_stock_notifications_for_favourite_product,
+    deactivate_stock_notifications_for_favourite_product,
+)
 from src.database import get_db
 from src.database.crud import (
     create_favoured_product,
@@ -48,6 +52,7 @@ async def favourite_products_create(product_id: int, db: AsyncSession = Depends(
     favourite = await get_favoured_product_by_user_and_product(db, current_user.id, product_id)
     if favourite is None:
         await create_favoured_product(db, FavouredProductCreate(user_id=current_user.id, product_id=product_id))
+        await activate_stock_notifications_for_favourite_product(db, user_id=current_user.id, product_id=product_id)
 
     return FavouriteProductStatusRead(product_id=product_id, is_favoured=True)
 
@@ -56,5 +61,6 @@ async def favourite_products_create(product_id: int, db: AsyncSession = Depends(
 async def favourite_products_delete(product_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     favourite = await get_favoured_product_by_user_and_product(db, current_user.id, product_id)
     if favourite is None: return None
+    await deactivate_stock_notifications_for_favourite_product(db, user_id=current_user.id, product_id=product_id)
     await delete_favoured_product(db, favourite)
     return None

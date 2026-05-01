@@ -26,7 +26,7 @@ if "PIL" not in sys.modules:
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
 from src.integrations.amocrm import amocrm_client
-from src.database.models import Order, Product, User, UserPushToken, Variant
+from src.database.models import Order, OrderDraft, Product, User, UserPushToken, Variant
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
@@ -96,6 +96,32 @@ def _update_order(order_id: int, **fields) -> None:
         for field, value in fields.items():
             setattr(order, field, value)
         session.commit()
+
+
+def _update_variant(variant_id: int, **fields) -> None:
+    with Session(sync_engine) as session:
+        variant = session.get(Variant, variant_id)
+        assert variant is not None
+        for field, value in fields.items():
+            setattr(variant, field, value)
+        session.commit()
+
+
+def _mark_order_completed(order_id: int) -> None:
+    _update_order(
+        order_id,
+        status=amocrm_client.STATUS_WORDS[amocrm_client.STATUS_IDS["won"]],
+        is_active=False,
+        is_paid=True,
+        is_canceled=False,
+        is_shipped=True,
+    )
+
+
+def _get_order_draft_count(user_id: int) -> int:
+    with Session(sync_engine) as session:
+        stmt = select(OrderDraft).where(OrderDraft.user_id == user_id)
+        return len(list(session.execute(stmt).scalars().all()))
 
 
 def _get_push_tokens_for_user(user_id: int) -> list[str]:
@@ -337,6 +363,146 @@ def test_create_final_order_removes_source_draft(client: TestClient, registered_
     )
 
     assert draft_response.status_code == 404, draft_response.text
+
+
+def test_repeat_order_creates_new_checkout_draft_with_current_prices_and_copied_details(
+    client: TestClient,
+    registered_user,
+    variant_factory,
+    stub_amocrm,
+):
+    ordered_catalog = variant_factory(stock=5, price=Decimal("19.00"))
+    basket_catalog = variant_factory(stock=5, price=Decimal("7.00"))
+    draft = _create_ready_draft(client, registered_user["headers"], ordered_catalog["variant_id"])
+
+    comment_response = client.patch(
+        f"/api/v1/users/me/order-drafts/{draft['id']}",
+        headers=registered_user["headers"],
+        json={"comment": "Оставить у консьержа"},
+    )
+    assert comment_response.status_code == 200, comment_response.text
+
+    order_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=registered_user["headers"],
+        json={"draft_id": draft["id"], "payment_method": "later"},
+    )
+    assert order_response.status_code == 200, order_response.text
+    order = order_response.json()
+    _mark_order_completed(order["id"])
+
+    _update_variant(ordered_catalog["variant_id"], price=Decimal("21.50"), stock=4)
+
+    basket_response = client.post(
+        "/api/v1/users/me/basket/items",
+        headers=registered_user["headers"],
+        json={"variant_id": basket_catalog["variant_id"], "quantity": 1},
+    )
+    assert basket_response.status_code == 200, basket_response.text
+
+    repeat_response = client.post(
+        f"/api/v1/users/me/orders/{order['id']}/repeat",
+        headers=registered_user["headers"],
+    )
+    assert repeat_response.status_code == 201, repeat_response.text
+    repeated_draft = repeat_response.json()
+
+    assert repeated_draft["id"] != draft["id"]
+    assert repeated_draft["draft_name"] == f"Повтор заказа №{order['order_number']}"
+    assert repeated_draft["recipient"]["email"] == "ivan.petrov@example.com"
+    assert repeated_draft["delivery_address"]["full_address"] == order["delivery_address"]["full_address"]
+    assert repeated_draft["comment"] == "Оставить у консьержа"
+    assert _decimal(repeated_draft["delivery_total"]) == Decimal("199.00")
+    assert repeated_draft["delivery_period_min"] == 2
+    assert repeated_draft["delivery_period_max"] == 4
+    assert repeated_draft["items_count"] == 1
+    assert repeated_draft["total_quantity"] == 2
+    assert repeated_draft["items"][0]["variant_id"] == ordered_catalog["variant_id"]
+    assert _decimal(repeated_draft["items"][0]["unit_price"]) == Decimal("21.50")
+    assert _decimal(repeated_draft["items"][0]["line_total"]) == Decimal("43.00")
+    assert _decimal(repeated_draft["basket_subtotal"]) == Decimal("43.00")
+    assert _decimal(repeated_draft["grand_total"]) == Decimal("242.00")
+
+    current_basket_response = client.get("/api/v1/users/me/basket", headers=registered_user["headers"])
+    assert current_basket_response.status_code == 200, current_basket_response.text
+    current_basket = current_basket_response.json()
+    assert current_basket["items_count"] == 1
+    assert current_basket["items"][0]["variant_id"] == basket_catalog["variant_id"]
+
+    original_order_response = client.get(
+        f"/api/v1/users/me/orders/{order['id']}",
+        headers=registered_user["headers"],
+    )
+    assert original_order_response.status_code == 200, original_order_response.text
+    original_order = original_order_response.json()
+    assert original_order["draft_id"] is None
+    assert _decimal(original_order["items"][0]["unit_price"]) == Decimal("19.00")
+
+    second_repeat_response = client.post(
+        f"/api/v1/users/me/orders/{order['id']}/repeat",
+        headers=registered_user["headers"],
+    )
+    assert second_repeat_response.status_code == 201, second_repeat_response.text
+    assert second_repeat_response.json()["id"] != repeated_draft["id"]
+
+
+def test_repeat_order_rejects_cross_user_order(
+    client: TestClient,
+    registered_user,
+    second_registered_user,
+    variant_factory,
+    stub_amocrm,
+):
+    catalog = variant_factory(stock=5, price=Decimal("19.00"))
+    order = _create_order_for_history(client, registered_user["headers"], catalog["variant_id"])
+
+    repeat_response = client.post(
+        f"/api/v1/users/me/orders/{order['id']}/repeat",
+        headers=second_registered_user["headers"],
+    )
+
+    assert repeat_response.status_code == 404, repeat_response.text
+
+
+def test_repeat_order_rejects_unavailable_items_without_creating_draft(
+    client: TestClient,
+    registered_user,
+    variant_factory,
+    stub_amocrm,
+):
+    catalog = variant_factory(stock=5, price=Decimal("19.00"))
+    order = _create_order_for_history(client, registered_user["headers"], catalog["variant_id"])
+    _mark_order_completed(order["id"])
+    draft_count_before = _get_order_draft_count(registered_user["user_id"])
+
+    _update_variant(catalog["variant_id"], stock=1)
+
+    repeat_response = client.post(
+        f"/api/v1/users/me/orders/{order['id']}/repeat",
+        headers=registered_user["headers"],
+    )
+
+    assert repeat_response.status_code == 409, repeat_response.text
+    assert _get_order_draft_count(registered_user["user_id"]) == draft_count_before
+
+
+def test_repeat_order_rejects_active_order_without_creating_draft(
+    client: TestClient,
+    registered_user,
+    variant_factory,
+    stub_amocrm,
+):
+    catalog = variant_factory(stock=5, price=Decimal("19.00"))
+    order = _create_order_for_history(client, registered_user["headers"], catalog["variant_id"])
+    draft_count_before = _get_order_draft_count(registered_user["user_id"])
+
+    repeat_response = client.post(
+        f"/api/v1/users/me/orders/{order['id']}/repeat",
+        headers=registered_user["headers"],
+    )
+
+    assert repeat_response.status_code == 409, repeat_response.text
+    assert _get_order_draft_count(registered_user["user_id"]) == draft_count_before
 
 
 def test_create_payment_later_marks_order_pending(client: TestClient, registered_user, variant_factory, stub_amocrm):

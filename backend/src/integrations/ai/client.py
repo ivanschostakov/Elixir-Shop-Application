@@ -1,11 +1,12 @@
 import base64
 import io
+import json
 import logging
 import mimetypes
 import time
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from openai import AsyncClient, BadRequestError, NotFoundError
 from openai.types.responses import FileSearchToolParam, Response, ResponseConversationParamParam, ToolParam
@@ -16,6 +17,7 @@ from openai.types.responses.tool import (
 )
 
 from config import AI_CONVERSATION_HARD_INPUT_TOKENS, AI_CONVERSATION_SOFT_INPUT_TOKENS, OPENAI_API_KEY
+from src.app.services.ai_chat_tools import tool_output_json
 
 from .enums import BotModel
 
@@ -49,9 +51,9 @@ class ProfessorClient(AsyncClient):
         return FREE_MODEL
 
     @staticmethod
-    def _build_tools(model: BotModel) -> list[ToolParam]:
+    def _build_tools(model: BotModel, function_tools: list[dict[str, Any]] | None = None) -> list[Any]:
         vector_store_id = PREMIUM_VECTOR_STORE_ID if model == BotModel.PREMIUM else FREE_VECTOR_STORE_ID
-        tools: list[ToolParam] = [
+        tools: list[Any] = [
             FileSearchToolParam(type="file_search", vector_store_ids=[vector_store_id]),
         ]
         if model == BotModel.PREMIUM:
@@ -62,6 +64,8 @@ class ProfessorClient(AsyncClient):
                 ),
                 ImageGeneration(type="image_generation"),
             ]
+        if function_tools:
+            tools.extend(function_tools)
         return tools
 
     @staticmethod
@@ -266,19 +270,124 @@ class ProfessorClient(AsyncClient):
         *,
         model: BotModel,
         conversation_id: str,
-        input_payload: str | list[dict[str, Any]],
+        input_payload: Any,
+        tools: list[Any],
         include: list[str] | None = None,
+        text_config: dict[str, Any] | None = None,
     ) -> Response:
-        return await self.responses.create(
-            model=self._resolve_model_name(model),
-            input=input_payload,
-            instructions=self._load_instructions(model),
-            conversation=ResponseConversationParamParam(id=conversation_id),
-            tools=self._build_tools(model),
-            include=include,
-            reasoning=self._build_reasoning_payload(model),
-            truncation="auto",
-        )
+        payload: dict[str, Any] = {
+            "model": self._resolve_model_name(model),
+            "input": input_payload,
+            "instructions": self._load_instructions(model),
+            "conversation": ResponseConversationParamParam(id=conversation_id),
+            "tools": tools,
+            "include": include,
+            "reasoning": self._build_reasoning_payload(model),
+            "truncation": "auto",
+        }
+        if text_config is not None:
+            payload["text"] = text_config
+        return await self.responses.create(**payload)
+
+    @staticmethod
+    def _build_response_text_config(output_schema: dict[str, Any] | None, output_schema_name: str) -> dict[str, Any] | None:
+        if not output_schema:
+            return None
+        return {
+            "format": {
+                "type": "json_schema",
+                "name": output_schema_name,
+                "strict": True,
+                "schema": output_schema,
+            }
+        }
+
+    @staticmethod
+    def _extract_function_calls(response: Response) -> list[dict[str, str]]:
+        calls: list[dict[str, str]] = []
+        for item in getattr(response, "output", []) or []:
+            if getattr(item, "type", None) != "function_call":
+                continue
+            call_id = str(getattr(item, "call_id", None) or getattr(item, "id", None) or "").strip()
+            name = str(getattr(item, "name", None) or "").strip()
+            arguments = getattr(item, "arguments", None)
+            if call_id and name:
+                calls.append(
+                    {
+                        "call_id": call_id,
+                        "name": name,
+                        "arguments": arguments if isinstance(arguments, str) else json.dumps(arguments or {}, ensure_ascii=False, default=str),
+                    }
+                )
+        return calls
+
+    @staticmethod
+    def _extract_v2_structured_output(response_text: str) -> Any:
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError:
+            return None
+
+    async def _run_function_tool_rounds(
+        self,
+        *,
+        response: Response,
+        model: BotModel,
+        conversation_id: str,
+        tools: list[Any],
+        include: list[str] | None,
+        text_config: dict[str, Any] | None,
+        function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None,
+        max_tool_rounds: int,
+        trace_id: str | None,
+    ) -> tuple[Response, int, int]:
+        if function_tool_executor is None:
+            return response, 0, 0
+
+        current_response = response
+        tool_rounds = 0
+        tool_calls_count = 0
+        while True:
+            function_calls = self._extract_function_calls(current_response)
+            if not function_calls:
+                return current_response, tool_rounds, tool_calls_count
+            if tool_rounds >= max_tool_rounds:
+                raise RuntimeError("Maximum AI tool rounds exceeded")
+
+            tool_rounds += 1
+            tool_calls_count += len(function_calls)
+            tool_outputs: list[dict[str, Any]] = []
+            for function_call in function_calls:
+                try:
+                    arguments = json.loads(function_call["arguments"] or "{}")
+                    if not isinstance(arguments, dict):
+                        arguments = {}
+                except json.JSONDecodeError:
+                    arguments = {}
+                output = await function_tool_executor(function_call["name"], arguments)
+                tool_outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": function_call["call_id"],
+                        "output": tool_output_json(output),
+                    }
+                )
+
+            self.__logger.info(
+                "AI client tool round | trace=%s | conversation_id=%s | round=%d | calls=%d",
+                trace_id,
+                conversation_id,
+                tool_rounds,
+                len(function_calls),
+            )
+            current_response = await self._create_v2_response(
+                model=model,
+                conversation_id=conversation_id,
+                input_payload=tool_outputs,
+                tools=tools,
+                include=include,
+                text_config=text_config,
+            )
 
     async def send_message_v2(
         self,
@@ -291,6 +400,11 @@ class ProfessorClient(AsyncClient):
         image_contents: list[tuple[str, bytes]] | None = None,
         user_id: int | None = None,
         trace_id: str | None = None,
+        function_tools: list[dict[str, Any]] | None = None,
+        function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
+        max_tool_rounds: int = 4,
+        output_schema: dict[str, Any] | None = None,
+        output_schema_name: str = "ai_chat_output",
     ) -> dict[str, Any]:
         started_at = int(time.time())
         total_started = time.monotonic()
@@ -309,6 +423,8 @@ class ProfessorClient(AsyncClient):
             image_contents=image_contents,
         )
         include = ["code_interpreter_call.outputs"] if bot_model == BotModel.PREMIUM else None
+        tools = self._build_tools(bot_model, function_tools if function_tool_executor is not None else None)
+        text_config = self._build_response_text_config(output_schema, output_schema_name)
 
         active_conversation_id = conversation_id
         had_existing_conversation = bool(active_conversation_id)
@@ -328,7 +444,9 @@ class ProfessorClient(AsyncClient):
                 model=bot_model,
                 conversation_id=active_conversation_id,
                 input_payload=input_payload,
+                tools=tools,
                 include=include,
+                text_config=text_config,
             )
         except Exception as exc:
             should_retry = self._should_retry_with_new_conversation(exc) or (
@@ -349,10 +467,24 @@ class ProfessorClient(AsyncClient):
                 model=bot_model,
                 conversation_id=active_conversation_id,
                 input_payload=input_payload,
+                tools=tools,
                 include=include,
+                text_config=text_config,
             )
 
+        response, tool_rounds, tool_calls = await self._run_function_tool_rounds(
+            response=response,
+            model=bot_model,
+            conversation_id=active_conversation_id,
+            tools=tools,
+            include=include,
+            text_config=text_config,
+            function_tool_executor=function_tool_executor,
+            max_tool_rounds=max_tool_rounds,
+            trace_id=trace_id,
+        )
         response_text = self._extract_v2_text(response)
+        structured_output = self._extract_v2_structured_output(response_text) if text_config is not None else None
         response_files = await self._extract_v2_files(response, started_at)
         input_tokens, cached_input_tokens, output_tokens = self._extract_v2_usage(response)
         final_conversation_id = getattr(getattr(response, "conversation", None), "id", None) or active_conversation_id
@@ -379,6 +511,9 @@ class ProfessorClient(AsyncClient):
             "output_tokens": int(output_tokens),
             "conversation_id": str(final_conversation_id),
             "conversation_reset_reason": conversation_reset_reason,
+            "structured_output": structured_output,
+            "tool_rounds": tool_rounds,
+            "tool_calls": tool_calls,
         }
 
 

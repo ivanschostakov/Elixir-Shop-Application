@@ -1,6 +1,8 @@
-import { apiGet, apiPostMultipart } from "@/services/api/client"
+import { apiGet, apiPost, apiPostMultipart } from "@/services/api/client"
 import { aiChatEndpoint } from "@/services/api/ai-chat.constants"
 import type {
+    AIChatActionPayload,
+    AIChatActionResponse,
     AIChatResponse,
     AIChatTranscriptionResponse,
     UploadableChatAttachment,
@@ -26,6 +28,10 @@ export function sendMyAiChatMessage(text: string, attachments: UploadableChatAtt
     }
 
     return apiPostMultipart<AIChatResponse>(aiChatEndpoint, formData)
+}
+
+export function performAiChatAction(payload: AIChatActionPayload): Promise<AIChatActionResponse> {
+    return apiPost<AIChatActionResponse, AIChatActionPayload>(`${aiChatEndpoint}/actions`, payload)
 }
 
 export function transcribeMyAiChatVoice(audio: UploadableChatAttachment): Promise<AIChatTranscriptionResponse> {

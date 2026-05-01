@@ -51,12 +51,14 @@ class _FakeSession:
 
 
 def test_restock_processor_sends_once_and_deactivates(monkeypatch: pytest.MonkeyPatch):
-    subscription = SimpleNamespace(user_id=11, variant_id=33, is_active=True, notified_at=None)
+    subscription = SimpleNamespace(user_id=11, variant_id=33, is_active=True, last_seen_stock=0, notified_at=None)
     variant = SimpleNamespace(id=33, product_id=7, name="Test Variant", stock=5)
 
     session = _FakeSession(
         [
+            _FakeScalarResult(rows=[]),
             _FakeScalarResult(rows=[(subscription, variant)]),
+            _FakeScalarResult(rows=[]),
         ]
     )
 
@@ -69,10 +71,63 @@ def test_restock_processor_sends_once_and_deactivates(monkeypatch: pytest.Monkey
 
     assert sent_count == 1
     assert subscription.is_active is False
+    assert subscription.last_seen_stock == 5
     assert subscription.notified_at is not None
     assert session.commits == 1
     assert len(session.added) == 1
     assert session.added[0].type == notifications_service.DISPATCH_TYPE_RESTOCK
+
+
+def test_restock_processor_waits_for_stock_increase(monkeypatch: pytest.MonkeyPatch):
+    subscription = SimpleNamespace(user_id=11, variant_id=33, is_active=True, last_seen_stock=5, notified_at=None)
+    variant = SimpleNamespace(id=33, product_id=7, name="Test Variant", stock=5)
+
+    session = _FakeSession(
+        [
+            _FakeScalarResult(rows=[]),
+            _FakeScalarResult(rows=[]),
+            _FakeScalarResult(rows=[]),
+        ]
+    )
+
+    async def fake_send_push_to_user(*args, **kwargs):
+        pytest.fail("Restock notification should wait until stock increases")
+
+    monkeypatch.setattr(notifications_service, "send_push_to_user", fake_send_push_to_user)
+
+    sent_count = asyncio.run(notifications_service.process_restock_notifications(session, now=notifications_service.ufa_now()))
+
+    assert sent_count == 0
+    assert subscription.is_active is True
+    assert subscription.last_seen_stock == 5
+    assert session.commits == 1
+    assert session.added == []
+
+
+def test_restock_processor_tracks_low_stock_decreases(monkeypatch: pytest.MonkeyPatch):
+    subscription = SimpleNamespace(user_id=11, variant_id=33, is_active=True, last_seen_stock=5, notified_at=None)
+    variant = SimpleNamespace(id=33, product_id=7, name="Test Variant", stock=2)
+
+    session = _FakeSession(
+        [
+            _FakeScalarResult(rows=[]),
+            _FakeScalarResult(rows=[]),
+            _FakeScalarResult(rows=[(subscription, variant)]),
+        ]
+    )
+
+    async def fake_send_push_to_user(*args, **kwargs):
+        pytest.fail("Lower stock should update the baseline without sending")
+
+    monkeypatch.setattr(notifications_service, "send_push_to_user", fake_send_push_to_user)
+
+    sent_count = asyncio.run(notifications_service.process_restock_notifications(session, now=notifications_service.ufa_now()))
+
+    assert sent_count == 0
+    assert subscription.is_active is True
+    assert subscription.last_seen_stock == 2
+    assert session.commits == 1
+    assert session.added == []
 
 
 def test_inactive_customer_processor_respects_cooldown(monkeypatch: pytest.MonkeyPatch):

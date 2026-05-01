@@ -9,7 +9,7 @@ from config import ufa_now
 from src.database.models import BasketItem
 
 
-async def create_basket_item(session: AsyncSession, *, basket_id: int, user_id: int, product_id: int, variant_id: int, quantity: int, price: Decimal) -> BasketItem:
+async def create_basket_item(session: AsyncSession, *, basket_id: int, user_id: int, product_id: int, variant_id: int, quantity: int, price: Decimal, commit: bool = True) -> BasketItem:
     timestamp = ufa_now()
     table = BasketItem.__table__
     insert_stmt = pg_insert(table).values(
@@ -34,7 +34,10 @@ async def create_basket_item(session: AsyncSession, *, basket_id: int, user_id: 
     ).returning(table.c.id)
 
     basket_item_id = (await session.execute(stmt)).scalar_one()
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     return await get_basket_item_by_id(session, basket_item_id)
 
 

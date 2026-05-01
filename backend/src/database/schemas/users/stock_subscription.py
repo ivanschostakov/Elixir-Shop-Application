@@ -14,6 +14,7 @@ class StockNotificationSubscriptionRead(BaseModel):
     user_id: int
     variant_id: int
     is_active: bool
+    last_seen_stock: int
     notified_at: datetime | None
     created_at: datetime
     updated_at: datetime

@@ -1,6 +1,51 @@
+import type { BasketRead } from "@/types/basket"
+
 export type BotModel = "free" | "premium"
 export type MessageSender = "user" | "ai"
 export type AttachmentType = "document" | "image"
+export type AIActionType = "open_product" | "ask_ai" | "add_to_basket"
+export type AIActionStyle = "primary" | "secondary" | "link"
+export type AIProductIntent = "recommend" | "compare" | "alternative"
+
+export type AIInteractiveAction = {
+    id: string
+    type: AIActionType
+    label: string
+    style: AIActionStyle
+    product_id: number | null
+    variant_id: number | null
+    quantity: number | null
+    prompt: string | null
+    action_token: string | null
+    completed: boolean
+    created_basket_item_id: number | null
+}
+
+export type AIInteractiveVariant = {
+    id: number
+    sku: string | null
+    name: string
+    stock: number
+    price: string
+    image_url: string
+    in_stock: boolean
+}
+
+export type AIInteractiveProductCard = {
+    id: string
+    product_id: number
+    intent: AIProductIntent
+    title: string
+    reason: string | null
+    image_url: string
+    in_stock: boolean
+    variants: AIInteractiveVariant[]
+    actions: AIInteractiveAction[]
+}
+
+export type AIInteractivePayload = {
+    cards: AIInteractiveProductCard[]
+}
 
 export type AIAttachmentRead = {
     id: number
@@ -24,6 +69,7 @@ export type AIMessageRead = {
     bot_model: BotModel
     tokens: number
     attachments: AIAttachmentRead[]
+    interactive: AIInteractivePayload | null
     created_at: string
     updated_at: string
 }
@@ -50,6 +96,18 @@ export type AIChatTurnMetaRead = {
 export type AIChatResponse = {
     chat: AIChatRead
     last_turn: AIChatTurnMetaRead | null
+    basket: BasketRead | null
+}
+
+export type AIChatActionPayload = {
+    message_id: number
+    action_id: string
+    action_token: string
+    quantity?: number
+}
+
+export type AIChatActionResponse = AIChatResponse & {
+    basket_item_id: number | null
 }
 
 export type AIChatTranscriptionResponse = {

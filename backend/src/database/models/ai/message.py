@@ -1,7 +1,11 @@
-from sqlalchemy import BigInteger, ForeignKey, Text
+from typing import Any
+
+from sqlalchemy import JSON, BigInteger, ForeignKey, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
+from src.database.schemas.ai.interactive import AIInteractivePayload
 from src.database.mixins import IdPkMixin, TimestampMixin
 from src.integrations.ai.enums import BotModel, MessageSender, bot_model, message_sender
 
@@ -17,6 +21,10 @@ class AIMessage(Base, IdPkMixin, TimestampMixin):
     bot_model: Mapped[BotModel] = mapped_column(bot_model, nullable=False)
 
     tokens: Mapped[int] = mapped_column(nullable=False)
+    context_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON().with_variant(JSONB, "postgresql"),
+        nullable=True,
+    )
 
     user: Mapped["User"] = relationship(back_populates="ai_messages")
     chat: Mapped["AIChat"] = relationship(back_populates="messages")
@@ -26,3 +34,13 @@ class AIMessage(Base, IdPkMixin, TimestampMixin):
         passive_deletes=True,
         order_by="Attachment.id",
     )
+
+    @property
+    def interactive(self) -> AIInteractivePayload | None:
+        payload = (self.context_json or {}).get("interactive")
+        if not isinstance(payload, dict):
+            return None
+        try:
+            return AIInteractivePayload.model_validate(payload)
+        except Exception:
+            return None

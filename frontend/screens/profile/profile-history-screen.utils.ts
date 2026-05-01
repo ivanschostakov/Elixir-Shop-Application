@@ -36,6 +36,19 @@ export const ORDER_STATUS_LABEL_KEYS: Record<OrderStatusCode, TranslationKey> = 
     refund_declined: "profile.history.status.refund_declined",
 }
 
+export const ORDER_STATUS_MESSAGE_KEYS: Record<OrderStatusCode, TranslationKey> = {
+    created: "profile.history.statusMessage.created",
+    invoice_sent: "profile.history.statusMessage.invoice_sent",
+    paid: "profile.history.statusMessage.paid",
+    waiting_response: "profile.history.statusMessage.waiting_response",
+    packaged: "profile.history.statusMessage.packaged",
+    sent: "profile.history.statusMessage.sent",
+    delivered: "profile.history.statusMessage.delivered",
+    canceled: "profile.history.statusMessage.canceled",
+    completed: "profile.history.statusMessage.completed",
+    refund_declined: "profile.history.statusMessage.refund_declined",
+}
+
 type CalendarDayParts = {
     day: number
     month: number

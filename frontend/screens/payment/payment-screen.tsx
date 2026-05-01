@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     ActivityIndicator,
+    Alert,
     Animated,
     Easing,
     Image,
@@ -11,6 +12,7 @@ import {
     Text,
     View,
 } from "react-native"
+import * as Clipboard from "expo-clipboard"
 import { router, useLocalSearchParams } from "expo-router"
 import LottieView from "lottie-react-native"
 
@@ -18,6 +20,7 @@ import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
+import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useOrderDraft } from "@/hooks/order-draft/use-order-draft"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
@@ -29,7 +32,7 @@ import {
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
 import { paymentScreenStyles } from "@/screens/payment/payment-screen.styles"
-import { createOrder, getOrder } from "@/services/api/orders"
+import { createOrder, getOrder, repeatOrder } from "@/services/api/orders"
 import type { OrderItemRead, OrderRead } from "@/services/api/orders.types"
 import { createPayment, getPaymentStatus } from "@/services/api/payments"
 import type { PaymentStatusRead } from "@/services/api/payments.types"
@@ -112,6 +115,7 @@ export default function PaymentScreen() {
     const [order, setOrder] = useState<OrderRead | null>(null)
     const [payment, setPayment] = useState<PaymentStatusRead | null>(null)
     const [submitting, setSubmitting] = useState(false)
+    const [isRepeating, setIsRepeating] = useState(false)
     const [phase, setPhase] = useState<"select" | "processing" | "sbp" | "success" | "failure">("select")
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
     const hasAutoStartedRef = useRef(false)
@@ -195,6 +199,7 @@ export default function PaymentScreen() {
     const resolvedRecipient = order?.recipient ?? getDraftRecipient(orderDraft) ?? getSelfRecipient(user)
     const resolvedItemsCount = order?.items.length ?? orderDraft?.items.length ?? 0
     const resolvedOrderNumber = payment?.order_number ?? order?.order_number ?? null
+    const resolvedOrderCode = payment?.order_code ?? order?.order_code ?? resolvedOrderNumber
     const resolvedAddress = order?.delivery_address?.full_address ?? orderDraft?.delivery_address?.full_address ?? "—"
     const resolvedItems = useMemo<(OrderItemRead | OrderDraftItemRead)[]>(
         () => order?.items ?? orderDraft?.items ?? [],
@@ -243,11 +248,43 @@ export default function PaymentScreen() {
     const canRetry = Boolean(orderDraft || order?.id || payment?.order_id) && (payment ? payment.can_retry : true)
     const missingStateMessage = orderLoadError ?? t("payment.orderMissingMessage")
     const shouldShowFooter = hasResolvedOrderInfo || loading || loadingOrder || phase === "processing" || submitting
+    const isRepeatableOrder = order?.history_bucket === "completed"
     const recipientLabel = formatRecipientName(resolvedRecipient)
     const deliveryLabel = [
         order?.selected_delivery_service ?? orderDraft?.delivery_address?.provider,
         resolvedAddress,
     ].filter(Boolean).join(" • ") || "—"
+
+    const handleCopyOrderCode = useCallback(async () => {
+        if (!resolvedOrderCode) {
+            return
+        }
+
+        const copiedCode = resolvedOrderCode.startsWith("#") ? resolvedOrderCode : `#${resolvedOrderCode}`
+        await Clipboard.setStringAsync(copiedCode)
+        Alert.alert(t("payment.orderCopiedTitle"), copiedCode)
+    }, [resolvedOrderCode, t])
+
+    const handleRepeatOrder = useCallback(async () => {
+        if (!order?.id || isRepeating || !isRepeatableOrder) {
+            return
+        }
+
+        setIsRepeating(true)
+
+        try {
+            const repeatedDraft = await repeatOrder(order.id)
+            setOrderDraftSnapshot(repeatedDraft)
+            router.push({ pathname: ROUTES.checkout, params: { draftId: String(repeatedDraft.id) } })
+        } catch (repeatError) {
+            Alert.alert(
+                t("payment.repeatFailedTitle"),
+                getErrorMessage(repeatError, t("payment.repeatFailedMessage")),
+            )
+        } finally {
+            setIsRepeating(false)
+        }
+    }, [isRepeatableOrder, isRepeating, order?.id, t])
 
     const openQrLink = useCallback(() => {
         if (!qrLinkTarget) {
@@ -373,6 +410,17 @@ export default function PaymentScreen() {
             }
         }
 
+        if (isRepeatableOrder) {
+            return {
+                busy: isRepeating,
+                disabled: isRepeating,
+                label: isRepeating ? t("payment.repeatLoading") : t("payment.repeatOrder"),
+                onPress: () => {
+                    void handleRepeatOrder()
+                },
+            }
+        }
+
         if (phase === "success") {
             if (!isSuccessVisualReady) {
                 return {
@@ -420,6 +468,9 @@ export default function PaymentScreen() {
     }, [
         canRetry,
         handleStartPayment,
+        handleRepeatOrder,
+        isRepeatableOrder,
+        isRepeating,
         isQrVisualReady,
         loading,
         loadingOrder,
@@ -434,19 +485,44 @@ export default function PaymentScreen() {
     ])
 
     const headerTitle = resolvedOrderNumber ? `#${resolvedOrderNumber}` : t("payment.title")
+    const headerCenterSlot = useMemo(() => {
+        if (!resolvedOrderNumber) {
+            return null
+        }
+
+        return (
+            <Pressable
+                accessibilityLabel={t("payment.copyOrderNumber")}
+                accessibilityRole="button"
+                onPress={() => {
+                    void handleCopyOrderCode()
+                }}
+                style={({ pressed }) => [
+                    paymentScreenStyles.headerTitleButton,
+                    pressed && paymentScreenStyles.headerTitleButtonPressed,
+                ]}
+            >
+                <Text numberOfLines={1} style={paymentScreenStyles.headerTitleText}>{headerTitle}</Text>
+            </Pressable>
+        )
+    }, [handleCopyOrderCode, headerTitle, resolvedOrderNumber, t])
 
     const paymentChromeTemplate = useMemo(() => {
+        const headerSlots = headerCenterSlot ? { headerCenter: headerCenterSlot } : undefined
+
         if (!shouldShowFooter) {
             return {
                 ...PAYMENT_CHROME_TEMPLATE,
-                title: headerTitle,
+                title: headerCenterSlot ? null : headerTitle,
+                slots: headerSlots,
             }
         }
 
         return {
             footer: "nav+customAction" as const,
-            title: headerTitle,
+            title: headerCenterSlot ? null : headerTitle,
             slots: {
+                ...headerSlots,
                 footer: (
                     <View style={paymentScreenStyles.footerActionStack}>
                         <Pressable
@@ -474,6 +550,7 @@ export default function PaymentScreen() {
         footerCtaState.disabled,
         footerCtaState.label,
         footerCtaState.onPress,
+        headerCenterSlot,
         headerTitle,
         shouldShowFooter,
     ])
@@ -740,10 +817,20 @@ export default function PaymentScreen() {
                             <Text style={paymentScreenStyles.successTitle}>{t("payment.successTitle")}</Text>
                             <Text style={paymentScreenStyles.successMessage}>{successMessage}</Text>
                             {resolvedOrderNumber ? (
-                                <View style={paymentScreenStyles.successOrderBox}>
+                                <Pressable
+                                    accessibilityLabel={t("payment.copyOrderNumber")}
+                                    accessibilityRole="button"
+                                    onPress={() => {
+                                        void handleCopyOrderCode()
+                                    }}
+                                    style={({ pressed }) => [
+                                        paymentScreenStyles.successOrderBox,
+                                        pressed && paymentScreenStyles.successOrderBoxPressed,
+                                    ]}
+                                >
                                     <Text style={paymentScreenStyles.successOrderLabel}>{t("payment.orderNumber")}</Text>
                                     <Text style={paymentScreenStyles.successOrderValue}>#{resolvedOrderNumber}</Text>
-                                </View>
+                                </Pressable>
                             ) : null}
                         </View>
                     </View>

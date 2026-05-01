@@ -5,7 +5,9 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from src.database.crud import get_basket_by_id, get_basket_by_user_id, get_order_draft_by_id
+from src.app.services.recommendations import record_cart_add
+from src.database.crud import create_basket_item, get_basket_by_id, get_basket_by_user_id, get_order_draft_by_id
+from src.database.crud.basket.basket_item import get_basket_item_by_basket_and_variant
 from src.database.models import Basket, BasketItem, Variant
 from src.database.schemas import BasketCreate, BasketItemRead, BasketProductSummaryRead, BasketRead, BasketVariantSummaryRead
 from src.product_media import build_products_media_url
@@ -127,6 +129,49 @@ async def _get_locked_variants(db: AsyncSession, variant_ids: set[int]) -> dict[
     stmt = select(Variant).where(Variant.id.in_(variant_ids)).with_for_update()
     variants = list((await db.execute(stmt)).scalars().all())
     return {variant.id: variant for variant in variants}
+
+
+async def add_variant_to_basket_for_user(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    variant_id: int,
+    quantity: int = 1,
+    commit: bool = True,
+) -> BasketItem:
+    if quantity <= 0 or quantity > 100:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Quantity is invalid")
+
+    basket = await _get_or_create_locked_basket(db, user_id)
+    variant = await _get_variant_for_update(db, variant_id)
+    if variant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+
+    existing_item = await get_basket_item_by_basket_and_variant(db, basket.id, variant.id, user_id=user_id)
+    next_quantity = quantity if existing_item is None else existing_item.quantity + quantity
+    if next_quantity > variant.stock:
+        raise _basket_conflict("Requested quantity exceeds available stock")
+
+    basket_item = await create_basket_item(
+        db,
+        basket_id=basket.id,
+        user_id=user_id,
+        product_id=variant.product_id,
+        variant_id=variant.id,
+        quantity=quantity,
+        price=variant.price,
+        commit=False,
+    )
+    await record_cart_add(
+        db,
+        user_id=user_id,
+        product_id=variant.product_id,
+        quantity=quantity,
+        commit=False,
+    )
+    if commit:
+        await db.commit()
+    return basket_item
 
 
 async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, user_id: int, draft_id: int) -> BasketRead:

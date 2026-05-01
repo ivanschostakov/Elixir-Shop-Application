@@ -1,5 +1,11 @@
 from .attachment import AIAttachmentBase, AIAttachmentCreate, AIAttachmentRead, AIAttachmentUpdate
 from .chat import AIChatBase, AIChatCreate, AIChatRead, AIChatUpdate, AIChatWithMessagesRead
+from .interactive import (
+    AIInteractiveAction,
+    AIInteractivePayload,
+    AIInteractiveProductCard,
+    AIInteractiveVariant,
+)
 from .message import AIMessageBase, AIMessageCreate, AIMessageRead, AIMessageUpdate
 
 __all__ = [
@@ -12,6 +18,10 @@ __all__ = [
     "AIChatRead",
     "AIChatUpdate",
     "AIChatWithMessagesRead",
+    "AIInteractiveAction",
+    "AIInteractivePayload",
+    "AIInteractiveProductCard",
+    "AIInteractiveVariant",
     "AIMessageBase",
     "AIMessageCreate",
     "AIMessageRead",

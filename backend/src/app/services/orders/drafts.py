@@ -1,14 +1,16 @@
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from fastapi import HTTPException
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from starlette import status
 
 from src.database.crud import create_delivery_address, create_delivery_recipient, create_order_draft, delete_order_draft, get_delivery_address_by_fields, get_delivery_address_by_id, get_delivery_addresses, get_delivery_recipient_by_fields, get_delivery_recipient_by_id, get_delivery_recipients, get_latest_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
 from src.database.limits import ORDER_DRAFT_COMMENT_MAX_LENGTH, ORDER_DRAFT_NAME_MAX_LENGTH
-from src.database.models import BasketItem, OrderDraft, User
+from src.database.models import BasketItem, OrderDraft, OrderDraftItem, User, Variant
 from src.database.schemas import DeliveryAddressCreate, DeliveryAddressRead, DeliveryRecipientCreate, DeliveryRecipientRead, OrderDraftCheckoutOptionsRead, OrderDraftCreate, OrderDraftUpdate
 
 from .draft_items import (
@@ -119,6 +121,105 @@ async def create_order_draft_for_user(session: AsyncSession, *, user: User, payl
     created_draft = await get_order_draft_by_id(session, order_draft.id, user_id=user.id)
     if created_draft is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order draft")
 
+    return created_draft
+
+
+def _normalize_ai_draft_items(items: list[dict[str, Any]]) -> dict[int, int]:
+    normalized: dict[int, int] = {}
+    for item in items:
+        variant_id = int(item.get("variant_id") or 0)
+        quantity = int(item.get("quantity") or 0)
+        if variant_id <= 0 or quantity <= 0:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft item data is invalid")
+        normalized[variant_id] = normalized.get(variant_id, 0) + quantity
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft must contain at least one item")
+    if any(quantity > 100 for quantity in normalized.values()):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft item quantity is too large")
+    return normalized
+
+
+async def create_order_draft_from_variant_selection(
+    session: AsyncSession,
+    *,
+    user: User,
+    items: list[dict[str, Any]],
+    draft_name: str | None = None,
+    comment: str | None = None,
+    commit: bool = True,
+) -> OrderDraft:
+    normalized_items = _normalize_ai_draft_items(items)
+    stmt = (
+        select(Variant)
+        .options(selectinload(Variant.product))
+        .where(Variant.id.in_(normalized_items.keys()))
+        .with_for_update()
+    )
+    variants = list((await session.execute(stmt)).scalars().all())
+    variants_by_id = {variant.id: variant for variant in variants}
+    if len(variants_by_id) != len(normalized_items):
+        raise _checkout_conflict("Some selected variants are no longer available")
+
+    draft_items: list[OrderDraftItem] = []
+    basket_subtotal = Decimal("0.00")
+    total_quantity = 0
+
+    for variant_id, quantity in normalized_items.items():
+        variant = variants_by_id[variant_id]
+        if variant.stock <= 0 or quantity > variant.stock:
+            raise _checkout_conflict("Selected products are no longer available in the requested quantity")
+        line_total = variant.price * quantity
+        basket_subtotal += line_total
+        total_quantity += quantity
+        draft_items.append(
+            OrderDraftItem(
+                user_id=user.id,
+                draft_id=0,
+                product_id=variant.product_id,
+                variant_id=variant.id,
+                product_name=variant.product.name,
+                product_sku=variant.product.sku,
+                variant_name=variant.name,
+                variant_sku=variant.sku,
+                quantity=quantity,
+                unit_price=variant.price,
+                line_total=line_total,
+            )
+        )
+
+    order_draft = await create_order_draft(
+        session,
+        OrderDraftCreate(
+            user_id=user.id,
+            delivery_address_id=None,
+            recipient_id=None,
+            status="draft",
+            items_count=len(draft_items),
+            total_quantity=total_quantity,
+            basket_subtotal=basket_subtotal,
+            delivery_total=Decimal("0.00"),
+            grand_total=basket_subtotal,
+            currency="RUB",
+            delivery_period_min=None,
+            delivery_period_max=None,
+            draft_name=_normalize_order_draft_text(draft_name, max_length=ORDER_DRAFT_NAME_MAX_LENGTH),
+            comment=_normalize_order_draft_text(comment, max_length=ORDER_DRAFT_COMMENT_MAX_LENGTH),
+        ),
+        commit=False,
+    )
+
+    for draft_item in draft_items:
+        draft_item.draft_id = order_draft.id
+
+    session.add_all(draft_items)
+    await session.flush()
+
+    if commit:
+        await session.commit()
+
+    created_draft = await get_order_draft_by_id(session, order_draft.id, user_id=user.id)
+    if created_draft is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order draft")
     return created_draft
 
 

@@ -39,11 +39,13 @@ async def upsert_my_stock_subscription(
             user_id=current_user.id,
             variant_id=payload.variant_id,
             is_active=True,
+            last_seen_stock=max(0, int(variant.stock or 0)),
             notified_at=None,
         )
         db.add(existing)
     else:
         existing.is_active = True
+        existing.last_seen_stock = max(0, int(variant.stock or 0))
         existing.notified_at = None
 
     await db.commit()

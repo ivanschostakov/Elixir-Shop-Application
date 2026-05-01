@@ -32,6 +32,7 @@ import { colors } from "@/theme/colors"
 import { profileHistoryScreenStyles } from "./profile-history-screen.styles"
 import {
     ORDER_STATUS_LABEL_KEYS,
+    ORDER_STATUS_MESSAGE_KEYS,
     type ProfileHistoryFilters,
     buildDateRangeSelection,
     buildMarkedDateRange,
@@ -453,90 +454,99 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
     const isCompleted = order.history_bucket === "completed"
     const visibleItems = order.items.slice(0, 4)
     const statusLabel = t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created")
+    const statusMessage = t(ORDER_STATUS_MESSAGE_KEYS[order.status_code] ?? "profile.history.statusMessage.created")
+
+    const handleOpenOrder = useCallback(() => {
+        router.push({ pathname: ROUTES.payment, params: { orderId: String(order.id) } })
+    }, [order.id])
 
     return (
-        <Pressable
-            accessibilityLabel={`#${order.order_number}`}
-            accessibilityRole="button"
-            onPress={() => {
-                router.push({ pathname: ROUTES.payment, params: { orderId: String(order.id) } })
-            }}
-            style={({ pressed }) => [
-                profileHistoryScreenStyles.historyCard,
-                pressed && profileHistoryScreenStyles.historyCardPressed,
-            ]}
-        >
-            <View style={profileHistoryScreenStyles.historyCardCollage}>
-                {visibleItems.map((item, index) => (
-                    <View
-                        key={`${order.id}-${item.id}-${item.variant_id}`}
-                        style={[
-                            profileHistoryScreenStyles.historyCardCollageTile,
-                            getModeBadgeStyle(visibleItems.length, index),
-                        ]}
-                    >
-                        <Image
-                            resizeMode="cover"
-                            source={{ uri: item.image_url }}
-                            style={profileHistoryScreenStyles.historyCardCollageTileImage}
-                        />
+        <View style={profileHistoryScreenStyles.historyCard}>
+            <Pressable
+                accessibilityLabel={`#${order.order_number}`}
+                accessibilityRole="button"
+                onPress={handleOpenOrder}
+                style={({ pressed }) => pressed && profileHistoryScreenStyles.historyCardPressed}
+            >
+                <View style={profileHistoryScreenStyles.historyCardCollage}>
+                    {visibleItems.map((item, index) => (
+                        <View
+                            key={`${order.id}-${item.id}-${item.variant_id}`}
+                            style={[
+                                profileHistoryScreenStyles.historyCardCollageTile,
+                                getModeBadgeStyle(visibleItems.length, index),
+                            ]}
+                        >
+                            <Image
+                                resizeMode="cover"
+                                source={{ uri: item.image_url }}
+                                style={profileHistoryScreenStyles.historyCardCollageTileImage}
+                            />
+                        </View>
+                    ))}
+                </View>
+
+                <View style={profileHistoryScreenStyles.historyCardBody}>
+                    <View style={profileHistoryScreenStyles.historyCardHeader}>
+                        <View style={profileHistoryScreenStyles.historyCardCopy}>
+                            <Text style={profileHistoryScreenStyles.historyCardEyebrow}>{t("route.payment")}</Text>
+                            <Text style={profileHistoryScreenStyles.historyCardTitle}>#{order.order_number}</Text>
+                            {subtitle ? (
+                                <Text numberOfLines={2} style={profileHistoryScreenStyles.historyCardSubtitle}>
+                                    {subtitle}
+                                </Text>
+                            ) : null}
+                        </View>
+
+                        <View
+                            style={[
+                                profileHistoryScreenStyles.historyCardBadge,
+                                isCompleted
+                                    ? profileHistoryScreenStyles.historyCardBadgeCompleted
+                                    : profileHistoryScreenStyles.historyCardBadgeActive,
+                            ]}
+                        >
+                            <Text
+                                numberOfLines={2}
+                                style={[
+                                    profileHistoryScreenStyles.historyCardBadgeText,
+                                    isCompleted
+                                        ? profileHistoryScreenStyles.historyCardBadgeTextCompleted
+                                        : profileHistoryScreenStyles.historyCardBadgeTextActive,
+                                ]}
+                            >
+                                {statusLabel}
+                            </Text>
+                        </View>
                     </View>
-                ))}
-            </View>
 
-            <View style={profileHistoryScreenStyles.historyCardHeader}>
-                <View style={profileHistoryScreenStyles.historyCardCopy}>
-                    <Text style={profileHistoryScreenStyles.historyCardEyebrow}>{t("route.payment")}</Text>
-                    <Text style={profileHistoryScreenStyles.historyCardTitle}>#{order.order_number}</Text>
-                    {subtitle ? (
-                        <Text numberOfLines={2} style={profileHistoryScreenStyles.historyCardSubtitle}>
-                            {subtitle}
-                        </Text>
-                    ) : null}
-                </View>
-
-                <View
-                    style={[
-                        profileHistoryScreenStyles.historyCardBadge,
-                        isCompleted
-                            ? profileHistoryScreenStyles.historyCardBadgeCompleted
-                            : profileHistoryScreenStyles.historyCardBadgeActive,
-                    ]}
-                >
-                    <Text
-                        style={[
-                            profileHistoryScreenStyles.historyCardBadgeText,
-                            isCompleted
-                                ? profileHistoryScreenStyles.historyCardBadgeTextCompleted
-                                : profileHistoryScreenStyles.historyCardBadgeTextActive,
-                        ]}
-                    >
-                        {statusLabel}
+                    <Text style={profileHistoryScreenStyles.historyCardStatusMessage}>
+                        {statusMessage}
                     </Text>
-                </View>
-            </View>
 
-            <View style={profileHistoryScreenStyles.historyCardMetaGrid}>
-                <View style={profileHistoryScreenStyles.historyCardMetaRow}>
-                    <Text style={profileHistoryScreenStyles.historyCardMetaLabel}>{t("profile.history.createdAt")}</Text>
-                    <Text style={profileHistoryScreenStyles.historyCardMetaValue}>
-                        {formatHistoryDate(order.created_at)}
-                    </Text>
-                </View>
+                    <View style={profileHistoryScreenStyles.historyCardMetaGrid}>
+                        <View style={profileHistoryScreenStyles.historyCardMetaRow}>
+                            <Text style={profileHistoryScreenStyles.historyCardMetaLabel}>{t("profile.history.createdAt")}</Text>
+                            <Text style={profileHistoryScreenStyles.historyCardMetaValue}>
+                                {formatHistoryDate(order.created_at)}
+                            </Text>
+                        </View>
 
-                <View style={profileHistoryScreenStyles.historyCardMetaRow}>
-                    <Text style={profileHistoryScreenStyles.historyCardMetaLabel}>{t("profile.history.positions")}</Text>
-                    <Text style={profileHistoryScreenStyles.historyCardMetaValue}>{order.items_count}</Text>
+                        <View style={profileHistoryScreenStyles.historyCardMetaRow}>
+                            <Text style={profileHistoryScreenStyles.historyCardMetaLabel}>{t("profile.history.positions")}</Text>
+                            <Text style={profileHistoryScreenStyles.historyCardMetaValue}>{order.items_count}</Text>
+                        </View>
+                    </View>
                 </View>
-            </View>
+            </Pressable>
 
             <View style={profileHistoryScreenStyles.historyCardDivider} />
 
             <View style={profileHistoryScreenStyles.historyCardFooter}>
                 <Text style={profileHistoryScreenStyles.historyCardFooterLabel}>{t("checkout.grandTotalLabel")}</Text>
-                <Text style={profileHistoryScreenStyles.historyCardFooterValue}>{totalLabel}</Text>
+                <Text numberOfLines={1} style={profileHistoryScreenStyles.historyCardFooterValue}>{totalLabel}</Text>
             </View>
-        </Pressable>
+        </View>
     )
 }
 
