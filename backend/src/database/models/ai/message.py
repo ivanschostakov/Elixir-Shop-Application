@@ -16,6 +16,8 @@ class AIMessage(Base, IdPkMixin, TimestampMixin):
     sender: Mapped[MessageSender] = mapped_column(message_sender, nullable=False)
     bot_model: Mapped[BotModel] = mapped_column(bot_model, nullable=False)
 
+    tokens: Mapped[int] = mapped_column(nullable=False)
+
     user: Mapped["User"] = relationship(back_populates="ai_messages")
     chat: Mapped["AIChat"] = relationship(back_populates="messages")
     attachments: Mapped[list["Attachment"]] = relationship(

@@ -18,3 +18,6 @@ class AIChat(Base, IdPkMixin, TimestampMixin):
         passive_deletes=True,
         order_by="AIMessage.id",
     )
+
+    current_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
+    total_tokens: Mapped[int] = mapped_column(nullable=False, default=0)

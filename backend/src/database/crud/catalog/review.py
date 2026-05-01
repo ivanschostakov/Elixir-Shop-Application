@@ -1,9 +1,11 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.database.models.orders.order import Order
 from src.database.models.orders.order_item import OrderItem
 from src.database.models.catalog.review import Review
+from src.database.models.catalog.review_attachment import ReviewAttachment
 from src.database.schemas import ReviewCreate
 
 
@@ -16,6 +18,10 @@ async def get_product_reviews(
 ) -> list[Review]:
     stmt = (
         select(Review)
+        .options(
+            selectinload(Review.user),
+            selectinload(Review.attachments),
+        )
         .where(Review.product_id == product_id)
         .order_by(Review.created_at.desc(), Review.id.desc())
         .offset(offset)
@@ -24,12 +30,29 @@ async def get_product_reviews(
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def get_review_by_id(
+    session: AsyncSession,
+    *,
+    review_id: int,
+) -> Review | None:
+    stmt = (
+        select(Review)
+        .options(
+            selectinload(Review.user),
+            selectinload(Review.attachments),
+        )
+        .where(Review.id == review_id)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 async def create_product_review(
     session: AsyncSession,
     *,
     user_id: int,
     product_id: int,
     data: ReviewCreate,
+    commit: bool = True,
 ) -> Review:
     review = Review(
         user_id=user_id,
@@ -38,9 +61,32 @@ async def create_product_review(
         text=data.text,
     )
     session.add(review)
-    await session.commit()
-    await session.refresh(review)
+    await session.flush()
+    if commit:
+        await session.commit()
+    await session.refresh(review, attribute_names=["user", "attachments"])
     return review
+
+
+async def create_review_attachment(
+    session: AsyncSession,
+    *,
+    review_id: int,
+    filename: str,
+    mime_type: str | None,
+    commit: bool = False,
+) -> ReviewAttachment:
+    attachment = ReviewAttachment(
+        review_id=review_id,
+        filename=filename,
+        mime_type=mime_type,
+    )
+    session.add(attachment)
+    await session.flush()
+    if commit:
+        await session.commit()
+    await session.refresh(attachment)
+    return attachment
 
 
 async def has_user_purchased_product(

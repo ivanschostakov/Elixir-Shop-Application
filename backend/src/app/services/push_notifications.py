@@ -1,7 +1,7 @@
 import logging
-import httpx
-
 from typing import Any
+
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import EXPO_PUSH_API_URL, EXPO_PUSH_TIMEOUT_SECONDS
@@ -41,8 +41,30 @@ def _build_order_status_data(order: Order) -> dict[str, Any]:
     }
 
 
+def _build_push_messages(
+    push_tokens,
+    *,
+    title: str,
+    body: str,
+    data: dict[str, Any],
+    channel_id: str = "default",
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "to": push_token.expo_push_token,
+            "title": title,
+            "body": body,
+            "data": data,
+            "sound": "default",
+            "channelId": channel_id,
+        }
+        for push_token in push_tokens
+    ]
+
+
 async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> set[str]:
-    if not messages: return set()
+    if not messages:
+        return set()
 
     async with httpx.AsyncClient(timeout=EXPO_PUSH_TIMEOUT_SECONDS) as client:
         response = await client.post(
@@ -59,54 +81,87 @@ async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> set[str]:
 
     invalid_tokens: set[str] = set()
     tickets = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(tickets, list): return invalid_tokens
+    if not isinstance(tickets, list):
+        return invalid_tokens
 
     for message, ticket in zip(messages, tickets, strict=False):
-        if not isinstance(ticket, dict): continue
+        if not isinstance(ticket, dict):
+            continue
         details = ticket.get("details")
         error_code = details.get("error") if isinstance(details, dict) else None
         if error_code == "DeviceNotRegistered":
             token = message.get("to")
-            if isinstance(token, str): invalid_tokens.add(token)
+            if isinstance(token, str):
+                invalid_tokens.add(token)
             continue
 
-        if ticket.get("status") == "error": log.warning("Expo push notification error for order message: %s", ticket)
+        if ticket.get("status") == "error":
+            log.warning("Expo push notification error: %s", ticket)
 
     return invalid_tokens
 
 
-async def send_order_status_change_notification(session: AsyncSession, order: Order) -> None:
-    push_tokens = await get_user_push_tokens(session, user_id=order.user_id)
-    if not push_tokens: return None
-
-    messages = [
-        {
-            "to": push_token.expo_push_token,
-            "title": f"Заказ №{order.order_number}",
-            "body": _build_order_status_body(order),
-            "data": _build_order_status_data(order),
-            "sound": "default",
-            "channelId": "default",
-        }
-        for push_token in push_tokens
-    ]
-
-    try: invalid_tokens = await _send_expo_push_messages(messages)
-    except Exception: return log.exception("Failed to send order status notification for order %s", order.order_number)
-
-
-    if not invalid_tokens: return None
+async def _delete_invalid_push_tokens(session: AsyncSession, *, push_tokens, invalid_tokens: set[str]) -> None:
+    if not invalid_tokens:
+        return
 
     removed_any = False
     for push_token in push_tokens:
-        if push_token.expo_push_token not in invalid_tokens: continue
+        if push_token.expo_push_token not in invalid_tokens:
+            continue
         await delete_user_push_token(session, push_token, commit=False)
         removed_any = True
 
-    if removed_any: await session.commit()
+    if removed_any:
+        await session.commit()
+
+
+async def send_push_to_user(
+    session: AsyncSession,
+    *,
+    user_id: int,
+    title: str,
+    body: str,
+    data: dict[str, Any],
+    channel_id: str = "default",
+) -> bool:
+    push_tokens = await get_user_push_tokens(session, user_id=user_id)
+    if not push_tokens:
+        return False
+
+    messages = _build_push_messages(
+        push_tokens,
+        title=title,
+        body=body,
+        data=data,
+        channel_id=channel_id,
+    )
+    invalid_tokens = await _send_expo_push_messages(messages)
+    await _delete_invalid_push_tokens(session, push_tokens=push_tokens, invalid_tokens=invalid_tokens)
+    return True
+
+
+async def send_order_status_change_notification(session: AsyncSession, order: Order) -> None:
+    try:
+        await send_push_to_user(
+            session,
+            user_id=order.user_id,
+            title=f"Заказ №{order.order_number}",
+            body=_build_order_status_body(order),
+            data=_build_order_status_data(order),
+        )
+    except Exception:
+        return log.exception("Failed to send order status notification for order %s", order.order_number)
+
     return None
 
 
-async def send_order_status_change_notification_if_needed(session: AsyncSession, *, previous_status: str | None, order: Order) -> None:
-    if normalize_order_status(previous_status) == normalize_order_status(order.status): return
+async def send_order_status_change_notification_if_needed(
+    session: AsyncSession,
+    *,
+    previous_status: str | None,
+    order: Order,
+) -> None:
+    if normalize_order_status(previous_status) == normalize_order_status(order.status):
+        return
     await send_order_status_change_notification(session, order)

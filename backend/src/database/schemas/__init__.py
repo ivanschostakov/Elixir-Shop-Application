@@ -27,7 +27,7 @@ from .basket.basket_item import (
 from .catalog.product import ProductBase, ProductCreate, ProductRead, ProductUpdate, ProductWithVariantsRead
 from .catalog.product_category import ProductCategoryBase, ProductCategoryCreate, ProductCategoryRead, ProductCategoryUpdate
 from .catalog.products_by_category import ProductByCategoryBase, ProductByCategoryCreate, ProductByCategoryRead, ProductByCategoryUpdate
-from .catalog.review import ReviewCreate, ReviewEligibilityRead, ReviewRead
+from .catalog.review import ReviewAttachmentRead, ReviewCreate, ReviewEligibilityRead, ReviewRead
 from .catalog.variant import ProductVariantRead, VariantBase, VariantCreate, VariantRead, VariantUpdate
 from .delivery.address import DeliveryAddressBase, DeliveryAddressCreate, DeliveryAddressRead
 from .delivery.cdek_door_address import CdekDoorAddressBase, CdekDoorAddressCreate, CdekDoorAddressRead, CdekDoorAddressUpdate
@@ -48,6 +48,11 @@ from .users.push_token import (
     UserPushTokenDeleteResponse,
     UserPushTokenRead,
     UserPushTokenUpsert,
+)
+from .users.stock_subscription import (
+    StockNotificationSubscriptionDeleteResponse,
+    StockNotificationSubscriptionRead,
+    StockNotificationSubscriptionUpsert,
 )
 from .website.website_identity import (
     WebsiteBonusAccountRead,
@@ -158,6 +163,7 @@ __all__ = [
     "ProductByCategoryUpdate",
     "ReviewCreate",
     "ReviewEligibilityRead",
+    "ReviewAttachmentRead",
     "ReviewRead",
     "UserBase",
     "UserCreate",
@@ -171,6 +177,9 @@ __all__ = [
     "UserPushTokenDeleteResponse",
     "UserPushTokenRead",
     "UserPushTokenUpsert",
+    "StockNotificationSubscriptionDeleteResponse",
+    "StockNotificationSubscriptionRead",
+    "StockNotificationSubscriptionUpsert",
     "ProductVariantRead",
     "VariantBase",
     "VariantCreate",

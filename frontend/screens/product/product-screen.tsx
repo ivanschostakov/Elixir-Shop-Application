@@ -28,6 +28,7 @@ import { getVariantStockLabel } from "@/screens/product/product-screen.utils"
 import { createProductReview } from "@/services/api/products"
 import { trackRecommendationView } from "@/services/api/recommendations"
 import { colors } from "@/theme/colors"
+import type { UploadableReviewAttachment } from "@/types/product"
 
 export default function ProductScreen({ productId }: ProductScreenProps) {
     const { product, loading, error } = useProduct(productId)
@@ -179,10 +180,10 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
         }
     }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
 
-    const handleSubmitReview = useCallback(async (value: number, text: string | null) => {
+    const handleSubmitReview = useCallback(async (value: number, text: string | null, attachments: UploadableReviewAttachment[]) => {
         setReviewsSubmitting(true)
         try {
-            const createdReview = await createProductReview(productId, { text, value })
+            const createdReview = await createProductReview(productId, { text, value, attachments })
             setReviews((currentReviews) => [createdReview, ...currentReviews])
         } finally {
             setReviewsSubmitting(false)

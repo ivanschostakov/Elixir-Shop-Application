@@ -18,7 +18,8 @@
       ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Allow Elixir Shop to access your location so the delivery map can center on you."
+        "NSLocationWhenInUseUsageDescription": "Allow Elixir Shop to access your location so the delivery map can center on you.",
+        "NSMicrophoneUsageDescription": "Allow Elixir Shop to record voice messages for AI chat."
       }
     },
     "android": {
@@ -33,12 +34,12 @@
       "package": "com.ivanschostakov.elixirshopapp",
       "versionCode": 1,
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO",
         "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.ACCESS_FINE_LOCATION"
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -63,9 +64,19 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Elixir Shop to access your photos so you can choose a profile picture.",
+          "photosPermission": "Allow Elixir Shop to access your photos so you can attach images to chat messages.",
           "cameraPermission": "Allow Elixir Shop to access your camera so you can take profile pictures.",
           "microphonePermission": false
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "granularPermissions": [
+            "photo"
+          ],
+          "photosPermission": "Allow Elixir Shop to show recent photos so you can attach them to chat messages.",
+          "savePhotosPermission": "Allow Elixir Shop to save photos."
         }
       ],
       [
@@ -82,7 +93,13 @@
           "mode": "production"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow Elixir Shop to record voice messages for AI chat."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

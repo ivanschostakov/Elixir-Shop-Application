@@ -1,5 +1,6 @@
+import * as ImagePicker from "expo-image-picker"
 import { useState } from "react"
-import { Animated, Pressable, Text, TextInput, View } from "react-native"
+import { Animated, Image, Pressable, Text, TextInput, View } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
 import { HtmlContent, hasRenderableHtmlContent } from "@/components/content/html-content"
@@ -8,6 +9,7 @@ import {
 } from "@/screens/product/product-screen.constants"
 import { productScreenStyle } from "@/screens/product/product-screen.styles"
 import type { ProductInfoTabsProps } from "@/screens/product/product-info-tabs.types"
+import type { UploadableReviewAttachment } from "@/types/product"
 
 function StarRating({
     rating,
@@ -72,6 +74,7 @@ export function ProductInfoTabs({
     const reviewRating = reviewRatingValue.toFixed(1)
     const [draftReviewValue, setDraftReviewValue] = useState(5)
     const [draftReviewText, setDraftReviewText] = useState("")
+    const [draftReviewAttachments, setDraftReviewAttachments] = useState<UploadableReviewAttachment[]>([])
     const [submitError, setSubmitError] = useState<string | null>(null)
     const infoTabs = [
         {
@@ -211,10 +214,15 @@ export function ProductInfoTabs({
                             disabled={reviewsSubmitting}
                             onPress={() => {
                                 setSubmitError(null)
-                                void onSubmitReview(draftReviewValue, draftReviewText.trim() || null)
+                                void onSubmitReview(
+                                    draftReviewValue,
+                                    draftReviewText.trim() || null,
+                                    draftReviewAttachments,
+                                )
                                     .then(() => {
                                         setDraftReviewText("")
                                         setDraftReviewValue(5)
+                                        setDraftReviewAttachments([])
                                     })
                                     .catch((error: unknown) => {
                                         setSubmitError(error instanceof Error ? error.message : t("product.reviewSubmitFailed"))
@@ -230,6 +238,70 @@ export function ProductInfoTabs({
                                 {reviewsSubmitting ? t("product.reviewSubmitLoading") : t("product.reviewSubmit")}
                             </Text>
                         </Pressable>
+                        <Pressable
+                            accessibilityRole="button"
+                            disabled={reviewsSubmitting}
+                            onPress={() => {
+                                void (async () => {
+                                    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+                                    if (!permission.granted) {
+                                        setSubmitError(t("product.reviewPhotoPermissionDenied"))
+                                        return
+                                    }
+
+                                    const result = await ImagePicker.launchImageLibraryAsync({
+                                        allowsMultipleSelection: true,
+                                        mediaTypes: ["images"],
+                                        quality: 0.9,
+                                    })
+
+                                    if (result.canceled) {
+                                        return
+                                    }
+
+                                    setSubmitError(null)
+                                    setDraftReviewAttachments((current) => [
+                                        ...current,
+                                        ...result.assets.map((asset, index) => ({
+                                            uri: asset.uri,
+                                            fileName: asset.fileName ?? `review-image-${Date.now()}-${index + 1}.jpg`,
+                                            mimeType: asset.mimeType ?? "image/jpeg",
+                                        })),
+                                    ])
+                                })()
+                            }}
+                            style={({ pressed }) => [
+                                productScreenStyle.reviewPhotoButton,
+                                reviewsSubmitting && productScreenStyle.reviewSubmitButtonDisabled,
+                                pressed && productScreenStyle.reviewPhotoButtonPressed,
+                            ]}
+                        >
+                            <Text style={productScreenStyle.reviewPhotoButtonText}>{t("product.reviewAddPhoto")}</Text>
+                        </Pressable>
+                        {draftReviewAttachments.length > 0 ? (
+                            <View style={productScreenStyle.reviewAttachmentPreviewRow}>
+                                {draftReviewAttachments.map((attachment, attachmentIndex) => (
+                                    <Pressable
+                                        key={`${attachment.uri}-${attachmentIndex}`}
+                                        accessibilityRole="button"
+                                        onPress={() => {
+                                            setDraftReviewAttachments((current) =>
+                                                current.filter((_, index) => index !== attachmentIndex),
+                                            )
+                                        }}
+                                        style={({ pressed }) => [
+                                            productScreenStyle.reviewAttachmentPreviewTile,
+                                            pressed && productScreenStyle.reviewPhotoButtonPressed,
+                                        ]}
+                                    >
+                                        <Image
+                                            source={{ uri: attachment.uri }}
+                                            style={productScreenStyle.reviewAttachmentPreviewImage}
+                                        />
+                                    </Pressable>
+                                ))}
+                            </View>
+                        ) : null}
                         {submitError ? <Text style={productScreenStyle.reviewSubmitError}>{submitError}</Text> : null}
                     </View>
                 ) : null}
@@ -243,7 +315,7 @@ export function ProductInfoTabs({
                           <View key={review.id} style={productScreenStyle.reviewCard}>
                               <View style={productScreenStyle.reviewCardHeader}>
                                   <Text style={productScreenStyle.reviewCardAuthor}>
-                                      ID {review.user_id}
+                                      @{review.author_username}
                                   </Text>
                                   <View style={productScreenStyle.reviewCardRatingRow}>
                                       <StarRating rating={review.value} size={14} />
@@ -253,6 +325,17 @@ export function ProductInfoTabs({
                               <Text style={productScreenStyle.reviewCardText}>
                                   {review.text?.trim() || detailsFallback}
                               </Text>
+                              {review.attachments.length ? (
+                                  <View style={productScreenStyle.reviewCardAttachmentsRow}>
+                                      {review.attachments.map((attachment) => (
+                                          <Image
+                                              key={attachment.id}
+                                              source={{ uri: attachment.image_url }}
+                                              style={productScreenStyle.reviewCardAttachmentImage}
+                                          />
+                                      ))}
+                                  </View>
+                              ) : null}
                           </View>
                       ))
                     : null}

@@ -12,6 +12,7 @@ class AIMessageBase(BaseModel):
     text: str = Field(min_length=1)
     sender: MessageSender
     bot_model: BotModel
+    tokens: int = Field(ge=0)
 
 
 class AIMessageCreate(AIMessageBase):
@@ -23,6 +24,7 @@ class AIMessageUpdate(BaseModel):
     text: str | None = Field(default=None, min_length=1)
     sender: MessageSender | None = None
     bot_model: BotModel | None = None
+    tokens: int | None = Field(default=None, ge=0)
 
 
 class AIMessageRead(AIMessageBase):

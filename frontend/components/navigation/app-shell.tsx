@@ -1,5 +1,11 @@
-import { Stack, usePathname } from "expo-router"
+import { useState } from "react"
+import { Stack, usePathname, useRouter } from "expo-router"
 import { Image, Text, View } from "react-native"
+import {
+    PanGestureHandler,
+    State,
+    type PanGestureHandlerStateChangeEvent,
+} from "react-native-gesture-handler"
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 
 import StickyFooter from "@/components/footer/sticky-footer"
@@ -9,15 +15,19 @@ import {
     getDefaultScreenChromeTemplate,
     mergeScreenChromeTemplate,
 } from "@/components/navigation/screen-template-registry"
+import { PRIMARY_APP_ROUTES } from "@/constants/routes"
 import { ScreenChromeTemplateProvider, useScreenChromeTemplate } from "@/providers/screen-chrome-template-provider"
 import { useAuth } from "@/providers/auth-provider"
 import { ScreenTemplateProvider } from "@/providers/screen-template-provider"
+import { motion } from "@/theme/motion"
 
 function AppShellContent() {
     const pathname = usePathname()
+    const router = useRouter()
     const { top: topInset } = useSafeAreaInsets()
     const { isAuthenticated, isReady } = useAuth()
     const { screenChromeTemplate } = useScreenChromeTemplate()
+    const [routeAnimation, setRouteAnimation] = useState<"slide_from_left" | "slide_from_right">("slide_from_right")
 
     const chromeTemplate = mergeScreenChromeTemplate(
         getDefaultScreenChromeTemplate(pathname, isReady && isAuthenticated),
@@ -27,6 +37,35 @@ function AppShellContent() {
     const shellEdges: ("top" | "bottom" | "left" | "right")[] =
         chromeTemplate.mode === "fullscreen" ? [] : ["top"]
     const brandLabelTop = Math.max(2, topInset - 44)
+    const currentPrimaryRouteIndex = PRIMARY_APP_ROUTES.findIndex((route) => route === pathname)
+    const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
+
+    const handlePrimaryRouteSwipe = (event: PanGestureHandlerStateChangeEvent) => {
+        if (!canSwipePrimaryRoutes || event.nativeEvent.state !== State.END) {
+            return
+        }
+
+        const { translationX, velocityX } = event.nativeEvent
+        const isSwipeLeft = translationX < -70 || velocityX < -650
+        const isSwipeRight = translationX > 70 || velocityX > 650
+
+        if (!isSwipeLeft && !isSwipeRight) {
+            return
+        }
+
+        const nextRouteIndex = isSwipeLeft
+            ? Math.min(currentPrimaryRouteIndex + 1, PRIMARY_APP_ROUTES.length - 1)
+            : Math.max(currentPrimaryRouteIndex - 1, 0)
+
+        if (nextRouteIndex === currentPrimaryRouteIndex) {
+            return
+        }
+
+        setRouteAnimation(isSwipeLeft ? "slide_from_right" : "slide_from_left")
+        requestAnimationFrame(() => {
+            router.replace(PRIMARY_APP_ROUTES[nextRouteIndex])
+        })
+    }
 
     return (
         <View style={appShellStyles.container}>
@@ -49,9 +88,23 @@ function AppShellContent() {
             <SafeAreaView style={appShellStyles.safeArea} edges={shellEdges}>
                 {chromeTemplate.header !== "none" ? <AppHeader template={chromeTemplate} /> : null}
 
-                <View style={appShellStyles.content}>
-                    <Stack screenOptions={{ headerShown: false }} />
-                </View>
+                <PanGestureHandler
+                    activeOffsetX={[-40, 40]}
+                    enabled={canSwipePrimaryRoutes}
+                    failOffsetY={[-24, 24]}
+                    onHandlerStateChange={handlePrimaryRouteSwipe}
+                >
+                    <View style={appShellStyles.content}>
+                        <Stack
+                            screenOptions={{
+                                animation: routeAnimation,
+                                animationDuration: motion.duration.route,
+                                gestureEnabled: true,
+                                headerShown: false,
+                            }}
+                        />
+                    </View>
+                </PanGestureHandler>
 
                 {chromeTemplate.footer !== "none" ? <StickyFooter template={chromeTemplate} /> : null}
             </SafeAreaView>

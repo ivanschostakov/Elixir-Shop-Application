@@ -59,7 +59,9 @@ from .catalog.product import (
     update_product,
 )
 from .catalog.review import get_product_reviews
+from .catalog.review import get_review_by_id
 from .catalog.review import create_product_review
+from .catalog.review import create_review_attachment
 from .catalog.review import get_product_review_stats
 from .catalog.review import has_user_purchased_product
 from .catalog.product_category import (
@@ -213,8 +215,10 @@ __all__ = [
     "get_product_by_system_id",
     "get_products",
     "get_product_reviews",
+    "get_review_by_id",
     "get_product_review_stats",
     "create_product_review",
+    "create_review_attachment",
     "has_user_purchased_product",
     "get_similar_products",
     "update_product",

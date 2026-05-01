@@ -10,6 +10,7 @@ import { PickupPointFooterExtension } from "@/components/delivery/pickup-point-f
 import { DeliverySearchPanel } from "@/components/delivery/delivery-search-panel"
 import { CountryFlag } from "@/components/country-flag/country-flag"
 import { COUNTRY_SELECTOR_CODES } from "@/components/country-flag/country-flag.consts"
+import { EdgeBlur } from "@/components/effects/edge-blur"
 import { StickyFooterSurface } from "@/components/footer/sticky-footer"
 import { BACK_ARROW_PATH, SEARCH_ICON_PATH } from "@/components/header/app-header.constants"
 import {
@@ -910,6 +911,18 @@ export default function DeliveryScreen() {
                         void handlePressDeliveryPoint(marker.provider ?? "cdek", marker.code)
                     }}
                     zoom={mapZoom}
+                />
+                <EdgeBlur
+                    height={24}
+                    intensity={10}
+                    opacity={0.12}
+                    position="top"
+                />
+                <EdgeBlur
+                    height={28}
+                    intensity={10}
+                    opacity={0.14}
+                    position="bottom"
                 />
             </View>
 

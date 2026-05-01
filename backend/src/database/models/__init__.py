@@ -15,6 +15,7 @@ from .catalog.product import Product
 from .catalog.product_category import ProductCategory
 from .catalog.products_by_category import ProductByCategory
 from .catalog.review import Review
+from .catalog.review_attachment import ReviewAttachment
 from .catalog.variant import Variant
 from .delivery.address import DeliveryAddress
 from .delivery.cdek_door_address import CdekDoorAddress
@@ -26,6 +27,8 @@ from .orders.draft import OrderDraft
 from .orders.draft_items import OrderDraftItem
 from .orders.order import Order
 from .orders.order_item import OrderItem
+from .notifications.notification_dispatch import NotificationDispatch
+from .notifications.stock_notification_subscription import StockNotificationSubscription
 from .recommendations.user_category_recommendation_signal import UserCategoryRecommendationSignal
 from .recommendations.user_product_recommendation_signal import UserProductRecommendationSignal
 from .website.website_bonus_account import WebsiteBonusAccount
@@ -54,14 +57,17 @@ __all__ = [
     "OrderDraftItem",
     "Order",
     "OrderItem",
+    "NotificationDispatch",
     "OrderBenefitApplication",
     "Product",
     "ProductCategory",
     "ProductByCategory",
     "Review",
+    "ReviewAttachment",
     "UserCategoryRecommendationSignal",
     "UserProductRecommendationSignal",
     "User",
+    "StockNotificationSubscription",
     "UserPushToken",
     "UserSession",
     "Variant",

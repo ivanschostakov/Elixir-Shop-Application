@@ -10,6 +10,7 @@ export const deliveryScreenWebStyles = StyleSheet.create({
     },
     mapLayer: {
         flex: 1,
+        position: "relative",
     },
     floatingControlsFrame: {
         alignItems: "center",

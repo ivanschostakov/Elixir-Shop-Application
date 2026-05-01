@@ -1,9 +1,0 @@
-tunnel: 6513940a-5450-480c-8d7d-7960c27bd310
-credentials-file: /etc/cloudflared/credentials.json
-
-ingress:
-  - hostname: elixirshop.devsivanschostakov.org
-    service: http://frontend:8081
-  - hostname: api-elixirshop.devsivanschostakov.org
-    service: http://backend:8000
-  - service: http_status:404

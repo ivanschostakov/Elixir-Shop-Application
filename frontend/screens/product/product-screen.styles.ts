@@ -486,6 +486,37 @@ export const productScreenStyle = StyleSheet.create({
         fontSize: 13,
         fontWeight: "800",
     },
+    reviewPhotoButton: {
+        alignItems: "center",
+        borderColor: colors.border,
+        borderRadius: 12,
+        borderWidth: 1,
+        justifyContent: "center",
+        minHeight: 38,
+        paddingHorizontal: 12,
+    },
+    reviewPhotoButtonPressed: {
+        opacity: 0.8,
+    },
+    reviewPhotoButtonText: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: "700",
+    },
+    reviewAttachmentPreviewRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: spacing.xs,
+    },
+    reviewAttachmentPreviewTile: {
+        borderRadius: 10,
+        overflow: "hidden",
+    },
+    reviewAttachmentPreviewImage: {
+        width: 56,
+        height: 56,
+        backgroundColor: colors.surfaceMuted,
+    },
     reviewSubmitError: {
         color: colors.danger,
         fontSize: 12,
@@ -522,6 +553,18 @@ export const productScreenStyle = StyleSheet.create({
         color: colors.text,
         fontSize: 14,
         lineHeight: 20,
+    },
+    reviewCardAttachmentsRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: spacing.xs,
+        marginTop: 2,
+    },
+    reviewCardAttachmentImage: {
+        width: 84,
+        height: 84,
+        borderRadius: 10,
+        backgroundColor: colors.surface,
     },
     reviewsSummaryRow: {
         alignItems: "center",

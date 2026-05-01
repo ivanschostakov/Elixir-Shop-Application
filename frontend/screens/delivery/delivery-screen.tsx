@@ -35,6 +35,7 @@ import { PickupPointFooterExtension } from "@/components/delivery/pickup-point-f
 import { DeliverySearchPanel } from "@/components/delivery/delivery-search-panel"
 import { CountryFlag } from "@/components/country-flag/country-flag"
 import { COUNTRY_SELECTOR_CODES } from "@/components/country-flag/country-flag.consts"
+import { EdgeBlur } from "@/components/effects/edge-blur"
 import { StickyFooterSurface } from "@/components/footer/sticky-footer"
 import { BACK_ARROW_PATH, MY_LOCATION_ICON_PATH } from "@/components/header/app-header.constants"
 import { CDEK_PICKUP_MARKER_OUTER_COLOR } from "@/components/maps/cdek-pickup-marker.constants"
@@ -247,6 +248,8 @@ export default function DeliveryScreen() {
         && isDoorFooterExpanded
         && Boolean(isResolvingDoorAddress || doorDeliveryDraft)
     const shouldHideDoorDeliveryChrome = isDoorDeliveryMapInteracting
+    const topMapEdgeBlurHeight = Math.max(insets.top, 0)
+    const bottomMapEdgeBlurHeight = Math.max(insets.bottom + 28, 20)
     const doorChromeOpacity = useRef(new Animated.Value(1)).current
     const doorTopControlsTranslateY = useRef(new Animated.Value(0)).current
     const doorBottomControlsTranslateY = useRef(new Animated.Value(0)).current
@@ -1539,6 +1542,18 @@ export default function DeliveryScreen() {
                         </Text>
                     </View>
                 ) : null}
+                <EdgeBlur
+                    height={Math.round(topMapEdgeBlurHeight)}
+                    intensity={12}
+                    opacity={0.14}
+                    position="top"
+                />
+                <EdgeBlur
+                    height={Math.round(bottomMapEdgeBlurHeight)}
+                    intensity={12}
+                    opacity={0.16}
+                    position="bottom"
+                />
 
                 {shouldBlockPickupMarkers ? (
                     <View style={deliveryScreenStyles.pickupMarkersLoadingOverlay}>

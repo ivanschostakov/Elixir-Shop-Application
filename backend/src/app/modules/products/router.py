@@ -1,15 +1,27 @@
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_admin_user, get_current_user
+from src.app.services.review_attachments import (
+    build_review_attachment_filename,
+    save_review_attachment_file,
+    validate_review_attachment,
+    validate_review_attachments_count,
+    validate_review_attachments_total_size,
+    remove_review_attachment_file,
+)
 from src.database import get_db
 from src.database.crud import (
+    create_review_attachment,
     create_product_review,
     create_product,
     delete_product,
+    get_review_by_id,
     has_user_purchased_product,
     get_product_by_id,
     get_product_review_stats,
@@ -21,7 +33,7 @@ from src.database.crud import (
 from src.database.models import User
 from src.database.schemas import ProductCreate, ProductUpdate, ProductWithVariantsRead, ReviewCreate, ReviewEligibilityRead, ReviewRead
 
-from .helpers import serialize_product_with_variants, serialize_products_with_variants
+from .helpers import serialize_product_with_variants, serialize_products_with_variants, serialize_review, serialize_reviews
 
 products_router = APIRouter(prefix="/products", tags=["products"])
 
@@ -55,6 +67,7 @@ async def products_get_similar(
 
 @products_router.get("/{product_id}/reviews", response_model=list[ReviewRead])
 async def products_get_reviews(
+    request: Request,
     product_id: int,
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -62,7 +75,8 @@ async def products_get_reviews(
 ):
     product = await get_product_by_id(db, product_id)
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    return await get_product_reviews(db, product_id=product_id, offset=offset, limit=limit)
+    reviews = await get_product_reviews(db, product_id=product_id, offset=offset, limit=limit)
+    return serialize_reviews(request, reviews)
 
 
 @products_router.get("/{product_id}/reviews/eligibility", response_model=ReviewEligibilityRead)
@@ -79,8 +93,11 @@ async def products_get_review_eligibility(
 
 @products_router.post("/{product_id}/reviews", response_model=ReviewRead, status_code=status.HTTP_201_CREATED)
 async def products_create_review(
+    request: Request,
     product_id: int,
-    data: ReviewCreate,
+    value: int = Form(..., ge=0, le=5),
+    text: str | None = Form(default=None),
+    attachments: list[UploadFile] | None = File(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -88,7 +105,59 @@ async def products_create_review(
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     if not await has_user_purchased_product(db, user_id=current_user.id, product_id=product_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers who bought this product can leave a review")
-    return await create_product_review(db, user_id=current_user.id, product_id=product_id, data=data)
+
+    data = ReviewCreate(
+        value=value,
+        text=text.strip() if text else None,
+    )
+    uploaded_attachments = attachments or []
+    validate_review_attachments_count(len(uploaded_attachments))
+
+    created_file_paths: list[Path] = []
+    total_size_bytes = 0
+
+    try:
+        review = await create_product_review(
+            db,
+            user_id=current_user.id,
+            product_id=product_id,
+            data=data,
+            commit=False,
+        )
+
+        for attachment in uploaded_attachments:
+            content = await attachment.read()
+            mime_type = validate_review_attachment(content, mime_type=attachment.content_type)
+            total_size_bytes += len(content)
+            validate_review_attachments_total_size(total_size_bytes)
+
+            filename = build_review_attachment_filename(mime_type)
+            await create_review_attachment(
+                db,
+                review_id=review.id,
+                filename=filename,
+                mime_type=mime_type,
+                commit=False,
+            )
+            saved_path = await save_review_attachment_file(
+                review.id,
+                filename=filename,
+                content=content,
+            )
+            created_file_paths.append(saved_path)
+
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        for file_path in created_file_paths:
+            remove_review_attachment_file(file_path)
+        raise
+
+    created_review = await get_review_by_id(db, review_id=review.id)
+    if created_review is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created review")
+
+    return serialize_review(request, created_review)
 
 
 @products_router.get("", response_model=list[ProductWithVariantsRead])

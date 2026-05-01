@@ -1,4 +1,4 @@
-import { useLayoutEffect } from "react"
+import { useLayoutEffect, useRef } from "react"
 
 import type {
     ScreenChromeTemplateOverride,
@@ -13,6 +13,7 @@ export function useApplyScreenTemplate(
 ) {
     const { setScreenChromeTemplate } = useScreenChromeTemplate()
     const { setScreenTemplate } = useScreenTemplate()
+    const stableChromeTemplate = useStableScreenChromeTemplate(chromeTemplate ?? null)
 
     useLayoutEffect(() => {
         setScreenTemplate(kind)
@@ -23,10 +24,44 @@ export function useApplyScreenTemplate(
     }, [kind, setScreenTemplate])
 
     useLayoutEffect(() => {
-        setScreenChromeTemplate(chromeTemplate ?? null)
+        setScreenChromeTemplate(stableChromeTemplate)
 
         return () => {
             setScreenChromeTemplate(null)
         }
-    }, [chromeTemplate, setScreenChromeTemplate])
+    }, [setScreenChromeTemplate, stableChromeTemplate])
+}
+
+function useStableScreenChromeTemplate(chromeTemplate: ScreenChromeTemplateOverride | null) {
+    const chromeTemplateRef = useRef<ScreenChromeTemplateOverride | null>(null)
+
+    if (!areScreenChromeTemplatesEqual(chromeTemplateRef.current, chromeTemplate)) {
+        chromeTemplateRef.current = chromeTemplate
+    }
+
+    return chromeTemplateRef.current
+}
+
+function areScreenChromeTemplatesEqual(
+    currentTemplate: ScreenChromeTemplateOverride | null,
+    nextTemplate: ScreenChromeTemplateOverride | null,
+) {
+    if (currentTemplate === nextTemplate) {
+        return true
+    }
+
+    if (!currentTemplate || !nextTemplate) {
+        return false
+    }
+
+    return (
+        currentTemplate.footer === nextTemplate.footer
+        && currentTemplate.header === nextTemplate.header
+        && currentTemplate.mode === nextTemplate.mode
+        && currentTemplate.title === nextTemplate.title
+        && currentTemplate.slots?.footer === nextTemplate.slots?.footer
+        && currentTemplate.slots?.headerCenter === nextTemplate.slots?.headerCenter
+        && currentTemplate.slots?.headerLeft === nextTemplate.slots?.headerLeft
+        && currentTemplate.slots?.headerRight === nextTemplate.slots?.headerRight
+    )
 }

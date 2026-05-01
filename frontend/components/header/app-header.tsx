@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Alert, Pressable, Text, View, useWindowDimensions } from "react-native"
+import { Alert, Animated, Pressable, Text, View, useWindowDimensions } from "react-native"
 import { BlurView } from "expo-blur"
 import { usePathname, useRouter } from "expo-router"
 import { Path, Svg } from "react-native-svg"
@@ -18,6 +18,7 @@ import {
 } from "@/components/header/app-header.constants"
 import { getHeaderStyles } from "@/components/header/app-header.styles"
 import { ROUTES, isPrimaryAppRoute } from "@/constants/routes"
+import { useEntranceAnimation } from "@/hooks/animation/use-entrance-animation"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { useContentTabs } from "@/hooks/navigation/use-content-tabs"
@@ -41,6 +42,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
         articles: t("common.articles"),
         products: t("common.products"),
     })
+    const entranceStyle = useEntranceAnimation({ translateY: -6 })
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [isSearchMode, setIsSearchMode] = useState(false)
     const headerVariant = template.header
@@ -209,7 +211,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
     }
 
     return (
-        <View style={[styles.wrapper, headerVariant === "overlay" && styles.wrapperOverlay]}>
+        <Animated.View style={[styles.wrapper, headerVariant === "overlay" && styles.wrapperOverlay, entranceStyle]}>
             {isSearchMode ? (
                 <Pressable
                     accessibilityLabel={t("nav.closeSearch")}
@@ -232,6 +234,6 @@ export default function AppHeader({ template }: AppHeaderProps) {
 
                 <View style={styles.rightSlot}>{template.slots?.headerRight ?? renderDefaultRightSlot()}</View>
             </View>
-        </View>
+        </Animated.View>
     )
 }

@@ -8,6 +8,8 @@ from src.database.schemas.ai.message import AIMessageRead
 class AIChatBase(BaseModel):
     user_id: int = Field(ge=1)
     conversation_id: str = Field(min_length=1)
+    current_tokens: int = Field(ge=0, default=0)
+    total_tokens: int = Field(ge=0, default=0)
 
 
 class AIChatCreate(AIChatBase):
@@ -16,6 +18,8 @@ class AIChatCreate(AIChatBase):
 
 class AIChatUpdate(BaseModel):
     conversation_id: str | None = Field(default=None, min_length=1)
+    current_tokens: int | None = Field(default=None, ge=0)
+    total_tokens: int | None = Field(default=None, ge=0)
 
 
 class AIChatRead(AIChatBase):

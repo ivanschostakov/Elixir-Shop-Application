@@ -4,36 +4,47 @@ from pathlib import Path
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
+from dotenv import load_dotenv
+
+
+WORKING_DIR = Path(__file__).resolve().parent
+load_dotenv(WORKING_DIR / ".env")
+
 
 def _env(name: str, default: str | None = None) -> str | None:
     value = getenv(name)
-    if value is None or value == "": return default
+    if value is None or value == "":
+        return default
     return value
 
 
 def _required_env(name: str) -> str:
     value = _env(name)
-    if value is None: raise RuntimeError(f"Missing required environment variable: {name}")
+    if value is None:
+        raise RuntimeError(f"Missing required environment variable: {name}")
     return value
 
 
 def _int_env(name: str, default: int | None = None) -> int:
     value = _env(name)
     if value is None:
-        if default is None: raise RuntimeError(f"Missing required environment variable: {name}")
+        if default is None:
+            raise RuntimeError(f"Missing required environment variable: {name}")
         return default
     return int(value)
 
 
 def _float_env(name: str, default: float) -> float:
     value = _env(name)
-    if value is None: return default
+    if value is None:
+        return default
     return float(value)
 
 
 def _bool_env(name: str, default: bool = False) -> bool:
     value = _env(name)
-    if value is None: return default
+    if value is None:
+        return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -69,6 +80,24 @@ BITRIX_SYNC_API_TIMEOUT_SECONDS = _int_env("BITRIX_SYNC_API_TIMEOUT_SECONDS", 30
 APP_PAYMENT_RETURN_BASE_URL = _env("APP_PAYMENT_RETURN_BASE_URL")
 EXPO_PUSH_API_URL = _env("EXPO_PUSH_API_URL", "https://exp.host/--/api/v2/push/send")
 EXPO_PUSH_TIMEOUT_SECONDS = _float_env("EXPO_PUSH_TIMEOUT_SECONDS", 15)
+NOTIFICATIONS_ENABLED = _bool_env("NOTIFICATIONS_ENABLED", True)
+NOTIFICATION_SCAN_INTERVAL_MINUTES = _int_env("NOTIFICATION_SCAN_INTERVAL_MINUTES", 15)
+NOTIFICATION_BATCH_SIZE = _int_env("NOTIFICATION_BATCH_SIZE", 200)
+
+NOTIFICATION_RESTOCK_ENABLED = _bool_env("NOTIFICATION_RESTOCK_ENABLED", True)
+
+NOTIFICATION_INACTIVE_CUSTOMER_ENABLED = _bool_env("NOTIFICATION_INACTIVE_CUSTOMER_ENABLED", True)
+NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS = _int_env("NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS", 45)
+NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS = _int_env("NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS", 14)
+
+NOTIFICATION_ABANDONED_CART_ENABLED = _bool_env("NOTIFICATION_ABANDONED_CART_ENABLED", True)
+NOTIFICATION_ABANDONED_CART_AFTER_HOURS = _int_env("NOTIFICATION_ABANDONED_CART_AFTER_HOURS", 24)
+NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS = _int_env("NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS", 24)
+
+NOTIFICATION_AI_EXPERT_REPLY_ENABLED = _bool_env("NOTIFICATION_AI_EXPERT_REPLY_ENABLED", True)
+
+NOTIFICATION_REVIEW_REMINDER_ENABLED = _bool_env("NOTIFICATION_REVIEW_REMINDER_ENABLED", True)
+NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS = _int_env("NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS", 30)
 SMTP_HOST = _env("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = _int_env("SMTP_PORT", 587)
 SMTP_USER = _env("SMTP_USER")
@@ -77,13 +106,13 @@ SMTP_FROM_NAME = _env("SMTP_FROM_NAME", "ElixirPeptide")
 EMAIL_VERIFICATION_CODE_TTL_MINUTES = _int_env("EMAIL_VERIFICATION_CODE_TTL_MINUTES", 10)
 EMAIL_VERIFICATION_MAX_ATTEMPTS = _int_env("EMAIL_VERIFICATION_MAX_ATTEMPTS", 5)
 
-WORKING_DIR = Path(__file__).parent
 LOGS_DIR = WORKING_DIR / "logs"
 MEDIA_DIR = WORKING_DIR / "media"
 ATTACHMENTS_DIR = MEDIA_DIR / "attachments"
 PRODUCTS_MEDIA_DIR = MEDIA_DIR / "products"
 AVATARS_MEDIA_DIR = MEDIA_DIR / "avatars"
 ORDERS_MEDIA_DIR = MEDIA_DIR / "orders"
+REVIEWS_MEDIA_DIR = MEDIA_DIR / "reviews"
 TEMP_MEDIA_DIR = MEDIA_DIR / "temp"
 
 CDEK_API_URL = _env("CDEK_API_URL")
@@ -124,6 +153,7 @@ MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 PRODUCTS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 AVATARS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 ORDERS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+REVIEWS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 UFA_TZ = ZoneInfo("Asia/Yekaterinburg")

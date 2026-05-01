@@ -113,8 +113,8 @@ export const deliveryScreenStyles = StyleSheet.create({
     },
     deliveryModeCard: {
         alignSelf: "center",
-        backgroundColor: colors.surfaceOverlay,
-        borderColor: "rgba(17,24,39,0.08)",
+        backgroundColor: "rgba(255,255,255,0.95)",
+        borderColor: "rgba(17,24,39,0.12)",
         borderRadius: 999,
         borderWidth: 1,
         flexDirection: "row",
@@ -164,8 +164,8 @@ export const deliveryScreenStyles = StyleSheet.create({
         color: colors.onPrimary,
     },
     doorDeliveryCard: {
-        backgroundColor: colors.surfaceOverlay,
-        borderColor: "rgba(17,24,39,0.08)",
+        backgroundColor: "rgba(255,255,255,0.95)",
+        borderColor: "rgba(17,24,39,0.12)",
         borderRadius: spacing.xl,
         borderWidth: 1,
         gap: spacing.sm,
@@ -285,8 +285,8 @@ export const deliveryScreenStyles = StyleSheet.create({
     },
     pickupFooterProviderButton: {
         alignItems: "center",
-        backgroundColor: colors.surface,
-        borderColor: "rgba(17,17,17,0.1)",
+        backgroundColor: "rgba(255,255,255,0.95)",
+        borderColor: "rgba(17,17,17,0.14)",
         borderRadius: 20,
         borderWidth: 1,
         justifyContent: "center",
@@ -646,8 +646,8 @@ export const deliveryScreenStyles = StyleSheet.create({
     },
     cornerButton: {
         alignItems: "center",
-        backgroundColor: colors.surfaceOverlay,
-        borderColor: "rgba(17,24,39,0.08)",
+        backgroundColor: "rgba(255,255,255,0.95)",
+        borderColor: "rgba(17,24,39,0.13)",
         borderRadius: 999,
         borderWidth: 1,
         height: 52,

@@ -1,4 +1,4 @@
-import { View } from "react-native"
+import { Animated, View } from "react-native"
 import { usePathname } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -9,6 +9,7 @@ import type {
     StickyFooterProps,
     StickyFooterSurfaceProps,
 } from "@/components/footer/sticky-footer.types"
+import { useEntranceAnimation } from "@/hooks/animation/use-entrance-animation"
 import { useBasket } from "@/hooks/basket/use-basket"
 
 export function StickyFooterSurface({
@@ -17,32 +18,37 @@ export function StickyFooterSurface({
     style,
     variant = "default",
 }: StickyFooterSurfaceProps) {
+    const entranceStyle = useEntranceAnimation({ translateY: 10 })
+
     return (
-        <SafeAreaView
-            edges={["bottom"]}
-            style={[
-                stickyFooterStyles.footerBase,
-                stickyFooterStyles.elevatedSurface,
-                style,
-            ]}
-        >
-            <View
+        <Animated.View style={entranceStyle}>
+            <SafeAreaView
+                edges={["bottom"]}
                 style={[
-                    variant === "search"
-                        ? stickyFooterStyles.searchSection
-                        : stickyFooterStyles.actionSection,
-                    contentStyle,
+                    stickyFooterStyles.footerBase,
+                    stickyFooterStyles.elevatedSurface,
+                    style,
                 ]}
             >
-                {children}
-            </View>
-        </SafeAreaView>
+                <View
+                    style={[
+                        variant === "search"
+                            ? stickyFooterStyles.searchSection
+                            : stickyFooterStyles.actionSection,
+                        contentStyle,
+                    ]}
+                >
+                    {children}
+                </View>
+            </SafeAreaView>
+        </Animated.View>
     )
 }
 
 export default function StickyFooter({ template }: StickyFooterProps) {
     const pathname = usePathname()
     const { basket } = useBasket()
+    const entranceStyle = useEntranceAnimation({ translateY: 10 })
     const hasBasketItems = (basket?.total_quantity ?? 0) > 0
     const showProductAction = template.footer === "nav+productAction"
     const showBasketAction = template.footer === "nav+basketAction" && hasBasketItems
@@ -54,7 +60,7 @@ export default function StickyFooter({ template }: StickyFooterProps) {
 
     if (showProductAction || showBasketAction || showCustomAction) {
         return (
-            <View style={[stickyFooterStyles.footerBase, stickyFooterStyles.elevatedSurface]}>
+            <Animated.View style={[stickyFooterStyles.footerBase, stickyFooterStyles.elevatedSurface, entranceStyle]}>
                 <View style={stickyFooterStyles.stack}>
                     <View style={stickyFooterStyles.actionSection}>
                         {showCustomAction
@@ -63,13 +69,13 @@ export default function StickyFooter({ template }: StickyFooterProps) {
                     </View>
                     <BottomNavTemplate pathname={pathname} />
                 </View>
-            </View>
+            </Animated.View>
         )
     }
 
     return (
-        <View style={stickyFooterStyles.footerBase}>
+        <Animated.View style={[stickyFooterStyles.footerBase, entranceStyle]}>
             <BottomNavTemplate pathname={pathname} />
-        </View>
+        </Animated.View>
     )
 }

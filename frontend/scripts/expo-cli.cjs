@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global __dirname */
 
 const { execFileSync, spawnSync } = require("node:child_process");
 const path = require("node:path");
@@ -6,17 +7,40 @@ const path = require("node:path");
 const MAX_ANDROID_JAVA_MAJOR = 24;
 const PREFERRED_ANDROID_JAVA_VERSIONS = ["21", "17"];
 
+function loadExpoCliExport(modulePath, exportName) {
+  const candidates = [
+    `@expo/cli/build/src/${modulePath}`,
+    path.join(__dirname, "../node_modules/expo/node_modules/@expo/cli/build/src", modulePath),
+  ];
+  const errors = [];
+
+  for (const candidate of candidates) {
+    try {
+      return require(candidate)[exportName];
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+
+  const errorMessages = errors
+    .map((error) => (error instanceof Error ? error.message : String(error)))
+    .join("\n");
+
+  throw new Error(
+    [
+      `Unable to load Expo CLI export "${exportName}" from "${modulePath}".`,
+      "Run `npm install` in the frontend directory, then try the command again.",
+      errorMessages,
+    ].join("\n")
+  );
+}
+
 const COMMAND_LOADERS = {
-  start: () =>
-    require("../node_modules/expo/node_modules/@expo/cli/build/src/start/index.js").expoStart,
-  "run:android": () =>
-    require("../node_modules/expo/node_modules/@expo/cli/build/src/run/android/index.js").expoRunAndroid,
-  "run:ios": () =>
-    require("../node_modules/expo/node_modules/@expo/cli/build/src/run/ios/index.js").expoRunIos,
-  export: () =>
-    require("../node_modules/expo/node_modules/@expo/cli/build/src/export/index.js").expoExport,
-  prebuild: () =>
-    require("../node_modules/expo/node_modules/@expo/cli/build/src/prebuild/index.js").expoPrebuild,
+  start: () => loadExpoCliExport("start/index.js", "expoStart"),
+  "run:android": () => loadExpoCliExport("run/android/index.js", "expoRunAndroid"),
+  "run:ios": () => loadExpoCliExport("run/ios/index.js", "expoRunIos"),
+  export: () => loadExpoCliExport("export/index.js", "expoExport"),
+  prebuild: () => loadExpoCliExport("prebuild/index.js", "expoPrebuild"),
 };
 
 function printUsage() {

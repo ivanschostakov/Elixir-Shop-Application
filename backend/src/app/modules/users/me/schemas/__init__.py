@@ -1,9 +1,13 @@
+from .ai_chat import AIChatResponse, AIChatTranscriptionResponse, AIChatTurnMetaRead
 from .benefits import BenefitBonusRead, BenefitCheckPayload, BenefitCheckRead, BenefitOptionRead
 from .order_draft import CreateOrderDraftPayload, DeliveryCalculationPayload, UpdateOrderDraftPayload
 from .order import CreateOrderPayload, CreatePaymentPayload, PaymentMethod, PaymentStatusRead
 from .recommendations import RecommendationCategoryViewPayload, RecommendationSurface, RecommendationViewPayload
 
 __all__ = [
+    "AIChatResponse",
+    "AIChatTranscriptionResponse",
+    "AIChatTurnMetaRead",
     "BenefitBonusRead",
     "BenefitCheckPayload",
     "BenefitCheckRead",

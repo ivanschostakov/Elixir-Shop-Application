@@ -1,7 +1,9 @@
 import Constants from "expo-constants"
 import * as Notifications from "expo-notifications"
+import { type Href } from "expo-router"
 import { Platform } from "react-native"
 
+import { getProductRoute, ROUTES } from "@/constants/routes"
 import { deleteMyPushToken, registerMyPushToken } from "@/services/api/users"
 
 const DEFAULT_ANDROID_CHANNEL_ID = "default"
@@ -9,6 +11,11 @@ const DEFAULT_ANDROID_CHANNEL_ID = "default"
 let notificationsConfigured = false
 let registeredExpoPushToken: string | null = null
 let syncRequest: Promise<string | null> | null = null
+
+type PushNotificationData = Record<string, unknown>
+type PushNotificationNavigate = (target: Href) => void
+
+const ORDER_STATUS_PAYMENT_CODES = new Set(["created", "invoice_sent"])
 
 function getProjectId() {
     return Constants.easConfig?.projectId ?? Constants.expoConfig?.extra?.eas?.projectId ?? undefined
@@ -132,4 +139,113 @@ export async function unregisterOrderStatusNotifications() {
 
 export function resetOrderStatusNotifications() {
     registeredExpoPushToken = null
+}
+
+function asString(value: unknown): string | null {
+    return typeof value === "string" ? value : null
+}
+
+function asPositiveInt(value: unknown): number | null {
+    const parsedNumber = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN
+
+    if (!Number.isInteger(parsedNumber) || parsedNumber <= 0) {
+        return null
+    }
+
+    return parsedNumber
+}
+
+function resolvePushTarget(data: PushNotificationData): Href | null {
+    const type = asString(data.type)
+    if (!type) {
+        return null
+    }
+
+    switch (type) {
+        case "order_status_changed": {
+            const statusCode = asString(data.status_code)
+            const orderId = asPositiveInt(data.order_id)
+
+            if (orderId && statusCode && ORDER_STATUS_PAYMENT_CODES.has(statusCode)) {
+                return {
+                    pathname: ROUTES.payment,
+                    params: { orderId: String(orderId) },
+                }
+            }
+
+            return ROUTES.profileHistory
+        }
+        case "restock":
+        case "review_reminder": {
+            const productId = asPositiveInt(data.product_id)
+            return productId ? getProductRoute(productId) : ROUTES.discover
+        }
+        case "inactive_customer":
+            return ROUTES.discover
+        case "abandoned_cart":
+            return ROUTES.basket
+        case "ai_reply":
+            return ROUTES.chat
+        default:
+            return null
+    }
+}
+
+function extractNotificationData(response: Notifications.NotificationResponse): PushNotificationData | null {
+    const data = response.notification.request.content.data
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+        return null
+    }
+
+    return data as PushNotificationData
+}
+
+export function attachPushOpenListener(navigate: PushNotificationNavigate) {
+    if (Platform.OS === "web") {
+        return () => undefined
+    }
+
+    let isDisposed = false
+    const handledNotificationIds = new Set<string>()
+
+    const handleResponse = (response: Notifications.NotificationResponse) => {
+        if (isDisposed) {
+            return
+        }
+
+        const notificationId = response.notification.request.identifier
+        if (handledNotificationIds.has(notificationId)) {
+            return
+        }
+        handledNotificationIds.add(notificationId)
+
+        const data = extractNotificationData(response)
+        if (!data) {
+            return
+        }
+
+        const target = resolvePushTarget(data)
+        if (!target) {
+            return
+        }
+
+        navigate(target)
+    }
+
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(handleResponse)
+    void Notifications.getLastNotificationResponseAsync()
+        .then((lastResponse) => {
+            if (!lastResponse) {
+                return
+            }
+            handleResponse(lastResponse)
+            void Notifications.clearLastNotificationResponseAsync().catch(() => undefined)
+        })
+        .catch(() => undefined)
+
+    return () => {
+        isDisposed = true
+        handledNotificationIds.clear()
+        responseSubscription.remove()
+    }
 }

@@ -1,4 +1,6 @@
+import asyncio
 import logging
+from contextlib import suppress
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,8 +8,12 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from uvicorn import Config, Server
 
+from config import NOTIFICATION_SCAN_INTERVAL_MINUTES, NOTIFICATIONS_ENABLED
+from src.app.services.notifications import run_notification_processors_once
+from src.database import get_session
 from .router import api_router
 from ..integrations.bitrix import get_bitrix_sync_api_client
+from ..integrations.ai import get_professor_client
 from ..integrations.website_identity import get_website_identity_client
 from ..integrations.delivery.geo import get_geo_client
 from ..integrations.delivery.cdek import get_cdek_client
@@ -16,14 +22,48 @@ logger = logging.getLogger("app")
 HOST = "0.0.0.0"
 PORT = 8000
 
+
+async def _notification_loop(stop_event: asyncio.Event):
+    check_interval_seconds = max(NOTIFICATION_SCAN_INTERVAL_MINUTES, 1) * 60
+    while True:
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=check_interval_seconds)
+            if stop_event.is_set():
+                return
+        except TimeoutError:
+            pass
+
+        if stop_event.is_set():
+            return
+
+        try:
+            async with get_session() as session:
+                results = await run_notification_processors_once(session)
+            logger.info("Notification runner tick completed: %s", results)
+        except Exception:
+            logger.exception("Notification runner tick failed")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    try: yield
+    notification_stop_event = asyncio.Event()
+    notification_task: asyncio.Task | None = None
+    if NOTIFICATIONS_ENABLED:
+        notification_task = asyncio.create_task(_notification_loop(notification_stop_event))
+
+    try:
+        yield
     finally:
+        notification_stop_event.set()
+        if notification_task is not None:
+            notification_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await notification_task
         await get_bitrix_sync_api_client().aclose()
         await get_website_identity_client().aclose()
         await get_geo_client().aclose()
         await get_cdek_client().aclose()
+        await get_professor_client().aclose()
 
 
 app = FastAPI(title="Elixir Shop API", version="0.1.0", lifespan=lifespan)

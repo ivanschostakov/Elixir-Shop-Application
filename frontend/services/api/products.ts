@@ -1,5 +1,5 @@
 import { ENDPOINTS } from "@/services/api/constants"
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api/client"
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart } from "@/services/api/client"
 import type {
     ProductCreate,
     ProductReviewCreate,
@@ -81,7 +81,24 @@ export function createProductReview(
     productId: number,
     data: ProductReviewCreate,
 ): Promise<ProductReviewRead> {
-    return apiPost<ProductReviewRead, ProductReviewCreate>(`${ENDPOINTS.PRODUCTS}/${productId}/reviews`, data)
+    const formData = new FormData()
+    formData.append("value", String(data.value))
+    if (typeof data.text === "string") {
+        formData.append("text", data.text)
+    }
+
+    for (const attachment of data.attachments ?? []) {
+        formData.append(
+            "attachments",
+            {
+                uri: attachment.uri,
+                name: attachment.fileName ?? "review-image.jpg",
+                type: attachment.mimeType ?? "image/jpeg",
+            } as unknown as Blob,
+        )
+    }
+
+    return apiPostMultipart<ProductReviewRead>(`${ENDPOINTS.PRODUCTS}/${productId}/reviews`, formData)
 }
 
 export function getProductReviewEligibility(productId: number): Promise<ProductReviewEligibilityRead> {

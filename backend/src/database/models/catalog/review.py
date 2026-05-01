@@ -1,5 +1,5 @@
 from sqlalchemy import BigInteger, ForeignKey, CheckConstraint, String, Boolean, Integer, false, text as sqltext
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
 from src.database.limits import REVIEW_MAXIMUM_LENGTH
@@ -25,4 +25,11 @@ class Review(Base, IdPkMixin, TimestampMixin):
         CheckConstraint("value >= 0 AND value <= 5", name="check_review_value_0_5"),
         CheckConstraint("likes >= 0", name="check_likes_non_negative"),
         CheckConstraint("dislikes >= 0", name="check_dislikes_non_negative"),
+    )
+
+    user: Mapped["User"] = relationship()
+    attachments: Mapped[list["ReviewAttachment"]] = relationship(
+        back_populates="review",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )

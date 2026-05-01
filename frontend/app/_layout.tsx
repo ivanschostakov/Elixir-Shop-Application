@@ -1,6 +1,8 @@
 import "expo-dev-client"
 
 import { useEffect } from "react"
+import { Asset } from "expo-asset"
+import { router } from "expo-router"
 import { AppState, Platform, StyleSheet, Text, View, type AppStateStatus } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 
@@ -8,6 +10,7 @@ import AppShell from "@/components/navigation/app-shell"
 import { AuthProvider } from "@/providers/auth-provider"
 import { ThemeProvider } from "@/providers/theme-provider"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
+import { attachPushOpenListener } from "@/services/notifications/order-status-notifications"
 
 type GlobalErrorHandler = (error: unknown, isFatal?: boolean) => void
 
@@ -15,6 +18,11 @@ type ErrorUtilsLike = {
     getGlobalHandler?: () => GlobalErrorHandler
     setGlobalHandler?: (handler: GlobalErrorHandler) => void
 }
+
+const CHAT_BACKGROUND_ASSETS = [
+    require("../assets/images/chat/chat-background-light.png"),
+    require("../assets/images/chat/chat-background-dark.png"),
+]
 
 const getRootLogErrorMessage = (error: unknown) =>
     error instanceof Error ? error.message : String(error)
@@ -73,6 +81,24 @@ export default function RootLayout() {
                 errorUtils.setGlobalHandler(previousGlobalErrorHandler)
             }
         }
+    }, [])
+
+    useEffect(() => {
+        if (Platform.OS === "web") {
+            return
+        }
+
+        void Asset.loadAsync(CHAT_BACKGROUND_ASSETS).catch(() => undefined)
+    }, [])
+
+    useEffect(() => {
+        if (Platform.OS === "web") {
+            return
+        }
+
+        return attachPushOpenListener((target) => {
+            router.push(target)
+        })
     }, [])
 
     if (Platform.OS === "web") {

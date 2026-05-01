@@ -33,11 +33,12 @@ export type ProductWithVariantsRead = ProductRead & {
 
 export type ProductReviewRead = {
     id: number
-    user_id: number
+    author_username: string
     product_id: number
     value: number
     text: string | null
     answer: string | null
+    attachments: ProductReviewAttachmentRead[]
     likes: number
     dislikes: number
     moderated: boolean
@@ -45,9 +46,23 @@ export type ProductReviewRead = {
     updated_at: string
 }
 
+export type ProductReviewAttachmentRead = {
+    id: number
+    image_url: string
+    created_at: string
+    updated_at: string
+}
+
+export type UploadableReviewAttachment = {
+    uri: string
+    fileName?: string | null
+    mimeType?: string | null
+}
+
 export type ProductReviewCreate = {
     value: number
     text?: string | null
+    attachments?: UploadableReviewAttachment[]
 }
 
 export type ProductReviewEligibilityRead = {
