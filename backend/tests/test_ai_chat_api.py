@@ -47,9 +47,8 @@ def _chat_payload() -> dict:
                 "chat_id": 77,
                 "text": "hello",
                 "sender": "user",
-                "bot_model": "free",
-                "tokens": 10,
                 "attachments": [],
+                "usage": None,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -194,6 +193,7 @@ def test_post_my_ai_chat_message_returns_turn_meta(monkeypatch):
                 "input_tokens": 101,
                 "cached_input_tokens": 11,
                 "output_tokens": 55,
+                "openai_model": "gpt-4.1",
                 "conversation_reset_reason": "soft_input_limit_post_response",
             },
             basket_updated=False,
@@ -219,6 +219,7 @@ def test_post_my_ai_chat_message_returns_turn_meta(monkeypatch):
         assert payload["last_turn"]["input_tokens"] == 101
         assert payload["last_turn"]["cached_input_tokens"] == 11
         assert payload["last_turn"]["output_tokens"] == 55
+        assert payload["last_turn"]["openai_model"] == "gpt-4.1"
         assert payload["last_turn"]["conversation_reset_reason"] == "soft_input_limit_post_response"
     finally:
         app.dependency_overrides.pop(get_db, None)
@@ -581,6 +582,7 @@ def test_send_user_chat_message_triggers_ai_reply_notification(monkeypatch: pyte
                 "input_tokens": 12,
                 "cached_input_tokens": 0,
                 "output_tokens": 7,
+                "openai_model": "gpt-4.1-mini",
                 "files": [],
                 "conversation_reset_reason": None,
             }
@@ -602,6 +604,9 @@ def test_send_user_chat_message_triggers_ai_reply_notification(monkeypatch: pyte
         message_counter["value"] += 1
         return user_message if message_counter["value"] == 1 else ai_message
 
+    async def fake_create_ai_message_usage(*args, **kwargs):
+        return SimpleNamespace(message_id=ai_message.id)
+
     async def fake_update_ai_message(*args, **kwargs):
         return None
 
@@ -619,6 +624,7 @@ def test_send_user_chat_message_triggers_ai_reply_notification(monkeypatch: pyte
     monkeypatch.setattr(ai_chat_service, "get_or_create_user_chat", fake_get_or_create_user_chat)
     monkeypatch.setattr(ai_chat_service, "resolve_user_bot_model", fake_resolve_user_bot_model)
     monkeypatch.setattr(ai_chat_service, "create_ai_message", fake_create_ai_message)
+    monkeypatch.setattr(ai_chat_service, "create_ai_message_usage", fake_create_ai_message_usage)
     monkeypatch.setattr(ai_chat_service, "update_ai_message", fake_update_ai_message)
     monkeypatch.setattr(ai_chat_service, "update_ai_chat", fake_update_ai_chat)
     monkeypatch.setattr(ai_chat_service, "get_ai_chat_by_id", fake_get_ai_chat_by_id)
@@ -636,6 +642,7 @@ def test_send_user_chat_message_triggers_ai_reply_notification(monkeypatch: pyte
 
     assert result.chat is refreshed_chat
     assert result.turn_meta["output_tokens"] == 7
+    assert result.turn_meta["openai_model"] == "gpt-4.1-mini"
     assert result.basket_updated is False
     assert captured_notification == {
         "user_id": 123,

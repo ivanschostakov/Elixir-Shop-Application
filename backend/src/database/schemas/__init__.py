@@ -17,6 +17,9 @@ from .ai import (
     AIMessageCreate,
     AIMessageRead,
     AIMessageUpdate,
+    AIMessageUsageBase,
+    AIMessageUsageCreate,
+    AIMessageUsageRead,
 )
 from .auth.user import UserBase, UserCreate, UserRead, UserUpdate
 from .auth.user_session import UserSessionBase, UserSessionCreate, UserSessionRead, UserSessionUpdate
@@ -110,6 +113,9 @@ __all__ = [
     "AIMessageCreate",
     "AIMessageRead",
     "AIMessageUpdate",
+    "AIMessageUsageBase",
+    "AIMessageUsageCreate",
+    "AIMessageUsageRead",
     "AvatarResponse",
     "BasketBase",
     "BasketCreate",

@@ -71,10 +71,20 @@ export type AIMessageRead = {
     chat_id: number
     text: string
     sender: MessageSender
-    bot_model: BotModel
-    tokens: number
     attachments: AIAttachmentRead[]
     interactive: AIInteractivePayload | null
+    usage: AIMessageUsageRead | null
+    created_at: string
+    updated_at: string
+}
+
+export type AIMessageUsageRead = {
+    message_id: number
+    input_tokens: number
+    cached_input_tokens: number
+    output_tokens: number
+    bot_model: BotModel
+    openai_model: string
     created_at: string
     updated_at: string
 }
@@ -95,6 +105,7 @@ export type AIChatTurnMetaRead = {
     input_tokens: number
     cached_input_tokens: number
     output_tokens: number
+    openai_model: string | null
     conversation_reset_reason: string | null
 }
 

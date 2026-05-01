@@ -34,6 +34,7 @@ from src.database.crud import (
     create_ai_attachment,
     create_ai_chat,
     create_ai_message,
+    create_ai_message_usage,
     get_ai_chat_by_id,
     get_ai_chat_by_user_id,
     update_ai_chat,
@@ -41,7 +42,14 @@ from src.database.crud import (
 )
 from src.database.models import AIMessage, Order, User
 from src.database.models.ai.chat import AIChat
-from src.database.schemas import AIAttachmentCreate, AIChatCreate, AIChatUpdate, AIMessageCreate, AIMessageUpdate
+from src.database.schemas import (
+    AIAttachmentCreate,
+    AIChatCreate,
+    AIChatUpdate,
+    AIMessageCreate,
+    AIMessageUpdate,
+    AIMessageUsageCreate,
+)
 from src.integrations.ai.client import ProfessorClient
 from src.integrations.ai.enums import AttachmentType, BotModel, MessageSender
 
@@ -383,8 +391,6 @@ async def send_user_chat_message(
             chat_id=chat.id,
             text=text,
             sender=MessageSender.USER,
-            bot_model=selected_model,
-            tokens=0,
         ),
         commit=False,
     )
@@ -435,6 +441,7 @@ async def send_user_chat_message(
         input_tokens = int(ai_result.get("input_tokens") or 0)
         cached_input_tokens = int(ai_result.get("cached_input_tokens") or 0)
         output_tokens = int(ai_result.get("output_tokens") or 0)
+        openai_model = str(ai_result.get("openai_model") or "")
         final_conversation_id = str(ai_result.get("conversation_id") or chat.conversation_id)
         structured_output = parse_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
         reply_text = str(ai_result.get("text") or "").strip()
@@ -495,13 +502,23 @@ async def send_user_chat_message(
                 chat_id=chat.id,
                 text=reply_text or AI_CHAT_EMPTY_REPLY,
                 sender=MessageSender.AI,
-                bot_model=selected_model,
-                tokens=output_tokens,
                 context_json=assistant_context,
             ),
             commit=False,
         )
         ai_message_id = ai_message.id
+        await create_ai_message_usage(
+            db,
+            AIMessageUsageCreate(
+                message_id=ai_message.id,
+                input_tokens=input_tokens,
+                cached_input_tokens=cached_input_tokens,
+                output_tokens=output_tokens,
+                bot_model=selected_model,
+                openai_model=openai_model or ProfessorClient._resolve_model_name(selected_model),
+            ),
+            commit=False,
+        )
         interactive_payload = attach_ai_action_tokens(
             interactive_payload,
             user_id=user.id,
@@ -539,13 +556,6 @@ async def send_user_chat_message(
             )
             ai_attachment_paths.append(saved_path)
 
-        await update_ai_message(
-            db,
-            user_message,
-            AIMessageUpdate(tokens=input_tokens),
-            commit=False,
-        )
-
         await update_ai_chat(
             db,
             chat,
@@ -581,6 +591,7 @@ async def send_user_chat_message(
             "input_tokens": input_tokens,
             "cached_input_tokens": cached_input_tokens,
             "output_tokens": output_tokens,
+            "openai_model": openai_model or ProfessorClient._resolve_model_name(selected_model),
             "conversation_reset_reason": ai_result.get("conversation_reset_reason") if ai_result else None,
         },
         basket_updated=basket_updated,

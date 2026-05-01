@@ -6,12 +6,21 @@ from .attachment import (
     update_ai_attachment,
 )
 from .chat import create_ai_chat, delete_ai_chat, get_ai_chat_by_conversation_id, get_ai_chat_by_id, get_ai_chat_by_user_id, get_ai_chats, update_ai_chat
-from .message import create_ai_message, delete_ai_message, get_ai_message_by_id, get_ai_messages, update_ai_message
+from .message import (
+    create_ai_message,
+    create_ai_message_usage,
+    delete_ai_message,
+    get_ai_message_by_id,
+    get_ai_message_usage_by_message_id,
+    get_ai_messages,
+    update_ai_message,
+)
 
 __all__ = [
     "create_ai_attachment",
     "create_ai_chat",
     "create_ai_message",
+    "create_ai_message_usage",
     "delete_ai_attachment",
     "delete_ai_chat",
     "delete_ai_message",
@@ -22,6 +31,7 @@ __all__ = [
     "get_ai_chat_by_user_id",
     "get_ai_chats",
     "get_ai_message_by_id",
+    "get_ai_message_usage_by_message_id",
     "get_ai_messages",
     "update_ai_attachment",
     "update_ai_chat",

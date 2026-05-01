@@ -487,6 +487,7 @@ class ProfessorClient(AsyncClient):
         structured_output = self._extract_v2_structured_output(response_text) if text_config is not None else None
         response_files = await self._extract_v2_files(response, started_at)
         input_tokens, cached_input_tokens, output_tokens = self._extract_v2_usage(response)
+        openai_model = str(getattr(response, "model", None) or self._resolve_model_name(bot_model))
         final_conversation_id = getattr(getattr(response, "conversation", None), "id", None) or active_conversation_id
 
         if input_tokens >= AI_CONVERSATION_HARD_INPUT_TOKENS:
@@ -509,6 +510,7 @@ class ProfessorClient(AsyncClient):
             "input_tokens": int(input_tokens),
             "cached_input_tokens": int(cached_input_tokens),
             "output_tokens": int(output_tokens),
+            "openai_model": openai_model,
             "conversation_id": str(final_conversation_id),
             "conversation_reset_reason": conversation_reset_reason,
             "structured_output": structured_output,

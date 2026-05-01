@@ -7,7 +7,15 @@ from .interactive import (
     AIInteractiveProductCard,
     AIInteractiveVariant,
 )
-from .message import AIMessageBase, AIMessageCreate, AIMessageRead, AIMessageUpdate
+from .message import (
+    AIMessageBase,
+    AIMessageCreate,
+    AIMessageRead,
+    AIMessageUpdate,
+    AIMessageUsageBase,
+    AIMessageUsageCreate,
+    AIMessageUsageRead,
+)
 
 __all__ = [
     "AIAttachmentBase",
@@ -28,4 +36,7 @@ __all__ = [
     "AIMessageCreate",
     "AIMessageRead",
     "AIMessageUpdate",
+    "AIMessageUsageBase",
+    "AIMessageUsageCreate",
+    "AIMessageUsageRead",
 ]

@@ -9,6 +9,7 @@ class AIChatTurnMetaRead(BaseModel):
     input_tokens: int = Field(ge=0)
     cached_input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
+    openai_model: str | None = None
     conversation_reset_reason: str | None = None
 
 

@@ -1,6 +1,7 @@
 from .ai.attachment import Attachment
 from .ai.chat import AIChat
 from .ai.message import AIMessage
+from .ai.usage import AIMessageUsage
 from .auth.admin import Admin
 from .auth.email_verification_code import EmailVerificationCode
 from .auth.user import User
@@ -43,6 +44,7 @@ __all__ = [
     "Admin",
     "AIChat",
     "AIMessage",
+    "AIMessageUsage",
     "Attachment",
     "Basket",
     "BasketItem",

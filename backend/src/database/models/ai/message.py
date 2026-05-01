@@ -7,7 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.database import Base
 from src.database.schemas.ai.interactive import AIInteractivePayload
 from src.database.mixins import IdPkMixin, TimestampMixin
-from src.integrations.ai.enums import BotModel, MessageSender, bot_model, message_sender
+from src.integrations.ai.enums import MessageSender, message_sender
 
 
 class AIMessage(Base, IdPkMixin, TimestampMixin):
@@ -18,9 +18,6 @@ class AIMessage(Base, IdPkMixin, TimestampMixin):
 
     text: Mapped[str] = mapped_column(Text, nullable=False)
     sender: Mapped[MessageSender] = mapped_column(message_sender, nullable=False)
-    bot_model: Mapped[BotModel] = mapped_column(bot_model, nullable=False)
-
-    tokens: Mapped[int] = mapped_column(nullable=False)
     context_json: Mapped[dict[str, Any] | None] = mapped_column(
         JSON().with_variant(JSONB, "postgresql"),
         nullable=True,
@@ -33,6 +30,12 @@ class AIMessage(Base, IdPkMixin, TimestampMixin):
         cascade="all, delete-orphan",
         passive_deletes=True,
         order_by="Attachment.id",
+    )
+    usage: Mapped["AIMessageUsage | None"] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
     )
 
     @property

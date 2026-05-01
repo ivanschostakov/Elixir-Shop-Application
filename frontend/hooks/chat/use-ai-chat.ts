@@ -244,7 +244,6 @@ function createOptimisticUserMessage({
                 messageId: id,
             }),
         ),
-        bot_model: chat?.last_turn?.selected_bot_model ?? "free",
         chat_id: chat?.chat.id ?? 0,
         client_id: `local-${Math.abs(id)}`,
         created_at: createdAt,
@@ -253,9 +252,9 @@ function createOptimisticUserMessage({
         interactive: null,
         sender: "user",
         text,
-        tokens: 0,
         updated_at: createdAt,
         user_id: chat?.chat.user_id ?? 0,
+        usage: null,
     }
 }
 

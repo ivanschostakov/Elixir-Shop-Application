@@ -2,13 +2,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.database.models import AIMessage
-from src.database.schemas import AIMessageCreate, AIMessageUpdate
+from src.database.models import AIMessage, AIMessageUsage
+from src.database.schemas import AIMessageCreate, AIMessageUpdate, AIMessageUsageCreate
 from src.integrations.ai.enums import BotModel, MessageSender
 
 
 def _ai_message_select():
-    return select(AIMessage).options(selectinload(AIMessage.attachments)).execution_options(populate_existing=True)
+    return (
+        select(AIMessage)
+        .options(selectinload(AIMessage.attachments), selectinload(AIMessage.usage))
+        .execution_options(populate_existing=True)
+    )
 
 
 async def create_ai_message(session: AsyncSession, data: AIMessageCreate, *, commit: bool = True) -> AIMessage:
@@ -37,7 +41,7 @@ async def get_ai_messages(session: AsyncSession, user_id: int | None = None, cha
     if user_id is not None: stmt = stmt.where(AIMessage.user_id == user_id)
     if chat_id is not None: stmt = stmt.where(AIMessage.chat_id == chat_id)
     if sender is not None: stmt = stmt.where(AIMessage.sender == sender)
-    if bot_model is not None: stmt = stmt.where(AIMessage.bot_model == bot_model)
+    if bot_model is not None: stmt = stmt.join(AIMessageUsage).where(AIMessageUsage.bot_model == bot_model)
     return list((await session.execute(stmt)).scalars().all())
 
 
@@ -58,3 +62,30 @@ async def delete_ai_message(session: AsyncSession, message: AIMessage, *, commit
     await session.flush()
 
     if commit: await session.commit()
+
+
+async def create_ai_message_usage(
+    session: AsyncSession,
+    data: AIMessageUsageCreate,
+    *,
+    commit: bool = True,
+) -> AIMessageUsage:
+    usage = AIMessageUsage(**data.model_dump())
+    session.add(usage)
+    await session.flush()
+
+    if commit:
+        await session.commit()
+        reloaded_usage = await get_ai_message_usage_by_message_id(session, usage.message_id)
+        if reloaded_usage is None:
+            raise RuntimeError("Failed to reload AI message usage")
+        return reloaded_usage
+
+    await session.refresh(usage)
+    return usage
+
+
+async def get_ai_message_usage_by_message_id(session: AsyncSession, message_id: int) -> AIMessageUsage | None:
+    return (
+        await session.execute(select(AIMessageUsage).where(AIMessageUsage.message_id == message_id))
+    ).scalar_one_or_none()
