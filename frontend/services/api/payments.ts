@@ -5,9 +5,9 @@ import type { CreatePaymentPayload, PaymentStatusRead } from "@/services/api/pay
 const paymentsEndpoint = ENDPOINTS.PAYMENTS
 
 export function createPayment(payload: CreatePaymentPayload): Promise<PaymentStatusRead> {
-    return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, payload)
+    return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, payload, { appIntegrityAction: "payments:create" })
 }
 
 export function getPaymentStatus(orderId: number): Promise<PaymentStatusRead> {
-    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`, { order_id: orderId })
+    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`, { order_id: orderId }, { appIntegrityAction: "payments:status" })
 }

@@ -17,7 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
 
-from config import ufa_now
+from config import (
+    AI_CHAT_MAX_ATTACHMENTS,
+    AI_CHAT_MAX_ATTACHMENT_BYTES,
+    AI_CHAT_MAX_TOTAL_ATTACHMENT_BYTES,
+    ufa_now,
+)
 from src.app.services.ai_chat_interactive import (
     attach_ai_action_tokens,
     build_ai_chat_output_schema,
@@ -30,6 +35,7 @@ from src.app.services.ai_chat_interactive import (
 from src.app.services.ai_chat_tools import SHOP_AI_FUNCTION_TOOLS, ShopAIToolExecutor
 from src.app.services.basket import add_variant_to_basket_for_user
 from src.app.services.notifications import send_ai_reply_notification
+from src.app.services.upload_limits import format_upload_size_limit, read_upload_file_limited
 from src.database.crud import (
     create_ai_attachment,
     create_ai_chat,
@@ -255,11 +261,28 @@ def _attachment_storage_filename(original_filename: str, mime_type: str | None) 
 
 async def _load_uploads(attachments: list[UploadFile] | None) -> list[_LoadedUpload]:
     uploads = attachments or []
+    if len(uploads) > AI_CHAT_MAX_ATTACHMENTS:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Too many attachments. Maximum is {AI_CHAT_MAX_ATTACHMENTS}",
+        )
+
     loaded: list[_LoadedUpload] = []
+    total_bytes = 0
     for index, upload in enumerate(uploads, start=1):
-        content = await upload.read()
+        content = await read_upload_file_limited(
+            upload,
+            max_bytes=AI_CHAT_MAX_ATTACHMENT_BYTES,
+            label=f"Attachment {index}",
+        )
         if not content:
             continue
+        total_bytes += len(content)
+        if total_bytes > AI_CHAT_MAX_TOTAL_ATTACHMENT_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"Attachments exceed {format_upload_size_limit(AI_CHAT_MAX_TOTAL_ATTACHMENT_BYTES)} total",
+            )
         filename = _normalize_filename(upload.filename, index)
         mime_type = (upload.content_type or "").strip() or None
         kind = _attachment_type_from_upload(filename, mime_type)

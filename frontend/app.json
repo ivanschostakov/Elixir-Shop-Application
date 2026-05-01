@@ -16,6 +16,9 @@
       "associatedDomains": [
         "applinks:elixirshop.devsivanschostakov.org"
       ],
+      "entitlements": {
+        "com.apple.developer.devicecheck.appattest-environment": "$(APP_ATTEST_ENVIRONMENT)"
+      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Allow Elixir Shop to access your location so the delivery map can center on you.",
@@ -31,7 +34,7 @@
         "monochromeImage": "./assets/images/adaptive-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.ivanschostakov.elixirshopapp",
+      "package": "com.ivanschostakov.elixirpeptide",
       "versionCode": 1,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
@@ -49,6 +52,7 @@
     "plugins": [
       "expo-router",
       "./plugins/with-yandex-mapkit",
+      "./plugins/with-app-attest-environment",
       [
         "expo-splash-screen",
         {

@@ -41,6 +41,7 @@ import { getErrorMessage } from "@/utils/errors"
 import { parsePositiveRouteId } from "@/utils/route-params"
 
 type PaymentMethod = "later" | "sbp"
+type PaymentPhase = "select" | "processing" | "sbp" | "pending" | "success" | "failure"
 type SummarySection = "contact" | "items"
 
 const FINAL_STOP_STATUSES = new Set(["error", "canceled", "refunded", "hold", "partial"])
@@ -116,7 +117,7 @@ export default function PaymentScreen() {
     const [payment, setPayment] = useState<PaymentStatusRead | null>(null)
     const [submitting, setSubmitting] = useState(false)
     const [isRepeating, setIsRepeating] = useState(false)
-    const [phase, setPhase] = useState<"select" | "processing" | "sbp" | "success" | "failure">("select")
+    const [phase, setPhase] = useState<PaymentPhase>("select")
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
     const hasAutoStartedRef = useRef(false)
     const hasLoadedOrderRef = useRef(false)
@@ -355,7 +356,12 @@ export default function PaymentScreen() {
             const nextPayment = await createPayment({ order_id: nextOrder.id })
             setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
 
-            if (nextPayment.is_paid || nextPayment.payment_method === "later") {
+            if (nextPayment.payment_method === "later") {
+                setPhase("pending")
+                return
+            }
+
+            if (nextPayment.is_paid) {
                 setPhase("success")
                 return
             }
@@ -407,6 +413,15 @@ export default function PaymentScreen() {
                 disabled: true,
                 label: !isQrVisualReady ? t("payment.processingVisual") : t("payment.awaitingPayment"),
                 onPress: null as (() => void) | null,
+            }
+        }
+
+        if (phase === "pending") {
+            return {
+                busy: false,
+                disabled: false,
+                label: t("payment.goHome"),
+                onPress: openDiscover,
             }
         }
 
@@ -574,7 +589,7 @@ export default function PaymentScreen() {
         const paymentMethod = (order.payment_method || "").toLowerCase()
         if (paymentMethod === "later") {
             if (order.payment_status === "pending") {
-                setPhase("success")
+                setPhase("pending")
             }
             return
         }
@@ -833,6 +848,34 @@ export default function PaymentScreen() {
                                 </Pressable>
                             ) : null}
                         </View>
+                    </View>
+                </View>
+            )
+        }
+
+        if (phase === "pending") {
+            return (
+                <View style={paymentScreenStyles.visualCard}>
+                    <View style={paymentScreenStyles.failureVisualBody}>
+                        <Text style={paymentScreenStyles.successBadge}>{t("payment.pendingLaterEyebrow")}</Text>
+                        <Text style={paymentScreenStyles.sectionTitle}>{t("payment.pendingLaterTitle")}</Text>
+                        <Text style={paymentScreenStyles.stateText}>{t("payment.pendingLaterMessage")}</Text>
+                        {resolvedOrderNumber ? (
+                            <Pressable
+                                accessibilityLabel={t("payment.copyOrderNumber")}
+                                accessibilityRole="button"
+                                onPress={() => {
+                                    void handleCopyOrderCode()
+                                }}
+                                style={({ pressed }) => [
+                                    paymentScreenStyles.successOrderBox,
+                                    pressed && paymentScreenStyles.successOrderBoxPressed,
+                                ]}
+                            >
+                                <Text style={paymentScreenStyles.successOrderLabel}>{t("payment.orderNumber")}</Text>
+                                <Text style={paymentScreenStyles.successOrderValue}>#{resolvedOrderNumber}</Text>
+                            </Pressable>
+                        ) : null}
                     </View>
                 </View>
             )

@@ -12,9 +12,11 @@
     "tunnel:elixirshop": "cloudflared tunnel --config cloudflared/elixirshop.local.yml run 6513940a-5450-480c-8d7d-7960c27bd310",
     "postinstall": "node scripts/patch-react-native-yamap.cjs",
     "prebuild:clean": "node scripts/expo-cli.cjs prebuild --clean",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo/app-integrity": "^55.0.13",
     "@lottiefiles/dotlottie-react": "^0.13.5",
     "@react-native-picker/picker": "2.11.1",
     "@react-navigation/native": "^7.1.8",

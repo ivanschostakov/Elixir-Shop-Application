@@ -9,7 +9,7 @@ import type {
 } from "@/services/api/ai-chat.types"
 
 export function getMyAiChat(): Promise<AIChatResponse> {
-    return apiGet<AIChatResponse>(aiChatEndpoint)
+    return apiGet<AIChatResponse>(aiChatEndpoint, undefined, { appIntegrityAction: "ai-chat:read" })
 }
 
 export function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = []): Promise<AIChatResponse> {
@@ -27,11 +27,11 @@ export function sendMyAiChatMessage(text: string, attachments: UploadableChatAtt
         )
     }
 
-    return apiPostMultipart<AIChatResponse>(aiChatEndpoint, formData)
+    return apiPostMultipart<AIChatResponse>(aiChatEndpoint, formData, { appIntegrityAction: "ai-chat:send" })
 }
 
 export function performAiChatAction(payload: AIChatActionPayload): Promise<AIChatActionResponse> {
-    return apiPost<AIChatActionResponse, AIChatActionPayload>(`${aiChatEndpoint}/actions`, payload)
+    return apiPost<AIChatActionResponse, AIChatActionPayload>(`${aiChatEndpoint}/actions`, payload, { appIntegrityAction: "ai-chat:action" })
 }
 
 export function transcribeMyAiChatVoice(audio: UploadableChatAttachment): Promise<AIChatTranscriptionResponse> {
@@ -45,5 +45,5 @@ export function transcribeMyAiChatVoice(audio: UploadableChatAttachment): Promis
         } as unknown as Blob,
     )
 
-    return apiPostMultipart<AIChatTranscriptionResponse>(`${aiChatEndpoint}/transcribe`, formData)
+    return apiPostMultipart<AIChatTranscriptionResponse>(`${aiChatEndpoint}/transcribe`, formData, { appIntegrityAction: "ai-chat:transcribe" })
 }

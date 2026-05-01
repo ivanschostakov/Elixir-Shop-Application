@@ -4,7 +4,13 @@ const expoConfig = require('eslint-config-expo/flat');
 
 module.exports = defineConfig([
   {
-    ignores: ['**/.expo/**', '**/dist/**'],
+    ignores: [
+      '**/.expo/**',
+      '**/dist/**',
+      '**/backups/**',
+      '**/web-backup/**',
+      '**/scripts/react-native-yamap-patches/**',
+    ],
   },
   expoConfig,
   {

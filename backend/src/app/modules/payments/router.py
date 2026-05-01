@@ -4,6 +4,7 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.users.me.schemas import CreatePaymentPayload, PaymentStatusRead
+from src.app.services.app_integrity import require_app_integrity
 from src.app.services.orders import create_payment_for_order, get_order_for_user, get_payment_status_for_order
 from src.database import get_db
 from src.database.models import User
@@ -17,6 +18,7 @@ async def create_payment(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _app_integrity: None = Depends(require_app_integrity("payments:create")),
 ) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=payload.order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
@@ -29,6 +31,7 @@ async def get_payment_status(
     order_id: int = Query(..., ge=1),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _app_integrity: None = Depends(require_app_integrity("payments:status")),
 ) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")

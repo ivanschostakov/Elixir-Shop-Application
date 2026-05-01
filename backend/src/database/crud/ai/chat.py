@@ -6,7 +6,15 @@ from src.database.models import AIChat, AIMessage
 from src.database.schemas import AIChatCreate, AIChatUpdate
 
 
-def _ai_chat_select(): return select(AIChat).options(selectinload(AIChat.messages).selectinload(AIMessage.attachments)).execution_options(populate_existing=True)
+def _ai_chat_select():
+    return (
+        select(AIChat)
+        .options(
+            selectinload(AIChat.messages).selectinload(AIMessage.attachments),
+            selectinload(AIChat.messages).selectinload(AIMessage.usage),
+        )
+        .execution_options(populate_existing=True)
+    )
 
 async def create_ai_chat(session: AsyncSession, data: AIChatCreate, *, commit: bool = True) -> AIChat:
     chat = AIChat(**data.model_dump())

@@ -3,6 +3,8 @@ from .ai.chat import AIChat
 from .ai.message import AIMessage
 from .ai.usage import AIMessageUsage
 from .auth.admin import Admin
+from .auth.app_attest_key import AppAttestKey
+from .auth.app_integrity_challenge import AppIntegrityChallenge
 from .auth.email_verification_code import EmailVerificationCode
 from .auth.user import User
 from .auth.user_push_token import UserPushToken
@@ -45,6 +47,8 @@ __all__ = [
     "AIChat",
     "AIMessage",
     "AIMessageUsage",
+    "AppAttestKey",
+    "AppIntegrityChallenge",
     "Attachment",
     "Basket",
     "BasketItem",

@@ -1973,13 +1973,7 @@ export default function ChatScreen() {
                             )}
                             style={chatScreenStyles.messagesScroll}
                         >
-                            {!messages.length ? (
-                                <View style={chatScreenStyles.emptyWrap}>
-                                    <View style={chatScreenStyles.emptyBubble}>
-                                        <Text style={chatScreenStyles.emptyText}>{t("chat.emptyDescription")}</Text>
-                                    </View>
-                                </View>
-                            ) : (
+                            {messages.length ? (
                                 <View style={chatScreenStyles.messageList}>
                                     {messages.map((message, messageIndex) => {
                                         const isUserMessage = message.sender === "user"
@@ -2076,8 +2070,15 @@ export default function ChatScreen() {
                                         </AnimatedMessageBlock>
                                     ) : null}
                                 </View>
-                            )}
+                            ) : null}
                         </ScrollView>
+                        {!messages.length ? (
+                            <View pointerEvents="none" style={chatScreenStyles.emptyCenterOverlay}>
+                                <View style={chatScreenStyles.emptyBubble}>
+                                    <Text style={chatScreenStyles.emptyText}>{t("chat.emptyDescription")}</Text>
+                                </View>
+                            </View>
+                        ) : null}
 
                         {error ? (
                             <View style={[chatScreenStyles.inlineErrorWrap, { bottom: composerOffset + spacing.sm }]}>

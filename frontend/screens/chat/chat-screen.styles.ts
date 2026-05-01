@@ -157,11 +157,12 @@ export const chatScreenStyles = StyleSheet.create({
         lineHeight: 14,
         fontWeight: "600",
     },
-    emptyWrap: {
-        flex: 1,
+    emptyCenterOverlay: {
+        ...StyleSheet.absoluteFillObject,
         alignItems: "center",
         justifyContent: "center",
-        minHeight: 320,
+        zIndex: 1,
+        paddingHorizontal: spacing.md,
     },
     emptyBubble: {
         maxWidth: "88%",

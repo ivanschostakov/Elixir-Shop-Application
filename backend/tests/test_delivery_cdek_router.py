@@ -2,31 +2,9 @@ from fastapi.testclient import TestClient
 
 from src.app.main import app
 from src.integrations.delivery.cdek import get_cdek_client
+from src.integrations.delivery.schemas import COUNTRY_NAMES
 
-SUPPORTED_COUNTRY_CODES = (
-    "RU",
-    "BY",
-    "KZ",
-    "AZ",
-    "MD",
-    "AM",
-    "UZ",
-    "KG",
-    "GE",
-    "EU",
-    "MN",
-    "CN",
-    "JP",
-    "RS",
-    "IL",
-    "AE",
-    "IN",
-    "BD",
-    "VN",
-    "TH",
-    "ID",
-    "US",
-)
+SUPPORTED_COUNTRY_CODES = tuple(COUNTRY_NAMES.keys())
 
 
 class FakeCDEKClient:
@@ -54,3 +32,19 @@ def test_delivery_point_markers_accepts_all_supported_country_codes():
             assert fake_cdek_client.country_codes == [country_code]
         finally:
             app.dependency_overrides.pop(get_cdek_client, None)
+
+
+def test_delivery_point_markers_rejects_unsupported_eu_country_code():
+    fake_cdek_client = FakeCDEKClient()
+    app.dependency_overrides[get_cdek_client] = lambda: fake_cdek_client
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get(
+                "/api/v1/delivery/cdek/delivery-point-markers",
+                params={"country_code": "EU"},
+            )
+
+        assert response.status_code == 422
+        assert fake_cdek_client.country_codes == []
+    finally:
+        app.dependency_overrides.pop(get_cdek_client, None)

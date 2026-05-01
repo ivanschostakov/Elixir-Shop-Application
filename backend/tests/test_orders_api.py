@@ -708,6 +708,53 @@ def test_amocrm_paid_webhook_creates_delivery_once(client: TestClient, registere
     assert calls["count"] == 1
 
 
+def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
+    catalog = variant_factory(stock=5, price=Decimal("21.00"))
+    draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
+
+    order_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=registered_user["headers"],
+        json={"draft_id": draft["id"], "payment_method": "sbp"},
+    )
+    assert order_response.status_code == 200, order_response.text
+    order_id = order_response.json()["id"]
+    order_number = order_response.json()["order_number"]
+
+    monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.verify_webhook_hash", lambda payload: True)
+
+    webhook_response = client.post(
+        "/api/v1/webhooks/intellectmoney",
+        data={
+            "EshopId": "shop-id",
+            "OrderId": order_number,
+            "ServiceName": f"Заказ №{order_number}",
+            "EshopAccount": "",
+            "RecipientAmount": "21.00",
+            "RecipientCurrency": "RUB",
+            "PaymentStatus": "5",
+            "UserName": "Иван Петров",
+            "UserEmail": "ivan.petrov@example.com",
+            "PaymentData": "2026-04-23 12:00:00",
+            "PaymentId": "invoice-paid",
+            "Hash": "ok",
+        },
+    )
+
+    assert webhook_response.status_code == 200, webhook_response.text
+    assert stub_amocrm["status_updates"][-1] == {
+        "lead_id": 67890,
+        "status_id": amocrm_client.STATUS_IDS["check_paid"],
+    }
+
+    stored_order = _get_order(order_id)
+    assert stored_order.payment_provider == "intellectmoney"
+    assert stored_order.payment_invoice_id == "invoice-paid"
+    assert stored_order.payment_status == "paid"
+    assert stored_order.payment_paid_at is not None
+    assert stored_order.is_paid is True
+
+
 @pytest.mark.parametrize(
     ("payment_status_code", "expected_payment_status", "expected_amocrm_status_id", "expected_is_active", "expected_is_canceled"),
     [

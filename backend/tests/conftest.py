@@ -18,7 +18,11 @@ if "PIL" not in sys.modules:
     pil_module.UnidentifiedImageError = _UnidentifiedImageError
     sys.modules["PIL"] = pil_module
 
-from src.app.main import app
+from src.app import main as app_main
+
+app_main.NOTIFICATIONS_ENABLED = False
+app_main.ONEC_SYNC_ENABLED = False
+app = app_main.app
 
 TEST_EMAIL_VERIFICATION_CODE = "123456"
 
@@ -38,6 +42,13 @@ def stub_email_verification(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(auth_router_module, "generate_email_verification_code", lambda: TEST_EMAIL_VERIFICATION_CODE)
     monkeypatch.setattr(auth_router_module, "send_user_verification_code_email", fake_send_user_verification_code_email)
+
+
+@pytest.fixture(autouse=True)
+def disable_app_integrity_by_default(monkeypatch: pytest.MonkeyPatch):
+    import src.app.services.app_integrity as app_integrity
+
+    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "off")
 
 
 @pytest.fixture()

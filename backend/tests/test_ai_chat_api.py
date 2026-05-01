@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
+from io import BytesIO
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from starlette.datastructures import Headers, UploadFile
 
 import src.app.modules.auth.dependencies as auth_dependencies
 import src.app.modules.users.me.ai_chat as ai_chat_router_module
@@ -351,6 +354,61 @@ def test_post_my_ai_chat_transcribe_rejects_empty_audio():
         app.dependency_overrides.pop(get_professor_client, None)
 
 
+def test_post_my_ai_chat_transcribe_rejects_large_audio(monkeypatch):
+    async def fake_get_current_user():
+        return _fake_user()
+
+    class FakeProfessorClient:
+        async def transcribe_audio_bytes(self, *, filename: str, content: bytes) -> str:
+            raise AssertionError("large audio should be rejected before transcription")
+
+    app.dependency_overrides[auth_dependencies.get_current_user] = fake_get_current_user
+    app.dependency_overrides[get_professor_client] = lambda: FakeProfessorClient()
+    monkeypatch.setattr(ai_chat_router_module, "AI_CHAT_MAX_AUDIO_BYTES", 4)
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.post(
+                "/api/v1/users/me/ai-chat/transcribe",
+                files={"audio": ("voice.m4a", b"audio", "audio/m4a")},
+            )
+
+        assert response.status_code == 413, response.text
+        assert response.json()["detail"] == "Audio upload exceeds 4 bytes"
+    finally:
+        app.dependency_overrides.pop(auth_dependencies.get_current_user, None)
+        app.dependency_overrides.pop(get_professor_client, None)
+
+
+@pytest.mark.anyio
+async def test_load_uploads_rejects_too_many_attachments(monkeypatch):
+    monkeypatch.setattr(ai_chat_service, "AI_CHAT_MAX_ATTACHMENTS", 1)
+
+    uploads = [
+        UploadFile(file=BytesIO(b"a"), filename="a.txt", headers=Headers({"content-type": "text/plain"})),
+        UploadFile(file=BytesIO(b"b"), filename="b.txt", headers=Headers({"content-type": "text/plain"})),
+    ]
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _load_uploads(uploads)
+
+    assert exc_info.value.status_code == 413
+    assert exc_info.value.detail == "Too many attachments. Maximum is 1"
+
+
+@pytest.mark.anyio
+async def test_load_uploads_rejects_large_attachment(monkeypatch):
+    monkeypatch.setattr(ai_chat_service, "AI_CHAT_MAX_ATTACHMENT_BYTES", 3)
+
+    upload = UploadFile(file=BytesIO(b"abcd"), filename="a.txt", headers=Headers({"content-type": "text/plain"}))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await _load_uploads([upload])
+
+    assert exc_info.value.status_code == 413
+    assert exc_info.value.detail == "Attachment 1 exceeds 3 bytes"
+
+
 class _FakeScalarResult:
     def __init__(self, value):
         self._value = value
@@ -374,9 +432,18 @@ class _FakeUploadFile:
         self.filename = filename
         self.content_type = content_type
         self._payload = payload
+        self._position = 0
 
-    async def read(self):
-        return self._payload
+    async def read(self, size: int | None = -1):
+        if size is None or size < 0:
+            chunk = self._payload[self._position:]
+            self._position = len(self._payload)
+            return chunk
+
+        start = self._position
+        end = min(start + size, len(self._payload))
+        self._position = end
+        return self._payload[start:end]
 
 
 def test_load_uploads_preserves_original_filename_but_normalizes_ai_image_extension():

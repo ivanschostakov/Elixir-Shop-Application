@@ -1,3 +1,4 @@
+from .app_integrity import app_integrity_router
 from .auth import auth_router
 from .favorites import favourites_query_router, favourites_router
 from .payments import payments_router
@@ -9,6 +10,7 @@ from .delivery import delivery_router
 
 __all__ = [
     "auth_router",
+    "app_integrity_router",
     "favourites_query_router",
     "favourites_router",
     "payments_router",

@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "@/services/api/constants"
 import type { QueryParams, RequestOptions } from "@/services/api/client.types"
+import { getAppIntegrityHeaders, resetAppIntegrityState } from "@/services/app-integrity"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 
 export class ApiError extends Error {
@@ -27,7 +28,7 @@ function buildUrl(baseUrl: string, path: string, query?: QueryParams): string {
     return url.toString()
 }
 
-function buildHeaders(init?: RequestInit, auth = true): Headers {
+async function buildHeaders(init?: RequestInit, auth = true, options?: RequestOptions): Promise<Headers> {
     const headers = new Headers(init?.headers ?? {})
     const tokens = getAuthTokens()
     const isFormDataBody =
@@ -40,6 +41,11 @@ function buildHeaders(init?: RequestInit, auth = true): Headers {
 
     if (auth && tokens?.accessToken) {
         headers.set("Authorization", `Bearer ${tokens.accessToken}`)
+    }
+
+    const appIntegrityHeaders = await getAppIntegrityHeaders(options?.appIntegrityAction)
+    for (const [key, value] of Object.entries(appIntegrityHeaders)) {
+        headers.set(key, value)
     }
 
     return headers
@@ -78,6 +84,19 @@ async function buildApiError(response: Response): Promise<ApiError> {
     return new ApiError(response.status, message, body)
 }
 
+function isAppIntegrityApiError(error: ApiError) {
+    if (error.message === "App integrity check failed") {
+        return true
+    }
+
+    return (
+        typeof error.body === "object" &&
+        error.body !== null &&
+        "detail" in error.body &&
+        error.body.detail === "App integrity check failed"
+    )
+}
+
 async function request<T>(
     baseUrl: string,
     path: string,
@@ -85,12 +104,13 @@ async function request<T>(
     query?: QueryParams,
     options?: RequestOptions,
     hasRetried = false,
+    hasRetriedAppIntegrity = false,
 ): Promise<T> {
     const auth = options?.auth ?? true
     const retryOnUnauthorized = options?.retryOnUnauthorized ?? auth
     const response = await fetch(buildUrl(baseUrl, path, query), {
-        headers: buildHeaders(init, auth),
         ...init,
+        headers: await buildHeaders(init, auth, options),
     })
 
     if (
@@ -103,12 +123,24 @@ async function request<T>(
         const refreshedTokens = await refreshAuthTokens()
 
         if (refreshedTokens?.accessToken) {
-            return request<T>(baseUrl, path, init, query, options, true)
+            return request<T>(baseUrl, path, init, query, options, true, hasRetriedAppIntegrity)
         }
     }
 
     if (!response.ok) {
-        throw await buildApiError(response)
+        const apiError = await buildApiError(response)
+
+        if (
+            response.status === 403 &&
+            options?.appIntegrityAction &&
+            !hasRetriedAppIntegrity &&
+            isAppIntegrityApiError(apiError)
+        ) {
+            await resetAppIntegrityState()
+            return request<T>(baseUrl, path, init, query, options, hasRetried, true)
+        }
+
+        throw apiError
     }
 
     if (response.status === 204) return undefined as T

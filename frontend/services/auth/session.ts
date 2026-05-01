@@ -5,14 +5,6 @@ import type { AuthTokens, RefreshHandler, SessionListener } from "@/services/aut
 
 export type { AuthTokens } from "@/services/auth/session.types"
 
-function getWebStorage() {
-    if (typeof window === "undefined" || typeof window.localStorage === "undefined") {
-        return null
-    }
-
-    return window.localStorage
-}
-
 function parseStoredAuthTokens(rawTokens: string | null): AuthTokens | null {
     if (!rawTokens) {
         return null
@@ -38,13 +30,7 @@ function parseStoredAuthTokens(rawTokens: string | null): AuthTokens | null {
 }
 
 function readWebStoredAuthTokens(): AuthTokens | null {
-    const storage = getWebStorage()
-
-    if (!storage) {
-        return null
-    }
-
-    return parseStoredAuthTokens(storage.getItem(AUTH_TOKENS_STORAGE_KEY))
+    return null
 }
 
 async function readStoredAuthTokens(): Promise<AuthTokens | null> {
@@ -60,22 +46,7 @@ async function readStoredAuthTokens(): Promise<AuthTokens | null> {
 }
 
 function persistWebAuthTokens(tokens: AuthTokens | null) {
-    const storage = getWebStorage()
-
-    if (!storage) {
-        return
-    }
-
-    try {
-        if (!tokens) {
-            storage.removeItem(AUTH_TOKENS_STORAGE_KEY)
-            return
-        }
-
-        storage.setItem(AUTH_TOKENS_STORAGE_KEY, JSON.stringify(tokens))
-    } catch {
-        // Ignore storage issues and keep the in-memory session alive.
-    }
+    void tokens
 }
 
 async function persistAuthTokens(tokens: AuthTokens | null) {

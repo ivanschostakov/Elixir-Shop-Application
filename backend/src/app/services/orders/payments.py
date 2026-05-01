@@ -221,6 +221,7 @@ async def reconcile_sbp_payment(
         patch["payment_status"] = "paid"
         patch["payment_paid_at"] = _parse_payment_timestamp(payment_data) or datetime.now(timezone.utc)
         patch["payment_error"] = ""
+        patch["is_paid"] = True
     else:
         if payment_status in {"canceled", "error", "refunded", "hold", "partial"}:
             order = await _move_lead_to_payment_result_status(session, order, payment_status=payment_status)
@@ -233,8 +234,18 @@ async def reconcile_sbp_payment(
     return updated_order
 
 
+async def _ensure_persisted_paid_state(session: AsyncSession, order: Order) -> Order:
+    if order.payment_status != "paid" or order.is_paid:
+        return order
+    return await update_order(session, order, OrderUpdate(is_paid=True), commit=True)
+
+
 async def create_payment_for_order(session: AsyncSession, *, request: Request, order: Order) -> dict[str, Any]:
     payment_method = (order.payment_method or "later").strip().lower()
+    if order.is_paid or order.payment_status == "paid":
+        order = await _ensure_persisted_paid_state(session, order)
+        return _payment_status_payload(order)
+
     if payment_method == "later":
         order = await update_order(
             session,
@@ -423,6 +434,7 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
         except IntellectMoneyError as exc:
             log.warning("IntellectMoney status check failed for order %s: %s", order.order_number, exc)
 
+    order = await _ensure_persisted_paid_state(session, order)
     saved_qr_image = await _resolve_payment_qr_image(
         request,
         order,

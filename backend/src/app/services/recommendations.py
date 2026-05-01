@@ -456,7 +456,7 @@ def _rank_candidate_products(
 ) -> list[Product]:
     target_category_ids = {int(category_id) for category_id in category_ids}
 
-    def sort_key(product: Product) -> tuple[float, int, float, float, int]:
+    def sort_key(product: Product) -> tuple[float, int, float, int, float, int]:
         shared_category_ids = categories_by_product_id.get(product.id, set()) & target_category_ids
         shared_category_count = len(shared_category_ids)
         product_score = (
@@ -467,6 +467,7 @@ def _rank_candidate_products(
             (
                 category_affinity.get(category_id, CategoryAffinity()).last_signal_at
                 for category_id in shared_category_ids
+                if category_affinity.get(category_id, CategoryAffinity()).last_signal_at is not None
             ),
             default=None,
         )
@@ -474,6 +475,7 @@ def _rank_candidate_products(
             -float(product_score),
             -shared_category_count,
             -_timestamp_sort_key(product_last_signal_at),
+            -(product.priority or 0),
             -product.created_at.timestamp(),
             -product.id,
         )
@@ -630,6 +632,7 @@ async def get_recommended_products_for_user(
         product_id=product_id,
         draft_id=draft_id,
     )
+    excluded_product_ids.update(source_product_ids)
 
     if surface == "home" and not user_top_categories:
         return await _load_home_fallback_products(
