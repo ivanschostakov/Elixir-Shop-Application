@@ -98,7 +98,6 @@ export default function ProfileScreen() {
             </Pressable>
 
             <View style={ProfileScreenStyles.sectionCard}>
-                <Text style={ProfileScreenStyles.sectionTitle}>{t("profile.legal")}</Text>
                 <Text style={ProfileScreenStyles.sectionDescription}>
                     {t("profile.legalSubtitle")}
                 </Text>

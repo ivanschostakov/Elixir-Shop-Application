@@ -57,20 +57,22 @@ export function ProductCard({ product, style }: ProductCardProps) {
                 </View>
 
                 <View style={contentStyles.productBody}>
-                    {priceLabel ? (
-                        <Text numberOfLines={1} style={contentStyles.productPrice}>
-                            {priceLabel}
-                        </Text>
-                    ) : null}
-                    {product.rating_count > 0 ? (
-                        <View style={contentStyles.productRatingRow}>
-                            <Svg width={12} height={12} viewBox="0 0 24 24">
-                                <Path d={STAR_PATH} fill="#FFC83D" />
-                            </Svg>
-                            <Text style={contentStyles.productRatingValue}>{product.rating_avg.toFixed(1)}</Text>
-                            <Text style={contentStyles.productRatingCount}>({product.rating_count})</Text>
-                        </View>
-                    ) : null}
+                    <View style={contentStyles.productPriceRow}>
+                        {priceLabel ? (
+                            <Text numberOfLines={1} style={contentStyles.productPrice}>
+                                {priceLabel}
+                            </Text>
+                        ) : null}
+                        {product.rating_count > 0 ? (
+                            <View style={contentStyles.productRatingRow}>
+                                <Svg width={12} height={12} viewBox="0 0 24 24">
+                                    <Path d={STAR_PATH} fill="#FFC83D" />
+                                </Svg>
+                                <Text style={contentStyles.productRatingValue}>{product.rating_avg.toFixed(1)}</Text>
+                                <Text style={contentStyles.productRatingCount}>({product.rating_count})</Text>
+                            </View>
+                        ) : null}
+                    </View>
                     <Text numberOfLines={1} style={contentStyles.productTitle}>
                         {product.name}
                     </Text>

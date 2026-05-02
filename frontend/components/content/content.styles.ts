@@ -325,10 +325,17 @@ export const contentStyles = StyleSheet.create({
         fontWeight: "700",
         lineHeight: 16,
     },
+    productPriceRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 8,
+        justifyContent: "space-between",
+    },
     productPrice: {
         color: colors.text,
         fontSize: 14,
         fontWeight: "800",
+        flexShrink: 1,
     },
     productRatingRow: {
         alignItems: "center",
