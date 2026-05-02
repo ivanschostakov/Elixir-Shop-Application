@@ -228,7 +228,7 @@ export const getHeaderStyles = (topInset: number, windowHeight: number) =>
             position: "absolute",
             right: 0,
             top: 38,
-            minWidth: 140,
+            minWidth: 190,
             backgroundColor: colors.background,
             borderRadius: 16,
             paddingHorizontal: 10,
@@ -300,6 +300,11 @@ export const getHeaderStyles = (topInset: number, windowHeight: number) =>
             justifyContent: "center",
             minHeight: 36,
             paddingHorizontal: 8,
+        },
+        menuActionText: {
+            color: colors.primary,
+            fontSize: 12,
+            fontWeight: "700",
         },
         menuActionPressed: {
             opacity: 0.5,

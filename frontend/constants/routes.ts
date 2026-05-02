@@ -16,6 +16,9 @@ export const ROUTES = {
     profileDrafts: "/profile-drafts",
     profileHistory: "/profile-history",
     websiteAccount: "/website-account",
+    contacts: "/contacts",
+    requisites: "/requisites",
+    publicOffer: "/public-offer",
 } as const
 
 const PRODUCT_ROUTE_PREFIX = "/products/"
@@ -32,6 +35,9 @@ const headerTitleKeys: Record<string, TranslationKey> = {
     [ROUTES.profileDrafts]: "route.profileDrafts",
     [ROUTES.profileHistory]: "route.profileHistory",
     [ROUTES.websiteAccount]: "route.websiteAccount",
+    [ROUTES.contacts]: "route.contacts",
+    [ROUTES.requisites]: "route.requisites",
+    [ROUTES.publicOffer]: "route.publicOffer",
 }
 
 export const PRIMARY_APP_ROUTES = [

@@ -13,6 +13,9 @@ const THEME_TOGGLE_THUMB_TRANSLATE_X = 40
 export function HeaderMenu({
     isOpen,
     onClose,
+    onOpenContacts,
+    onOpenPublicOffer,
+    onOpenRequisites,
     onSignOut,
     onToggleTheme,
     onToggle,
@@ -106,6 +109,44 @@ export function HeaderMenu({
                             <View style={styles.menuDivider} />
                         </>
                     ) : null}
+
+                    <Pressable
+                        accessibilityLabel={t("nav.contacts")}
+                        accessibilityRole="button"
+                        onPress={() => {
+                            onClose()
+                            onOpenContacts()
+                        }}
+                        style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}
+                    >
+                        <Text style={styles.menuActionText}>{t("nav.contacts")}</Text>
+                    </Pressable>
+
+                    <Pressable
+                        accessibilityLabel={t("nav.requisites")}
+                        accessibilityRole="button"
+                        onPress={() => {
+                            onClose()
+                            onOpenRequisites()
+                        }}
+                        style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}
+                    >
+                        <Text style={styles.menuActionText}>{t("nav.requisites")}</Text>
+                    </Pressable>
+
+                    <Pressable
+                        accessibilityLabel={t("nav.publicOffer")}
+                        accessibilityRole="button"
+                        onPress={() => {
+                            onClose()
+                            onOpenPublicOffer()
+                        }}
+                        style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}
+                    >
+                        <Text style={styles.menuActionText}>{t("nav.publicOffer")}</Text>
+                    </Pressable>
+
+                    <View style={styles.menuDivider} />
 
                     <Pressable
                         accessibilityLabel={t("nav.signOut")}

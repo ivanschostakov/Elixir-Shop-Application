@@ -97,6 +97,64 @@ export default function ProfileScreen() {
                 </View>
             </Pressable>
 
+            <View style={ProfileScreenStyles.sectionCard}>
+                <Text style={ProfileScreenStyles.sectionTitle}>{t("profile.legal")}</Text>
+                <Text style={ProfileScreenStyles.sectionDescription}>
+                    {t("profile.legalSubtitle")}
+                </Text>
+
+                <Pressable
+                    accessibilityLabel={t("profile.openContacts")}
+                    accessibilityRole="button"
+                    onPress={() => router.push(ROUTES.contacts)}
+                    style={({ pressed }) => [
+                        ProfileScreenStyles.historyCardButton,
+                        pressed && ProfileScreenStyles.historyCardButtonPressed,
+                    ]}
+                >
+                    <View style={ProfileScreenStyles.sectionCard}>
+                        <View style={ProfileScreenStyles.historyCardHeader}>
+                            <Text style={ProfileScreenStyles.historyCardTitle}>{t("nav.contacts")}</Text>
+                            <Text style={ProfileScreenStyles.historyCardArrow}>{">"}</Text>
+                        </View>
+                    </View>
+                </Pressable>
+
+                <Pressable
+                    accessibilityLabel={t("profile.openRequisites")}
+                    accessibilityRole="button"
+                    onPress={() => router.push(ROUTES.requisites)}
+                    style={({ pressed }) => [
+                        ProfileScreenStyles.historyCardButton,
+                        pressed && ProfileScreenStyles.historyCardButtonPressed,
+                    ]}
+                >
+                    <View style={ProfileScreenStyles.sectionCard}>
+                        <View style={ProfileScreenStyles.historyCardHeader}>
+                            <Text style={ProfileScreenStyles.historyCardTitle}>{t("nav.requisites")}</Text>
+                            <Text style={ProfileScreenStyles.historyCardArrow}>{">"}</Text>
+                        </View>
+                    </View>
+                </Pressable>
+
+                <Pressable
+                    accessibilityLabel={t("profile.openPublicOffer")}
+                    accessibilityRole="button"
+                    onPress={() => router.push(ROUTES.publicOffer)}
+                    style={({ pressed }) => [
+                        ProfileScreenStyles.historyCardButton,
+                        pressed && ProfileScreenStyles.historyCardButtonPressed,
+                    ]}
+                >
+                    <View style={ProfileScreenStyles.sectionCard}>
+                        <View style={ProfileScreenStyles.historyCardHeader}>
+                            <Text style={ProfileScreenStyles.historyCardTitle}>{t("nav.publicOffer")}</Text>
+                            <Text style={ProfileScreenStyles.historyCardArrow}>{">"}</Text>
+                        </View>
+                    </View>
+                </Pressable>
+            </View>
+
             <ProfileQuickActions onSignOut={handleSignOut} />
         </FeedTemplate>
     )

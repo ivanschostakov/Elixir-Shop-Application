@@ -8,5 +8,6 @@ export const ENDPOINTS = {
     PAYMENTS: "/v1/payments",
     PRODUCT_CATEGORIES: "/v1/product-categories",
     PRODUCTS: "/v1/products",
+    REQUISITES: "/v1/requisites",
     USERS: "/v1/users",
 }

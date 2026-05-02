@@ -168,6 +168,18 @@ export default function AppHeader({ template }: AppHeaderProps) {
             <HeaderMenu
                 isOpen={isMenuOpen}
                 onClose={() => setIsMenuOpen(false)}
+                onOpenContacts={() => {
+                    setIsMenuOpen(false)
+                    router.push(ROUTES.contacts)
+                }}
+                onOpenPublicOffer={() => {
+                    setIsMenuOpen(false)
+                    router.push(ROUTES.publicOffer)
+                }}
+                onOpenRequisites={() => {
+                    setIsMenuOpen(false)
+                    router.push(ROUTES.requisites)
+                }}
                 onSignOut={signOut}
                 onToggleTheme={toggleTheme}
                 onToggle={() => setIsMenuOpen((currentValue) => !currentValue)}

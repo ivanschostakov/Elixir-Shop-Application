@@ -122,6 +122,7 @@ from .favorites.favoured_product import (
     get_favourite_products_for_user,
     update_favoured_product,
 )
+from .legal.requisite import create_requisite, delete_requisite, get_requisite_by_id, get_requisites, update_requisite
 from .orders.draft import create_order_draft, delete_order_draft, get_latest_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
 from .orders.order import create_order, get_order_by_amocrm_lead_id, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_by_invoice_id, get_orders_for_user, update_order
 from .website.website_identity import (
@@ -208,6 +209,11 @@ __all__ = [
     "get_order_by_id",
     "get_order_by_invoice_id",
     "get_orders_for_user",
+    "create_requisite",
+    "delete_requisite",
+    "get_requisite_by_id",
+    "get_requisites",
+    "update_requisite",
     "update_order_draft",
     "update_order",
     "update_favoured_product",

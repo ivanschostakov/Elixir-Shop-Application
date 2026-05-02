@@ -5,6 +5,9 @@ import type { ThemeName } from "@/theme/colors"
 export type HeaderMenuProps = {
     isOpen: boolean
     onClose: () => void
+    onOpenContacts: () => void
+    onOpenPublicOffer: () => void
+    onOpenRequisites: () => void
     onSignOut: () => Promise<void>
     onToggleTheme?: () => void
     onToggle: () => void

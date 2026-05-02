@@ -9,6 +9,7 @@ from .modules import (
     payments_router,
     product_categories_router,
     products_router,
+    requisites_router,
     users_router,
     webhooks_router,
 )
@@ -20,6 +21,7 @@ v1_router.include_router(auth_router)
 v1_router.include_router(app_integrity_router)
 v1_router.include_router(product_categories_router)
 v1_router.include_router(products_router)
+v1_router.include_router(requisites_router)
 v1_router.include_router(favourites_router)
 v1_router.include_router(favourites_query_router)
 v1_router.include_router(users_router)
@@ -35,6 +37,7 @@ __all__ = [
     "app_integrity_router",
     "product_categories_router",
     "products_router",
+    "requisites_router",
     "favourites_router",
     "favourites_query_router",
     "payments_router",

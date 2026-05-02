@@ -7,6 +7,7 @@ from .products import products_router
 from .users import users_router
 from .webhooks import webhooks_router
 from .delivery import delivery_router
+from .requisites import requisites_router
 
 __all__ = [
     "auth_router",
@@ -16,6 +17,7 @@ __all__ = [
     "payments_router",
     "product_categories_router",
     "products_router",
+    "requisites_router",
     "users_router",
     "webhooks_router",
     "delivery_router",

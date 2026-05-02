@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 import src.app.modules.auth.dependencies as auth_dependencies
 import src.app.modules.product_categories.router as product_categories_router_module
 import src.app.modules.products.router as products_router_module
+import src.app.modules.requisites.router as requisites_router_module
 from src.app.main import app
 from src.database import get_db
 from src.database.models import User
@@ -42,6 +43,9 @@ from src.database.models import User
         ),
         ("PATCH", "/api/v1/products/1", {}),
         ("DELETE", "/api/v1/products/1", None),
+        ("POST", "/api/v1/requisites", {"title": "R", "config": {"label": "value"}}),
+        ("PATCH", "/api/v1/requisites/1", {"title": "Updated"}),
+        ("DELETE", "/api/v1/requisites/1", None),
     ],
 )
 def test_protected_routes_require_authentication(client: TestClient, method: str, path: str, payload: dict | None):
@@ -91,6 +95,26 @@ def test_product_categories_get_is_public(monkeypatch: pytest.MonkeyPatch):
         app.dependency_overrides.pop(get_db, None)
 
 
+def test_requisites_get_is_public(monkeypatch: pytest.MonkeyPatch):
+    async def fake_get_db():
+        yield object()
+
+    async def fake_get_requisites(*args, **kwargs):
+        return []
+
+    app.dependency_overrides[get_db] = fake_get_db
+    monkeypatch.setattr(requisites_router_module, "get_requisites", fake_get_requisites)
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get("/api/v1/requisites")
+
+        assert response.status_code == 200, response.text
+        assert response.json() == []
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
 def _product_payload(sku: str = "admin-only-sku") -> dict:
     return {
         "sku": sku,
@@ -120,6 +144,9 @@ def _fake_user() -> User:
         ("POST", "/api/v1/products", _product_payload()),
         ("PATCH", "/api/v1/products/1", {"name": "Updated"}),
         ("DELETE", "/api/v1/products/1", None),
+        ("POST", "/api/v1/requisites", {"title": "R", "config": {"label": "value"}}),
+        ("PATCH", "/api/v1/requisites/1", {"title": "Updated"}),
+        ("DELETE", "/api/v1/requisites/1", None),
     ],
 )
 def test_product_mutations_reject_authenticated_non_admin(monkeypatch: pytest.MonkeyPatch, method: str, path: str, payload: dict | None):
@@ -199,6 +226,46 @@ def test_product_create_allows_admin(monkeypatch: pytest.MonkeyPatch):
 
         assert response.status_code == 201, response.text
         assert response.json()["id"] == 777
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(auth_dependencies.get_current_user, None)
+
+
+def test_requisite_create_allows_admin(monkeypatch: pytest.MonkeyPatch):
+    async def fake_get_db():
+        yield object()
+
+    async def fake_get_current_user():
+        return _fake_user()
+
+    async def fake_is_admin_user(*args, **kwargs):
+        return True
+
+    async def fake_create_requisite(*args, **kwargs):
+        now = datetime.now(timezone.utc)
+        return SimpleNamespace(
+            id=888,
+            title="Тестовый реквизит",
+            config={"ИНН": "000000000000"},
+            created_at=now,
+            updated_at=now,
+        )
+
+    app.dependency_overrides[get_db] = fake_get_db
+    app.dependency_overrides[auth_dependencies.get_current_user] = fake_get_current_user
+    monkeypatch.setattr(auth_dependencies, "is_admin_user", fake_is_admin_user)
+    monkeypatch.setattr(requisites_router_module, "create_requisite", fake_create_requisite)
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.post(
+                "/api/v1/requisites",
+                json={"title": "Тестовый реквизит", "config": {"ИНН": "000000000000"}},
+            )
+
+        assert response.status_code == 201, response.text
+        assert response.json()["id"] == 888
+        assert response.json()["config"]["ИНН"] == "000000000000"
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(auth_dependencies.get_current_user, None)
