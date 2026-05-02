@@ -17,7 +17,7 @@
         "applinks:elixirshop.devsivanschostakov.org"
       ],
       "entitlements": {
-        "com.apple.developer.devicecheck.appattest-environment": "$(APP_ATTEST_ENVIRONMENT)"
+        "com.apple.developer.devicecheck.appattest-environment": "production"
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
@@ -103,7 +103,8 @@
         {
           "microphonePermission": "Allow Elixir Shop to record voice messages for AI chat."
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

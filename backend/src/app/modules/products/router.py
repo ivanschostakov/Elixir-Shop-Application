@@ -1,6 +1,5 @@
 from typing import Literal
 from pathlib import Path
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,9 +58,7 @@ async def products_get_similar(
     similar_products = await get_similar_products(db, product_id=product_id, offset=offset, limit=limit)
     review_stats = await get_product_review_stats(db, product_ids=[item.id for item in similar_products])
     return serialize_products_with_variants(
-        request,
-        similar_products,
-        review_stats_by_product_id=review_stats,
+        request, similar_products, review_stats_by_product_id=review_stats,
     )
 
 
@@ -103,13 +100,9 @@ async def products_create_review(
 ):
     product = await get_product_by_id(db, product_id)
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    if not await has_user_purchased_product(db, user_id=current_user.id, product_id=product_id):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers who bought this product can leave a review")
+    if not await has_user_purchased_product(db, user_id=current_user.id, product_id=product_id): raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers who bought this product can leave a review")
 
-    data = ReviewCreate(
-        value=value,
-        text=text.strip() if text else None,
-    )
+    data = ReviewCreate(value=value, text=text.strip() if text else None)
     uploaded_attachments = attachments or []
     validate_review_attachments_count(len(uploaded_attachments))
 
@@ -117,14 +110,7 @@ async def products_create_review(
     total_size_bytes = 0
 
     try:
-        review = await create_product_review(
-            db,
-            user_id=current_user.id,
-            product_id=product_id,
-            data=data,
-            commit=False,
-        )
-
+        review = await create_product_review(db, user_id=current_user.id, product_id=product_id, data=data, commit=False)
         for attachment in uploaded_attachments:
             content = await attachment.read()
             mime_type = validate_review_attachment(content, mime_type=attachment.content_type)
@@ -132,25 +118,15 @@ async def products_create_review(
             validate_review_attachments_total_size(total_size_bytes)
 
             filename = build_review_attachment_filename(mime_type)
-            await create_review_attachment(
-                db,
-                review_id=review.id,
-                filename=filename,
-                mime_type=mime_type,
-                commit=False,
-            )
-            saved_path = await save_review_attachment_file(
-                review.id,
-                filename=filename,
-                content=content,
-            )
+            await create_review_attachment(db, review_id=review.id, filename=filename, mime_type=mime_type, commit=False)
+            saved_path = await save_review_attachment_file(review.id, filename=filename, content=content)
             created_file_paths.append(saved_path)
 
         await db.commit()
+    
     except Exception:
         await db.rollback()
-        for file_path in created_file_paths:
-            remove_review_attachment_file(file_path)
+        for file_path in created_file_paths: remove_review_attachment_file(file_path)
         raise
 
     created_review = await get_review_by_id(db, review_id=review.id)
@@ -172,16 +148,7 @@ async def products_get(
     db: AsyncSession = Depends(get_db),
     sort: Literal["newest", "name_asc", "name_desc", "price_asc", "price_desc"] | None = Query(default=None),
 ):
-    products = await get_products(
-        db,
-        q=q,
-        sku=sku,
-        min_priority=min_priority,
-        category_id=category_id,
-        offset=offset,
-        limit=limit,
-        sort=sort,
-    )
+    products = await get_products(db, q=q, sku=sku, min_priority=min_priority, category_id=category_id, offset=offset, limit=limit, sort=sort)
     review_stats = await get_product_review_stats(db, product_ids=[product.id for product in products])
     return serialize_products_with_variants(request, products, review_stats_by_product_id=review_stats)
 

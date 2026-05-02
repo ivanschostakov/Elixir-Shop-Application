@@ -16,10 +16,8 @@ def resolve_coupon_discount(coupon: WebsiteCoupon) -> tuple[str, Decimal | None,
 
 
 def resolve_entitlement_discount(entitlement: WebsiteDiscountEntitlement) -> tuple[str, Decimal | None, Decimal | None, str | None]:
-    if entitlement.discount_percent is not None:
-        return "percent", quantize_money(entitlement.discount_percent), None, None
-    if entitlement.discount_amount is not None:
-        return "fixed_amount", None, quantize_money(entitlement.discount_amount), None
+    if entitlement.discount_percent is not None: return "percent", quantize_money(entitlement.discount_percent), None, None
+    if entitlement.discount_amount is not None: return "fixed_amount", None, quantize_money(entitlement.discount_amount), None
     return "unknown", None, None, "Website personal discount exists, but its numeric value was not exposed by the website payload"
 
 
@@ -30,20 +28,19 @@ def build_website_coupon_option(coupon: WebsiteCoupon, *, subtotal: Decimal) -> 
     if calculation_mode == "unknown":
         status = "unsupported"
         is_applicable = False
+
     elif not coupon.is_active:
         status = "inactive"
         is_applicable = False
         reason = "Coupon is not active on the website"
+
     elif coupon.max_use is not None and 0 < coupon.max_use <= coupon.use_count:
         status = "usage_limit_reached"
         is_applicable = False
         reason = "Coupon usage limit has already been reached on the website"
 
     estimated_discount_amount = None
-    if is_applicable:
-        estimated_discount_amount = estimate_discount_amount(
-            subtotal=subtotal, calculation_mode=calculation_mode, discount_percent=discount_percent, discount_amount=discount_amount
-        )
+    if is_applicable: estimated_discount_amount = estimate_discount_amount(subtotal=subtotal, calculation_mode=calculation_mode, discount_percent=discount_percent, discount_amount=discount_amount)
 
     return ResolvedDiscountOption(
         source_kind="website_coupon",
@@ -71,24 +68,24 @@ def build_website_entitlement_option(entitlement: WebsiteDiscountEntitlement, *,
     if calculation_mode == "unknown":
         status = "unsupported"
         is_applicable = False
+
     elif not entitlement.is_active:
         status = "inactive"
         is_applicable = False
         reason = "Website personal discount is not active"
+
     elif entitlement.starts_at and entitlement.starts_at > now:
         status = "scheduled"
         is_applicable = False
         reason = "Website personal discount is not active yet"
+
     elif entitlement.ends_at and entitlement.ends_at < now:
         status = "expired"
         is_applicable = False
         reason = "Website personal discount has expired"
 
     estimated_discount_amount = None
-    if is_applicable:
-        estimated_discount_amount = estimate_discount_amount(
-            subtotal=subtotal, calculation_mode=calculation_mode, discount_percent=discount_percent, discount_amount=discount_amount
-        )
+    if is_applicable: estimated_discount_amount = estimate_discount_amount(subtotal=subtotal, calculation_mode=calculation_mode, discount_percent=discount_percent, discount_amount=discount_amount)
 
     return ResolvedDiscountOption(
         source_kind="website_discount_entitlement",

@@ -30,7 +30,7 @@ import { trackRecommendationView } from "@/services/api/recommendations"
 import { colors } from "@/theme/colors"
 import type { UploadableReviewAttachment } from "@/types/product"
 
-export default function ProductScreen({ productId }: ProductScreenProps) {
+export default function ProductScreen({ productId, preferredVariantId }: ProductScreenProps) {
     const { product, loading, error } = useProduct(productId)
     const { reviews, loading: reviewsLoading, error: reviewsError, setReviews } = useProductReviews(productId)
     const { canReview, loading: reviewEligibilityLoading } = useProductReviewEligibility(productId)
@@ -43,7 +43,7 @@ export default function ProductScreen({ productId }: ProductScreenProps) {
     } = useProductFavourite(productId)
     const { t } = useLanguage()
     const { handleCopy } = useCopyableProfileValue({ t })
-    const { handleVariantSelect, selectedVariant } = useSelectedProductVariant(product)
+    const { handleVariantSelect, selectedVariant } = useSelectedProductVariant(product, preferredVariantId)
     const { products: similarProducts } = useSimilarProducts(product?.id ?? null, 6)
     const {
         activeInfoTab,

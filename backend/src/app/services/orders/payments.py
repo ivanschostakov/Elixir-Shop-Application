@@ -35,58 +35,41 @@ FINAL_PAYMENT_STATUSES = {"paid", "canceled", "error", "refunded"}
 
 def _payment_status_from_step(payment_step: str | None) -> str:
     step = (payment_step or "").strip()
-    if step == "OK":
-        return "paid"
-    if step == "Error":
-        return "error"
-    if step in PENDING_PAYMENT_STEPS:
-        return "pending"
+    if step == "OK": return "paid"
+    if step == "Error": return "error"
+    if step in PENDING_PAYMENT_STEPS: return "pending"
     return step.lower() if step else "pending"
 
 
 def _payment_status_from_code(payment_status_code: int | None) -> str | None:
-    if payment_status_code is None:
-        return None
+    if payment_status_code is None: return None
     return PAYMENT_STATUS_BY_CODE.get(int(payment_status_code))
 
 
 def _parse_payment_timestamp(value: str | None) -> datetime | None:
-    if not value:
-        return None
+    if not value: return None
     raw = str(value).strip()
-    if not raw:
-        return None
+    if not raw: return None
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
-        except ValueError:
-            continue
-    try:
-        dt = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
+        try: return datetime.strptime(raw, fmt).replace(tzinfo=timezone.utc)
+        except ValueError: continue
+    try: dt = datetime.fromisoformat(raw)
+    except ValueError: return None
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def _payment_error_text(payment_status: str | None, payment_step: str | None = None) -> str | None:
-    if payment_status == "canceled":
-        return "Платеж был отменен"
-    if payment_status == "error":
-        return "Ошибка оплаты"
-    if payment_status == "refunded":
-        return "Платеж возвращен"
-    if payment_status == "hold":
-        return "Платеж захолдирован"
-    if payment_status == "partial":
-        return "Платеж оплачен частично"
-    if payment_step and payment_step not in PENDING_PAYMENT_STEPS:
-        return payment_step
+    if payment_status == "canceled": return "Платеж был отменен"
+    if payment_status == "error": return "Ошибка оплаты"
+    if payment_status == "refunded": return "Платеж возвращен"
+    if payment_status == "hold": return "Платеж захолдирован"
+    if payment_status == "partial": return "Платеж оплачен частично"
+    if payment_step and payment_step not in PENDING_PAYMENT_STEPS: return payment_step
     return None
 
 def _base_return_url(request: Request) -> str:
     configured = (APP_PAYMENT_RETURN_BASE_URL or "").strip().rstrip("/")
-    if configured:
-        return configured
+    if configured: return configured
     return str(request.base_url).rstrip("/")
 
 
@@ -103,50 +86,37 @@ def _intellectmoney_urls(request: Request, order_id: int) -> dict[str, str]:
 
 
 def _ipv4_from_value(value: str | None) -> str | None:
-    if not value:
-        return None
+    if not value: return None
     for raw_candidate in str(value).split(","):
         candidate = raw_candidate.strip().strip('"').strip("'")
-        if not candidate:
-            continue
-        if candidate.lower().startswith("for="):
-            candidate = candidate[4:].strip().strip('"').strip("'")
-        if candidate.startswith("[") and "]" in candidate:
-            candidate = candidate[1:candidate.index("]")]
-        elif candidate.count(":") == 1 and "." in candidate:
-            candidate = candidate.rsplit(":", 1)[0]
-        try:
-            parsed = ip_address(candidate)
-        except ValueError:
-            continue
-        if parsed.version == 4:
-            return str(parsed)
+        if not candidate: continue
+        if candidate.lower().startswith("for="): candidate = candidate[4:].strip().strip('"').strip("'")
+        if candidate.startswith("[") and "]" in candidate: candidate = candidate[1:candidate.index("]")]
+        elif candidate.count(":") == 1 and "." in candidate: candidate = candidate.rsplit(":", 1)[0]
+        try: parsed = ip_address(candidate)
+        except ValueError: continue
+        if parsed.version == 4: return str(parsed)
     return None
 
 
 def _detect_request_ip(request: Request) -> str:
     configured_ip = _ipv4_from_value(INTELLECTMONEY_IP_ADDRESS)
-    if configured_ip:
-        return configured_ip
+    if configured_ip: return configured_ip
     if INTELLECTMONEY_IP_ADDRESS:
         log.warning("Ignoring invalid INTELLECTMONEY_IP_ADDRESS=%s; expected IPv4", INTELLECTMONEY_IP_ADDRESS)
 
     for header_name in ("cf-connecting-ip", "x-real-ip", "x-forwarded-for", "forwarded"):
         header_ip = _ipv4_from_value(request.headers.get(header_name))
-        if header_ip:
-            return header_ip
+        if header_ip: return header_ip
 
     if request.client and request.client.host:
         client_ip = _ipv4_from_value(request.client.host)
-        if client_ip:
-            return client_ip
+        if client_ip: return client_ip
 
     host = urlsplit(_base_return_url(request)).hostname
     if host:
-        try:
-            return socket.gethostbyname(host)
-        except OSError:
-            log.warning("Unable to resolve return base host %s for IntellectMoney; falling back", host)
+        try: return socket.gethostbyname(host)
+        except OSError: log.warning("Unable to resolve return base host %s for IntellectMoney; falling back", host)
     return "127.0.0.1"
 
 def _payment_status_payload(
@@ -177,25 +147,12 @@ def _payment_status_payload(
 
 
 def _qr_debug(value: str | None) -> dict[str, Any]:
-    if not value:
-        return {"present": False, "length": 0, "prefix": None}
+    if not value: return {"present": False, "length": 0, "prefix": None}
     return {"present": True, "length": len(value), "prefix": value[:120]}
 
 
-async def _resolve_payment_qr_image(
-    request: Request,
-    order: Order,
-    *,
-    qr_image: str | None,
-    qr_url: str | None,
-) -> str | None:
-    try:
-        saved_path = await save_order_payment_qr(
-            order.user_id,
-            order.id,
-            qr_image=qr_image,
-            qr_url=qr_url,
-        )
+async def _resolve_payment_qr_image(request: Request, order: Order, *, qr_image: str | None, qr_url: str | None) -> str | None:
+    try: saved_path = await save_order_payment_qr(order.user_id, order.id, qr_image=qr_image, qr_url=qr_url)
     except Exception:
         log.exception("Failed to save SBP QR for order %s", order.order_number)
         saved_path = find_order_payment_qr_path(order.user_id, order.id)
@@ -235,8 +192,7 @@ async def reconcile_sbp_payment(
 
 
 async def _ensure_persisted_paid_state(session: AsyncSession, order: Order) -> Order:
-    if order.payment_status != "paid" or order.is_paid:
-        return order
+    if order.payment_status != "paid" or order.is_paid: return order
     return await update_order(session, order, OrderUpdate(is_paid=True), commit=True)
 
 

@@ -6,6 +6,7 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.users.me.schemas import CreateOrderDraftPayload, UpdateOrderDraftPayload
+from src.app.services.orders.draft_serialization import serialize_order_draft, serialize_order_drafts
 from src.app.services.orders.drafts import (
     create_order_draft_for_user,
     delete_order_draft_for_user,
@@ -13,8 +14,6 @@ from src.app.services.orders.drafts import (
     get_order_draft_checkout_options_for_user,
     get_order_draft_for_user,
     get_recent_order_drafts_for_user,
-    serialize_order_draft,
-    serialize_order_drafts,
     update_order_draft_for_user,
 )
 from src.database import get_db
@@ -65,7 +64,6 @@ async def get_my_latest_order_draft(
     draft = await get_latest_order_draft_for_checkout(db, user_id=current_user.id)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
-
     return await serialize_order_draft(request, db, draft)
 
 
@@ -78,7 +76,6 @@ async def get_my_order_draft_options(
     options = await get_order_draft_checkout_options_for_user(db, user=current_user, draft_id=draft_id)
     if options is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
-
     return options
 
 
@@ -92,7 +89,6 @@ async def get_my_order_draft(
     draft = await get_order_draft_for_user(db, user_id=current_user.id, draft_id=draft_id)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
-
     return await serialize_order_draft(request, db, draft)
 
 
@@ -107,7 +103,6 @@ async def update_my_order_draft(
     draft = await update_order_draft_for_user(db, user_id=current_user.id, draft_id=draft_id, payload=payload)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
-
     return await serialize_order_draft(request, db, draft)
 
 

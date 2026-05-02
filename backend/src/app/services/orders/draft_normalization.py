@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from starlette import status
 
-from src.database.limits import DELIVERY_ADDRESS_MAX_LENGTH, DELIVERY_CITY_MAX_LENGTH, DELIVERY_COMMENT_MAX_LENGTH, DELIVERY_LABEL_MAX_LENGTH, DELIVERY_POSTAL_CODE_MAX_LENGTH, EMAIL_MAX_LENGTH, EXTERNAL_ID_MAX_LENGTH, PERSON_NAME_MAX_LENGTH, WEBSITE_PHONE_MAX_LENGTH
+from src.database.limits import EMAIL_MAX_LENGTH, PERSON_NAME_MAX_LENGTH, WEBSITE_PHONE_MAX_LENGTH
 from src.database.models import OrderDraft
 from src.database.schemas import DeliveryAddressCreate, DeliveryRecipientCreate
 from src.normalize import fit_text, normalize_person_name, optional_str
@@ -36,7 +36,7 @@ def _build_new_recipient_data(user_id: int, payload) -> DeliveryRecipientCreate:
 
 
 def _build_create_delivery_address_data(user_id: int, payload) -> DeliveryAddressCreate:
-    full_address = fit_text(payload.full_address, DELIVERY_ADDRESS_MAX_LENGTH)
+    full_address = optional_str(payload.full_address)
     if full_address is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Address is required")
 
@@ -45,21 +45,20 @@ def _build_create_delivery_address_data(user_id: int, payload) -> DeliveryAddres
         mode=_require_delivery_value(payload.mode, field_name="Delivery mode"),
         provider=_require_delivery_value(payload.provider, field_name="Delivery provider"),
         country_code=_require_delivery_value(payload.country_code, field_name="Delivery country"),
-        name=fit_text(payload.name or full_address, DELIVERY_LABEL_MAX_LENGTH) or full_address,
+        name=optional_str(payload.name) or full_address,
         full_address=full_address,
-        details=fit_text(payload.details, DELIVERY_COMMENT_MAX_LENGTH),
-        city=fit_text(payload.city, DELIVERY_CITY_MAX_LENGTH),
-        postal_code=fit_text(payload.postal_code, DELIVERY_POSTAL_CODE_MAX_LENGTH),
+        details=optional_str(payload.details),
+        city=optional_str(payload.city),
+        postal_code=optional_str(payload.postal_code),
         latitude=_require_delivery_value(payload.latitude, field_name="Delivery latitude"),
         longitude=_require_delivery_value(payload.longitude, field_name="Delivery longitude"),
-        provider_reference=fit_text(payload.provider_reference, EXTERNAL_ID_MAX_LENGTH),
+        provider_reference=optional_str(payload.provider_reference),
     )
 
 
 def _build_new_delivery_address_data(draft: OrderDraft, payload) -> DeliveryAddressCreate:
-    full_address = fit_text(payload.full_address, DELIVERY_ADDRESS_MAX_LENGTH)
-    if full_address is None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Address is required")
+    full_address = optional_str(payload.full_address)
+    if full_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Address is required")
 
     template = draft.delivery_address
     fields = payload.model_fields_set
@@ -74,12 +73,12 @@ def _build_new_delivery_address_data(draft: OrderDraft, payload) -> DeliveryAddr
         mode=_require_delivery_value(mode, field_name="Delivery mode"),
         provider=_require_delivery_value(provider, field_name="Delivery provider"),
         country_code=_require_delivery_value(country_code, field_name="Delivery country"),
-        name=fit_text(payload.name or full_address, DELIVERY_LABEL_MAX_LENGTH) or full_address,
+        name=optional_str(payload.name) or full_address,
         full_address=full_address,
-        details=fit_text(payload.details, DELIVERY_COMMENT_MAX_LENGTH) if "details" in fields else (template.details if template is not None else None),
-        city=fit_text(payload.city, DELIVERY_CITY_MAX_LENGTH) if "city" in fields else (template.city if template is not None else None),
-        postal_code=fit_text(payload.postal_code, DELIVERY_POSTAL_CODE_MAX_LENGTH) if "postal_code" in fields else (template.postal_code if template is not None else None),
+        details=optional_str(payload.details) if "details" in fields else (template.details if template is not None else None),
+        city=optional_str(payload.city) if "city" in fields else (template.city if template is not None else None),
+        postal_code=optional_str(payload.postal_code) if "postal_code" in fields else (template.postal_code if template is not None else None),
         latitude=_require_delivery_value(latitude, field_name="Delivery latitude"),
         longitude=_require_delivery_value(longitude, field_name="Delivery longitude"),
-        provider_reference=fit_text(payload.provider_reference, EXTERNAL_ID_MAX_LENGTH) if "provider_reference" in fields else (template.provider_reference if template is not None else None),
+        provider_reference=optional_str(payload.provider_reference) if "provider_reference" in fields else (template.provider_reference if template is not None else None),
     )

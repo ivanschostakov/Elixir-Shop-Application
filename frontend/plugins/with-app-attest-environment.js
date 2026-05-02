@@ -6,7 +6,20 @@ const {
 
 const PLUGIN_NAME = "with-app-attest-environment"
 const APP_ATTEST_ENTITLEMENT = "com.apple.developer.devicecheck.appattest-environment"
-const APP_ATTEST_BUILD_SETTING = "$(APP_ATTEST_ENVIRONMENT)"
+
+function resolveAppAttestEntitlementEnvironment() {
+  const explicit = String(process.env.APP_ATTEST_ENVIRONMENT ?? "").trim().toLowerCase()
+  if (explicit === "development" || explicit === "production") {
+    return explicit
+  }
+
+  const profile = String(process.env.EAS_BUILD_PROFILE ?? "").trim().toLowerCase()
+  if (profile === "development" || profile === "preview") {
+    return "development"
+  }
+
+  return "production"
+}
 
 function getEnvironmentForConfiguration(name) {
   const normalizedName = String(name ?? "").toLowerCase()
@@ -23,8 +36,10 @@ function getEnvironmentForConfiguration(name) {
 }
 
 function withAppAttestEnvironment(config) {
+  const entitlementEnvironment = resolveAppAttestEntitlementEnvironment()
+
   config = withEntitlementsPlist(config, (config) => {
-    config.modResults[APP_ATTEST_ENTITLEMENT] = APP_ATTEST_BUILD_SETTING
+    config.modResults[APP_ATTEST_ENTITLEMENT] = entitlementEnvironment
     return config
   })
 

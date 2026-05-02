@@ -53,6 +53,7 @@ class _FakeSession:
 def test_restock_processor_sends_once_and_deactivates(monkeypatch: pytest.MonkeyPatch):
     subscription = SimpleNamespace(user_id=11, variant_id=33, is_active=True, last_seen_stock=0, notified_at=None)
     variant = SimpleNamespace(id=33, product_id=7, name="Test Variant", stock=5)
+    captured_payload: dict[str, object] = {}
 
     session = _FakeSession(
         [
@@ -63,6 +64,7 @@ def test_restock_processor_sends_once_and_deactivates(monkeypatch: pytest.Monkey
     )
 
     async def fake_send_push_to_user(*args, **kwargs):
+        captured_payload.update(kwargs)
         return True
 
     monkeypatch.setattr(notifications_service, "send_push_to_user", fake_send_push_to_user)
@@ -76,6 +78,14 @@ def test_restock_processor_sends_once_and_deactivates(monkeypatch: pytest.Monkey
     assert session.commits == 1
     assert len(session.added) == 1
     assert session.added[0].type == notifications_service.DISPATCH_TYPE_RESTOCK
+    assert captured_payload["title"] == "Товар снова в наличии"
+    assert captured_payload["body"] == "Вариант Test Variant снова в наличии."
+    assert captured_payload["data"] == {
+        "type": "restock",
+        "variant_id": 33,
+        "variant_name": "Test Variant",
+        "product_id": 7,
+    }
 
 
 def test_restock_processor_waits_for_stock_increase(monkeypatch: pytest.MonkeyPatch):

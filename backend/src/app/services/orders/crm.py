@@ -15,7 +15,8 @@ from src.database.schemas import OrderUpdate
 from src.integrations.amocrm import amocrm_client
 
 from .common import _normalize_phone
-from .fulfillment import create_delivery_for_order, normalize_address_for_cf
+from .fulfillment import create_delivery_for_order
+from .fulfillment_payloads import normalize_address_for_cf
 
 log = logging.getLogger(__name__)
 
@@ -50,14 +51,11 @@ def _payment_status_to_amocrm_status_id(payment_status: str | None) -> int | Non
     return None
 
 def _is_delivery_data_error(exc: HTTPException) -> bool:
-    if exc.status_code < 500:
-        return True
+    if exc.status_code < 500: return True
     detail = exc.detail if isinstance(exc.detail, dict) else {}
     downstream_status = detail.get("status_code")
-    try:
-        return int(downstream_status) < 500
-    except (TypeError, ValueError):
-        return False
+    try: return int(downstream_status) < 500
+    except (TypeError, ValueError): return False
 
 def _format_order_for_amocrm(
     order_number: str,
@@ -91,21 +89,17 @@ def _format_order_for_amocrm(
     formatted_address = address_data.get("formatted") or address_data.get("address") or address_data.get("name") or ""
 
     if service_normalized == "CDEK":
-        if tariff_normalized == "office":
-            prefix = "Доставка: Пункт выдачи СДЭК"
-        elif tariff_normalized == "door":
-            prefix = "Доставка: Курьер СДЭК"
-        else:
-            prefix = "Доставка: СДЭК"
+        if tariff_normalized == "office": prefix = "Доставка: Пункт выдачи СДЭК"
+        elif tariff_normalized == "door": prefix = "Доставка: Курьер СДЭК"
+        else: prefix = "Доставка: СДЭК"
         delivery_line = f"{prefix}: {postal_code}, {formatted_address}".strip(", ")
+
     elif service_normalized == "YANDEX":
-        if delivery_mode == "self_pickup":
-            prefix = "Доставка: Пункт выдачи Яндекс"
-        else:
-            prefix = "Доставка: Яндекс"
+        if delivery_mode == "self_pickup": prefix = "Доставка: Пункт выдачи Яндекс"
+        else: prefix = "Доставка: Яндекс"
         delivery_line = f"{prefix}: {formatted_address}".strip()
-    else:
-        delivery_line = f"Доставка: {formatted_address or service_normalized or 'Не указана'}"
+
+    else: delivery_line = f"Доставка: {formatted_address or service_normalized or 'Не указана'}"
 
     full_name = " ".join(part for part in [contact.get("surname") or "", contact.get("name") or ""] if part).strip() or "Не указано"
     phone = contact.get("phone") or "Не указан"
@@ -189,22 +183,12 @@ async def _move_lead_to_pending_payment(session: AsyncSession, order: Order) -> 
         log.exception("Failed to update amoCRM lead %s to pending payment status", order.amocrm_lead_id)
         return order
 
-    updated_order = await update_order(
-        session,
-        order,
-        OrderUpdate(**pending_patch),
-        commit=True,
-    )
+    updated_order = await update_order(session, order, OrderUpdate(**pending_patch), commit=True)
     await send_order_status_change_notification_if_needed(session, previous_status=previous_status, order=updated_order)
     return updated_order
 
 
-async def _move_lead_to_payment_result_status(
-    session: AsyncSession,
-    order: Order,
-    *,
-    payment_status: str | None,
-) -> Order:
+async def _move_lead_to_payment_result_status(session: AsyncSession, order: Order, *, payment_status: str | None) -> Order:
     target_status_id = _payment_status_to_amocrm_status_id(payment_status)
     if not order.amocrm_lead_id or target_status_id is None: return order
 
@@ -215,11 +199,7 @@ async def _move_lead_to_payment_result_status(
 
     try: await amocrm_client.update_lead_status(int(order.amocrm_lead_id), target_status_id)
     except Exception:
-        log.exception(
-            "Failed to update amoCRM lead %s for payment status %s",
-            order.amocrm_lead_id,
-            payment_status,
-        )
+        log.exception("Failed to update amoCRM lead %s for payment status %s",order.amocrm_lead_id, payment_status)
         return order
 
     updated_order = await update_order(session, order, OrderUpdate(**target_patch), commit=True)
@@ -231,11 +211,9 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
     order = await update_order(session, order, OrderUpdate(**_order_state_patch_for_amocrm_status(status_id)), commit=False)
 
     if status_id in amocrm_client.PAID_STATUS_IDS and order.delivery_created_at is None:
-        try:
-            delivery_patch = await create_delivery_for_order(order)
+        try: delivery_patch = await create_delivery_for_order(order)
         except HTTPException as exc:
-            if not _is_delivery_data_error(exc):
-                raise
+            if not _is_delivery_data_error(exc): raise
             log.exception(
                 "Skipping automatic delivery creation after amoCRM paid status because order data is incomplete order_id=%s order_number=%s delivery_service=%s delivery_payload=%s detail=%s",
                 order.id,
@@ -245,6 +223,7 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
                 exc.detail,
             )
             delivery_patch = {}
+
         if delivery_patch:
             delivery_patch["delivery_created_at"] = datetime.now(timezone.utc)
             order = await update_order(session, order, OrderUpdate(**delivery_patch), commit=False)

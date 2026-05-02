@@ -104,6 +104,7 @@ async def register(payload: UserRegisterPayload, db: AsyncSession = Depends(get_
         await create_and_send_verification_code(user, db)
         await db.commit()
         await db.refresh(user)
+
     except IntegrityError as e:
         await db.rollback()
         existing_user = await get_user_by_email(db, payload.email)
@@ -111,12 +112,15 @@ async def register(payload: UserRegisterPayload, db: AsyncSession = Depends(get_
             try:
                 await create_and_send_verification_code(existing_user, db)
                 await db.commit()
+
             except (EmailVerificationConfigError, EmailVerificationDeliveryError) as resend_error:
                 logger.exception("Failed to resend email verification code during duplicate registration")
                 raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from resend_error
+
             return UserRegistrationStartedResponse(user_id=existing_user.id, email=existing_user.email, message="Verification code sent")
         logger.exception("Failed to create user during registration")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this username or email already exists") from e
+
     except (EmailVerificationConfigError, EmailVerificationDeliveryError) as e:
         logger.exception("Failed to send email verification code during registration")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from e
@@ -166,6 +170,7 @@ async def login(payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -
     try:
         await create_and_send_verification_code(user, db)
         await db.commit()
+
     except (EmailVerificationConfigError, EmailVerificationDeliveryError) as e:
         logger.exception("Failed to send email verification code during login")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from e
@@ -179,8 +184,7 @@ async def verify_login(payload: UserLoginVerifyPayload, db: AsyncSession = Depen
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code")
 
     await verify_latest_email_code(user, payload.code, db)
-    if not user.is_verified:
-        user.is_verified = True
+    if not user.is_verified: user.is_verified = True
     await db.commit()
     await db.refresh(user)
     return await build_auth_tokens_response(user, db)
@@ -192,9 +196,11 @@ async def resend_login_verification_code(payload: UserLoginPayload, db: AsyncSes
     try:
         await create_and_send_verification_code(user, db)
         await db.commit()
+
     except (EmailVerificationConfigError, EmailVerificationDeliveryError) as e:
         logger.exception("Failed to resend email verification code during login")
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from e
+
     return AuthVerificationRequiredResponse(email=user.email, message="Verification code sent")
 
 

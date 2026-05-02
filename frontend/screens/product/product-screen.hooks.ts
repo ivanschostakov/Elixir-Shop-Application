@@ -27,7 +27,10 @@ type UseProductScreenActionsParams = {
     toggleFavourite: () => Promise<boolean>
 }
 
-export function useSelectedProductVariant(product: ProductWithVariantsRead | null | undefined) {
+export function useSelectedProductVariant(
+    product: ProductWithVariantsRead | null | undefined,
+    preferredVariantId?: number,
+) {
     const [selectedVariantId, setSelectedVariantId] = useState<number | null>(null)
 
     useEffect(() => {
@@ -36,11 +39,16 @@ export function useSelectedProductVariant(product: ProductWithVariantsRead | nul
             return
         }
 
+        const preferredVariant =
+            Number.isInteger(preferredVariantId)
+                ? product.variants.find((variant) => variant.id === preferredVariantId && variant.stock > 0) ?? null
+                : null
+
         const rememberedVariantId = getRememberedProductVariantSelection(product.id)?.variantId
-        const nextVariantId = getPreferredVariantId(product.variants, rememberedVariantId)
+        const nextVariantId = preferredVariant?.id ?? getPreferredVariantId(product.variants, rememberedVariantId)
 
         setSelectedVariantId(nextVariantId)
-    }, [product])
+    }, [preferredVariantId, product])
 
     useEffect(() => {
         if (!product) {

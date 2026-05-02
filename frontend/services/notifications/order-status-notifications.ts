@@ -205,7 +205,21 @@ function resolvePushTarget(data: PushNotificationData): Href | null {
         case "restock":
         case "review_reminder": {
             const productId = asPositiveInt(data.product_id)
-            return productId ? getProductRoute(productId) : ROUTES.discover
+            if (!productId) {
+                return ROUTES.discover
+            }
+
+            if (type === "restock") {
+                const variantId = asPositiveInt(data.variant_id)
+                if (variantId) {
+                    return {
+                        pathname: `/products/${productId}`,
+                        params: { variantId: String(variantId) },
+                    }
+                }
+            }
+
+            return getProductRoute(productId)
         }
         case "inactive_customer":
             return ROUTES.discover

@@ -190,13 +190,6 @@ async def activate_stock_notifications_for_favourite_product(
         current_stock = _normalize_stock(variant.stock)
         subscription = subscriptions_by_variant_id.get(variant.id)
 
-        if not _is_low_stock(current_stock):
-            if subscription is not None and subscription.is_active:
-                subscription.is_active = False
-                subscription.last_seen_stock = current_stock
-                changed_count += 1
-            continue
-
         if subscription is None:
             session.add(
                 StockNotificationSubscription(
@@ -210,6 +203,7 @@ async def activate_stock_notifications_for_favourite_product(
             changed_count += 1
             continue
 
+        # Favouriting a product means listening to all its variants.
         subscription.is_active = True
         subscription.last_seen_stock = current_stock
         subscription.notified_at = None
@@ -324,10 +318,11 @@ async def process_restock_notifications(session: AsyncSession, *, now: datetime 
             session,
             user_id=subscription.user_id,
             title="Товар снова в наличии",
-            body=f"{variant.name} снова в наличии.",
+            body=f"Вариант {variant.name} снова в наличии.",
             data={
                 "type": "restock",
                 "variant_id": variant.id,
+                "variant_name": variant.name,
                 "product_id": variant.product_id,
             },
             dispatch_type=DISPATCH_TYPE_RESTOCK,

@@ -51,8 +51,12 @@ function applyTheme(themeName: ThemeName) {
     Appearance.setColorScheme(themeName)
 }
 
+function getSystemThemeName(): ThemeName {
+    return Appearance.getColorScheme() === "dark" ? "dark" : "light"
+}
+
 export function ThemeProvider({ children }: ThemeProviderProps) {
-    const [themeName, setThemeName] = useState<ThemeName>("light")
+    const [themeName, setThemeName] = useState<ThemeName>(getSystemThemeName)
 
     useEffect(() => {
         let isMounted = true
@@ -63,7 +67,6 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
             }
 
             if (!storedThemeName) {
-                applyTheme("light")
                 return
             }
 

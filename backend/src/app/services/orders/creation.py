@@ -19,7 +19,7 @@ from src.integrations.delivery.cdek import get_cdek_client
 
 from .common import _delivery_string, _normalize_phone
 from .crm import ensure_order_has_amocrm_lead
-from .fulfillment import normalize_address_for_cf
+from .fulfillment_payloads import normalize_address_for_cf
 
 ORDER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -28,8 +28,7 @@ async def _generate_order_code(session: AsyncSession) -> str:
     for _ in range(20):
         suffix = "".join(secrets.choice(ORDER_CODE_ALPHABET) for _ in range(8))
         order_code = f"EP-{suffix}"
-        if await get_order_by_code(session, order_code) is None:
-            return order_code
+        if await get_order_by_code(session, order_code) is None: return order_code
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate order code")
 
 
@@ -131,24 +130,16 @@ async def _get_locked_variants_for_repeat(session: AsyncSession, variant_ids: li
     if not variant_ids:
         return {}
 
-    stmt = (
-        select(Variant)
-        .options(selectinload(Variant.product))
-        .where(Variant.id.in_(variant_ids))
-        .with_for_update()
-    )
+    stmt = (select(Variant).options(selectinload(Variant.product)).where(Variant.id.in_(variant_ids)).with_for_update())
     variants = list((await session.execute(stmt)).scalars().all())
     return {variant.id: variant for variant in variants}
 
 
 async def repeat_order_as_draft_for_user(session: AsyncSession, *, user_id: int, order_id: int) -> OrderDraft | None:
     order = await get_order_by_id(session, order_id, user_id=user_id)
-    if order is None:
-        return None
-    if get_order_history_bucket(order) != "completed":
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Повторить можно только завершенный заказ")
-    if not order.items:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order is empty")
+    if order is None: return None
+    if get_order_history_bucket(order) != "completed": raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Повторить можно только завершенный заказ")
+    if not order.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order is empty")
 
     variants_by_id = await _get_locked_variants_for_repeat(session, [item.variant_id for item in order.items])
     draft_items: list[OrderDraftItem] = []
@@ -157,10 +148,8 @@ async def repeat_order_as_draft_for_user(session: AsyncSession, *, user_id: int,
 
     for order_item in order.items:
         variant = variants_by_id.get(order_item.variant_id)
-        if variant is None or variant.product is None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
-        if variant.stock <= 0 or order_item.quantity > variant.stock:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
+        if variant is None or variant.product is None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
+        if variant.stock <= 0 or order_item.quantity > variant.stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
 
         line_total = variant.price * order_item.quantity
         basket_subtotal += line_total
@@ -202,15 +191,10 @@ async def repeat_order_as_draft_for_user(session: AsyncSession, *, user_id: int,
         commit=False,
     )
 
-    for draft_item in draft_items:
-        draft_item.draft_id = draft.id
-
+    for draft_item in draft_items: draft_item.draft_id = draft.id
     session.add_all(draft_items)
     await session.flush()
     await session.commit()
-
     created_draft = await get_order_draft_by_id(session, draft.id, user_id=user_id)
-    if created_draft is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load repeated order draft")
-
+    if created_draft is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load repeated order draft")
     return created_draft

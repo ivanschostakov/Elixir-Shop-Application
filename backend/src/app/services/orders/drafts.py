@@ -31,13 +31,11 @@ from .draft_normalization import (
     _build_new_recipient_data,
     _normalize_order_draft_text,
 )
-from .draft_serialization import serialize_order_draft, serialize_order_drafts
 
 
 async def _get_or_create_delivery_recipient(session: AsyncSession, *, data: DeliveryRecipientCreate):
     recipient = await get_delivery_recipient_by_fields(session, user_id=data.user_id, name=data.name, surname=data.surname, phone=data.phone, email=data.email)
     if recipient is not None: return recipient
-
     return await create_delivery_recipient(session, data, commit=False)
 
 
@@ -55,7 +53,6 @@ async def _get_or_create_delivery_address(session: AsyncSession, *, data: Delive
         provider_reference=data.provider_reference,
     )
     if address is not None: return address
-
     return await create_delivery_address(session, data, commit=False)
 
 
@@ -139,26 +136,12 @@ def _normalize_ai_draft_items(items: list[dict[str, Any]]) -> dict[int, int]:
     return normalized
 
 
-async def create_order_draft_from_variant_selection(
-    session: AsyncSession,
-    *,
-    user: User,
-    items: list[dict[str, Any]],
-    draft_name: str | None = None,
-    comment: str | None = None,
-    commit: bool = True,
-) -> OrderDraft:
+async def create_order_draft_from_variant_selection(session: AsyncSession, *, user: User, items: list[dict[str, Any]], draft_name: str | None = None, comment: str | None = None, commit: bool = True) -> OrderDraft:
     normalized_items = _normalize_ai_draft_items(items)
-    stmt = (
-        select(Variant)
-        .options(selectinload(Variant.product))
-        .where(Variant.id.in_(normalized_items.keys()))
-        .with_for_update()
-    )
+    stmt = select(Variant).options(selectinload(Variant.product)).where(Variant.id.in_(normalized_items.keys())).with_for_update()
     variants = list((await session.execute(stmt)).scalars().all())
     variants_by_id = {variant.id: variant for variant in variants}
-    if len(variants_by_id) != len(normalized_items):
-        raise _checkout_conflict("Some selected variants are no longer available")
+    if len(variants_by_id) != len(normalized_items): raise _checkout_conflict("Some selected variants are no longer available")
 
     draft_items: list[OrderDraftItem] = []
     basket_subtotal = Decimal("0.00")
@@ -166,8 +149,7 @@ async def create_order_draft_from_variant_selection(
 
     for variant_id, quantity in normalized_items.items():
         variant = variants_by_id[variant_id]
-        if variant.stock <= 0 or quantity > variant.stock:
-            raise _checkout_conflict("Selected products are no longer available in the requested quantity")
+        if variant.stock <= 0 or quantity > variant.stock: raise _checkout_conflict("Selected products are no longer available in the requested quantity")
         line_total = variant.price * quantity
         basket_subtotal += line_total
         total_quantity += quantity
@@ -208,18 +190,15 @@ async def create_order_draft_from_variant_selection(
         commit=False,
     )
 
-    for draft_item in draft_items:
-        draft_item.draft_id = order_draft.id
+    for draft_item in draft_items: draft_item.draft_id = order_draft.id
 
     session.add_all(draft_items)
     await session.flush()
 
-    if commit:
-        await session.commit()
+    if commit: await session.commit()
 
     created_draft = await get_order_draft_by_id(session, order_draft.id, user_id=user.id)
-    if created_draft is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order draft")
+    if created_draft is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order draft")
     return created_draft
 
 
@@ -262,32 +241,28 @@ async def update_order_draft_for_user(session: AsyncSession, *, user_id: int, dr
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
     if draft is None: return None
 
-    if "recipient_id" in payload.model_fields_set and payload.new_recipient is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing recipient or create a new one")
-    if payload.delivery_address_id is not None and payload.new_delivery_address is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing address or create a new one")
+    if "recipient_id" in payload.model_fields_set and payload.new_recipient is not None: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing recipient or create a new one")
+    if payload.delivery_address_id is not None and payload.new_delivery_address is not None: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing address or create a new one")
 
     update_data: dict[str, Decimal | int | str | None] = {}
-    if "draft_name" in payload.model_fields_set:
-        update_data["draft_name"] = _normalize_order_draft_text(payload.draft_name, max_length=ORDER_DRAFT_NAME_MAX_LENGTH)
-    if "comment" in payload.model_fields_set:
-        update_data["comment"] = _normalize_order_draft_text(payload.comment, max_length=ORDER_DRAFT_COMMENT_MAX_LENGTH)
+    if "draft_name" in payload.model_fields_set: update_data["draft_name"] = _normalize_order_draft_text(payload.draft_name, max_length=ORDER_DRAFT_NAME_MAX_LENGTH)
+    if "comment" in payload.model_fields_set: update_data["comment"] = _normalize_order_draft_text(payload.comment, max_length=ORDER_DRAFT_COMMENT_MAX_LENGTH)
     if "recipient_id" in payload.model_fields_set:
-        if payload.recipient_id is None:
-            update_data["recipient_id"] = None
+        if payload.recipient_id is None: update_data["recipient_id"] = None
         else:
             recipient = await get_delivery_recipient_by_id(session, payload.recipient_id, user_id=user_id)
-            if recipient is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery recipient not found")
+            if recipient is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery recipient not found")
             update_data["recipient_id"] = recipient.id
+
     if payload.new_recipient is not None:
         created_recipient = await _get_or_create_delivery_recipient(session, data=_build_new_recipient_data(user_id, payload.new_recipient))
         update_data["recipient_id"] = created_recipient.id
+
     if payload.delivery_address_id is not None:
         delivery_address = await get_delivery_address_by_id(session, payload.delivery_address_id)
-        if delivery_address is None or delivery_address.user_id != user_id:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery address not found")
+        if delivery_address is None or delivery_address.user_id != user_id: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery address not found")
         update_data["delivery_address_id"] = delivery_address.id
+
     if payload.new_delivery_address is not None:
         created_address = await _get_or_create_delivery_address(session, data=_build_new_delivery_address_data(draft, payload.new_delivery_address))
         update_data["delivery_address_id"] = created_address.id
@@ -298,8 +273,8 @@ async def update_order_draft_for_user(session: AsyncSession, *, user_id: int, dr
             update_data["delivery_period_min"] = payload.new_delivery_address.delivery_calculation.period_min
             update_data["delivery_period_max"] = payload.new_delivery_address.delivery_calculation.period_max
             update_data["grand_total"] = draft.basket_subtotal + delivery_total
-    if payload.sync_basket_items:
-        await _sync_order_draft_items_from_basket(session, draft=draft, user_id=user_id, update_data=update_data)
+
+    if payload.sync_basket_items: await _sync_order_draft_items_from_basket(session, draft=draft, user_id=user_id, update_data=update_data)
 
     update_payload = OrderDraftUpdate(**update_data)
     updated_draft = await update_order_draft(session, draft, update_payload)

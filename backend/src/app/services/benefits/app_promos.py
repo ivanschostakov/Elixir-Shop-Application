@@ -1,12 +1,10 @@
 from decimal import Decimal
 from typing import Any
-
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import AppPromo, OrderBenefitApplication
 from src.normalize import lower_optional_str
-
 from .money import estimate_discount_amount, quantize_money, total_after
 from .types import FIXED_BENEFIT_KINDS, IGNORED_USAGE_STATUSES, PERCENT_BENEFIT_KINDS, ResolvedDiscountOption
 
@@ -30,9 +28,7 @@ async def app_promo_usage_counts(db: AsyncSession, *, app_promo_id: int, user_id
     return total_uses, user_uses
 
 
-async def build_app_promo_option(
-    db: AsyncSession, *, app_promo: AppPromo, subtotal: Decimal, user_id: int, now: Any
-) -> ResolvedDiscountOption:
+async def build_app_promo_option(db: AsyncSession, *, app_promo: AppPromo, subtotal: Decimal, user_id: int, now: Any) -> ResolvedDiscountOption:
     calculation_mode, discount_percent, discount_amount, reason = resolve_app_promo_discount(app_promo)
     status = "available"
     is_applicable = True

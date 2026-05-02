@@ -26,6 +26,7 @@ from .delivery.cdek_pickup_address import CdekPickupAddress
 from .delivery.recipient import DeliveryRecipient
 from .delivery.yandex_pickup_address import YandexPickupAddress
 from .favorites.favoured_product import FavouredProduct
+from .legal.requisite import Requisite
 from .orders.draft import OrderDraft
 from .orders.draft_items import OrderDraftItem
 from .orders.order import Order
@@ -63,6 +64,7 @@ __all__ = [
     "OrderDraftItem",
     "Order",
     "OrderItem",
+    "Requisite",
     "NotificationDispatch",
     "OrderBenefitApplication",
     "Product",

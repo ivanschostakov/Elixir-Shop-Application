@@ -23,9 +23,7 @@ async def get_my_avatar(request: Request, current_user: User = Depends(get_curre
 
 
 @avatar_router.post("", response_model=AvatarResponse, status_code=status.HTTP_200_OK)
-async def upload_my_avatar(
-    request: Request, image: UploadFile = File(...), current_user: User = Depends(get_current_user)
-) -> AvatarResponse:
+async def upload_my_avatar(request: Request, image: UploadFile = File(...), current_user: User = Depends(get_current_user)) -> AvatarResponse:
     validate_avatar_content_type(image.content_type)
     content = await image.read()
     validate_avatar_content(content)

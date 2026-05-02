@@ -38,10 +38,8 @@ _INTELLECTMONEY_PAYLOAD_KEYS = {
 
 def _coerce_amocrm_int(value: Any, field: str) -> int:
     raw = value or "0"
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return 0
+    try: return int(raw)
+    except (TypeError, ValueError): return 0
 
 
 def _amocrm_payload_int(payload: dict[str, list[str]], key: str) -> int:
@@ -52,12 +50,9 @@ def _amocrm_payload_int(payload: dict[str, list[str]], key: str) -> int:
 def _intellectmoney_form_charset(content_type: str | None) -> str:
     match = re.search(r"(?i)(?:^|;)\s*charset\s*=\s*([^;]+)", content_type or "")
     charset = (match.group(1).strip().strip("\"'") if match else "") or "utf-8"
-    if charset.lower() in {"windows-1251", "win-1251"}:
-        charset = "cp1251"
-    try:
-        codecs.lookup(charset)
-    except LookupError:
-        return "utf-8"
+    if charset.lower() in {"windows-1251", "win-1251"}: charset = "cp1251"
+    try: codecs.lookup(charset)
+    except LookupError: return "utf-8"
     return charset
 
 
@@ -68,6 +63,7 @@ def _parse_intellectmoney_payload(body: bytes, content_type: str | None) -> tupl
     for key, value in parse_qsl(text, keep_blank_values=True, encoding=charset, errors="replace"):
         canonical_key = _INTELLECTMONEY_PAYLOAD_KEYS.get(str(key).lower(), str(key))
         payload[canonical_key] = str(value)
+
     return payload, charset
 
 
@@ -80,17 +76,14 @@ async def amocrm_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     status_id = _amocrm_payload_int(payload, "leads[status][0][status_id]")
     pipeline_id = _amocrm_payload_int(payload, "leads[status][0][pipeline_id]")
 
-    if not lead_id:
-        return JSONResponse({"ok": True, "ignored": "no lead_id"})
-    if pipeline_id and pipeline_id != amocrm_client.PIPELINE_ID:
-        return JSONResponse({"ok": True, "ignored": "wrong pipeline"})
+    if not lead_id: return JSONResponse({"ok": True, "ignored": "no lead_id"})
+    if pipeline_id and pipeline_id != amocrm_client.PIPELINE_ID: return JSONResponse({"ok": True, "ignored": "wrong pipeline"})
 
     lead = await amocrm_client.get_lead(lead_id)
     name = lead.get("name") or ""
     status_id = _coerce_amocrm_int(lead.get("status_id") or status_id, "lead.status_id")
     pipeline_id = _coerce_amocrm_int(lead.get("pipeline_id") or pipeline_id, "lead.pipeline_id")
-    if pipeline_id and pipeline_id != amocrm_client.PIPELINE_ID:
-        return JSONResponse({"ok": True, "ignored": "pipeline mismatch"})
+    if pipeline_id and pipeline_id != amocrm_client.PIPELINE_ID: return JSONResponse({"ok": True, "ignored": "pipeline mismatch"})
 
     order = await get_order_by_amocrm_lead_id(db, lead_id)
     if order is None:
@@ -98,11 +91,9 @@ async def amocrm_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         if match:
             public_code = match.group(1).strip().upper()
             order = await get_order_by_code(db, public_code)
-            if order is None and public_code.isdigit():
-                order = await get_order_by_id(db, int(public_code))
+            if order is None and public_code.isdigit(): order = await get_order_by_id(db, int(public_code))
 
-    if order is None:
-        return JSONResponse({"ok": True, "ignored": "order not found"})
+    if order is None: return JSONResponse({"ok": True, "ignored": "order not found"})
 
     updated_order = await apply_amocrm_status_update(db, order=order, status_id=status_id)
     return JSONResponse(
@@ -126,24 +117,13 @@ async def intellectmoney_webhook(request: Request, db: AsyncSession = Depends(ge
 
     order_id_raw = payload.get("OrderId") or ""
     order = None
-    if order_id_raw:
-        order = await get_order_by_code(db, str(order_id_raw).strip().upper())
-    if order is None and order_id_raw.isdigit():
-        order = await get_order_by_id(db, int(order_id_raw))
-    if order is None and payload.get("PaymentId"):
-        order = await get_order_by_invoice_id(db, str(payload["PaymentId"]))
-    if order is None:
-        return PlainTextResponse("ERROR", status_code=404)
+    if order_id_raw: order = await get_order_by_code(db, str(order_id_raw).strip().upper())
+    if order is None and order_id_raw.isdigit(): order = await get_order_by_id(db, int(order_id_raw))
+    if order is None and payload.get("PaymentId"): order = await get_order_by_invoice_id(db, str(payload["PaymentId"]))
+    if order is None: return PlainTextResponse("ERROR", status_code=404)
 
     payment_status_raw = payload.get("PaymentStatus")
     payment_status_code = int(payment_status_raw) if payment_status_raw and payment_status_raw.isdigit() else None
     order = await update_order(db, order, OrderUpdate(payment_provider="intellectmoney", payment_invoice_id=payload.get("PaymentId") or None), commit=True)
-    await reconcile_sbp_payment(
-        db,
-        order,
-        payment_status_code=payment_status_code,
-        payment_data=payload.get("PaymentData"),
-        invoice_id=payload.get("PaymentId"),
-    )
-
+    await reconcile_sbp_payment(db, order, payment_status_code=payment_status_code, payment_data=payload.get("PaymentData"), invoice_id=payload.get("PaymentId"))
     return PlainTextResponse("OK")

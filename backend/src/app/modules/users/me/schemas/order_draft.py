@@ -5,13 +5,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from src.database.limits import (
     CURRENCY_CODE_MAX_LENGTH,
-    DELIVERY_ADDRESS_MAX_LENGTH,
-    DELIVERY_CITY_MAX_LENGTH,
-    DELIVERY_COMMENT_MAX_LENGTH,
-    DELIVERY_LABEL_MAX_LENGTH,
-    DELIVERY_POSTAL_CODE_MAX_LENGTH,
     EMAIL_MAX_LENGTH,
-    EXTERNAL_ID_MAX_LENGTH,
     ORDER_DRAFT_COMMENT_MAX_LENGTH,
     ORDER_DRAFT_NAME_MAX_LENGTH,
     PERSON_NAME_MAX_LENGTH,
@@ -35,14 +29,14 @@ class CreateOrderDraftPayload(BaseModel):
     mode: DeliveryMode | None = None
     provider: DeliveryProvider | None = None
     country_code: CountryCode | None = None
-    name: str | None = Field(default=None, min_length=1, max_length=DELIVERY_LABEL_MAX_LENGTH)
-    full_address: str | None = Field(default=None, min_length=1, max_length=DELIVERY_ADDRESS_MAX_LENGTH)
-    details: str | None = Field(default=None, max_length=DELIVERY_COMMENT_MAX_LENGTH)
-    city: str | None = Field(default=None, max_length=DELIVERY_CITY_MAX_LENGTH)
-    postal_code: str | None = Field(default=None, max_length=DELIVERY_POSTAL_CODE_MAX_LENGTH)
+    name: str | None = Field(default=None, min_length=1)
+    full_address: str | None = Field(default=None, min_length=1)
+    details: str | None = None
+    city: str | None = None
+    postal_code: str | None = None
     latitude: float | None = None
     longitude: float | None = None
-    provider_reference: str | None = Field(default=None, max_length=EXTERNAL_ID_MAX_LENGTH)
+    provider_reference: str | None = None
     draft_name: str | None = Field(default=None, max_length=ORDER_DRAFT_NAME_MAX_LENGTH)
     delivery_calculation: DeliveryCalculationPayload | None = None
 
@@ -51,14 +45,14 @@ class UpdateOrderDraftDeliveryAddressPayload(BaseModel):
     mode: DeliveryMode | None = None
     provider: DeliveryProvider | None = None
     country_code: CountryCode | None = None
-    name: str | None = Field(default=None, max_length=DELIVERY_LABEL_MAX_LENGTH)
-    full_address: str = Field(min_length=1, max_length=DELIVERY_ADDRESS_MAX_LENGTH)
-    details: str | None = Field(default=None, max_length=DELIVERY_COMMENT_MAX_LENGTH)
-    city: str | None = Field(default=None, max_length=DELIVERY_CITY_MAX_LENGTH)
-    postal_code: str | None = Field(default=None, max_length=DELIVERY_POSTAL_CODE_MAX_LENGTH)
+    name: str | None = None
+    full_address: str = Field(min_length=1)
+    details: str | None = None
+    city: str | None = None
+    postal_code: str | None = None
     latitude: float | None = None
     longitude: float | None = None
-    provider_reference: str | None = Field(default=None, max_length=EXTERNAL_ID_MAX_LENGTH)
+    provider_reference: str | None = None
     delivery_calculation: DeliveryCalculationPayload | None = None
 
 

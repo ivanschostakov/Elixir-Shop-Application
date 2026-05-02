@@ -42,6 +42,7 @@ from .delivery.cdek_door_address import CdekDoorAddressBase, CdekDoorAddressCrea
 from .delivery.cdek_pickup_address import CdekPickupAddressBase, CdekPickupAddressCreate, CdekPickupAddressRead, CdekPickupAddressUpdate
 from .delivery.recipient import DeliveryRecipientBase, DeliveryRecipientCreate, DeliveryRecipientRead
 from .delivery.yandex_pickup_address import YandexPickupAddressBase, YandexPickupAddressCreate, YandexPickupAddressRead, YandexPickupAddressUpdate
+from .legal.requisite import RequisiteBase, RequisiteCreate, RequisiteRead, RequisiteUpdate
 from .favorites.favoured_product import (
     FavouredProductBase,
     FavouredProductCreate,
@@ -56,11 +57,6 @@ from .users.push_token import (
     UserPushTokenDeleteResponse,
     UserPushTokenRead,
     UserPushTokenUpsert,
-)
-from .users.stock_subscription import (
-    StockNotificationSubscriptionDeleteResponse,
-    StockNotificationSubscriptionRead,
-    StockNotificationSubscriptionUpsert,
 )
 from .website.website_identity import (
     WebsiteBonusAccountRead,
@@ -164,6 +160,10 @@ __all__ = [
     "OrderStatusCode",
     "OrderUpdate",
     "PushTokenPlatform",
+    "RequisiteBase",
+    "RequisiteCreate",
+    "RequisiteRead",
+    "RequisiteUpdate",
     "ProductBase",
     "ProductCreate",
     "ProductRead",
@@ -193,9 +193,6 @@ __all__ = [
     "UserPushTokenDeleteResponse",
     "UserPushTokenRead",
     "UserPushTokenUpsert",
-    "StockNotificationSubscriptionDeleteResponse",
-    "StockNotificationSubscriptionRead",
-    "StockNotificationSubscriptionUpsert",
     "ProductVariantRead",
     "VariantBase",
     "VariantCreate",

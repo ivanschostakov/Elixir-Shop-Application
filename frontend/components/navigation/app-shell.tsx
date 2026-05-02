@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Stack, usePathname, useRouter } from "expo-router"
+import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from "@react-navigation/native"
 import { Image, Text, View } from "react-native"
 import {
     PanGestureHandler,
@@ -17,17 +18,36 @@ import {
 } from "@/components/navigation/screen-template-registry"
 import { PRIMARY_APP_ROUTES } from "@/constants/routes"
 import { ScreenChromeTemplateProvider, useScreenChromeTemplate } from "@/providers/screen-chrome-template-provider"
+import { useTheme } from "@/providers/theme-provider"
 import { useAuth } from "@/providers/auth-provider"
 import { ScreenTemplateProvider } from "@/providers/screen-template-provider"
+import { darkColors, lightColors } from "@/theme/colors"
 import { motion } from "@/theme/motion"
 
 function AppShellContent() {
     const pathname = usePathname()
     const router = useRouter()
     const { top: topInset } = useSafeAreaInsets()
+    const { isDark } = useTheme()
     const { isAuthenticated, isReady } = useAuth()
     const { screenChromeTemplate } = useScreenChromeTemplate()
     const [routeAnimation, setRouteAnimation] = useState<"slide_from_left" | "slide_from_right">("slide_from_right")
+    const palette = isDark ? darkColors : lightColors
+    const navigationTheme = useMemo(
+        () => ({
+            ...(isDark ? DarkTheme : DefaultTheme),
+            colors: {
+                ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+                background: palette.pageBackground,
+                border: palette.border,
+                card: palette.surface,
+                notification: palette.favorite,
+                primary: palette.primary,
+                text: palette.text,
+            },
+        }),
+        [isDark, palette],
+    )
 
     const chromeTemplate = mergeScreenChromeTemplate(
         getDefaultScreenChromeTemplate(pathname, isReady && isAuthenticated),
@@ -95,14 +115,17 @@ function AppShellContent() {
                     onHandlerStateChange={handlePrimaryRouteSwipe}
                 >
                     <View style={appShellStyles.content}>
-                        <Stack
-                            screenOptions={{
-                                animation: routeAnimation,
-                                animationDuration: motion.duration.route,
-                                gestureEnabled: true,
-                                headerShown: false,
-                            }}
-                        />
+                        <NavigationThemeProvider value={navigationTheme}>
+                            <Stack
+                                screenOptions={{
+                                    animation: routeAnimation,
+                                    animationDuration: motion.duration.route,
+                                    contentStyle: { backgroundColor: palette.pageBackground },
+                                    gestureEnabled: true,
+                                    headerShown: false,
+                                }}
+                            />
+                        </NavigationThemeProvider>
                     </View>
                 </PanGestureHandler>
 

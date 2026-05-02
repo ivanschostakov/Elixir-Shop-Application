@@ -21,13 +21,11 @@ def _build_items_signature(items: list[BasketItem] | list[OrderDraftItem]) -> tu
 
 async def _find_duplicate_order_draft(session: AsyncSession, *, user_id: int, basket_items: list[BasketItem]) -> OrderDraft | None:
     basket_signature = _build_items_signature(basket_items)
-    if not basket_signature:
-        return None
-
+    if not basket_signature: return None
     existing_drafts = await get_order_drafts_for_user(session, user_id, limit=None)
+
     for existing_draft in existing_drafts:
-        if _build_items_signature(existing_draft.items) == basket_signature:
-            return existing_draft
+        if _build_items_signature(existing_draft.items) == basket_signature: return existing_draft
 
     return None
 
@@ -38,13 +36,7 @@ async def _get_locked_basket(session: AsyncSession, user_id: int) -> Basket | No
 
 
 async def _get_locked_basket_items(session: AsyncSession, basket_id: int) -> list[BasketItem]:
-    stmt = (
-        select(BasketItem)
-        .options(selectinload(BasketItem.product), selectinload(BasketItem.variant))
-        .where(BasketItem.basket_id == basket_id)
-        .order_by(BasketItem.created_at.asc(), BasketItem.id.asc())
-        .with_for_update()
-    )
+    stmt = select(BasketItem).options(selectinload(BasketItem.product), selectinload(BasketItem.variant)).where(BasketItem.basket_id == basket_id).order_by(BasketItem.created_at.asc(), BasketItem.id.asc()).with_for_update()
     return list((await session.execute(stmt)).scalars().all())
 
 

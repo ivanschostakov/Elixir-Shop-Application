@@ -29,102 +29,31 @@ def serialize_product_variant(request: Request, variant) -> ProductVariantRead:
     return payload.model_copy(update={"image_url": build_variant_image_url(request, variant)})
 
 
-def _get_review_stats(
-    product_id: int,
-    review_stats_by_product_id: ReviewStatsByProductId | None,
-) -> tuple[float, int]:
-    if review_stats_by_product_id is None:
-        return (0.0, 0)
+def _get_review_stats(product_id: int, review_stats_by_product_id: ReviewStatsByProductId | None) -> tuple[float, int]:
+    if review_stats_by_product_id is None: return (0.0, 0)
     return review_stats_by_product_id.get(product_id, (0.0, 0))
 
 
-def serialize_product(
-    request: Request,
-    product: Product,
-    *,
-    review_stats_by_product_id: ReviewStatsByProductId | None = None,
-) -> ProductRead:
+def serialize_product(request: Request, product: Product, *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> ProductRead:
     payload = ProductRead.model_validate(product)
     rating_avg, rating_count = _get_review_stats(product.id, review_stats_by_product_id)
-    return payload.model_copy(
-        update={
-            "image_url": build_product_image_url(request, product),
-            "rating_avg": rating_avg,
-            "rating_count": rating_count,
-        }
-    )
+    return payload.model_copy(update={"image_url": build_product_image_url(request, product), "rating_avg": rating_avg, "rating_count": rating_count})
 
 
-def serialize_product_with_variants(
-    request: Request,
-    product: Product,
-    *,
-    review_stats_by_product_id: ReviewStatsByProductId | None = None,
-) -> ProductWithVariantsRead:
+def serialize_product_with_variants(request: Request, product: Product, *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> ProductWithVariantsRead:
     payload = ProductWithVariantsRead.model_validate(product)
     variants = [serialize_product_variant(request, variant) for variant in product.variants]
     rating_avg, rating_count = _get_review_stats(product.id, review_stats_by_product_id)
-    return payload.model_copy(
-        update={
-            "image_url": build_product_image_url(request, product),
-            "variants": variants,
-            "rating_avg": rating_avg,
-            "rating_count": rating_count,
-        }
-    )
+    return payload.model_copy(update={"image_url": build_product_image_url(request, product), "variants": variants, "rating_avg": rating_avg, "rating_count": rating_count})
 
 
-def serialize_products(
-    request: Request,
-    products: list[Product],
-    *,
-    review_stats_by_product_id: ReviewStatsByProductId | None = None,
-) -> list[ProductRead]:
-    return [
-        serialize_product(request, product, review_stats_by_product_id=review_stats_by_product_id)
-        for product in products
-    ]
-
-
-def serialize_products_with_variants(
-    request: Request,
-    products: list[Product],
-    *,
-    review_stats_by_product_id: ReviewStatsByProductId | None = None,
-) -> list[ProductWithVariantsRead]:
-    return [
-        serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats_by_product_id)
-        for product in products
-    ]
+def serialize_products(request: Request, products: list[Product], *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> list[ProductRead]:  return [serialize_product(request, product, review_stats_by_product_id=review_stats_by_product_id) for product in products]
+def serialize_products_with_variants(request: Request, products: list[Product], *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> list[ProductWithVariantsRead]: return [serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats_by_product_id) for product in products]
 
 
 def serialize_review(request: Request, review: Review) -> ReviewRead:
-    attachments = [
-        ReviewAttachmentRead(
-            id=attachment.id,
-            image_url=build_review_attachment_url(
-                request,
-                build_review_attachment_path(attachment.review_id, attachment.filename),
-            ),
-            created_at=attachment.created_at,
-            updated_at=attachment.updated_at,
-        )
-        for attachment in review.attachments
-    ]
-    return ReviewRead(
-        id=review.id,
-        author_username=PLACEHOLDER_SITE_REVIEW_AUTHOR if review.user_id == 0 else review.user.username,
-        product_id=review.product_id,
-        value=review.value,
-        text=review.text,
-        answer=review.answer,
-        attachments=attachments,
-        likes=review.likes,
-        dislikes=review.dislikes,
-        moderated=review.moderated,
-        created_at=review.created_at,
-        updated_at=review.updated_at,
-    )
+    attachments = [ReviewAttachmentRead(id=attachment.id, image_url=build_review_attachment_url(request, build_review_attachment_path(attachment.review_id, attachment.filename)), created_at=attachment.created_at, updated_at=attachment.updated_at) for attachment in review.attachments]
+    return ReviewRead(id=review.id, author_username=PLACEHOLDER_SITE_REVIEW_AUTHOR if review.user_id == 0 else review.user.username, product_id=review.product_id, value=review.value, text=review.text, answer=review.answer, attachments=attachments, likes=review.likes, dislikes=review.dislikes, moderated=review.moderated, created_at=review.created_at, updated_at=review.updated_at)
 
 
 def serialize_reviews(request: Request, reviews: list[Review]) -> list[ReviewRead]:

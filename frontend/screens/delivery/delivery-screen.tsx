@@ -56,14 +56,12 @@ import {
     useSelectedDeliveryPoint,
 } from "@/hooks/delivery/delivery-point-selection-store"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
-import { useDeliveryGeoSearch } from "@/hooks/delivery/use-delivery-geo-search"
 import { useDeliveryPointMarkers } from "@/hooks/delivery/use-delivery-point-markers"
 import { translate } from "@/i18n/translations"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
 import {
     calculateCdekDelivery,
     calculateYandexDelivery,
-    DEFAULT_DELIVERY_COUNTRY_CODE,
     geocodeDeliveryAddress,
     getCdekDeliveryPoint,
     getYandexDeliveryPoint,
@@ -98,11 +96,8 @@ import {
 } from "@/screens/delivery/delivery-calculation"
 import { useDeliveryLocation, useDeliveryMapCamera } from "@/screens/delivery/delivery-screen.hooks"
 import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
-import type {
-    DeliveryDoorDraft,
-    DeliveryMapMarker,
-    DeliveryPickupDraft,
-} from "@/screens/delivery/delivery-screen.types"
+import { useDeliveryFlowController } from "@/screens/delivery/use-delivery-flow-controller"
+import type { DeliveryMapMarker } from "@/screens/delivery/delivery-screen.types"
 import {
     arePointsClose,
     buildCdekPickupCalculationRequest,
@@ -115,8 +110,6 @@ import {
     getDeliveryCalculationErrorMessage,
     getDeliveryPointMarkerKey,
     getDoorDeliveryInfoRows,
-    getDoorDeliveryPoint,
-    getPickupPoint,
     getPickupPointAddress,
     getPickupPointInfoRows,
     parseBooleanSearchParam,
@@ -146,43 +139,11 @@ export default function DeliveryScreen() {
     const lastFollowedUserPointRef = useRef<Point | null>(null)
     const cameraPositionRef = useRef<CameraPosition | null>(null)
     const lastDeliveryAppStateRef = useRef<AppStateStatus>(AppState.currentState)
-    const [searchFocusPoint, setSearchFocusPoint] = useState<Point | null>(null)
-    const [isSearchFocused, setIsSearchFocused] = useState(false)
-    const [search, setSearch] = useState("")
-    const [searchEnabled, setSearchEnabled] = useState(true)
     const [hasMovedDoorDeliveryMapOnce, setHasMovedDoorDeliveryMapOnce] = useState(false)
     const [isDoorDeliveryMapInteracting, setIsDoorDeliveryMapInteracting] = useState(false)
     const selectedDeliveryAddress = useSelectedDeliveryAddress()
     const selectedDeliveryPoint = useSelectedDeliveryPoint()
     const selectedDeliveryCountry = useSelectedDeliveryCountry()
-    const activeCountryCode = selectedDeliveryCountry ?? DEFAULT_DELIVERY_COUNTRY_CODE
-    const activeCountryCodeRef = useRef(activeCountryCode)
-    const deliveryScreenMountLogContextRef = useRef({
-        activeCountryCode,
-        checkoutDraftId,
-        hasSelectedDeliveryAddress: Boolean(selectedDeliveryAddress),
-        hasSelectedDeliveryPoint: Boolean(selectedDeliveryPoint),
-        selectedDeliveryCountry,
-        shouldSyncBasketItems,
-    })
-    const [doorDeliveryDraft, setDoorDeliveryDraft] = useState<DeliveryDoorDraft | null>(
-        selectedDeliveryAddress
-            ? {
-                  ...selectedDeliveryAddress,
-                  provider: DOOR_DELIVERY_PROVIDER,
-              }
-            : null,
-    )
-    const [isDoorFooterExpanded, setIsDoorFooterExpanded] = useState(Boolean(selectedDeliveryAddress))
-    const [pickupPointDraft, setPickupPointDraft] = useState<DeliveryPickupDraft | null>(
-        selectedDeliveryPoint ? buildPickupPointDraft(selectedDeliveryPoint) : null,
-    )
-    const [isPickupFooterExpanded, setIsPickupFooterExpanded] = useState(Boolean(selectedDeliveryPoint))
-    const [isResolvingDoorAddress, setIsResolvingDoorAddress] = useState(false)
-    const [isResolvingPickupPoint, setIsResolvingPickupPoint] = useState(false)
-    const [removedDeliveryPointKeys, setRemovedDeliveryPointKeys] = useState<Set<string>>(() => new Set())
-    const [selectionError, setSelectionError] = useState<string | null>(null)
-    const [pickupPointError, setPickupPointError] = useState<string | null>(null)
     const [mapKitStatus, setMapKitStatus] = useState<MapKitStatus>("loading")
     const [shouldRenderNativeMap, setShouldRenderNativeMap] = useState(false)
     const [hasNativeMapLoaded, setHasNativeMapLoaded] = useState(false)
@@ -193,7 +154,58 @@ export default function DeliveryScreen() {
         userPoint,
     } = useDeliveryLocation()
     const { handleMapLoaded, moveToRegion } = useDeliveryMapCamera(mapRef)
-    const supportsDoorDelivery = supportsDoorDeliveryForCountry(activeCountryCode)
+    const {
+        activeCountryCode,
+        clearResults,
+        doorDeliveryDraft,
+        doorDeliveryPoint,
+        error,
+        hasVisibleSearchFeedback,
+        isDoorFooterExpanded,
+        isLoading,
+        isResolvingDoorAddress,
+        isResolvingPickupPoint,
+        isSearchActive,
+        pickupPoint,
+        pickupPointDraft,
+        pickupPointError,
+        removedDeliveryPointKeys,
+        results,
+        runSearch,
+        search,
+        searchFocusPoint,
+        selectionError,
+        setDoorDeliveryDraft,
+        setIsDoorFooterExpanded,
+        setIsPickupFooterExpanded,
+        setIsResolvingDoorAddress,
+        setIsResolvingPickupPoint,
+        setIsSearchFocused,
+        setPickupPointDraft,
+        setPickupPointError,
+        setRemovedDeliveryPointKeys,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+        setSelectionError,
+        shouldShowDoorFooterExtension,
+        shouldShowPickupFooterExtension,
+        supportsDoorDelivery,
+    } = useDeliveryFlowController({
+        selectedDeliveryAddress,
+        selectedDeliveryCountry,
+        selectedDeliveryPoint,
+        userPoint,
+    })
+    const activeCountryCodeRef = useRef(activeCountryCode)
+    const deliveryScreenMountLogContextRef = useRef({
+        activeCountryCode,
+        checkoutDraftId,
+        hasSelectedDeliveryAddress: Boolean(selectedDeliveryAddress),
+        hasSelectedDeliveryPoint: Boolean(selectedDeliveryPoint),
+        selectedDeliveryCountry,
+        shouldSyncBasketItems,
+    })
     const {
         deliveryPointMarkers,
         error: deliveryPointsError,
@@ -201,22 +213,6 @@ export default function DeliveryScreen() {
     } = useDeliveryPointMarkers(activeCountryCode, {
         enabled: shouldLoadPickupMarkers,
     })
-    const doorDeliveryPoint = useMemo(
-        () => getDoorDeliveryPoint(doorDeliveryDraft),
-        [doorDeliveryDraft],
-    )
-    const pickupPoint = useMemo(
-        () => getPickupPoint(pickupPointDraft),
-        [pickupPointDraft],
-    )
-    const searchOriginPoint = searchFocusPoint ?? doorDeliveryPoint ?? pickupPoint ?? userPoint
-    const { clearResults, error, isLoading, results, runSearch } = useDeliveryGeoSearch(
-        search,
-        searchOriginPoint,
-        searchEnabled,
-    )
-    const isSearchActive = isSearchFocused
-    const hasVisibleSearchFeedback = isLoading || Boolean(error) || results.length > 0
     const isMapKitInitializing = mapKitStatus === "loading"
     const isMapKitReady = mapKitStatus === "ready"
     const isMapLoading = isMapKitInitializing || (isMapKitReady && !hasNativeMapLoaded)
@@ -231,15 +227,6 @@ export default function DeliveryScreen() {
         && searchFocusPoint === null
         && doorDeliveryPoint === null
         && pickupPoint === null
-    const shouldShowPickupFooterExtension =
-        isPickupFooterExpanded &&
-        !hasVisibleSearchFeedback &&
-        Boolean(isResolvingPickupPoint || pickupPointDraft || pickupPointError)
-    const shouldShowDoorFooterExtension =
-        supportsDoorDelivery &&
-        isDoorFooterExpanded &&
-        !hasVisibleSearchFeedback &&
-        Boolean(isResolvingDoorAddress || doorDeliveryDraft || selectionError)
     const shouldShowDoorDeliveryMarker =
         isMapKitReady
         && supportsDoorDelivery

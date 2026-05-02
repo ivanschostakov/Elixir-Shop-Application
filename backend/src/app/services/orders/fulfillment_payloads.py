@@ -12,10 +12,8 @@ log = logging.getLogger(__name__)
 
 
 def normalize_address_for_cf(address: object) -> str | None:
-    if not address:
-        return None
-    if isinstance(address, str):
-        value = address
+    if not address: return None
+    if isinstance(address, str): value = address
     elif isinstance(address, dict):
         postal_code = address.get("postal_code")
         city = address.get("city")
@@ -23,8 +21,8 @@ def normalize_address_for_cf(address: object) -> str | None:
         country_code = address.get("country_code")
         line = address.get("address") or address.get("formatted") or address.get("name")
         value = ", ".join(str(part) for part in [postal_code, city, region, country_code, line] if part)
-    else:
-        value = str(address)
+
+    else: value = str(address)
     value = value.strip()
     return value[:255] if value else None
 
@@ -32,8 +30,7 @@ def normalize_address_for_cf(address: object) -> str | None:
 def _resolve_snapshot(order: Order) -> dict[str, Any]:
     snapshot = order.checkout_snapshot if isinstance(order.checkout_snapshot, dict) else {}
     selected_delivery = order.selected_delivery_payload if isinstance(order.selected_delivery_payload, dict) else {}
-    if "selected_delivery" not in snapshot:
-        snapshot = {**snapshot, "selected_delivery": selected_delivery}
+    if "selected_delivery" not in snapshot: snapshot = {**snapshot, "selected_delivery": selected_delivery}
     return snapshot
 
 
@@ -99,8 +96,7 @@ def build_yandex_delivery_request(order: Order) -> dict[str, Any]:
 def _build_cdek_recipient(order: Order) -> dict[str, Any]:
     recipient_name = " ".join(part for part in [order.recipient.surname, order.recipient.name] if part).strip() or order.recipient.name
     recipient: dict[str, Any] = {"name": recipient_name, "phones": [{"number": order.recipient.phone}]}
-    if order.recipient.email:
-        recipient["email"] = order.recipient.email
+    if order.recipient.email: recipient["email"] = order.recipient.email
     return recipient
 
 
@@ -184,12 +180,9 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
         "code": city_code,
         "address": formatted,
     }
-    if city:
-        to_location["city"] = city
-    if postal_code:
-        to_location["postal_code"] = postal_code
-    if country_code:
-        to_location["country_code"] = country_code
+    if city: to_location["city"] = city
+    if postal_code: to_location["postal_code"] = postal_code
+    if country_code: to_location["country_code"] = country_code
 
     order_body["to_location"] = to_location
     log.info("Built CDEK order body order_number=%s body=%s", order.order_number, order_body)

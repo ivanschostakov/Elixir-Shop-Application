@@ -1,7 +1,4 @@
-from typing import Literal
-
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -9,28 +6,9 @@ from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.app_integrity import create_app_integrity_challenge, register_ios_app_attest_key as register_ios_app_attest_key_service
 from src.database import get_db
 from src.database.models import User
+from .schemas import AppIntegrityChallengeRead, AppIntegrityChallengeCreate, IosAppAttestRegisterRead, IosAppAttestRegisterPayload
 
 app_integrity_router = APIRouter(prefix="/app-integrity", tags=["app-integrity"])
-
-
-class AppIntegrityChallengeCreate(BaseModel):
-    purpose: Literal["attestation", "assertion"]
-    action: str | None = Field(default=None, max_length=32)
-
-
-class AppIntegrityChallengeRead(BaseModel):
-    challenge: str
-
-
-class IosAppAttestRegisterPayload(BaseModel):
-    key_id: str = Field(min_length=1, max_length=128)
-    challenge: str = Field(min_length=1, max_length=128)
-    attestation_object: str = Field(min_length=1)
-
-
-class IosAppAttestRegisterRead(BaseModel):
-    key_id: str
-    environment: str
 
 
 @app_integrity_router.post("/ios/challenge", response_model=AppIntegrityChallengeRead, status_code=status.HTTP_200_OK)

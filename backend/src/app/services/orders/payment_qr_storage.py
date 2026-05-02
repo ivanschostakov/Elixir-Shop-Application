@@ -26,15 +26,12 @@ def find_order_payment_qr_path(user_id: int, order_id: int) -> Path | None:
 
 
 def build_order_payment_qr_url(request: Request, image_path: Path | None) -> str | None:
-    if image_path is None:
-        return None
+    if image_path is None: return None
 
     base_url = str(request.base_url).rstrip("/")
     version = int(image_path.stat().st_mtime_ns)
-    try:
-        relative_path = image_path.relative_to(MEDIA_DIR).as_posix()
-    except ValueError:
-        relative_path = f"orders/{image_path.name}"
+    try: relative_path = image_path.relative_to(MEDIA_DIR).as_posix()
+    except ValueError: relative_path = f"orders/{image_path.name}"
     return f"{base_url}/media/{relative_path}?v={version}"
 
 
@@ -55,15 +52,12 @@ def _is_http_url(value: str) -> bool:
 
 async def _load_candidate_bytes(value: str) -> bytes:
     candidate = (value or "").strip()
-    if not candidate:
-        raise ValueError("QR source is empty")
+    if not candidate: raise ValueError("QR source is empty")
 
-    if candidate.startswith("data:") and ";base64," in candidate:
-        return _decode_data_url(candidate)
+    if candidate.startswith("data:") and ";base64," in candidate: return _decode_data_url(candidate)
 
     if _is_http_url(candidate):
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(candidate)
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client: response = await client.get(candidate)
         response.raise_for_status()
         return response.content
 
@@ -89,14 +83,11 @@ async def save_order_payment_qr(user_id: int, order_id: int, *, qr_image: str | 
             png_content = _convert_qr_to_png(raw_content)
             target_path = build_order_payment_qr_path(user_id, order_id)
             if target_path.exists():
-                async with aiofiles.open(target_path, "rb") as existing_file:
-                    existing_content = await existing_file.read()
+                async with aiofiles.open(target_path, "rb") as existing_file: existing_content = await existing_file.read()
                 if existing_content == png_content: return target_path
-            async with aiofiles.open(target_path, "wb") as target_file:
-                await target_file.write(png_content)
+            async with aiofiles.open(target_path, "wb") as target_file: await target_file.write(png_content)
             return target_path
-        except (ValueError, binascii.Error, UnidentifiedImageError, httpx.HTTPError) as exc:
-            errors.append(f"{source_name}: {exc}")
+        except (ValueError, binascii.Error, UnidentifiedImageError, httpx.HTTPError) as exc: errors.append(f"{source_name}: {exc}")
 
     if errors: raise RuntimeError("; ".join(errors))
 

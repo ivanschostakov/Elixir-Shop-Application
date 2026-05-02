@@ -564,6 +564,8 @@ async def sync_onec_product_catalog() -> OneCCatalogSyncStats:
     logger.info("1C catalog sync started")
     product_rows, variant_rows, stats = await onec_catalog_client.fetch_catalog_rows()
     logger.info("1C catalog sync fetched rows products=%s variants=%s", len(product_rows), len(variant_rows))
+    from src.app.services.notifications import process_restock_notifications
+
     async with SessionLocal() as session:
         try:
             stats = await upsert_onec_catalog_rows(session, product_rows, variant_rows, stats)
@@ -574,6 +576,18 @@ async def sync_onec_product_catalog() -> OneCCatalogSyncStats:
             await session.rollback()
             logger.exception("1C catalog sync rolled back after %.2fs", time.perf_counter() - started)
             raise
+
+        try:
+            restock_sent = await process_restock_notifications(session)
+            if restock_sent:
+                logger.info(
+                    "1C sync immediate restock notifications sent=%s seconds=%.2f",
+                    restock_sent,
+                    time.perf_counter() - started,
+                )
+        except Exception:
+            await session.rollback()
+            logger.exception("1C sync immediate restock notification processing failed")
     return stats
 
 
