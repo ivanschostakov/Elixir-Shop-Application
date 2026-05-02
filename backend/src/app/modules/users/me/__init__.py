@@ -8,6 +8,7 @@ from .order_drafts import my_order_drafts_router
 from .orders import my_orders_router
 from .push_tokens import push_tokens_router
 from .recommendations import recommendations_router
+from .search_queries import search_queries_router
 from .website_identity import my_website_identity_router
 
 me_router = APIRouter(prefix="/me", tags=["me"])
@@ -19,6 +20,7 @@ me_router.include_router(my_order_drafts_router)
 me_router.include_router(my_orders_router)
 me_router.include_router(push_tokens_router)
 me_router.include_router(recommendations_router)
+me_router.include_router(search_queries_router)
 me_router.include_router(my_website_identity_router)
 
 __all__ = ["me_router"]

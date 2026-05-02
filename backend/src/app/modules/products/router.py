@@ -1,32 +1,34 @@
-from typing import Literal
 from pathlib import Path
+from typing import Literal
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_admin_user, get_current_user
+from src.app.services.cache import build_cache_key, get_cache_service
 from src.app.services.review_attachments import (
     build_review_attachment_filename,
+    remove_review_attachment_file,
     save_review_attachment_file,
     validate_review_attachment,
     validate_review_attachments_count,
     validate_review_attachments_total_size,
-    remove_review_attachment_file,
 )
 from src.database import get_db
 from src.database.crud import (
-    create_review_attachment,
-    create_product_review,
     create_product,
+    create_product_review,
+    create_review_attachment,
     delete_product,
-    get_review_by_id,
-    has_user_purchased_product,
     get_product_by_id,
     get_product_review_stats,
     get_product_reviews,
     get_products,
+    get_review_by_id,
     get_similar_products,
+    has_user_purchased_product,
     update_product,
 )
 from src.database.models import User
@@ -35,14 +37,54 @@ from src.database.schemas import ProductCreate, ProductUpdate, ProductWithVarian
 from .helpers import serialize_product_with_variants, serialize_products_with_variants, serialize_review, serialize_reviews
 
 products_router = APIRouter(prefix="/products", tags=["products"])
+PRODUCT_DETAIL_CACHE_TTL_SECONDS = 180
+PRODUCT_SIMILAR_CACHE_TTL_SECONDS = 180
+PRODUCT_REVIEWS_CACHE_TTL_SECONDS = 90
+PRODUCT_LIST_CACHE_TTL_SECONDS = 90
+
+
+async def _bump_product_cache_namespaces(*, include_categories: bool = False) -> None:
+    cache = get_cache_service()
+    await cache.bump_namespace("catalog")
+    await cache.bump_namespace("product")
+    if include_categories:
+        await cache.bump_namespace("categories")
+
+
+async def _bump_review_cache_namespaces() -> None:
+    cache = get_cache_service()
+    await cache.bump_namespace("reviews")
+    await cache.bump_namespace("product")
+    await cache.bump_namespace("catalog")
 
 
 @products_router.get("/{product_id}", response_model=ProductWithVariantsRead)
 async def products_get_by_id(request: Request, product_id: int, db: AsyncSession = Depends(get_db)):
+    cache = get_cache_service()
+    base_key = build_cache_key(
+        route="products:detail",
+        params={
+            "product_id": product_id,
+            "base_url": str(request.base_url),
+        },
+    )
+    cache_key = await cache.versioned_key("product", base_key)
+    cached_item = await cache.get_json(cache_key, key_prefix="products:detail")
+    if cached_item is not None:
+        return ProductWithVariantsRead.model_validate(cached_item)
+
     product = await get_product_by_id(db, product_id)
-    if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     review_stats = await get_product_review_stats(db, product_ids=[product.id])
-    return serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats)
+    payload = serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats)
+    await cache.set_json(
+        cache_key,
+        payload.model_dump(mode="json"),
+        ttl_seconds=PRODUCT_DETAIL_CACHE_TTL_SECONDS,
+        key_prefix="products:detail",
+    )
+    return payload
 
 
 @products_router.get("/{product_id}/similar", response_model=list[ProductWithVariantsRead])
@@ -53,13 +95,36 @@ async def products_get_similar(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
+    cache = get_cache_service()
+    base_key = build_cache_key(
+        route="products:similar",
+        params={
+            "product_id": product_id,
+            "limit": limit,
+            "offset": offset,
+            "base_url": str(request.base_url),
+        },
+    )
+    cache_key = await cache.versioned_key("product", base_key)
+    cached_items = await cache.get_json(cache_key, key_prefix="products:similar")
+    if cached_items is not None:
+        return [ProductWithVariantsRead.model_validate(item) for item in cached_items]
+
     product = await get_product_by_id(db, product_id)
-    if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     similar_products = await get_similar_products(db, product_id=product_id, offset=offset, limit=limit)
     review_stats = await get_product_review_stats(db, product_ids=[item.id for item in similar_products])
-    return serialize_products_with_variants(
+    payload = serialize_products_with_variants(
         request, similar_products, review_stats_by_product_id=review_stats,
     )
+    await cache.set_json(
+        cache_key,
+        [item.model_dump(mode="json") for item in payload],
+        ttl_seconds=PRODUCT_SIMILAR_CACHE_TTL_SECONDS,
+        key_prefix="products:similar",
+    )
+    return payload
 
 
 @products_router.get("/{product_id}/reviews", response_model=list[ReviewRead])
@@ -70,10 +135,33 @@ async def products_get_reviews(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
+    cache = get_cache_service()
+    base_key = build_cache_key(
+        route="products:reviews",
+        params={
+            "product_id": product_id,
+            "limit": limit,
+            "offset": offset,
+            "base_url": str(request.base_url),
+        },
+    )
+    cache_key = await cache.versioned_key("reviews", base_key)
+    cached_items = await cache.get_json(cache_key, key_prefix="products:reviews")
+    if cached_items is not None:
+        return [ReviewRead.model_validate(item) for item in cached_items]
+
     product = await get_product_by_id(db, product_id)
-    if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     reviews = await get_product_reviews(db, product_id=product_id, offset=offset, limit=limit)
-    return serialize_reviews(request, reviews)
+    payload = serialize_reviews(request, reviews)
+    await cache.set_json(
+        cache_key,
+        [item.model_dump(mode="json") for item in payload],
+        ttl_seconds=PRODUCT_REVIEWS_CACHE_TTL_SECONDS,
+        key_prefix="products:reviews",
+    )
+    return payload
 
 
 @products_router.get("/{product_id}/reviews/eligibility", response_model=ReviewEligibilityRead)
@@ -83,7 +171,8 @@ async def products_get_review_eligibility(
     current_user: User = Depends(get_current_user),
 ):
     product = await get_product_by_id(db, product_id)
-    if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     can_review = await has_user_purchased_product(db, user_id=current_user.id, product_id=product_id)
     return ReviewEligibilityRead(can_review=can_review)
 
@@ -99,8 +188,10 @@ async def products_create_review(
     current_user: User = Depends(get_current_user),
 ):
     product = await get_product_by_id(db, product_id)
-    if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    if not await has_user_purchased_product(db, user_id=current_user.id, product_id=product_id): raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers who bought this product can leave a review")
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if not await has_user_purchased_product(db, user_id=current_user.id, product_id=product_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers who bought this product can leave a review")
 
     data = ReviewCreate(value=value, text=text.strip() if text else None)
     uploaded_attachments = attachments or []
@@ -123,10 +214,12 @@ async def products_create_review(
             created_file_paths.append(saved_path)
 
         await db.commit()
-    
+        await _bump_review_cache_namespaces()
+
     except Exception:
         await db.rollback()
-        for file_path in created_file_paths: remove_review_attachment_file(file_path)
+        for file_path in created_file_paths:
+            remove_review_attachment_file(file_path)
         raise
 
     created_review = await get_review_by_id(db, review_id=review.id)
@@ -148,9 +241,46 @@ async def products_get(
     db: AsyncSession = Depends(get_db),
     sort: Literal["newest", "name_asc", "name_desc", "price_asc", "price_desc"] | None = Query(default=None),
 ):
-    products = await get_products(db, q=q, sku=sku, min_priority=min_priority, category_id=category_id, offset=offset, limit=limit, sort=sort)
+    normalized_q = q.strip().lower() if q is not None else None
+    normalized_sku = sku.strip() if sku is not None else None
+    cache = get_cache_service()
+    base_key = build_cache_key(
+        route="products:list",
+        params={
+            "q": normalized_q,
+            "sku": normalized_sku,
+            "min_priority": min_priority,
+            "category_id": category_id,
+            "limit": limit,
+            "offset": offset,
+            "sort": sort,
+            "base_url": str(request.base_url),
+        },
+    )
+    cache_key = await cache.versioned_key("catalog", base_key)
+    cached_items = await cache.get_json(cache_key, key_prefix="products:list")
+    if cached_items is not None:
+        return [ProductWithVariantsRead.model_validate(item) for item in cached_items]
+
+    products = await get_products(
+        db,
+        q=normalized_q,
+        sku=normalized_sku,
+        min_priority=min_priority,
+        category_id=category_id,
+        offset=offset,
+        limit=limit,
+        sort=sort,
+    )
     review_stats = await get_product_review_stats(db, product_ids=[product.id for product in products])
-    return serialize_products_with_variants(request, products, review_stats_by_product_id=review_stats)
+    payload = serialize_products_with_variants(request, products, review_stats_by_product_id=review_stats)
+    await cache.set_json(
+        cache_key,
+        [item.model_dump(mode="json") for item in payload],
+        ttl_seconds=PRODUCT_LIST_CACHE_TTL_SECONDS,
+        key_prefix="products:list",
+    )
+    return payload
 
 
 @products_router.post("", response_model=ProductWithVariantsRead, status_code=status.HTTP_201_CREATED)
@@ -159,6 +289,7 @@ async def products_create(request: Request, data: ProductCreate, db: AsyncSessio
         product = await create_product(db, data)
         product = await get_product_by_id(db, product.id, include_out_of_stock=True)
         review_stats = await get_product_review_stats(db, product_ids=[product.id])
+        await _bump_product_cache_namespaces()
         return serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats)
 
     except IntegrityError:
@@ -169,11 +300,13 @@ async def products_create(request: Request, data: ProductCreate, db: AsyncSessio
 @products_router.patch("/{product_id}", response_model=ProductWithVariantsRead)
 async def products_patch(request: Request, product_id: int, data: ProductUpdate, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_admin_user)):
     product = await get_product_by_id(db, product_id, include_out_of_stock=True)
-    if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     try:
         updated_product = await update_product(db, product, data)
         updated_product = await get_product_by_id(db, updated_product.id, include_out_of_stock=True)
         review_stats = await get_product_review_stats(db, product_ids=[updated_product.id])
+        await _bump_product_cache_namespaces()
         return serialize_product_with_variants(request, updated_product, review_stats_by_product_id=review_stats)
 
     except IntegrityError:
@@ -184,5 +317,7 @@ async def products_patch(request: Request, product_id: int, data: ProductUpdate,
 @products_router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def products_delete(product_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_admin_user)):
     product = await get_product_by_id(db, product_id, include_out_of_stock=True)
-    if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     await delete_product(db, product)
+    await _bump_product_cache_namespaces()

@@ -9,6 +9,7 @@ from starlette.staticfiles import StaticFiles
 from uvicorn import Config, Server
 
 from config import NOTIFICATION_SCAN_INTERVAL_MINUTES, NOTIFICATIONS_ENABLED, ONEC_SYNC_ENABLED, ONEC_SYNC_INTERVAL_MINUTES
+from src.app.services.cache import get_cache_service
 from src.app.services.notifications import run_notification_processors_once
 from src.database import get_session
 from .router import api_router
@@ -55,6 +56,7 @@ async def _onec_catalog_sync_loop(stop_event: asyncio.Event):
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await get_cache_service().connect()
     notification_stop_event = asyncio.Event()
     notification_task: asyncio.Task | None = None
     onec_sync_stop_event = asyncio.Event()
@@ -80,6 +82,7 @@ async def lifespan(_: FastAPI):
         await get_cdek_client().aclose()
         await get_professor_client().aclose()
         await get_onec_catalog_client().aclose()
+        await get_cache_service().close()
 
 
 app = FastAPI(title="Elixir Shop API", version="0.1.0", lifespan=lifespan)

@@ -22,6 +22,7 @@ from config import (
     ONEC_REQUEST_TIMEOUT_SECONDS,
     ONEC_STOCK_RESERVE,
 )
+from src.app.services.cache import get_cache_service
 from src.database import SessionLocal
 from src.database.limits import (
     PRODUCT_DESCRIPTION_MAX_LENGTH,
@@ -570,6 +571,10 @@ async def sync_onec_product_catalog() -> OneCCatalogSyncStats:
         try:
             stats = await upsert_onec_catalog_rows(session, product_rows, variant_rows, stats)
             await session.commit()
+            cache = get_cache_service()
+            await cache.bump_namespace("catalog")
+            await cache.bump_namespace("product")
+            await cache.bump_namespace("categories")
             logger.info("1C catalog sync committed stats=%s seconds=%.2f", stats.as_dict(), time.perf_counter() - started)
 
         except Exception:

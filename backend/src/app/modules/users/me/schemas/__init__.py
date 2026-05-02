@@ -3,6 +3,7 @@ from .benefits import BenefitBonusRead, BenefitCheckPayload, BenefitCheckRead, B
 from .order_draft import CreateOrderDraftPayload, DeliveryCalculationPayload, UpdateOrderDraftPayload
 from .order import CreateOrderPayload, CreatePaymentPayload, PaymentMethod, PaymentStatusRead
 from .recommendations import RecommendationCategoryViewPayload, RecommendationSurface, RecommendationViewPayload
+from .search_queries import CreateRecentSearchQueryPayload
 
 __all__ = [
     "AIChatResponse",
@@ -23,5 +24,6 @@ __all__ = [
     "RecommendationCategoryViewPayload",
     "RecommendationSurface",
     "RecommendationViewPayload",
+    "CreateRecentSearchQueryPayload",
     "UpdateOrderDraftPayload",
 ]
