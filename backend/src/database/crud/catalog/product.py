@@ -1,10 +1,11 @@
-from sqlalchemy import distinct, func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.product_media import resolve_product_image_path
+from src.database.search import build_search_query_variants
 
-from src.database.models import Product, ProductByCategory, Variant
+from src.database.models import Product, ProductByCategory, ProductCategory, Variant
 from src.database.schemas import ProductCreate, ProductUpdate
 
 
@@ -46,10 +47,34 @@ async def get_product_by_sku(session: AsyncSession, sku: str) -> Product | None:
 
 async def get_products(session: AsyncSession, *, q: str | None = None, sku: str | None = None, min_priority: int | None = None, category_id: int | None = None, offset: int = 0, limit: int = 100, sort: str = None) -> list[Product]:
     stmt = select(Product).options(selectinload(Product.variants))
-    if category_id is not None: stmt = stmt.join(ProductByCategory, ProductByCategory.product_id == Product.id).where(ProductByCategory.category_id == category_id)
+    if category_id is not None:
+        stmt = stmt.join(ProductByCategory, ProductByCategory.product_id == Product.id).where(ProductByCategory.category_id == category_id)
     if sku is not None: stmt = stmt.where(Product.sku == sku)
     if min_priority is not None: stmt = stmt.where(Product.priority >= min_priority)
-    if q: stmt = stmt.where(or_(Product.name.ilike(f"%{q}%"), Product.sku.ilike(f"%{q}%")))
+    if q:
+        query_variants = build_search_query_variants(q)
+        predicates = []
+        for variant in query_variants:
+            pattern = f"%{variant}%"
+            category_match = exists(
+                select(ProductByCategory.id)
+                .join(ProductCategory, ProductCategory.id == ProductByCategory.category_id)
+                .where(
+                    ProductByCategory.product_id == Product.id,
+                    ProductCategory.name.ilike(pattern),
+                )
+            )
+            predicates.extend(
+                [
+                    Product.name.ilike(pattern),
+                    Product.description.ilike(pattern),
+                    Product.usage.ilike(pattern),
+                    Product.sku.ilike(pattern),
+                    category_match,
+                ]
+            )
+        if predicates:
+            stmt = stmt.where(or_(*predicates))
 
     min_variant_price = select(func.min(Variant.price)).where(Variant.product_id == Product.id).correlate(Product).scalar_subquery()
     max_variant_price = select(func.max(Variant.price)).where(Variant.product_id == Product.id).correlate(Product).scalar_subquery()

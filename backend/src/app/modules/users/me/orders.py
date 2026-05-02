@@ -1,5 +1,4 @@
 from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -32,13 +31,7 @@ async def create_my_order(
     current_user: User = Depends(get_current_user),
     _app_integrity: None = Depends(require_app_integrity("orders:create")),
 ) -> OrderRead:
-    order = await create_order_from_draft_for_user(
-        db,
-        request=request,
-        user=current_user,
-        draft_id=payload.draft_id,
-        payment_method=payload.payment_method,
-    )
+    order = await create_order_from_draft_for_user(db, request=request, user=current_user, draft_id=payload.draft_id, payment_method=payload.payment_method)
     return await serialize_order(request, db, order)
 
 
@@ -55,16 +48,7 @@ async def list_my_orders(
     current_user: User = Depends(get_current_user),
     _app_integrity: None = Depends(require_app_integrity("orders:list")),
 ) -> list[OrderRead]:
-    orders = await get_orders_history_for_user(
-        db,
-        user_id=current_user.id,
-        history_bucket=history_bucket,
-        status_code=status_code,
-        created_from=created_from,
-        created_to=created_to,
-        limit=limit,
-        offset=offset,
-    )
+    orders = await get_orders_history_for_user(db, user_id=current_user.id, history_bucket=history_bucket, status_code=status_code, created_from=created_from, created_to=created_to, limit=limit, offset=offset)
     return await serialize_orders(request, db, orders)
 
 
@@ -77,8 +61,7 @@ async def repeat_my_order(
     _app_integrity: None = Depends(require_app_integrity("orders:repeat")),
 ) -> OrderDraftRead:
     draft = await repeat_order_as_draft_for_user(db, user_id=current_user.id, order_id=order_id)
-    if draft is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     return await serialize_order_draft(request, db, draft)
 
 
@@ -91,6 +74,5 @@ async def get_my_order(
     _app_integrity: None = Depends(require_app_integrity("orders:read")),
 ) -> OrderRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=order_id)
-    if order is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     return await serialize_order(request, db, order)

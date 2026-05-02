@@ -32,6 +32,7 @@ from src.database.crud import (
     update_product,
 )
 from src.database.models import User
+from src.database.search import normalize_search_text
 from src.database.schemas import ProductCreate, ProductUpdate, ProductWithVariantsRead, ReviewCreate, ReviewEligibilityRead, ReviewRead
 
 from .helpers import serialize_product_with_variants, serialize_products_with_variants, serialize_review, serialize_reviews
@@ -241,7 +242,7 @@ async def products_get(
     db: AsyncSession = Depends(get_db),
     sort: Literal["newest", "name_asc", "name_desc", "price_asc", "price_desc"] | None = Query(default=None),
 ):
-    normalized_q = q.strip().lower() if q is not None else None
+    normalized_q = normalize_search_text(q) if q is not None else None
     normalized_sku = sku.strip() if sku is not None else None
     cache = get_cache_service()
     base_key = build_cache_key(
