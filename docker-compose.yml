@@ -1,0 +1,105 @@
+services:
+  redis:
+    image: redis:7
+    container_name: shop-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend-api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shop-backend-api
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      NOTIFICATIONS_ENABLED: "false"
+      ONEC_SYNC_ENABLED: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    command: ["python", "run.py"]
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/logs:/app/backend/logs
+
+  worker-notifications:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shop-worker-notifications
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      NOTIFICATIONS_ENABLED: "true"
+      NOTIFICATION_RESTOCK_ENABLED: "false"
+      ONEC_SYNC_ENABLED: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "src.workers.notifications"]
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/logs:/app/backend/logs
+
+  worker-onec-sync:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shop-worker-onec-sync
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      NOTIFICATIONS_ENABLED: "true"
+      ONEC_SYNC_ENABLED: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "src.workers.onec_sync"]
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/logs:/app/backend/logs
+
+  job-website-identity-sync:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shop-job-website-identity-sync
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      WEBSITE_IDENTITY_SYNC_INTERVAL_MINUTES: "60"
+      WEBSITE_IDENTITY_SYNC_STALE_MINUTES: "50"
+      WEBSITE_IDENTITY_SYNC_BATCH_SIZE: "50"
+      WEBSITE_IDENTITY_SYNC_LIMIT: "0"
+      WEBSITE_IDENTITY_SYNC_DRY_RUN: "false"
+      NOTIFICATIONS_ENABLED: "false"
+      ONEC_SYNC_ENABLED: "false"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "src.workers.website_identity_sync"]
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/logs:/app/backend/logs
+
+volumes:
+  redis_data:
