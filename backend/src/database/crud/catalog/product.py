@@ -13,6 +13,17 @@ def _in_stock_product_clause():
     return Product.in_stock.is_(True)
 
 
+def _compact_sku_search_token(value: str) -> str:
+    return "".join(char for char in value.casefold() if char.isalnum())
+
+
+def _normalized_product_sku_expression():
+    expr = func.lower(Product.sku)
+    for token in ("-", "_", " ", ".", "/", "\\"):
+        expr = func.replace(expr, token, "")
+    return expr
+
+
 def _has_product_image(*, product_id: int | None = None, system_id) -> bool:
     return resolve_product_image_path(product_id=product_id, system_id=system_id) is not None
 
@@ -54,6 +65,8 @@ async def get_products(session: AsyncSession, *, q: str | None = None, sku: str 
     if q:
         query_variants = build_search_query_variants(q)
         predicates = []
+        compact_sku_variants: set[str] = set()
+        normalized_product_sku = _normalized_product_sku_expression()
         for variant in query_variants:
             pattern = f"%{variant}%"
             predicates.extend(
@@ -62,6 +75,10 @@ async def get_products(session: AsyncSession, *, q: str | None = None, sku: str 
                     Product.sku.ilike(pattern),
                 ]
             )
+            compact_sku = _compact_sku_search_token(variant)
+            if compact_sku and compact_sku not in compact_sku_variants:
+                compact_sku_variants.add(compact_sku)
+                predicates.append(normalized_product_sku.ilike(f"%{compact_sku}%"))
         if predicates:
             stmt = stmt.where(or_(*predicates))
 

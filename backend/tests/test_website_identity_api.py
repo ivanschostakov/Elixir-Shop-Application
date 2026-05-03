@@ -23,9 +23,10 @@ if "PIL" not in sys.modules:
     sys.modules["PIL"] = pil_module
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER, ufa_now
+import src.app.modules.auth.router as auth_router_module
+from src.database.models import User, WebsiteCoupon, WebsiteDiscountEntitlement, WebsiteIdentity
 from src.integrations.website_identity import website_identity_client
 from src.integrations.website_identity.exceptions import WebsiteIdentityError
-from src.database.models import User, WebsiteCoupon, WebsiteDiscountEntitlement, WebsiteIdentity
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
@@ -356,6 +357,39 @@ def test_plain_login_falls_back_to_local_credentials_when_website_auth_fails(
         raise WebsiteIdentityError("Invalid website credentials", status_code=401, error_code="invalid_credentials")
 
     monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
+
+    try:
+        response = client.post("/api/v1/auth/login", json={"login": email, "password": password})
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert payload["verification_required"] is True
+        assert payload["email"] == email
+    finally:
+        _delete_user(user_id)
+
+
+def test_plain_login_skips_website_identity_when_toggle_is_disabled(
+    client: TestClient,
+    register_verified_user,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token = uuid.uuid4().hex[:12]
+    email = f"plain_login_toggle_{token}@example.com"
+    password = "test-password"
+    registration_payload = register_verified_user({
+        "username": f"u{token}",
+        "email": email,
+        "password": password,
+        "name": "Plain",
+        "surname": "Toggle",
+    })
+    user_id = registration_payload["user"]["id"]
+    monkeypatch.setattr(auth_router_module, "AUTH_LOGIN_WEBSITE_FIRST_ENABLED", False)
+
+    async def fail_if_called(*, login: str, password: str) -> dict:
+        raise AssertionError("Website identity authenticate should not be called when toggle is disabled")
+
+    monkeypatch.setattr(website_identity_client, "authenticate", fail_if_called)
 
     try:
         response = client.post("/api/v1/auth/login", json={"login": email, "password": password})

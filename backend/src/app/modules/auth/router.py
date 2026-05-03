@@ -7,6 +7,7 @@ from starlette import status
 
 from src.app.services.security import create_access_token
 from config import (
+    AUTH_LOGIN_WEBSITE_FIRST_ENABLED,
     AUTH_RATE_LIMIT_MAX_REQUESTS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
     AUTH_VERIFY_RATE_LIMIT_MAX_REQUESTS,
@@ -204,17 +205,18 @@ async def login(
 ) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
     await _apply_auth_rate_limit(request, scope="auth:login", principal=payload.login)
 
-    try:
-        website_user, _ = await login_with_website_identity(
-            db,
-            login=payload.login,
-            password=payload.password,
-            website_identity_client=website_identity_client,
-        )
-        return await build_auth_tokens_response(website_user, db)
-    except HTTPException:
-        # Keep local login available even when website auth rejects credentials or is temporarily unavailable.
-        pass
+    if AUTH_LOGIN_WEBSITE_FIRST_ENABLED:
+        try:
+            website_user, _ = await login_with_website_identity(
+                db,
+                login=payload.login,
+                password=payload.password,
+                website_identity_client=website_identity_client,
+            )
+            return await build_auth_tokens_response(website_user, db)
+        except HTTPException:
+            # Keep local login available even when website auth rejects credentials or is temporarily unavailable.
+            pass
 
     user = await get_plain_login_user(payload, db)
     try:

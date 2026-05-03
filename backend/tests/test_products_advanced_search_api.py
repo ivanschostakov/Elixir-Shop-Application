@@ -129,6 +129,8 @@ def _seed_search_products() -> dict[str, int]:
         "peptides_category_id": created_category_ids[0],
         "accessories_category_id": created_category_ids[1],
         "peptides_category_name": f"Пептиды-{token}",
+        "ru_product_sku": f"RET-RU-{token}",
+        "en_product_sku": f"RET-EN-{token}",
     }
 
 
@@ -187,6 +189,16 @@ def test_products_advanced_search_variants_and_regressions():
             fuzzy = client.get("/api/v1/products", params={"q": "retaa"})
             assert fuzzy.status_code == 200, fuzzy.text
             assert seed["en_product_id"] in _response_product_ids(fuzzy)
+
+            # SKU search should work for punctuated and compact input alike.
+            sku_punctuated = client.get("/api/v1/products", params={"q": seed["ru_product_sku"]})
+            assert sku_punctuated.status_code == 200, sku_punctuated.text
+            assert seed["ru_product_id"] in _response_product_ids(sku_punctuated)
+
+            compact_sku_query = seed["ru_product_sku"].replace("-", "")
+            sku_compact = client.get("/api/v1/products", params={"q": compact_sku_query})
+            assert sku_compact.status_code == 200, sku_compact.text
+            assert seed["ru_product_id"] in _response_product_ids(sku_compact)
 
             # Category filtering still applies.
             filtered = client.get(
