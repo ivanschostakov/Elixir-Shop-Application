@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react"
 import { Stack, usePathname, useRouter } from "expo-router"
 import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from "@react-navigation/native"
-import { Image, Text, View } from "react-native"
+import { Image, Platform, Text, View } from "react-native"
 import {
     PanGestureHandler,
     State,
@@ -56,6 +56,7 @@ function AppShellContent() {
 
     const shellEdges: ("top" | "bottom" | "left" | "right")[] =
         chromeTemplate.mode === "fullscreen" ? [] : ["top"]
+    const hasDynamicIsland = Platform.OS === "ios" && topInset >= 51
     const brandLabelTop = Math.max(2, topInset - 44)
     const currentPrimaryRouteIndex = PRIMARY_APP_ROUTES.findIndex((route) => route === pathname)
     const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
@@ -89,21 +90,23 @@ function AppShellContent() {
 
     return (
         <View style={appShellStyles.container}>
-            <View
-                pointerEvents="none"
-                style={[appShellStyles.brandLabelOverlay, { top: brandLabelTop }]}
-            >
-                <View style={appShellStyles.brandLabelPill}>
-                    <Image
-                        source={require("@/assets/icons/dynamic-island.png")}
-                        resizeMode="contain"
-                        style={appShellStyles.brandLabelImage}
-                    />
-                    <Text numberOfLines={1} style={appShellStyles.brandLabelText}>
-                        ElixirPeptide
-                    </Text>
+            {hasDynamicIsland ? (
+                <View
+                    pointerEvents="none"
+                    style={[appShellStyles.brandLabelOverlay, { top: brandLabelTop }]}
+                >
+                    <View style={appShellStyles.brandLabelPill}>
+                        <Image
+                            source={require("@/assets/icons/dynamic-island.png")}
+                            resizeMode="contain"
+                            style={appShellStyles.brandLabelImage}
+                        />
+                        <Text numberOfLines={1} style={appShellStyles.brandLabelText}>
+                            ElixirPeptide
+                        </Text>
+                    </View>
                 </View>
-            </View>
+            ) : null}
 
             <SafeAreaView style={appShellStyles.safeArea} edges={shellEdges}>
                 {chromeTemplate.header !== "none" ? <AppHeader template={chromeTemplate} /> : null}

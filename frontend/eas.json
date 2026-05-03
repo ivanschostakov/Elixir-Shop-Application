@@ -16,6 +16,7 @@
     "testing": {
       "environment": "production",
       "distribution": "store",
+      "channel": "production",
       "autoIncrement": true,
       "android": {
         "buildType": "app-bundle"
@@ -24,10 +25,12 @@
     "testflight": {
       "environment": "production",
       "distribution": "store",
+      "channel": "production",
       "autoIncrement": true
     },
     "production": {
       "environment": "production",
+      "channel": "production",
       "autoIncrement": true
     }
   },

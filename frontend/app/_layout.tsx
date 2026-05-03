@@ -7,6 +7,7 @@ import { AppState, Platform, Text, View, useColorScheme, type AppStateStatus } f
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 
 import AppShell from "@/components/navigation/app-shell"
+import { VersionGate } from "@/components/navigation/version-gate"
 import { AuthProvider } from "@/providers/auth-provider"
 import { ThemeProvider } from "@/providers/theme-provider"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
@@ -118,9 +119,11 @@ export default function RootLayout() {
     return (
         <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
             <ThemeProvider>
-                <AuthProvider>
-                    <AppShell />
-                </AuthProvider>
+                <VersionGate>
+                    <AuthProvider>
+                        <AppShell />
+                    </AuthProvider>
+                </VersionGate>
             </ThemeProvider>
         </GestureHandlerRootView>
     )

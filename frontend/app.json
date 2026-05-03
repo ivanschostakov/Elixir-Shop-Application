@@ -8,6 +8,12 @@
     "scheme": "elixirshopapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/32dfb6b0-55a1-4dcc-aeab-91b3633cfed6"
+    },
     "ios": {
       "supportsTablet": true,
       "icon": "./assets/images/adaptive-icon-preview.png",
