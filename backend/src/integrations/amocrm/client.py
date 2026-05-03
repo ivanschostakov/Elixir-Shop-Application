@@ -55,7 +55,7 @@ class AsyncAmoCRM:
         self._ensure_playwright_auth_config()
         try: from playwright.async_api import async_playwright
         except ModuleNotFoundError as exc: raise HTTPException(status_code=503, detail="Playwright is not installed for amoCRM interactive authorization") from exc
-        auth_url = f"https://www..ru/oauth?client_id={self.transport.client_id}&redirect_uri={self.transport.redirect_uri}&response_type=code"
+        auth_url = f"https://www.amocrm.ru/oauth?client_id={self.transport.client_id}&redirect_uri={self.transport.redirect_uri}&response_type=code"
         self.logger.warning("Launching Playwright to get a new amoCRM authorization code")
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=self.playwright_headless)
