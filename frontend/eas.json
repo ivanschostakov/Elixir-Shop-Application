@@ -13,6 +13,10 @@
       "environment": "preview",
       "distribution": "internal"
     },
+    "internal": {
+      "environment": "preview",
+      "distribution": "internal"
+    },
     "testing": {
       "environment": "production",
       "distribution": "store",
