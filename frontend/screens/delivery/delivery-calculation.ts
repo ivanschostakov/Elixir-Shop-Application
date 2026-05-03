@@ -45,17 +45,10 @@ export function formatDeliveryCalculationPeriod(deliveryCalculation?: CdekDelive
 }
 
 export function getDeliveryActionLabel(
-    deliveryCalculation: CdekDeliveryCalculation | null | undefined,
+    _deliveryCalculation: CdekDeliveryCalculation | null | undefined,
     fallbackLabel: string,
 ) {
-    const price = formatDeliveryCalculationPrice(deliveryCalculation)
-    const period = formatDeliveryCalculationPeriod(deliveryCalculation)
-
-    if (!price || !period) {
-        return fallbackLabel
-    }
-
-    return `${price} • ~${period}`
+    return fallbackLabel
 }
 
 export function getPickupPointActionLabel(deliveryCalculation?: CdekDeliveryCalculation | null) {
