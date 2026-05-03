@@ -17,11 +17,13 @@ from src.database import get_db
 from src.database.crud import get_order_by_amocrm_lead_id, get_order_by_code, get_order_by_id, get_order_by_invoice_id, update_order
 from src.database.crud.webhooks import payload_digest, register_webhook_delivery
 from src.database.schemas import OrderUpdate
-from src.integrations.amocrm import amocrm_client
-from src.integrations.intellectmoney import intellectmoney
+from src.integrations.amocrm import get_amocrm_client
+from src.integrations.intellectmoney import get_intellectmoney_client
 
 webhooks_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 log = logging.getLogger(__name__)
+amocrm_client = get_amocrm_client()
+intellectmoney = get_intellectmoney_client()
 
 _INTELLECTMONEY_PAYLOAD_KEYS = {
     "eshopaccount": "EshopAccount",

@@ -14,7 +14,7 @@ from src.database.crud import create_delivery_recipient, create_order, create_or
 from src.database.models import Order, OrderDraft, OrderDraftItem, OrderItem, User, Variant
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode, get_order_history_bucket
 from src.database.schemas import DeliveryRecipientCreate, OrderCreate, OrderDraftCreate
-from src.integrations.amocrm import amocrm_client
+from src.integrations.amocrm import get_amocrm_client
 from src.integrations.delivery.cdek import get_cdek_client
 
 from .common import _delivery_string, _normalize_phone
@@ -22,6 +22,7 @@ from .crm import ensure_order_has_amocrm_lead
 from .fulfillment_payloads import normalize_address_for_cf
 
 ORDER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+amocrm_client = get_amocrm_client()
 
 
 async def _generate_order_code(session: AsyncSession) -> str:

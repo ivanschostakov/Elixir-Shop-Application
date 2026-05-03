@@ -5,10 +5,11 @@ import signal
 from contextlib import suppress
 
 from logger import setup_logging
-from src.integrations.bitrix import bitrix_sync_api_client
+from src.integrations.bitrix import get_bitrix_sync_api_client
 from src.scripts.sync_website_identities_from_bitrix_vm import run_sync
 
 log = logging.getLogger("worker.website_identity_sync")
+bitrix_sync_api_client = get_bitrix_sync_api_client()
 
 
 def _int_env(name: str, default: int) -> int:

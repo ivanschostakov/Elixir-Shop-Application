@@ -2,7 +2,6 @@ __all__ = [
     "BitrixSyncApiClient",
     "BitrixSyncApiError",
     "BitrixSyncBatchResult",
-    "bitrix_sync_api_client",
     "get_bitrix_sync_api_client",
 ]
 

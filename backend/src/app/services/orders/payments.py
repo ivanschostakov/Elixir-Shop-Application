@@ -14,12 +14,13 @@ from src.app.services.external_errors import external_service_http_exception
 from src.database.crud import update_order
 from src.database.models import Order
 from src.database.schemas import OrderUpdate
-from src.integrations.intellectmoney import IntellectMoneyError, intellectmoney
+from src.integrations.intellectmoney import IntellectMoneyError, get_intellectmoney_client
 
 from .crm import _move_lead_to_payment_result_status, _move_lead_to_pending_payment
 from .payment_qr_storage import build_order_payment_qr_url, find_order_payment_qr_path, save_order_payment_qr
 
 log = logging.getLogger(__name__)
+intellectmoney = get_intellectmoney_client()
 
 PAYMENT_STATUS_BY_CODE = {3: "created", 4: "canceled", 5: "paid", 6: "hold", 7: "partial", 8: "refunded"}
 PENDING_PAYMENT_STEPS = {"", "Created", "InProcess", "SendTo3DS"}
