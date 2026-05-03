@@ -85,7 +85,7 @@ export const stickyFooterStyles = StyleSheet.create({
     },
     actionButton: {
         alignItems: "center",
-        backgroundColor: colors.primary,
+        backgroundColor: "#0A84FF",
         borderRadius: 16,
         justifyContent: "center",
         minHeight: 56,
@@ -93,7 +93,7 @@ export const stickyFooterStyles = StyleSheet.create({
         width: "100%",
     },
     actionButtonPressed: {
-        backgroundColor: colors.primaryPressed,
+        backgroundColor: "#096FE0",
     },
     actionButtonDisabled: {
         opacity: 0.5,
@@ -105,7 +105,7 @@ export const stickyFooterStyles = StyleSheet.create({
     },
     quantityControl: {
         alignItems: "center",
-        backgroundColor: colors.primary,
+        backgroundColor: "#0A84FF",
         borderRadius: 16,
         flexDirection: "row",
         minHeight: 56,

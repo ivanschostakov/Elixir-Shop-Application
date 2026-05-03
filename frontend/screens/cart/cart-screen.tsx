@@ -38,6 +38,7 @@ import {
     useSelectedDeliveryPoint,
 } from "@/hooks/delivery/delivery-point-selection-store"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
+import { useRecentOrderDrafts } from "@/hooks/order-draft/use-recent-order-drafts"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useLanguage } from "@/providers/language-provider"
 import { CartBasketItem } from "@/screens/cart/cart-basket-item"
@@ -68,6 +69,8 @@ export default function CartScreen() {
     const [isSavingDraft, setIsSavingDraft] = useState(false)
     const swipeableRefs = useRef<Record<number, Swipeable | null>>({})
     const routeDraftIdParam = Array.isArray(params.draftId) ? params.draftId[0] : params.draftId
+    const { orderDrafts: recentOrderDrafts, loading: recentOrderDraftsLoading } = useRecentOrderDrafts(1)
+    const hasRecentOrderDrafts = recentOrderDrafts.length > 0
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,
@@ -336,11 +339,24 @@ export default function CartScreen() {
                         <EmptyState
                             actionVariant="link"
                             sticker={STICKERS.cartEmpty}
-                            description={t("cart.emptyDescription")}
+                            description={t(hasRecentOrderDrafts ? "cart.emptyDescriptionWithDrafts" : "cart.emptyDescription")}
                             actionLabel={t("cart.primaryCta")}
                             onPressAction={() => router.push(ROUTES.discover)}
                             variant="plain"
                         />
+                        {hasRecentOrderDrafts && !recentOrderDraftsLoading ? (
+                            <Pressable
+                                accessibilityLabel={t("cart.openDraftsCta")}
+                                accessibilityRole="button"
+                                onPress={() => router.push(ROUTES.profileDrafts)}
+                                style={({ pressed }) => [
+                                    cartScreenStyles.emptyDraftLink,
+                                    pressed && cartScreenStyles.pressed,
+                                ]}
+                            >
+                                <Text style={cartScreenStyles.emptyDraftLinkText}>{t("cart.openDraftsCta")}</Text>
+                            </Pressable>
+                        ) : null}
                     </View>
                 </ScrollView>
             </View>

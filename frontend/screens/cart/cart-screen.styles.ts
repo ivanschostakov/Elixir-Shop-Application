@@ -20,10 +20,22 @@ export const cartScreenStyles = StyleSheet.create({
         backgroundColor: colors.surface,
         justifyContent: "center",
         flexGrow: 1,
+        gap: spacing.md,
         minHeight: 360,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.lg,
         width: "100%",
+    },
+    emptyDraftLink: {
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 36,
+        paddingHorizontal: spacing.md,
+    },
+    emptyDraftLinkText: {
+        color: colors.primary,
+        fontSize: 14,
+        fontWeight: "800",
     },
     loadingContainer: {
         backgroundColor: colors.surface,

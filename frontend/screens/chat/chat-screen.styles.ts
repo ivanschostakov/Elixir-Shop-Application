@@ -243,7 +243,7 @@ export const chatScreenStyles = StyleSheet.create({
         maxWidth: 260,
         minHeight: 52,
         borderRadius: 14,
-        backgroundColor: colors.primaryMuted,
+        backgroundColor: "rgba(21,151,223,0.09)",
         flexDirection: "row",
         alignItems: "center",
         gap: 9,
@@ -263,7 +263,7 @@ export const chatScreenStyles = StyleSheet.create({
     },
     messageDocumentName: {
         flex: 1,
-        color: colors.primary,
+        color: "#2B658F",
         fontSize: 14,
         lineHeight: 18,
         fontWeight: "700",
@@ -276,7 +276,7 @@ export const chatScreenStyles = StyleSheet.create({
         marginTop: spacing.xs,
     },
     attachmentName: {
-        color: colors.primary,
+        color: "#2B658F",
         fontSize: 14,
         lineHeight: 18,
     },
@@ -521,7 +521,7 @@ export const chatScreenStyles = StyleSheet.create({
         width: "100%",
         minHeight: 30,
         borderRadius: 8,
-        backgroundColor: colors.primaryMuted,
+        backgroundColor: "rgba(21,151,223,0.08)",
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
@@ -1074,7 +1074,7 @@ export const chatScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.md,
     },
     attachmentActionText: {
-        color: colors.primary,
+        color: "#1597DF",
         fontSize: 21,
         lineHeight: 26,
         fontWeight: "500",
@@ -1113,7 +1113,7 @@ export const chatScreenStyles = StyleSheet.create({
         width: 34,
         height: 34,
         borderRadius: 10,
-        backgroundColor: colors.primaryMuted,
+        backgroundColor: "rgba(21,151,223,0.11)",
         alignItems: "center",
         justifyContent: "center",
     },
@@ -1163,7 +1163,7 @@ export const chatScreenStyles = StyleSheet.create({
         gap: 3,
     },
     attachmentModeButtonActive: {
-        backgroundColor: colors.primaryMuted,
+        backgroundColor: "rgba(36,177,245,0.24)",
         borderWidth: 1,
         borderColor: "rgba(255,255,255,0.62)",
     },
@@ -1197,7 +1197,7 @@ export const chatScreenStyles = StyleSheet.create({
         paddingHorizontal: spacing.md,
     },
     albumSelectorRowActive: {
-        backgroundColor: colors.primaryMuted,
+        backgroundColor: "rgba(21,151,223,0.12)",
     },
     albumSelectorText: {
         flex: 1,
