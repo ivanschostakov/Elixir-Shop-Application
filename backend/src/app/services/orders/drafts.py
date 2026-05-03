@@ -67,18 +67,15 @@ async def create_order_draft_for_user(session: AsyncSession, *, user: User, payl
     _validate_checkout_items(basket_items, variants_by_id)
 
     duplicate_draft = await _find_duplicate_order_draft(session, user_id=user.id, basket_items=basket_items)
-    if duplicate_draft is not None:
-        raise _checkout_conflict({"message": "Черновик с такими товарами уже существует", "draft_id": duplicate_draft.id})
+    if duplicate_draft is not None: raise _checkout_conflict({"message": "Черновик с такими товарами уже существует", "draft_id": duplicate_draft.id})
 
     has_any_delivery_payload = any(field in payload.model_fields_set for field in CREATE_ORDER_DRAFT_DELIVERY_FIELDS)
     if has_any_delivery_payload:
         missing_delivery_fields = [field_name for field_name in REQUIRED_CREATE_ORDER_DRAFT_DELIVERY_FIELDS if getattr(payload, field_name) is None]
-        if missing_delivery_fields:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery data is incomplete")
+        if missing_delivery_fields: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery data is incomplete")
 
     delivery_address = None
-    if has_any_delivery_payload:
-        delivery_address = await _get_or_create_delivery_address(session, data=_build_create_delivery_address_data(user.id, payload))
+    if has_any_delivery_payload: delivery_address = await _get_or_create_delivery_address(session, data=_build_create_delivery_address_data(user.id, payload))
 
     draft_items, basket_subtotal, total_quantity = _build_draft_items_from_basket(user_id=user.id, draft_id=0, basket_items=basket_items, variants_by_id=variants_by_id)
     calculation = payload.delivery_calculation
@@ -126,13 +123,10 @@ def _normalize_ai_draft_items(items: list[dict[str, Any]]) -> dict[int, int]:
     for item in items:
         variant_id = int(item.get("variant_id") or 0)
         quantity = int(item.get("quantity") or 0)
-        if variant_id <= 0 or quantity <= 0:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft item data is invalid")
+        if variant_id <= 0 or quantity <= 0: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft item data is invalid")
         normalized[variant_id] = normalized.get(variant_id, 0) + quantity
-    if not normalized:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft must contain at least one item")
-    if any(quantity > 100 for quantity in normalized.values()):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft item quantity is too large")
+    if not normalized: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft must contain at least one item")
+    if any(quantity > 100 for quantity in normalized.values()): raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Draft item quantity is too large")
     return normalized
 
 

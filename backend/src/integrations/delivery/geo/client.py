@@ -1,9 +1,9 @@
 import json
 
-from fastapi import HTTPException
 from httpx import AsyncClient, HTTPError
 
 from config import GEOSUGGEST_API_URL, GEOCODE_API_URL, GEOSUGGEST_API_KEY, GEOCODE_API_KEY
+from src.app.services.external_errors import external_service_http_exception
 from .schemas import GeoSuggestResult, GeoCodeResult
 
 
@@ -28,19 +28,20 @@ class GeoClient:
             "ll": ll,
         })
         try: response.raise_for_status()
-        except HTTPError as e: raise HTTPException(status_code=502, detail={"service": "yandex_geosuggest", "error": str(e), "status_code": response.status_code, "body": response.text})
+        except HTTPError as e:
+            raise external_service_http_exception(
+                service="yandex_geosuggest",
+                operation="geosuggest",
+                public_detail="Geo suggestion service request failed",
+                raw_detail={"status_code": response.status_code, "body": response.text},
+                exc=e,
+            ) from e
         raw_data: dict = json.loads(response.text.removeprefix("jsonp_ymaps3_suggest_10(").removesuffix(")"))
         if not isinstance(raw_data, dict): raise TypeError(f"Expected dict but got {type(raw_data)}")
 
         return [GeoSuggestResult.from_raw(r) for r in raw_data["results"]]
 
-    async def geocode(
-        self,
-        address: str,
-        lang: str = "ru_RU",
-        results: int = 1,
-        uri: str | None = None,
-    ) -> GeoCodeResult:
+    async def geocode(self, address: str, lang: str = "ru_RU", results: int = 1, uri: str | None = None) -> GeoCodeResult:
         params = {
             "apikey": self.__geocode_api_key,
             "geocode": address,
@@ -48,15 +49,20 @@ class GeoClient:
             "lang": lang,
             "results": results,
         }
-        if uri:
-            params["uri"] = uri
+        if uri: params["uri"] = uri
 
         response = await self._client.get(self._geocode_url, params=params)
         try: response.raise_for_status()
-        except HTTPError as e: raise HTTPException(status_code=502, detail={"service": "yandex_geocode", "error": str(e), "status_code": response.status_code, "body": response.text})
+        except HTTPError as e:
+            raise external_service_http_exception(
+                service="yandex_geocode",
+                operation="geocode",
+                public_detail="Geo coding service request failed",
+                raw_detail={"status_code": response.status_code, "body": response.text},
+                exc=e,
+            ) from e
         raw_data: dict = response.json()
         if not isinstance(raw_data, dict): raise TypeError(f"Expected dict but got {type(raw_data)}")
-
         return GeoCodeResult.from_raw(raw_data)
 
 geo_client = GeoClient()

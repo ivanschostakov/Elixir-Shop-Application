@@ -50,7 +50,7 @@ export default function EmailVerificationStep({
     const codeDigits = Array.from({ length: 6 }, (_, index) => verificationCode[index] ?? "")
 
     return (
-        <>
+        <View style={authSharedStyles.verificationStep}>
             <Pressable
                 accessibilityLabel={t("auth.verify.editEmail")}
                 accessibilityRole="button"
@@ -134,6 +134,6 @@ export default function EmailVerificationStep({
                     </Pressable>
                 </View>
             </View>
-        </>
+        </View>
     )
 }

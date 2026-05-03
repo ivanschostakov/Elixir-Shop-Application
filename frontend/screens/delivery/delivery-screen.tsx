@@ -117,6 +117,7 @@ import {
 } from "@/screens/delivery/delivery-screen.utils"
 import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
+import { showBackendErrorAlert } from "@/utils/errors"
 
 type MapKitStatus = "loading" | "ready" | "error"
 
@@ -837,6 +838,7 @@ export default function DeliveryScreen() {
                 try {
                     nextDraft.deliveryCalculation = await calculateDoorDelivery(nextDraft)
                 } catch (deliveryCalculationError) {
+                    showBackendErrorAlert(deliveryCalculationError)
                     deliveryCalculationErrorMessage = getDeliveryCalculationErrorMessage(deliveryCalculationError)
                 }
 
@@ -886,7 +888,8 @@ export default function DeliveryScreen() {
                     recenterMap,
                     showCountryError: !silent,
                 })
-            } catch {
+            } catch (resolveError) {
+                showBackendErrorAlert(resolveError)
                 if (!silent) {
                     Alert.alert(
                         translate("delivery.doorDeliveryResolveTitle"),
@@ -1030,6 +1033,7 @@ export default function DeliveryScreen() {
 
                 router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
             } catch (deliveryCalculationError) {
+                showBackendErrorAlert(deliveryCalculationError)
                 setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
             } finally {
                 setIsResolvingPickupPoint(false)
@@ -1089,6 +1093,7 @@ export default function DeliveryScreen() {
 
                 router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
             } catch (deliveryCalculationError) {
+                showBackendErrorAlert(deliveryCalculationError)
                 setSelectionError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
             } finally {
                 setIsResolvingDoorAddress(false)
@@ -1152,12 +1157,14 @@ export default function DeliveryScreen() {
                         ),
                     )
                 } catch (deliveryCalculationError) {
+                    showBackendErrorAlert(deliveryCalculationError)
                     setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
                 }
             } else if (provider === "yandex") {
                 try {
                     nextDraft.deliveryCalculation = await calculateYandexDelivery(nextDraft.code)
                 } catch (deliveryCalculationError) {
+                    showBackendErrorAlert(deliveryCalculationError)
                     setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
                 }
             }
@@ -1172,6 +1179,7 @@ export default function DeliveryScreen() {
             clearResults()
             moveToRegion(getDeliveryRegion(nextPoint, PICKUP_POINT_FOCUS_ZOOM), DELIVERY_CAMERA_DURATIONS.search)
         } catch (deliveryPointError) {
+            showBackendErrorAlert(deliveryPointError)
             pendingDeliveryPointCodeRef.current = null
             setPickupPointDraft(null)
 
@@ -1238,6 +1246,7 @@ export default function DeliveryScreen() {
                 DELIVERY_CAMERA_DURATIONS.search,
             )
         } catch (selectionError) {
+            showBackendErrorAlert(selectionError)
             const message =
                 selectionError instanceof Error
                     ? selectionError.message

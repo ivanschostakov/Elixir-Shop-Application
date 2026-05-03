@@ -7,7 +7,7 @@ import {
 } from "@/services/api/favourites"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import type { UseProductFavouriteResult } from "@/hooks/products/use-product-favourite.types"
-import { getErrorMessage } from "@/utils/errors"
+import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 
 export function useProductFavourite(productId: number): UseProductFavouriteResult {
     const [updating, setUpdating] = useState(false)
@@ -54,6 +54,7 @@ export function useProductFavourite(productId: number): UseProductFavouriteResul
         } catch (err) {
             const nextError = getErrorMessage(err)
             setActionError(nextError)
+            showBackendErrorAlert(err, nextError)
             throw err instanceof Error ? err : new Error(nextError)
         } finally {
             setUpdating(false)

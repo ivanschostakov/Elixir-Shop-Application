@@ -176,6 +176,25 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
         }
     }
 
+    const handleConfirmOpenCheckout = () => {
+        Alert.alert(
+            t("cart.checkoutDraftNoticeTitle"),
+            t("cart.checkoutDraftNoticeMessage"),
+            [
+                {
+                    text: t("common.cancel"),
+                    style: "cancel",
+                },
+                {
+                    text: t("cart.checkoutDraftNoticeContinue"),
+                    onPress: () => {
+                        void handleOpenCheckout()
+                    },
+                },
+            ],
+        )
+    }
+
     if (variant === "product") {
         if (selectedBasketItem) {
             return (
@@ -246,7 +265,7 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
             accessibilityRole="button"
             disabled={isOpeningCheckout}
             onPress={() => {
-                void handleOpenCheckout()
+                handleConfirmOpenCheckout()
             }}
             style={({ pressed }) => [
                 stickyFooterStyles.actionButton,

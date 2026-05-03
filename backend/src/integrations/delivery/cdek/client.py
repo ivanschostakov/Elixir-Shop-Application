@@ -3,7 +3,6 @@ import logging
 import httpx
 import time
 
-from decimal import Decimal
 from typing import Any
 from fastapi import HTTPException
 
@@ -16,8 +15,10 @@ from config import (
     CDEK_SENDER_CITY_CODE,
     CDEK_SENDER_POSTAL_CODE,
 )
+
+from src.app.services.external_errors import external_service_http_exception
 from .schemas import CDEKCalculatedDelivery
-from src.integrations.delivery.schemas import CountryCode, DeliveryPointMarker, DeliveryPoint, CdekDeliveryMode
+from ..schemas import CountryCode, DeliveryPointMarker, DeliveryPoint, CdekDeliveryMode
 
 log = logging.getLogger(__name__)
 
@@ -64,11 +65,22 @@ class AsyncCDEKClient:
         resp = await self._httpx_client.post("/v2/oauth/token", params={"grant_type": "client_credentials", "client_id": self.__account, "client_secret": self.__secure_password})
         try: resp.raise_for_status()
         except httpx.HTTPError as e:
-            log.exception("CDEK OAuth error: %s", resp.text)
-            raise HTTPException(status_code=502, detail={"service": "cdek", "stage": "oauth", "error": str(e), "body": resp.text})
+            raise external_service_http_exception(
+                service="cdek",
+                operation="oauth",
+                public_detail="Delivery provider authentication failed",
+                raw_detail={"status_code": resp.status_code, "body": resp.text},
+                exc=e,
+            ) from e
 
         data = resp.json()
-        if "access_token" not in data: raise HTTPException(status_code=500, detail="Failed to obtain CDEK token")
+        if "access_token" not in data:
+            raise external_service_http_exception(
+                service="cdek",
+                operation="oauth_response",
+                public_detail="Delivery provider authentication failed",
+                raw_detail=data,
+            )
 
         token: str = data["access_token"]
         expires_in: int = int(data.get("expires_in", 3600))
@@ -106,9 +118,12 @@ class AsyncCDEKClient:
         token = await self._ensure_token()
         resp = await self._httpx_client.request(method=method.upper(), url=path, params=params, json=json, headers={"Authorization": f"Bearer {token}"})
         if resp.status_code >= 400:
-            body = resp.text
-            self.log.error("CDEK API error %s %s: %s", method, path, body)
-            raise HTTPException(status_code=502, detail={"service": "cdek", "status_code": resp.status_code, "path": path, "body": body})
+            raise external_service_http_exception(
+                service="cdek",
+                operation=f"{method.upper()} {path}",
+                public_detail="Delivery provider request failed",
+                raw_detail={"status_code": resp.status_code, "body": resp.text},
+            )
 
         return resp.json()
 
@@ -131,12 +146,13 @@ class AsyncCDEKClient:
             delivery_point = delivery_point[0]
 
         if not isinstance(delivery_point, dict):
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "service": "cdek",
+            raise external_service_http_exception(
+                service="cdek",
+                operation="get_delivery_point",
+                public_detail="Delivery provider returned invalid data",
+                raw_detail={
                     "path": "/v2/deliverypoints",
-                    "error": "Unexpected delivery point response shape",
+                    "response_type": str(type(delivery_point)),
                 },
             )
 
@@ -145,14 +161,11 @@ class AsyncCDEKClient:
     async def create_order(self, order: dict[str, Any]) -> dict[str, Any]:
         response = await self._request("POST", "/v2/orders", json=order)
         if not isinstance(response, dict):
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "service": "cdek",
-                    "path": "/v2/orders",
-                    "error": "Unexpected order creation response shape",
-                    "body": response,
-                },
+            raise external_service_http_exception(
+                service="cdek",
+                operation="create_order",
+                public_detail="Delivery provider returned invalid order response",
+                raw_detail=response,
             )
         return response
 
@@ -165,46 +178,27 @@ class AsyncCDEKClient:
         })
 
         if not isinstance(city_candidates, list) or not city_candidates:
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "service": "cdek",
-                    "path": "/v2/location/cities",
-                    "error": "No city candidates found for coordinates",
-                    "latitude": latitude,
-                    "longitude": longitude,
-                },
+            raise external_service_http_exception(
+                service="cdek",
+                operation="resolve_city_by_coordinates",
+                public_detail="Delivery provider could not resolve destination city",
+                raw_detail={"latitude": latitude, "longitude": longitude, "response": city_candidates},
             )
 
         city_candidate = city_candidates[0]
         city_code = city_candidate.get("code")
 
         if not isinstance(city_code, int):
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "service": "cdek",
-                    "path": "/v2/location/cities",
-                    "error": "Resolved city is missing numeric code",
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "body": city_candidate,
-                },
+            raise external_service_http_exception(
+                service="cdek",
+                operation="resolve_city_code",
+                public_detail="Delivery provider returned invalid city code",
+                raw_detail={"latitude": latitude, "longitude": longitude, "response": city_candidate},
             )
 
         return city_code
 
-    async def calculate_delivery(
-        self,
-        latitude: float,
-        longitude: float,
-        mode: CdekDeliveryMode,
-        *,
-        country_code: CountryCode | None = None,
-        postal_code: str | None = None,
-        address: str | None = None,
-        city: str | None = None,
-    ) -> CDEKCalculatedDelivery:
+    async def calculate_delivery(self, latitude: float, longitude: float, mode: CdekDeliveryMode, *, country_code: CountryCode | None = None, postal_code: str | None = None, address: str | None = None, city: str | None = None) -> CDEKCalculatedDelivery:
         city_code = await self.get_city_code_by_coordinates(latitude, longitude)
         to_location: dict[str, Any] = {
             "code": city_code,
@@ -212,17 +206,10 @@ class AsyncCDEKClient:
             "longitude": longitude,
         }
 
-        if country_code:
-            to_location["country_code"] = country_code
-
-        if postal_code:
-            to_location["postal_code"] = postal_code
-
-        if address:
-            to_location["address"] = address
-
-        if city:
-            to_location["city"] = city
+        if country_code: to_location["country_code"] = country_code
+        if postal_code: to_location["postal_code"] = postal_code
+        if address: to_location["address"] = address
+        if city: to_location["city"] = city
 
         response = await self._request("POST", "/v2/calculator/tariff", json={
             "tariff_code": self.tariff_codes[mode],

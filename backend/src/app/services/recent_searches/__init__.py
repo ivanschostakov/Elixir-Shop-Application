@@ -44,8 +44,7 @@ async def add_recent_search_query(*, user_id: int, query: str) -> None:
 async def clear_recent_search_queries(*, user_id: int) -> None:
     cache = get_cache_service()
     client = cache.client
-    if client is None:
-        return
+    if client is None: return
 
     try: await client.delete(_recent_searches_key(user_id))
     except Exception: logger.exception("recent_searches_clear_error user_id=%s", user_id)

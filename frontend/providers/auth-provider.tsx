@@ -40,6 +40,46 @@ import {
     subscribeAuthSession,
 } from "@/services/auth/session"
 
+function normalizeAuthErrorMessage(rawMessage: string, fallbackMessage: string) {
+    const normalizedMessage = rawMessage.trim()
+    const loweredMessage = normalizedMessage.toLowerCase()
+
+    if (!normalizedMessage) {
+        return fallbackMessage
+    }
+
+    if (
+        loweredMessage.includes("invalid credentials") ||
+        loweredMessage.includes("could not validate credentials")
+    ) {
+        return translate("auth.error.invalidCredentials")
+    }
+
+    if (
+        loweredMessage.includes("invalid verification code") ||
+        loweredMessage.includes("invalid or expired verification code")
+    ) {
+        return translate("auth.error.invalidCode")
+    }
+
+    if (
+        loweredMessage.includes("<!doctype html") ||
+        loweredMessage.includes("<html") ||
+        loweredMessage.includes("unexpected token '<'") ||
+        loweredMessage.includes("failed to fetch") ||
+        loweredMessage.includes("network request failed")
+    ) {
+        return translate("auth.error.backendUnavailable")
+    }
+
+    return normalizedMessage
+}
+
+function mapAuthErrorMessage(error: unknown, fallbackMessage: string) {
+    const rawMessage = getAuthErrorMessage(error, fallbackMessage)
+    return normalizeAuthErrorMessage(rawMessage, fallbackMessage)
+}
+
 export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<AuthUser | null>(null)
     const [isReady, setIsReady] = useState(false)
@@ -150,7 +190,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             return result
         } catch (error) {
             clearAuthTokens()
-            throw new Error(getAuthErrorMessage(error, translate("auth.error.loginFallback")))
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.loginFallback")))
         }
     }
 
@@ -159,7 +199,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             return await registerAccount(payload)
         } catch (error) {
             clearAuthTokens()
-            throw new Error(getAuthErrorMessage(error, translate("auth.error.registerFallback")))
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.registerFallback")))
         }
     }
 
@@ -169,7 +209,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setUser(nextUser)
         } catch (error) {
             clearAuthTokens()
-            throw new Error(getAuthErrorMessage(error, translate("auth.error.verifyFallback")))
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.verifyFallback")))
         }
     }
 
@@ -177,7 +217,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         try {
             return await resendLoginCodeRequest(payload)
         } catch (error) {
-            throw new Error(getAuthErrorMessage(error, translate("auth.error.resendCodeFallback")))
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.resendCodeFallback")))
         }
     }
 
@@ -187,7 +227,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             setUser(nextUser)
         } catch (error) {
             clearAuthTokens()
-            throw new Error(getAuthErrorMessage(error, translate("auth.error.verifyFallback")))
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.verifyFallback")))
         }
     }
 
@@ -195,7 +235,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         try {
             return await resendRegistrationCodeRequest(payload)
         } catch (error) {
-            throw new Error(getAuthErrorMessage(error, translate("auth.error.resendCodeFallback")))
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.resendCodeFallback")))
         }
     }
 

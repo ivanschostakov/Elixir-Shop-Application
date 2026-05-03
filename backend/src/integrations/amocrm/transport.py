@@ -5,6 +5,7 @@ from typing import Any, Callable
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from src.app.services.external_errors import external_service_http_exception
 from .schemas.oauth import AuthorizationCodeRequest, OAuthTokenResponse, RefreshTokenRequest
 
 
@@ -30,7 +31,13 @@ class AmoCRMTransport:
     async def _request_token(self, payload: AuthorizationCodeRequest | RefreshTokenRequest) -> OAuthTokenResponse:
         self._ensure_config()
         async with httpx.AsyncClient(timeout=30.0) as client: response = await client.post(f"https://{self.base_domain}/oauth2/access_token", json=payload.model_dump(mode="json"))
-        if response.status_code >= 400: raise HTTPException(status_code=502, detail={"service": "amocrm", "stage": payload.grant_type, "status_code": response.status_code, "body": response.text})
+        if response.status_code >= 400:
+            raise external_service_http_exception(
+                service="amocrm",
+                operation=f"oauth:{payload.grant_type}",
+                public_detail="amoCRM authentication failed",
+                raw_detail={"status_code": response.status_code, "body": response.text},
+            )
         data = OAuthTokenResponse.model_validate(response.json())
         self.access_token = data.access_token
         self.refresh_token = data.refresh_token
@@ -59,7 +66,13 @@ class AmoCRMTransport:
                 headers["Authorization"] = f"Bearer {self.access_token}"
                 response = await client.request(method=method, url=f"https://{self.base_domain}{endpoint}", headers=headers, **kwargs)
 
-        if response.status_code >= 400: raise HTTPException(status_code=502, detail={"service": "amocrm", "path": endpoint, "status_code": response.status_code, "body": response.text})
+        if response.status_code >= 400:
+            raise external_service_http_exception(
+                service="amocrm",
+                operation=f"{method.upper()} {endpoint}",
+                public_detail="amoCRM request failed",
+                raw_detail={"status_code": response.status_code, "body": response.text},
+            )
         if not response.text.strip(): return {}
         return response.json()
 

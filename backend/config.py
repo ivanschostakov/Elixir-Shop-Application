@@ -41,10 +41,14 @@ def _float_env(name: str, default: float) -> float:
     return float(value)
 
 
+def _csv_env(name: str, default: str = "") -> list[str]:
+    raw = _env(name, default) or ""
+    return [chunk.strip() for chunk in raw.split(",") if chunk.strip()]
+
+
 def _bool_env(name: str, default: bool = False) -> bool:
     value = _env(name)
-    if value is None:
-        return default
+    if value is None: return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -70,6 +74,10 @@ ASYNC_DB_URL = (
 )
 API_BASE_URL = _env("API_BASE_URL")
 PUBLIC_API_BASE_URL = _env("PUBLIC_API_BASE_URL")
+CORS_ALLOWED_ORIGINS = _csv_env(
+    "CORS_ALLOWED_ORIGINS",
+    "https://api-elixirshop.devsivanschostakov.org",
+)
 REDIS_URL = _env("REDIS_URL")
 WEBSITE_IDENTITY_ENDPOINT = _env("WEBSITE_IDENTITY_ENDPOINT")
 WEBSITE_IDENTITY_TIMEOUT_SECONDS = _int_env("WEBSITE_IDENTITY_TIMEOUT_SECONDS", 15)
@@ -109,6 +117,14 @@ NOTIFICATION_AI_EXPERT_REPLY_ENABLED = _bool_env("NOTIFICATION_AI_EXPERT_REPLY_E
 
 NOTIFICATION_REVIEW_REMINDER_ENABLED = _bool_env("NOTIFICATION_REVIEW_REMINDER_ENABLED", True)
 NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS = _int_env("NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS", 30)
+
+RATE_LIMIT_ENABLED = _bool_env("RATE_LIMIT_ENABLED", True)
+AUTH_RATE_LIMIT_WINDOW_SECONDS = _int_env("AUTH_RATE_LIMIT_WINDOW_SECONDS", 60)
+AUTH_RATE_LIMIT_MAX_REQUESTS = _int_env("AUTH_RATE_LIMIT_MAX_REQUESTS", 20)
+AUTH_VERIFY_RATE_LIMIT_MAX_REQUESTS = _int_env("AUTH_VERIFY_RATE_LIMIT_MAX_REQUESTS", 10)
+WEBHOOK_RATE_LIMIT_WINDOW_SECONDS = _int_env("WEBHOOK_RATE_LIMIT_WINDOW_SECONDS", 60)
+WEBHOOK_RATE_LIMIT_MAX_REQUESTS = _int_env("WEBHOOK_RATE_LIMIT_MAX_REQUESTS", 120)
+
 SMTP_HOST = _env("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = _int_env("SMTP_PORT", 587)
 SMTP_USER = _env("SMTP_USER")

@@ -37,7 +37,7 @@ import type { OrderItemRead, OrderRead } from "@/services/api/orders.types"
 import { createPayment, getPaymentStatus } from "@/services/api/payments"
 import type { PaymentStatusRead } from "@/services/api/payments.types"
 import type { OrderDraftItemRead } from "@/services/api/order-drafts.types"
-import { getErrorMessage } from "@/utils/errors"
+import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 import { parsePositiveRouteId } from "@/utils/route-params"
 
 type PaymentMethod = "later" | "sbp"
@@ -184,7 +184,9 @@ export default function PaymentScreen() {
                 if (!isActive) {
                     return
                 }
-                setOrderLoadError(getErrorMessage(loadError, t("payment.orderMissingMessage")))
+                const message = getErrorMessage(loadError, t("payment.orderMissingMessage"))
+                setOrderLoadError(message)
+                showBackendErrorAlert(loadError, message)
             } finally {
                 if (isActive) {
                     setLoadingOrder(false)
@@ -278,6 +280,7 @@ export default function PaymentScreen() {
             setOrderDraftSnapshot(repeatedDraft)
             router.push({ pathname: ROUTES.checkout, params: { draftId: String(repeatedDraft.id) } })
         } catch (repeatError) {
+            showBackendErrorAlert(repeatError, t("payment.repeatFailedMessage"))
             Alert.alert(
                 t("payment.repeatFailedTitle"),
                 getErrorMessage(repeatError, t("payment.repeatFailedMessage")),
@@ -375,7 +378,9 @@ export default function PaymentScreen() {
             setPhase("sbp")
         } catch (paymentError) {
             const fallback = order ? t("payment.paymentCreateFailed") : t("payment.orderCreateFailed")
-            setErrorMessage(getErrorMessage(paymentError, fallback))
+            const message = getErrorMessage(paymentError, fallback)
+            setErrorMessage(message)
+            showBackendErrorAlert(paymentError, message)
             setPhase("failure")
         } finally {
             setSubmitting(false)
@@ -657,7 +662,9 @@ export default function PaymentScreen() {
                     return
                 }
                 setPhase("failure")
-                setErrorMessage(getErrorMessage(resumeError, t("payment.statusCheckFailed")))
+                const message = getErrorMessage(resumeError, t("payment.statusCheckFailed"))
+                setErrorMessage(message)
+                showBackendErrorAlert(resumeError, message)
             }
         })()
     }, [order, payment, phase, submitting, t])
@@ -684,7 +691,9 @@ export default function PaymentScreen() {
                         setErrorMessage(getPaymentStateError(nextPayment, t("payment.failureMessage")))
                     }
                 } catch (pollError) {
-                    setErrorMessage(getErrorMessage(pollError, t("payment.statusCheckFailed")))
+                    const message = getErrorMessage(pollError, t("payment.statusCheckFailed"))
+                    setErrorMessage(message)
+                    showBackendErrorAlert(pollError, message)
                 }
             })()
         }, 4000)

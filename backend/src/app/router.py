@@ -6,6 +6,7 @@ from .modules import (
     delivery_router,
     favourites_query_router,
     favourites_router,
+    health_router,
     payments_router,
     product_categories_router,
     products_router,
@@ -17,6 +18,7 @@ from .modules import (
 api_router = APIRouter(prefix="/api")
 v1_router = APIRouter(prefix="/v1")
 
+v1_router.include_router(health_router)
 v1_router.include_router(auth_router)
 v1_router.include_router(app_integrity_router)
 v1_router.include_router(product_categories_router)
@@ -35,6 +37,7 @@ __all__ = [
     "v1_router",
     "auth_router",
     "app_integrity_router",
+    "health_router",
     "product_categories_router",
     "products_router",
     "requisites_router",

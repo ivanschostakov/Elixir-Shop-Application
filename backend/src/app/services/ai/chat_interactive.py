@@ -1,19 +1,18 @@
-from __future__ import annotations
-
 import base64
 import copy
 import hashlib
 import hmac
 import json
 import time
-from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from typing import Any, Literal
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import AI_CHAT_ACTION_SECRET, AI_CHAT_ACTION_TOKEN_TTL_SECONDS
+from .schemas import StructuredAIChatOutput, StructuredProductRef, AIActionTokenPayload
 from src.database.models import Product, Variant
 from src.database.schemas import (
     AIInteractiveAction,
@@ -26,49 +25,6 @@ from src.database.schemas import (
 
 ProductRequestedAction = Literal["open_product", "compare", "alternatives", "checkout"]
 ProductRefIntent = Literal["recommend", "compare", "alternative"]
-
-
-class StructuredProductRef(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    product_id: int = Field(gt=0)
-    variant_id: int | None = Field(default=None, gt=0)
-    intent: ProductRefIntent = "recommend"
-    reason: str = Field(min_length=1, max_length=500)
-    requested_actions: list[ProductRequestedAction] = Field(default_factory=list, max_length=4)
-    button_rows: list[list[str]] = Field(default_factory=list, max_length=6)
-
-
-class StructuredBasketItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    variant_id: int = Field(gt=0)
-    quantity: int = Field(ge=1, le=100)
-
-
-class StructuredBasketAddition(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    items: list[StructuredBasketItem] = Field(default_factory=list, min_length=1, max_length=10)
-
-
-class StructuredAIChatOutput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    assistant_text: str = Field(min_length=1, max_length=12000)
-    product_refs: list[StructuredProductRef] = Field(default_factory=list, max_length=6)
-    basket_addition: StructuredBasketAddition | None = None
-
-
-class AIActionTokenPayload(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    v: Literal[1] = 1
-    user_id: int = Field(gt=0)
-    chat_id: int = Field(gt=0)
-    message_id: int = Field(gt=0)
-    action_id: str = Field(min_length=1, max_length=120)
-    expires_at: int = Field(gt=0)
 
 
 def _normalize_openai_json_schema(node: Any) -> Any:
@@ -94,46 +50,30 @@ def build_ai_chat_output_schema() -> dict[str, Any]:
 
 
 def parse_structured_ai_chat_output(payload: Any) -> StructuredAIChatOutput | None:
-    if payload is None:
-        return None
+    if payload is None: return None
     try:
-        if isinstance(payload, StructuredAIChatOutput):
-            return payload
-        if isinstance(payload, str):
-            return StructuredAIChatOutput.model_validate_json(payload)
-        if isinstance(payload, dict):
-            return StructuredAIChatOutput.model_validate(payload)
-    except ValidationError:
-        return None
+        if isinstance(payload, StructuredAIChatOutput): return payload
+        if isinstance(payload, str): return StructuredAIChatOutput.model_validate_json(payload)
+        if isinstance(payload, dict): return StructuredAIChatOutput.model_validate(payload)
+    except ValidationError: return None
     return None
 
 
 def load_ai_interactive_payload(context_json: dict[str, Any] | None) -> AIInteractivePayload | None:
     interactive = (context_json or {}).get("interactive")
-    if not isinstance(interactive, dict):
-        return None
-    try:
-        return AIInteractivePayload.model_validate(interactive)
-    except ValidationError:
-        return None
+    if not isinstance(interactive, dict): return None
+    try: return AIInteractivePayload.model_validate(interactive)
+    except ValidationError: return None
 
 
 def _action_secret() -> str:
-    if AI_CHAT_ACTION_SECRET:
-        return AI_CHAT_ACTION_SECRET
+    if AI_CHAT_ACTION_SECRET: return AI_CHAT_ACTION_SECRET
     raise RuntimeError("AI_CHAT_ACTION_SECRET or JWT_ACCESS_SECRET_KEY must be configured")
 
 
-def _urlsafe_b64encode(payload: bytes) -> str:
-    return base64.urlsafe_b64encode(payload).decode("utf-8").rstrip("=")
-
-
-def _urlsafe_b64decode(value: str) -> bytes:
-    return base64.urlsafe_b64decode(f"{value}{'=' * (-len(value) % 4)}".encode("utf-8"))
-
-
-def _action_signature(encoded_payload: str) -> str:
-    return hmac.new(_action_secret().encode("utf-8"), encoded_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+def _urlsafe_b64encode(payload: bytes) -> str: return base64.urlsafe_b64encode(payload).decode("utf-8").rstrip("=")
+def _urlsafe_b64decode(value: str) -> bytes: return base64.urlsafe_b64decode(f"{value}{'=' * (-len(value) % 4)}".encode("utf-8"))
+def _action_signature(encoded_payload: str) -> str: return hmac.new(_action_secret().encode("utf-8"), encoded_payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def mint_ai_action_token(*, user_id: int, chat_id: int, message_id: int, action_id: str) -> str:
@@ -150,57 +90,40 @@ def mint_ai_action_token(*, user_id: int, chat_id: int, message_id: int, action_
 
 def verify_ai_action_token(token: str) -> AIActionTokenPayload:
     encoded_payload, separator, signature = str(token or "").strip().partition(".")
-    if not encoded_payload or not separator or not signature:
-        raise ValueError("Invalid action token")
-    if not hmac.compare_digest(signature, _action_signature(encoded_payload)):
-        raise ValueError("Invalid action token signature")
-    try:
-        payload = AIActionTokenPayload.model_validate_json(_urlsafe_b64decode(encoded_payload).decode("utf-8"))
-    except (ValidationError, ValueError, json.JSONDecodeError) as exc:
-        raise ValueError("Invalid action token payload") from exc
-    if payload.expires_at < int(time.time()):
-        raise ValueError("Action token expired")
+    if not encoded_payload or not separator or not signature: raise ValueError("Invalid action token")
+    if not hmac.compare_digest(signature, _action_signature(encoded_payload)): raise ValueError("Invalid action token signature")
+    try: payload = AIActionTokenPayload.model_validate_json(_urlsafe_b64decode(encoded_payload).decode("utf-8"))
+    except (ValidationError, ValueError, json.JSONDecodeError) as exc: raise ValueError("Invalid action token payload") from exc
+    if payload.expires_at < int(time.time()): raise ValueError("Action token expired")
     return payload
 
 
 def _make_action_id(*parts: Any) -> str:
     raw = "_".join(str(part).strip().replace(" ", "_") for part in parts if str(part).strip())
     cleaned = "".join(char if char.isalnum() or char in {"_", "-"} else "_" for char in raw.lower())
-    while "__" in cleaned:
-        cleaned = cleaned.replace("__", "_")
+    while "__" in cleaned: cleaned = cleaned.replace("__", "_")
     return cleaned.strip("_")[:120] or "action"
 
 
 def _truncate(value: str | None, limit: int) -> str | None:
     text = str(value or "").strip()
-    if not text:
-        return None
-    if len(text) <= limit:
-        return text
+    if not text: return None
+    if len(text) <= limit: return text
     return text[: max(1, limit - 1)].rstrip() + "..."
 
 
-def _variant_image_url(variant: Variant) -> str:
-    return variant.image_url or variant.product.image_url
-
-
-def _normalize_button_key(value: str) -> str:
-    return str(value or "").strip().lower().replace("_", "-")
+def _variant_image_url(variant: Variant) -> str: return variant.image_url or variant.product.image_url
+def _normalize_button_key(value: str) -> str: return str(value or "").strip().lower().replace("_", "-")
 
 
 def _button_key_aliases(value: str) -> list[str]:
     normalized = _normalize_button_key(value)
     aliases = [normalized]
-    if normalized in {"open", "product", "open-product"}:
-        aliases.append("open_product")
-    if normalized in {"compare", "comparison"}:
-        aliases.append("compare")
-    if normalized in {"alternative", "alternatives"}:
-        aliases.append("alternatives")
-    if normalized in {"checkout", "open-checkout", "go-checkout", "order", "finish"}:
-        aliases.append("checkout")
-    if normalized.startswith("variant-"):
-        aliases.append(f"variant:{normalized.removeprefix('variant-')}")
+    if normalized in {"open", "product", "open-product"}: aliases.append("open_product")
+    if normalized in {"compare", "comparison"}: aliases.append("compare")
+    if normalized in {"alternative", "alternatives"}: aliases.append("alternatives")
+    if normalized in {"checkout", "open-checkout", "go-checkout", "order", "finish"}: aliases.append("checkout")
+    if normalized.startswith("variant-"): aliases.append(f"variant:{normalized.removeprefix('variant-')}")
     return aliases
 
 
@@ -272,33 +195,15 @@ def _build_product_card(product: Product, ref: StructuredProductRef) -> AIIntera
     in_stock_variants = [variant for variant in product.variants if variant.stock > 0]
     shown_variants = in_stock_variants[:6]
     action_id_by_key: dict[str, str] = {}
-    requested_button_keys = {
-        alias
-        for row in ref.button_rows
-        for key in row
-        for alias in _button_key_aliases(key)
-    }
-    variant_rows = [
-        AIInteractiveVariant(
-            id=variant.id,
-            sku=variant.sku,
-            name=variant.name,
-            stock=max(0, variant.stock),
-            price=variant.price,
-            image_url=_variant_image_url(variant),
-            in_stock=variant.stock > 0,
-        )
-        for variant in shown_variants
-    ]
-    actions = [
-        AIInteractiveAction(
-            id=_make_action_id("product", product.id, "open"),
-            type="open_product",
-            label="Открыть товар",
-            style="link",
-            product_id=product.id,
-        )
-    ]
+    requested_button_keys = {alias for row in ref.button_rows for key in row for alias in _button_key_aliases(key)}
+    variant_rows = [AIInteractiveVariant(id=variant.id, sku=variant.sku, name=variant.name, stock=max(0, variant.stock), price=variant.price, image_url=_variant_image_url(variant), in_stock=variant.stock > 0) for variant in shown_variants]
+    actions = [AIInteractiveAction(
+        id=_make_action_id("product", product.id, "open"),
+        type="open_product",
+        label="Открыть товар",
+        style="link",
+        product_id=product.id,
+    )]
     action_id_by_key["open_product"] = actions[0].id
 
     for variant in shown_variants[:3]:
@@ -315,34 +220,28 @@ def _build_product_card(product: Product, ref: StructuredProductRef) -> AIIntera
         action_id_by_key[f"variant:{variant.id}"] = action.id
 
     if "compare" in ref.requested_actions:
-        actions.append(
-            AIInteractiveAction(
-                id=_make_action_id("product", product.id, "compare"),
-                type="ask_ai",
-                label="Сравнить",
-                prompt=f"Сравни {product.name} с похожими товарами из каталога.",
-            )
-        )
+        actions.append(AIInteractiveAction(
+            id=_make_action_id("product", product.id, "compare"),
+            type="ask_ai",
+            label="Сравнить",
+            prompt=f"Сравни {product.name} с похожими товарами из каталога.",
+        ))
         action_id_by_key["compare"] = actions[-1].id
     if "alternatives" in ref.requested_actions:
-        actions.append(
-            AIInteractiveAction(
-                id=_make_action_id("product", product.id, "alternatives"),
-                type="ask_ai",
-                label="Альтернативы",
-                prompt=f"Подбери 2-3 альтернативы для {product.name} из каталога.",
-            )
-        )
+        actions.append(AIInteractiveAction(
+            id=_make_action_id("product", product.id, "alternatives"),
+            type="ask_ai",
+            label="Альтернативы",
+            prompt=f"Подбери 2-3 альтернативы для {product.name} из каталога.",
+        ))
         action_id_by_key["alternatives"] = actions[-1].id
     if "checkout" in ref.requested_actions or "checkout" in requested_button_keys:
-        actions.append(
-            AIInteractiveAction(
-                id=_make_action_id("product", product.id, "checkout"),
-                type="open_checkout",
-                label="Перейти к оформлению",
-                style="primary",
-            )
-        )
+        actions.append(AIInteractiveAction(
+            id=_make_action_id("product", product.id, "checkout"),
+            type="open_checkout",
+            label="Перейти к оформлению",
+            style="primary",
+        ))
         action_id_by_key["checkout"] = actions[-1].id
 
     actions = actions[:8]
@@ -366,10 +265,7 @@ def _build_product_card(product: Product, ref: StructuredProductRef) -> AIIntera
     )
 
 
-async def build_ai_interactive_payload(
-    session: AsyncSession,
-    structured_output: StructuredAIChatOutput,
-) -> AIInteractivePayload | None:
+async def build_ai_interactive_payload(session: AsyncSession, structured_output: StructuredAIChatOutput) -> AIInteractivePayload | None:
     product_ids = {ref.product_id for ref in structured_output.product_refs}
     products_by_id = await _load_products(session, product_ids)
 
@@ -377,47 +273,25 @@ async def build_ai_interactive_payload(
     seen_product_ids: set[int] = set()
     for ref in structured_output.product_refs:
         product = products_by_id.get(ref.product_id)
-        if product is None or product.id in seen_product_ids:
-            continue
+        if product is None or product.id in seen_product_ids: continue
         seen_product_ids.add(product.id)
         cards.append(_build_product_card(product, ref))
 
-    if not cards:
-        return None
-
-    return AIInteractivePayload(
-        cards=cards,
-    )
+    if not cards: return None
+    return AIInteractivePayload(cards=cards)
 
 
-def attach_ai_action_tokens(
-    interactive: AIInteractivePayload | None,
-    *,
-    user_id: int,
-    chat_id: int,
-    message_id: int,
-) -> AIInteractivePayload | None:
-    if interactive is None:
-        return interactive
-
+def attach_ai_action_tokens(interactive: AIInteractivePayload | None, *, user_id: int, chat_id: int, message_id: int) -> AIInteractivePayload | None:
+    if interactive is None: return interactive
     updated = interactive.model_copy(deep=True)
     basket_actions: list[AIInteractiveAction] = []
-    for card in updated.cards:
-        basket_actions.extend(action for action in card.actions if action.type == "add_to_basket" and not action.completed)
-
-    for action in basket_actions:
-        action.action_token = mint_ai_action_token(
-            user_id=user_id,
-            chat_id=chat_id,
-            message_id=message_id,
-            action_id=action.id,
-        )
+    for card in updated.cards:basket_actions.extend(action for action in card.actions if action.type == "add_to_basket" and not action.completed)
+    for action in basket_actions: action.action_token = mint_ai_action_token(user_id=user_id, chat_id=chat_id, message_id=message_id, action_id=action.id)
     return updated
 
 
 def find_ai_interactive_action(interactive: AIInteractivePayload, action_id: str) -> AIInteractiveAction | None:
     for card in interactive.cards:
         for action in card.actions:
-            if action.id == action_id:
-                return action
+            if action.id == action_id: return action
     return None

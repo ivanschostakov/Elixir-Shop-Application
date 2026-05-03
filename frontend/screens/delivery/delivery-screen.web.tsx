@@ -87,6 +87,7 @@ import {
     parseDraftId,
 } from "@/screens/delivery/delivery-screen.utils"
 import { deliveryScreenWebStyles } from "@/screens/delivery/delivery-screen.web.styles"
+import { showBackendErrorAlert } from "@/utils/errors"
 
 export default function DeliveryScreen() {
     const router = useRouter()
@@ -299,6 +300,7 @@ export default function DeliveryScreen() {
             try {
                 nextDraft.deliveryCalculation = await calculateDoorDelivery(nextDraft)
             } catch (deliveryCalculationError) {
+                showBackendErrorAlert(deliveryCalculationError)
                 deliveryCalculationErrorMessage = getDeliveryCalculationErrorMessage(deliveryCalculationError)
             }
 
@@ -342,6 +344,7 @@ export default function DeliveryScreen() {
                 const geocodeResult = await reverseGeocodeDeliveryPoint(nextPoint)
                 return await applyDoorDeliveryGeocodeResult(geocodeResult)
             } catch (resolveError) {
+                showBackendErrorAlert(resolveError)
                 if (!silent) {
                     setSelectionError(
                         resolveError instanceof Error
@@ -499,12 +502,14 @@ export default function DeliveryScreen() {
                         ),
                     )
                 } catch (deliveryCalculationError) {
+                    showBackendErrorAlert(deliveryCalculationError)
                     setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
                 }
             } else if (provider === "yandex") {
                 try {
                     nextDraft.deliveryCalculation = await calculateYandexDelivery(nextDraft.code)
                 } catch (deliveryCalculationError) {
+                    showBackendErrorAlert(deliveryCalculationError)
                     setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
                 }
             }
@@ -519,6 +524,7 @@ export default function DeliveryScreen() {
             setPoint(nextPoint)
             setMapZoom(PICKUP_POINT_FOCUS_ZOOM)
         } catch (deliveryPointError) {
+            showBackendErrorAlert(deliveryPointError)
             setPickupPointDraft(null)
 
             if (provider === "yandex" && deliveryPointError instanceof ApiError && deliveryPointError.status === 404) {
@@ -573,6 +579,7 @@ export default function DeliveryScreen() {
             setPoint(nextPoint)
             setMapZoom(getDeliverySelectionZoom(geocodeResult))
         } catch (lookupError) {
+            showBackendErrorAlert(lookupError)
             setIsDoorFooterExpanded(true)
             setSelectionError(
                 lookupError instanceof Error
@@ -633,6 +640,7 @@ export default function DeliveryScreen() {
 
                 router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
             } catch (deliveryCalculationError) {
+                showBackendErrorAlert(deliveryCalculationError)
                 setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
             } finally {
                 setIsResolvingPickupPoint(false)
@@ -702,6 +710,7 @@ export default function DeliveryScreen() {
 
                 router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
             } catch (deliveryCalculationError) {
+                showBackendErrorAlert(deliveryCalculationError)
                 setSelectionError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
             } finally {
                 setIsResolvingDoorAddress(false)

@@ -30,10 +30,8 @@ async def send_user_verification_code_email(*, to_email: str, code: str) -> None
     if not SMTP_USER or not SMTP_PASSWORD:
         raise EmailVerificationConfigError("SMTP_USER and SMTP_PASSWORD are required to send verification email")
 
-    try:
-        import aiosmtplib
-    except ModuleNotFoundError as exc:
-        raise EmailVerificationConfigError("aiosmtplib is required to send verification email") from exc
+    try: import aiosmtplib
+    except ModuleNotFoundError as exc: raise EmailVerificationConfigError("aiosmtplib is required to send verification email") from exc
 
     msg = EmailMessage()
     msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_USER}>"
@@ -56,5 +54,4 @@ async def send_user_verification_code_email(*, to_email: str, code: str) -> None
             password=SMTP_PASSWORD,
             timeout=20,
         )
-    except Exception as exc:
-        raise EmailVerificationDeliveryError("Failed to send verification email") from exc
+    except Exception as exc: raise EmailVerificationDeliveryError("Failed to send verification email") from exc

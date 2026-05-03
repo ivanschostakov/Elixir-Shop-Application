@@ -4,8 +4,7 @@ import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+if str(ROOT_DIR) not in sys.path: sys.path.insert(0, str(ROOT_DIR))
 
 from src.scripts.sync_website_identities_from_bitrix_vm import run_sync
 

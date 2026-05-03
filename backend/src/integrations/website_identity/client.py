@@ -2,9 +2,9 @@ import asyncio
 import httpx
 
 from typing import Any
-from .exceptions import WebsiteIdentityError
 
 from config import WEBSITE_IDENTITY_ENDPOINT, WEBSITE_IDENTITY_TIMEOUT_SECONDS
+from .exceptions import WebsiteIdentityError
 from src.normalize import optional_str
 
 
@@ -37,6 +37,7 @@ class WebsiteIdentityClient:
             raw_text = response.text
             try: decoded = response.json()
             except Exception as exc: raise WebsiteIdentityError(f"Website identity endpoint returned invalid JSON: {raw_text[:500]}", status_code=response.status_code) from exc
+
         except httpx.TimeoutException as exc: raise WebsiteIdentityError("Website identity endpoint timed out") from exc
         except httpx.HTTPError as exc: raise WebsiteIdentityError(f"Website identity request failed: {exc}") from exc
 

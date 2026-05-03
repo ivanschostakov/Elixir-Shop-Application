@@ -123,22 +123,10 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
 
     city_code = await cdek_client.get_city_code_by_coordinates(order.delivery_address.latitude, order.delivery_address.longitude)
     log.info(
-        "Building CDEK order body order_number=%s delivery_mode=%s city_code=%s selected_address=%s db_address=%s",
+        "Building CDEK order body order_number=%s delivery_mode=%s city_code=%s",
         order.order_number,
         delivery_mode,
         city_code,
-        address,
-        {
-            "mode": order.delivery_address.mode,
-            "provider": order.delivery_address.provider,
-            "country_code": order.delivery_address.country_code,
-            "city": order.delivery_address.city,
-            "postal_code": order.delivery_address.postal_code,
-            "full_address": order.delivery_address.full_address,
-            "latitude": order.delivery_address.latitude,
-            "longitude": order.delivery_address.longitude,
-            "provider_reference": order.delivery_address.provider_reference,
-        },
     )
     package = {"number": "1", "weight": 357, "length": 18, "width": 7, "height": 24, "items": _build_cdek_order_items(order)}
     order_body: dict[str, Any] = {
@@ -168,12 +156,11 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
         raise HTTPException(status_code=400, detail="CDEK door delivery requires address")
     if not city or not postal_code:
         log.warning(
-            "CDEK door delivery missing city/postal_code; using resolved city_code order_number=%s city=%s postal_code=%s city_code=%s address=%s",
+            "CDEK door delivery missing city/postal_code; using resolved city_code order_number=%s city=%s postal_code=%s city_code=%s",
             order.order_number,
             city,
             postal_code,
             city_code,
-            formatted,
         )
 
     to_location: dict[str, Any] = {
@@ -185,5 +172,5 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
     if country_code: to_location["country_code"] = country_code
 
     order_body["to_location"] = to_location
-    log.info("Built CDEK order body order_number=%s body=%s", order.order_number, order_body)
+    log.info("Built CDEK order body order_number=%s", order.order_number)
     return order_body

@@ -4,7 +4,7 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.products.helpers import serialize_products
-from src.app.services.notifications import (
+from src.app.services.notifications.core import (
     activate_stock_notifications_for_favourite_product,
     deactivate_stock_notifications_for_favourite_product,
 )

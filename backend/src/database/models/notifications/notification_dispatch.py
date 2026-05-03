@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -15,6 +15,13 @@ class NotificationDispatch(Base, IdPkMixin):
     __table_args__ = (
         Index("ix_notification_dispatches_user_type_sent_at", "user_id", "type", "sent_at"),
         Index("ix_notification_dispatches_type_dedupe_key", "type", "dedupe_key"),
+        UniqueConstraint(
+            "user_id",
+            "type",
+            "dedupe_key",
+            "sent_at",
+            name="uq_notification_dispatches_user_type_dedupe_sent_at",
+        ),
     )
 
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

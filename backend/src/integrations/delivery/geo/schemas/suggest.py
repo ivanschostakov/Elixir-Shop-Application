@@ -61,27 +61,16 @@ class GeoSuggestResult(BaseModel):
     @property
     def icon_key(self) -> str:
         if self.type == "business":
-            if "supermarket" in self.tags:
-                return "store"
-            if "cafe" in self.tags or "fast food" in self.tags:
-                return "food"
+            if "supermarket" in self.tags: return "store"
+            if "cafe" in self.tags or "fast food" in self.tags: return "food"
             return "business"
 
-        if "house" in self.tags:
-            return "house"
-        if "street" in self.tags:
-            return "street"
-        if "metro" in self.tags:
-            return "metro"
-        if "district" in self.tags:
-            return "district"
-        if "locality" in self.tags:
-            return "locality"
-        if "province" in self.tags:
-            return "province"
-        if "country" in self.tags:
-            return "country"
-        if "vegetation" in self.tags:
-            return "vegetation"
-
+        if "house" in self.tags: return "house"
+        if "street" in self.tags: return "street"
+        if "metro" in self.tags: return "metro"
+        if "district" in self.tags: return "district"
+        if "locality" in self.tags: return "locality"
+        if "province" in self.tags: return "province"
+        if "country" in self.tags: return "country"
+        if "vegetation" in self.tags: return "vegetation"
         return "place"

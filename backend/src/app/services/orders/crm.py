@@ -3,7 +3,6 @@ import logging
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
-
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -57,14 +56,7 @@ def _is_delivery_data_error(exc: HTTPException) -> bool:
     try: return int(downstream_status) < 500
     except (TypeError, ValueError): return False
 
-def _format_order_for_amocrm(
-    order_number: str,
-    payload: dict[str, Any],
-    delivery_service: str,
-    tariff: str | None,
-    commentary_text: str,
-    delivery_sum: Decimal,
-) -> str:
+def _format_order_for_amocrm(order_number: str, payload: dict[str, Any], delivery_service: str, tariff: str | None, commentary_text: str, delivery_sum: Decimal) -> str:
     checkout = payload.get("checkout_data") or {}
     items = checkout.get("items") or []
     delivery = payload.get("selected_delivery") or {}

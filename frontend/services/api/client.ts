@@ -15,6 +15,15 @@ export class ApiError extends Error {
     }
 }
 
+const SERVICE_UNAVAILABLE_MESSAGE = "Service is temporarily unavailable. Please try again later."
+const INVALID_RESPONSE_MESSAGE = "Unexpected response from server."
+
+function isLikelyHtmlResponse(payload: string) {
+    const trimmedPayload = payload.trim().toLowerCase()
+
+    return trimmedPayload.startsWith("<!doctype html") || trimmedPayload.startsWith("<html")
+}
+
 function buildUrl(baseUrl: string, path: string, query?: QueryParams): string {
     const url = new URL(`${baseUrl}${path}`)
 
@@ -57,6 +66,10 @@ async function buildApiError(response: Response): Promise<ApiError> {
     let message = raw || `HTTP ${response.status}`
 
     if (raw) {
+        if (isLikelyHtmlResponse(raw)) {
+            return new ApiError(response.status, SERVICE_UNAVAILABLE_MESSAGE, raw)
+        }
+
         try {
             body = JSON.parse(raw)
 
@@ -108,10 +121,16 @@ async function request<T>(
 ): Promise<T> {
     const auth = options?.auth ?? true
     const retryOnUnauthorized = options?.retryOnUnauthorized ?? auth
-    const response = await fetch(buildUrl(baseUrl, path, query), {
-        ...init,
-        headers: await buildHeaders(init, auth, options),
-    })
+    let response: Response
+
+    try {
+        response = await fetch(buildUrl(baseUrl, path, query), {
+            ...init,
+            headers: await buildHeaders(init, auth, options),
+        })
+    } catch {
+        throw new ApiError(503, SERVICE_UNAVAILABLE_MESSAGE)
+    }
 
     if (
         response.status === 401 &&
@@ -144,7 +163,22 @@ async function request<T>(
     }
 
     if (response.status === 204) return undefined as T
-    return response.json() as Promise<T>
+
+    const rawResponse = await response.text()
+
+    if (!rawResponse) {
+        return undefined as T
+    }
+
+    try {
+        return JSON.parse(rawResponse) as T
+    } catch {
+        if (isLikelyHtmlResponse(rawResponse)) {
+            throw new ApiError(response.status, SERVICE_UNAVAILABLE_MESSAGE, rawResponse)
+        }
+
+        throw new ApiError(response.status, INVALID_RESPONSE_MESSAGE, rawResponse)
+    }
 }
 
 export function apiFetch<T>(

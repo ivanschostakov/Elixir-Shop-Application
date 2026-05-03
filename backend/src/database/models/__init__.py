@@ -41,6 +41,7 @@ from .website.website_discount_entitlement import WebsiteDiscountEntitlement
 from .website.website_identity import WebsiteIdentity
 from .website.website_referral_profile import WebsiteReferralProfile
 from .website.website_sync_event import WebsiteSyncEvent
+from .webhooks.webhook_delivery import WebhookDelivery
 
 __all__ = [
     "AppPromo",
@@ -85,5 +86,6 @@ __all__ = [
     "WebsiteIdentity",
     "WebsiteReferralProfile",
     "WebsiteSyncEvent",
+    "WebhookDelivery",
     "YandexPickupAddress",
 ]

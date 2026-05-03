@@ -61,8 +61,7 @@ class GeoCodeResult(BaseModel):
 def parse_geo_bounds(envelope: dict[str, Any]) -> GeoBounds | None:
     lower_corner = envelope.get("lowerCorner")
     upper_corner = envelope.get("upperCorner")
-    if not lower_corner or not upper_corner:
-        return None
+    if not lower_corner or not upper_corner: return None
 
     south_west_lon, south_west_lat = map(float, lower_corner.split())
     north_east_lon, north_east_lat = map(float, upper_corner.split())
@@ -81,9 +80,7 @@ def parse_geo_bounds(envelope: dict[str, Any]) -> GeoBounds | None:
 
 def parse_country_code(address: dict[str, Any]) -> str | None:
     country_code = address.get("country_code")
-    if not isinstance(country_code, str):
-        return None
-
+    if not isinstance(country_code, str): return None
     normalized_country_code = country_code.strip().upper()
     return normalized_country_code or None
 
@@ -99,20 +96,14 @@ def parse_city(address: dict[str, Any]) -> str | None:
 
 def parse_address_component(address: dict[str, Any], kinds: set[str]) -> str | None:
     components = address.get("Components")
-    if not isinstance(components, list):
-        return None
+    if not isinstance(components, list): return None
 
     for component in components:
-        if not isinstance(component, dict):
-            continue
-
-        if component.get("kind") not in kinds:
-            continue
-
+        if not isinstance(component, dict): continue
+        if component.get("kind") not in kinds: continue
         name = component.get("name")
         if isinstance(name, str):
             normalized_name = name.strip()
-            if normalized_name:
-                return normalized_name
+            if normalized_name: return normalized_name
 
     return None

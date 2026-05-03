@@ -19,27 +19,20 @@ async def run_forever() -> None:
     stop_event = asyncio.Event()
     interval_seconds = max(int(ONEC_SYNC_INTERVAL_MINUTES), 1) * 60
 
-    async def _shutdown() -> None:
-        stop_event.set()
+    async def _shutdown() -> None: stop_event.set()
 
     loop = asyncio.get_running_loop()
     for sig_name in ("SIGINT", "SIGTERM"):
-        with suppress(AttributeError, NotImplementedError):
-            loop.add_signal_handler(getattr(signal, sig_name), lambda: asyncio.create_task(_shutdown()))
+        with suppress(AttributeError, NotImplementedError): loop.add_signal_handler(getattr(signal, sig_name), lambda: asyncio.create_task(_shutdown()))
 
     while not stop_event.is_set():
-        try:
-            await _run_once()
-        except Exception:
-            log.exception("1C sync tick failed")
+        try: await _run_once()
+        except Exception: log.exception("1C sync tick failed")
 
-        if stop_event.is_set():
-            break
+        if stop_event.is_set(): break
 
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-        except TimeoutError:
-            continue
+        try: await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except TimeoutError: continue
 
 
 if __name__ == "__main__":

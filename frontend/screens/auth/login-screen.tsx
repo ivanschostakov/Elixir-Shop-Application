@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "react-native"
 import { router } from "expo-router"
 
 import { ROUTES } from "@/constants/routes"
@@ -26,6 +26,10 @@ export default function LoginScreen() {
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [isResending, setIsResending] = useState(false)
 
+    const showAuthAlert = (message: string) => {
+        Alert.alert(t("auth.error.alertTitle"), message)
+    }
+
     const handleSubmit = async () => {
         if (!login.trim() || !password.trim()) {
             setError(t("auth.error.loginRequired"))
@@ -48,11 +52,11 @@ export default function LoginScreen() {
             }
             router.replace(ROUTES.discover)
         } catch (submitError) {
-            setError(
-                submitError instanceof Error
-                    ? submitError.message
-                    : t("auth.error.loginFallback"),
-            )
+            const nextError = submitError instanceof Error
+                ? submitError.message
+                : t("auth.error.loginFallback")
+            setError(nextError)
+            showAuthAlert(nextError)
         } finally {
             setIsSubmitting(false)
         }
@@ -60,7 +64,9 @@ export default function LoginScreen() {
 
     const handleVerify = async (code: string) => {
         if (code.length !== 6) {
-            setError(t("auth.error.codeRequired"))
+            const nextError = t("auth.error.codeRequired")
+            setError(nextError)
+            showAuthAlert(nextError)
             return false
         }
 
@@ -76,7 +82,9 @@ export default function LoginScreen() {
             router.replace(ROUTES.discover)
             return true
         } catch (submitError) {
-            setError(submitError instanceof Error ? submitError.message : t("auth.error.verifyFallback"))
+            const nextError = submitError instanceof Error ? submitError.message : t("auth.error.verifyFallback")
+            setError(nextError)
+            showAuthAlert(nextError)
             return false
         } finally {
             setIsSubmitting(false)
@@ -93,7 +101,9 @@ export default function LoginScreen() {
             setPendingEmail(response.email)
             setStatusMessage(t("auth.verify.resendSuccess"))
         } catch (resendError) {
-            setError(resendError instanceof Error ? resendError.message : t("auth.error.resendCodeFallback"))
+            const nextError = resendError instanceof Error ? resendError.message : t("auth.error.resendCodeFallback")
+            setError(nextError)
+            showAuthAlert(nextError)
         } finally {
             setIsResending(false)
         }

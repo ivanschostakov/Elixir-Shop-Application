@@ -158,7 +158,13 @@ export const authSharedStyles = StyleSheet.create({
         lineHeight: 20,
     },
     verificationPanel: {
+        alignItems: "center",
         gap: spacing.lg,
+        paddingTop: 44,
+    },
+    verificationStep: {
+        minHeight: 44,
+        position: "relative",
     },
     verificationText: {
         color: colors.mutedText,
@@ -172,23 +178,28 @@ export const authSharedStyles = StyleSheet.create({
     },
     verificationBackButton: {
         alignItems: "center",
-        alignSelf: "flex-start",
         borderRadius: 20,
         height: 40,
         justifyContent: "center",
+        left: 0,
+        position: "absolute",
+        top: 0,
         width: 40,
+        zIndex: 2,
     },
     verificationBackButtonPressed: {
         backgroundColor: colors.surfaceMuted,
     },
     verificationCodeGroup: {
+        alignItems: "center",
         gap: spacing.sm,
+        width: "100%",
     },
     codeCells: {
+        alignSelf: "center",
         flexDirection: "row",
         gap: spacing.xs,
         justifyContent: "center",
-        width: "100%",
     },
     codeCell: {
         alignItems: "center",
@@ -209,6 +220,7 @@ export const authSharedStyles = StyleSheet.create({
     },
     codeCellText: {
         color: colors.text,
+        fontVariant: ["tabular-nums"],
         fontSize: 22,
         fontWeight: "700",
         lineHeight: 28,

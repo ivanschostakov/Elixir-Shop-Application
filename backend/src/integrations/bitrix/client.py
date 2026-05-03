@@ -14,13 +14,7 @@ from .exceptions import BitrixSyncApiError
 
 
 class BitrixSyncApiClient:
-    def __init__(
-        self,
-        endpoint: str | None = BITRIX_SYNC_API_ENDPOINT,
-        app_key: str | None = BITRIX_SYNC_API_APP_KEY,
-        app_secret: str | None = BITRIX_SYNC_API_APP_SECRET,
-        timeout_seconds: int = BITRIX_SYNC_API_TIMEOUT_SECONDS,
-    ) -> None:
+    def __init__(self, endpoint: str | None = BITRIX_SYNC_API_ENDPOINT, app_key: str | None = BITRIX_SYNC_API_APP_KEY, app_secret: str | None = BITRIX_SYNC_API_APP_SECRET, timeout_seconds: int = BITRIX_SYNC_API_TIMEOUT_SECONDS) -> None:
         self._endpoint = optional_str(endpoint) or ""
         self._app_key = optional_str(app_key) or ""
         self._app_secret = optional_str(app_secret) or ""
@@ -32,8 +26,7 @@ class BitrixSyncApiClient:
         return bool(self._endpoint and self._app_key and self._app_secret)
 
     async def _get_client(self) -> httpx.AsyncClient:
-        if self._client is not None and not self._client.is_closed:
-            return self._client
+        if self._client is not None and not self._client.is_closed: return self._client
 
         async with self._client_lock:
             if self._client is None or self._client.is_closed: self._client = httpx.AsyncClient(timeout=httpx.Timeout(self._timeout_seconds))
@@ -92,22 +85,18 @@ class BitrixSyncApiClient:
         return BitrixSyncBatchResult(snapshots=snapshots, errors=errors)
 
     async def fetch_snapshots(self, user_ids: list[int]) -> BitrixSyncBatchResult:
-        if not self.is_configured():
-            raise BitrixSyncApiError("Bitrix sync API is not configured")
+        if not self.is_configured(): raise BitrixSyncApiError("Bitrix sync API is not configured")
 
         method = "POST"
         timestamp = self._build_timestamp()
         body = self._build_body(user_ids)
         try:
             client = await self._get_client()
-            response = await client.post(
-                self._endpoint,
-                content=body.encode("utf-8"),
-                headers=self._build_headers(method=method, timestamp=timestamp, body=body),
-            )
+            response = await client.post(self._endpoint, content=body.encode("utf-8"), headers=self._build_headers(method=method, timestamp=timestamp, body=body))
             raw_text = response.text
             try: payload = json.loads(raw_text)
             except json.JSONDecodeError as exc: raise BitrixSyncApiError(f"Bitrix sync API returned invalid JSON: {raw_text[:500]}") from exc
+
         except httpx.TimeoutException as exc: raise BitrixSyncApiError("Bitrix sync API timed out") from exc
         except httpx.HTTPError as exc: raise BitrixSyncApiError(f"Bitrix sync API request failed: {exc}") from exc
 
@@ -115,6 +104,7 @@ class BitrixSyncApiClient:
         if response.status_code >= 400 or not payload.get("ok"):
             message = payload.get("message") or payload.get("error") or "Bitrix sync API request failed"
             raise BitrixSyncApiError(str(message))
+
         return self._parse_batch_result(payload)
 
 

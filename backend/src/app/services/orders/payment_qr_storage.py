@@ -75,8 +75,7 @@ def _convert_qr_to_png(content: bytes) -> bytes:
 async def save_order_payment_qr(user_id: int, order_id: int, *, qr_image: str | None, qr_url: str | None) -> Path | None:
     errors: list[str] = []
     for source_name, source_value in (("qr_image", qr_image), ("qr_url", qr_url)):
-        if not source_value:
-            continue
+        if not source_value: continue
 
         try:
             raw_content = await _load_candidate_bytes(source_value)
@@ -90,5 +89,4 @@ async def save_order_payment_qr(user_id: int, order_id: int, *, qr_image: str | 
         except (ValueError, binascii.Error, UnidentifiedImageError, httpx.HTTPError) as exc: errors.append(f"{source_name}: {exc}")
 
     if errors: raise RuntimeError("; ".join(errors))
-
     return find_order_payment_qr_path(user_id, order_id)

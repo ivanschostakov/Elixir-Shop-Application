@@ -33,11 +33,9 @@ BITRIX_SERIALIZED_VALUE_TYPE_RE = re.compile(r'VALUE_TYPE";s:\d+:"([^"]+)"')
 
 def extract_website_profile(payload: dict[str, Any]) -> dict[str, Any]:
     profile = payload.get("user")
-    if not isinstance(profile, dict):
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website returned invalid user payload")
+    if not isinstance(profile, dict): raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website returned invalid user payload")
     website_user_id = profile.get("id")
-    if not isinstance(website_user_id, int) or website_user_id <= 0:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website returned invalid website user id")
+    if not isinstance(website_user_id, int) or website_user_id <= 0: raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website returned invalid website user id")
 
     return profile
 
@@ -45,14 +43,11 @@ def extract_website_profile(payload: dict[str, Any]) -> dict[str, Any]:
 def _normalize_discount_type(*candidates: Any) -> str | None:
     for raw_candidate in candidates:
         normalized = lower_optional_str(raw_candidate)
-        if normalized in PERCENT_DISCOUNT_TYPES:
-            return "percent"
-        if normalized in FIXED_AMOUNT_DISCOUNT_TYPES:
-            return "fixed_amount"
-        if normalized in BITRIX_SERIALIZED_PERCENT_TYPES:
-            return "percent"
-        if normalized in BITRIX_SERIALIZED_FIXED_TYPES:
-            return "fixed_amount"
+        if normalized in PERCENT_DISCOUNT_TYPES: return "percent"
+        if normalized in FIXED_AMOUNT_DISCOUNT_TYPES: return "fixed_amount"
+        if normalized in BITRIX_SERIALIZED_PERCENT_TYPES: return "percent"
+        if normalized in BITRIX_SERIALIZED_FIXED_TYPES: return "fixed_amount"
+
     return None
 
 
@@ -60,19 +55,16 @@ def _extract_referral_tier(discounts: dict[str, Any]) -> tuple[int | None, str |
     referral_tier = extract_dict(discounts.get("referral_tier"))
     tier_group_id = coerce_int(referral_tier.get("group_id")) or coerce_int(referral_tier.get("id"))
     tier_group_name = optional_str(referral_tier.get("group_name")) or optional_str(referral_tier.get("name"))
-    if tier_group_id is not None and tier_group_name is not None:
-        return tier_group_id, tier_group_name
+    if tier_group_id is not None and tier_group_name is not None: return tier_group_id, tier_group_name
 
     discount_groups = discounts.get("discount_groups") if isinstance(discounts.get("discount_groups"), list) else []
     legacy_group_id: int | None = None
     legacy_group_name: str | None = None
     for item in discount_groups:
-        if not isinstance(item, dict):
-            continue
+        if not isinstance(item, dict): continue
         item_id = coerce_int(item.get("id"))
         item_name = optional_str(item.get("name"))
-        if item_id is None or not (REFERRAL_TIER_GROUP_MIN_ID <= item_id <= REFERRAL_TIER_GROUP_MAX_ID):
-            continue
+        if item_id is None or not (REFERRAL_TIER_GROUP_MIN_ID <= item_id <= REFERRAL_TIER_GROUP_MAX_ID): continue
         if legacy_group_id is None or item_id > legacy_group_id:
             legacy_group_id = item_id
             legacy_group_name = item_name
@@ -83,8 +75,7 @@ def _extract_referral_tier(discounts: dict[str, Any]) -> tuple[int | None, str |
 def _resolve_discount_amounts(item: dict[str, Any]) -> tuple[Decimal | None, Decimal | None]:
     discount_percent = coerce_decimal(item.get("discount_percent"))
     discount_amount = coerce_decimal(item.get("discount_amount"))
-    if discount_percent is not None or discount_amount is not None:
-        return discount_percent, discount_amount
+    if discount_percent is not None or discount_amount is not None: return discount_percent, discount_amount
 
     discount_type = _normalize_discount_type(
         item.get("discount_type"),
@@ -94,18 +85,14 @@ def _resolve_discount_amounts(item: dict[str, Any]) -> tuple[Decimal | None, Dec
         item.get("type"),
     )
     discount_value = coerce_decimal(item.get("discount_value")) or coerce_decimal(item.get("value"))
-    if discount_type == "percent":
-        return discount_value, None
-    if discount_type == "fixed_amount":
-        return None, discount_value
+    if discount_type == "percent": return discount_value, None
+    if discount_type == "fixed_amount": return None, discount_value
     return None, None
 
 
 def _parse_legacy_coupon_discount(item: dict[str, Any], discount: dict[str, Any]) -> tuple[str | None, Decimal | None]:
     serialized_discount = optional_str(discount.get("short_description")) or optional_str(item.get("description"))
-    if not serialized_discount or "VALUE_TYPE" not in serialized_discount:
-        return None, None
-
+    if not serialized_discount or "VALUE_TYPE" not in serialized_discount: return None, None
     value_type_match = BITRIX_SERIALIZED_VALUE_TYPE_RE.search(serialized_discount)
     value_match = BITRIX_SERIALIZED_VALUE_RE.search(serialized_discount)
     discount_type = _normalize_discount_type(value_type_match.group(1) if value_type_match else None)
@@ -136,17 +123,14 @@ def _resolve_coupon_discount(item: dict[str, Any], discount: dict[str, Any]) -> 
         or optional_str(item.get("currency"))
         or optional_str(discount.get("currency"))
     )
-    if explicit_discount_type and explicit_discount_value is not None:
-        return explicit_discount_type, explicit_discount_value, discount_currency
+    if explicit_discount_type and explicit_discount_value is not None: return explicit_discount_type, explicit_discount_value, discount_currency
 
     legacy_discount_type = _normalize_discount_type(item.get("type"), discount.get("type"))
     legacy_discount_value = coerce_decimal(discount.get("value")) or coerce_decimal(item.get("value"))
-    if legacy_discount_type and legacy_discount_value not in {None, Decimal("0")}:
-        return legacy_discount_type, legacy_discount_value, discount_currency
+    if legacy_discount_type and legacy_discount_value not in {None, Decimal("0")}: return legacy_discount_type, legacy_discount_value, discount_currency
 
     parsed_discount_type, parsed_discount_value = _parse_legacy_coupon_discount(item, discount)
-    if parsed_discount_type and parsed_discount_value is not None:
-        return parsed_discount_type, parsed_discount_value, discount_currency
+    if parsed_discount_type and parsed_discount_value is not None: return parsed_discount_type, parsed_discount_value, discount_currency
 
     return explicit_discount_type or legacy_discount_type, explicit_discount_value or legacy_discount_value, discount_currency
 
@@ -202,12 +186,8 @@ def build_referral_profile_payload(*, website_identity_id: int, payload: dict[st
     custom_fields = extract_dict(profile.get("custom_fields"))
     referral_program = extract_dict(discounts.get("referral_program"))
 
-    turnover_amount, turnover_currency = extract_money(
-        referral_program.get("order_sum") if referral_program else custom_fields.get("UF_ORDER_SUMM")
-    )
-    monthly_amount, monthly_currency = extract_money(
-        referral_program.get("sum_paid_orders_month") if referral_program else custom_fields.get("UF_SUM_PAID_ORDERS_MONTH")
-    )
+    turnover_amount, turnover_currency = extract_money(referral_program.get("order_sum") if referral_program else custom_fields.get("UF_ORDER_SUMM"))
+    monthly_amount, monthly_currency = extract_money(referral_program.get("sum_paid_orders_month") if referral_program else custom_fields.get("UF_SUM_PAID_ORDERS_MONTH"))
 
     tier_group_id, tier_group_name = _extract_referral_tier(discounts)
     referral_percent = coerce_decimal(referral_program.get("percent")) or coerce_decimal(custom_fields.get("UF_PERCENT"))
@@ -232,8 +212,7 @@ def build_referral_profile_payload(*, website_identity_id: int, payload: dict[st
 
 def build_bonus_account_payload(*, website_identity_id: int, payload: dict[str, Any], last_synced_at: datetime) -> dict[str, Any] | None:
     bonus_account = extract_dict(payload.get("discounts")).get("bonus_account")
-    if not isinstance(bonus_account, dict):
-        return None
+    if not isinstance(bonus_account, dict): return None
 
     balance, currency = extract_money(bonus_account.get("balance"))
     currency = currency or optional_str(bonus_account.get("currency")) or "RUB"
@@ -247,15 +226,11 @@ def build_bonus_account_payload(*, website_identity_id: int, payload: dict[str, 
         "website_created_at": parse_iso_datetime(bonus_account.get("date_create")),
         "last_synced_at": last_synced_at,
     }
-    has_meaningful_data = any(
-        value is not None for key, value in data.items() if key not in {"website_identity_id", "is_active", "balance", "last_synced_at"}
-    )
+    has_meaningful_data = any(value is not None for key, value in data.items() if key not in {"website_identity_id", "is_active", "balance", "last_synced_at"})
     return data if has_meaningful_data or data["balance"] != Decimal("0.00") else data
 
 
-def build_discount_entitlement_payloads(
-    *, website_identity_id: int, payload: dict[str, Any], last_synced_at: datetime
-) -> list[dict[str, Any]]:
+def build_discount_entitlement_payloads(*, website_identity_id: int, payload: dict[str, Any], last_synced_at: datetime) -> list[dict[str, Any]]:
     discounts = extract_dict(payload.get("discounts"))
     has_explicit_personal_discounts = isinstance(discounts.get("personal_discounts"), list)
     source_items = discounts.get("personal_discounts") if has_explicit_personal_discounts else discounts.get("discount_groups")
@@ -264,19 +239,17 @@ def build_discount_entitlement_payloads(
 
     rows: list[dict[str, Any]] = []
     for item in source_items:
-        if not isinstance(item, dict):
-            continue
+        if not isinstance(item, dict): continue
         source_name = optional_str(item.get("name")) or optional_str(item.get("title"))
-        if not source_name:
-            continue
+        if not source_name: continue
         discount_percent, discount_amount = _resolve_discount_amounts(item)
-        if discount_percent is None and discount_amount is None:
-            continue
+        if discount_percent is None and discount_amount is None: continue
 
         source_id = optional_str(item.get("source_id")) or optional_str(item.get("website_source_id"))
         if source_id is None:
             source_id_int = coerce_int(item.get("id"))
             source_id = str(source_id_int) if source_id_int is not None else None
+
         is_stackable = coerce_bool(item.get("is_stackable"))
         is_active = coerce_bool(item.get("is_active"))
         rows.append(
@@ -306,15 +279,13 @@ def build_coupon_payloads(*, website_identity_id: int, payload: dict[str, Any], 
 
     def append_coupon(item: dict[str, Any], *, is_active_default: bool) -> None:
         coupon_code = optional_str(item.get("coupon"))
-        if not coupon_code:
-            return
+        if not coupon_code: return
         discount = item.get("discount") if isinstance(item.get("discount"), dict) else {}
         external_id = coerce_int(item.get("id"))
         active_flag = coerce_bool(item.get("active"))
         is_active = is_active_default if active_flag is None else active_flag
         key = (str(external_id) if external_id is not None else None, lower_optional_str(coupon_code), is_active)
-        if key in dedupe_keys:
-            return
+        if key in dedupe_keys: return
         dedupe_keys.add(key)
 
         discount_type, discount_value, discount_currency = _resolve_coupon_discount(item, discount)
@@ -342,13 +313,11 @@ def build_coupon_payloads(*, website_identity_id: int, payload: dict[str, Any], 
     active_coupons = discounts.get("active_coupons")
     if isinstance(active_coupons, list):
         for item in active_coupons:
-            if isinstance(item, dict):
-                append_coupon(item, is_active_default=True)
+            if isinstance(item, dict): append_coupon(item, is_active_default=True)
 
     recent_used_coupons = discounts.get("recent_used_coupons")
     if isinstance(recent_used_coupons, list):
         for item in recent_used_coupons:
-            if isinstance(item, dict):
-                append_coupon(item, is_active_default=False)
+            if isinstance(item, dict): append_coupon(item, is_active_default=False)
 
     return rows

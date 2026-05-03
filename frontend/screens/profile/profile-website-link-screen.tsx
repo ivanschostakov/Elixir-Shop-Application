@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "react-native"
 import { router } from "expo-router"
 
 import { useLanguage } from "@/providers/language-provider"
@@ -8,6 +8,7 @@ import { authSharedStyles } from "@/screens/auth/auth-shared.styles"
 import PasswordField from "@/screens/auth/password-field"
 import { getErrorMessage } from "@/screens/profile/profile-website-link-screen.utils"
 import { linkMyWebsiteIdentity } from "@/services/api/website-identity"
+import { isBackendError, showBackendErrorAlert } from "@/utils/errors"
 
 export default function ProfileWebsiteLinkScreen() {
     const { t } = useLanguage()
@@ -32,7 +33,12 @@ export default function ProfileWebsiteLinkScreen() {
             })
             router.back()
         } catch (submitError) {
-            setError(getErrorMessage(submitError, t("profile.website.linkFallback")))
+            const message = getErrorMessage(submitError, t("profile.website.linkFallback"))
+            setError(message)
+            showBackendErrorAlert(submitError, message)
+            if (!isBackendError(submitError)) {
+                Alert.alert(t("auth.error.alertTitle"), message)
+            }
         } finally {
             setIsSubmitting(false)
         }

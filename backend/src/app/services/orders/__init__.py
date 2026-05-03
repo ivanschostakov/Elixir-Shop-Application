@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import Order, User
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode
 from src.integrations.amocrm import amocrm_client
-from src.integrations.intellectmoney import intellectmoney
+from src.integrations.intellectmoney.client import intellectmoney
 
 from . import creation as _order_creation
 from . import crm as _order_crm

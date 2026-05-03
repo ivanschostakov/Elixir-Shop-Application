@@ -1,0 +1,2 @@
+class IntellectMoneyError(RuntimeError):
+    pass

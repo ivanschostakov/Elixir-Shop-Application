@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from config import YANDEX_DELIVERY_BASE_URL, YANDEX_DELIVERY_TOKEN
+from src.app.services.external_errors import external_service_http_exception
 from src.database.models import Order
 from src.integrations.delivery.cdek import get_cdek_client
 from .fulfillment_payloads import build_cdek_order_body, build_yandex_delivery_request
@@ -20,7 +21,13 @@ def _offer_min_unix(offer: dict[str, Any]) -> int:
 
 async def _confirm_best_yandex_offer(client: httpx.AsyncClient, request_body: dict[str, Any]) -> dict[str, Any]:
     offers_response = await client.post(f"{YANDEX_DELIVERY_BASE_URL}/api/b2b/platform/offers/create", params={"send_unix": True}, json=request_body, headers=YANDEX_HEADERS)
-    if offers_response.status_code >= 400: raise HTTPException(status_code=502, detail=f"Yandex Delivery offers/create error: {offers_response.text}")
+    if offers_response.status_code >= 400:
+        raise external_service_http_exception(
+            service="yandex_delivery",
+            operation="offers/create",
+            public_detail="Yandex delivery offer lookup failed",
+            raw_detail={"status_code": offers_response.status_code, "body": offers_response.text},
+        )
 
     offers = (offers_response.json()).get("offers") or []
     if not offers: raise HTTPException(status_code=502, detail="Yandex Delivery has no offers for this order")
@@ -30,7 +37,13 @@ async def _confirm_best_yandex_offer(client: httpx.AsyncClient, request_body: di
     if not offer_id: raise HTTPException(status_code=502, detail="Yandex Delivery offer_id missing")
 
     confirm_response = await client.post(f"{YANDEX_DELIVERY_BASE_URL}/api/b2b/platform/offers/confirm", json={"offer_id": str(offer_id)}, headers=YANDEX_HEADERS)
-    if confirm_response.status_code >= 400: raise HTTPException(status_code=502, detail=f"Yandex Delivery offers/confirm error: {confirm_response.text}")
+    if confirm_response.status_code >= 400:
+        raise external_service_http_exception(
+            service="yandex_delivery",
+            operation="offers/confirm",
+            public_detail="Yandex delivery offer confirmation failed",
+            raw_detail={"status_code": confirm_response.status_code, "body": confirm_response.text},
+        )
     return confirm_response.json()
 
 
@@ -39,7 +52,13 @@ async def _create_yandex_delivery(order: Order) -> dict[str, Any]:
     async with httpx.AsyncClient(timeout=20.0) as client:
         response = await client.post(f"{YANDEX_DELIVERY_BASE_URL}/api/b2b/platform/request/create", params={"send_unix": True}, json=request_body, headers=YANDEX_HEADERS)
         if response.status_code == 404: data = await _confirm_best_yandex_offer(client, request_body)
-        elif response.status_code >= 400: raise HTTPException(status_code=502, detail=f"Yandex Delivery request/create error: {response.text}")
+        elif response.status_code >= 400:
+            raise external_service_http_exception(
+                service="yandex_delivery",
+                operation="request/create",
+                public_detail="Yandex delivery request creation failed",
+                raw_detail={"status_code": response.status_code, "body": response.text},
+            )
         else: data = response.json()
 
     request_id = data.get("request_id")
@@ -60,9 +79,9 @@ def _extract_cdek_provider_ref(response: dict[str, Any], order: Order) -> str:
 async def _create_cdek_delivery(order: Order) -> dict[str, Any]:
     cdek_client = get_cdek_client()
     order_body = await build_cdek_order_body(order, cdek_client)
-    log.info("CDEK create_order request order_number=%s body=%s", order.order_number, order_body)
+    log.info("CDEK create_order request order_number=%s", order.order_number)
     response = await cdek_client.create_order(order_body)
-    log.info("CDEK create_order response order_number=%s response=%s", order.order_number, response)
+    log.info("CDEK create_order response order_number=%s", order.order_number)
     return {"delivery_provider_ref": _extract_cdek_provider_ref(response, order)}
 
 

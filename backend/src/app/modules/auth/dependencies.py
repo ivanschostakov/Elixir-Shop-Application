@@ -3,6 +3,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
+from config import ufa_now
 from src.app.services.security import decode_access_token
 from src.database import get_db
 from src.database.crud.auth.admin import is_admin_user
@@ -26,7 +27,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
     except (KeyError, TypeError, ValueError): raise unauthorized_exception() from None
 
     user_session = await get_user_session_by_id(db, session_id)
-    if user_session is None or user_session.user_id != user_id or user_session.revoked_at is not None: raise unauthorized_exception()
+    if user_session is None or user_session.user_id != user_id or user_session.revoked_at is not None:
+        raise unauthorized_exception()
+    if user_session.expires_at <= ufa_now():
+        raise unauthorized_exception("Session has expired")
     user = await get_user_by_id(db, user_id)
     if user is None or not user.is_active: raise unauthorized_exception()
 

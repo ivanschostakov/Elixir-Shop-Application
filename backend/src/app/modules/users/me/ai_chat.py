@@ -17,7 +17,7 @@ from src.app.services.basket import _get_serialized_basket
 from src.app.services.upload_limits import read_upload_file_limited
 from src.database import get_db
 from src.database.models import User
-from src.integrations.ai.client import ProfessorClient, get_professor_client
+from src.integrations.ai import ProfessorClient, get_professor_client
 
 ai_chat_router = APIRouter(prefix="/ai-chat", tags=["ai_chat"])
 

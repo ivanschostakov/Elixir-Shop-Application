@@ -1,12 +1,20 @@
 from datetime import timedelta
 from logging import getLogger
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.services.security import create_access_token
-from config import EMAIL_VERIFICATION_CODE_TTL_MINUTES, EMAIL_VERIFICATION_MAX_ATTEMPTS, REFRESH_TOKEN_LIFETIME_DAYS, ufa_now
+from config import (
+    AUTH_RATE_LIMIT_MAX_REQUESTS,
+    AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    AUTH_VERIFY_RATE_LIMIT_MAX_REQUESTS,
+    EMAIL_VERIFICATION_CODE_TTL_MINUTES,
+    EMAIL_VERIFICATION_MAX_ATTEMPTS,
+    REFRESH_TOKEN_LIFETIME_DAYS,
+    ufa_now,
+)
 from src.app.services.email_verification import (
     EmailVerificationConfigError,
     EmailVerificationDeliveryError,
@@ -19,6 +27,7 @@ from src.integrations.website_identity import WebsiteIdentityClient, get_website
 from src.app.services.security import hash_password, verify_password
 from src.app.services.security.refresh import create_refresh_token, hash_refresh_token, verify_refresh_token
 from src.app.services.website_identities.service import link_website_identity_to_user, login_with_website_identity
+from src.app.services.rate_limit import client_ip_from_request, enforce_rate_limit
 from src.database import get_db
 from src.database.crud.auth.email_verification_code import create_email_verification_code, get_latest_pending_email_verification_code
 from src.database.crud.auth.user import create_user, get_user_by_email, get_user_by_id, get_user_by_username
@@ -51,6 +60,24 @@ from .schemas.website import WebsiteIdentityLoginPayload
 
 logger = getLogger(__name__)
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _auth_limit_key(request: Request, principal: str | None = None) -> str:
+    ip = client_ip_from_request(request)
+    normalized_principal = (principal or "").strip().lower()
+    if normalized_principal:
+        return f"{ip}:{normalized_principal}"
+    return ip
+
+
+async def _apply_auth_rate_limit(request: Request, *, scope: str, principal: str | None = None, verify: bool = False) -> None:
+    await enforce_rate_limit(
+        request,
+        scope=scope,
+        limit=AUTH_VERIFY_RATE_LIMIT_MAX_REQUESTS if verify else AUTH_RATE_LIMIT_MAX_REQUESTS,
+        window_seconds=AUTH_RATE_LIMIT_WINDOW_SECONDS,
+        key=_auth_limit_key(request, principal),
+    )
 
 
 async def build_auth_tokens_response(user: User, db: AsyncSession) -> AuthTokensWithUserResponse:
@@ -95,7 +122,8 @@ async def verify_latest_email_code(user: User, code: str, db: AsyncSession) -> N
 
 
 @auth_router.post("/register", response_model=UserRegistrationStartedResponse, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserRegisterPayload, db: AsyncSession = Depends(get_db)) -> UserRegistrationStartedResponse:
+async def register(request: Request, payload: UserRegisterPayload, db: AsyncSession = Depends(get_db)) -> UserRegistrationStartedResponse:
+    await _apply_auth_rate_limit(request, scope="auth:register", principal=payload.email)
     password_hash = hash_password(payload.password)
     user_create = UserCreate(username=payload.username, email=payload.email, name=payload.name, surname=payload.surname, password_hash=password_hash)
 
@@ -129,7 +157,8 @@ async def register(payload: UserRegisterPayload, db: AsyncSession = Depends(get_
 
 
 @auth_router.post("/register/verify", response_model=AuthTokensWithUserResponse, status_code=status.HTTP_200_OK)
-async def verify_registration(payload: UserRegisterVerifyPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse:
+async def verify_registration(request: Request, payload: UserRegisterVerifyPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse:
+    await _apply_auth_rate_limit(request, scope="auth:register_verify", principal=payload.email, verify=True)
     user = await get_user_by_email(db, payload.email)
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code")
@@ -147,9 +176,11 @@ async def verify_registration(payload: UserRegisterVerifyPayload, db: AsyncSessi
 
 @auth_router.post("/register/resend-code", response_model=UserVerificationCodeSentResponse, status_code=status.HTTP_200_OK)
 async def resend_registration_verification_code(
+    request: Request,
     payload: UserVerificationCodeResendPayload,
     db: AsyncSession = Depends(get_db),
 ) -> UserVerificationCodeSentResponse:
+    await _apply_auth_rate_limit(request, scope="auth:register_resend", principal=payload.email)
     user = await get_user_by_email(db, payload.email)
     if not user or not user.is_active or user.is_verified:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found or already verified")
@@ -165,7 +196,8 @@ async def resend_registration_verification_code(
 
 
 @auth_router.post("/login", response_model=AuthTokensWithUserResponse | AuthVerificationRequiredResponse, status_code=status.HTTP_200_OK, summary="Plain username or email login")
-async def login(payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
+async def login(request: Request, payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
+    await _apply_auth_rate_limit(request, scope="auth:login", principal=payload.login)
     user = await get_plain_login_user(payload, db)
     try:
         await create_and_send_verification_code(user, db)
@@ -178,7 +210,8 @@ async def login(payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -
 
 
 @auth_router.post("/login/verify", response_model=AuthTokensWithUserResponse, status_code=status.HTTP_200_OK)
-async def verify_login(payload: UserLoginVerifyPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse:
+async def verify_login(request: Request, payload: UserLoginVerifyPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse:
+    await _apply_auth_rate_limit(request, scope="auth:login_verify", principal=payload.email, verify=True)
     user = await get_user_by_email(db, payload.email)
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code")
@@ -191,7 +224,8 @@ async def verify_login(payload: UserLoginVerifyPayload, db: AsyncSession = Depen
 
 
 @auth_router.post("/login/resend-code", response_model=AuthVerificationRequiredResponse, status_code=status.HTTP_200_OK)
-async def resend_login_verification_code(payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -> AuthVerificationRequiredResponse:
+async def resend_login_verification_code(request: Request, payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -> AuthVerificationRequiredResponse:
+    await _apply_auth_rate_limit(request, scope="auth:login_resend", principal=payload.login)
     user = await get_plain_login_user(payload, db)
     try:
         await create_and_send_verification_code(user, db)
@@ -206,10 +240,12 @@ async def resend_login_verification_code(payload: UserLoginPayload, db: AsyncSes
 
 @auth_router.post("/website/login", response_model=AuthTokensWithWebsiteIdentityResponse, status_code=status.HTTP_200_OK, summary="Website-backed login")
 async def login_with_website(
+    request: Request,
     payload: WebsiteIdentityLoginPayload,
     db: AsyncSession = Depends(get_db),
     website_identity_client: WebsiteIdentityClient = Depends(get_website_identity_client),
 ) -> AuthTokensWithWebsiteIdentityResponse:
+    await _apply_auth_rate_limit(request, scope="auth:website_login", principal=payload.login)
     user, website_identity = await login_with_website_identity(
         db,
         login=payload.login,
@@ -229,11 +265,13 @@ async def login_with_website(
 
 @auth_router.post("/website/parse", response_model=WebsiteIdentityRead, status_code=status.HTTP_200_OK, summary="Refresh website identity data")
 async def parse_website_identity(
+    request: Request,
     payload: WebsiteIdentityLoginPayload,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     website_identity_client: WebsiteIdentityClient = Depends(get_website_identity_client),
 ) -> WebsiteIdentityRead:
+    await _apply_auth_rate_limit(request, scope="auth:website_parse", principal=payload.login)
     website_identity = await link_website_identity_to_user(
         db,
         user=current_user,
@@ -245,7 +283,8 @@ async def parse_website_identity(
 
 
 @auth_router.post("/refresh", response_model=AuthRefreshResponse, status_code=status.HTTP_200_OK)
-async def refresh(payload: UserRefreshPayload, db: AsyncSession = Depends(get_db)) -> AuthRefreshResponse:
+async def refresh(request: Request, payload: UserRefreshPayload, db: AsyncSession = Depends(get_db)) -> AuthRefreshResponse:
+    await _apply_auth_rate_limit(request, scope="auth:refresh", principal=str(payload.session_id), verify=True)
     session = await get_user_session_by_id(db, payload.session_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
@@ -280,7 +319,8 @@ async def refresh(payload: UserRefreshPayload, db: AsyncSession = Depends(get_db
 
 
 @auth_router.post("/logout", response_model=AuthLogoutResponse, status_code=status.HTTP_200_OK)
-async def logout(payload: UserLogoutPayload, db: AsyncSession = Depends(get_db)) -> AuthLogoutResponse:
+async def logout(request: Request, payload: UserLogoutPayload, db: AsyncSession = Depends(get_db)) -> AuthLogoutResponse:
+    await _apply_auth_rate_limit(request, scope="auth:logout", principal=str(payload.session_id), verify=True)
     session = await get_user_session_by_id(db, payload.session_id)
     if not session:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")

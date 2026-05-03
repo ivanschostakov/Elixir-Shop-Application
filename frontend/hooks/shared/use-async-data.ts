@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { Dispatch, SetStateAction } from "react"
 
-import { getErrorMessage } from "@/utils/errors"
+import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 
 type ReloadOptions = {
     showLoading?: boolean
@@ -71,6 +71,7 @@ export function useAsyncData<TData>({
 
             setData(initialDataRef.current)
             setError(getErrorMessage(loadError))
+            showBackendErrorAlert(loadError)
             return null
         } finally {
             if (requestIdRef.current === requestId) {

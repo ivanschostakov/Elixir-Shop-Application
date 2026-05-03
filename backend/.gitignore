@@ -39,6 +39,7 @@ logs/
 media/
 tmp/
 *.pid
+.secrets/
 
 # Local databases
 *.db

@@ -5,7 +5,7 @@ import { setBasketSnapshot } from "@/hooks/basket/basket-store"
 import type { UseBasketMutationsResult } from "@/hooks/basket/use-basket.types"
 import { addBasketItem, clearBasket, removeBasketItem, restoreDraftToBasket, updateBasketItem } from "@/services/api/basket"
 import type { BasketRead } from "@/types/basket"
-import { getErrorMessage } from "@/utils/errors"
+import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 
 function assertPositiveInteger(value: number, label: string) {
     if (!Number.isInteger(value) || value < 1) {
@@ -28,6 +28,7 @@ export function useBasketMutations(): UseBasketMutationsResult {
         } catch (mutationError) {
             const nextError = getErrorMessage(mutationError)
             setError(nextError)
+            showBackendErrorAlert(mutationError, nextError)
             throw mutationError instanceof Error ? mutationError : new Error(nextError)
         } finally {
             setUpdating(false)

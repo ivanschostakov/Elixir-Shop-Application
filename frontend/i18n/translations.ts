@@ -91,6 +91,9 @@ const translations = {
     "cart.stockConflict": "Запрошенное количество превышает доступный остаток.",
     "cart.updateFailed": "Не удалось обновить корзину.",
     "cart.checkoutCta": "К оформлению",
+    "cart.checkoutDraftNoticeTitle": "Перед переходом к оформлению",
+    "cart.checkoutDraftNoticeMessage": "Если прервете оформление, заказ сохранится как черновик в меню профиля.",
+    "cart.checkoutDraftNoticeContinue": "Перейти к оформлению",
     "cart.checkoutFailed": "Не удалось перейти к оформлению.",
     "cart.existingDraftTitle": "Такой черновик уже есть",
     "cart.existingDraftMessage": "Корзина с таким составом уже сохранена как черновик. Открыть его и продолжить оформление?",
@@ -468,7 +471,7 @@ const translations = {
     "product.screenshotSharePromptDescription": "Так человеку сразу откроется этот товар в приложении.",
     "product.screenshotSharePromptCta": "Скопировать ссылку",
     "product.screenshotSharePromptCopied": "Ссылка скопирована",
-    "product.favoriteAdded": "Сохранено",
+    "product.favoriteAdded": "Вы будете получать уведомления о поступлениях этого товара",
     "product.favoriteRemoved": "Убрано из сохраненного",
     "product.favoriteUpdateFailed": "Не удалось обновить сохраненное",
     "product.chooseDosagesCta": "Добавить в корзину",
@@ -637,6 +640,10 @@ const translations = {
     "auth.error.codeRequired": "Введите 6-значный код.",
     "auth.error.verifyFallback": "Не удалось подтвердить email.",
     "auth.error.resendCodeFallback": "Не удалось отправить код повторно.",
+    "auth.error.invalidCredentials": "Неверный логин или пароль.",
+    "auth.error.invalidCode": "Неверный или просроченный код подтверждения.",
+    "auth.error.backendUnavailable": "Сервер временно недоступен. Попробуйте еще раз чуть позже.",
+    "auth.error.alertTitle": "Ошибка входа",
 } as const
 
 export type Language = "ru"

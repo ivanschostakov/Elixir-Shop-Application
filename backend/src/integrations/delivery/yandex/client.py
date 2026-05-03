@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from config import YANDEX_DELIVERY_TOKEN, YANDEX_DELIVERY_BASE_URL, YANDEX_DELIVERY_WAREHOUSE_ID
+from src.app.services.external_errors import external_service_http_exception
 from src.integrations.delivery.schemas import DeliveryPointMarker, DeliveryPoint, YandexDeliveryMode
 from src.integrations.delivery.yandex.schemas.calculated_delivery import YandexCalculatedDelivery
 from src.normalize import is_valid_uuid
@@ -43,16 +44,11 @@ class YandexDeliveryClient:
             json=json,
         )
         if resp.status_code >= 400:
-            body = resp.text
-            self.log.error("Yandex API error %s %s: %s", method, path, body)
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "service": "yandex",
-                    "status_code": resp.status_code,
-                    "path": path,
-                    "body": body,
-                },
+            raise external_service_http_exception(
+                service="yandex",
+                operation=f"{method.upper()} {path}",
+                public_detail="Delivery provider request failed",
+                raw_detail={"status_code": resp.status_code, "body": resp.text},
             )
 
         return resp.json()
@@ -73,14 +69,11 @@ class YandexDeliveryClient:
         points = response.get("points")
 
         if not isinstance(points, list):
-            raise HTTPException(
-                status_code=502,
-                detail={
-                    "service": "yandex",
-                    "path": "/pickup-points/list",
-                    "error": "Unexpected pickup point response shape",
-                    "body": response,
-                },
+            raise external_service_http_exception(
+                service="yandex",
+                operation="get_delivery_point",
+                public_detail="Delivery provider returned invalid pickup point response",
+                raw_detail=response,
             )
 
         if not points:
