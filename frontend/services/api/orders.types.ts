@@ -77,7 +77,7 @@ export type OrderRead = {
 }
 
 export type CreateOrderPayload = {
-    draft_id: number
+    draft_id?: number | null
     payment_method: "later" | "sbp"
 }
 

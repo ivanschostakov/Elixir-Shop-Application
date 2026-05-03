@@ -78,6 +78,18 @@ async def get_latest_order_draft_for_user(session: AsyncSession, user_id: int) -
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def get_latest_named_order_draft_for_user(session: AsyncSession, user_id: int) -> OrderDraft | None:
+    stmt = (
+        select(OrderDraft)
+        .options(*_order_draft_load_options())
+        .where(OrderDraft.user_id == user_id, OrderDraft.draft_name.is_not(None))
+        .order_by(OrderDraft.created_at.desc(), OrderDraft.id.desc())
+        .limit(1)
+        .execution_options(populate_existing=True)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
 async def get_order_drafts_for_user(
     session: AsyncSession,
     user_id: int,
@@ -86,6 +98,7 @@ async def get_order_drafts_for_user(
     offset: int = 0,
     created_from: datetime | None = None,
     created_to: datetime | None = None,
+    named_only: bool = False,
 ) -> list[OrderDraft]:
     stmt = (
         select(OrderDraft)
@@ -101,6 +114,9 @@ async def get_order_drafts_for_user(
 
     if created_to is not None:
         stmt = stmt.where(OrderDraft.created_at <= created_to)
+
+    if named_only:
+        stmt = stmt.where(OrderDraft.draft_name.is_not(None))
 
     if limit is not None:
         stmt = stmt.limit(limit)

@@ -40,6 +40,11 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, request: Re
     return await _order_creation.create_order_from_draft_for_user(session, user=user, draft_id=draft_id, payment_method=payment_method)
 
 
+async def create_order_from_basket_for_user(session: AsyncSession, *, request: Request, user: User, payment_method: str) -> Order:
+    _sync_runtime_dependencies()
+    return await _order_creation.create_order_from_basket_for_user(session, user=user, payment_method=payment_method)
+
+
 async def get_order_for_user(session: AsyncSession, *, user_id: int, order_id: int) -> Order | None:
     return await _order_creation.get_order_for_user(session, user_id=user_id, order_id=order_id)
 
@@ -78,6 +83,7 @@ __all__ = [
     "PENDING_PAYMENT_STEPS",
     "apply_amocrm_status_update",
     "create_delivery_for_order",
+    "create_order_from_basket_for_user",
     "create_order_from_draft_for_user",
     "create_payment_for_order",
     "ensure_order_has_amocrm_lead",

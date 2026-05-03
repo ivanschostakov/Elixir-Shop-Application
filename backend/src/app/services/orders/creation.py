@@ -2,16 +2,17 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from decimal import Decimal
 import secrets
+from types import SimpleNamespace
 from typing import Any
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
 
 from src.app.services.recommendations import record_purchase
-from src.database.crud import create_delivery_recipient, create_order, create_order_draft, delete_order_draft, get_delivery_recipient_by_fields, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id, get_orders_for_user as get_orders_for_user_crud
-from src.database.models import Order, OrderDraft, OrderDraftItem, OrderItem, User, Variant
+from src.database.crud import create_delivery_recipient, create_order, create_order_draft, delete_order_draft, get_basket_by_user_id, get_delivery_recipient_by_fields, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id, get_orders_for_user as get_orders_for_user_crud
+from src.database.models import BasketItem, Order, OrderDraft, OrderDraftItem, OrderItem, User, Variant
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode, get_order_history_bucket
 from src.database.schemas import DeliveryRecipientCreate, OrderCreate, OrderDraftCreate
 from src.integrations.amocrm import get_amocrm_client
@@ -120,6 +121,85 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     created_order = await get_order_by_id(session, order.id, user_id=user.id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
 
+    return created_order
+
+
+async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str) -> Order:
+    basket = await get_basket_by_user_id(session, user.id)
+    if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
+    if basket.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
+
+    if basket.recipient is None:
+        recipient = await _get_or_create_self_recipient(session, user=user)
+        basket.recipient_id = recipient.id
+        basket.recipient = recipient
+        await session.flush()
+
+    basket_subtotal = Decimal("0.00")
+    total_quantity = 0
+    snapshot_items = []
+    order_item_rows: list[tuple[BasketItem, Decimal, Decimal]] = []
+
+    for basket_item in basket.items:
+        variant = basket_item.variant
+        if variant is None or variant.stock <= 0 or basket_item.quantity > variant.stock:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
+
+        unit_price = variant.price
+        line_total = unit_price * basket_item.quantity
+        basket_subtotal += line_total
+        total_quantity += basket_item.quantity
+        order_item_rows.append((basket_item, unit_price, line_total))
+        snapshot_items.append(
+            SimpleNamespace(
+                product_id=basket_item.product_id,
+                variant_id=basket_item.variant_id,
+                product_name=basket_item.product.name,
+                product_sku=basket_item.product.sku,
+                variant_name=variant.name,
+                quantity=basket_item.quantity,
+                unit_price=unit_price,
+                line_total=line_total,
+            )
+        )
+
+    checkout_source = SimpleNamespace(
+        delivery_address=basket.delivery_address,
+        delivery_address_id=basket.delivery_address_id,
+        recipient=basket.recipient,
+        recipient_id=basket.recipient_id,
+        items=snapshot_items,
+        basket_subtotal=basket_subtotal,
+        delivery_total=basket.delivery_total,
+        grand_total=basket_subtotal + basket.delivery_total,
+        currency=basket.currency,
+        delivery_period_min=basket.delivery_period_min,
+        delivery_period_max=basket.delivery_period_max,
+        comment=None,
+    )
+    selected_delivery_service, selected_delivery_payload = _build_selected_delivery_payload(checkout_source)
+    checkout_snapshot = _build_checkout_snapshot(checkout_source, payment_method=payment_method, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload)
+    delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
+
+    order_code = await _generate_order_code(session)
+    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=basket.delivery_address_id, recipient_id=basket.recipient_id, order_code=order_code, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=len(order_item_rows), total_quantity=total_quantity, basket_subtotal=basket_subtotal, delivery_total=basket.delivery_total, grand_total=basket_subtotal + basket.delivery_total, currency=basket.currency, delivery_period_min=basket.delivery_period_min, delivery_period_max=basket.delivery_period_max, comment=None, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
+
+    order_items = [OrderItem(user_id=user.id, order_id=order.id, product_id=item.product_id, variant_id=item.variant_id, product_name=item.product.name, product_sku=item.product.sku, variant_name=item.variant.name, variant_sku=item.variant.sku, quantity=item.quantity, unit_price=unit_price, line_total=line_total) for item, unit_price, line_total in order_item_rows]
+    session.add_all(order_items)
+    await session.flush()
+    for item, _, _ in order_item_rows: await record_purchase(session, user_id=user.id, product_id=item.product_id, quantity=item.quantity, commit=False)
+    await ensure_order_has_amocrm_lead(session, order, user=user)
+    await session.execute(delete(BasketItem).where(BasketItem.basket_id == basket.id))
+    basket.delivery_address_id = None
+    basket.recipient_id = None
+    basket.delivery_total = Decimal("0.00")
+    basket.currency = "RUB"
+    basket.delivery_period_min = None
+    basket.delivery_period_max = None
+    await session.commit()
+
+    created_order = await get_order_by_id(session, order.id, user_id=user.id)
+    if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     return created_order
 
 

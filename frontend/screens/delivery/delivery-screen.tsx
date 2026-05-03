@@ -42,7 +42,7 @@ import { CDEK_PICKUP_MARKER_OUTER_COLOR } from "@/components/maps/cdek-pickup-ma
 import { DeliveryPlaceMarker } from "@/components/maps/delivery-place-marker"
 import { MapFlowTemplate } from "@/components/templates/map-flow-template"
 import { ROUTES } from "@/constants/routes"
-import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
+import { setBasketSnapshot } from "@/hooks/basket/basket-store"
 import {
     setSelectedDeliveryAddress,
     useSelectedDeliveryAddress,
@@ -73,7 +73,8 @@ import type {
     DeliveryGeoSuggestResult,
     DeliveryPointProvider,
 } from "@/services/api/delivery.types"
-import { createOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
+import { updateBasketCheckout } from "@/services/api/basket"
+import { updateOrderDraft } from "@/services/api/order-drafts"
 import { initializeYandexMapKit } from "@/services/maps/yandex-mapkit"
 import {
     DOOR_DELIVERY_PROVIDER,
@@ -1008,11 +1009,18 @@ export default function DeliveryScreen() {
                               checkoutDraftId,
                               buildOrderDraftAddressUpdatePayload(orderDraftPayload, shouldSyncBasketItems),
                           )
-                        : await createOrderDraft(orderDraftPayload)
+                        : null
+                const nextBasket = checkoutDraftId === null
+                    ? await updateBasketCheckout({
+                          new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                      })
+                    : null
 
-                setOrderDraftSnapshot(nextDraft)
-                if (checkoutDraftId === null) {
-                    clearBasketSnapshot()
+                if (nextDraft !== null) {
+                    setOrderDraftSnapshot(nextDraft)
+                }
+                if (nextBasket !== null) {
+                    setBasketSnapshot(nextBasket)
                 }
                 setSelectedDeliveryPoint(null)
                 setSelectedDeliveryAddress(null)
@@ -1031,7 +1039,11 @@ export default function DeliveryScreen() {
                     DELIVERY_CAMERA_DURATIONS.search,
                 )
 
-                router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
+                if (nextBasket !== null) {
+                    router.replace(ROUTES.checkout)
+                } else if (nextDraft !== null) {
+                    router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
+                }
             } catch (deliveryCalculationError) {
                 showBackendErrorAlert(deliveryCalculationError)
                 setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
@@ -1080,18 +1092,29 @@ export default function DeliveryScreen() {
                               checkoutDraftId,
                               buildOrderDraftAddressUpdatePayload(orderDraftPayload, shouldSyncBasketItems),
                           )
-                        : await createOrderDraft(orderDraftPayload)
+                        : null
+                const nextBasket = checkoutDraftId === null
+                    ? await updateBasketCheckout({
+                          new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                      })
+                    : null
 
-                setOrderDraftSnapshot(nextDraft)
-                if (checkoutDraftId === null) {
-                    clearBasketSnapshot()
+                if (nextDraft !== null) {
+                    setOrderDraftSnapshot(nextDraft)
+                }
+                if (nextBasket !== null) {
+                    setBasketSnapshot(nextBasket)
                 }
                 setPickupPointDraft(null)
                 setPickupPointError(null)
                 setSelectedDeliveryPoint(null)
                 setSelectedDeliveryAddress(null)
 
-                router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
+                if (nextBasket !== null) {
+                    router.replace(ROUTES.checkout)
+                } else if (nextDraft !== null) {
+                    router.replace(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
+                }
             } catch (deliveryCalculationError) {
                 showBackendErrorAlert(deliveryCalculationError)
                 setSelectionError(getDeliveryCalculationErrorMessage(deliveryCalculationError))

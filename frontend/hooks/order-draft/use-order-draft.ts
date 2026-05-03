@@ -3,7 +3,7 @@ import { useEffect } from "react"
 import { subscribeOrderDraftSnapshot, getOrderDraftSnapshot, setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { ApiError } from "@/services/api/client"
-import { getLatestOrderDraft, getOrderDraft } from "@/services/api/order-drafts"
+import { getOrderDraft } from "@/services/api/order-drafts"
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
 import type { UseOrderDraftResult } from "@/hooks/order-draft/use-order-draft.types"
 
@@ -24,10 +24,13 @@ export function useOrderDraft(draftId: number | null): UseOrderDraftResult {
     const { data: orderDraft, error, loading, reload, setData } = useAsyncData<OrderDraftRead | null>({
         deps: [draftId],
         fetcher: async () => {
+            if (draftId === null) {
+                setOrderDraftSnapshot(null)
+                return null
+            }
+
             try {
-                const nextOrderDraft = draftId === null
-                    ? await getLatestOrderDraft()
-                    : await getOrderDraft(draftId)
+                const nextOrderDraft = await getOrderDraft(draftId)
 
                 setOrderDraftSnapshot(nextOrderDraft)
                 return nextOrderDraft

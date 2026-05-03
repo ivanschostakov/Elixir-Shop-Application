@@ -17,6 +17,7 @@ class DeliveryRecipient(Base, IdPkMixin, TimestampMixin):
     email: Mapped[str] = mapped_column(String(length=EMAIL_MAX_LENGTH), nullable=False, default="", server_default=text("''"))
 
     user: Mapped["User"] = relationship(back_populates="delivery_recipients")
+    baskets: Mapped[list["Basket"]] = relationship(back_populates="recipient")
     drafts: Mapped[list["OrderDraft"]] = relationship(back_populates="recipient")
     orders: Mapped[list["Order"]] = relationship(back_populates="recipient", passive_deletes="all")
 

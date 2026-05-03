@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
 
-from src.database.crud import create_delivery_address, create_delivery_recipient, create_order_draft, delete_order_draft, get_delivery_address_by_fields, get_delivery_address_by_id, get_delivery_addresses, get_delivery_recipient_by_fields, get_delivery_recipient_by_id, get_delivery_recipients, get_latest_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
+from src.database.crud import create_delivery_address, create_delivery_recipient, create_order_draft, delete_order_draft, get_delivery_address_by_fields, get_delivery_address_by_id, get_delivery_addresses, get_delivery_recipient_by_fields, get_delivery_recipient_by_id, get_delivery_recipients, get_latest_named_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
 from src.database.limits import ORDER_DRAFT_COMMENT_MAX_LENGTH, ORDER_DRAFT_NAME_MAX_LENGTH
 from src.database.models import BasketItem, OrderDraft, OrderDraftItem, User, Variant
 from src.database.schemas import DeliveryAddressCreate, DeliveryAddressRead, DeliveryRecipientCreate, DeliveryRecipientRead, OrderDraftCheckoutOptionsRead, OrderDraftCreate, OrderDraftUpdate
@@ -201,11 +201,11 @@ async def get_order_draft_for_user(session: AsyncSession, *, user_id: int, draft
 
 
 async def get_latest_order_draft_for_checkout(session: AsyncSession, *, user_id: int) -> OrderDraft | None:
-    return await get_latest_order_draft_for_user(session, user_id)
+    return await get_latest_named_order_draft_for_user(session, user_id)
 
 
 async def get_recent_order_drafts_for_user(session: AsyncSession, *, user_id: int, limit: int = 10, offset: int = 0, created_from: datetime | None = None, created_to: datetime | None = None) -> list[OrderDraft]:
-    return await get_order_drafts_for_user(session, user_id, limit=limit, offset=offset, created_from=created_from, created_to=created_to)
+    return await get_order_drafts_for_user(session, user_id, limit=limit, offset=offset, created_from=created_from, created_to=created_to, named_only=True)
 
 
 async def delete_order_draft_for_user(session: AsyncSession, *, user_id: int, draft_id: int) -> bool:

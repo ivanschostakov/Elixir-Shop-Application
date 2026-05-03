@@ -20,11 +20,14 @@ import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
+import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
+import { useBasket } from "@/hooks/basket/use-basket"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useOrderDraft } from "@/hooks/order-draft/use-order-draft"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import {
+    buildCheckoutDraftFromBasket,
     formatMoney,
     formatRecipientName,
     getDraftRecipient,
@@ -111,7 +114,15 @@ export default function PaymentScreen() {
     const draftId = parseDraftId(params.draftId)
     const routePaymentMethod = parsePaymentMethod(params.paymentMethod)
     const routeOrderId = parsePositiveRouteId(params.orderId)
-    const { orderDraft, error, loading } = useOrderDraft(draftId)
+    const isBasketCheckout = draftId === null
+    const { basket, loading: basketLoading } = useBasket()
+    const { orderDraft: savedOrderDraft, error: savedDraftError, loading: savedDraftLoading } = useOrderDraft(draftId)
+    const orderDraft = useMemo(
+        () => (isBasketCheckout && basket ? buildCheckoutDraftFromBasket(basket) : savedOrderDraft),
+        [basket, isBasketCheckout, savedOrderDraft],
+    )
+    const error = isBasketCheckout ? null : savedDraftError
+    const loading = isBasketCheckout ? basketLoading : savedDraftLoading
     const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(routePaymentMethod ?? "sbp")
     const [order, setOrder] = useState<OrderRead | null>(null)
     const [payment, setPayment] = useState<PaymentStatusRead | null>(null)
@@ -140,8 +151,12 @@ export default function PaymentScreen() {
     }, [])
 
     const openCheckout = useCallback(() => {
-        if (draftId && !order) {
-            router.replace({ pathname: ROUTES.checkout, params: { draftId: String(draftId) } })
+        if (!order) {
+            router.replace(
+                draftId
+                    ? { pathname: ROUTES.checkout, params: { draftId: String(draftId) } }
+                    : ROUTES.checkout,
+            )
             return
         }
 
@@ -350,9 +365,19 @@ export default function PaymentScreen() {
                 }
 
                 nextOrder = await createOrder({
-                    draft_id: orderDraft.id,
+                    ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
                     payment_method: effectiveMethod,
                 })
+                if (isBasketCheckout) {
+                    clearBasketSnapshot()
+                    router.replace({
+                        pathname: ROUTES.payment,
+                        params: {
+                            orderId: String(nextOrder.id),
+                            paymentMethod: effectiveMethod,
+                        },
+                    })
+                }
                 setOrder(nextOrder)
             }
 
@@ -385,7 +410,7 @@ export default function PaymentScreen() {
         } finally {
             setSubmitting(false)
         }
-    }, [order, orderDraft, selectedMethod, t])
+    }, [isBasketCheckout, order, orderDraft, selectedMethod, t])
 
     const footerCtaState = useMemo(() => {
         if (loading || loadingOrder) {

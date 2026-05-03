@@ -180,6 +180,47 @@ export function basketMatchesDraft(basket: BasketRead | null | undefined, orderD
     return orderDraft.items.every((item) => basketItemQuantities.get(item.variant_id) === item.quantity)
 }
 
+export function buildCheckoutDraftFromBasket(basket: BasketRead): OrderDraftRead {
+    return {
+        id: -basket.id,
+        user_id: basket.user_id,
+        delivery_address_id: basket.delivery_address_id,
+        recipient_id: basket.recipient_id,
+        status: "basket",
+        items_count: basket.items_count,
+        total_quantity: basket.total_quantity,
+        basket_subtotal: basket.total_amount,
+        delivery_total: basket.delivery_total,
+        grand_total: basket.grand_total,
+        currency: basket.currency,
+        delivery_period_min: basket.delivery_period_min,
+        delivery_period_max: basket.delivery_period_max,
+        draft_name: null,
+        comment: null,
+        delivery_address: basket.delivery_address,
+        recipient: basket.recipient,
+        items: basket.items.map((item) => ({
+            id: item.id,
+            user_id: basket.user_id,
+            draft_id: -basket.id,
+            product_id: item.product.id,
+            variant_id: item.variant_id,
+            product_name: item.product.name,
+            product_sku: item.product.sku,
+            variant_name: item.variant.name,
+            variant_sku: item.variant.sku,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            line_total: item.line_total,
+            image_url: item.variant.image_url || item.product.image_url,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+        })),
+        created_at: basket.created_at,
+        updated_at: basket.updated_at,
+    }
+}
+
 export function buildDraftPayloadFromOrderDraft(orderDraft: OrderDraftRead): CreateOrderDraftPayload {
     if (!orderDraft.delivery_address) {
         return {}

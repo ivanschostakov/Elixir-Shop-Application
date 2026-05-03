@@ -1,15 +1,44 @@
 from decimal import Decimal
+from types import SimpleNamespace
 from fastapi import HTTPException, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.services.recommendations import record_cart_add
-from src.database.crud import create_basket_item, get_basket_by_id, get_basket_by_user_id, get_order_draft_by_id
+from src.database.crud import (
+    create_basket_item,
+    create_delivery_address,
+    create_delivery_recipient,
+    get_basket_by_id,
+    get_basket_by_user_id,
+    get_delivery_address_by_fields,
+    get_delivery_address_by_id,
+    get_delivery_addresses,
+    get_delivery_recipient_by_fields,
+    get_delivery_recipient_by_id,
+    get_delivery_recipients,
+    get_order_draft_by_id,
+    update_basket,
+)
 from src.database.crud.basket.basket_item import get_basket_item_by_basket_and_variant
-from src.database.models import Basket, BasketItem, Variant
-from src.database.schemas import BasketCreate, BasketItemRead, BasketProductSummaryRead, BasketRead, BasketVariantSummaryRead
+from src.database.models import Basket, BasketItem, User, Variant
+from src.database.schemas import (
+    BasketCreate,
+    BasketItemRead,
+    BasketProductSummaryRead,
+    BasketRead,
+    BasketUpdate,
+    BasketVariantSummaryRead,
+    DeliveryAddressCreate,
+    DeliveryAddressRead,
+    DeliveryRecipientCreate,
+    DeliveryRecipientRead,
+    OrderDraftCheckoutOptionsRead,
+)
 from src.product_media import build_products_media_url
+
+from .orders.draft_normalization import _build_new_delivery_address_data, _build_new_recipient_data
 
 
 def _product_image_url(request: Request, product) -> str: return build_products_media_url(str(request.base_url), product.image_path)
@@ -66,9 +95,18 @@ def serialize_basket(request: Request, basket: Basket) -> BasketRead:
         id=basket.id,
         user_id=basket.user_id,
         items=items,
+        delivery_address_id=basket.delivery_address_id,
+        recipient_id=basket.recipient_id,
+        delivery_address=DeliveryAddressRead.model_validate(basket.delivery_address) if basket.delivery_address is not None else None,
+        recipient=DeliveryRecipientRead.model_validate(basket.recipient) if basket.recipient is not None else None,
         items_count=len(items),
         total_quantity=total_quantity,
         total_amount=total_amount,
+        delivery_total=basket.delivery_total,
+        grand_total=total_amount + basket.delivery_total,
+        currency=basket.currency,
+        delivery_period_min=basket.delivery_period_min,
+        delivery_period_max=basket.delivery_period_max,
         has_unavailable_items=has_unavailable_items,
         created_at=basket.created_at,
         updated_at=basket.updated_at,
@@ -95,6 +133,93 @@ async def _get_variant_for_update(db: AsyncSession, variant_id: int) -> Variant 
 async def _get_serialized_basket(request: Request, db: AsyncSession, user_id: int) -> BasketRead:
     basket = await _ensure_basket(db, user_id)
     return serialize_basket(request, basket)
+
+
+async def get_basket_checkout_options_for_user(db: AsyncSession, *, user: User, limit: int = 20) -> OrderDraftCheckoutOptionsRead:
+    basket = await _ensure_basket(db, user.id)
+    addresses = await get_delivery_addresses(db, user_id=user.id, limit=limit)
+    recipients = await get_delivery_recipients(db, user.id, limit=limit)
+
+    if basket.delivery_address is not None and not any(address.id == basket.delivery_address.id for address in addresses):
+        addresses.insert(0, basket.delivery_address)
+    if basket.recipient is not None and not any(recipient.id == basket.recipient.id for recipient in recipients):
+        recipients.insert(0, basket.recipient)
+
+    return OrderDraftCheckoutOptionsRead(
+        addresses=[DeliveryAddressRead.model_validate(address) for address in addresses],
+        recipients=[DeliveryRecipientRead.model_validate(recipient) for recipient in recipients],
+    )
+
+
+async def _get_or_create_delivery_recipient(db: AsyncSession, *, data: DeliveryRecipientCreate):
+    recipient = await get_delivery_recipient_by_fields(db, user_id=data.user_id, name=data.name, surname=data.surname, phone=data.phone, email=data.email)
+    if recipient is not None: return recipient
+    return await create_delivery_recipient(db, data, commit=False)
+
+
+async def _get_or_create_delivery_address(db: AsyncSession, *, data: DeliveryAddressCreate):
+    address = await get_delivery_address_by_fields(
+        db,
+        user_id=data.user_id,
+        mode=data.mode,
+        provider=data.provider,
+        country_code=data.country_code,
+        full_address=data.full_address,
+        details=data.details,
+        city=data.city,
+        postal_code=data.postal_code,
+        provider_reference=data.provider_reference,
+    )
+    if address is not None: return address
+    return await create_delivery_address(db, data, commit=False)
+
+
+async def update_basket_checkout_for_user(request: Request, db: AsyncSession, *, user: User, payload) -> BasketRead:
+    basket = await _ensure_basket(db, user.id)
+
+    if "recipient_id" in payload.model_fields_set and payload.new_recipient is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing recipient or create a new one")
+    if payload.delivery_address_id is not None and payload.new_delivery_address is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing address or create a new one")
+
+    update_data: dict[str, Decimal | int | str | None] = {}
+
+    if "recipient_id" in payload.model_fields_set:
+        if payload.recipient_id is None:
+            update_data["recipient_id"] = None
+        else:
+            recipient = await get_delivery_recipient_by_id(db, payload.recipient_id, user_id=user.id)
+            if recipient is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery recipient not found")
+            update_data["recipient_id"] = recipient.id
+
+    if payload.new_recipient is not None:
+        recipient = await _get_or_create_delivery_recipient(db, data=_build_new_recipient_data(user.id, payload.new_recipient))
+        update_data["recipient_id"] = recipient.id
+
+    if payload.delivery_address_id is not None:
+        address = await get_delivery_address_by_id(db, payload.delivery_address_id)
+        if address is None or address.user_id != user.id: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery address not found")
+        update_data["delivery_address_id"] = address.id
+
+    if payload.new_delivery_address is not None:
+        address = await _get_or_create_delivery_address(
+            db,
+            data=_build_new_delivery_address_data(
+                SimpleNamespace(user_id=user.id, delivery_address=basket.delivery_address),
+                payload.new_delivery_address,
+            ),
+        )
+        update_data["delivery_address_id"] = address.id
+        if payload.new_delivery_address.delivery_calculation is not None:
+            update_data["delivery_total"] = payload.new_delivery_address.delivery_calculation.delivery_sum
+            update_data["currency"] = payload.new_delivery_address.delivery_calculation.currency
+            update_data["delivery_period_min"] = payload.new_delivery_address.delivery_calculation.period_min
+            update_data["delivery_period_max"] = payload.new_delivery_address.delivery_calculation.period_max
+
+    await update_basket(db, basket, BasketUpdate(**update_data))
+    updated_basket = await get_basket_by_id(db, basket.id)
+    if updated_basket is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load basket")
+    return serialize_basket(request, updated_basket)
 
 
 async def _get_or_create_locked_basket(db: AsyncSession, user_id: int) -> Basket:

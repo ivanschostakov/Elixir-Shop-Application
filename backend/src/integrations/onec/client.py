@@ -151,7 +151,6 @@ class OneCCatalogClient:
     def _include_product(cls, record: dict[str, Any]) -> bool:
         ref_key = lower_optional_str(record.get("Ref_Key"))
         if not ref_key: return False
-        if not optional_str(record.get("КатегорияНоменклатуры_Key")): return False
         if cls._is_truthy(record.get("Недействителен")) or cls._is_truthy(record.get("DeletionMark")): return False
         if optional_str(record.get("ТипНоменклатуры")) != "Запас": return False
         if ref_key not in cls.FORCE_INCLUDE_PRODUCT_IDS and lower_optional_str(record.get("Parent_Key")) != cls.PARENT_KEY: return False
@@ -374,7 +373,6 @@ async def sync_onec_product_catalog() -> OneCCatalogSyncStats:
             cache = get_cache_service()
             await cache.bump_namespace("catalog")
             await cache.bump_namespace("product")
-            await cache.bump_namespace("categories")
             logger.info("1C catalog sync committed stats=%s seconds=%.2f", stats.as_dict(), time.perf_counter() - started)
 
         except Exception:

@@ -1,5 +1,6 @@
 import { apiDelete, apiFetch, apiGet, apiPatch, apiPost } from "@/services/api/client"
 import { basketEndpoint, basketItemsEndpoint } from "@/services/api/basket.constants"
+import type { OrderDraftCheckoutOptionsRead, UpdateOrderDraftPayload } from "@/services/api/order-drafts.types"
 import type { BasketItemCreate, BasketItemUpdate, BasketRead } from "@/types/basket"
 
 export function getBasket(): Promise<BasketRead> {
@@ -20,6 +21,14 @@ export function removeBasketItem(itemId: number): Promise<BasketRead> {
 
 export function clearBasket(): Promise<BasketRead> {
     return apiDelete<BasketRead>(basketItemsEndpoint)
+}
+
+export function getBasketCheckoutOptions(): Promise<OrderDraftCheckoutOptionsRead> {
+    return apiGet<OrderDraftCheckoutOptionsRead>(`${basketEndpoint}/checkout/options`)
+}
+
+export function updateBasketCheckout(payload: UpdateOrderDraftPayload): Promise<BasketRead> {
+    return apiPatch<BasketRead, UpdateOrderDraftPayload>(`${basketEndpoint}/checkout`, payload)
 }
 
 export function restoreDraftToBasket(draftId: number): Promise<BasketRead> {

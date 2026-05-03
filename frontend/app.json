@@ -33,6 +33,7 @@
     },
     "android": {
       "icon": "./assets/images/adaptive-icon-preview.png",
+      "minSdkVersion": 26,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/adaptive-icon-foreground.png",

@@ -7,6 +7,7 @@ from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.users.me.schemas import CreateOrderPayload
 from src.app.services.app_integrity import require_app_integrity
 from src.app.services.orders import (
+    create_order_from_basket_for_user,
     create_order_from_draft_for_user,
     get_order_for_user,
     get_orders_history_for_user,
@@ -31,7 +32,11 @@ async def create_my_order(
     current_user: User = Depends(get_current_user),
     _app_integrity: None = Depends(require_app_integrity("orders:create")),
 ) -> OrderRead:
-    order = await create_order_from_draft_for_user(db, request=request, user=current_user, draft_id=payload.draft_id, payment_method=payload.payment_method)
+    order = (
+        await create_order_from_draft_for_user(db, request=request, user=current_user, draft_id=payload.draft_id, payment_method=payload.payment_method)
+        if payload.draft_id is not None
+        else await create_order_from_basket_for_user(db, request=request, user=current_user, payment_method=payload.payment_method)
+    )
     return await serialize_order(request, db, order)
 
 

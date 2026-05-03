@@ -21,7 +21,7 @@ import { contentStyles } from "@/components/content/content.styles"
 import {
     setSelectedDeliveryAddress,
 } from "@/hooks/delivery/delivery-address-selection-store"
-import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
+import { clearBasketSnapshot, setBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { setBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
@@ -53,6 +53,7 @@ import {
     buildAvailableAddresses,
     calculateDeliveryForSavedAddress,
     buildAvailableRecipients,
+    buildCheckoutDraftFromBasket,
     buildDraftPayloadFromOrderDraft,
     createEmptyRecipientForm,
     formatMoney,
@@ -69,7 +70,7 @@ import {
     normalizeTextInputValue,
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
-import { restoreDraftToBasket, updateBasketItem } from "@/services/api/basket"
+import { getBasketCheckoutOptions, restoreDraftToBasket, updateBasketCheckout, updateBasketItem } from "@/services/api/basket"
 import { createOrderDraft, getOrderDraftOptions, updateOrderDraft } from "@/services/api/order-drafts"
 import type {
     DeliveryRecipientRead,
@@ -84,9 +85,14 @@ export default function CheckoutScreen() {
     const { t } = useLanguage()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const draftId = parseDraftId(params.draftId)
-    const { basket } = useBasket()
+    const { basket, loading: basketLoading, reload: reloadBasket } = useBasket()
     const { error: basketError, restoreDraft, updating: isRestoringDraft } = useBasketMutations()
-    const { orderDraft, error, loading, reload } = useOrderDraft(draftId)
+    const isBasketCheckout = draftId === null
+    const { orderDraft: savedOrderDraft, error, loading, reload } = useOrderDraft(draftId)
+    const orderDraft = useMemo(
+        () => (isBasketCheckout && basket ? buildCheckoutDraftFromBasket(basket) : savedOrderDraft),
+        [basket, isBasketCheckout, savedOrderDraft],
+    )
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,
@@ -94,15 +100,19 @@ export default function CheckoutScreen() {
         products: recommendedProducts,
     } = useRecommendations({
         surface: "draft",
-        draftId: orderDraft?.id ?? null,
+        draftId: !isBasketCheckout ? orderDraft?.id ?? null : null,
         limit: 6,
-        enabled: Boolean(orderDraft?.id && orderDraft.items.length),
+        enabled: Boolean(!isBasketCheckout && orderDraft?.id && orderDraft.items.length),
         deps: [orderDraft?.updated_at ?? null, orderDraft?.items.length ?? 0],
     })
     const { data: checkoutOptions, loading: optionsLoading, reload: reloadCheckoutOptions } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
-        deps: [orderDraft?.id ?? null],
+        deps: [isBasketCheckout, orderDraft?.id ?? null],
         enabled: Boolean(orderDraft?.id),
         fetcher: async () => {
+            if (isBasketCheckout) {
+                return getBasketCheckoutOptions()
+            }
+
             if (!orderDraft?.id) {
                 return null
             }
@@ -175,11 +185,11 @@ export default function CheckoutScreen() {
         router.push({
             pathname: ROUTES.payment,
             params: {
-                draftId: String(orderDraft.id),
                 paymentMethod,
+                ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
             },
         })
-    }, [orderDraft])
+    }, [isBasketCheckout, orderDraft])
 
     const handlePressPay = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
@@ -189,7 +199,6 @@ export default function CheckoutScreen() {
             },
             {
                 text: t("payment.methodLaterTitle"),
-                style: "destructive",
                 onPress: () => {
                     openPaymentFlow("later")
                 },
@@ -349,7 +358,10 @@ export default function CheckoutScreen() {
         </View>
     )
 
-    if (loading && !orderDraft) {
+    const checkoutLoading = isBasketCheckout ? basketLoading : loading
+    const checkoutError = isBasketCheckout ? null : error
+
+    if (checkoutLoading && !orderDraft) {
         return renderStateScreen(
             <View style={checkoutScreenStyles.stateLoadingRow}>
                 <ActivityIndicator />
@@ -358,7 +370,7 @@ export default function CheckoutScreen() {
         )
     }
 
-    if (error && !orderDraft) {
+    if (checkoutError && !orderDraft) {
         return renderStateScreen(
             <>
                 <Text style={checkoutScreenStyles.sectionTitle}>{t("checkout.loadFailedTitle")}</Text>
@@ -457,7 +469,28 @@ export default function CheckoutScreen() {
         await reloadCheckoutOptions({ showLoading: false })
     }
 
+    const applyUpdatedBasket = async (nextBasket: NonNullable<typeof basket>) => {
+        setBasketSnapshot(nextBasket)
+        await reloadCheckoutOptions({ showLoading: false })
+    }
+
+    const updateCheckoutMeta = async (payload: Parameters<typeof updateOrderDraft>[1]) => {
+        if (isBasketCheckout) {
+            const nextBasket = await updateBasketCheckout(payload)
+            await applyUpdatedBasket(nextBasket)
+            return
+        }
+
+        const updatedDraft = await updateOrderDraft(orderDraft.id, payload)
+        await applyUpdatedDraft(updatedDraft)
+    }
+
     const syncDraftItemsFromBasket = async () => {
+        if (isBasketCheckout) {
+            await reloadBasket({ showLoading: false })
+            return
+        }
+
         const updatedDraft = await updateOrderDraft(orderDraft.id, {
             sync_basket_items: true,
         })
@@ -467,6 +500,14 @@ export default function CheckoutScreen() {
     }
 
     const openDraftDiscoverForEditing = () => {
+        if (isBasketCheckout) {
+            setSelectedDeliveryCountry(orderDraft.delivery_address?.country_code ?? null)
+            setSelectedDeliveryAddress(null)
+            setSelectedDeliveryPoint(null)
+            router.push(ROUTES.discover)
+            return
+        }
+
         setBasketDraftEditingId(orderDraft.id)
         setOrderDraftSnapshot(orderDraft)
         setSelectedDeliveryCountry(orderDraft.delivery_address?.country_code ?? null)
@@ -477,7 +518,7 @@ export default function CheckoutScreen() {
 
     const openDeliveryFromCheckout = () => {
         router.push({
-            params: { draftId: String(orderDraft.id) },
+            params: isBasketCheckout ? {} : { draftId: String(orderDraft.id) },
             pathname: ROUTES.delivery,
         })
     }
@@ -517,6 +558,11 @@ export default function CheckoutScreen() {
     }
 
     const handleAddProductsPress = () => {
+        if (isBasketCheckout) {
+            openDraftDiscoverForEditing()
+            return
+        }
+
         if (basketMatchesDraft(basket, orderDraft)) {
             openDraftDiscoverForEditing()
             return
@@ -564,6 +610,12 @@ export default function CheckoutScreen() {
         setIsUpdatingPositions(true)
 
         try {
+            if (isBasketCheckout) {
+                const nextBasket = await updateBasketItem(item.id, { quantity: nextQuantity })
+                setBasketSnapshot(nextBasket)
+                return
+            }
+
             if (options?.saveCurrentCart) {
                 await createOrderDraft({
                     ...buildDraftPayloadFromOrderDraft(orderDraft),
@@ -596,6 +648,11 @@ export default function CheckoutScreen() {
 
         const nextQuantity = item.quantity + delta
         if (nextQuantity < 1) {
+            return
+        }
+
+        if (isBasketCheckout) {
+            void handleDraftItemQuantityCommit(item, nextQuantity)
             return
         }
 
@@ -642,10 +699,9 @@ export default function CheckoutScreen() {
             setIsSavingRecipient(true)
 
             try {
-                const updatedDraft = await updateOrderDraft(orderDraft.id, {
+                await updateCheckoutMeta({
                     recipient_id: null,
                 })
-                await applyUpdatedDraft(updatedDraft)
             } catch (saveError) {
                 Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
             } finally {
@@ -661,10 +717,9 @@ export default function CheckoutScreen() {
         setIsSavingRecipient(true)
 
         try {
-            const updatedDraft = await updateOrderDraft(orderDraft.id, {
+            await updateCheckoutMeta({
                 recipient_id: option.id,
             })
-            await applyUpdatedDraft(updatedDraft)
         } catch (saveError) {
             Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
         } finally {
@@ -686,7 +741,7 @@ export default function CheckoutScreen() {
         setIsSavingRecipient(true)
 
         try {
-            const updatedDraft = await updateOrderDraft(orderDraft.id, {
+            await updateCheckoutMeta({
                 new_recipient: {
                     name: firstName,
                     surname: lastName,
@@ -694,7 +749,6 @@ export default function CheckoutScreen() {
                     email,
                 },
             })
-            await applyUpdatedDraft(updatedDraft)
             setIsRecipientEditorOpen(false)
         } catch (saveError) {
             Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
@@ -718,13 +772,12 @@ export default function CheckoutScreen() {
             }
 
             const deliveryCalculation = await calculateDeliveryForSavedAddress(selectedAddress)
-            const updatedDraft = await updateOrderDraft(orderDraft.id, {
+            await updateCheckoutMeta({
                 new_delivery_address: buildAddressUpdatePayloadWithCalculation(
                     selectedAddress,
                     deliveryCalculation,
                 ),
             })
-            await applyUpdatedDraft(updatedDraft)
         } catch (saveError) {
             Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
         } finally {

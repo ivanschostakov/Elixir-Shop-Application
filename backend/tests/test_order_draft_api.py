@@ -377,7 +377,7 @@ def test_create_order_draft_rejects_duplicate_products_without_clearing_basket(c
     first_create_response = client.post(
         "/api/v1/users/me/order-drafts",
         headers=registered_user["headers"],
-        json=_build_pickup_payload(),
+        json={**_build_pickup_payload(), "draft_name": "Первый черновик"},
     )
     assert first_create_response.status_code == 201, first_create_response.text
     first_draft_id = first_create_response.json()["id"]
@@ -392,7 +392,7 @@ def test_create_order_draft_rejects_duplicate_products_without_clearing_basket(c
     duplicate_create_response = client.post(
         "/api/v1/users/me/order-drafts",
         headers=registered_user["headers"],
-        json=_build_pickup_payload(),
+        json={**_build_pickup_payload(), "draft_name": "Повторный черновик"},
     )
 
     assert duplicate_create_response.status_code == 409, duplicate_create_response.text
@@ -463,7 +463,7 @@ def test_get_latest_order_draft_returns_newest_for_user(client: TestClient, regi
     first_draft_response = client.post(
         "/api/v1/users/me/order-drafts",
         headers=registered_user["headers"],
-        json=_build_pickup_payload(),
+        json={**_build_pickup_payload(), "draft_name": "Первый черновик"},
     )
     assert first_draft_response.status_code == 201, first_draft_response.text
     first_draft_id = first_draft_response.json()["id"]
@@ -478,7 +478,7 @@ def test_get_latest_order_draft_returns_newest_for_user(client: TestClient, regi
     second_draft_response = client.post(
         "/api/v1/users/me/order-drafts",
         headers=registered_user["headers"],
-        json=_build_door_payload(),
+        json={**_build_door_payload(), "draft_name": "Второй черновик"},
     )
     assert second_draft_response.status_code == 201, second_draft_response.text
     second_draft_id = second_draft_response.json()["id"]
@@ -504,7 +504,7 @@ def test_get_order_drafts_returns_recent_drafts_for_user(client: TestClient, reg
     first_draft_response = client.post(
         "/api/v1/users/me/order-drafts",
         headers=registered_user["headers"],
-        json=_build_pickup_payload(),
+        json={**_build_pickup_payload(), "draft_name": "Первый черновик"},
     )
     assert first_draft_response.status_code == 201, first_draft_response.text
     first_draft_id = first_draft_response.json()["id"]
@@ -519,7 +519,7 @@ def test_get_order_drafts_returns_recent_drafts_for_user(client: TestClient, reg
     second_draft_response = client.post(
         "/api/v1/users/me/order-drafts",
         headers=registered_user["headers"],
-        json=_build_door_payload(),
+        json={**_build_door_payload(), "draft_name": "Второй черновик"},
     )
     assert second_draft_response.status_code == 201, second_draft_response.text
     second_draft_id = second_draft_response.json()["id"]
@@ -1061,7 +1061,7 @@ def test_list_order_drafts_supports_offset_and_created_filters(
     second_registered_user,
     variant_factory,
 ):
-    def create_draft(headers: dict[str, str], variant_id: int, quantity: int) -> dict:
+    def create_draft(headers: dict[str, str], variant_id: int, quantity: int, draft_name: str) -> dict:
         add_item_response = client.post(
             "/api/v1/users/me/basket/items",
             headers=headers,
@@ -1072,15 +1072,15 @@ def test_list_order_drafts_supports_offset_and_created_filters(
         create_response = client.post(
             "/api/v1/users/me/order-drafts",
             headers=headers,
-            json=_build_pickup_payload(),
+            json={**_build_pickup_payload(), "draft_name": draft_name},
         )
         assert create_response.status_code == 201, create_response.text
         return create_response.json()
 
-    first_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("12.00"))["variant_id"], 1)
-    second_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("14.00"))["variant_id"], 1)
-    third_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("16.00"))["variant_id"], 1)
-    other_user_draft = create_draft(second_registered_user["headers"], variant_factory(stock=5, price=Decimal("18.00"))["variant_id"], 1)
+    first_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("12.00"))["variant_id"], 1, "Первый черновик")
+    second_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("14.00"))["variant_id"], 1, "Второй черновик")
+    third_draft = create_draft(registered_user["headers"], variant_factory(stock=5, price=Decimal("16.00"))["variant_id"], 1, "Третий черновик")
+    other_user_draft = create_draft(second_registered_user["headers"], variant_factory(stock=5, price=Decimal("18.00"))["variant_id"], 1, "Чужой черновик")
 
     _update_order_draft(first_draft["id"], created_at=datetime(2026, 4, 10, 9, 0, tzinfo=timezone.utc))
     _update_order_draft(second_draft["id"], created_at=datetime(2026, 4, 11, 9, 0, tzinfo=timezone.utc))

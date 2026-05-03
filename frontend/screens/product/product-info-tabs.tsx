@@ -78,10 +78,6 @@ export function ProductInfoTabs({
     const [submitError, setSubmitError] = useState<string | null>(null)
     const infoTabs = [
         {
-            key: "reviews" as const,
-            label: `${t("product.tabReviews")} (${reviewCount})`,
-        },
-        {
             key: "overview" as const,
             label: t("product.tabOverview"),
         },
@@ -92,6 +88,10 @@ export function ProductInfoTabs({
         {
             key: "details" as const,
             label: t("product.tabDetails"),
+        },
+        {
+            key: "reviews" as const,
+            label: `${t("product.tabReviews")} (${reviewCount})`,
         },
     ]
 

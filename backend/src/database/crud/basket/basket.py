@@ -7,7 +7,12 @@ from src.database.schemas import BasketCreate, BasketUpdate
 
 
 def _basket_load_options():
-    return (selectinload(Basket.items).selectinload(BasketItem.product), selectinload(Basket.items).selectinload(BasketItem.variant))
+    return (
+        selectinload(Basket.delivery_address),
+        selectinload(Basket.recipient),
+        selectinload(Basket.items).selectinload(BasketItem.product),
+        selectinload(Basket.items).selectinload(BasketItem.variant),
+    )
 
 
 async def create_basket(session: AsyncSession, data: BasketCreate) -> Basket:

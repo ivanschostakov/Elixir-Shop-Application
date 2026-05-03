@@ -1,3 +1,5 @@
+import type { DeliveryAddressRead, DeliveryRecipientRead } from "@/services/api/order-drafts.types"
+
 export type BasketItemCreate = {
     variant_id: number
     quantity: number
@@ -42,9 +44,18 @@ export type BasketRead = {
     id: number
     user_id: number
     items: BasketItemRead[]
+    delivery_address_id: number | null
+    recipient_id: number | null
+    delivery_address: DeliveryAddressRead | null
+    recipient: DeliveryRecipientRead | null
     items_count: number
     total_quantity: number
     total_amount: string
+    delivery_total: string
+    grand_total: string
+    currency: string
+    delivery_period_min: number | null
+    delivery_period_max: number | null
     has_unavailable_items: boolean
     created_at: string
     updated_at: string

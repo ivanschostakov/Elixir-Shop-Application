@@ -22,7 +22,7 @@ def _build_items_signature(items: list[BasketItem] | list[OrderDraftItem]) -> tu
 async def _find_duplicate_order_draft(session: AsyncSession, *, user_id: int, basket_items: list[BasketItem]) -> OrderDraft | None:
     basket_signature = _build_items_signature(basket_items)
     if not basket_signature: return None
-    existing_drafts = await get_order_drafts_for_user(session, user_id, limit=None)
+    existing_drafts = await get_order_drafts_for_user(session, user_id, limit=None, named_only=True)
 
     for existing_draft in existing_drafts:
         if _build_items_signature(existing_draft.items) == basket_signature: return existing_draft

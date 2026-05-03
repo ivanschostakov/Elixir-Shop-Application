@@ -266,23 +266,27 @@ def variant_factory():
 def stub_amocrm(monkeypatch):
     calls = {"status_updates": []}
 
-    async def fake_find_lead_by_order_number(order_number):
-        return None
+    class StubAmoCrmClient:
+        STATUS_IDS = amocrm_client.STATUS_IDS
+        STATUS_WORDS = amocrm_client.STATUS_WORDS
 
-    async def fake_find_or_create_contact(**kwargs):
-        return {"id": 12345}
+        async def find_lead_by_order_number(self, order_number):
+            return None
 
-    async def fake_create_lead_with_contact_and_note(**kwargs):
-        return {"id": 67890}
+        async def find_or_create_contact(self, **kwargs):
+            return {"id": 12345}
 
-    async def fake_update_lead_status(lead_id, status_id):
-        calls["status_updates"].append({"lead_id": lead_id, "status_id": status_id})
-        return {"id": lead_id, "status_id": status_id}
+        async def create_lead_with_contact_and_note(self, **kwargs):
+            return {"id": 67890}
 
-    monkeypatch.setattr("src.app.services.orders.amocrm_client.find_lead_by_order_number", fake_find_lead_by_order_number)
-    monkeypatch.setattr("src.app.services.orders.amocrm_client.find_or_create_contact", fake_find_or_create_contact)
-    monkeypatch.setattr("src.app.services.orders.amocrm_client.create_lead_with_contact_and_note", fake_create_lead_with_contact_and_note)
-    monkeypatch.setattr("src.app.services.orders.amocrm_client.update_lead_status", fake_update_lead_status)
+        async def update_lead_status(self, lead_id, status_id):
+            calls["status_updates"].append({"lead_id": lead_id, "status_id": status_id})
+            return {"id": lead_id, "status_id": status_id}
+
+    stub_client = StubAmoCrmClient()
+    monkeypatch.setattr("src.app.services.orders.get_amocrm_client", lambda: stub_client)
+    monkeypatch.setattr("src.app.services.orders.creation.amocrm_client", stub_client)
+    monkeypatch.setattr("src.app.services.orders.crm.amocrm_client", stub_client)
     yield calls
 
 
@@ -343,6 +347,62 @@ def test_create_final_order_persists_snapshot_and_amocrm_link(client: TestClient
     assert stored_order.amocrm_lead_id == 67890
     assert stored_order.selected_delivery_service == "CDEK"
     assert stored_order.draft_id is None
+
+
+def test_create_final_order_from_basket_checkout_without_draft(client: TestClient, registered_user, variant_factory, stub_amocrm):
+    catalog = variant_factory(stock=5, price=Decimal("19.00"))
+
+    basket_response = client.post(
+        "/api/v1/users/me/basket/items",
+        headers=registered_user["headers"],
+        json={"variant_id": catalog["variant_id"], "quantity": 2},
+    )
+    assert basket_response.status_code == 200, basket_response.text
+
+    checkout_response = client.patch(
+        "/api/v1/users/me/basket/checkout",
+        headers=registered_user["headers"],
+        json={
+            "new_delivery_address": _build_pickup_payload(),
+            "new_recipient": {
+                "name": "Иван",
+                "surname": "Петров",
+                "phone": "+79991234567",
+                "email": "ivan.petrov@example.com",
+            },
+        },
+    )
+    assert checkout_response.status_code == 200, checkout_response.text
+    checkout_payload = checkout_response.json()
+    assert checkout_payload["delivery_address"]["full_address"] == "Россия, Москва, ул. Пушкина, 10"
+    assert checkout_payload["recipient"]["email"] == "ivan.petrov@example.com"
+    assert _decimal(checkout_payload["total_amount"]) == Decimal("38.00")
+    assert _decimal(checkout_payload["delivery_total"]) == Decimal("199.00")
+    assert _decimal(checkout_payload["grand_total"]) == Decimal("237.00")
+    assert _get_order_draft_count(registered_user["user_id"]) == 0
+
+    order_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=registered_user["headers"],
+        json={"payment_method": "later"},
+    )
+
+    assert order_response.status_code == 200, order_response.text
+    payload = order_response.json()
+    assert payload["draft_id"] is None
+    assert payload["recipient"]["email"] == "ivan.petrov@example.com"
+    assert _decimal(payload["basket_subtotal"]) == Decimal("38.00")
+    assert _decimal(payload["delivery_total"]) == Decimal("199.00")
+    assert _decimal(payload["grand_total"]) == Decimal("237.00")
+    assert payload["checkout_snapshot"]["checkout_data"]["items"][0]["featureId"] == catalog["variant_id"]
+    assert _get_order_draft_count(registered_user["user_id"]) == 0
+
+    basket_after_order_response = client.get("/api/v1/users/me/basket", headers=registered_user["headers"])
+    assert basket_after_order_response.status_code == 200, basket_after_order_response.text
+    basket_after_order = basket_after_order_response.json()
+    assert basket_after_order["items"] == []
+    assert basket_after_order["delivery_address"] is None
+    assert basket_after_order["recipient"] is None
 
 
 def test_create_final_order_removes_source_draft(client: TestClient, registered_user, variant_factory, stub_amocrm):

@@ -4,12 +4,20 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.recommendations import record_cart_add
-from src.app.services.basket import _ensure_basket, _get_serialized_basket, _get_variant_for_update, restore_order_draft_to_basket
+from src.app.modules.users.me.schemas import UpdateOrderDraftPayload
+from src.app.services.basket import (
+    _ensure_basket,
+    _get_serialized_basket,
+    _get_variant_for_update,
+    get_basket_checkout_options_for_user,
+    restore_order_draft_to_basket,
+    update_basket_checkout_for_user,
+)
 from src.database import get_db
 from src.database.crud import clear_basket, create_basket_item, delete_basket_item, get_basket_item_by_id, update_basket_item
 from src.database.crud.basket.basket_item import get_basket_item_by_basket_and_variant
 from src.database.models import User
-from src.database.schemas import BasketItemCreate, BasketItemUpdate, BasketRead
+from src.database.schemas import BasketItemCreate, BasketItemUpdate, BasketRead, OrderDraftCheckoutOptionsRead
 
 my_basket_router = APIRouter(prefix="/basket", tags=["my_basket"])
 
@@ -117,6 +125,24 @@ async def clear_my_basket(
     basket = await _ensure_basket(db, current_user.id)
     await clear_basket(db, basket.id)
     return await _get_serialized_basket(request, db, current_user.id)
+
+
+@my_basket_router.get("/checkout/options", response_model=OrderDraftCheckoutOptionsRead, status_code=status.HTTP_200_OK)
+async def get_my_basket_checkout_options(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> OrderDraftCheckoutOptionsRead:
+    return await get_basket_checkout_options_for_user(db, user=current_user)
+
+
+@my_basket_router.patch("/checkout", response_model=BasketRead, status_code=status.HTTP_200_OK)
+async def update_my_basket_checkout(
+    payload: UpdateOrderDraftPayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> BasketRead:
+    return await update_basket_checkout_for_user(request, db, user=current_user, payload=payload)
 
 
 @my_basket_router.post("/restore-draft/{draft_id}", response_model=BasketRead, status_code=status.HTTP_200_OK)

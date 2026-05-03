@@ -28,6 +28,7 @@ class DeliveryAddress(Base, IdPkMixin, TimestampMixin):
     provider_reference: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
 
     user: Mapped["User"] = relationship(back_populates="delivery_addresses")
+    baskets: Mapped[list["Basket"]] = relationship(back_populates="delivery_address")
     drafts: Mapped[list["OrderDraft"]] = relationship(back_populates="delivery_address")
     orders: Mapped[list["Order"]] = relationship(back_populates="delivery_address", passive_deletes="all")
 

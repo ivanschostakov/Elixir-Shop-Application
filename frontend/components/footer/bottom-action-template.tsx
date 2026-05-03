@@ -3,22 +3,16 @@ import { Alert, Pressable, Text, View } from "react-native"
 import { useLocalSearchParams, usePathname, useRouter } from "expo-router"
 
 import type { BottomActionTemplateProps } from "@/components/footer/bottom-action-template.types"
-import {
-    getExistingDraftIdFromError,
-    parseDraftId,
-} from "@/components/footer/bottom-action-template.utils"
+import { parseDraftId } from "@/components/footer/bottom-action-template.utils"
 import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { getAddToCartErrorMessage } from "@/components/footer/sticky-footer.utils"
 import { ROUTES, getProductIdFromRoute, isProductRoute } from "@/constants/routes"
-import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useRememberedProductVariantSelection } from "@/hooks/products/product-variant-selection-store"
 import { useLanguage } from "@/providers/language-provider"
-import { ApiError } from "@/services/api/client"
-import { createOrderDraft, getOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
-import type { OrderDraftRead } from "@/services/api/order-drafts.types"
+import { updateOrderDraft } from "@/services/api/order-drafts"
 
 export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     const pathname = usePathname()
@@ -110,12 +104,6 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
         }
     }
 
-    const handleOpenExistingDraftCheckout = async (draft: OrderDraftRead) => {
-        await clear()
-        setOrderDraftSnapshot(draft)
-        router.push(`${ROUTES.checkout}?draftId=${draft.id}`)
-    }
-
     const handleOpenCheckout = async () => {
         if (isOpeningCheckout) {
             return
@@ -126,73 +114,25 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
         try {
             const nextDraft = basketDraftId !== null
                 ? await updateOrderDraft(basketDraftId, { sync_basket_items: true })
-                : await createOrderDraft({})
+                : null
 
-            if (basketDraftId === null) {
-                clearBasketSnapshot()
-            } else {
+            if (basketDraftId !== null && nextDraft !== null) {
                 await clear()
+                setOrderDraftSnapshot(nextDraft)
+                router.push(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
+                return
             }
 
-            setOrderDraftSnapshot(nextDraft)
-            router.push(`${ROUTES.checkout}?draftId=${nextDraft.id}`)
+            setOrderDraftSnapshot(null)
+            router.push(ROUTES.checkout)
         } catch (error) {
-            if (basketDraftId === null && basket?.items.length && error instanceof ApiError && error.status === 409) {
-                const existingDraftId = getExistingDraftIdFromError(error)
-
-                if (existingDraftId !== null) {
-                    const matchingDraft = await getOrderDraft(existingDraftId)
-                    Alert.alert(
-                        t("cart.existingDraftTitle"),
-                        t("cart.existingDraftMessage"),
-                        [
-                            {
-                                text: t("common.cancel"),
-                                style: "cancel",
-                            },
-                            {
-                                text: t("cart.existingDraftAction"),
-                                onPress: () => {
-                                    void handleOpenExistingDraftCheckout(matchingDraft).catch((nextError) => {
-                                        const nextErrorMessage = nextError instanceof ApiError && nextError.message
-                                            ? nextError.message
-                                            : t("cart.checkoutFailed")
-                                        Alert.alert(nextErrorMessage)
-                                    })
-                                },
-                            },
-                        ],
-                    )
-                    return
-                }
-            }
-
-            const errorMessage = error instanceof ApiError && error.message
+            const errorMessage = error instanceof Error && error.message
                 ? error.message
                 : t("cart.checkoutFailed")
             Alert.alert(errorMessage)
         } finally {
             setIsOpeningCheckout(false)
         }
-    }
-
-    const handleConfirmOpenCheckout = () => {
-        Alert.alert(
-            t("cart.checkoutDraftNoticeTitle"),
-            t("cart.checkoutDraftNoticeMessage"),
-            [
-                {
-                    text: t("common.cancel"),
-                    style: "cancel",
-                },
-                {
-                    text: t("cart.checkoutDraftNoticeContinue"),
-                    onPress: () => {
-                        void handleOpenCheckout()
-                    },
-                },
-            ],
-        )
     }
 
     if (variant === "product") {
@@ -265,7 +205,7 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
             accessibilityRole="button"
             disabled={isOpeningCheckout}
             onPress={() => {
-                handleConfirmOpenCheckout()
+                void handleOpenCheckout()
             }}
             style={({ pressed }) => [
                 stickyFooterStyles.actionButton,

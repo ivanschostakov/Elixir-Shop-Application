@@ -9,7 +9,7 @@ PaymentMethod = Literal["later", "sbp"]
 
 
 class CreateOrderPayload(BaseModel):
-    draft_id: int = Field(ge=1)
+    draft_id: int | None = Field(default=None, ge=1)
     payment_method: PaymentMethod
 
 

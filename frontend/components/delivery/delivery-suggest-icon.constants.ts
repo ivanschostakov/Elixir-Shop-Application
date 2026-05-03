@@ -38,8 +38,8 @@ export type DeliverySuggestIconDefinition = {
 const PALETTE = {
     amber: "#F4C542",
     amberSoft: "#FEF3C7",
-    blue: "#2563EB",
-    blueSoft: "#DBEAFE",
+    blue: "#34639B",
+    blueSoft: "#E9F0F8",
     brown: "#8B5E3C",
     emerald: "#0F9F6E",
     emeraldSoft: "#DCFCE7",

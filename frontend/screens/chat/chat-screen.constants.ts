@@ -4,7 +4,7 @@ export const CHAT_BACKGROUND_DARK = require("../../assets/images/chat/chat-backg
 export const CHAT_BACKGROUND_LIGHT = require("../../assets/images/chat/chat-background-light.png")
 
 export const RECENT_PHOTO_LIMIT = 60
-export const ATTACHMENT_ICON_COLOR = "#1597DF"
+export const ATTACHMENT_ICON_COLOR = "#34639B"
 export const MESSAGE_IMAGE_MAX_WIDTH = 286
 export const MESSAGE_IMAGE_MIN_ASPECT_RATIO = 0.64
 export const MESSAGE_IMAGE_MAX_ASPECT_RATIO = 1.7
