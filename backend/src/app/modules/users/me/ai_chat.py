@@ -13,7 +13,7 @@ from src.app.modules.users.me.schemas import (
     AIChatTurnMetaRead,
 )
 from src.app.services.app_integrity import require_app_integrity
-from src.app.services.ai_chat import get_or_create_user_chat, perform_user_ai_chat_action, send_user_chat_message
+from src.app.services.ai.chat import get_or_create_user_chat, perform_user_ai_chat_action, send_user_chat_message
 from src.app.services.basket import _get_serialized_basket
 from src.app.services.upload_limits import read_upload_file_limited
 from src.database import get_db
