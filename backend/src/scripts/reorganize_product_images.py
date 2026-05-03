@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 import sys
 from pathlib import Path
 
@@ -26,23 +27,21 @@ async def reorganize_product_images() -> None:
         str(system_id): variant_image_path(product_id, system_id) for product_id, system_id in variants if system_id is not None
     }
 
-    moved_products = 0
-    moved_variants = 0
+    copied_products = 0
+    copied_variants = 0
     skipped_existing = 0
-    unmatched_files: list[str] = []
+    unmatched_system_ids: list[str] = []
 
-    for source_path in sorted(PRODUCTS_MEDIA_DIR.glob("*.png")):
+    source_paths_by_system_id: dict[str, Path] = {}
+    for source_path in sorted(PRODUCTS_MEDIA_DIR.rglob("*.png")):
         if source_path.name == "product.png":
             continue
+        source_paths_by_system_id.setdefault(source_path.stem, source_path)
 
-        target_path = product_targets.get(source_path.stem)
-        target_kind = "product"
-        if target_path is None:
-            target_path = variant_targets.get(source_path.stem)
-            target_kind = "variant"
-
-        if target_path is None:
-            unmatched_files.append(source_path.name)
+    for system_id_str, target_path in product_targets.items():
+        source_path = source_paths_by_system_id.get(system_id_str)
+        if source_path is None:
+            unmatched_system_ids.append(system_id_str)
             continue
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -50,18 +49,30 @@ async def reorganize_product_images() -> None:
             skipped_existing += 1
             continue
 
-        source_path.rename(target_path)
-        if target_kind == "product":
-            moved_products += 1
-        else:
-            moved_variants += 1
+        shutil.copy2(source_path, target_path)
+        copied_products += 1
 
-    print(f"moved_products={moved_products}")
-    print(f"moved_variants={moved_variants}")
+    for system_id_str, target_path in variant_targets.items():
+        source_path = source_paths_by_system_id.get(system_id_str)
+        if source_path is None:
+            unmatched_system_ids.append(system_id_str)
+            continue
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        if target_path.exists():
+            skipped_existing += 1
+            continue
+
+        shutil.copy2(source_path, target_path)
+        copied_variants += 1
+
+    print(f"copied_products={copied_products}")
+    print(f"copied_variants={copied_variants}")
     print(f"skipped_existing={skipped_existing}")
-    print(f"unmatched_files={len(unmatched_files)}")
-    for file_name in unmatched_files[:20]:
-        print(f"unmatched={file_name}")
+    unique_unmatched = sorted(set(unmatched_system_ids))
+    print(f"unmatched_system_ids={len(unique_unmatched)}")
+    for system_id_str in unique_unmatched[:20]:
+        print(f"unmatched={system_id_str}")
 
 
 if __name__ == "__main__":
