@@ -1,11 +1,11 @@
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.product_media import resolve_product_image_path
 from src.database.search import build_search_query_variants
 
-from src.database.models import Product, ProductByCategory, ProductCategory, Variant
+from src.database.models import Product, ProductByCategory, Variant
 from src.database.schemas import ProductCreate, ProductUpdate
 
 
@@ -56,21 +56,10 @@ async def get_products(session: AsyncSession, *, q: str | None = None, sku: str 
         predicates = []
         for variant in query_variants:
             pattern = f"%{variant}%"
-            category_match = exists(
-                select(ProductByCategory.id)
-                .join(ProductCategory, ProductCategory.id == ProductByCategory.category_id)
-                .where(
-                    ProductByCategory.product_id == Product.id,
-                    ProductCategory.name.ilike(pattern),
-                )
-            )
             predicates.extend(
                 [
                     Product.name.ilike(pattern),
-                    Product.description.ilike(pattern),
-                    Product.usage.ilike(pattern),
                     Product.sku.ilike(pattern),
-                    category_match,
                 ]
             )
         if predicates:
