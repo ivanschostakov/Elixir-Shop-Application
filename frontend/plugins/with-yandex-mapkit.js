@@ -1,11 +1,11 @@
 const fs = require("fs")
 const path = require("path")
-const { createRunOncePlugin, withAppDelegate } = require("expo/config-plugins")
+const { AndroidConfig, createRunOncePlugin, withAndroidManifest, withAppDelegate } = require("expo/config-plugins")
 
 const PLUGIN_NAME = "with-yandex-mapkit"
 
 function getMapKitApiKey() {
-    return process.env.EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY
+    return process.env.YANDEX_MAPKIT_API_KEY || process.env.EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY
 }
 
 function stripWrappingQuotes(value) {
@@ -78,11 +78,11 @@ function withYandexMapKit(config) {
 
     if (!apiKey) {
         throw new Error(
-            "Missing EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY for Yandex MapKit. Set it in your shell, local .env file, or EAS environment.",
+            "Missing YANDEX_MAPKIT_API_KEY (or EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY) for Yandex MapKit. Set it in your shell, local .env file, or EAS environment.",
         )
     }
 
-    return withAppDelegate(config, (config) => {
+    const withIos = withAppDelegate(config, (config) => {
         const appDelegate = config.modResults
 
         if (appDelegate.language !== "swift") {
@@ -147,6 +147,18 @@ function withYandexMapKit(config) {
             )
         }
 
+        return config
+    })
+
+    return withAndroidManifest(withIos, (config) => {
+        const androidManifest = config.modResults
+        const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(androidManifest)
+        AndroidConfig.Manifest.addMetaDataItemToMainApplication(
+            mainApplication,
+            "YANDEX_MAPKIT_API_KEY",
+            apiKey,
+        )
+        config.modResults = androidManifest
         return config
     })
 }

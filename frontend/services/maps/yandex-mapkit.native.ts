@@ -1,6 +1,6 @@
 import { Platform } from "react-native"
 
-const MAPKIT_API_KEY = process.env.EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY?.trim()
+const MAPKIT_API_KEY_FALLBACK = process.env.EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY?.trim() ?? ""
 
 let initializationPromise: Promise<void> | null = null
 
@@ -27,12 +27,9 @@ export function initializeYandexMapKit() {
             return
         }
 
-        if (!MAPKIT_API_KEY) {
-            throw new Error("Missing EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY.")
-        }
-
         const { YaMap } = await getYandexMapModule()
-        await YaMap.init(MAPKIT_API_KEY)
+        // Prefer native key injection (manifest), but keep public env fallback for compatibility.
+        await YaMap.init(MAPKIT_API_KEY_FALLBACK)
         await YaMap.resetLocale()
     })().catch((error) => {
         initializationPromise = null

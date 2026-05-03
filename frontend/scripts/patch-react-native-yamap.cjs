@@ -217,6 +217,7 @@ applyReplacements("ios/View/RNYMView.m", [
   "ios/View/RNCYMView.h",
   "ios/View/RNCYMView.m",
   "ios/ClusteredYamapView.m",
+  "android/src/main/java/ru/vvdev/yamap/RNYamapModule.kt",
   "android/src/main/java/ru/vvdev/yamap/view/ClusteredYamapView.kt",
   "android/src/main/java/ru/vvdev/yamap/ClusteredYamapViewManager.kt",
 ].forEach(copyPatchedFile);
