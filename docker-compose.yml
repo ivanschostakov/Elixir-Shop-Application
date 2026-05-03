@@ -1,3 +1,4 @@
+# Backend-only Linux deployment stack (frontend is intentionally excluded)
 services:
   redis:
     image: redis:7
@@ -23,8 +24,6 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
-      NOTIFICATIONS_ENABLED: "false"
-      ONEC_SYNC_ENABLED: "false"
     depends_on:
       redis:
         condition: service_healthy
@@ -45,9 +44,6 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
-      NOTIFICATIONS_ENABLED: "true"
-      NOTIFICATION_RESTOCK_ENABLED: "false"
-      ONEC_SYNC_ENABLED: "false"
     depends_on:
       redis:
         condition: service_healthy
@@ -66,8 +62,6 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
-      NOTIFICATIONS_ENABLED: "true"
-      ONEC_SYNC_ENABLED: "true"
     depends_on:
       redis:
         condition: service_healthy
@@ -91,8 +85,6 @@ services:
       WEBSITE_IDENTITY_SYNC_BATCH_SIZE: "50"
       WEBSITE_IDENTITY_SYNC_LIMIT: "0"
       WEBSITE_IDENTITY_SYNC_DRY_RUN: "false"
-      NOTIFICATIONS_ENABLED: "false"
-      ONEC_SYNC_ENABLED: "false"
     depends_on:
       redis:
         condition: service_healthy

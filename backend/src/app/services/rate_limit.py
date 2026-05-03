@@ -8,7 +8,6 @@ from threading import Lock
 from fastapi import HTTPException, Request
 from starlette import status
 
-from config import RATE_LIMIT_ENABLED
 from src.app.services.cache import get_cache_service
 
 log = logging.getLogger(__name__)
@@ -45,7 +44,6 @@ def _memory_allow(*, bucket_key: str, limit: int, window_seconds: int) -> bool:
 
 
 async def enforce_rate_limit(request: Request, *, scope: str, limit: int, window_seconds: int, key: str | None = None) -> None:
-    if not RATE_LIMIT_ENABLED: return
     if limit <= 0 or window_seconds <= 0: return
 
     requester_key = key or client_ip_from_request(request)

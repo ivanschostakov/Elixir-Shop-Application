@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import NOTIFICATION_ABANDONED_CART_AFTER_HOURS, NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS, NOTIFICATION_ABANDONED_CART_ENABLED, NOTIFICATION_AI_EXPERT_REPLY_ENABLED, NOTIFICATION_BATCH_SIZE, NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS, NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS, NOTIFICATION_INACTIVE_CUSTOMER_ENABLED, NOTIFICATION_RESTOCK_ENABLED, NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS, NOTIFICATION_REVIEW_REMINDER_ENABLED, NOTIFICATIONS_ENABLED, ufa_now
+from config import NOTIFICATION_ABANDONED_CART_AFTER_HOURS, NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS, NOTIFICATION_BATCH_SIZE, NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS, NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS, NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS, ufa_now
 from src.app.services.push_notifications import send_push_to_user
 from src.database.models import Basket, BasketItem, FavouredProduct, NotificationDispatch, Order, OrderItem, Review, StockNotificationSubscription, Variant
 
@@ -98,7 +98,6 @@ async def sync_favourite_stock_notification_subscriptions(session: AsyncSession)
 
 
 async def process_restock_notifications(session: AsyncSession, *, now: datetime | None = None) -> int:
-    if not NOTIFICATIONS_ENABLED or not NOTIFICATION_RESTOCK_ENABLED: return 0
     current_time = now or ufa_now()
     await sync_favourite_stock_notification_subscriptions(session)
 
@@ -121,7 +120,6 @@ async def process_restock_notifications(session: AsyncSession, *, now: datetime 
 
 
 async def process_inactive_customer_notifications(session: AsyncSession, *, now: datetime | None = None) -> int:
-    if not NOTIFICATIONS_ENABLED or not NOTIFICATION_INACTIVE_CUSTOMER_ENABLED: return 0
     current_time = now or ufa_now()
     inactive_cutoff = current_time - timedelta(days=NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS)
     cooldown_cutoff = current_time - timedelta(days=NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS)
@@ -142,8 +140,6 @@ async def process_inactive_customer_notifications(session: AsyncSession, *, now:
 
 
 async def process_abandoned_cart_notifications(session: AsyncSession, *, now: datetime | None = None) -> int:
-    if not NOTIFICATIONS_ENABLED or not NOTIFICATION_ABANDONED_CART_ENABLED: return 0
-
     current_time = now or ufa_now()
     abandoned_cutoff = current_time - timedelta(hours=NOTIFICATION_ABANDONED_CART_AFTER_HOURS)
     cooldown_cutoff = current_time - timedelta(hours=NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS)
@@ -164,8 +160,6 @@ async def process_abandoned_cart_notifications(session: AsyncSession, *, now: da
 
 
 async def process_review_reminders(session: AsyncSession, *, now: datetime | None = None) -> int:
-    if not NOTIFICATIONS_ENABLED or not NOTIFICATION_REVIEW_REMINDER_ENABLED: return 0
-
     current_time = now or ufa_now()
     review_cutoff = current_time - timedelta(days=NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS)
 
@@ -192,8 +186,6 @@ async def run_notification_processors_once(session: AsyncSession, *, now: dateti
 
 
 async def send_ai_reply_notification(session: AsyncSession, *, user_id: int, chat_id: int, message_id: int) -> None:
-    if not NOTIFICATIONS_ENABLED or not NOTIFICATION_AI_EXPERT_REPLY_ENABLED: return
-
     try:
         await _send_and_record(session, user_id=user_id, title="Новый ответ от AI-эксперта", body="Мы подготовили ответ в чате.", data={"type": "ai_reply", "chat_id": chat_id, "message_id": message_id, }, dispatch_type=DISPATCH_TYPE_AI_REPLY, dedupe_key=f"message:{message_id}", sent_at=ufa_now())
         await session.commit()

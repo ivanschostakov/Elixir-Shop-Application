@@ -1,0 +1,25 @@
+.git
+.gitignore
+.idea
+.DS_Store
+
+# Keep Linux deployment backend-only
+frontend
+
+# Local runtime data
+media
+logs
+tmp
+
+# Python
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.venv
+**/.pytest_cache
+
+# Env files
+.env
+.env.*
+!.env.example

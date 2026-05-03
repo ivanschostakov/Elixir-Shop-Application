@@ -20,8 +20,6 @@ if "PIL" not in sys.modules:
 
 from src.app import main as app_main
 
-app_main.NOTIFICATIONS_ENABLED = False
-app_main.ONEC_SYNC_ENABLED = False
 app = app_main.app
 
 TEST_EMAIL_VERIFICATION_CODE = "123456"
