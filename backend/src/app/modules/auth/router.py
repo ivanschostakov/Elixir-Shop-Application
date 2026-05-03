@@ -196,8 +196,26 @@ async def resend_registration_verification_code(
 
 
 @auth_router.post("/login", response_model=AuthTokensWithUserResponse | AuthVerificationRequiredResponse, status_code=status.HTTP_200_OK, summary="Plain username or email login")
-async def login(request: Request, payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
+async def login(
+    request: Request,
+    payload: UserLoginPayload,
+    db: AsyncSession = Depends(get_db),
+    website_identity_client: WebsiteIdentityClient = Depends(get_website_identity_client),
+) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
     await _apply_auth_rate_limit(request, scope="auth:login", principal=payload.login)
+
+    try:
+        website_user, _ = await login_with_website_identity(
+            db,
+            login=payload.login,
+            password=payload.password,
+            website_identity_client=website_identity_client,
+        )
+        return await build_auth_tokens_response(website_user, db)
+    except HTTPException:
+        # Keep local login available even when website auth rejects credentials or is temporarily unavailable.
+        pass
+
     user = await get_plain_login_user(payload, db)
     try:
         await create_and_send_verification_code(user, db)
