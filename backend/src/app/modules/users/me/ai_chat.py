@@ -21,7 +21,7 @@ from src.database.models import User
 from src.integrations.ai import get_professor_client
 
 if TYPE_CHECKING:
-    from src.integrations.ai.client import ProfessorClient
+    from src.integrations.ai.client import ProfessorClient#
 
 ai_chat_router = APIRouter(prefix="/ai-chat", tags=["ai_chat"])
 
