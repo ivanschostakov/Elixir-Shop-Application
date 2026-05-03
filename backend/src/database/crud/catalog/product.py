@@ -1,4 +1,4 @@
-from sqlalchemy import func, or_, select
+from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 

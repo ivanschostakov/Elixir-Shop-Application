@@ -172,7 +172,7 @@ export function MessageMarkdown({
                 source={htmlSource}
                 tagsStyles={{
                     a: {
-                        color: "#0A84FF",
+                        color: colors.primary,
                         textDecorationLine: "underline",
                     },
                     blockquote: {
