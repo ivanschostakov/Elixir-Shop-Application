@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Order, User
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode
-from src.integrations.amocrm import amocrm_client
+from src.integrations.amocrm import get_amocrm_client
 from src.integrations.intellectmoney import get_intellectmoney_client
 
 from . import creation as _order_creation
@@ -21,6 +21,7 @@ _resolve_payment_qr_image = _order_payments._resolve_payment_qr_image
 
 
 def _sync_runtime_dependencies() -> None:
+    amocrm_client = get_amocrm_client()
     _order_crm.amocrm_client = amocrm_client
     _order_crm.create_delivery_for_order = create_delivery_for_order
     _order_creation.amocrm_client = amocrm_client
@@ -75,7 +76,6 @@ __all__ = [
     "FINAL_PAYMENT_STATUSES",
     "PAYMENT_STATUS_BY_CODE",
     "PENDING_PAYMENT_STEPS",
-    "amocrm_client",
     "apply_amocrm_status_update",
     "create_delivery_for_order",
     "create_order_from_draft_for_user",

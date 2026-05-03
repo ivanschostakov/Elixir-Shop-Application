@@ -15,9 +15,10 @@ from config import ufa_now
 from src.app.services.website_identities.sync import refresh_linked_website_identity
 from src.database import SessionLocal
 from src.database.models import WebsiteIdentity, WebsiteSyncEvent
-from src.integrations.bitrix import BitrixSyncApiError, bitrix_sync_api_client
+from src.integrations.bitrix import BitrixSyncApiError, get_bitrix_sync_api_client
 
 SYNC_EVENT_TYPE = "website_identity_refresh"
+bitrix_sync_api_client = get_bitrix_sync_api_client()
 
 
 @dataclass(frozen=True)

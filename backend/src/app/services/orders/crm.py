@@ -11,13 +11,14 @@ from src.app.services.push_notifications import send_order_status_change_notific
 from src.database.crud import get_order_by_id, update_order
 from src.database.models import Order, User
 from src.database.schemas import OrderUpdate
-from src.integrations.amocrm import amocrm_client
+from src.integrations.amocrm import get_amocrm_client
 
 from .common import _normalize_phone
 from .fulfillment import create_delivery_for_order
 from .fulfillment_payloads import normalize_address_for_cf
 
 log = logging.getLogger(__name__)
+amocrm_client = get_amocrm_client()
 
 
 def _amocrm_payment_label(payment_method: str | None) -> str:
