@@ -1,7 +1,17 @@
-from .client import ProfessorClient
+from typing import TYPE_CHECKING
 
-professor_client = ProfessorClient()
+if TYPE_CHECKING:
+    from .client import ProfessorClient
 
-def get_professor_client() -> ProfessorClient: return professor_client
+_professor_client: "ProfessorClient | None" = None
 
-__all__ = ["professor_client", "get_professor_client", "ProfessorClient"]
+
+def get_professor_client() -> "ProfessorClient":
+    global _professor_client
+    if _professor_client is None:
+        from .client import ProfessorClient
+        _professor_client = ProfessorClient()
+    return _professor_client
+
+
+__all__ = ["get_professor_client"]

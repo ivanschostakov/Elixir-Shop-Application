@@ -7,7 +7,12 @@ from sqlalchemy import desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.database.models import Basket, BasketItem, Order, OrderDraft, Product, Variant
+from src.database.models.basket.basket import Basket
+from src.database.models.basket.basket_item import BasketItem
+from src.database.models.catalog.product import Product
+from src.database.models.catalog.variant import Variant
+from src.database.models.orders.draft import OrderDraft
+from src.database.models.orders.order import Order
 from .schemas import ShopAIFunctionTool, ToolArguments, ToolMethod, ShopAIToolCall
 
 SHOP_AI_FUNCTION_TOOLS: list[ShopAIFunctionTool] = [

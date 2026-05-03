@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import uuid4
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import func, select
@@ -52,7 +52,8 @@ from src.database.schemas import (
     AIMessageUpdate,
     AIMessageUsageCreate,
 )
-from src.integrations.ai import ProfessorClient
+if TYPE_CHECKING:
+    from src.integrations.ai.client import ProfessorClient
 from src.integrations.ai.enums import AttachmentType, BotModel, MessageSender
 from .schemas.chat import _LoadedUpload, AIChatActionResult, AIChatSendResult
 
@@ -239,7 +240,7 @@ async def resolve_user_bot_model(db: AsyncSession, *, user_id: int) -> BotModel:
     return BotModel.PREMIUM if total > PREMIUM_MONTHLY_PAID_ORDERS_THRESHOLD else BotModel.FREE
 
 
-async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_client: ProfessorClient) -> AIChat:
+async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_client: "ProfessorClient") -> AIChat:
     existing = await get_ai_chat_by_user_id(db, user.id)
     if existing is not None: return existing
 
@@ -248,7 +249,7 @@ async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_cli
     return created
 
 
-async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: ProfessorClient) -> AIChatSendResult:
+async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient") -> AIChatSendResult:
     chat = await get_or_create_user_chat(db, user=user, professor_client=professor_client)
     loaded_uploads = await _load_uploads(attachments)
     selected_model = await resolve_user_bot_model(db, user_id=user.id)

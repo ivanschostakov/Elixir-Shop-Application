@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -17,7 +18,10 @@ from src.app.services.basket import _get_serialized_basket
 from src.app.services.upload_limits import read_upload_file_limited
 from src.database import get_db
 from src.database.models import User
-from src.integrations.ai import ProfessorClient, get_professor_client
+from src.integrations.ai import get_professor_client
+
+if TYPE_CHECKING:
+    from src.integrations.ai.client import ProfessorClient
 
 ai_chat_router = APIRouter(prefix="/ai-chat", tags=["ai_chat"])
 
@@ -26,7 +30,7 @@ ai_chat_router = APIRouter(prefix="/ai-chat", tags=["ai_chat"])
 async def get_my_ai_chat(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    professor_client: ProfessorClient = Depends(get_professor_client),
+    professor_client: "ProfessorClient" = Depends(get_professor_client),
     _app_integrity: None = Depends(require_app_integrity("ai-chat:read")),
 ) -> AIChatResponse:
     chat = await get_or_create_user_chat(db, user=current_user, professor_client=professor_client)
@@ -40,7 +44,7 @@ async def send_my_ai_chat_message(
     attachments: list[UploadFile] | None = File(default=None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    professor_client: ProfessorClient = Depends(get_professor_client),
+    professor_client: "ProfessorClient" = Depends(get_professor_client),
     _app_integrity: None = Depends(require_app_integrity("ai-chat:send")),
 ) -> AIChatResponse:
     normalized_text = text.strip()
@@ -87,7 +91,7 @@ async def perform_my_ai_chat_action(
 async def transcribe_my_ai_chat_voice_message(
     audio: UploadFile = File(...),
     _current_user: User = Depends(get_current_user),
-    professor_client: ProfessorClient = Depends(get_professor_client),
+    professor_client: "ProfessorClient" = Depends(get_professor_client),
     _app_integrity: None = Depends(require_app_integrity("ai-chat:transcribe")),
 ) -> AIChatTranscriptionResponse:
     content = await read_upload_file_limited(
