@@ -93,9 +93,30 @@ class AsyncAmoCRM:
         try: await self.transport.ensure_token_valid()
         except HTTPException: await self._refresh()
 
-    async def _get(self, endpoint: str, **kwargs: Any) -> dict[str, Any]: await self._ensure_token_valid(); return await self.transport.get(endpoint, **kwargs)
-    async def _post(self, endpoint: str, **kwargs: Any) -> dict[str, Any]: await self._ensure_token_valid(); return await self.transport.post(endpoint, **kwargs)
-    async def _patch(self, endpoint: str, **kwargs: Any) -> dict[str, Any]: await self._ensure_token_valid(); return await self.transport.patch(endpoint, **kwargs)
+    async def _request_with_auth_recovery(self, method: str, endpoint: str, **kwargs: Any) -> dict[str, Any]:
+        await self._ensure_token_valid()
+        transport_call = getattr(self.transport, method.lower())
+        try:
+            return await transport_call(endpoint, **kwargs)
+        except HTTPException as exc:
+            if exc.status_code == 502 and str(exc.detail) == "amoCRM authentication failed":
+                self.logger.warning(
+                    "amoCRM transport authentication failed during %s %s; retrying via full reauthorization flow",
+                    method,
+                    endpoint,
+                )
+                await self._refresh()
+                return await transport_call(endpoint, **kwargs)
+            raise
+
+    async def _get(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
+        return await self._request_with_auth_recovery("GET", endpoint, **kwargs)
+
+    async def _post(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
+        return await self._request_with_auth_recovery("POST", endpoint, **kwargs)
+
+    async def _patch(self, endpoint: str, **kwargs: Any) -> dict[str, Any]:
+        return await self._request_with_auth_recovery("PATCH", endpoint, **kwargs)
 
     async def get_contact(self, contact_id: int) -> dict[str, Any] | None:
         try: return await self._get(f"/api/v4/contacts/{contact_id}")
