@@ -1,7 +1,20 @@
 from fastapi.testclient import TestClient
 
 
-def test_app_version_policy_returns_defaults(client: TestClient):
+def test_app_version_policy_returns_defaults(client: TestClient, monkeypatch):
+    import src.app.modules.app_version.router as app_version_router_module
+
+    monkeypatch.setattr(app_version_router_module, "IOS_MINIMUM_BUILD", 1)
+    monkeypatch.setattr(app_version_router_module, "IOS_LATEST_BUILD", 1)
+    monkeypatch.setattr(app_version_router_module, "IOS_MINIMUM_JS_BUNDLE_VERSION", 1)
+    monkeypatch.setattr(app_version_router_module, "IOS_LATEST_JS_BUNDLE_VERSION", 1)
+    monkeypatch.setattr(app_version_router_module, "IOS_STORE_URL", "")
+    monkeypatch.setattr(app_version_router_module, "ANDROID_MINIMUM_VERSION_CODE", 1)
+    monkeypatch.setattr(app_version_router_module, "ANDROID_LATEST_VERSION_CODE", 1)
+    monkeypatch.setattr(app_version_router_module, "ANDROID_MINIMUM_JS_BUNDLE_VERSION", 1)
+    monkeypatch.setattr(app_version_router_module, "ANDROID_LATEST_JS_BUNDLE_VERSION", 1)
+    monkeypatch.setattr(app_version_router_module, "ANDROID_STORE_URL", "")
+
     response = client.get("/api/v1/app-version")
 
     assert response.status_code == 200, response.text
