@@ -33,7 +33,6 @@
     },
     "android": {
       "icon": "./assets/images/adaptive-icon-preview.png",
-      "minSdkVersion": 26,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/adaptive-icon-foreground.png",
@@ -58,6 +57,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ],
       "./plugins/with-yandex-mapkit",
       "./plugins/with-app-attest-environment",
       [

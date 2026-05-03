@@ -1,12 +1,16 @@
+import secrets
+
 from datetime import timedelta
 from logging import getLogger
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.services.security import create_access_token
 from config import (
+    AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA,
     AUTH_LOGIN_WEBSITE_FIRST_ENABLED,
     AUTH_RATE_LIMIT_MAX_REQUESTS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
@@ -31,8 +35,10 @@ from src.app.services.website_identities.service import link_website_identity_to
 from src.app.services.rate_limit import client_ip_from_request, enforce_rate_limit
 from src.database import get_db
 from src.database.crud.auth.email_verification_code import create_email_verification_code, get_latest_pending_email_verification_code
+from src.database.crud.auth.admin import is_admin_user
 from src.database.crud.auth.user import create_user, get_user_by_email, get_user_by_id, get_user_by_username
 from src.database.crud.auth.user_session import create_user_session, get_user_session_by_id, update_user_session
+from src.database.models.auth.user_session import UserSession
 from src.database.models.auth.user import User
 from src.database.schemas.auth.user import UserCreate
 from src.database.schemas.auth.user_session import UserSessionCreate, UserSessionUpdate
@@ -219,6 +225,8 @@ async def login(
             pass
 
     user = await get_plain_login_user(payload, db)
+    if AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA and await is_admin_user(db, user.id):
+        return await build_auth_tokens_response(user, db)
     try:
         await create_and_send_verification_code(user, db)
         await db.commit()
@@ -359,3 +367,34 @@ async def logout(request: Request, payload: UserLogoutPayload, db: AsyncSession 
 @auth_router.get("/me", response_model=AuthUserRead, status_code=status.HTTP_200_OK)
 async def me(current_user: User = Depends(get_current_user)) -> AuthUserRead:
     return AuthUserRead.model_validate(current_user)
+
+
+@auth_router.delete("/me", response_model=AuthLogoutResponse, status_code=status.HTTP_200_OK)
+async def delete_my_account(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AuthLogoutResponse:
+    await _apply_auth_rate_limit(request, scope="auth:delete_account", principal=str(current_user.id), verify=True)
+
+    now = ufa_now()
+    suffix = f"{current_user.id}_{int(now.timestamp())}"
+    current_user.username = f"deleted_{suffix}"
+    current_user.email = f"deleted_{suffix}@example.invalid"
+    current_user.name = "Deleted"
+    current_user.surname = "User"
+    current_user.phone_number = None
+    current_user.contact_id = None
+    current_user.is_verified = False
+    current_user.is_active = False
+    current_user.password_hash = hash_password(secrets.token_urlsafe(32))
+    current_user.last_active_at = now
+
+    await db.execute(
+        update(UserSession)
+        .where(UserSession.user_id == current_user.id, UserSession.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    await db.commit()
+
+    return AuthLogoutResponse(ok=True, message="Account deleted")
