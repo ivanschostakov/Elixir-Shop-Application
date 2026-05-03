@@ -35,6 +35,7 @@ services:
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
+      - /home/paylakurusyan/.config/gcloud:/home/app/.config/gcloud:ro
 
   worker-notifications:
     build:
