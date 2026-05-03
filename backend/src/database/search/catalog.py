@@ -1,4 +1,9 @@
-def normalize_search_text(value: str | None, *, strip_punctuation: bool = True, MAX_QUERY_LENGTH=None, _WHITESPACE_RE=None, _EXTRA_PUNCTUATION_RE=None) -> str:
+from .constants import MAX_VARIANTS, MIN_FUZZY_LENGTH, RU_TO_EN_LAYOUT_MAP, EN_TO_RU_LAYOUT_MAP, \
+    CYR_TO_LATIN_CHARS, LATIN_TO_CYR_CHARS, LATIN_TO_CYR_TOKENS, MAX_QUERY_LENGTH, _WHITESPACE_RE, \
+    _EXTRA_PUNCTUATION_RE, _CYRILLIC_RE, _LATIN_RE, _REPEATED_CHAR_RE
+
+
+def normalize_search_text(value: str | None, *, strip_punctuation: bool = True) -> str:
     if not value: return ""
     normalized = value.casefold().strip()
     if strip_punctuation: normalized = _EXTRA_PUNCTUATION_RE.sub(" ", normalized)
@@ -6,7 +11,7 @@ def normalize_search_text(value: str | None, *, strip_punctuation: bool = True, 
     return normalized[:MAX_QUERY_LENGTH]
 
 
-def transliterate_latin_to_cyrillic(value: str, LATIN_TO_CYR_CHARS=None, LATIN_TO_CYR_TOKENS=None) -> str:
+def transliterate_latin_to_cyrillic(value: str) -> str:
     text = normalize_search_text(value)
     if not text: return ""
     i = 0
@@ -32,28 +37,28 @@ def transliterate_latin_to_cyrillic(value: str, LATIN_TO_CYR_CHARS=None, LATIN_T
     return normalize_search_text("".join(out), strip_punctuation=False)
 
 
-def transliterate_cyrillic_to_latin(value: str, CYR_TO_LATIN_CHARS=None) -> str:
+def transliterate_cyrillic_to_latin(value: str) -> str:
     text = normalize_search_text(value, strip_punctuation=False)
     if not text: return ""
     out = "".join(CYR_TO_LATIN_CHARS.get(ch, ch) for ch in text)
     return normalize_search_text(out)
 
 
-def convert_keyboard_layout_en_to_ru(value: str, EN_TO_RU_LAYOUT_MAP=None) -> str:
+def convert_keyboard_layout_en_to_ru(value: str) -> str:
     text = normalize_search_text(value, strip_punctuation=False)
     return normalize_search_text(text.translate(EN_TO_RU_LAYOUT_MAP), strip_punctuation=False)
 
 
-def convert_keyboard_layout_ru_to_en(value: str, RU_TO_EN_LAYOUT_MAP=None) -> str:
+def convert_keyboard_layout_ru_to_en(value: str) -> str:
     text = normalize_search_text(value, strip_punctuation=False)
     return normalize_search_text(text.translate(RU_TO_EN_LAYOUT_MAP), strip_punctuation=False)
 
 
-def _contains_cyrillic(value: str, _CYRILLIC_RE=None) -> bool: return bool(_CYRILLIC_RE.search(value))
-def _contains_latin(value: str, _LATIN_RE=None) -> bool: return bool(_LATIN_RE.search(value))
+def _contains_cyrillic(value: str) -> bool: return bool(_CYRILLIC_RE.search(value))
+def _contains_latin(value: str) -> bool: return bool(_LATIN_RE.search(value))
 
 
-def _fuzzy_variants(value: str, MIN_FUZZY_LENGTH=None, _REPEATED_CHAR_RE=None) -> list[str]:
+def _fuzzy_variants(value: str) -> list[str]:
     if len(value) < MIN_FUZZY_LENGTH: return []
 
     variants: list[str] = []
@@ -76,7 +81,7 @@ def _fuzzy_variants(value: str, MIN_FUZZY_LENGTH=None, _REPEATED_CHAR_RE=None) -
     return variants
 
 
-def build_search_query_variants(query: str, MAX_VARIANTS=None) -> list[str]:
+def build_search_query_variants(query: str) -> list[str]:
     base = normalize_search_text(query)
     if not base: return []
 
