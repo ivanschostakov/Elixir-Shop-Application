@@ -2,6 +2,7 @@ import codecs
 import logging
 import re
 
+from ipaddress import ip_address, ip_network
 from typing import Any
 from urllib.parse import parse_qs, parse_qsl
 
@@ -10,7 +11,14 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import JSONResponse
 
-from config import WEBHOOK_RATE_LIMIT_MAX_REQUESTS, WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
+from config import (
+    AMOCRM_ACCOUNT_ID,
+    AMOCRM_WEBHOOK_ALLOWED_ACCOUNT_IDS,
+    AMOCRM_WEBHOOK_ALLOWED_IPS,
+    AMOCRM_WEBHOOK_ALLOWED_SUBDOMAINS,
+    WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
+    WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
+)
 from src.app.services.rate_limit import enforce_rate_limit
 from src.app.services.orders import apply_amocrm_status_update, reconcile_sbp_payment
 from src.database import get_db
@@ -82,6 +90,56 @@ def _header_value(request: Request, *names: str) -> str | None:
     return None
 
 
+def _first_payload_value(payload: dict[str, list[str]], key: str) -> str:
+    return str((payload.get(key) or [""])[0] or "").strip()
+
+
+def _request_client_ip(request: Request) -> str:
+    forwarded_for = _header_value(request, "x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    real_ip = _header_value(request, "x-real-ip")
+    if real_ip:
+        return real_ip
+    return (request.client.host if request.client else "").strip()
+
+
+def _ip_allowed(ip_raw: str, allowed_networks: list[str]) -> bool:
+    if not allowed_networks:
+        return True
+    try:
+        client_ip = ip_address(ip_raw)
+    except ValueError:
+        return False
+    for network_raw in allowed_networks:
+        candidate = network_raw.strip()
+        if not candidate:
+            continue
+        try:
+            if "/" in candidate:
+                if client_ip in ip_network(candidate, strict=False):
+                    return True
+            elif client_ip == ip_address(candidate):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _amocrm_webhook_verified(request: Request, payload: dict[str, list[str]]) -> bool:
+    account_id = _first_payload_value(payload, "account[id]")
+    account_subdomain = _first_payload_value(payload, "account[subdomain]").lower()
+    allowed_account_ids = [value.strip() for value in AMOCRM_WEBHOOK_ALLOWED_ACCOUNT_IDS if value.strip()]
+    if not allowed_account_ids and AMOCRM_ACCOUNT_ID:
+        allowed_account_ids = [str(AMOCRM_ACCOUNT_ID).strip()]
+    allowed_subdomains = [value.strip().lower() for value in AMOCRM_WEBHOOK_ALLOWED_SUBDOMAINS if value.strip()]
+    if allowed_account_ids and account_id not in allowed_account_ids:
+        return False
+    if allowed_subdomains and account_subdomain not in allowed_subdomains:
+        return False
+    return _ip_allowed(_request_client_ip(request), AMOCRM_WEBHOOK_ALLOWED_IPS)
+
+
 @webhooks_router.post("/amocrm")
 async def amocrm_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     await enforce_rate_limit(
@@ -94,6 +152,14 @@ async def amocrm_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     raw_text = body.decode("utf-8", "replace")
     log.info("amoCRM webhook inbound headers=%s body=%s", dict(request.headers), raw_text)
     payload = parse_qs(raw_text, keep_blank_values=True)
+    if not _amocrm_webhook_verified(request, payload):
+        log.warning(
+            "amoCRM webhook rejected verification account_id=%s subdomain=%s source_ip=%s",
+            _first_payload_value(payload, "account[id]"),
+            _first_payload_value(payload, "account[subdomain]"),
+            _request_client_ip(request),
+        )
+        return JSONResponse({"ok": False, "error": "webhook verification failed"}, status_code=403)
 
     delivery_id = _header_value(request, "x-delivery-id", "x-request-id", "x-webhook-id", "x-amocrm-delivery-id")
     signature = _header_value(request, "x-amocrm-signature", "x-signature", "x-hub-signature", "x-hub-signature-256")
