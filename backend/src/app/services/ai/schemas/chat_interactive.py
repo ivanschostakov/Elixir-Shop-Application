@@ -1,6 +1,8 @@
 from pydantic import Field, BaseModel, ConfigDict
 from typing import Literal
-from src.app.services.ai.chat_interactive import ProductRequestedAction, ProductRefIntent
+
+ProductRequestedAction = Literal["open_product", "compare", "alternatives", "checkout"]
+ProductRefIntent = Literal["recommend", "compare", "alternative"]
 
 
 class StructuredProductRef(BaseModel):

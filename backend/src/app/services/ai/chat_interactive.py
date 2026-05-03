@@ -13,7 +13,8 @@ from sqlalchemy.orm import selectinload
 
 from config import AI_CHAT_ACTION_SECRET, AI_CHAT_ACTION_TOKEN_TTL_SECONDS
 from .schemas import StructuredAIChatOutput, StructuredProductRef, AIActionTokenPayload
-from src.database.models import Product, Variant
+from src.database.models.catalog.product import Product
+from src.database.models.catalog.variant import Variant
 from src.database.schemas import (
     AIInteractiveAction,
     AIInteractiveActionRow,
