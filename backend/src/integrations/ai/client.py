@@ -4,6 +4,7 @@ import json
 import logging
 import mimetypes
 import time
+import httpx
 
 from pathlib import Path
 from typing import Any, Awaitable, Callable
@@ -11,7 +12,7 @@ from openai import AsyncClient, BadRequestError, NotFoundError
 from openai.types.responses import FileSearchToolParam, Response, ResponseConversationParamParam
 from openai.types.responses.tool import CodeInterpreter, CodeInterpreterContainerCodeInterpreterToolAuto, ImageGeneration
 
-from config import AI_CONVERSATION_HARD_INPUT_TOKENS, AI_CONVERSATION_SOFT_INPUT_TOKENS, OPENAI_API_KEY
+from config import AI_CONVERSATION_HARD_INPUT_TOKENS, AI_CONVERSATION_SOFT_INPUT_TOKENS, OPENAI_API_KEY, OPENAI_PROXY_URL
 from src.app.services.ai.chat_tools import tool_output_json
 
 from .enums import BotModel
@@ -23,8 +24,10 @@ PREMIUM_MODEL = "gpt-4.1"
 
 
 class ProfessorClient(AsyncClient):
-    def __init__(self, api_key: str | None = OPENAI_API_KEY):
-        super().__init__(api_key=api_key)
+    def __init__(self, api_key: str | None = OPENAI_API_KEY, proxy_url: str | None = OPENAI_PROXY_URL):
+        normalized_proxy_url = (proxy_url or "").strip() or None
+        http_client = httpx.AsyncClient(proxy=normalized_proxy_url) if normalized_proxy_url else None
+        super().__init__(api_key=api_key, http_client=http_client)
         self.__logger = logging.getLogger(self.__class__.__name__)
 
     @property
