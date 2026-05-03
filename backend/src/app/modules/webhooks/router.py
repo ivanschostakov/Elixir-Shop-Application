@@ -18,7 +18,7 @@ from src.database.crud import get_order_by_amocrm_lead_id, get_order_by_code, ge
 from src.database.crud.webhooks import payload_digest, register_webhook_delivery
 from src.database.schemas import OrderUpdate
 from src.integrations.amocrm import amocrm_client
-from src.integrations.intellectmoney.client import intellectmoney
+from src.integrations.intellectmoney import intellectmoney
 
 webhooks_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 log = logging.getLogger(__name__)
