@@ -13,11 +13,8 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.database import SessionLocal
 from src.database.limits import (
-    PRODUCT_DESCRIPTION_MAX_LENGTH,
-    PRODUCT_EXPIRATION_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
     PRODUCT_SKU_MAX_LENGTH,
-    PRODUCT_USAGE_MAX_LENGTH,
     VARIANT_NAME_MAX_LENGTH,
     VARIANT_SKU_MAX_LENGTH,
 )
@@ -129,9 +126,9 @@ async def sync_products_and_variants_from_shop() -> None:
             payload = {
                 "sku": fit_text(remote_product.code, PRODUCT_SKU_MAX_LENGTH),
                 "name": fit_text(remote_product.name, PRODUCT_NAME_MAX_LENGTH),
-                "description": fit_text(normalize_product_text(remote_product.description), PRODUCT_DESCRIPTION_MAX_LENGTH),
-                "usage": fit_text(normalize_product_text(remote_product.usage), PRODUCT_USAGE_MAX_LENGTH),
-                "expiration": fit_text(normalize_product_text(remote_product.expiration), PRODUCT_EXPIRATION_MAX_LENGTH),
+                "description": normalize_product_text(remote_product.description),
+                "usage": normalize_product_text(remote_product.usage),
+                "expiration": normalize_product_text(remote_product.expiration),
             }
 
             local_product = products_by_system_id.get(system_id)

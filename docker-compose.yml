@@ -59,11 +59,11 @@ services:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
 
-  worker-onec-sync:
+  worker-moysklad-sync:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: shop-worker-onec-sync
+    container_name: shop-worker-moysklad-sync
     restart: unless-stopped
     env_file:
       - ./backend/.env

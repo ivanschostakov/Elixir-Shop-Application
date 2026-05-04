@@ -21,11 +21,8 @@ from config import (
 from src.app.services.cache import get_cache_service
 from src.database import SessionLocal
 from src.database.limits import (
-    PRODUCT_DESCRIPTION_MAX_LENGTH,
-    PRODUCT_EXPIRATION_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
     PRODUCT_SKU_MAX_LENGTH,
-    PRODUCT_USAGE_MAX_LENGTH,
     VARIANT_NAME_MAX_LENGTH,
     VARIANT_SKU_MAX_LENGTH,
 )
@@ -267,7 +264,7 @@ class OneCCatalogClient:
 
             sku = self._fit_required(product.get("sku"), PRODUCT_SKU_MAX_LENGTH, fallback=str(system_id))
             name = self._fit_required(product.get("name"), PRODUCT_NAME_MAX_LENGTH, fallback=sku)
-            rows.append(OneCProductRow(system_id=system_id, sku=sku, name=name, description=fit_text(normalize_product_text(product.get("description")), PRODUCT_DESCRIPTION_MAX_LENGTH), usage=fit_text(normalize_product_text(product.get("usage")), PRODUCT_USAGE_MAX_LENGTH), expiration=fit_text(normalize_product_text(product.get("expiration")), PRODUCT_EXPIRATION_MAX_LENGTH)))
+            rows.append(OneCProductRow(system_id=system_id, sku=sku, name=name, description=normalize_product_text(product.get("description")), usage=normalize_product_text(product.get("usage")), expiration=normalize_product_text(product.get("expiration"))))
         return rows
 
     def _merge_feature_rows(self, products: dict[str, dict[str, Any]], features: dict[str, dict[str, Any]], prices_map: dict[str, dict[str, Any]], balances_map: dict[str, dict[str, Any]], stats: OneCCatalogSyncStats) -> dict[str, dict[str, Any]]:

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import Boolean, Integer, String, text
+from sqlalchemy import Boolean, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from config import API_BASE_URL
@@ -8,11 +8,8 @@ from src.product_media import build_products_media_url, resolve_product_image_pa
 
 from src.database import Base
 from src.database.limits import (
-    PRODUCT_DESCRIPTION_MAX_LENGTH,
-    PRODUCT_EXPIRATION_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
     PRODUCT_SKU_MAX_LENGTH,
-    PRODUCT_USAGE_MAX_LENGTH,
 )
 from src.database.mixins import SystemMixin
 from src.database.models.catalog.variant import Variant
@@ -23,9 +20,9 @@ class Product(Base, SystemMixin):
 
     sku: Mapped[str] = mapped_column(String(length=PRODUCT_SKU_MAX_LENGTH), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(length=PRODUCT_NAME_MAX_LENGTH), nullable=False, unique=True)
-    description: Mapped[str | None] = mapped_column(String(length=PRODUCT_DESCRIPTION_MAX_LENGTH), nullable=True)
-    usage: Mapped[str | None] = mapped_column(String(length=PRODUCT_USAGE_MAX_LENGTH), nullable=True)
-    expiration: Mapped[str | None] = mapped_column(String(length=PRODUCT_EXPIRATION_MAX_LENGTH), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    usage: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expiration: Mapped[str | None] = mapped_column(Text, nullable=True)
     in_stock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 

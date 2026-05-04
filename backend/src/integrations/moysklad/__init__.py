@@ -24,5 +24,4 @@ from .client import (
 )
 
 
-def get_moysklad_catalog_client() -> MoySkladClient:
-    return moysklad_catalog_client
+def get_moysklad_catalog_client() -> MoySkladClient: return moysklad_catalog_client

@@ -19,7 +19,6 @@ from config import (
 from src.app.services.cache import get_cache_service
 from src.database import SessionLocal
 from src.database.limits import (
-    PRODUCT_DESCRIPTION_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
     PRODUCT_SKU_MAX_LENGTH,
     VARIANT_NAME_MAX_LENGTH,
@@ -42,14 +41,7 @@ logger = logging.getLogger(__name__)
 class MoySkladClient:
     _EXCLUDED_PATH_FILTER = "pathName!=Товары интернет-магазинов/elixirpeptide.ru"
 
-    def __init__(
-        self,
-        *,
-        token: str | None = MOY_SKLAD_TOKEN,
-        base_url: str | None = MOY_SKLAD_BASE_URL,
-        timeout_seconds: int = MOY_SKLAD_TIMEOUT_SECONDS,
-        stock_reserve: int = MOY_SKLAD_STOCK_RESERVE,
-    ) -> None:
+    def __init__(self, *, token: str | None = MOY_SKLAD_TOKEN, base_url: str | None = MOY_SKLAD_BASE_URL, timeout_seconds: int = MOY_SKLAD_TIMEOUT_SECONDS, stock_reserve: int = MOY_SKLAD_STOCK_RESERVE) -> None:
         self._token = optional_str(token) or ""
         self._base_url = optional_str(base_url) or ""
         self._timeout_seconds = max(int(timeout_seconds), 1)
@@ -62,10 +54,8 @@ class MoySkladClient:
         return bool(self._token and self._base_url)
 
     async def _get_client(self) -> httpx.AsyncClient:
-        if not self.is_configured():
-            raise RuntimeError("MoySklad integration is not configured")
-        if self._client is not None and not self._client.is_closed:
-            return self._client
+        if not self.is_configured(): raise RuntimeError("MoySklad integration is not configured")
+        if self._client is not None and not self._client.is_closed: return self._client
 
         async with self._client_lock:
             if self._client is None or self._client.is_closed:
@@ -83,8 +73,7 @@ class MoySkladClient:
 
     async def aclose(self) -> None:
         async with self._client_lock:
-            if self._client is not None and not self._client.is_closed:
-                await self._client.aclose()
+            if self._client is not None and not self._client.is_closed: await self._client.aclose()
             self._client = None
 
     @staticmethod
@@ -93,23 +82,19 @@ class MoySkladClient:
 
     @staticmethod
     def _money(value: float | int | str | Decimal | None) -> Decimal:
-        if value is None:
-            return Decimal("0")
+        if value is None: return Decimal("0")
         return Decimal(str(value)) / Decimal("100")
 
     def _sale_price(self, item: dict[str, Any]) -> Decimal:
         sale_prices = item.get("salePrices")
-        if not isinstance(sale_prices, list) or not sale_prices:
-            return Decimal("0")
+        if not isinstance(sale_prices, list) or not sale_prices: return Decimal("0")
         first = sale_prices[0]
-        if not isinstance(first, dict):
-            return Decimal("0")
+        if not isinstance(first, dict): return Decimal("0")
         return self._money(first.get("value"))
 
     def _available_stock(self, value: Any) -> int:
         raw = max(int(coerce_decimal(value) or Decimal("0")), 0)
-        if self._stock_reserve <= 0:
-            return raw
+        if self._stock_reserve <= 0: return raw
         return raw - self._stock_reserve if raw >= self._stock_reserve else 0
 
     async def _get_page(self, path: str, *, limit: int = 100, offset: int = 0, **params: Any) -> dict[str, Any]:
@@ -127,65 +112,35 @@ class MoySkladClient:
         while True:
             data = await self._get_page(path, limit=100, offset=offset, **(base_params or {}))
             batch = data.get("rows", [])
-            if not isinstance(batch, list):
-                break
+            if not isinstance(batch, list): break
             rows.extend(item for item in batch if isinstance(item, dict))
-            if len(batch) < 100:
-                break
+            if len(batch) < 100: break
             offset += 100
         return rows
 
-    async def get_products(self) -> list[dict[str, Any]]:
-        return await self._get_all_rows(
-            "/entity/product",
-            base_params={"filter": self._EXCLUDED_PATH_FILTER},
-        )
-
-    async def get_variants(self) -> list[dict[str, Any]]:
-        return await self._get_all_rows(
-            "/entity/variant",
-            base_params={"expand": "product"},
-        )
-
-    async def get_stocks_report(self) -> list[dict[str, Any]]:
-        return await self._get_all_rows(
-            "/report/stock/all",
-            base_params={"filter": self._EXCLUDED_PATH_FILTER},
-        )
+    async def get_products(self) -> list[dict[str, Any]]: return await self._get_all_rows("/entity/product", base_params={"filter": self._EXCLUDED_PATH_FILTER})
+    async def get_variants(self) -> list[dict[str, Any]]: return await self._get_all_rows("/entity/variant", base_params={"expand": "product"})
+    async def get_stocks_report(self) -> list[dict[str, Any]]: return await self._get_all_rows("/report/stock/all", base_params={})
 
     async def fetch_catalog_rows(self) -> tuple[list[MoySkladProductRow], list[MoySkladVariantRow], MoySkladCatalogSyncStats]:
         self.log.info("MoySklad catalog fetch started")
         products, variants, stocks = await asyncio.gather(
             self.get_products(),
             self.get_variants(),
-            self.get_stocks_report(),
-        )
-        self.log.info(
-            "MoySklad catalog fetch completed products=%s variants=%s stocks=%s",
-            len(products),
-            len(variants),
-            len(stocks),
-        )
+            self.get_stocks_report(), )
+        self.log.info("MoySklad catalog fetch completed products=%s variants=%s stocks=%s", len(products), len(variants), len(stocks))
 
         stats = MoySkladCatalogSyncStats()
         product_rows, products_by_external_code = self._build_product_rows(products, stats)
-        variant_rows = self._build_variant_rows(
-            variants=variants,
-            stocks=stocks,
-            products_by_external_code=products_by_external_code,
-            stats=stats,
-        )
+        variant_rows = self._build_variant_rows(variants=variants, stocks=stocks, products_by_external_code=products_by_external_code, stats=stats)
 
         stats.fetched_products = len(product_rows)
         stats.fetched_variants = len(variant_rows)
         self.log.info("MoySklad catalog rows prepared products=%s variants=%s", stats.fetched_products, stats.fetched_variants)
         return product_rows, variant_rows, stats
 
-    def _build_product_rows(
-        self,
-        products: list[dict[str, Any]],
-        stats: MoySkladCatalogSyncStats,
-    ) -> tuple[list[MoySkladProductRow], dict[str, dict[str, Any]]]:
+    @staticmethod
+    def _build_product_rows(products: list[dict[str, Any]], stats: MoySkladCatalogSyncStats) -> tuple[list[MoySkladProductRow], dict[str, dict[str, Any]]]:
         rows: list[MoySkladProductRow] = []
         products_by_external_code: dict[str, dict[str, Any]] = {}
         for product in products:
@@ -193,36 +148,22 @@ class MoySkladClient:
             if product_id is None:
                 stats.skipped_products_invalid_system_id += 1
                 continue
+            
             external_code = optional_str(product.get("externalCode"))
-            if external_code:
-                products_by_external_code[external_code] = product
+            if external_code: products_by_external_code[external_code] = product
 
             sku_fallback = str(product_id)
             sku = fit_text(product.get("article") or product.get("code"), PRODUCT_SKU_MAX_LENGTH) or sku_fallback[:PRODUCT_SKU_MAX_LENGTH]
             name = fit_text(product.get("name"), PRODUCT_NAME_MAX_LENGTH) or sku[:PRODUCT_NAME_MAX_LENGTH]
-            rows.append(
-                MoySkladProductRow(
-                    system_id=product_id,
-                    sku=sku,
-                    name=name,
-                    description=fit_text(normalize_product_text(product.get("description")), PRODUCT_DESCRIPTION_MAX_LENGTH),
-                )
-            )
+            rows.append(MoySkladProductRow(system_id=product_id,sku=sku, name=name, description=normalize_product_text(product.get("description"))))
+        
         return rows, products_by_external_code
 
-    def _build_variant_rows(
-        self,
-        *,
-        variants: list[dict[str, Any]],
-        stocks: list[dict[str, Any]],
-        products_by_external_code: dict[str, dict[str, Any]],
-        stats: MoySkladCatalogSyncStats,
-    ) -> list[MoySkladVariantRow]:
+    def _build_variant_rows(self, *, variants: list[dict[str, Any]], stocks: list[dict[str, Any]], products_by_external_code: dict[str, dict[str, Any]], stats: MoySkladCatalogSyncStats) -> list[MoySkladVariantRow]:
         stock_by_external_code: dict[str, dict[str, Any]] = {}
         for stock in stocks:
             external_code = optional_str(stock.get("externalCode"))
-            if external_code:
-                stock_by_external_code[external_code] = stock
+            if external_code: stock_by_external_code[external_code] = stock
 
         rows: list[MoySkladVariantRow] = []
         variants_seen_by_product_id: set[uuid.UUID] = set()
@@ -239,6 +180,7 @@ class MoySkladClient:
             if product_external_code is None:
                 stats.skipped_variants_missing_product += 1
                 continue
+
             product = products_by_external_code.get(product_external_code)
             if product is None:
                 stats.skipped_variants_missing_product += 1
@@ -255,36 +197,30 @@ class MoySkladClient:
 
             sku = fit_text(variant.get("code"), VARIANT_SKU_MAX_LENGTH)
             name_fallback = sku or "Основной вариант"
-            rows.append(
-                MoySkladVariantRow(
-                    system_id=variant_id,
-                    product_system_id=product_system_id,
-                    sku=sku,
-                    name=fit_text(variant.get("name"), VARIANT_NAME_MAX_LENGTH) or name_fallback[:VARIANT_NAME_MAX_LENGTH],
-                    stock=stock_quantity,
-                    price=self._sale_price(variant),
-                )
-            )
+            rows.append(MoySkladVariantRow(
+                system_id=variant_id,
+                product_system_id=product_system_id,
+                sku=sku,
+                name=fit_text(variant.get("name"), VARIANT_NAME_MAX_LENGTH) or name_fallback[:VARIANT_NAME_MAX_LENGTH],
+                stock=stock_quantity,
+                price=self._sale_price(variant),
+            ))
 
         # Ensure each product has at least one variant.
         for product_external_code, product in products_by_external_code.items():
             product_system_id = coerce_uuid(product.get("id"))
-            if product_system_id is None:
-                continue
-            if product_system_id in variants_seen_by_product_id:
-                continue
+            if product_system_id is None: continue
+            if product_system_id in variants_seen_by_product_id: continue
 
             stock = stock_by_external_code.get(product_external_code)
-            rows.append(
-                MoySkladVariantRow(
-                    system_id=self.synthetic_variant_system_id(product_system_id),
-                    product_system_id=product_system_id,
-                    sku=fit_text(product.get("code"), VARIANT_SKU_MAX_LENGTH),
-                    name="Основной вариант",
-                    stock=self._available_stock((stock or {}).get("quantity")),
-                    price=self._sale_price(product),
-                )
-            )
+            rows.append(MoySkladVariantRow(
+                system_id=self.synthetic_variant_system_id(product_system_id),
+                product_system_id=product_system_id,
+                sku=fit_text(product.get("code"), VARIANT_SKU_MAX_LENGTH),
+                name="Основной вариант",
+                stock=self._available_stock((stock or {}).get("quantity")),
+                price=self._sale_price(product),
+            ))
 
         return rows
 
@@ -302,10 +238,12 @@ class MoySkladClient:
             if old_system_id is None:
                 stats.skipped_products_invalid_external_code += 1
                 continue
+
             new_system_id = coerce_uuid(moy_product.get("id"))
             if new_system_id is None:
                 stats.skipped_products_invalid_system_id += 1
                 continue
+
             local_product = products_by_system_id.get(old_system_id)
             if local_product is None:
                 stats.skipped_products_missing_local += 1
@@ -327,10 +265,12 @@ class MoySkladClient:
             if old_system_id is None:
                 stats.skipped_variants_invalid_external_code += 1
                 continue
+
             new_system_id = coerce_uuid(moy_variant.get("id"))
             if new_system_id is None:
                 stats.skipped_variants_invalid_system_id += 1
                 continue
+
             local_variant = variants_by_system_id.get(old_system_id)
             if local_variant is None:
                 stats.skipped_variants_missing_local += 1
@@ -350,12 +290,7 @@ class MoySkladClient:
         return stats
 
 
-async def upsert_moysklad_catalog_rows(
-    session: AsyncSession,
-    products: list[MoySkladProductRow],
-    variants: list[MoySkladVariantRow],
-    stats: MoySkladCatalogSyncStats | None = None,
-) -> MoySkladCatalogSyncStats:
+async def upsert_moysklad_catalog_rows(session: AsyncSession, products: list[MoySkladProductRow], variants: list[MoySkladVariantRow], stats: MoySkladCatalogSyncStats | None = None) -> MoySkladCatalogSyncStats:
     stats = stats or MoySkladCatalogSyncStats(fetched_products=len(products), fetched_variants=len(variants))
     logger.info("MoySklad catalog DB upsert started products=%s variants=%s", len(products), len(variants))
 
@@ -366,11 +301,7 @@ async def upsert_moysklad_catalog_rows(
     logger.info("MoySklad catalog DB local rows loaded products=%s variants=%s", len(local_products), len(local_variants))
 
     for product in products:
-        payload = {
-            "sku": product.sku,
-            "name": product.name,
-            "description": product.description,
-        }
+        payload = {"sku": product.sku, "name": product.name, "description": product.description}
         local_product = products_by_system_id.get(product.system_id)
         if local_product is None:
             local_product = Product(system_id=product.system_id, priority=0, **payload)
@@ -396,8 +327,8 @@ async def upsert_moysklad_catalog_rows(
             "sku": variant.sku,
             "name": variant.name,
             "stock": variant.stock,
-            "price": variant.price,
-        }
+            "price": variant.price, }
+
         local_variant = variants_by_system_id.get(variant.system_id)
         if local_variant is None:
             local_variant = Variant(system_id=variant.system_id, **payload)
@@ -406,8 +337,7 @@ async def upsert_moysklad_catalog_rows(
             stats.created_variants += 1
             continue
 
-        if _apply_changes(local_variant, payload):
-            stats.updated_variants += 1
+        if _apply_changes(local_variant, payload): stats.updated_variants += 1
 
     logger.info("MoySklad catalog DB upsert prepared stats=%s", stats.as_dict())
     return stats
@@ -428,6 +358,7 @@ async def sync_moysklad_product_catalog() -> MoySkladCatalogSyncStats:
             await cache.bump_namespace("catalog")
             await cache.bump_namespace("product")
             logger.info("MoySklad catalog sync committed stats=%s seconds=%.2f", stats.as_dict(), time.perf_counter() - started)
+
         except Exception:
             await session.rollback()
             logger.exception("MoySklad catalog sync rolled back after %.2fs", time.perf_counter() - started)
@@ -435,12 +366,8 @@ async def sync_moysklad_product_catalog() -> MoySkladCatalogSyncStats:
 
         try:
             restock_sent = await process_restock_notifications(session)
-            if restock_sent:
-                logger.info(
-                    "MoySklad sync immediate restock notifications sent=%s seconds=%.2f",
-                    restock_sent,
-                    time.perf_counter() - started,
-                )
+            if restock_sent: logger.info("MoySklad sync immediate restock notifications sent=%s seconds=%.2f", restock_sent, time.perf_counter() - started)
+
         except Exception:
             await session.rollback()
             logger.exception("MoySklad sync immediate restock notification processing failed")
@@ -459,6 +386,7 @@ async def run_moysklad_initial_relink() -> MoySkladInitialRelinkStats:
             await cache.bump_namespace("product")
             logger.info("MoySklad initial relink committed stats=%s", stats.as_dict())
             return stats
+
         except Exception:
             await session.rollback()
             logger.exception("MoySklad initial relink rolled back")
@@ -468,10 +396,10 @@ async def run_moysklad_initial_relink() -> MoySkladInitialRelinkStats:
 def _apply_changes(model: Any, payload: dict[str, Any]) -> bool:
     changed = False
     for field, value in payload.items():
-        if getattr(model, field) == value:
-            continue
+        if getattr(model, field) == value: continue
         setattr(model, field, value)
         changed = True
+
     return changed
 
 

@@ -4,11 +4,8 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.database.limits import (
-    PRODUCT_DESCRIPTION_MAX_LENGTH,
-    PRODUCT_EXPIRATION_MAX_LENGTH,
     PRODUCT_NAME_MAX_LENGTH,
     PRODUCT_SKU_MAX_LENGTH,
-    PRODUCT_USAGE_MAX_LENGTH,
 )
 from src.database.product_text import normalize_product_text
 from src.database.schemas.catalog.variant import ProductVariantRead
@@ -17,9 +14,9 @@ from src.database.schemas.catalog.variant import ProductVariantRead
 class ProductBase(BaseModel):
     sku: str = Field(min_length=1, max_length=PRODUCT_SKU_MAX_LENGTH)
     name: str = Field(min_length=1, max_length=PRODUCT_NAME_MAX_LENGTH)
-    description: str | None = Field(default=None, max_length=PRODUCT_DESCRIPTION_MAX_LENGTH)
-    usage: str | None = Field(default=None, max_length=PRODUCT_USAGE_MAX_LENGTH)
-    expiration: str | None = Field(default=None, max_length=PRODUCT_EXPIRATION_MAX_LENGTH)
+    description: str | None = Field(default=None)
+    usage: str | None = Field(default=None)
+    expiration: str | None = Field(default=None)
     priority: int = Field(default=0, ge=0)
 
     @field_validator("description", "usage", "expiration", mode="before")
@@ -35,9 +32,9 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseModel):
     sku: str | None = Field(default=None, min_length=1, max_length=PRODUCT_SKU_MAX_LENGTH)
     name: str | None = Field(default=None, min_length=1, max_length=PRODUCT_NAME_MAX_LENGTH)
-    description: str | None = Field(default=None, max_length=PRODUCT_DESCRIPTION_MAX_LENGTH)
-    usage: str | None = Field(default=None, max_length=PRODUCT_USAGE_MAX_LENGTH)
-    expiration: str | None = Field(default=None, max_length=PRODUCT_EXPIRATION_MAX_LENGTH)
+    description: str | None = Field(default=None)
+    usage: str | None = Field(default=None)
+    expiration: str | None = Field(default=None)
     priority: int | None = Field(default=None, ge=0)
     system_id: uuid.UUID | None = None
 
