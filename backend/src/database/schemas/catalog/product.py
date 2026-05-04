@@ -17,6 +17,7 @@ class ProductBase(BaseModel):
     description: str | None = Field(default=None)
     usage: str | None = Field(default=None)
     expiration: str | None = Field(default=None)
+    archived: bool = False
     priority: int = Field(default=0, ge=0)
 
     @field_validator("description", "usage", "expiration", mode="before")
@@ -35,6 +36,7 @@ class ProductUpdate(BaseModel):
     description: str | None = Field(default=None)
     usage: str | None = Field(default=None)
     expiration: str | None = Field(default=None)
+    archived: bool | None = None
     priority: int | None = Field(default=None, ge=0)
     system_id: uuid.UUID | None = None
 
@@ -50,6 +52,7 @@ class ProductRead(ProductBase):
     id: int
     system_id: uuid.UUID
     in_stock: bool
+    archived: bool
     image_url: str
     rating_avg: float = 0.0
     rating_count: int = 0

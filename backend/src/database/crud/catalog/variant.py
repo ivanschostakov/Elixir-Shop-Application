@@ -13,19 +13,25 @@ async def create_variant(session: AsyncSession, data: VariantCreate) -> Variant:
     return variant
 
 
-async def get_variant_by_id(session: AsyncSession, variant_id: int) -> Variant | None:
+async def get_variant_by_id(session: AsyncSession, variant_id: int, *, include_archived: bool = False) -> Variant | None:
     stmt = select(Variant).where(Variant.id == variant_id)
+    if not include_archived:
+        stmt = stmt.where(Variant.archived.is_(False))
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_variant_by_system_id(session: AsyncSession, system_id: str) -> Variant | None:
+async def get_variant_by_system_id(session: AsyncSession, system_id: str, *, include_archived: bool = False) -> Variant | None:
     stmt = select(Variant).where(Variant.system_id == system_id)
+    if not include_archived:
+        stmt = stmt.where(Variant.archived.is_(False))
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_variants(session: AsyncSession, *, product_id: int | None = None, sku: str | None = None, q: str | None = None, offset: int = 0, limit: int = 100) -> list[Variant]:
+async def get_variants(session: AsyncSession, *, product_id: int | None = None, sku: str | None = None, q: str | None = None, offset: int = 0, limit: int = 100, include_archived: bool = False) -> list[Variant]:
     stmt = select(Variant)
 
+    if not include_archived:
+        stmt = stmt.where(Variant.archived.is_(False))
     if product_id is not None: stmt = stmt.where(Variant.product_id == product_id)
     if sku is not None: stmt = stmt.where(Variant.sku == sku)
     if q: stmt = stmt.where(or_(Variant.name.ilike(f"%{q}%"), Variant.sku.ilike(f"%{q}%")))

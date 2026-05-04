@@ -104,7 +104,7 @@ def _product_summary(product: Product) -> dict[str, Any]:
         "expiration": product.expiration,
         "in_stock": product.in_stock,
         "image_url": product.image_url,
-        "variants": [_variant_summary(variant) for variant in product.variants],
+        "variants": [_variant_summary(variant) for variant in product.variants if not variant.archived],
     }
 def _variant_summary(variant: Variant) -> dict[str, Any]:
     return {
@@ -189,7 +189,7 @@ class ShopAIToolExecutor:
         return {}
 
     async def search_catalog_products(self, *, query: str, limit: int, offset: int) -> ToolArguments:
-        stmt = select(Product).options(selectinload(Product.variants))
+        stmt = select(Product).options(selectinload(Product.variants)).where(Product.archived.is_(False))
         if query:
             pattern = f"%{query}%"
             stmt = stmt.where(
@@ -204,7 +204,7 @@ class ShopAIToolExecutor:
         return {"ok": True, "query": query, "limit": limit, "offset": offset, "items": [_product_summary(product) for product in products]}
 
     async def get_catalog_product(self, *, product_id: int) -> ToolArguments:
-        stmt = select(Product).options(selectinload(Product.variants)).where(Product.id == product_id)
+        stmt = select(Product).options(selectinload(Product.variants)).where(Product.id == product_id, Product.archived.is_(False))
         product = (await self._session.execute(stmt)).scalar_one_or_none()
         if product is None: return {"ok": False, "error": "product_not_found"}
         return {"ok": True, "product": _product_summary(product)}
@@ -213,13 +213,14 @@ class ShopAIToolExecutor:
         if variant_id is not None:
             stmt = select(Variant).options(selectinload(Variant.product)).where(Variant.id == variant_id)
             variant = (await self._session.execute(stmt)).scalar_one_or_none()
-            if variant is None: return {"ok": False, "error": "variant_not_found"}
+            if variant is None or variant.archived: return {"ok": False, "error": "variant_not_found"}
+            if variant.product.archived: return {"ok": False, "error": "variant_not_found"}
             return {"ok": True, "scope": "variant", "variant": _variant_summary(variant)}
 
-        stmt = select(Product).options(selectinload(Product.variants)).where(Product.id == product_id)
+        stmt = select(Product).options(selectinload(Product.variants)).where(Product.id == product_id, Product.archived.is_(False))
         product = (await self._session.execute(stmt)).scalar_one_or_none()
         if product is None: return {"ok": False, "error": "product_not_found"}
-        variants = [_variant_summary(variant) for variant in product.variants]
+        variants = [_variant_summary(variant) for variant in product.variants if not variant.archived]
         return {
             "ok": True,
             "scope": "product",

@@ -13,6 +13,10 @@ def _in_stock_product_clause():
     return Product.in_stock.is_(True)
 
 
+def _not_archived_product_clause():
+    return Product.archived.is_(False)
+
+
 def _compact_sku_search_token(value: str) -> str:
     return "".join(char for char in value.casefold() if char.isalnum())
 
@@ -41,10 +45,18 @@ async def create_product(session: AsyncSession, data: ProductCreate) -> Product:
     return product
 
 
-async def get_product_by_id(session: AsyncSession, product_id: int, *, include_out_of_stock: bool = True) -> Product | None:
+async def get_product_by_id(
+    session: AsyncSession,
+    product_id: int,
+    *,
+    include_out_of_stock: bool = True,
+    include_archived: bool = False,
+) -> Product | None:
     stmt = select(Product).options(selectinload(Product.variants)).where(Product.id == product_id)
     if not include_out_of_stock:
         stmt = stmt.where(_in_stock_product_clause())
+    if not include_archived:
+        stmt = stmt.where(_not_archived_product_clause())
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
@@ -56,8 +68,21 @@ async def get_product_by_sku(session: AsyncSession, sku: str) -> Product | None:
     return (await session.execute(select(Product).where(Product.sku == sku))).scalar_one_or_none()
 
 
-async def get_products(session: AsyncSession, *, q: str | None = None, sku: str | None = None, min_priority: int | None = None, category_id: int | None = None, offset: int = 0, limit: int = 100, sort: str = None) -> list[Product]:
+async def get_products(
+    session: AsyncSession,
+    *,
+    q: str | None = None,
+    sku: str | None = None,
+    min_priority: int | None = None,
+    category_id: int | None = None,
+    offset: int = 0,
+    limit: int = 100,
+    sort: str = None,
+    include_archived: bool = False,
+) -> list[Product]:
     stmt = select(Product).options(selectinload(Product.variants))
+    if not include_archived:
+        stmt = stmt.where(_not_archived_product_clause())
     if category_id is not None:
         stmt = stmt.join(ProductByCategory, ProductByCategory.product_id == Product.id).where(ProductByCategory.category_id == category_id)
     if sku is not None: stmt = stmt.where(Product.sku == sku)
@@ -128,7 +153,7 @@ async def get_similar_products(
         select(Product)
         .options(selectinload(Product.variants))
         .join(shared_category_counts, shared_category_counts.c.product_id == Product.id)
-        .where(_in_stock_product_clause())
+        .where(_in_stock_product_clause(), _not_archived_product_clause())
         .order_by(
             shared_category_counts.c.shared_category_count.desc(),
             Product.created_at.desc(),
@@ -140,15 +165,25 @@ async def get_similar_products(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_priority_products(session: AsyncSession, *, min_priority: int = 1, offset: int = 0, limit: int = 100) -> list[Product]:
+async def get_priority_products(
+    session: AsyncSession,
+    *,
+    min_priority: int = 1,
+    offset: int = 0,
+    limit: int = 100,
+    include_archived: bool = False,
+) -> list[Product]:
     stmt = (
         select(Product)
         .options(selectinload(Product.variants))
-        .where(_in_stock_product_clause(), Product.priority >= min_priority)
         .order_by(Product.priority.desc(), Product.id.desc())
         .offset(offset)
         .limit(limit)
     )
+    predicates = [_in_stock_product_clause(), Product.priority >= min_priority]
+    if not include_archived:
+        predicates.append(_not_archived_product_clause())
+    stmt = stmt.where(*predicates)
     return list((await session.execute(stmt)).scalars().all())
 
 

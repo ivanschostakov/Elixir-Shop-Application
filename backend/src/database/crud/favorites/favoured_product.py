@@ -31,7 +31,7 @@ async def get_favoured_products(session: AsyncSession, *, user_id: int | None = 
 
 
 async def get_favourite_products_for_user(session: AsyncSession, user_id: int, *, product_id: int | None = None, offset: int = 0, limit: int = 100) -> list[Product]:
-    stmt = select(Product).join(FavouredProduct, FavouredProduct.product_id == Product.id).where(FavouredProduct.user_id == user_id)
+    stmt = select(Product).join(FavouredProduct, FavouredProduct.product_id == Product.id).where(FavouredProduct.user_id == user_id, Product.archived.is_(False))
     if product_id is not None: stmt = stmt.where(FavouredProduct.product_id == product_id)
     stmt = stmt.order_by(Product.in_stock.desc(), FavouredProduct.id.desc()).offset(offset).limit(limit)
     return list((await session.execute(stmt)).scalars().all())

@@ -8,6 +8,7 @@ export type ProductRead = {
     expiration: string | null
     priority: number
     in_stock: boolean
+    archived: boolean
     rating_avg: number
     rating_count: number
     image_url: string
@@ -22,6 +23,7 @@ export type ProductVariantRead = {
     sku: string | null
     name: string
     stock: number
+    archived: boolean
     price: string
     created_at: string
     updated_at: string
@@ -76,6 +78,7 @@ export type ProductCreate = {
     description?: string | null
     usage?: string | null
     expiration?: string | null
+    archived?: boolean
     priority?: number
 }
 
@@ -86,5 +89,6 @@ export type ProductUpdate = {
     description?: string | null
     usage?: string | null
     expiration?: string | null
+    archived?: boolean | null
     priority?: number | null
 }

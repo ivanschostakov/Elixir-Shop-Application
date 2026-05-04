@@ -52,7 +52,7 @@ def _validate_checkout_items(items: list[BasketItem], variants_by_id: dict[int, 
     for item in items:
         variant = variants_by_id.get(item.variant_id)
         if variant is None: raise _checkout_conflict("Basket contains a variant that is no longer available")
-        if variant.stock <= 0 or item.quantity > variant.stock: raise _checkout_conflict("Basket contains unavailable items")
+        if variant.archived or variant.stock <= 0 or item.quantity > variant.stock: raise _checkout_conflict("Basket contains unavailable items")
 
 
 def _build_draft_items_from_basket(*, user_id: int, draft_id: int, basket_items: list[BasketItem], variants_by_id: dict[int, Variant]) -> tuple[list[OrderDraftItem], Decimal, int]:

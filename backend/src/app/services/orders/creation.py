@@ -142,7 +142,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
 
     for basket_item in basket.items:
         variant = basket_item.variant
-        if variant is None or variant.stock <= 0 or basket_item.quantity > variant.stock:
+        if variant is None or variant.archived or variant.stock <= 0 or basket_item.quantity > variant.stock:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
 
         unit_price = variant.price
@@ -230,7 +230,7 @@ async def repeat_order_as_draft_for_user(session: AsyncSession, *, user_id: int,
     for order_item in order.items:
         variant = variants_by_id.get(order_item.variant_id)
         if variant is None or variant.product is None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
-        if variant.stock <= 0 or order_item.quantity > variant.stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
+        if variant.archived or variant.stock <= 0 or order_item.quantity > variant.stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
 
         line_total = variant.price * order_item.quantity
         basket_subtotal += line_total

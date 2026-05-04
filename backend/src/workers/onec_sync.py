@@ -3,21 +3,22 @@ import logging
 import signal
 from contextlib import suppress
 
-from config import ONEC_SYNC_INTERVAL_MINUTES
+from config import MOY_SKLAD_SYNC_INTERVAL_MINUTES
 from logger import setup_logging
-from src.integrations.onec import sync_onec_product_catalog
+from src.integrations.moysklad import sync_moysklad_product_catalog
 
 log = logging.getLogger("worker.onec_sync")
 
 
 async def _run_once() -> None:
-    stats = await sync_onec_product_catalog()
-    log.info("1C sync tick completed: %s", stats.as_dict())
+    log.warning("Legacy 1C sync worker is deprecated; running MoySklad sync instead")
+    stats = await sync_moysklad_product_catalog()
+    log.info("MoySklad sync tick completed from legacy 1C worker entrypoint: %s", stats.as_dict())
 
 
 async def run_forever() -> None:
     stop_event = asyncio.Event()
-    interval_seconds = max(int(ONEC_SYNC_INTERVAL_MINUTES), 1) * 60
+    interval_seconds = max(int(MOY_SKLAD_SYNC_INTERVAL_MINUTES), 1) * 60
 
     async def _shutdown() -> None: stop_event.set()
 

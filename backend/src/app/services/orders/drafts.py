@@ -143,7 +143,7 @@ async def create_order_draft_from_variant_selection(session: AsyncSession, *, us
 
     for variant_id, quantity in normalized_items.items():
         variant = variants_by_id[variant_id]
-        if variant.stock <= 0 or quantity > variant.stock: raise _checkout_conflict("Selected products are no longer available in the requested quantity")
+        if variant.archived or variant.stock <= 0 or quantity > variant.stock: raise _checkout_conflict("Selected products are no longer available in the requested quantity")
         line_total = variant.price * quantity
         basket_subtotal += line_total
         total_quantity += quantity

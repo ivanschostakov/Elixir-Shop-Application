@@ -209,6 +209,7 @@ def test_product_create_allows_admin(monkeypatch: pytest.MonkeyPatch):
             "expiration": None,
             "priority": 0,
             "in_stock": False,
+            "archived": False,
             "image_url": "http://testserver/media/products/product.png",
             "created_at": now,
             "updated_at": now,

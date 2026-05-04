@@ -24,6 +24,7 @@ class Product(Base, SystemMixin):
     usage: Mapped[str | None] = mapped_column(Text, nullable=True)
     expiration: Mapped[str | None] = mapped_column(Text, nullable=True)
     in_stock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
     variants: Mapped[list["Variant"]] = relationship(

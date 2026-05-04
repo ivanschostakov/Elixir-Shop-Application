@@ -193,7 +193,7 @@ async def _load_variants(session: AsyncSession, variant_ids: set[int]) -> dict[i
 
 
 def _build_product_card(product: Product, ref: StructuredProductRef) -> AIInteractiveProductCard:
-    in_stock_variants = [variant for variant in product.variants if variant.stock > 0]
+    in_stock_variants = [variant for variant in product.variants if not variant.archived and variant.stock > 0]
     shown_variants = in_stock_variants[:6]
     action_id_by_key: dict[str, str] = {}
     requested_button_keys = {alias for row in ref.button_rows for key in row for alias in _button_key_aliases(key)}

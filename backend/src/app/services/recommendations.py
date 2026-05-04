@@ -439,7 +439,7 @@ async def _load_candidate_products(
         select(Product)
         .options(selectinload(Product.variants))
         .join(ProductByCategory, ProductByCategory.product_id == Product.id)
-        .where(ProductByCategory.category_id.in_(normalized_category_ids), Product.in_stock.is_(True))
+        .where(ProductByCategory.category_id.in_(normalized_category_ids), Product.in_stock.is_(True), Product.archived.is_(False))
     )
     if excluded_product_ids:
         stmt = stmt.where(Product.id.notin_(excluded_product_ids))
@@ -493,7 +493,7 @@ async def _load_home_fallback_products(
     stmt: Select[tuple[Product]] = (
         select(Product)
         .options(selectinload(Product.variants))
-        .where(Product.in_stock.is_(True))
+        .where(Product.in_stock.is_(True), Product.archived.is_(False))
         .order_by(Product.created_at.desc(), Product.id.desc())
         .offset(offset)
         .limit(limit)

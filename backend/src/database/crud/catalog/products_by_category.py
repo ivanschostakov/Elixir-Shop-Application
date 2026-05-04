@@ -33,13 +33,23 @@ async def get_product_by_category_links(session: AsyncSession, *, product_id: in
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_products_for_category(session: AsyncSession, category_id: int, *, product_id: int | None = None, offset: int = 0, limit: int = 100) -> list[Product]:
+async def get_products_for_category(
+    session: AsyncSession,
+    category_id: int,
+    *,
+    product_id: int | None = None,
+    offset: int = 0,
+    limit: int = 100,
+    include_archived: bool = False,
+) -> list[Product]:
     stmt = (
         select(Product)
         .join(ProductByCategory, ProductByCategory.product_id == Product.id)
         .where(ProductByCategory.category_id == category_id)
     )
 
+    if not include_archived:
+        stmt = stmt.where(Product.archived.is_(False))
     if product_id is not None: stmt = stmt.where(ProductByCategory.product_id == product_id)
     stmt = stmt.order_by(ProductByCategory.id.desc()).offset(offset).limit(limit)
     return list((await session.execute(stmt)).scalars().all())

@@ -250,7 +250,7 @@ async def add_variant_to_basket_for_user(db: AsyncSession, *, user_id: int, vari
 
     basket = await _get_or_create_locked_basket(db, user_id)
     variant = await _get_variant_for_update(db, variant_id)
-    if variant is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    if variant is None or variant.archived: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
 
     existing_item = await get_basket_item_by_basket_and_variant(db, basket.id, variant.id, user_id=user_id)
     next_quantity = quantity if existing_item is None else existing_item.quantity + quantity
@@ -276,7 +276,7 @@ async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, u
     for draft_item in draft.items:
         variant = variants_by_id.get(draft_item.variant_id)
         if variant is None: raise _basket_conflict("Order draft contains unavailable items")
-        if variant.stock <= 0 or draft_item.quantity > variant.stock: raise _basket_conflict("Order draft contains unavailable items")
+        if variant.archived or variant.stock <= 0 or draft_item.quantity > variant.stock: raise _basket_conflict("Order draft contains unavailable items")
 
         restored_items.append(
             BasketItem(

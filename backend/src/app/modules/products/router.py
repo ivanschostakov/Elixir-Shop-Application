@@ -288,10 +288,10 @@ async def products_get(
 async def products_create(request: Request, data: ProductCreate, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_admin_user)):
     try:
         product = await create_product(db, data)
-        product = await get_product_by_id(db, product.id, include_out_of_stock=True)
+        product = await get_product_by_id(db, product.id, include_out_of_stock=True, include_archived=True)
         review_stats = await get_product_review_stats(db, product_ids=[product.id])
         await _bump_product_cache_namespaces()
-        return serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats)
+        return serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats, include_archived_variants=True)
 
     except IntegrityError:
         await db.rollback()
@@ -300,15 +300,15 @@ async def products_create(request: Request, data: ProductCreate, db: AsyncSessio
 
 @products_router.patch("/{product_id}", response_model=ProductWithVariantsRead)
 async def products_patch(request: Request, product_id: int, data: ProductUpdate, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_admin_user)):
-    product = await get_product_by_id(db, product_id, include_out_of_stock=True)
+    product = await get_product_by_id(db, product_id, include_out_of_stock=True, include_archived=True)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     try:
         updated_product = await update_product(db, product, data)
-        updated_product = await get_product_by_id(db, updated_product.id, include_out_of_stock=True)
+        updated_product = await get_product_by_id(db, updated_product.id, include_out_of_stock=True, include_archived=True)
         review_stats = await get_product_review_stats(db, product_ids=[updated_product.id])
         await _bump_product_cache_namespaces()
-        return serialize_product_with_variants(request, updated_product, review_stats_by_product_id=review_stats)
+        return serialize_product_with_variants(request, updated_product, review_stats_by_product_id=review_stats, include_archived_variants=True)
 
     except IntegrityError:
         await db.rollback()
@@ -317,7 +317,7 @@ async def products_patch(request: Request, product_id: int, data: ProductUpdate,
 
 @products_router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def products_delete(product_id: int, db: AsyncSession = Depends(get_db), _: User = Depends(get_current_admin_user)):
-    product = await get_product_by_id(db, product_id, include_out_of_stock=True)
+    product = await get_product_by_id(db, product_id, include_out_of_stock=True, include_archived=True)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     await delete_product(db, product)

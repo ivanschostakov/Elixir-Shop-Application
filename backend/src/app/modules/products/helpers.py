@@ -40,15 +40,41 @@ def serialize_product(request: Request, product: Product, *, review_stats_by_pro
     return payload.model_copy(update={"image_url": build_product_image_url(request, product), "rating_avg": rating_avg, "rating_count": rating_count})
 
 
-def serialize_product_with_variants(request: Request, product: Product, *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> ProductWithVariantsRead:
+def serialize_product_with_variants(
+    request: Request,
+    product: Product,
+    *,
+    review_stats_by_product_id: ReviewStatsByProductId | None = None,
+    include_archived_variants: bool = False,
+) -> ProductWithVariantsRead:
     payload = ProductWithVariantsRead.model_validate(product)
-    variants = [serialize_product_variant(request, variant) for variant in product.variants]
+    visible_variants = [
+        variant
+        for variant in product.variants
+        if include_archived_variants or not variant.archived
+    ]
+    variants = [serialize_product_variant(request, variant) for variant in visible_variants]
     rating_avg, rating_count = _get_review_stats(product.id, review_stats_by_product_id)
     return payload.model_copy(update={"image_url": build_product_image_url(request, product), "variants": variants, "rating_avg": rating_avg, "rating_count": rating_count})
 
 
 def serialize_products(request: Request, products: list[Product], *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> list[ProductRead]:  return [serialize_product(request, product, review_stats_by_product_id=review_stats_by_product_id) for product in products]
-def serialize_products_with_variants(request: Request, products: list[Product], *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> list[ProductWithVariantsRead]: return [serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats_by_product_id) for product in products]
+def serialize_products_with_variants(
+    request: Request,
+    products: list[Product],
+    *,
+    review_stats_by_product_id: ReviewStatsByProductId | None = None,
+    include_archived_variants: bool = False,
+) -> list[ProductWithVariantsRead]:
+    return [
+        serialize_product_with_variants(
+            request,
+            product,
+            review_stats_by_product_id=review_stats_by_product_id,
+            include_archived_variants=include_archived_variants,
+        )
+        for product in products
+    ]
 
 
 def serialize_review(request: Request, review: Review) -> ReviewRead:
