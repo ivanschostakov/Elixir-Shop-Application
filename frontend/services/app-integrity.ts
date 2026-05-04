@@ -1,8 +1,7 @@
 import * as AppIntegrity from "@expo/app-integrity"
-import Constants from "expo-constants"
 import * as SecureStore from "expo-secure-store"
 import { Platform } from "react-native"
-import { API_BASE_URL } from "@/services/api/constants"
+import { ANDROID_CLOUD_PROJECT_NUMBER, API_BASE_URL } from "@/config/env"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 
 const IOS_APP_ATTEST_KEY_STORAGE_KEY = "elixirshop.appIntegrity.iosKeyId"
@@ -57,13 +56,7 @@ type IosRegisterResponse = {
 }
 
 function getAndroidCloudProjectNumber() {
-    const envValue = process.env.EXPO_PUBLIC_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER?.trim()
-    if (envValue) {
-        return envValue
-    }
-
-    const extra = Constants.expoConfig?.extra as { appIntegrity?: { androidCloudProjectNumber?: string } } | undefined
-    return extra?.appIntegrity?.androidCloudProjectNumber?.trim() || null
+    return ANDROID_CLOUD_PROJECT_NUMBER
 }
 
 function randomHex(bytesLength: number) {
@@ -105,6 +98,10 @@ function createUnavailableError(action: string, platform: string, error: unknown
 }
 
 async function appIntegrityFetch<T>(path: string, init: RequestInit, hasRetried = false): Promise<T> {
+    if (!API_BASE_URL) {
+        throw new Error("missing_api_base_url")
+    }
+
     const headers = new Headers(init.headers)
     const tokens = getAuthTokens()
 

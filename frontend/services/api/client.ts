@@ -25,7 +25,17 @@ function isLikelyHtmlResponse(payload: string) {
 }
 
 function buildUrl(baseUrl: string, path: string, query?: QueryParams): string {
-    const url = new URL(`${baseUrl}${path}`)
+    const normalizedBaseUrl = baseUrl.trim()
+    if (!normalizedBaseUrl) {
+        throw new ApiError(503, SERVICE_UNAVAILABLE_MESSAGE, "Missing API base URL")
+    }
+
+    let url: URL
+    try {
+        url = new URL(`${normalizedBaseUrl}${path}`)
+    } catch {
+        throw new ApiError(503, SERVICE_UNAVAILABLE_MESSAGE, "Invalid API base URL")
+    }
 
     if (query) {
         for (const [key, value] of Object.entries(query)) {

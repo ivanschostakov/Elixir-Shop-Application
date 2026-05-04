@@ -7,6 +7,8 @@ module.exports = defineConfig([
     ignores: [
       '**/.expo/**',
       '**/dist/**',
+      '**/dist-ios-sourcemap/**',
+      '**/dist-ios-test/**',
       '**/backups/**',
       '**/web-backup/**',
       '**/scripts/react-native-yamap-patches/**',

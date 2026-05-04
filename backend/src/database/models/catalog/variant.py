@@ -1,6 +1,5 @@
 from decimal import Decimal
 from pathlib import Path
-
 from sqlalchemy import BigInteger, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,7 +12,7 @@ from src.database.mixins import SystemMixin
 
 
 class Variant(Base, SystemMixin):
-    __tablename__ = "doses"
+    __tablename__ = "variants"
 
     product_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("products.id", ondelete="CASCADE"), index=True, nullable=False)
 
