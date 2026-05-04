@@ -33,6 +33,7 @@ class MoySkladCatalogSyncStats:
     updated_variants: int = 0
     skipped_products_invalid_system_id: int = 0
     skipped_products_variant_external_code: int = 0
+    skipped_products_excluded_name: int = 0
     skipped_products_conflict_sku: int = 0
     skipped_products_conflict_name: int = 0
     skipped_variants_invalid_system_id: int = 0

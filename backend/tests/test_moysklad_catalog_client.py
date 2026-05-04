@@ -51,6 +51,66 @@ def test_moysklad_variant_rows_use_product_meta_id_and_stock_assortment_id():
     assert variant_rows[0].stock == 5
 
 
+def test_moysklad_variant_rows_strip_parent_product_name():
+    client = MoySkladClient(token="token", base_url="https://example.test")
+    stats = MoySkladCatalogSyncStats()
+    products = [
+        {
+            "id": str(NEW_PRODUCT_ID),
+            "externalCode": str(OLD_PRODUCT_ID),
+            "article": "P-001",
+            "name": "Product",
+        }
+    ]
+    variants = [
+        {
+            "id": str(VARIANT_5_ID),
+            "externalCode": str(OLD_PRODUCT_ID),
+            "code": "V-001",
+            "name": "Product (5 mg)",
+            "product": {"id": str(NEW_PRODUCT_ID), "externalCode": str(OLD_PRODUCT_ID)},
+        },
+        {
+            "id": str(VARIANT_10_ID),
+            "externalCode": str(OLD_PRODUCT_ID),
+            "code": "V-002",
+            "name": "Standalone 10 mg",
+            "product": {"id": str(NEW_PRODUCT_ID), "externalCode": str(OLD_PRODUCT_ID)},
+        },
+    ]
+
+    _, products_by_external_code, products_by_id = client._build_product_rows(products, stats)
+    variant_rows = client._build_variant_rows(
+        variants=variants,
+        stocks=[],
+        products_by_external_code=products_by_external_code,
+        products_by_id=products_by_id,
+        stats=stats,
+    )
+
+    assert [row.name for row in variant_rows] == ["5 mg", "Standalone 10 mg"]
+
+
+def test_moysklad_product_rows_skip_package_product():
+    stats = MoySkladCatalogSyncStats()
+    product_rows, products_by_external_code, products_by_id = MoySkladClient._build_product_rows(
+        [
+            {
+                "id": str(NEW_PRODUCT_ID),
+                "externalCode": str(OLD_PRODUCT_ID),
+                "code": "PKG",
+                "name": "ПАКЕТ фирменный, малый",
+            }
+        ],
+        stats,
+    )
+
+    assert product_rows == []
+    assert products_by_external_code == {}
+    assert products_by_id == {}
+    assert stats.skipped_products_excluded_name == 1
+
+
 def test_moysklad_product_row_unarchives_fetched_products():
     stats = MoySkladCatalogSyncStats()
     product_rows, _, _ = MoySkladClient._build_product_rows(

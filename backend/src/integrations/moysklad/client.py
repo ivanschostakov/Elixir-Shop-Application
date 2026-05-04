@@ -50,6 +50,7 @@ class MoySkladInitialRelinkError(RuntimeError):
 
 
 _MATCH_TOKEN_RE = re.compile(r"[^0-9a-zа-яё]+", re.IGNORECASE)
+_VARIANT_NAME_PREFIX_SEPARATORS = " \t\r\n-–—:|/\\"
 
 
 def _normalized_match_text(value: Any) -> str | None:
@@ -127,6 +128,33 @@ def _local_variant_match_keys(variant: Variant, *, product_name: Any = None) -> 
     return keys
 
 
+def _moysklad_variant_display_name(value: Any, *, product_name: Any = None, fallback: str = "Основной вариант") -> str:
+    name = optional_str(value)
+    if name is None:
+        return fallback
+
+    product = optional_str(product_name)
+    if product is None:
+        return name
+
+    normalized_name = name.casefold().replace("ё", "е")
+    normalized_product = product.casefold().replace("ё", "е")
+    if normalized_name == normalized_product:
+        return fallback
+
+    if not normalized_name.startswith(normalized_product):
+        return name
+
+    remainder = name[len(product):]
+    if remainder and remainder[0].isalnum():
+        return name
+
+    cleaned = remainder.strip().lstrip(_VARIANT_NAME_PREFIX_SEPARATORS).strip()
+    if len(cleaned) >= 2 and cleaned.startswith("(") and cleaned.endswith(")"):
+        cleaned = cleaned[1:-1].strip()
+    return cleaned or fallback
+
+
 def _stock_assortment_id(stock: dict[str, Any]) -> uuid.UUID | None:
     direct = coerce_uuid(stock.get("assortmentId"))
     if direct is not None:
@@ -182,6 +210,7 @@ class MoySkladClient:
         "Товары интернет-магазинов/https://elixirpeptide.ru/",
         "Пасхалка",
     }
+    _EXCLUDED_PRODUCT_NAME_PREFIXES = ("пакет",)
 
     def __init__(self, *, token: str | None = MOY_SKLAD_TOKEN, base_url: str | None = MOY_SKLAD_BASE_URL, timeout_seconds: int = MOY_SKLAD_TIMEOUT_SECONDS, stock_reserve: int = MOY_SKLAD_STOCK_RESERVE) -> None:
         self._token = optional_str(token) or ""
@@ -311,12 +340,16 @@ class MoySkladClient:
             if external_code and "#" in external_code:
                 stats.skipped_products_variant_external_code += 1
                 continue
+            product_name = optional_str(product.get("name"))
+            if product_name and product_name.casefold().startswith(MoySkladClient._EXCLUDED_PRODUCT_NAME_PREFIXES):
+                stats.skipped_products_excluded_name += 1
+                continue
             if external_code: products_by_external_code[external_code] = product
             products_by_id[product_id] = product
 
             sku_fallback = str(product_id)
             sku = fit_text(product.get("article") or product.get("code"), PRODUCT_SKU_MAX_LENGTH) or sku_fallback[:PRODUCT_SKU_MAX_LENGTH]
-            name = fit_text(product.get("name"), PRODUCT_NAME_MAX_LENGTH) or sku[:PRODUCT_NAME_MAX_LENGTH]
+            name = fit_text(product_name, PRODUCT_NAME_MAX_LENGTH) or sku[:PRODUCT_NAME_MAX_LENGTH]
             rows.append(MoySkladProductRow(
                 system_id=product_id,
                 sku=sku,
@@ -384,11 +417,16 @@ class MoySkladClient:
 
             sku = fit_text(variant.get("code"), VARIANT_SKU_MAX_LENGTH)
             name_fallback = sku or "Основной вариант"
+            variant_name = _moysklad_variant_display_name(
+                variant.get("name"),
+                product_name=product.get("name"),
+                fallback=name_fallback,
+            )
             rows.append(MoySkladVariantRow(
                 system_id=variant_id,
                 product_system_id=product_system_id,
                 sku=sku,
-                name=fit_text(variant.get("name"), VARIANT_NAME_MAX_LENGTH) or name_fallback[:VARIANT_NAME_MAX_LENGTH],
+                name=fit_text(variant_name, VARIANT_NAME_MAX_LENGTH) or name_fallback[:VARIANT_NAME_MAX_LENGTH],
                 stock=stock_quantity,
                 price=self._sale_price(variant),
             ))
@@ -767,12 +805,21 @@ class MoySkladClient:
         self._execute_image_rename_plans(image_plans, stats=stats)
 
         try:
+            product_match_by_id = {product.id: product for product, _, _, _ in product_matches}
             for local_product, _, new_system_id, _ in product_matches:
                 local_product.system_id = new_system_id
 
             for local_variant, _, new_system_id, moy_variant in variant_matches:
                 local_variant.system_id = new_system_id
-                new_name = fit_text(moy_variant.get("name"), VARIANT_NAME_MAX_LENGTH)
+                local_product = product_match_by_id.get(local_variant.product_id)
+                new_name = fit_text(
+                    _moysklad_variant_display_name(
+                        moy_variant.get("name"),
+                        product_name=local_product.name if local_product is not None else None,
+                        fallback=local_variant.name,
+                    ),
+                    VARIANT_NAME_MAX_LENGTH,
+                )
                 if new_name:
                     local_variant.name = new_name
 
