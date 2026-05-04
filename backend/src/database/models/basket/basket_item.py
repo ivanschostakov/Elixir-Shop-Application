@@ -17,7 +17,7 @@ class BasketItem(Base, IdPkMixin, TimestampMixin):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     basket_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("baskets.id", ondelete="CASCADE"), nullable=False, index=True)
     product_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("products.id", ondelete="CASCADE"), nullable=False, index=True)
-    variant_id: Mapped[int] = mapped_column("dose_id", BigInteger, ForeignKey("doses.id", ondelete="CASCADE"), nullable=False, index=True)
+    variant_id: Mapped[int] = mapped_column("dose_id", BigInteger, ForeignKey("variants.id", ondelete="CASCADE"), nullable=False, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 

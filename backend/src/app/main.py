@@ -14,7 +14,7 @@ from ..integrations.ai import get_professor_client
 from ..integrations.website_identity import get_website_identity_client
 from ..integrations.delivery.geo import get_geo_client
 from ..integrations.delivery.cdek import get_cdek_client
-from ..integrations.onec import get_onec_catalog_client
+from ..integrations.moysklad import get_moysklad_catalog_client
 
 logger = logging.getLogger("app")
 HOST = "0.0.0.0"
@@ -31,7 +31,7 @@ async def lifespan(_: FastAPI):
         await get_geo_client().aclose()
         await get_cdek_client().aclose()
         await get_professor_client().aclose()
-        await get_onec_catalog_client().aclose()
+        await get_moysklad_catalog_client().aclose()
         await get_cache_service().close()
 
 

@@ -14,7 +14,7 @@ class StockNotificationSubscription(Base, IdPkMixin, TimestampMixin):
     )
 
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    variant_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("doses.id", ondelete="CASCADE"), nullable=False, index=True)
+    variant_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("variants.id", ondelete="CASCADE"), nullable=False, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     last_seen_stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

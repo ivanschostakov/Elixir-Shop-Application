@@ -74,7 +74,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: ["python", "-m", "src.workers.onec_sync"]
+    command: ["python", "-m", "src.workers.moysklad_sync"]
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
