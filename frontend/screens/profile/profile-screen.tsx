@@ -12,6 +12,8 @@ import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { checkMyBenefits } from "@/services/api/benefits"
+import type { BenefitCheckResponse, BenefitOptionResponse } from "@/services/api/benefits.types"
 import { attachMyReferrerCode, detachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { formatMoney } from "@/utils/formatting"
@@ -24,6 +26,42 @@ function formatProfileMoney(value: string | null | undefined) {
 function formatProfilePercent(value: string | null | undefined) {
     const amount = Number(value ?? 0)
     return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(amount)}%`
+}
+
+function formatProfileBenefitValue(option: BenefitOptionResponse) {
+    if (option.discount_percent !== null) {
+        return formatProfilePercent(option.discount_percent)
+    }
+
+    if (option.discount_amount !== null) {
+        return formatProfileMoney(option.discount_amount)
+    }
+
+    return null
+}
+
+function getProfileBenefitTitle(option: BenefitOptionResponse, t: ReturnType<typeof useLanguage>["t"]) {
+    if (option.source_kind === "app_referral") {
+        return t("profile.discounts.appReferral")
+    }
+
+    if (option.source_kind === "website_discount_entitlement") {
+        return t("profile.discounts.websitePersonal")
+    }
+
+    if (option.source_kind === "website_coupon") {
+        return t("profile.discounts.websiteCoupon")
+    }
+
+    if (option.source_kind === "app_promo") {
+        return t("profile.discounts.appPromo")
+    }
+
+    return t("profile.discounts.discount")
+}
+
+function getProfileBenefitKey(option: BenefitOptionResponse) {
+    return `${option.source_kind}-${option.source_record_id ?? "none"}-${option.code ?? "none"}`
 }
 
 export default function ProfileScreen() {
@@ -48,6 +86,19 @@ export default function ProfileScreen() {
     const [isDetachingProfilePromo, setIsDetachingProfilePromo] = useState(false)
     const [isDeletingAccount, setIsDeletingAccount] = useState(false)
     const normalizedProfilePromoCode = useMemo(() => profilePromoCode.trim(), [profilePromoCode])
+    const {
+        data: benefitCheck,
+        reload: reloadBenefits,
+    } = useAsyncData<BenefitCheckResponse | null>({
+        deps: [user?.id ?? null],
+        enabled: Boolean(user?.id),
+        fetcher: () => checkMyBenefits({
+            currency: "RUB",
+            subtotal: "0",
+        }),
+        initialData: null,
+        resetOnLoad: true,
+    })
 
     const {
         avatarUri,
@@ -64,9 +115,24 @@ export default function ProfileScreen() {
         useCallback(() => {
             if (user?.id) {
                 void reloadReferralProfile({ showLoading: false })
+                void reloadBenefits({ showLoading: false })
             }
-        }, [reloadReferralProfile, user?.id]),
+        }, [reloadBenefits, reloadReferralProfile, user?.id]),
     )
+
+    const liveDiscountOptions = useMemo(() => {
+        const options = benefitCheck?.available_discount_options.filter((option) => option.is_applicable) ?? []
+        const seen = new Set<string>()
+
+        return options.filter((option) => {
+            const key = getProfileBenefitKey(option)
+            if (seen.has(key)) {
+                return false
+            }
+            seen.add(key)
+            return true
+        })
+    }, [benefitCheck])
 
     const handleApplyProfilePromo = useCallback(async () => {
         if (!normalizedProfilePromoCode) {
@@ -87,6 +153,7 @@ export default function ProfileScreen() {
             })
             setReferralProfile(nextReferralProfile)
             setProfilePromoCode("")
+            void reloadBenefits({ showLoading: false })
             Alert.alert(t("profile.referral.attachSuccessTitle"), t("profile.referral.attachSuccessMessage"))
         } catch (applyError) {
             Alert.alert(
@@ -98,7 +165,7 @@ export default function ProfileScreen() {
         } finally {
             setIsApplyingProfilePromo(false)
         }
-    }, [isApplyingProfilePromo, normalizedProfilePromoCode, setReferralProfile, t])
+    }, [isApplyingProfilePromo, normalizedProfilePromoCode, reloadBenefits, setReferralProfile, t])
 
     const handleDetachProfilePromo = useCallback(async () => {
         if (isDetachingProfilePromo) {
@@ -111,6 +178,7 @@ export default function ProfileScreen() {
             const nextReferralProfile = await detachMyReferrerCode()
             setReferralProfile(nextReferralProfile)
             setProfilePromoCode("")
+            void reloadBenefits({ showLoading: false })
             Alert.alert(t("profile.referral.detachSuccessTitle"), t("profile.referral.detachSuccessMessage"))
         } catch (detachError) {
             Alert.alert(
@@ -122,7 +190,7 @@ export default function ProfileScreen() {
         } finally {
             setIsDetachingProfilePromo(false)
         }
-    }, [isDetachingProfilePromo, setReferralProfile, t])
+    }, [isDetachingProfilePromo, reloadBenefits, setReferralProfile, t])
 
     const handleSignOut = async () => {
         await signOut()
@@ -268,6 +336,47 @@ export default function ProfileScreen() {
                             />
                         </View>
                     </>
+                )}
+            </View>
+
+            <View style={ProfileScreenStyles.sectionCard}>
+                <View style={ProfileScreenStyles.sectionHeader}>
+                    <View style={ProfileScreenStyles.sectionHeaderCopy}>
+                        <Text style={ProfileScreenStyles.sectionTitle}>{t("profile.discounts.title")}</Text>
+                        <Text style={ProfileScreenStyles.sectionDescription}>
+                            {t("profile.discounts.subtitle")}
+                        </Text>
+                    </View>
+                </View>
+
+                {liveDiscountOptions.length ? (
+                    <View style={ProfileScreenStyles.discountStack}>
+                        {liveDiscountOptions.map((option) => {
+                            const benefitValue = formatProfileBenefitValue(option)
+
+                            return (
+                                <View key={getProfileBenefitKey(option)} style={ProfileScreenStyles.discountRow}>
+                                    <View style={ProfileScreenStyles.discountCopy}>
+                                        <Text style={ProfileScreenStyles.discountTitle}>
+                                            {getProfileBenefitTitle(option, t)}
+                                        </Text>
+                                        {option.code ? (
+                                            <Text style={ProfileScreenStyles.discountCode}>
+                                                {option.code}
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                    <Text style={ProfileScreenStyles.discountValue}>
+                                        {benefitValue ?? t("profile.discounts.available")}
+                                    </Text>
+                                </View>
+                            )
+                        })}
+                    </View>
+                ) : (
+                    <Text style={ProfileScreenStyles.sectionDescription}>
+                        {t("profile.discounts.empty")}
+                    </Text>
                 )}
             </View>
 

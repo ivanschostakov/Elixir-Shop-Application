@@ -8,3 +8,5 @@
 .env.*
 !.env.example
 !.env.docker.example
+/docs/product-image-audit-2026-05-06-after-fix.md
+/docs/product-image-audit-2026-05-06.md

@@ -395,6 +395,41 @@ export const ProfileScreenStyles = StyleSheet.create({
         fontSize: 14,
         fontWeight: "700",
     },
+    discountStack: {
+        gap: spacing.sm,
+    },
+    discountRow: {
+        alignItems: "center",
+        backgroundColor: colors.surfaceElevated,
+        borderColor: colors.borderSoft,
+        borderRadius: 16,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.md,
+        justifyContent: "space-between",
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+    discountCopy: {
+        flex: 1,
+        gap: 3,
+        minWidth: 0,
+    },
+    discountTitle: {
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: "800",
+    },
+    discountCode: {
+        color: colors.mutedText,
+        fontSize: 12,
+        fontWeight: "700",
+    },
+    discountValue: {
+        color: colors.success,
+        fontSize: 20,
+        fontWeight: "900",
+    },
     historyCardButton: {
         borderRadius: spacing.lg,
         overflow: "hidden",
