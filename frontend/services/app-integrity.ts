@@ -4,9 +4,9 @@ import { Platform } from "react-native"
 import { ANDROID_CLOUD_PROJECT_NUMBER, API_BASE_URL } from "@/config/env"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 
-const IOS_APP_ATTEST_KEY_STORAGE_KEY = "elixirshop.appIntegrity.iosKeyId"
-const IOS_APP_ATTEST_REGISTERED_STORAGE_KEY = "elixirshop.appIntegrity.iosRegisteredKeyId"
-const IOS_APP_ATTEST_STATE_VERSION_STORAGE_KEY = "elixirshop.appIntegrity.iosStateVersion"
+const IOS_APP_ATTEST_KEY_STORAGE_KEY = "elixirpeptide.appIntegrity.iosKeyId"
+const IOS_APP_ATTEST_REGISTERED_STORAGE_KEY = "elixirpeptide.appIntegrity.iosRegisteredKeyId"
+const IOS_APP_ATTEST_STATE_VERSION_STORAGE_KEY = "elixirpeptide.appIntegrity.iosStateVersion"
 const IOS_APP_ATTEST_STATE_VERSION = "2"
 const APP_INTEGRITY_HEADERS = {
     action: "X-App-Integrity-Action",

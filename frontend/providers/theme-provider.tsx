@@ -6,7 +6,7 @@ import { ThemeContext } from "@/providers/theme-provider.context"
 import type { ThemeProviderProps } from "@/providers/theme-provider.types"
 import type { ThemeName } from "@/theme/colors"
 
-const THEME_STORAGE_KEY = "elixirshop-theme"
+const THEME_STORAGE_KEY = "elixirpeptide-theme"
 
 function isThemeName(value: string | null): value is ThemeName {
     return value === "light" || value === "dark"

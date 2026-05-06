@@ -20,7 +20,7 @@ import { useLanguage } from "@/providers/language-provider"
 import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-const LEGAL_ACCEPTED_STORAGE_KEY = "elixirshop-legal-accepted-v1"
+const LEGAL_ACCEPTED_STORAGE_KEY = "elixirpeptide-legal-accepted-v1"
 
 function getWebStorage() {
     if (typeof window === "undefined" || typeof window.localStorage === "undefined") {

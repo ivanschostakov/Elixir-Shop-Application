@@ -6,7 +6,7 @@ import { translate, type Language } from "@/i18n/translations"
 import { LanguageContext, useLanguage } from "@/providers/language-provider.context"
 import type { LanguageProviderProps } from "@/providers/language-provider.types"
 
-const LANGUAGE_STORAGE_KEY = "elixirshop-language"
+const LANGUAGE_STORAGE_KEY = "elixirpeptide-language"
 
 function isLanguage(value: string | null): value is Language {
     return value === "ru" || value === "en"

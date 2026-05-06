@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "Elixir Peptide",
-    "slug": "elixir-shop",
+    "slug": "elixirpeptide",
     "version": "0.1.1",
     "orientation": "portrait",
     "icon": "./assets/images/adaptive-icon-preview.png",
-    "scheme": "elixirshopapp",
+    "scheme": "elixirpeptide",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "runtimeVersion": {
@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "icon": "./assets/images/adaptive-icon-preview.png",
-      "bundleIdentifier": "com.ivanschostakov.elixirshopapp",
+      "bundleIdentifier": "com.ivanschostakov.elixirpeptide",
       "buildNumber": "2",
       "associatedDomains": [
         "applinks:elixirshop.devsivanschostakov.org"
