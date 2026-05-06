@@ -4,6 +4,7 @@ import { AppState, type AppStateStatus } from "react-native"
 
 import {
     authenticate,
+    deleteAccount as deleteAccountRequest,
     getCurrentUser,
     getAuthErrorMessage,
     logout,
@@ -256,6 +257,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     }
 
+    const deleteAccount = async () => {
+        try {
+            await unregisterOrderStatusNotifications()
+            await deleteAccountRequest()
+        } finally {
+            clearAuthTokens()
+            clearBasketSnapshot()
+            resetOrderStatusNotifications()
+            setUser(null)
+        }
+    }
+
     const isAuthenticated = Boolean(user)
 
     return (
@@ -271,6 +284,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 verifyRegistration,
                 resendRegistrationCode,
                 signOut,
+                deleteAccount,
             }}
         >
             {children}

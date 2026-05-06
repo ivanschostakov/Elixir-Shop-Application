@@ -295,6 +295,10 @@ export const getHeaderStyles = (topInset: number, windowHeight: number) =>
             justifyContent: "center",
             width: 32,
         },
+        languageToggleFlag: {
+            fontSize: 18,
+            lineHeight: 22,
+        },
         menuAction: {
             alignItems: "center",
             justifyContent: "center",

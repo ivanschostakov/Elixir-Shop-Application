@@ -1,5 +1,5 @@
 import { ENDPOINTS } from "@/services/api/constants"
-import { apiGet, apiPost } from "@/services/api/client"
+import { apiDelete, apiGet, apiPost } from "@/services/api/client"
 import {
     clearAuthTokens,
     getAuthTokens,
@@ -179,6 +179,10 @@ export async function logout() {
         },
         { auth: false, retryOnUnauthorized: false },
     )
+}
+
+export async function deleteAccount() {
+    await apiDelete<AuthLogoutResponse>(authPath("/me"))
 }
 
 export async function getCurrentUser(): Promise<AuthUser> {

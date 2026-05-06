@@ -27,7 +27,7 @@ function formatProfilePercent(value: string | null | undefined) {
 }
 
 export default function ProfileScreen() {
-    const { signOut, user } = useAuth()
+    const { deleteAccount, signOut, user } = useAuth()
     const { t } = useLanguage()
     const fullName = [user?.name, user?.surname].filter(Boolean).join(" ").trim()
     const displayName = fullName || t("profile.fallbackName")
@@ -46,6 +46,7 @@ export default function ProfileScreen() {
     const [profilePromoCode, setProfilePromoCode] = useState("")
     const [isApplyingProfilePromo, setIsApplyingProfilePromo] = useState(false)
     const [isDetachingProfilePromo, setIsDetachingProfilePromo] = useState(false)
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false)
     const normalizedProfilePromoCode = useMemo(() => profilePromoCode.trim(), [profilePromoCode])
 
     const {
@@ -127,6 +128,45 @@ export default function ProfileScreen() {
         await signOut()
         router.replace(ROUTES.login)
     }
+
+    const handleDeleteAccount = useCallback(() => {
+        if (isDeletingAccount) {
+            return
+        }
+
+        Alert.alert(
+            t("profile.deleteAccountConfirmTitle"),
+            t("profile.deleteAccountConfirmMessage"),
+            [
+                {
+                    text: t("common.cancel"),
+                    style: "cancel",
+                },
+                {
+                    text: t("profile.deleteAccountConfirmAction"),
+                    style: "destructive",
+                    onPress: () => {
+                        setIsDeletingAccount(true)
+                        void deleteAccount()
+                            .then(() => {
+                                router.replace(ROUTES.login)
+                            })
+                            .catch((deleteError) => {
+                                Alert.alert(
+                                    t("profile.deleteAccountFailedTitle"),
+                                    deleteError instanceof Error && deleteError.message
+                                        ? deleteError.message
+                                        : t("profile.deleteAccountFailedMessage"),
+                                )
+                            })
+                            .finally(() => {
+                                setIsDeletingAccount(false)
+                            })
+                    },
+                },
+            ],
+        )
+    }, [deleteAccount, isDeletingAccount, t])
 
     const profileChromeTemplate = useMemo(() => {
         if (!normalizedProfilePromoCode || shouldShowReferralDetails) {
@@ -406,7 +446,11 @@ export default function ProfileScreen() {
                 </Pressable>
             </View>
 
-            <ProfileQuickActions onSignOut={handleSignOut} />
+            <ProfileQuickActions
+                isDeletingAccount={isDeletingAccount}
+                onDeleteAccount={handleDeleteAccount}
+                onSignOut={handleSignOut}
+            />
         </FeedTemplate>
     )
 }

@@ -1,10 +1,10 @@
-import { Pressable, Text, View } from "react-native"
+import { ActivityIndicator, Pressable, Text, View } from "react-native"
 
 import type { ProfileQuickActionsProps } from "@/components/profile/profile-quick-actions.types"
 import { useLanguage } from "@/providers/language-provider"
 import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
 
-export function ProfileQuickActions({ onSignOut }: ProfileQuickActionsProps) {
+export function ProfileQuickActions({ isDeletingAccount = false, onDeleteAccount, onSignOut }: ProfileQuickActionsProps) {
     const { t } = useLanguage()
 
     return (
@@ -26,6 +26,26 @@ export function ProfileQuickActions({ onSignOut }: ProfileQuickActionsProps) {
                 <Text style={ProfileScreenStyles.signOutButtonText}>
                     {t("profile.signOutCta")}
                 </Text>
+            </Pressable>
+
+            <Pressable
+                accessibilityLabel={t("profile.deleteAccountCta")}
+                accessibilityRole="button"
+                disabled={isDeletingAccount}
+                onPress={onDeleteAccount}
+                style={({ pressed }) => [
+                    ProfileScreenStyles.deleteAccountButton,
+                    pressed && !isDeletingAccount && ProfileScreenStyles.deleteAccountButtonPressed,
+                    isDeletingAccount && ProfileScreenStyles.deleteAccountButtonDisabled,
+                ]}
+            >
+                {isDeletingAccount ? (
+                    <ActivityIndicator color="#ffffff" />
+                ) : (
+                    <Text style={ProfileScreenStyles.deleteAccountButtonText}>
+                        {t("profile.deleteAccountCta")}
+                    </Text>
+                )}
             </Pressable>
         </View>
     )

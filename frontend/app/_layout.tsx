@@ -9,6 +9,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler"
 import AppShell from "@/components/navigation/app-shell"
 import { VersionGate } from "@/components/navigation/version-gate"
 import { AuthProvider } from "@/providers/auth-provider"
+import { LanguageProvider } from "@/providers/language-provider"
 import { ThemeProvider } from "@/providers/theme-provider"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
 import { attachPushOpenListener } from "@/services/notifications/order-status-notifications"
@@ -110,7 +111,9 @@ export default function RootLayout() {
         return (
             <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
                 <ThemeProvider>
-                    <WebTemporarilyDisabledScreen />
+                    <LanguageProvider>
+                        <WebTemporarilyDisabledScreen />
+                    </LanguageProvider>
                 </ThemeProvider>
             </GestureHandlerRootView>
         )
@@ -119,11 +122,13 @@ export default function RootLayout() {
     return (
         <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
             <ThemeProvider>
-                <VersionGate>
-                    <AuthProvider>
-                        <AppShell />
-                    </AuthProvider>
-                </VersionGate>
+                <LanguageProvider>
+                    <VersionGate>
+                        <AuthProvider>
+                            <AppShell />
+                        </AuthProvider>
+                    </VersionGate>
+                </LanguageProvider>
             </ThemeProvider>
         </GestureHandlerRootView>
     )

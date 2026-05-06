@@ -24,6 +24,7 @@ export type AuthContextValue = {
     verifyRegistration: (payload: RegistrationVerifyPayload) => Promise<void>
     resendRegistrationCode: (payload: RegistrationCodeResendPayload) => Promise<RegistrationCodeSentResponse>
     signOut: () => Promise<void>
+    deleteAccount: () => Promise<void>
 }
 
 export type AuthProviderProps = {

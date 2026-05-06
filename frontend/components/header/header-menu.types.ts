@@ -1,4 +1,5 @@
 import type { AppHeaderStyles } from "@/components/header/app-header.styles"
+import type { Language } from "@/i18n/translations"
 import type { LanguageContextValue } from "@/providers/language-provider.types"
 import type { ThemeName } from "@/theme/colors"
 
@@ -9,9 +10,11 @@ export type HeaderMenuProps = {
     onOpenPublicOffer: () => void
     onOpenRequisites: () => void
     onSignOut: () => Promise<void>
+    onToggleLanguage?: () => void
     onToggleTheme?: () => void
     onToggle: () => void
     styles: AppHeaderStyles
     t: LanguageContextValue["t"]
+    language?: Language
     themeName?: ThemeName
 }

@@ -37,7 +37,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const { signOut } = useAuth()
     const { basket } = useBasket()
     const { clear, error: basketError, updating: basketUpdating } = useBasketMutations()
-    const { t } = useLanguage()
+    const { language, t, toggleLanguage } = useLanguage()
     const { tabs } = useContentTabs(pathname, {
         articles: t("common.articles"),
         products: t("common.products"),
@@ -181,10 +181,12 @@ export default function AppHeader({ template }: AppHeaderProps) {
                     router.push(ROUTES.requisites)
                 }}
                 onSignOut={signOut}
+                onToggleLanguage={toggleLanguage}
                 onToggleTheme={toggleTheme}
                 onToggle={() => setIsMenuOpen((currentValue) => !currentValue)}
                 styles={styles}
                 t={t}
+                language={language}
                 themeName={themeName}
             />
         )

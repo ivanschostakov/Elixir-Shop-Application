@@ -12,11 +12,13 @@ const THEME_TOGGLE_THUMB_TRANSLATE_X = 40
 
 export function HeaderMenu({
     isOpen,
+    language,
     onClose,
     onOpenContacts,
     onOpenPublicOffer,
     onOpenRequisites,
     onSignOut,
+    onToggleLanguage,
     onToggleTheme,
     onToggle,
     styles,
@@ -24,9 +26,16 @@ export function HeaderMenu({
     themeName,
 }: HeaderMenuProps) {
     const canToggleTheme = Boolean(onToggleTheme && themeName)
+    const canToggleLanguage = Boolean(onToggleLanguage && language)
     const isDarkTheme = themeName === "dark"
+    const isEnglish = language === "en"
     const themeToggleProgress = useRef(new Animated.Value(isDarkTheme ? 1 : 0)).current
+    const languageToggleProgress = useRef(new Animated.Value(isEnglish ? 1 : 0)).current
     const thumbTranslateX = themeToggleProgress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0, THEME_TOGGLE_THUMB_TRANSLATE_X],
+    })
+    const languageThumbTranslateX = languageToggleProgress.interpolate({
         inputRange: [0, 1],
         outputRange: [0, THEME_TOGGLE_THUMB_TRANSLATE_X],
     })
@@ -38,6 +47,14 @@ export function HeaderMenu({
             useNativeDriver: true,
         }).start()
     }, [isDarkTheme, themeToggleProgress])
+
+    useEffect(() => {
+        Animated.timing(languageToggleProgress, {
+            duration: 180,
+            toValue: isEnglish ? 1 : 0,
+            useNativeDriver: true,
+        }).start()
+    }, [isEnglish, languageToggleProgress])
 
     return (
         <>
@@ -101,6 +118,43 @@ export function HeaderMenu({
                                                     strokeWidth={2}
                                                 />
                                             </Svg>
+                                        </View>
+                                    </View>
+                                </View>
+                            </Pressable>
+
+                            <View style={styles.menuDivider} />
+                        </>
+                    ) : null}
+
+                    {canToggleLanguage ? (
+                        <>
+                            <Pressable
+                                accessibilityLabel={t("nav.toggleLanguage")}
+                                accessibilityRole="button"
+                                accessibilityState={{ checked: isEnglish }}
+                                onPress={() => {
+                                    onToggleLanguage?.()
+                                }}
+                                style={({ pressed }) => [
+                                    styles.themeToggleAction,
+                                    pressed && styles.menuActionPressed,
+                                ]}
+                            >
+                                <View style={styles.themeToggleTrack}>
+                                    <View pointerEvents="none" style={styles.themeToggleTrackFill} />
+                                    <Animated.View
+                                        style={[
+                                            styles.themeToggleThumb,
+                                            { transform: [{ translateX: languageThumbTranslateX }] },
+                                        ]}
+                                    />
+                                    <View pointerEvents="none" style={styles.themeToggleIcons}>
+                                        <View style={styles.themeToggleIconSlot}>
+                                            <Text style={styles.languageToggleFlag}>🇷🇺</Text>
+                                        </View>
+                                        <View style={styles.themeToggleIconSlot}>
+                                            <Text style={styles.languageToggleFlag}>🇬🇧</Text>
                                         </View>
                                     </View>
                                 </View>

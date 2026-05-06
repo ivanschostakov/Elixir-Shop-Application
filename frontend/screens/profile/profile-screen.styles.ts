@@ -445,6 +445,25 @@ export const ProfileScreenStyles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "800",
     },
+    deleteAccountButton: {
+        minHeight: 50,
+        borderRadius: 16,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#dc2626",
+        paddingHorizontal: spacing.md,
+    },
+    deleteAccountButtonPressed: {
+        opacity: 0.84,
+    },
+    deleteAccountButtonDisabled: {
+        opacity: 0.5,
+    },
+    deleteAccountButtonText: {
+        color: "#ffffff",
+        fontSize: 16,
+        fontWeight: "800",
+    },
     avatarViewerBackdrop: {
         flex: 1,
         backgroundColor: "rgba(4, 10, 18, 0.92)",
