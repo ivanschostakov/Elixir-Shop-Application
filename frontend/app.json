@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Elixir Shop",
+    "name": "Elixir Peptide",
     "slug": "elixir-shop",
     "version": "0.1.1",
     "orientation": "portrait",
@@ -27,8 +27,8 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Allow Elixir Shop to access your location so the delivery map can center on you.",
-        "NSMicrophoneUsageDescription": "Allow Elixir Shop to record voice messages for AI chat."
+        "NSLocationWhenInUseUsageDescription": "Allow Elixir Peptide to access your location so the delivery map can center on you.",
+        "NSMicrophoneUsageDescription": "Allow Elixir Peptide to record voice messages for AI chat."
       }
     },
     "android": {
@@ -82,8 +82,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Elixir Shop to access your photos so you can attach images to chat messages.",
-          "cameraPermission": "Allow Elixir Shop to access your camera so you can take profile pictures.",
+          "photosPermission": "Allow Elixir Peptide to access your photos so you can attach images to chat messages.",
+          "cameraPermission": "Allow Elixir Peptide to access your camera so you can take profile pictures.",
           "microphonePermission": false
         }
       ],
@@ -93,14 +93,14 @@
           "granularPermissions": [
             "photo"
           ],
-          "photosPermission": "Allow Elixir Shop to show recent photos so you can attach them to chat messages.",
-          "savePhotosPermission": "Allow Elixir Shop to save photos."
+          "photosPermission": "Allow Elixir Peptide to show recent photos so you can attach them to chat messages.",
+          "savePhotosPermission": "Allow Elixir Peptide to save photos."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Elixir Shop to access your camera so you can take profile pictures.",
+          "cameraPermission": "Allow Elixir Peptide to access your camera so you can take profile pictures.",
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
@@ -115,7 +115,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow Elixir Shop to record voice messages for AI chat."
+          "microphonePermission": "Allow Elixir Peptide to record voice messages for AI chat."
         }
       ],
       "expo-asset"

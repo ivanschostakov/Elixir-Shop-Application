@@ -11,7 +11,7 @@ import Swipeable from "react-native-gesture-handler/Swipeable"
 
 import { SavedIcon } from "@/components/footer/sticky-footer.icons"
 import { formatProductPrice } from "@/components/content/product-content"
-import { useProductFavourite } from "@/hooks/products/use-product-favourite"
+import { AUTH_REQUIRED_PROMPTED_ERROR, useProductFavourite } from "@/hooks/products/use-product-favourite"
 import { useLanguage } from "@/providers/language-provider"
 import { FULL_SWIPE_REMOVE_TRIGGER } from "@/screens/cart/cart-screen.constants"
 import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
@@ -102,6 +102,10 @@ export function CartBasketItem({
             const nextIsFavourite = await toggleFavourite()
             Alert.alert(nextIsFavourite ? t("product.favoriteAdded") : t("product.favoriteRemoved"))
         } catch (error) {
+            if (error instanceof Error && error.message === AUTH_REQUIRED_PROMPTED_ERROR) {
+                return
+            }
+
             Alert.alert(
                 error instanceof Error
                     ? error.message

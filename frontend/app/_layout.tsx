@@ -33,7 +33,7 @@ function WebTemporarilyDisabledScreen() {
     return (
         <View style={rootLayoutStyles.webDisabledScreen}>
             <View style={rootLayoutStyles.webDisabledCard}>
-                <Text style={rootLayoutStyles.webDisabledEyebrow}>Elixir Shop</Text>
+                <Text style={rootLayoutStyles.webDisabledEyebrow}>Elixir Peptide</Text>
                 <Text style={rootLayoutStyles.webDisabledTitle}>Web version is temporarily disabled</Text>
                 <Text style={rootLayoutStyles.webDisabledText}>
                     The app is currently being built mobile-first. Web will come back later when the product flow is finished.

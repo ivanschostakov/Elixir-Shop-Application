@@ -171,15 +171,21 @@ export default function LoginScreen() {
                 )}
             </Pressable>
 
-            <Pressable
-                onPress={() => router.push(ROUTES.register)}
-                style={({ pressed }) => [
-                    authSharedStyles.secondaryButton,
-                    pressed && authSharedStyles.secondaryButtonPressed,
-                ]}
-            >
-                <Text style={authSharedStyles.secondaryButtonText}>{t("auth.login.goToRegister")}</Text>
-            </Pressable>
+            <View style={authSharedStyles.helperRow}>
+                <Pressable
+                    onPress={() => router.push(ROUTES.register)}
+                    style={({ pressed }) => [pressed && authSharedStyles.textLinkDisabled]}
+                >
+                    <Text style={authSharedStyles.helperLink}>{t("auth.login.goToRegister")}</Text>
+                </Pressable>
+                <Text style={authSharedStyles.helperText}>·</Text>
+                <Pressable
+                    onPress={() => router.replace(ROUTES.discover)}
+                    style={({ pressed }) => [pressed && authSharedStyles.textLinkDisabled]}
+                >
+                    <Text style={authSharedStyles.helperLink}>{t("auth.continueAsGuest")}</Text>
+                </Pressable>
+            </View>
         </AuthFormLayout>
     )
 }

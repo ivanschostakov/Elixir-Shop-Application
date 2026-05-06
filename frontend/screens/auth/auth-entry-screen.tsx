@@ -34,6 +34,15 @@ export default function AuthEntryScreen() {
                     >
                         <Text style={authSharedStyles.secondaryButtonText}>{t("auth.entry.register")}</Text>
                     </Pressable>
+
+                    <View style={authSharedStyles.helperRow}>
+                        <Pressable
+                            onPress={() => router.replace(ROUTES.discover)}
+                            style={({ pressed }) => [pressed && authSharedStyles.textLinkDisabled]}
+                        >
+                            <Text style={authSharedStyles.helperLink}>{t("auth.continueAsGuest")}</Text>
+                        </Pressable>
+                    </View>
                 </View>
             </ScrollView>
         </SafeAreaView>

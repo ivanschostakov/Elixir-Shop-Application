@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Alert, Animated, Share } from "react-native"
 
 import { getProductRoute } from "@/constants/routes"
+import { AUTH_REQUIRED_PROMPTED_ERROR } from "@/hooks/products/use-product-favourite"
 import {
     getRememberedProductVariantSelection,
     setRememberedProductVariantSelection,
@@ -189,6 +190,10 @@ export function useProductScreenActions({
             const nextIsFavourite = await toggleFavourite()
             Alert.alert(nextIsFavourite ? t("product.favoriteAdded") : t("product.favoriteRemoved"))
         } catch (bookmarkError) {
+            if (bookmarkError instanceof Error && bookmarkError.message === AUTH_REQUIRED_PROMPTED_ERROR) {
+                return
+            }
+
             Alert.alert(
                 bookmarkError instanceof Error
                     ? bookmarkError.message

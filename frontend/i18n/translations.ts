@@ -1,5 +1,5 @@
 const translations = {
-    "app.name": "Elixir Shop",
+    "app.name": "Elixir Peptide",
     "route.discover": "Обзор",
     "route.chat": "Чат",
     "route.basket": "Корзина",
@@ -599,6 +599,7 @@ const translations = {
     "legal.agreeCta": "Я согласен",
     "auth.entry.login": "Войти",
     "auth.entry.register": "Регистрация",
+    "auth.continueAsGuest": "Продолжить как гость",
     "auth.login.title": "Войти",
     "auth.login.loginOrEmail": "Логин или email",
     "auth.login.loginOrEmailPlaceholder": "Введите логин или email",

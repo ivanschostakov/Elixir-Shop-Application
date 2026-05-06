@@ -1,4 +1,4 @@
-# Elixir Shop Cloudflare Tunnel
+# Elixir Peptide Cloudflare Tunnel
 
 Hostnames:
 

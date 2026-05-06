@@ -35,7 +35,7 @@ async def lifespan(_: FastAPI):
         await get_cache_service().close()
 
 
-app = FastAPI(title="Elixir Shop API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Elixir Peptide API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ALLOWED_ORIGINS,
@@ -48,7 +48,7 @@ app.include_router(api_router)
 
 
 @app.get("/")
-async def read_root() -> dict[str, str]: return {"message": "Elixir Shop API is running"}
+async def read_root() -> dict[str, str]: return {"message": "Elixir Peptide API is running"}
 
 
 @app.get("/health")

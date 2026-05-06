@@ -23,11 +23,11 @@ export function getDefaultScreenTemplateKind(pathname: string): ScreenTemplateKi
 
 export function getDefaultScreenChromeTemplate(
     pathname: string,
-    isAuthenticated: boolean,
+    _isAuthenticated: boolean,
 ): ScreenChromeTemplateConfig {
     const title = getRouteTitle(pathname)
 
-    if (!isAuthenticated || isAuthRoute(pathname)) {
+    if (isAuthRoute(pathname)) {
         return {
             footer: "none",
             header: "none",

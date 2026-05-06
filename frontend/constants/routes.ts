@@ -48,6 +48,19 @@ export const PRIMARY_APP_ROUTES = [
     ROUTES.profile,
 ] as const
 
+const ACCOUNT_REQUIRED_ROUTES = [
+    ROUTES.favorites,
+    ROUTES.chat,
+    ROUTES.basket,
+    ROUTES.checkout,
+    ROUTES.delivery,
+    ROUTES.payment,
+    ROUTES.profile,
+    ROUTES.profileDrafts,
+    ROUTES.profileHistory,
+    ROUTES.websiteAccount,
+] as const
+
 const FULLSCREEN_ROUTES = [
     ROUTES.delivery,
 ] as const
@@ -75,6 +88,11 @@ export function isAuthRoute(pathname: string) {
 
 export function isPrimaryAppRoute(pathname: string) {
     return PRIMARY_APP_ROUTES.includes(pathname as (typeof PRIMARY_APP_ROUTES)[number])
+}
+
+export function isAccountRequiredRoute(pathname: string) {
+    const normalizedPath = pathname.split("?")[0]
+    return ACCOUNT_REQUIRED_ROUTES.includes(normalizedPath as (typeof ACCOUNT_REQUIRED_ROUTES)[number])
 }
 
 export function shouldShowAppChrome(pathname: string, isAuthenticated: boolean) {

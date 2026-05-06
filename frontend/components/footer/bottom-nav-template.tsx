@@ -10,13 +10,16 @@ import {
 } from "@/components/footer/sticky-footer.icons"
 import type { BottomNavTemplateProps } from "@/components/footer/bottom-nav-template.types"
 import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
-import { ROUTES } from "@/constants/routes"
+import { showAuthRequiredAlert } from "@/components/navigation/auth-required-alert"
+import { ROUTES, isAccountRequiredRoute } from "@/constants/routes"
 import { useBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
 import { useBasket } from "@/hooks/basket/use-basket"
+import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { colors } from "@/theme/colors"
 
 export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
+    const { isAuthenticated } = useAuth()
     const { basket } = useBasket()
     const basketDraftEditingId = useBasketDraftEditingId()
     const { t } = useLanguage()
@@ -76,6 +79,15 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
                         accessibilityRole="button"
                         onPress={() => {
                             if (!item.isActive) {
+                                if (!isAuthenticated && isAccountRequiredRoute(item.route)) {
+                                    showAuthRequiredAlert({
+                                        onLogin: () => {
+                                            router.push(ROUTES.login)
+                                        },
+                                    })
+                                    return
+                                }
+
                                 router.replace(item.route as never)
                             }
                         }}

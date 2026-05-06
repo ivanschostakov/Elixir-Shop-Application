@@ -4,6 +4,7 @@ import { ApiError } from "@/services/api/client"
 
 const BACKEND_UNAVAILABLE_MESSAGE = "Сервер временно недоступен. Попробуйте еще раз чуть позже."
 const INVALID_CREDENTIALS_MESSAGE = "Неверный логин или пароль."
+const AUTH_REQUIRED_MESSAGE = "Требуется вход в аккаунт."
 const INVALID_VERIFICATION_CODE_MESSAGE = "Неверный или просроченный код подтверждения."
 const ALERT_TITLE = "Ошибка"
 const ALERT_DEDUP_WINDOW_MS = 1200
@@ -19,11 +20,12 @@ function normalizeMessage(message: string, fallback: string) {
         return fallback
     }
 
-    if (
-        loweredMessage.includes("invalid credentials") ||
-        loweredMessage.includes("could not validate credentials")
-    ) {
+    if (loweredMessage.includes("invalid credentials")) {
         return INVALID_CREDENTIALS_MESSAGE
+    }
+
+    if (loweredMessage.includes("could not validate credentials")) {
+        return AUTH_REQUIRED_MESSAGE
     }
 
     if (
@@ -67,6 +69,10 @@ export function isBackendError(error: unknown) {
 }
 
 export function getErrorMessage(error: unknown, fallback = "Unknown error") {
+    if (error instanceof ApiError && [401, 403].includes(error.status)) {
+        return AUTH_REQUIRED_MESSAGE
+    }
+
     if (error instanceof ApiError && error.status >= 500) {
         return BACKEND_UNAVAILABLE_MESSAGE
     }
@@ -80,6 +86,10 @@ export function getErrorMessage(error: unknown, fallback = "Unknown error") {
 
 export function showBackendErrorAlert(error: unknown, fallback = BACKEND_UNAVAILABLE_MESSAGE) {
     if (!isBackendError(error)) {
+        return
+    }
+
+    if (error instanceof ApiError && [401, 403].includes(error.status)) {
         return
     }
 

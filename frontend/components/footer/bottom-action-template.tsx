@@ -6,11 +6,13 @@ import type { BottomActionTemplateProps } from "@/components/footer/bottom-actio
 import { parseDraftId } from "@/components/footer/bottom-action-template.utils"
 import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { getAddToCartErrorMessage } from "@/components/footer/sticky-footer.utils"
+import { showAuthRequiredAlert } from "@/components/navigation/auth-required-alert"
 import { ROUTES, getProductIdFromRoute, isProductRoute } from "@/constants/routes"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useRememberedProductVariantSelection } from "@/hooks/products/product-variant-selection-store"
+import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { updateOrderDraft } from "@/services/api/order-drafts"
 
@@ -19,6 +21,7 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     const router = useRouter()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()
+    const { isAuthenticated } = useAuth()
     const { basket } = useBasket()
     const [isOpeningCheckout, setIsOpeningCheckout] = useState(false)
     const { addItem, clear, error: basketError, removeItem, updateItemQuantity, updating } = useBasketMutations()
@@ -38,6 +41,14 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
         selectedBasketQuantity < selectedBasketAvailableQuantity &&
         selectedVariant !== null &&
         selectedVariant.stock > 0
+
+    const promptLogin = () => {
+        showAuthRequiredAlert({
+            onLogin: () => {
+                router.push(ROUTES.login)
+            },
+        })
+    }
 
     const handleBasketActionError = (error: unknown) => {
         Alert.alert(getAddToCartErrorMessage(error, basketError, t))
@@ -64,6 +75,11 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     }
 
     const handleAddToBasketPress = async () => {
+        if (!isAuthenticated) {
+            promptLogin()
+            return
+        }
+
         if (!selectedVariant?.variantId || selectedVariant.stock <= 0) {
             return
         }
@@ -76,6 +92,11 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     }
 
     const handleDecreaseBasketQuantity = async () => {
+        if (!isAuthenticated) {
+            promptLogin()
+            return
+        }
+
         if (!selectedBasketItem) {
             return
         }
@@ -93,6 +114,11 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     }
 
     const handleIncreaseBasketQuantity = async () => {
+        if (!isAuthenticated) {
+            promptLogin()
+            return
+        }
+
         if (!selectedBasketItem || !canIncreaseSelectedVariant) {
             return
         }
@@ -105,6 +131,11 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     }
 
     const handleOpenCheckout = async () => {
+        if (!isAuthenticated) {
+            promptLogin()
+            return
+        }
+
         if (isOpeningCheckout) {
             return
         }

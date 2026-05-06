@@ -167,7 +167,7 @@ export function VersionGate({ children }: VersionGateProps) {
     return (
         <View style={[versionGateStyles.screen, { backgroundColor: palette.pageBackground }]}>
             <View style={[versionGateStyles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-                <Text style={[versionGateStyles.eyebrow, { color: palette.mutedText }]}>Elixir Shop</Text>
+                <Text style={[versionGateStyles.eyebrow, { color: palette.mutedText }]}>Elixir Peptide</Text>
                 <Text style={[versionGateStyles.title, { color: palette.text }]}>Update required</Text>
                 <Text style={[versionGateStyles.text, { color: palette.stateText }]}>{bodyText}</Text>
 
