@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": true,
       "icon": "./assets/images/adaptive-icon-preview.png",
-      "bundleIdentifier": "com.ivanschostakov.elixirpeptide",
+      "bundleIdentifier": "com.ivanschostakov.elixirshopapp",
       "buildNumber": "2",
       "associatedDomains": [
         "applinks:elixirshop.devsivanschostakov.org"
