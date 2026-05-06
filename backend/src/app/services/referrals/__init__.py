@@ -8,6 +8,7 @@ from .calculations import (
 from .service import (
     attach_referrer_code,
     check_referrer_code,
+    detach_referrer_code,
     finalize_paid_order_referral_effects,
     get_deposit_balance,
     get_or_create_referral_profile,
@@ -25,6 +26,7 @@ __all__ = [
     "calculate_personal_discount_percent",
     "calculate_super_referrer_commission_percent",
     "check_referrer_code",
+    "detach_referrer_code",
     "finalize_paid_order_referral_effects",
     "get_deposit_balance",
     "get_or_create_referral_profile",

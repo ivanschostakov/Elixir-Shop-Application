@@ -506,6 +506,36 @@ async def attach_referrer_code(db: AsyncSession, *, user: User, code: str, confi
     return profile
 
 
+async def detach_referrer_code(db: AsyncSession, *, user: User) -> ReferralProfile:
+    profile = await get_or_create_referral_profile(db, user=user)
+    current_code = normalize_referral_code(profile.referrer_promo_code)
+    if current_code is None:
+        return profile
+
+    now = ufa_now()
+    active_relationships = list(
+        (
+            await db.execute(
+                select(ReferralRelationship).where(
+                    ReferralRelationship.referred_user_id == user.id,
+                    ReferralRelationship.is_active.is_(True),
+                )
+            )
+        ).scalars().all()
+    )
+    for relationship in active_relationships:
+        relationship.is_active = False
+        relationship.ended_at = now
+
+    profile.referrer_promo_code = None
+    profile.referrer_user_id = None
+    profile.promo_changed_at = now
+    profile.referral_discount_base_total = Decimal("0.00")
+    _refresh_profile_discount(profile)
+    await db.flush()
+    return profile
+
+
 async def _user_paid_order_total_for_period(db: AsyncSession, *, user_id: int, period_start: date, period_end: date) -> Decimal:
     start_dt, end_dt = _period_bounds(period_start, period_end)
     total = (

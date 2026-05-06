@@ -371,6 +371,9 @@ export const ProfileScreenStyles = StyleSheet.create({
     primaryActionButtonPressed: {
         opacity: 0.84,
     },
+    primaryActionButtonDisabled: {
+        opacity: 0.5,
+    },
     primaryActionButtonText: {
         color: "#ffffff",
         fontSize: 16,

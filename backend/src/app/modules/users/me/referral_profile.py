@@ -9,7 +9,7 @@ from src.app.modules.users.me.schemas.referrals import (
     ReferrerCodeCheckRead,
     ReferralProfileRead,
 )
-from src.app.services.referrals import attach_referrer_code, check_referrer_code, get_referral_profile_summary
+from src.app.services.referrals import attach_referrer_code, check_referrer_code, detach_referrer_code, get_referral_profile_summary
 from src.database import get_db
 from src.database.models import User
 
@@ -40,6 +40,17 @@ async def attach_my_referrer_code(
     current_user: User = Depends(get_current_user),
 ) -> ReferralProfileRead:
     await attach_referrer_code(db, user=current_user, code=payload.code, confirmed=payload.confirmed)
+    summary = await get_referral_profile_summary(db, user=current_user)
+    await db.commit()
+    return ReferralProfileRead.model_validate(summary)
+
+
+@my_referral_profile_router.delete("/referrer-code", response_model=ReferralProfileRead, status_code=status.HTTP_200_OK)
+async def detach_my_referrer_code(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReferralProfileRead:
+    await detach_referrer_code(db, user=current_user)
     summary = await get_referral_profile_summary(db, user=current_user)
     await db.commit()
     return ReferralProfileRead.model_validate(summary)

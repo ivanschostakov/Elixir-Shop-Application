@@ -80,25 +80,9 @@ import type {
     OrderDraftItemRead,
     OrderDraftRead,
 } from "@/services/api/order-drafts.types"
+import { attachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
+import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { colors } from "@/theme/colors"
-
-function normalizeCheckoutAmountInput(value: string) {
-    const normalized = value.trim().replace(",", ".")
-    if (!normalized) {
-        return null
-    }
-
-    if (!/^\d+(\.\d{0,2})?$/.test(normalized)) {
-        return null
-    }
-
-    const numericValue = Number(normalized)
-    if (!Number.isFinite(numericValue) || numericValue <= 0) {
-        return null
-    }
-
-    return numericValue.toFixed(2)
-}
 
 function formatBenefitTitle(option: BenefitOptionResponse) {
     if (["app_referral", "app_promo", "website_coupon"].includes(option.source_kind)) {
@@ -155,6 +139,17 @@ export default function CheckoutScreen() {
         initialData: null,
         resetOnLoad: true,
     })
+    const {
+        data: referralProfile,
+        reload: reloadReferralProfile,
+        setData: setReferralProfile,
+    } = useAsyncData<ReferralProfileResponse | null>({
+        deps: [orderDraft?.id ?? null, isBasketCheckout],
+        enabled: Boolean(orderDraft),
+        fetcher: getMyReferralProfile,
+        initialData: null,
+        resetOnLoad: true,
+    })
     const [openPickerSection, setOpenPickerSection] = useState<ExpandedSection>(null)
     const [isRecipientEditorOpen, setIsRecipientEditorOpen] = useState(false)
     const [isSavingRecipient, setIsSavingRecipient] = useState(false)
@@ -166,38 +161,37 @@ export default function CheckoutScreen() {
     const [recipientForm, setRecipientForm] = useState<RecipientFormState>(createEmptyRecipientForm())
     const [recipientFormErrors, setRecipientFormErrors] = useState<RecipientFormErrors>({})
     const [promoCode, setPromoCode] = useState(routePromoCode ?? "")
-    const [depositSpend, setDepositSpend] = useState("")
+    const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(routePromoCode ?? null)
+    const [benefitCheck, setBenefitCheck] = useState<BenefitCheckResponse | null>(null)
+    const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const appliedRoutePromoCodeRef = useRef<string | null>(routePromoCode ?? null)
     const normalizedPromoCode = useMemo(() => {
         const trimmedCode = promoCode.trim()
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
-    const requestedDepositAmount = useMemo(() => normalizeCheckoutAmountInput(depositSpend), [depositSpend])
-    const isDepositSpendInvalid = Boolean(depositSpend.trim() && requestedDepositAmount === null)
-    const { data: benefitCheck, error: benefitCheckError, loading: benefitCheckLoading } = useAsyncData<BenefitCheckResponse | null>({
-        debounceMs: 300,
-        deps: [
-            orderDraft?.basket_subtotal ?? null,
-            orderDraft?.currency ?? null,
-            normalizedPromoCode,
-            requestedDepositAmount,
-            isDepositSpendInvalid,
-        ],
-        enabled: Boolean(orderDraft),
-        fetcher: async () => {
-            if (!orderDraft) {
-                return null
-            }
+    const attachedPromoCode = referralProfile?.referrer_promo_code ?? null
+    const hasAttachedPromoCode = Boolean(attachedPromoCode)
+    const displayedPromoCode = attachedPromoCode ?? promoCode
+    const hasUnappliedPromoCode = Boolean(!hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const activeEnteredPromoCode = hasAttachedPromoCode ? null : appliedPromoCode
+    const loadBenefitCheck = useCallback(async (code: string | null) => {
+        if (!orderDraft) {
+            return null
+        }
 
-            return checkMyBenefits({
-                code: normalizedPromoCode,
+        try {
+            const nextBenefitCheck = await checkMyBenefits({
+                code,
                 currency: orderDraft.currency,
-                requested_deposit_amount: isDepositSpendInvalid ? null : requestedDepositAmount,
+                requested_deposit_amount: null,
                 subtotal: orderDraft.basket_subtotal,
             })
-        },
-        initialData: null,
-    })
+            setBenefitCheck(nextBenefitCheck)
+            return nextBenefitCheck
+        } catch {
+            return null
+        }
+    }, [orderDraft])
 
     useEffect(() => {
         if (!routePromoCode || appliedRoutePromoCodeRef.current === routePromoCode) {
@@ -206,7 +200,22 @@ export default function CheckoutScreen() {
 
         appliedRoutePromoCodeRef.current = routePromoCode
         setPromoCode(routePromoCode)
+        setAppliedPromoCode(routePromoCode)
     }, [routePromoCode])
+
+    useEffect(() => {
+        if (!orderDraft) {
+            return
+        }
+
+        const timeoutId = setTimeout(() => {
+            void loadBenefitCheck(activeEnteredPromoCode)
+        }, 300)
+
+        return () => {
+            clearTimeout(timeoutId)
+        }
+    }, [activeEnteredPromoCode, loadBenefitCheck, orderDraft])
 
     useEffect(() => {
         if (!orderDraft) {
@@ -226,6 +235,14 @@ export default function CheckoutScreen() {
         ), []),
     )
 
+    useFocusEffect(
+        useCallback(() => {
+            if (orderDraft) {
+                void reloadReferralProfile({ showLoading: false })
+            }
+        }, [orderDraft, reloadReferralProfile]),
+    )
+
     const savedRecipient = getDraftRecipient(orderDraft)
     const selfRecipient = getSelfRecipient(user)
     const currentRecipient = savedRecipient ?? selfRecipient
@@ -243,53 +260,98 @@ export default function CheckoutScreen() {
             orderDraft.currency,
         )
         : null
-    const stackedDiscountAmount = Number(benefitCheck?.stacked_discount_amount ?? 0)
     const depositAppliedAmount = Number(benefitCheck?.deposit_option?.applicable_amount ?? 0)
-    const stackedDiscountLabel = stackedDiscountAmount > 0
-        ? `−${formatMoney(stackedDiscountAmount, benefitCheck?.currency ?? orderDraft?.currency ?? null)}`
-        : null
     const depositAppliedLabel = depositAppliedAmount > 0
         ? `−${formatMoney(depositAppliedAmount, benefitCheck?.deposit_option?.currency ?? orderDraft?.currency ?? null)}`
         : null
-    const totalAfterDiscountsLabel = benefitCheck
-        ? formatMoney(Number(benefitCheck.total_after_discounts), benefitCheck.currency ?? orderDraft?.currency ?? null)
-        : null
-    const promoCodeStatusLabel = normalizedPromoCode
-        ? benefitCheckLoading
-            ? t("checkout.promoCodeChecking")
-            : benefitCheck?.unresolved_code_reason
-                ? t("checkout.promoCodeNotFound")
-                : benefitCheck?.entered_code_matches.some((option) => option.is_applicable)
-                    ? t("checkout.promoCodeApplied")
-                    : benefitCheck?.entered_code_matches.length
-                        ? t("checkout.promoCodeUnavailable")
-                        : null
-        : null
-    const promoCodeStatusIsError = Boolean(
-        normalizedPromoCode &&
-        !benefitCheckLoading &&
-        (
-            benefitCheck?.unresolved_code_reason ||
-            (
-                benefitCheck?.entered_code_matches.length &&
-                !benefitCheck.entered_code_matches.some((option) => option.is_applicable)
-            )
-        ),
-    )
     const hasDeliveryAddress = Boolean(orderDraft?.delivery_address)
     const hasRecipient = Boolean(currentRecipient)
     const payCtaLabel = grandTotal
         ? `${t("checkout.payCta")} ${grandTotal}`
         : t("checkout.payCta")
-    const checkoutFooterCtaLabel = !hasDeliveryAddress
+    const paymentFooterCtaLabel = !hasDeliveryAddress
         ? t("checkout.openDelivery")
         : !hasRecipient
             ? t("checkout.selectRecipient")
             : payCtaLabel
-    const isCheckoutFooterCtaDisabled = !hasDeliveryAddress || !hasRecipient
+    const checkoutFooterCtaLabel = isCheckingPromoCode
+        ? t("checkout.promoCodeChecking")
+        : hasUnappliedPromoCode
+            ? t("checkout.applyPromoCode")
+            : paymentFooterCtaLabel
+    const isCheckoutFooterCtaDisabled = isCheckingPromoCode || (!hasUnappliedPromoCode && (!hasDeliveryAddress || !hasRecipient))
     const [isUpdatingPositions, setIsUpdatingPositions] = useState(false)
     const isPositionsBusy = isRestoringDraft || isUpdatingPositions
     const isAddProductsBusy = isRestoringDraft
+    const handleApplyPromoCode = useCallback(async () => {
+        if (!normalizedPromoCode || !orderDraft || isCheckingPromoCode || hasAttachedPromoCode) {
+            return
+        }
+
+        setIsCheckingPromoCode(true)
+
+        try {
+            const nextBenefitCheck = await loadBenefitCheck(normalizedPromoCode)
+
+            if (!nextBenefitCheck) {
+                setAppliedPromoCode(null)
+                Alert.alert(t("checkout.promoCodeUnavailable"), t("checkout.promoCodeUnavailableMessage"))
+                return
+            }
+
+            const hasCodeMatch = Boolean(
+                !nextBenefitCheck.unresolved_code_reason && nextBenefitCheck.entered_code_matches.length,
+            )
+            const isApplicable = nextBenefitCheck.entered_code_matches.some((option) => option.is_applicable)
+            const hasDiscount = Number(nextBenefitCheck.stacked_discount_amount) > 0
+
+            if (!hasCodeMatch) {
+                try {
+                    const nextReferralProfile = await attachMyReferrerCode({
+                        code: normalizedPromoCode,
+                        confirmed: true,
+                    })
+                    setReferralProfile(nextReferralProfile)
+                    setPromoCode("")
+                    setAppliedPromoCode(null)
+                    await loadBenefitCheck(null)
+                    Alert.alert(t("checkout.promoCodeAppliedTitle"), t("checkout.promoCodeAppliedMessage"))
+                } catch {
+                    setAppliedPromoCode(null)
+                    await loadBenefitCheck(activeEnteredPromoCode)
+                    Alert.alert(t("checkout.promoCodeNotFound"), t("checkout.promoCodeNotFoundMessage"))
+                }
+                return
+            }
+
+            if (!isApplicable || !hasDiscount) {
+                setAppliedPromoCode(null)
+                await loadBenefitCheck(activeEnteredPromoCode)
+                Alert.alert(t("checkout.promoCodeUnavailable"), t("checkout.promoCodeUnavailableMessage"))
+                return
+            }
+
+            setAppliedPromoCode(normalizedPromoCode)
+            Alert.alert(t("checkout.promoCodeAppliedTitle"), t("checkout.promoCodeAppliedMessage"))
+        } finally {
+            setIsCheckingPromoCode(false)
+        }
+    }, [
+        activeEnteredPromoCode,
+        hasAttachedPromoCode,
+        isCheckingPromoCode,
+        loadBenefitCheck,
+        normalizedPromoCode,
+        orderDraft,
+        setReferralProfile,
+        t,
+    ])
+    const handlePromoCodeChange = useCallback((value: string) => {
+        setPromoCode(value)
+        if (appliedPromoCode && value.trim() !== appliedPromoCode) {
+            setAppliedPromoCode(null)
+        }
+    }, [appliedPromoCode])
     const openPaymentFlow = useCallback((paymentMethod: "later" | "sbp") => {
         if (!orderDraft) {
             return
@@ -300,11 +362,10 @@ export default function CheckoutScreen() {
             params: {
                 paymentMethod,
                 ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
-                ...(normalizedPromoCode ? { code: normalizedPromoCode } : {}),
-                ...(requestedDepositAmount && !isDepositSpendInvalid ? { depositSpend: requestedDepositAmount } : {}),
+                ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
             },
         })
-    }, [isBasketCheckout, isDepositSpendInvalid, normalizedPromoCode, orderDraft, requestedDepositAmount])
+    }, [activeEnteredPromoCode, isBasketCheckout, orderDraft])
 
     const handlePressPay = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
@@ -326,6 +387,14 @@ export default function CheckoutScreen() {
             },
         ])
     }, [openPaymentFlow, t])
+    const handleCheckoutFooterCtaPress = useCallback(() => {
+        if (hasUnappliedPromoCode) {
+            void handleApplyPromoCode()
+            return
+        }
+
+        handlePressPay()
+    }, [handleApplyPromoCode, handlePressPay, hasUnappliedPromoCode])
 
     const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         if (!hasMoreRecommendations || recommendationsLoadingMore) {
@@ -364,6 +433,25 @@ export default function CheckoutScreen() {
                                     <Text style={checkoutScreenStyles.totalValue}>{deliveryCost}</Text>
                                 </View>
                             ) : null}
+                            {grandTotal ? (
+                                <View style={[checkoutScreenStyles.totalRow, checkoutScreenStyles.totalRowGrandTotal]}>
+                                    <Text style={checkoutScreenStyles.totalLabelStrong}>{t("checkout.grandTotalLabel")}</Text>
+                                    <Text style={checkoutScreenStyles.totalValueStrong}>{grandTotal}</Text>
+                                </View>
+                            ) : null}
+                            {benefitCheck?.stacked_discount_options.map((option) => (
+                                <View
+                                    key={`${option.source_kind}-${option.source_record_id ?? option.code ?? option.sequence}`}
+                                    style={checkoutScreenStyles.totalRow}
+                                >
+                                    <Text style={checkoutScreenStyles.totalLabel}>{formatBenefitTitle(option)}</Text>
+                                    <Text style={[checkoutScreenStyles.totalValue, checkoutScreenStyles.totalValueDiscount]}>
+                                        {option.applied_discount_amount
+                                            ? `−${formatMoney(Number(option.applied_discount_amount), option.currency ?? benefitCheck.currency)}`
+                                            : null}
+                                    </Text>
+                                </View>
+                            ))}
                             {depositAppliedLabel ? (
                                 <View style={checkoutScreenStyles.totalRow}>
                                     <Text style={checkoutScreenStyles.totalLabel}>{t("checkout.depositSpendLabel")}</Text>
@@ -372,27 +460,13 @@ export default function CheckoutScreen() {
                                     </Text>
                                 </View>
                             ) : null}
-                            {stackedDiscountLabel ? (
-                                <View style={checkoutScreenStyles.totalRow}>
-                                    <Text style={checkoutScreenStyles.totalLabel}>{t("checkout.benefitsDiscountLabel")}</Text>
-                                    <Text style={[checkoutScreenStyles.totalValue, checkoutScreenStyles.totalValueDiscount]}>
-                                        {stackedDiscountLabel}
-                                    </Text>
-                                </View>
-                            ) : null}
-                            {grandTotal ? (
-                                <View style={[checkoutScreenStyles.totalRow, checkoutScreenStyles.totalRowGrandTotal]}>
-                                    <Text style={checkoutScreenStyles.totalLabelStrong}>{t("checkout.grandTotalLabel")}</Text>
-                                    <Text style={checkoutScreenStyles.totalValueStrong}>{grandTotal}</Text>
-                                </View>
-                            ) : null}
                         </View>
 
                         <Pressable
                             accessibilityLabel={checkoutFooterCtaLabel}
                             accessibilityRole="button"
                             disabled={isCheckoutFooterCtaDisabled}
-                            onPress={handlePressPay}
+                            onPress={handleCheckoutFooterCtaPress}
                             style={({ pressed }) => [
                                 checkoutScreenStyles.footerCtaButton,
                                 isCheckoutFooterCtaDisabled && checkoutScreenStyles.footerCtaButtonDisabled,
@@ -414,14 +488,14 @@ export default function CheckoutScreen() {
         }
     }, [
         basketSubtotal,
+        benefitCheck,
         checkoutFooterCtaLabel,
         deliveryCost,
         depositAppliedLabel,
         grandTotal,
-        handlePressPay,
+        handleCheckoutFooterCtaPress,
         isCheckoutFooterCtaDisabled,
         orderDraft,
-        stackedDiscountLabel,
         t,
     ])
     useApplyScreenTemplate("feed", checkoutChromeTemplate)
@@ -1046,108 +1120,23 @@ export default function CheckoutScreen() {
                                     <TextInput
                                         autoCapitalize="characters"
                                         autoCorrect={false}
-                                        onChangeText={setPromoCode}
+                                        editable={!hasAttachedPromoCode}
+                                        onChangeText={handlePromoCodeChange}
                                         placeholder={t("checkout.promoCodePlaceholder")}
                                         placeholderTextColor="#94A3B8"
                                         style={checkoutScreenStyles.detailsSheetInput}
-                                        value={promoCode}
+                                        value={displayedPromoCode}
                                     />
                                 </View>
                             </View>
                         </View>
-                        {promoCodeStatusLabel ? (
+                        {hasAttachedPromoCode ? (
                             <View style={checkoutScreenStyles.detailsSheetHintRow}>
-                                <Text
-                                    style={[
-                                        checkoutScreenStyles.detailsSheetHintText,
-                                        promoCodeStatusIsError
-                                            ? checkoutScreenStyles.detailsSheetHintTextError
-                                            : checkoutScreenStyles.detailsSheetHintTextSuccess,
-                                    ]}
-                                >
-                                    {promoCodeStatusLabel}
+                                <Text style={[checkoutScreenStyles.detailsSheetHintText, checkoutScreenStyles.detailsSheetHintTextSuccess]}>
+                                    {t("checkout.promoCodeAlreadyApplied")}
                                 </Text>
                             </View>
                         ) : null}
-                    </View>
-
-                    <View style={checkoutScreenStyles.sectionCard}>
-                        <View style={checkoutScreenStyles.sectionHeader}>
-                            <Text style={checkoutScreenStyles.sectionHeaderTitle}>
-                                {t("checkout.benefitsTitle")}
-                            </Text>
-                        </View>
-
-                        <View style={checkoutScreenStyles.infoList}>
-                            {benefitCheckLoading && !benefitCheck ? (
-                                <View style={checkoutScreenStyles.selectorLoadingRow}>
-                                    <ActivityIndicator size="small" />
-                                </View>
-                            ) : benefitCheckError && !benefitCheck ? (
-                                <Text style={checkoutScreenStyles.stateText}>{benefitCheckError}</Text>
-                            ) : benefitCheck ? (
-                                <>
-                                    {benefitCheck.stacked_discount_options.length ? (
-                                        benefitCheck.stacked_discount_options.map((option) => (
-                                            <View key={`${option.source_kind}-${option.source_record_id ?? option.code ?? option.sequence}`} style={checkoutScreenStyles.totalRow}>
-                                                <Text style={checkoutScreenStyles.totalLabel}>
-                                                    {formatBenefitTitle(option)}
-                                                </Text>
-                                                <Text style={[checkoutScreenStyles.totalValue, checkoutScreenStyles.totalValueDiscount]}>
-                                                    {option.applied_discount_amount
-                                                        ? `−${formatMoney(Number(option.applied_discount_amount), option.currency ?? benefitCheck.currency)}`
-                                                        : null}
-                                                </Text>
-                                            </View>
-                                        ))
-                                    ) : (
-                                        <Text style={checkoutScreenStyles.stateText}>{t("checkout.noBenefitsApplied")}</Text>
-                                    )}
-
-                                    {totalAfterDiscountsLabel ? (
-                                        <>
-                                            <View style={checkoutScreenStyles.summaryDivider} />
-                                            <View style={checkoutScreenStyles.totalRow}>
-                                                <Text style={checkoutScreenStyles.totalLabel}>{t("checkout.totalAfterDiscountsLabel")}</Text>
-                                                <Text style={checkoutScreenStyles.totalValue}>{totalAfterDiscountsLabel}</Text>
-                                            </View>
-                                        </>
-                                    ) : null}
-
-                                    {benefitCheck.deposit_option?.is_available ? (
-                                        <>
-                                            <View style={checkoutScreenStyles.summaryDivider} />
-                                            <View style={checkoutScreenStyles.infoRow}>
-                                                <Text style={checkoutScreenStyles.infoLabel}>{t("checkout.depositSpendLabel")}</Text>
-                                                <Text style={checkoutScreenStyles.infoValue}>
-                                                    {`${t("checkout.depositAvailable")} ${
-                                                        formatMoney(
-                                                            Number(benefitCheck.deposit_option.max_applicable_amount),
-                                                            benefitCheck.deposit_option.currency ?? benefitCheck.currency,
-                                                        ) ?? "0 ₽"
-                                                    }`}
-                                                </Text>
-                                            </View>
-                                            <TextInput
-                                                keyboardType="decimal-pad"
-                                                onChangeText={setDepositSpend}
-                                                placeholder={t("checkout.depositSpendPlaceholder")}
-                                                placeholderTextColor="#94A3B8"
-                                                style={checkoutScreenStyles.selectorInput}
-                                                value={depositSpend}
-                                            />
-                                            {isDepositSpendInvalid ? (
-                                                <Text style={checkoutScreenStyles.stateText}>{t("checkout.depositSpendInvalid")}</Text>
-                                            ) : depositAppliedLabel ? (
-                                                <Text style={checkoutScreenStyles.stateText}>
-                                                    {`${t("checkout.depositWillApply")} ${depositAppliedLabel.replace("−", "")}`}
-                                                </Text>
-                                            ) : null}
-                                        </>
-                                    ) : null}
-                                </>
-                            ) : null}
-                        </View>
                     </View>
 
                     <View style={[checkoutScreenStyles.sectionCard, checkoutScreenStyles.positionsSectionCard]}>

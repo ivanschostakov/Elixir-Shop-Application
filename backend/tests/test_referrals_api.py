@@ -191,6 +191,15 @@ def test_referrer_code_attach_and_replacement_confirmation(client: TestClient, r
     assert confirmed_payload["referrer_promo_code"] == second_code
     assert _decimal(confirmed_payload["current_discount_percent"]) == Decimal("3.00")
 
+    detach_response = client.delete(
+        "/api/v1/users/me/referral-profile/referrer-code",
+        headers=buyer["headers"],
+    )
+    assert detach_response.status_code == 200, detach_response.text
+    detach_payload = detach_response.json()
+    assert detach_payload["referrer_promo_code"] is None
+    assert _decimal(detach_payload["current_discount_percent"]) == Decimal("0.00")
+
 
 def test_referrer_code_rejects_own_promo(client: TestClient, registered_user_factory):
     buyer = registered_user_factory(email_prefix="buyer")

@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef } from "react"
+import { useCallback, useRef } from "react"
+import { useFocusEffect } from "expo-router"
 
 import type {
     ScreenChromeTemplateOverride,
@@ -15,21 +16,21 @@ export function useApplyScreenTemplate(
     const { setScreenTemplate } = useScreenTemplate()
     const stableChromeTemplate = useStableScreenChromeTemplate(chromeTemplate ?? null)
 
-    useLayoutEffect(() => {
+    useFocusEffect(useCallback(() => {
         setScreenTemplate(kind)
 
         return () => {
             setScreenTemplate(null)
         }
-    }, [kind, setScreenTemplate])
+    }, [kind, setScreenTemplate]))
 
-    useLayoutEffect(() => {
+    useFocusEffect(useCallback(() => {
         setScreenChromeTemplate(stableChromeTemplate)
 
         return () => {
             setScreenChromeTemplate(null)
         }
-    }, [setScreenChromeTemplate, stableChromeTemplate])
+    }, [setScreenChromeTemplate, stableChromeTemplate]))
 }
 
 function useStableScreenChromeTemplate(chromeTemplate: ScreenChromeTemplateOverride | null) {

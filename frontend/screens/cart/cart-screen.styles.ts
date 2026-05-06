@@ -172,13 +172,49 @@ export const cartScreenStyles = StyleSheet.create({
     summaryStatValuePrice: {
         color: colors.text,
     },
-    promoInput: {
+    summaryStatValueOriginal: {
+        color: colors.mutedText,
+        fontSize: 12,
+        fontWeight: "700",
+        lineHeight: 16,
+        textDecorationLine: "line-through",
+    },
+    summaryStatValueDiscounted: {
+        color: colors.discountedPrice,
+        fontSize: 16,
+        fontWeight: "900",
+        lineHeight: 20,
+    },
+    promoInputShell: {
+        alignItems: "center",
         backgroundColor: colors.surfaceElevated,
         borderRadius: 10,
+        flexDirection: "row",
+        minHeight: 40,
+        paddingRight: spacing.xs,
+    },
+    promoInput: {
         color: colors.text,
+        flex: 1,
         fontSize: 14,
         minHeight: 40,
         paddingHorizontal: spacing.sm,
+    },
+    promoClearButton: {
+        alignItems: "center",
+        borderRadius: 14,
+        height: 28,
+        justifyContent: "center",
+        width: 28,
+    },
+    promoClearButtonPressed: {
+        backgroundColor: colors.surfaceMuted,
+    },
+    promoClearButtonText: {
+        color: colors.mutedText,
+        fontSize: 22,
+        fontWeight: "600",
+        lineHeight: 24,
     },
     promoTitle: {
         color: colors.text,
@@ -195,9 +231,6 @@ export const cartScreenStyles = StyleSheet.create({
     },
     promoStatusTextSuccess: {
         color: colors.success,
-    },
-    promoStatusTextError: {
-        color: colors.danger,
     },
     footerActionStack: {
         gap: spacing.xs,
@@ -230,6 +263,23 @@ export const cartScreenStyles = StyleSheet.create({
     },
     totalValueDiscount: {
         color: colors.discountedPrice,
+    },
+    discountedTotalStack: {
+        alignItems: "flex-end",
+        gap: 1,
+    },
+    totalValueOriginal: {
+        color: colors.mutedText,
+        fontSize: 13,
+        fontWeight: "700",
+        lineHeight: 18,
+        textDecorationLine: "line-through",
+    },
+    totalValueDiscountedStrong: {
+        color: colors.discountedPrice,
+        fontSize: 18,
+        fontWeight: "900",
+        lineHeight: 24,
     },
     totalLabelStrong: {
         color: colors.text,
