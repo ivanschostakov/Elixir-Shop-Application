@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from config import ufa_now
+from src.app.services.referrals import seed_referral_profile_from_website_payload
 from src.app.services.security import hash_password
 from src.database.crud import (
     create_user,
@@ -143,6 +144,7 @@ async def sync_website_identity_payload_for_user(db: AsyncSession, *, user: User
     try:
         synced_user = await sync_local_user_from_website_payload(db, user, payload)
         website_identity = await _upsert_website_identity_for_user(db, user=synced_user, payload=payload)
+        await seed_referral_profile_from_website_payload(db, user=synced_user, website_identity=website_identity, payload=payload)
         await db.commit()
     except Exception:
         await db.rollback()

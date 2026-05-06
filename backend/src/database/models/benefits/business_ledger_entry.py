@@ -23,6 +23,9 @@ class BusinessLedgerEntry(Base, IdPkMixin, TimestampMixin):
     order_benefit_application_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("order_benefit_applications.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    referral_commission_entry_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("referral_commission_entries.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     website_identity_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("website_identities.id", ondelete="SET NULL"), nullable=True, index=True
@@ -41,5 +44,6 @@ class BusinessLedgerEntry(Base, IdPkMixin, TimestampMixin):
     idempotency_key: Mapped[str | None] = mapped_column(String(length=EXTERNAL_ID_MAX_LENGTH), nullable=True, unique=True)
 
     benefit_application: Mapped["OrderBenefitApplication | None"] = relationship(back_populates="ledger_entries")
+    referral_commission_entry: Mapped["ReferralCommissionEntry | None"] = relationship(back_populates="ledger_entries")
     user: Mapped["User | None"] = relationship(back_populates="business_ledger_entries")
     website_identity: Mapped["WebsiteIdentity | None"] = relationship(back_populates="ledger_entries")

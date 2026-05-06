@@ -35,6 +35,10 @@ from .notifications.notification_dispatch import NotificationDispatch
 from .notifications.stock_notification_subscription import StockNotificationSubscription
 from .recommendations.user_category_recommendation_signal import UserCategoryRecommendationSignal
 from .recommendations.user_product_recommendation_signal import UserProductRecommendationSignal
+from .referrals.referral_commission_entry import ReferralCommissionEntry
+from .referrals.referral_profile import ReferralProfile
+from .referrals.referral_promo_code import ReferralPromoCode
+from .referrals.referral_relationship import ReferralRelationship
 from .website.website_bonus_account import WebsiteBonusAccount
 from .website.website_coupon import WebsiteCoupon
 from .website.website_discount_entitlement import WebsiteDiscountEntitlement
@@ -71,6 +75,10 @@ __all__ = [
     "Product",
     "ProductCategory",
     "ProductByCategory",
+    "ReferralCommissionEntry",
+    "ReferralProfile",
+    "ReferralPromoCode",
+    "ReferralRelationship",
     "Review",
     "ReviewAttachment",
     "UserCategoryRecommendationSignal",

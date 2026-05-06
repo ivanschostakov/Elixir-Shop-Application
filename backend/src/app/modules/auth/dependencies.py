@@ -37,6 +37,15 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
     return user
 
 
+async def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    if credentials is None:
+        return None
+    return await get_current_user(credentials=credentials, db=db)
+
+
 async def get_current_admin_user(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> User:
     if not await is_admin_user(db, current_user.id): raise forbidden_exception()
     return current_user

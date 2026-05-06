@@ -79,6 +79,8 @@ export type OrderRead = {
 export type CreateOrderPayload = {
     draft_id?: number | null
     payment_method: "later" | "sbp"
+    code?: string | null
+    requested_deposit_amount?: string | null
 }
 
 export type GetOrdersQuery = {

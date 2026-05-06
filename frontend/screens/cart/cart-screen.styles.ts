@@ -180,6 +180,62 @@ export const cartScreenStyles = StyleSheet.create({
         minHeight: 40,
         paddingHorizontal: spacing.sm,
     },
+    promoStatusText: {
+        fontSize: 12,
+        fontWeight: "700",
+        lineHeight: 16,
+        paddingHorizontal: spacing.xs,
+    },
+    promoStatusTextSuccess: {
+        color: colors.success,
+    },
+    promoStatusTextError: {
+        color: colors.danger,
+    },
+    footerActionStack: {
+        gap: spacing.xs,
+    },
+    footerTotalsList: {
+        gap: spacing.xs,
+        paddingHorizontal: spacing.xs,
+        paddingTop: spacing.xs,
+    },
+    totalRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: spacing.md,
+        justifyContent: "space-between",
+        minHeight: 22,
+    },
+    totalRowGrandTotal: {
+        marginBottom: spacing.xs,
+    },
+    totalLabel: {
+        color: colors.mutedText,
+        fontSize: 14,
+        lineHeight: 20,
+    },
+    totalValue: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "700",
+        lineHeight: 20,
+    },
+    totalValueDiscount: {
+        color: colors.discountedPrice,
+    },
+    totalLabelStrong: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: "800",
+        lineHeight: 22,
+    },
+    totalValueStrong: {
+        color: colors.text,
+        fontSize: 18,
+        fontWeight: "900",
+        lineHeight: 24,
+    },
     deliveryCountryCarousel: {
         marginBottom: spacing.xs,
     },

@@ -78,6 +78,24 @@ export const checkoutScreenStyles = StyleSheet.create({
         height: 1,
         marginHorizontal: spacing.lg,
     },
+    detailsSheetHintRow: {
+        alignItems: "flex-end",
+        paddingBottom: spacing.xs,
+        paddingHorizontal: spacing.lg,
+        paddingTop: 0,
+    },
+    detailsSheetHintText: {
+        fontSize: 12,
+        fontWeight: "700",
+        lineHeight: 16,
+        textAlign: "right",
+    },
+    detailsSheetHintTextSuccess: {
+        color: colors.success,
+    },
+    detailsSheetHintTextError: {
+        color: colors.danger,
+    },
     detailsSheetLabel: {
         color: colors.text,
         flexShrink: 0,
@@ -432,6 +450,9 @@ export const checkoutScreenStyles = StyleSheet.create({
         fontSize: 14,
         fontWeight: "700",
         lineHeight: 20,
+    },
+    totalValueDiscount: {
+        color: colors.discountedPrice,
     },
     totalLabelStrong: {
         color: colors.text,

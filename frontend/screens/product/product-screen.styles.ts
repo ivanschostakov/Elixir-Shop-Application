@@ -48,11 +48,33 @@ export const productScreenStyle = StyleSheet.create({
         paddingHorizontal: spacing.lg,
         paddingTop: spacing.xs,
     },
+    priceInlineRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: spacing.xs,
+    },
     priceInline: {
         color: colors.text,
         fontSize: 22,
         fontWeight: "800",
         lineHeight: 32,
+    },
+    priceInlineDiscounted: {
+        color: colors.discountedPrice,
+    },
+    priceInlineOriginal: {
+        color: colors.mutedText,
+        fontSize: 17,
+        fontWeight: "700",
+        lineHeight: 26,
+        textDecorationLine: "line-through",
+    },
+    priceInlinePercent: {
+        color: colors.discountedPrice,
+        fontSize: 17,
+        fontWeight: "800",
+        lineHeight: 26,
     },
     skuPressable: {
         alignSelf: "flex-start",

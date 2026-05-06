@@ -132,13 +132,13 @@ export default function LoginScreen() {
     return (
         <AuthFormLayout error={error} scrollRef={scrollRef} title={t("auth.login.title")}>
             <View onLayout={handleFieldLayout("login")} style={authSharedStyles.formGroup}>
-                <Text style={authSharedStyles.fieldLabel}>{t("auth.login.loginOrEmail")}</Text>
+                <Text style={authSharedStyles.fieldLabel}>{t("auth.login.username")}</Text>
                 <TextInput
                     autoCapitalize="none"
                     autoCorrect={false}
                     onChangeText={setLogin}
                     onFocus={() => scrollToField("login")}
-                    placeholder={t("auth.login.loginOrEmailPlaceholder")}
+                    placeholder={t("auth.login.usernamePlaceholder")}
                     returnKeyType="next"
                     style={authSharedStyles.input}
                     value={login}

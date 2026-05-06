@@ -13,9 +13,13 @@ let registeredExpoPushToken: string | null = null
 let registeredRoutePath: string | null = null
 let currentRoutePath: string | null = null
 let syncRequest: Promise<string | null> | null = null
+let syncRequestAllowsPermissionPrompt = false
 
 type PushNotificationData = Record<string, unknown>
 type PushNotificationNavigate = (target: Href) => void
+type OrderStatusNotificationSyncOptions = {
+    requestPermissions?: boolean
+}
 
 const ORDER_STATUS_PAYMENT_CODES = new Set(["created", "invoice_sent"])
 
@@ -73,21 +77,25 @@ async function ensureAndroidChannel() {
     })
 }
 
-async function requestPushPermissions() {
+async function hasPushPermissions(options: OrderStatusNotificationSyncOptions) {
     const existingPermissions = await Notifications.getPermissionsAsync()
     if (existingPermissions.granted) {
         return true
+    }
+
+    if (!options.requestPermissions) {
+        return false
     }
 
     const requestedPermissions = await Notifications.requestPermissionsAsync()
     return requestedPermissions.granted
 }
 
-async function getExpoPushToken() {
+async function getExpoPushToken(options: OrderStatusNotificationSyncOptions) {
     ensureNotificationsConfigured()
     await ensureAndroidChannel()
 
-    const isGranted = await requestPushPermissions()
+    const isGranted = await hasPushPermissions(options)
     if (!isGranted) {
         return null
     }
@@ -97,14 +105,14 @@ async function getExpoPushToken() {
     return token.data
 }
 
-async function performPushTokenSync() {
+async function performPushTokenSync(options: OrderStatusNotificationSyncOptions) {
     const platform = Platform.OS
     if (platform !== "ios" && platform !== "android") {
         return null
     }
 
     try {
-        const expoPushToken = await getExpoPushToken()
+        const expoPushToken = await getExpoPushToken(options)
         if (!expoPushToken) {
             return null
         }
@@ -130,10 +138,20 @@ async function performPushTokenSync() {
     }
 }
 
-export async function syncOrderStatusNotifications() {
+export async function syncOrderStatusNotifications(options: OrderStatusNotificationSyncOptions = {}) {
+    if (syncRequest) {
+        if (!options.requestPermissions || syncRequestAllowsPermissionPrompt) {
+            return syncRequest
+        }
+
+        await syncRequest.catch(() => null)
+    }
+
     if (!syncRequest) {
-        syncRequest = performPushTokenSync().finally(() => {
+        syncRequestAllowsPermissionPrompt = Boolean(options.requestPermissions)
+        syncRequest = performPushTokenSync(options).finally(() => {
             syncRequest = null
+            syncRequestAllowsPermissionPrompt = false
         })
     }
 

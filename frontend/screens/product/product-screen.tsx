@@ -5,7 +5,7 @@ import { Path, Svg } from "react-native-svg"
 
 import { ContentRail } from "@/components/content/content-rail"
 import { SavedIcon } from "@/components/footer/sticky-footer.icons"
-import { formatProductPrice } from "@/components/content/product-content"
+import { getVariantPriceDisplay } from "@/components/content/product-content"
 import { SHARE_ICON_PATH } from "@/components/header/app-header.constants"
 import { DetailTemplate } from "@/components/templates/detail-template"
 import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-value"
@@ -261,7 +261,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
     const selectedVariantStockLabel = selectedVariant
         ? getVariantStockLabel(selectedVariant.stock, t)
         : null
-    const selectedVariantPriceLabel = formatProductPrice(selectedVariant?.price)
+    const selectedVariantPriceDisplay = getVariantPriceDisplay(selectedVariant)
     const heroImageUrl =
         selectedVariant?.image_url ||
         product.variants.find((variant) => Boolean(variant.image_url))?.image_url ||
@@ -286,9 +286,28 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                         style={productScreenStyle.image}
                         resizeMode="cover"
                     />
-                    {selectedVariantPriceLabel ? (
+                    {selectedVariantPriceDisplay ? (
                         <View style={productScreenStyle.priceInlineWrap}>
-                            <Text style={productScreenStyle.priceInline}>{selectedVariantPriceLabel}</Text>
+                            <View style={productScreenStyle.priceInlineRow}>
+                                <Text
+                                    style={[
+                                        productScreenStyle.priceInline,
+                                        selectedVariantPriceDisplay.hasDiscount && productScreenStyle.priceInlineDiscounted,
+                                    ]}
+                                >
+                                    {selectedVariantPriceDisplay.currentLabel}
+                                </Text>
+                                {selectedVariantPriceDisplay.hasDiscount ? (
+                                    <>
+                                        <Text style={productScreenStyle.priceInlineOriginal}>
+                                            {selectedVariantPriceDisplay.originalLabel ?? ""}
+                                        </Text>
+                                        <Text style={productScreenStyle.priceInlinePercent}>
+                                            {selectedVariantPriceDisplay.discountLabel ?? ""}
+                                        </Text>
+                                    </>
+                                ) : null}
+                            </View>
                         </View>
                     ) : null}
                 </View>

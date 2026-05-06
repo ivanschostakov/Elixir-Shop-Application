@@ -17,6 +17,7 @@ import { Path, Svg } from "react-native-svg"
 import { ContentRail } from "@/components/content/content-rail"
 import { formatProductPrice } from "@/components/content/product-content"
 import { EmptyState } from "@/components/content/empty-state"
+import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { getProductRoute, ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
@@ -40,6 +41,7 @@ import {
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useRecentOrderDrafts } from "@/hooks/order-draft/use-recent-order-drafts"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
+import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useLanguage } from "@/providers/language-provider"
 import { CartBasketItem } from "@/screens/cart/cart-basket-item"
 import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
@@ -51,7 +53,8 @@ import {
     getOrderDraftProvider,
 } from "@/screens/cart/cart-screen.utils"
 import { ApiError } from "@/services/api/client"
-import { createOrderDraft } from "@/services/api/order-drafts"
+import { checkMyBenefits } from "@/services/api/benefits"
+import { createOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
 import type { CreateOrderDraftPayload } from "@/services/api/order-drafts.types"
 import { colors } from "@/theme/colors"
 import type { BasketItemRead } from "@/types/basket"
@@ -60,13 +63,14 @@ export default function CartScreen() {
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()
     const { basket, error: basketLoadError, loading, reload } = useBasket()
-    const { error: basketActionError, removeItem, updateItemQuantity, updating } = useBasketMutations()
+    const { clear, error: basketActionError, removeItem, updateItemQuantity, updating } = useBasketMutations()
     const basketDraftEditingId = useBasketDraftEditingId()
     const selectedDeliveryAddress = useSelectedDeliveryAddress()
     const selectedDeliveryPoint = useSelectedDeliveryPoint()
     const selectedDeliveryCountry = useSelectedDeliveryCountry()
     const [promoCode, setPromoCode] = useState("")
     const [isSavingDraft, setIsSavingDraft] = useState(false)
+    const [isOpeningCheckout, setIsOpeningCheckout] = useState(false)
     const swipeableRefs = useRef<Record<number, Swipeable | null>>({})
     const routeDraftIdParam = Array.isArray(params.draftId) ? params.draftId[0] : params.draftId
     const { orderDrafts: recentOrderDrafts, loading: recentOrderDraftsLoading } = useRecentOrderDrafts(1)
@@ -81,6 +85,32 @@ export default function CartScreen() {
         limit: 6,
         enabled: Boolean(basket?.items.length),
         deps: [basket?.updated_at ?? null, basket?.items.length ?? 0],
+    })
+    const normalizedPromoCode = useMemo(() => {
+        const trimmedCode = promoCode.trim()
+        return trimmedCode ? trimmedCode : null
+    }, [promoCode])
+    const { data: benefitCheck, error: benefitCheckError, loading: benefitCheckLoading } = useAsyncData({
+        debounceMs: 300,
+        deps: [
+            basket?.total_amount ?? null,
+            basket?.currency ?? null,
+            basket?.items.length ?? 0,
+            normalizedPromoCode,
+        ],
+        enabled: Boolean(basket?.items.length),
+        fetcher: async () => {
+            if (!basket) {
+                return null
+            }
+
+            return checkMyBenefits({
+                code: normalizedPromoCode,
+                currency: basket.currency,
+                subtotal: basket.total_amount,
+            })
+        },
+        initialData: null,
     })
 
     useEffect(() => {
@@ -234,13 +264,141 @@ export default function CartScreen() {
         }
     }, [isSavingDraft, resolveCreateDraftPayload, t])
 
+    const handleOpenCheckout = useCallback(async () => {
+        if (!basket?.items.length || isOpeningCheckout) {
+            return
+        }
+
+        setIsOpeningCheckout(true)
+
+        try {
+            const checkoutParams = normalizedPromoCode ? { code: normalizedPromoCode } : {}
+
+            if (basketDraftEditingId !== null) {
+                const nextDraft = await updateOrderDraft(basketDraftEditingId, { sync_basket_items: true })
+                await clear()
+                setOrderDraftSnapshot(nextDraft)
+                router.push({
+                    pathname: ROUTES.checkout,
+                    params: {
+                        draftId: String(nextDraft.id),
+                        ...checkoutParams,
+                    },
+                })
+                return
+            }
+
+            setOrderDraftSnapshot(null)
+            router.push({
+                pathname: ROUTES.checkout,
+                params: checkoutParams,
+            })
+        } catch (checkoutError) {
+            Alert.alert(
+                checkoutError instanceof Error && checkoutError.message
+                    ? checkoutError.message
+                    : t("cart.checkoutFailed"),
+            )
+        } finally {
+            setIsOpeningCheckout(false)
+        }
+    }, [basket?.items.length, basketDraftEditingId, clear, isOpeningCheckout, normalizedPromoCode, t])
+
+    const subtotalLabel = basket ? formatProductPrice(basket.total_amount) : null
+    const deliveryAmount = Number(basket?.delivery_total ?? 0)
+    const deliveryLabel = basket && deliveryAmount > 0 ? formatProductPrice(basket.delivery_total) : null
+    const discountAmount = Number(benefitCheck?.stacked_discount_amount ?? 0)
+    const discountLabel = discountAmount > 0 ? `-${formatProductPrice(discountAmount)}` : null
+    const grandTotalAmount = basket
+        ? (
+            benefitCheck
+                ? Number(benefitCheck.total_after_deposit) + deliveryAmount
+                : Number(basket.grand_total)
+        )
+        : null
+    const grandTotalLabel = grandTotalAmount !== null ? formatProductPrice(grandTotalAmount) : null
+    const promoCodeStatusLabel = normalizedPromoCode
+        ? benefitCheckLoading
+            ? t("cart.promoCodeChecking")
+            : benefitCheck?.unresolved_code_reason
+                ? t("cart.promoCodeNotFound")
+                : benefitCheck?.entered_code_matches.some((option) => option.is_applicable)
+                    ? t("cart.promoCodeApplied")
+                    : benefitCheck?.entered_code_matches.length
+                        ? t("cart.promoCodeUnavailable")
+                        : null
+        : null
+    const promoCodeStatusIsError = Boolean(
+        normalizedPromoCode &&
+        !benefitCheckLoading &&
+        (
+            benefitCheck?.unresolved_code_reason ||
+            (
+                benefitCheck?.entered_code_matches.length &&
+                !benefitCheck.entered_code_matches.some((option) => option.is_applicable)
+            )
+        ),
+    )
+    const checkoutCtaLabel = grandTotalLabel
+        ? `${t("cart.checkoutCta")} ${grandTotalLabel}`
+        : t("cart.checkoutCta")
+
     const cartChromeTemplate = useMemo(() => {
         if (!basket?.items.length) {
             return null
         }
 
         return {
+            footer: "nav+customAction" as const,
             slots: {
+                footer: (
+                    <View style={cartScreenStyles.footerActionStack}>
+                        <View style={cartScreenStyles.footerTotalsList}>
+                            {subtotalLabel ? (
+                                <View style={cartScreenStyles.totalRow}>
+                                    <Text style={cartScreenStyles.totalLabel}>{t("checkout.basketSubtotalLabel")}</Text>
+                                    <Text style={cartScreenStyles.totalValue}>{subtotalLabel}</Text>
+                                </View>
+                            ) : null}
+                            {deliveryLabel ? (
+                                <View style={cartScreenStyles.totalRow}>
+                                    <Text style={cartScreenStyles.totalLabel}>{t("checkout.deliveryCostLabel")}</Text>
+                                    <Text style={cartScreenStyles.totalValue}>{deliveryLabel}</Text>
+                                </View>
+                            ) : null}
+                            {discountLabel ? (
+                                <View style={cartScreenStyles.totalRow}>
+                                    <Text style={cartScreenStyles.totalLabel}>{t("checkout.benefitsDiscountLabel")}</Text>
+                                    <Text style={[cartScreenStyles.totalValue, cartScreenStyles.totalValueDiscount]}>
+                                        {discountLabel}
+                                    </Text>
+                                </View>
+                            ) : null}
+                            {grandTotalLabel ? (
+                                <View style={[cartScreenStyles.totalRow, cartScreenStyles.totalRowGrandTotal]}>
+                                    <Text style={cartScreenStyles.totalLabelStrong}>{t("checkout.grandTotalLabel")}</Text>
+                                    <Text style={cartScreenStyles.totalValueStrong}>{grandTotalLabel}</Text>
+                                </View>
+                            ) : null}
+                        </View>
+
+                        <Pressable
+                            accessibilityLabel={checkoutCtaLabel}
+                            accessibilityRole="button"
+                            disabled={isOpeningCheckout}
+                            onPress={() => {
+                                void handleOpenCheckout()
+                            }}
+                            style={({ pressed }) => [
+                                stickyFooterStyles.actionButton,
+                                isOpeningCheckout && stickyFooterStyles.actionButtonDisabled,
+                                pressed && stickyFooterStyles.actionButtonPressed,
+                            ]}
+                        >
+                            <Text style={stickyFooterStyles.actionButtonText}>{checkoutCtaLabel}</Text>
+                        </Pressable>
+                    </View>
+                ),
                 headerLeft: (
                     <Pressable
                         accessibilityLabel={t("cart.saveDraftCta")}
@@ -282,7 +440,19 @@ export default function CartScreen() {
                 ),
             },
         }
-    }, [basket?.items.length, handleSaveDraft, isSavingDraft, t])
+    }, [
+        basket?.items.length,
+        checkoutCtaLabel,
+        deliveryLabel,
+        discountLabel,
+        grandTotalLabel,
+        handleOpenCheckout,
+        handleSaveDraft,
+        isOpeningCheckout,
+        isSavingDraft,
+        subtotalLabel,
+        t,
+    ])
     useApplyScreenTemplate("feed", cartChromeTemplate)
 
     const renderStateScreen = (content: ReactNode) => (
@@ -363,7 +533,6 @@ export default function CartScreen() {
         )
     }
 
-    const totalAmountLabel = formatProductPrice(basket.total_amount)
     const availableItems = basket.items.filter((item) => item.is_available)
     const unavailableItems = basket.items.filter((item) => !item.is_available)
     const hasUnavailableItems = unavailableItems.length > 0
@@ -387,6 +556,22 @@ export default function CartScreen() {
                                 style={cartScreenStyles.promoInput}
                                 value={promoCode}
                             />
+                            {promoCodeStatusLabel ? (
+                                <Text
+                                    style={[
+                                        cartScreenStyles.promoStatusText,
+                                        promoCodeStatusIsError
+                                            ? cartScreenStyles.promoStatusTextError
+                                            : cartScreenStyles.promoStatusTextSuccess,
+                                    ]}
+                                >
+                                    {promoCodeStatusLabel}
+                                </Text>
+                            ) : benefitCheckError ? (
+                                <Text style={[cartScreenStyles.promoStatusText, cartScreenStyles.promoStatusTextError]}>
+                                    {benefitCheckError}
+                                </Text>
+                            ) : null}
                         </View>
 
                         <View style={cartScreenStyles.summaryFooter}>
@@ -414,7 +599,7 @@ export default function CartScreen() {
                                             cartScreenStyles.summaryStatValuePrice,
                                         ]}
                                     >
-                                        {totalAmountLabel ?? "—"}
+                                        {grandTotalLabel ?? "—"}
                                     </Text>
                                 </View>
                             </View>

@@ -25,6 +25,9 @@ export type ProductVariantRead = {
     stock: number
     archived: boolean
     price: string
+    original_price: string | null
+    discounted_price: string | null
+    discount_percent: string
     created_at: string
     updated_at: string
 }

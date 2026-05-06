@@ -15,6 +15,7 @@ import {
     verifyRegistration as verifyRegistrationRequest,
 } from "@/services/auth/auth"
 import { translate } from "@/i18n/translations"
+import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
 import { AuthContext } from "@/providers/auth-provider.context"
 import type { AuthProviderProps } from "@/providers/auth-provider.types"
 import {
@@ -67,7 +68,8 @@ function normalizeAuthErrorMessage(rawMessage: string, fallbackMessage: string) 
         loweredMessage.includes("<html") ||
         loweredMessage.includes("unexpected token '<'") ||
         loweredMessage.includes("failed to fetch") ||
-        loweredMessage.includes("network request failed")
+        loweredMessage.includes("network request failed") ||
+        loweredMessage.includes("request timed out")
     ) {
         return translate("auth.error.backendUnavailable")
     }
@@ -88,6 +90,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     useEffect(() => {
         return subscribeAuthSession((tokens) => {
             if (!tokens) {
+                clearBasketSnapshot()
                 resetOrderStatusNotifications()
                 setUser(null)
             }
@@ -162,6 +165,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 }
             } catch {
                 clearAuthTokens()
+                clearBasketSnapshot()
 
                 if (isMounted) {
                     setUser(null)
@@ -245,6 +249,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             await logout()
         } finally {
             clearAuthTokens()
+            clearBasketSnapshot()
             resetOrderStatusNotifications()
             setUser(null)
         }

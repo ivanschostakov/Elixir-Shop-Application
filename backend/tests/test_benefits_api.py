@@ -271,11 +271,18 @@ def test_benefit_check_returns_website_coupon_personal_discount_and_bonus(
     assert payload["entered_code_matches"][0]["source_kind"] == "website_coupon"
     assert payload["entered_code_matches"][0]["is_applicable"] is True
     assert _decimal(payload["entered_code_matches"][0]["estimated_discount_amount"]) == Decimal("20.00")
-    assert payload["personal_discount"]["source_kind"] == "website_discount_entitlement"
-    assert _decimal(payload["personal_discount"]["estimated_discount_amount"]) == Decimal("10.00")
-    assert payload["best_discount"]["source_kind"] == "website_coupon"
-    assert _decimal(payload["best_discount"]["estimated_discount_amount"]) == Decimal("20.00")
-    assert len(payload["available_discount_options"]) == 2
+    assert payload["personal_discount"]["source_kind"] == "app_referral"
+    assert _decimal(payload["personal_discount"]["estimated_discount_amount"]) == Decimal("38.00")
+    assert payload["best_discount"]["source_kind"] == "app_referral"
+    assert _decimal(payload["best_discount"]["estimated_discount_amount"]) == Decimal("38.00")
+    assert len(payload["available_discount_options"]) == 3
+    assert payload["available_discount_options"][0]["source_kind"] == "app_referral"
+    assert _decimal(payload["available_discount_options"][0]["discount_percent"]) == Decimal("19.00")
+    assert [option["source_kind"] for option in payload["stacked_discount_options"]] == [
+        "app_referral",
+        "website_discount_entitlement",
+        "website_coupon",
+    ]
     assert payload["bonus_option"]["is_available"] is True
     assert _decimal(payload["bonus_option"]["max_applicable_amount"]) == Decimal("125.50")
     assert _decimal(payload["bonus_option"]["applicable_amount"]) == Decimal("50.00")
@@ -376,7 +383,8 @@ def test_benefit_check_marks_coupon_unsupported_without_explicit_discount_mode(
     assert payload["entered_code_matches"][0]["source_kind"] == "website_coupon"
     assert payload["entered_code_matches"][0]["status"] == "unsupported"
     assert payload["entered_code_matches"][0]["is_applicable"] is False
-    assert payload["best_discount"] is None
+    assert payload["best_discount"]["source_kind"] == "app_referral"
+    assert _decimal(payload["best_discount"]["discount_percent"]) == Decimal("19.00")
 
 
 def test_benefit_check_parses_legacy_serialized_coupon_discount(
@@ -432,4 +440,5 @@ def test_benefit_check_parses_legacy_serialized_coupon_discount(
     assert payload["entered_code_matches"][0]["status"] == "available"
     assert payload["entered_code_matches"][0]["is_applicable"] is True
     assert _decimal(payload["entered_code_matches"][0]["estimated_discount_amount"]) == Decimal("6.00")
-    assert payload["best_discount"]["source_kind"] == "website_coupon"
+    assert payload["best_discount"]["source_kind"] == "app_referral"
+    assert [option["source_kind"] for option in payload["stacked_discount_options"]] == ["app_referral", "website_coupon"]

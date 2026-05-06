@@ -109,8 +109,7 @@ async def create_and_send_verification_code(user: User, db: AsyncSession) -> Non
 
 
 async def get_plain_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
-    if payload.is_email: user = await get_user_by_email(db, payload.login)
-    else: user = await get_user_by_username(db, payload.login)
+    user = await get_user_by_username(db, payload.login)
     if not user or not user.is_active or not verify_password(payload.password, user.password_hash): raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     return user
 
@@ -202,7 +201,7 @@ async def resend_registration_verification_code(
     return UserVerificationCodeSentResponse(email=user.email, message="Verification code sent")
 
 
-@auth_router.post("/login", response_model=AuthTokensWithUserResponse | AuthVerificationRequiredResponse, status_code=status.HTTP_200_OK, summary="Plain username or email login")
+@auth_router.post("/login", response_model=AuthTokensWithUserResponse | AuthVerificationRequiredResponse, status_code=status.HTTP_200_OK, summary="Plain username login")
 async def login(
     request: Request,
     payload: UserLoginPayload,
@@ -379,7 +378,7 @@ async def delete_my_account(
 
     now = ufa_now()
     suffix = f"{current_user.id}_{int(now.timestamp())}"
-    current_user.username = f"deleted_{suffix}"
+    current_user.username = f"del_{str(current_user.id)[-12:]}"
     current_user.email = f"deleted_{suffix}@example.invalid"
     current_user.name = "Deleted"
     current_user.surname = "User"

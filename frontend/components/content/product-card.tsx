@@ -4,7 +4,7 @@ import { Path, Svg } from "react-native-svg"
 
 import {
     getProductContentSubtitle,
-    getProductPriceLabel,
+    getProductPriceDisplay,
     isProductOutOfStock,
 } from "@/components/content/product-content"
 import { contentStyles } from "@/components/content/content.styles"
@@ -20,7 +20,7 @@ export function ProductCard({ product, style }: ProductCardProps) {
     const { t } = useLanguage()
     const { handleCopy } = useCopyableProfileValue({ t })
     const subtitle = getProductContentSubtitle(product)
-    const priceLabel = getProductPriceLabel(product)
+    const priceDisplay = getProductPriceDisplay(product)
     const isOutOfStock = isProductOutOfStock(product)
 
     return (
@@ -58,10 +58,28 @@ export function ProductCard({ product, style }: ProductCardProps) {
 
                 <View style={contentStyles.productBody}>
                     <View style={contentStyles.productPriceRow}>
-                        {priceLabel ? (
-                            <Text numberOfLines={1} style={contentStyles.productPrice}>
-                                {priceLabel}
-                            </Text>
+                        {priceDisplay ? (
+                            <View style={contentStyles.productPriceBlock}>
+                                <Text
+                                    numberOfLines={1}
+                                    style={[
+                                        contentStyles.productPrice,
+                                        priceDisplay.hasDiscount && contentStyles.productPriceDiscounted,
+                                    ]}
+                                >
+                                    {`${priceDisplay.prefix}${priceDisplay.currentLabel}`}
+                                </Text>
+                                {priceDisplay.hasDiscount ? (
+                                    <View style={contentStyles.productDiscountMetaRow}>
+                                        <Text numberOfLines={1} style={contentStyles.productOriginalPrice}>
+                                            {priceDisplay.originalLabel ?? ""}
+                                        </Text>
+                                        <Text numberOfLines={1} style={contentStyles.productDiscountPercent}>
+                                            {priceDisplay.discountLabel ?? ""}
+                                        </Text>
+                                    </View>
+                                ) : null}
+                            </View>
                         ) : null}
                         {product.rating_count > 0 ? (
                             <View style={contentStyles.productRatingRow}>

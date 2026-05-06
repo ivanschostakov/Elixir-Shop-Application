@@ -5,4 +5,5 @@ export type RequestOptions = {
     auth?: boolean
     appIntegrityAction?: string
     retryOnUnauthorized?: boolean
+    timeoutMs?: number
 }

@@ -18,6 +18,7 @@ from .payments import FINAL_PAYMENT_STATUSES, PAYMENT_STATUS_BY_CODE, PENDING_PA
 from .serialization import serialize_order, serialize_orders
 
 _resolve_payment_qr_image = _order_payments._resolve_payment_qr_image
+intellectmoney = _order_payments.intellectmoney
 
 
 def _sync_runtime_dependencies() -> None:
@@ -26,7 +27,7 @@ def _sync_runtime_dependencies() -> None:
     _order_crm.create_delivery_for_order = create_delivery_for_order
     _order_creation.amocrm_client = amocrm_client
     _order_creation.ensure_order_has_amocrm_lead = ensure_order_has_amocrm_lead
-    _order_payments.intellectmoney = get_intellectmoney_client()
+    _order_payments.intellectmoney = intellectmoney
     _order_payments._resolve_payment_qr_image = _resolve_payment_qr_image
 
 
@@ -35,14 +36,44 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
     return await _order_crm.ensure_order_has_amocrm_lead(session, order, user=user)
 
 
-async def create_order_from_draft_for_user(session: AsyncSession, *, request: Request, user: User, draft_id: int, payment_method: str) -> Order:
+async def create_order_from_draft_for_user(
+    session: AsyncSession,
+    *,
+    request: Request,
+    user: User,
+    draft_id: int,
+    payment_method: str,
+    entered_code: str | None = None,
+    requested_deposit_amount=None,
+) -> Order:
     _sync_runtime_dependencies()
-    return await _order_creation.create_order_from_draft_for_user(session, user=user, draft_id=draft_id, payment_method=payment_method)
+    return await _order_creation.create_order_from_draft_for_user(
+        session,
+        user=user,
+        draft_id=draft_id,
+        payment_method=payment_method,
+        entered_code=entered_code,
+        requested_deposit_amount=requested_deposit_amount,
+    )
 
 
-async def create_order_from_basket_for_user(session: AsyncSession, *, request: Request, user: User, payment_method: str) -> Order:
+async def create_order_from_basket_for_user(
+    session: AsyncSession,
+    *,
+    request: Request,
+    user: User,
+    payment_method: str,
+    entered_code: str | None = None,
+    requested_deposit_amount=None,
+) -> Order:
     _sync_runtime_dependencies()
-    return await _order_creation.create_order_from_basket_for_user(session, user=user, payment_method=payment_method)
+    return await _order_creation.create_order_from_basket_for_user(
+        session,
+        user=user,
+        payment_method=payment_method,
+        entered_code=entered_code,
+        requested_deposit_amount=requested_deposit_amount,
+    )
 
 
 async def get_order_for_user(session: AsyncSession, *, user_id: int, order_id: int) -> Order | None:
@@ -90,6 +121,7 @@ __all__ = [
     "get_order_for_user",
     "get_orders_history_for_user",
     "get_payment_status_for_order",
+    "intellectmoney",
     "reconcile_sbp_payment",
     "repeat_order_as_draft_for_user",
     "serialize_order",

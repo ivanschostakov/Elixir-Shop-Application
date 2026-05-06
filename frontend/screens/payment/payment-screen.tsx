@@ -39,6 +39,7 @@ import { createOrder, getOrder, repeatOrder } from "@/services/api/orders"
 import type { OrderItemRead, OrderRead } from "@/services/api/orders.types"
 import { createPayment, getPaymentStatus } from "@/services/api/payments"
 import type { PaymentStatusRead } from "@/services/api/payments.types"
+import { syncOrderStatusNotifications } from "@/services/notifications/order-status-notifications"
 import type { OrderDraftItemRead } from "@/services/api/order-drafts.types"
 import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 import { parsePositiveRouteId } from "@/utils/route-params"
@@ -94,6 +95,12 @@ function resolvePaymentMethod(value: string | null | undefined): PaymentMethod |
     return value === "later" || value === "sbp" ? value : null
 }
 
+function parseRouteString(value: string | string[] | undefined) {
+    const rawValue = Array.isArray(value) ? value[0] : value
+    const trimmedValue = rawValue?.trim()
+    return trimmedValue || null
+}
+
 function mergePaymentState(previous: PaymentStatusRead | null, next: PaymentStatusRead) {
     if (!previous || previous.order_id !== next.order_id) {
         return next
@@ -110,10 +117,18 @@ function mergePaymentState(previous: PaymentStatusRead | null, next: PaymentStat
 export default function PaymentScreen() {
     const { user } = useAuth()
     const { t } = useLanguage()
-    const params = useLocalSearchParams<{ draftId?: string | string[]; paymentMethod?: string | string[]; orderId?: string | string[] }>()
+    const params = useLocalSearchParams<{
+        code?: string | string[]
+        depositSpend?: string | string[]
+        draftId?: string | string[]
+        paymentMethod?: string | string[]
+        orderId?: string | string[]
+    }>()
     const draftId = parseDraftId(params.draftId)
     const routePaymentMethod = parsePaymentMethod(params.paymentMethod)
     const routeOrderId = parsePositiveRouteId(params.orderId)
+    const routePromoCode = parseRouteString(params.code)
+    const routeDepositSpend = parseRouteString(params.depositSpend)
     const isBasketCheckout = draftId === null
     const { basket, loading: basketLoading } = useBasket()
     const { orderDraft: savedOrderDraft, error: savedDraftError, loading: savedDraftLoading } = useOrderDraft(draftId)
@@ -366,6 +381,8 @@ export default function PaymentScreen() {
 
                 nextOrder = await createOrder({
                     ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
+                    ...(routePromoCode ? { code: routePromoCode } : {}),
+                    ...(routeDepositSpend ? { requested_deposit_amount: routeDepositSpend } : {}),
                     payment_method: effectiveMethod,
                 })
                 if (isBasketCheckout) {
@@ -379,6 +396,7 @@ export default function PaymentScreen() {
                     })
                 }
                 setOrder(nextOrder)
+                void syncOrderStatusNotifications({ requestPermissions: true })
             }
 
             const nextPayment = await createPayment({ order_id: nextOrder.id })
@@ -410,7 +428,7 @@ export default function PaymentScreen() {
         } finally {
             setSubmitting(false)
         }
-    }, [isBasketCheckout, order, orderDraft, selectedMethod, t])
+    }, [isBasketCheckout, order, orderDraft, routeDepositSpend, routePromoCode, selectedMethod, t])
 
     const footerCtaState = useMemo(() => {
         if (loading || loadingOrder) {

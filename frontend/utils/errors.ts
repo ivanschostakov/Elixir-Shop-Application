@@ -41,6 +41,7 @@ function normalizeMessage(message: string, fallback: string) {
         loweredMessage.includes("unexpected token '<'") ||
         loweredMessage.includes("failed to fetch") ||
         loweredMessage.includes("network request failed") ||
+        loweredMessage.includes("request timed out") ||
         loweredMessage.includes("service is temporarily unavailable")
     ) {
         return BACKEND_UNAVAILABLE_MESSAGE
@@ -62,6 +63,7 @@ export function isBackendError(error: unknown) {
     return (
         loweredMessage.includes("failed to fetch") ||
         loweredMessage.includes("network request failed") ||
+        loweredMessage.includes("request timed out") ||
         loweredMessage.includes("unexpected token '<'") ||
         loweredMessage.includes("<!doctype html") ||
         loweredMessage.includes("<html")

@@ -2,6 +2,7 @@ import sys
 import types
 import uuid
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,7 @@ if "PIL" not in sys.modules:
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER, ufa_now
 import src.app.modules.auth.router as auth_router_module
-from src.database.models import User, WebsiteCoupon, WebsiteDiscountEntitlement, WebsiteIdentity
+from src.database.models import ReferralProfile, User, WebsiteCoupon, WebsiteDiscountEntitlement, WebsiteIdentity
 from src.integrations.website_identity import website_identity_client
 from src.integrations.website_identity.exceptions import WebsiteIdentityError
 
@@ -52,6 +53,26 @@ def _get_user(user_id: int) -> User | None:
             return None
         session.expunge(user)
         return user
+
+
+def _get_referral_profile(user_id: int) -> ReferralProfile | None:
+    with Session(sync_engine) as session:
+        profile = session.query(ReferralProfile).filter(ReferralProfile.user_id == user_id).one_or_none()
+        if profile is None:
+            return None
+        session.expunge(profile)
+        return profile
+
+
+def _set_app_purchase_total(user_id: int, amount: Decimal) -> None:
+    with Session(sync_engine) as session:
+        profile = session.query(ReferralProfile).filter(ReferralProfile.user_id == user_id).one_or_none()
+        if profile is None:
+            profile = ReferralProfile(user_id=user_id)
+            session.add(profile)
+            session.flush()
+        profile.app_paid_purchase_total = amount
+        session.commit()
 
 
 def _get_website_identity_snapshot(user_id: int) -> dict | None:
@@ -198,6 +219,18 @@ def _website_payload(*, website_user_id: int, login: str, email: str, name: str 
     }
 
 
+def _set_website_referral_level(payload: dict, *, percent: Decimal, turnover_amount: Decimal) -> None:
+    raw_money = f"{turnover_amount}|RUB"
+    payload["user"]["custom_fields"]["UF_PERCENT"] = str(percent)
+    payload["user"]["custom_fields"]["UF_ORDER_SUMM"] = raw_money
+    payload["discounts"]["referral_program"]["percent"] = float(percent)
+    payload["discounts"]["referral_program"]["order_sum"] = {
+        "raw": raw_money,
+        "amount": float(turnover_amount),
+        "currency": "RUB",
+    }
+
+
 def test_link_my_website_identity_creates_link_and_syncs_user(client: TestClient, registered_user, monkeypatch: pytest.MonkeyPatch):
     website_user_id = 91000 + (uuid.uuid4().int % 1000000)
     website_data = _website_payload(
@@ -254,6 +287,100 @@ def test_link_my_website_identity_creates_link_and_syncs_user(client: TestClient
     assert synced_user.is_verified is True
 
 
+def test_website_identity_seed_combines_website_referral_level_with_app_purchases(
+    client: TestClient,
+    registered_user,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    website_user_id = 91000 + (uuid.uuid4().int % 1000000)
+    website_data = _website_payload(
+        website_user_id=website_user_id,
+        login="combined-site-user",
+        email=f"combined_{uuid.uuid4().hex[:8]}@example.com",
+        name="Combined",
+        surname="Referral",
+    )
+    _set_app_purchase_total(registered_user["user_id"], Decimal("10000.00"))
+
+    async def fake_authenticate(*, login: str, password: str) -> dict:
+        assert login == "site-login"
+        assert password == "site-password"
+        return website_data
+
+    monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
+
+    response = client.post(
+        "/api/v1/users/me/website-identity/link",
+        headers=registered_user["headers"],
+        json={"login": "site-login", "password": "site-password"},
+    )
+
+    assert response.status_code == 200, response.text
+    profile = _get_referral_profile(registered_user["user_id"])
+    assert profile is not None
+    assert float(profile.website_seed_purchase_balance) == 190000.0
+    assert float(profile.app_paid_purchase_total) == 10000.0
+    assert float(profile.referral_discount_base_total) == 200000.0
+    assert float(profile.current_discount_percent) == 20.0
+
+
+def test_website_identity_daily_resync_replaces_website_baseline_and_keeps_app_side_total(
+    client: TestClient,
+    registered_user,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    website_user_id = 91000 + (uuid.uuid4().int % 1000000)
+    first_payload = _website_payload(
+        website_user_id=website_user_id,
+        login="daily-sync-site-user",
+        email=f"daily_{uuid.uuid4().hex[:8]}@example.com",
+        name="Daily",
+        surname="Sync",
+    )
+    second_payload = _website_payload(
+        website_user_id=website_user_id,
+        login="daily-sync-site-user",
+        email=first_payload["user"]["email"],
+        name="Daily",
+        surname="Sync",
+    )
+    _set_website_referral_level(first_payload, percent=Decimal("19.00"), turnover_amount=Decimal("190000.00"))
+    _set_website_referral_level(second_payload, percent=Decimal("12.00"), turnover_amount=Decimal("120000.00"))
+    _set_app_purchase_total(registered_user["user_id"], Decimal("10000.00"))
+    payloads = [first_payload, second_payload]
+
+    async def fake_authenticate(*, login: str, password: str) -> dict:
+        assert login == "site-login"
+        assert password == "site-password"
+        return payloads.pop(0)
+
+    monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
+
+    first_response = client.post(
+        "/api/v1/users/me/website-identity/link",
+        headers=registered_user["headers"],
+        json={"login": "site-login", "password": "site-password"},
+    )
+    assert first_response.status_code == 200, first_response.text
+    first_profile = _get_referral_profile(registered_user["user_id"])
+    assert first_profile is not None
+    assert float(first_profile.referral_discount_base_total) == 200000.0
+    assert float(first_profile.current_discount_percent) == 20.0
+
+    second_response = client.post(
+        "/api/v1/users/me/website-identity/link",
+        headers=registered_user["headers"],
+        json={"login": "site-login", "password": "site-password"},
+    )
+    assert second_response.status_code == 200, second_response.text
+    second_profile = _get_referral_profile(registered_user["user_id"])
+    assert second_profile is not None
+    assert float(second_profile.website_seed_purchase_balance) == 120000.0
+    assert float(second_profile.app_paid_purchase_total) == 10000.0
+    assert float(second_profile.referral_discount_base_total) == 130000.0
+    assert float(second_profile.current_discount_percent) == 13.0
+
+
 def test_website_login_creates_local_user_and_identity(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     website_user_id = 91000 + (uuid.uuid4().int % 1000000)
     website_data = _website_payload(
@@ -292,6 +419,12 @@ def test_website_login_creates_local_user_and_identity(client: TestClient, monke
         assert payload["access_token"]
         assert payload["refresh_token"]
         assert payload["session_id"] > 0
+
+        referral_profile = _get_referral_profile(user_id)
+        assert referral_profile is not None
+        assert float(referral_profile.website_seed_purchase_balance) == 190000.0
+        assert float(referral_profile.referral_discount_base_total) == 190000.0
+        assert float(referral_profile.current_discount_percent) == 19.0
     finally:
         _delete_user(user_id)
 
@@ -359,7 +492,7 @@ def test_plain_login_falls_back_to_local_credentials_when_website_auth_fails(
     monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
 
     try:
-        response = client.post("/api/v1/auth/login", json={"login": email, "password": password})
+        response = client.post("/api/v1/auth/login", json={"login": f"u{token}", "password": password})
         assert response.status_code == 200, response.text
         payload = response.json()
         assert payload["verification_required"] is True
@@ -392,11 +525,41 @@ def test_plain_login_skips_website_identity_when_toggle_is_disabled(
     monkeypatch.setattr(website_identity_client, "authenticate", fail_if_called)
 
     try:
-        response = client.post("/api/v1/auth/login", json={"login": email, "password": password})
+        response = client.post("/api/v1/auth/login", json={"login": f"u{token}", "password": password})
         assert response.status_code == 200, response.text
         payload = response.json()
         assert payload["verification_required"] is True
         assert payload["email"] == email
+    finally:
+        _delete_user(user_id)
+
+
+def test_plain_login_rejects_email_identifier_when_local_credentials_match(
+    client: TestClient,
+    register_verified_user,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    token = uuid.uuid4().hex[:12]
+    email = f"plain_login_email_{token}@example.com"
+    password = "test-password"
+    registration_payload = register_verified_user({
+        "username": f"u{token}",
+        "email": email,
+        "password": password,
+        "name": "Plain",
+        "surname": "Email",
+    })
+    user_id = registration_payload["user"]["id"]
+
+    async def fake_authenticate(*, login: str, password: str) -> dict:
+        raise WebsiteIdentityError("Invalid website credentials", status_code=401, error_code="invalid_credentials")
+
+    monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
+
+    try:
+        response = client.post("/api/v1/auth/login", json={"login": email, "password": password})
+        assert response.status_code == 401, response.text
+        assert response.json()["detail"] == "Invalid credentials"
     finally:
         _delete_user(user_id)
 

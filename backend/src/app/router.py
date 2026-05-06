@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from .modules import (
     auth_router,
+    admin_referrals_router,
     app_integrity_router,
     app_version_router,
     delivery_router,
@@ -21,6 +22,7 @@ v1_router = APIRouter(prefix="/v1")
 
 v1_router.include_router(health_router)
 v1_router.include_router(auth_router)
+v1_router.include_router(admin_referrals_router)
 v1_router.include_router(app_integrity_router)
 v1_router.include_router(app_version_router)
 v1_router.include_router(product_categories_router)
@@ -40,6 +42,7 @@ __all__ = [
     "auth_router",
     "app_integrity_router",
     "app_version_router",
+    "admin_referrals_router",
     "health_router",
     "product_categories_router",
     "products_router",

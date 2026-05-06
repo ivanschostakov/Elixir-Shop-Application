@@ -57,6 +57,32 @@ class User(Base, IdPkMixin, TimestampMixin):
     app_promos_created: Mapped[list["AppPromo"]] = relationship(back_populates="created_by")
     order_benefit_applications: Mapped[list["OrderBenefitApplication"]] = relationship(back_populates="user")
     business_ledger_entries: Mapped[list["BusinessLedgerEntry"]] = relationship(back_populates="user")
+    referral_profile: Mapped["ReferralProfile | None"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="ReferralProfile.user_id",
+        uselist=False,
+    )
+    owned_referral_promo_codes: Mapped[list["ReferralPromoCode"]] = relationship(
+        back_populates="owner",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    referral_relationships: Mapped[list["ReferralRelationship"]] = relationship(
+        back_populates="referred_user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        foreign_keys="ReferralRelationship.referred_user_id",
+    )
+    referrals_made: Mapped[list["ReferralRelationship"]] = relationship(
+        back_populates="referrer_user",
+        foreign_keys="ReferralRelationship.referrer_user_id",
+    )
+    referral_commission_entries: Mapped[list["ReferralCommissionEntry"]] = relationship(
+        back_populates="referrer",
+        foreign_keys="ReferralCommissionEntry.referrer_user_id",
+    )
     website_sync_events: Mapped[list["WebsiteSyncEvent"]] = relationship(back_populates="user")
     ai_chat: Mapped["AIChat | None"] = relationship(
         back_populates="user",

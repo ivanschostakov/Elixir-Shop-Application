@@ -10,9 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
 
+from config import ufa_now
+from src.app.services.benefits.money import quantize_money
+from src.app.services.benefits.service import resolve_benefits_for_user
 from src.app.services.recommendations import record_purchase
 from src.database.crud import create_delivery_recipient, create_order, create_order_draft, delete_order_draft, get_basket_by_user_id, get_delivery_recipient_by_fields, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id, get_orders_for_user as get_orders_for_user_crud
-from src.database.models import BasketItem, Order, OrderDraft, OrderDraftItem, OrderItem, User, Variant
+from src.database.models import BasketItem, Order, OrderBenefitApplication, OrderDraft, OrderDraftItem, OrderItem, ReferralProfile, ReferralRelationship, User, Variant
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode, get_order_history_bucket
 from src.database.schemas import DeliveryRecipientCreate, OrderCreate, OrderDraftCreate
 from src.integrations.amocrm import get_amocrm_client
@@ -72,14 +75,173 @@ def _build_selected_delivery_payload(draft: OrderDraft) -> tuple[str, dict[str, 
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported delivery provider")
 
 
-def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any]) -> dict[str, Any]:
+def _json_money(value: Any) -> float:
+    return float(quantize_money(value) or Decimal("0.00"))
+
+
+def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, Any]:
+    if resolved_benefits is None:
+        return {}
+
+    return {
+        "entered_code": resolved_benefits.get("entered_code"),
+        "basket_subtotal": _json_money(resolved_benefits.get("basket_subtotal")),
+        "stacked_discount_amount": _json_money(resolved_benefits.get("stacked_discount_amount")),
+        "total_after_discounts": _json_money(resolved_benefits.get("total_after_discounts")),
+        "deposit_amount": _json_money((resolved_benefits.get("deposit_option") or {}).get("applicable_amount")),
+        "total_after_deposit": _json_money(resolved_benefits.get("total_after_deposit")),
+        "applications": [
+            {
+                "source_kind": option.get("source_kind"),
+                "code": option.get("code"),
+                "discount_percent": str(option.get("discount_percent")) if option.get("discount_percent") is not None else None,
+                "discount_amount": str(option.get("applied_discount_amount")) if option.get("applied_discount_amount") is not None else None,
+                "sequence": option.get("sequence"),
+            }
+            for option in resolved_benefits.get("stacked_discount_options", [])
+        ],
+    }
+
+
+def _build_checkout_snapshot(
+    draft: OrderDraft,
+    *,
+    payment_method: str,
+    selected_delivery_service: str,
+    selected_delivery_payload: dict[str, Any],
+    resolved_benefits: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if draft.recipient is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Recipient is required")
 
     items = [{"id": item.product_id, "featureId": item.variant_id, "name": item.product_name, "product_name": item.product_name, "feature_name": item.variant_name, "code": item.product_sku, "qty": item.quantity, "price": float(item.unit_price), "subtotal": float(item.line_total)} for item in draft.items]
 
-    return {"source": "shop_application", "payment_method": payment_method, "contact_info": {"name": draft.recipient.name, "surname": draft.recipient.surname, "phone": draft.recipient.phone, "email": draft.recipient.email, }, "checkout_data": {"items": items, "total": float(draft.basket_subtotal), }, "selected_delivery": deepcopy(selected_delivery_payload), "selected_delivery_service": selected_delivery_service, "commentary": draft.comment or "Не указан", "order_date": datetime.now(timezone.utc).isoformat()}
+    return {"source": "shop_application", "payment_method": payment_method, "contact_info": {"name": draft.recipient.name, "surname": draft.recipient.surname, "phone": draft.recipient.phone, "email": draft.recipient.email, }, "checkout_data": {"items": items, "total": float(draft.basket_subtotal), }, "benefits": _json_safe_benefits(resolved_benefits), "selected_delivery": deepcopy(selected_delivery_payload), "selected_delivery_service": selected_delivery_service, "commentary": draft.comment or "Не указан", "order_date": datetime.now(timezone.utc).isoformat()}
 
-async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str) -> Order:
+
+async def _active_referral_relationship(session: AsyncSession, *, user_id: int) -> ReferralRelationship | None:
+    stmt = (
+        select(ReferralRelationship)
+        .where(ReferralRelationship.referred_user_id == user_id, ReferralRelationship.is_active.is_(True))
+        .order_by(ReferralRelationship.started_at.desc(), ReferralRelationship.id.desc())
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def _persist_order_benefit_applications(session: AsyncSession, *, order: Order, user: User, resolved_benefits: dict[str, Any]) -> None:
+    now = ufa_now()
+    applications: list[OrderBenefitApplication] = []
+    referral_relationship = await _active_referral_relationship(session, user_id=user.id)
+    referral_profile = None
+    if resolved_benefits.get("referral_profile_id") is not None:
+        referral_profile = (
+            await session.execute(select(ReferralProfile).where(ReferralProfile.id == resolved_benefits["referral_profile_id"]))
+        ).scalar_one_or_none()
+
+    for option in resolved_benefits.get("stacked_discount_options", []):
+        source_kind = option.get("source_kind")
+        source_record_id = option.get("source_record_id")
+        kwargs: dict[str, Any] = {}
+        if source_kind == "website_coupon":
+            kwargs["website_coupon_id"] = source_record_id
+        elif source_kind == "website_discount_entitlement":
+            kwargs["website_discount_entitlement_id"] = source_record_id
+        elif source_kind == "app_promo":
+            kwargs["app_promo_id"] = source_record_id
+        elif source_kind == "app_referral":
+            kwargs["referral_profile_id"] = source_record_id
+            if referral_relationship is not None:
+                kwargs["referral_relationship_id"] = referral_relationship.id
+                kwargs["referral_promo_code_id"] = referral_relationship.referral_promo_code_id
+
+        snapshot = {
+            "sequence": option.get("sequence"),
+            "subtotal_before": str(option.get("subtotal_before")),
+            "subtotal_after": str(option.get("subtotal_after")),
+            "entered_code": resolved_benefits.get("entered_code"),
+        }
+        if source_kind == "app_referral":
+            snapshot.update(
+                {
+                    "referrer_user_id": referral_profile.referrer_user_id if referral_profile is not None else None,
+                    "referrer_promo_code": option.get("code"),
+                }
+            )
+
+        applications.append(
+            OrderBenefitApplication(
+                order_id=order.id,
+                user_id=user.id,
+                website_identity_id=resolved_benefits.get("website_identity_id"),
+                source_kind=source_kind,
+                entered_code=resolved_benefits.get("entered_code"),
+                resolved_code=option.get("code"),
+                discount_percent=option.get("discount_percent"),
+                discount_amount=option.get("applied_discount_amount"),
+                currency=option.get("currency") or resolved_benefits.get("currency") or order.currency,
+                status="applied",
+                applied_at=now,
+                calculation_snapshot=snapshot,
+                **kwargs,
+            )
+        )
+
+    deposit_option = resolved_benefits.get("deposit_option") or {}
+    deposit_amount = quantize_money(deposit_option.get("applicable_amount")) or Decimal("0.00")
+    if deposit_amount > Decimal("0.00"):
+        applications.append(
+            OrderBenefitApplication(
+                order_id=order.id,
+                user_id=user.id,
+                website_identity_id=resolved_benefits.get("website_identity_id"),
+                source_kind="app_deposit",
+                entered_code=resolved_benefits.get("entered_code"),
+                resolved_code="APP_DEPOSIT",
+                bonus_spent_amount=deposit_amount,
+                currency=deposit_option.get("currency") or resolved_benefits.get("currency") or order.currency,
+                status="applied",
+                applied_at=now,
+                calculation_snapshot={
+                    "balance": str(deposit_option.get("balance")),
+                    "requested_amount": str(deposit_option.get("requested_amount")),
+                    "max_applicable_amount": str(deposit_option.get("max_applicable_amount")),
+                    "estimated_total_after_deposit": str(deposit_option.get("estimated_total_after_deposit")),
+                },
+            )
+        )
+
+    if applications:
+        session.add_all(applications)
+        await session.flush()
+
+
+async def _resolve_checkout_benefits(
+    session: AsyncSession,
+    *,
+    user: User,
+    subtotal: Decimal,
+    currency: str,
+    entered_code: str | None,
+    requested_deposit_amount: Decimal | None,
+) -> dict[str, Any]:
+    return await resolve_benefits_for_user(
+        session,
+        user=user,
+        entered_code=entered_code,
+        subtotal=subtotal,
+        currency=currency,
+        requested_deposit_amount=requested_deposit_amount,
+    )
+
+async def create_order_from_draft_for_user(
+    session: AsyncSession,
+    *,
+    user: User,
+    draft_id: int,
+    payment_method: str,
+    entered_code: str | None = None,
+    requested_deposit_amount: Decimal | None = None,
+) -> Order:
     draft = await get_order_draft_by_id(session, draft_id, user_id=user.id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
 
@@ -103,15 +265,31 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     if not draft.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft is empty")
 
     selected_delivery_service, selected_delivery_payload = _build_selected_delivery_payload(draft)
-    checkout_snapshot = _build_checkout_snapshot(draft, payment_method=payment_method, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload)
+    resolved_benefits = await _resolve_checkout_benefits(
+        session,
+        user=user,
+        subtotal=draft.basket_subtotal,
+        currency=draft.currency,
+        entered_code=entered_code,
+        requested_deposit_amount=requested_deposit_amount,
+    )
+    grand_total = (quantize_money(resolved_benefits["total_after_deposit"]) or Decimal("0.00")) + draft.delivery_total
+    checkout_snapshot = _build_checkout_snapshot(
+        draft,
+        payment_method=payment_method,
+        selected_delivery_service=selected_delivery_service,
+        selected_delivery_payload=selected_delivery_payload,
+        resolved_benefits=resolved_benefits,
+    )
     delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
 
     order_code = await _generate_order_code(session)
-    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=draft.delivery_address_id, recipient_id=draft.recipient_id, order_code=order_code, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=draft.items_count, total_quantity=draft.total_quantity, basket_subtotal=draft.basket_subtotal, delivery_total=draft.delivery_total, grand_total=draft.grand_total, currency=draft.currency, delivery_period_min=draft.delivery_period_min, delivery_period_max=draft.delivery_period_max, comment=draft.comment, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
+    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=draft.delivery_address_id, recipient_id=draft.recipient_id, order_code=order_code, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=draft.items_count, total_quantity=draft.total_quantity, basket_subtotal=draft.basket_subtotal, delivery_total=draft.delivery_total, grand_total=grand_total, currency=draft.currency, delivery_period_min=draft.delivery_period_min, delivery_period_max=draft.delivery_period_max, comment=draft.comment, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
 
     order_items = [OrderItem(user_id=user.id, order_id=order.id, product_id=item.product_id, variant_id=item.variant_id, product_name=item.product_name, product_sku=item.product_sku, variant_name=item.variant_name, variant_sku=item.variant_sku, quantity=item.quantity, unit_price=item.unit_price, line_total=item.line_total) for item in draft.items]
     session.add_all(order_items)
     await session.flush()
+    await _persist_order_benefit_applications(session, order=order, user=user, resolved_benefits=resolved_benefits)
     for item in draft.items: await record_purchase(session, user_id=user.id, product_id=item.product_id, quantity=item.quantity, commit=False)
     await ensure_order_has_amocrm_lead(session, order, user=user)
     await _clear_order_draft_references(session, draft_id=draft.id)
@@ -124,7 +302,14 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     return created_order
 
 
-async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str) -> Order:
+async def create_order_from_basket_for_user(
+    session: AsyncSession,
+    *,
+    user: User,
+    payment_method: str,
+    entered_code: str | None = None,
+    requested_deposit_amount: Decimal | None = None,
+) -> Order:
     basket = await get_basket_by_user_id(session, user.id)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
     if basket.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
@@ -178,15 +363,31 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
         comment=None,
     )
     selected_delivery_service, selected_delivery_payload = _build_selected_delivery_payload(checkout_source)
-    checkout_snapshot = _build_checkout_snapshot(checkout_source, payment_method=payment_method, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload)
+    resolved_benefits = await _resolve_checkout_benefits(
+        session,
+        user=user,
+        subtotal=basket_subtotal,
+        currency=basket.currency,
+        entered_code=entered_code,
+        requested_deposit_amount=requested_deposit_amount,
+    )
+    grand_total = (quantize_money(resolved_benefits["total_after_deposit"]) or Decimal("0.00")) + basket.delivery_total
+    checkout_snapshot = _build_checkout_snapshot(
+        checkout_source,
+        payment_method=payment_method,
+        selected_delivery_service=selected_delivery_service,
+        selected_delivery_payload=selected_delivery_payload,
+        resolved_benefits=resolved_benefits,
+    )
     delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
 
     order_code = await _generate_order_code(session)
-    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=basket.delivery_address_id, recipient_id=basket.recipient_id, order_code=order_code, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=len(order_item_rows), total_quantity=total_quantity, basket_subtotal=basket_subtotal, delivery_total=basket.delivery_total, grand_total=basket_subtotal + basket.delivery_total, currency=basket.currency, delivery_period_min=basket.delivery_period_min, delivery_period_max=basket.delivery_period_max, comment=None, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
+    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=basket.delivery_address_id, recipient_id=basket.recipient_id, order_code=order_code, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=len(order_item_rows), total_quantity=total_quantity, basket_subtotal=basket_subtotal, delivery_total=basket.delivery_total, grand_total=grand_total, currency=basket.currency, delivery_period_min=basket.delivery_period_min, delivery_period_max=basket.delivery_period_max, comment=None, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
 
     order_items = [OrderItem(user_id=user.id, order_id=order.id, product_id=item.product_id, variant_id=item.variant_id, product_name=item.product.name, product_sku=item.product.sku, variant_name=item.variant.name, variant_sku=item.variant.sku, quantity=item.quantity, unit_price=unit_price, line_total=line_total) for item, unit_price, line_total in order_item_rows]
     session.add_all(order_items)
     await session.flush()
+    await _persist_order_benefit_applications(session, order=order, user=user, resolved_benefits=resolved_benefits)
     for item, _, _ in order_item_rows: await record_purchase(session, user_id=user.id, product_id=item.product_id, quantity=item.quantity, commit=False)
     await ensure_order_has_amocrm_lead(session, order, user=user)
     await session.execute(delete(BasketItem).where(BasketItem.basket_id == basket.id))

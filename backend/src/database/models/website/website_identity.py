@@ -46,6 +46,7 @@ class WebsiteIdentity(Base, IdPkMixin, TimestampMixin):
     referral_profile: Mapped["WebsiteReferralProfile | None"] = relationship(
         back_populates="website_identity", cascade="all, delete-orphan", passive_deletes=True, uselist=False
     )
+    app_referral_profile: Mapped["ReferralProfile | None"] = relationship(back_populates="website_identity", uselist=False)
     bonus_account_snapshot: Mapped["WebsiteBonusAccount | None"] = relationship(
         back_populates="website_identity", cascade="all, delete-orphan", passive_deletes=True, uselist=False
     )

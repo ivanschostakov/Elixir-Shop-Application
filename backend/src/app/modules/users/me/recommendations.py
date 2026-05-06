@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
-from src.app.modules.products.helpers import serialize_products_with_variants
+from src.app.modules.products.helpers import get_user_product_price_discount_context, serialize_products_with_variants
 from src.app.modules.users.me.schemas import RecommendationCategoryViewPayload, RecommendationSurface, RecommendationViewPayload
 from src.app.services.recommendations import (
     get_recommended_products_for_user,
@@ -49,4 +49,5 @@ async def list_my_recommendations(
     current_user: User = Depends(get_current_user),
 ) -> list[ProductWithVariantsRead]:
     products = await get_recommended_products_for_user(db, user_id=current_user.id, surface=surface, product_id=product_id, draft_id=draft_id, limit=limit, offset=offset)
-    return serialize_products_with_variants(request, products)
+    discount_context = await get_user_product_price_discount_context(db, current_user)
+    return serialize_products_with_variants(request, products, discount_context=discount_context)

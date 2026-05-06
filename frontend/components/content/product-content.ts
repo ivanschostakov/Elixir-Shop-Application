@@ -1,4 +1,4 @@
-import type { ProductRead, ProductWithVariantsRead } from "@/types/product"
+import type { ProductRead, ProductVariantRead, ProductWithVariantsRead } from "@/types/product"
 
 const decodeHtmlEntities = (value: string) =>
     value
@@ -53,23 +53,71 @@ export const formatProductPrice = (value?: number | string | null) => {
     }).format(numericPrice)} ₽`
 }
 
-const getProductDisplayPrice = (product: Pick<ProductWithVariantsRead, "variants">) => {
-    const prices = product.variants
-        .map((variant) => getNumericPrice(variant.price))
-        .filter((price): price is number => price !== null)
+export type ProductPriceDisplay = {
+    currentLabel: string
+    originalLabel: string | null
+    discountLabel: string | null
+    hasDiscount: boolean
+    prefix: string
+}
 
-    if (prices.length === 0) {
+type ProductPriceDisplayCandidate = ProductPriceDisplay & {
+    currentPrice: number
+}
+
+export function getVariantPriceDisplay(variant?: ProductVariantRead | null, prefix = ""): ProductPriceDisplay | null {
+    if (!variant) {
         return null
     }
 
-    return Math.min(...prices)
+    const originalPrice = getNumericPrice(variant.original_price ?? variant.price)
+    const discountedPrice = getNumericPrice(variant.discounted_price ?? variant.price)
+    if (originalPrice === null || discountedPrice === null) {
+        return null
+    }
+
+    const discountPercent = getNumericPrice(variant.discount_percent)
+    const hasDiscount = Boolean(discountPercent && discountPercent > 0 && discountedPrice < originalPrice)
+    const currentLabel = formatProductPrice(hasDiscount ? discountedPrice : originalPrice)
+    if (!currentLabel) {
+        return null
+    }
+
+    return {
+        currentLabel,
+        originalLabel: hasDiscount ? formatProductPrice(originalPrice) : null,
+        discountLabel: hasDiscount ? `-${Math.round(discountPercent ?? 0)}%` : null,
+        hasDiscount,
+        prefix,
+    }
+}
+
+const getVariantPriceDisplayCandidate = (variant: ProductVariantRead, prefix: string): ProductPriceDisplayCandidate | null => {
+    const display = getVariantPriceDisplay(variant, prefix)
+    const currentPrice = getNumericPrice(variant.discounted_price ?? variant.price)
+    if (!display || currentPrice === null) {
+        return null
+    }
+
+    return {
+        ...display,
+        currentPrice,
+    }
+}
+
+export const getProductPriceDisplay = (product: Pick<ProductWithVariantsRead, "variants">): ProductPriceDisplay | null => {
+    const candidates = product.variants
+        .map((variant) => getVariantPriceDisplayCandidate(variant, "от "))
+        .filter((candidate): candidate is ProductPriceDisplayCandidate => candidate !== null)
+        .sort((left, right) => left.currentPrice - right.currentPrice)
+
+    return candidates[0] ?? null
 }
 
 export const getProductPriceLabel = (product: Pick<ProductWithVariantsRead, "variants">) => {
-    const numericPrice = getProductDisplayPrice(product)
-    const formattedPrice = formatProductPrice(numericPrice)
+    const priceDisplay = getProductPriceDisplay(product)
 
-    return formattedPrice ? `от ${formattedPrice}` : null
+    return priceDisplay ? `${priceDisplay.prefix}${priceDisplay.currentLabel}` : null
 }
 
 export function isProductOutOfStock(product: Pick<ProductWithVariantsRead, "variants">) {

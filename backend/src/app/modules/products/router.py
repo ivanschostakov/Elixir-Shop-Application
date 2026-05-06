@@ -6,7 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from src.app.modules.auth.dependencies import get_current_admin_user, get_current_user
+from src.app.modules.auth.dependencies import get_current_admin_user, get_current_user, get_optional_current_user
 from src.app.services.cache import build_cache_key, get_cache_service
 from src.app.services.review_attachments import (
     build_review_attachment_filename,
@@ -35,7 +35,7 @@ from src.database.models import User
 from src.database.search import normalize_search_text
 from src.database.schemas import ProductCreate, ProductUpdate, ProductWithVariantsRead, ReviewCreate, ReviewEligibilityRead, ReviewRead
 
-from .helpers import serialize_product_with_variants, serialize_products_with_variants, serialize_review, serialize_reviews
+from .helpers import get_user_product_price_discount_context, serialize_product_with_variants, serialize_products_with_variants, serialize_review, serialize_reviews
 
 products_router = APIRouter(prefix="/products", tags=["products"])
 PRODUCT_DETAIL_CACHE_TTL_SECONDS = 180
@@ -60,7 +60,12 @@ async def _bump_review_cache_namespaces() -> None:
 
 
 @products_router.get("/{product_id}", response_model=ProductWithVariantsRead)
-async def products_get_by_id(request: Request, product_id: int, db: AsyncSession = Depends(get_db)):
+async def products_get_by_id(
+    request: Request,
+    product_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
     cache = get_cache_service()
     base_key = build_cache_key(
         route="products:detail",
@@ -70,21 +75,24 @@ async def products_get_by_id(request: Request, product_id: int, db: AsyncSession
         },
     )
     cache_key = await cache.versioned_key("product", base_key)
-    cached_item = await cache.get_json(cache_key, key_prefix="products:detail")
-    if cached_item is not None:
-        return ProductWithVariantsRead.model_validate(cached_item)
+    if current_user is None:
+        cached_item = await cache.get_json(cache_key, key_prefix="products:detail")
+        if cached_item is not None:
+            return ProductWithVariantsRead.model_validate(cached_item)
 
     product = await get_product_by_id(db, product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     review_stats = await get_product_review_stats(db, product_ids=[product.id])
-    payload = serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats)
-    await cache.set_json(
-        cache_key,
-        payload.model_dump(mode="json"),
-        ttl_seconds=PRODUCT_DETAIL_CACHE_TTL_SECONDS,
-        key_prefix="products:detail",
-    )
+    discount_context = await get_user_product_price_discount_context(db, current_user)
+    payload = serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats, discount_context=discount_context)
+    if current_user is None:
+        await cache.set_json(
+            cache_key,
+            payload.model_dump(mode="json"),
+            ttl_seconds=PRODUCT_DETAIL_CACHE_TTL_SECONDS,
+            key_prefix="products:detail",
+        )
     return payload
 
 
@@ -95,6 +103,7 @@ async def products_get_similar(
     limit: int = Query(default=6, ge=1, le=20),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     cache = get_cache_service()
     base_key = build_cache_key(
@@ -107,24 +116,27 @@ async def products_get_similar(
         },
     )
     cache_key = await cache.versioned_key("product", base_key)
-    cached_items = await cache.get_json(cache_key, key_prefix="products:similar")
-    if cached_items is not None:
-        return [ProductWithVariantsRead.model_validate(item) for item in cached_items]
+    if current_user is None:
+        cached_items = await cache.get_json(cache_key, key_prefix="products:similar")
+        if cached_items is not None:
+            return [ProductWithVariantsRead.model_validate(item) for item in cached_items]
 
     product = await get_product_by_id(db, product_id)
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     similar_products = await get_similar_products(db, product_id=product_id, offset=offset, limit=limit)
     review_stats = await get_product_review_stats(db, product_ids=[item.id for item in similar_products])
+    discount_context = await get_user_product_price_discount_context(db, current_user)
     payload = serialize_products_with_variants(
-        request, similar_products, review_stats_by_product_id=review_stats,
+        request, similar_products, review_stats_by_product_id=review_stats, discount_context=discount_context,
     )
-    await cache.set_json(
-        cache_key,
-        [item.model_dump(mode="json") for item in payload],
-        ttl_seconds=PRODUCT_SIMILAR_CACHE_TTL_SECONDS,
-        key_prefix="products:similar",
-    )
+    if current_user is None:
+        await cache.set_json(
+            cache_key,
+            [item.model_dump(mode="json") for item in payload],
+            ttl_seconds=PRODUCT_SIMILAR_CACHE_TTL_SECONDS,
+            key_prefix="products:similar",
+        )
     return payload
 
 
@@ -241,6 +253,7 @@ async def products_get(
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
     sort: Literal["newest", "name_asc", "name_desc", "price_asc", "price_desc"] | None = Query(default=None),
+    current_user: User | None = Depends(get_optional_current_user),
 ):
     normalized_q = normalize_search_text(q) if q is not None else None
     normalized_sku = sku.strip() if sku is not None else None
@@ -259,9 +272,10 @@ async def products_get(
         },
     )
     cache_key = await cache.versioned_key("catalog", base_key)
-    cached_items = await cache.get_json(cache_key, key_prefix="products:list")
-    if cached_items is not None:
-        return [ProductWithVariantsRead.model_validate(item) for item in cached_items]
+    if current_user is None:
+        cached_items = await cache.get_json(cache_key, key_prefix="products:list")
+        if cached_items is not None:
+            return [ProductWithVariantsRead.model_validate(item) for item in cached_items]
 
     products = await get_products(
         db,
@@ -274,13 +288,15 @@ async def products_get(
         sort=sort,
     )
     review_stats = await get_product_review_stats(db, product_ids=[product.id for product in products])
-    payload = serialize_products_with_variants(request, products, review_stats_by_product_id=review_stats)
-    await cache.set_json(
-        cache_key,
-        [item.model_dump(mode="json") for item in payload],
-        ttl_seconds=PRODUCT_LIST_CACHE_TTL_SECONDS,
-        key_prefix="products:list",
-    )
+    discount_context = await get_user_product_price_discount_context(db, current_user)
+    payload = serialize_products_with_variants(request, products, review_stats_by_product_id=review_stats, discount_context=discount_context)
+    if current_user is None:
+        await cache.set_json(
+            cache_key,
+            [item.model_dump(mode="json") for item in payload],
+            ttl_seconds=PRODUCT_LIST_CACHE_TTL_SECONDS,
+            key_prefix="products:list",
+        )
     return payload
 
 

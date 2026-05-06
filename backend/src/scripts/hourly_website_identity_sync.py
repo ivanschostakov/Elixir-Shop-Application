@@ -8,12 +8,12 @@ if str(ROOT_DIR) not in sys.path: sys.path.insert(0, str(ROOT_DIR))
 
 from src.scripts.sync_website_identities_from_bitrix_vm import run_sync
 
-DEFAULT_STALE_MINUTES = 50
+DEFAULT_STALE_MINUTES = 23 * 60
 DEFAULT_BATCH_SIZE = 50
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Hourly task for syncing stale linked website website_identity.")
+    parser = argparse.ArgumentParser(description="Daily task for syncing stale linked website identity snapshots.")
     parser.add_argument(
         "--stale-minutes",
         type=int,
