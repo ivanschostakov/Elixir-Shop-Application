@@ -890,6 +890,8 @@ async def upsert_moysklad_catalog_rows(session: AsyncSession, products: list[Moy
             continue
 
         was_archived = local_product.archived
+        if not product.archived:
+            payload.pop("archived", None)
         sku_conflict = products_by_sku.get(product.sku)
         if sku_conflict is not None and sku_conflict.id != local_product.id:
             payload.pop("sku", None)
@@ -920,8 +922,6 @@ async def upsert_moysklad_catalog_rows(session: AsyncSession, products: list[Moy
             products_by_name[local_product.name] = local_product
         if product.archived and not was_archived:
             stats.archived_products += 1
-        if not product.archived and was_archived:
-            stats.unarchived_products += 1
 
     for local_product in local_products:
         if local_product.system_id in incoming_product_system_ids:
@@ -951,22 +951,27 @@ async def upsert_moysklad_catalog_rows(session: AsyncSession, products: list[Moy
             "sku": variant.sku,
             "name": variant.name,
             "stock": variant.stock,
-            "archived": False,
             "price": variant.price, }
 
         local_variant = variants_by_system_id.get(variant.system_id)
         if local_variant is None:
+            payload["archived"] = local_product.archived
             local_variant = Variant(system_id=variant.system_id, **payload)
             session.add(local_variant)
             variants_by_system_id[variant.system_id] = local_variant
             variants_by_product_id.setdefault(local_product.id, []).append(local_variant)
             stats.created_variants += 1
-            stats.unarchived_variants += 1
+            if local_variant.archived:
+                stats.archived_variants += 1
+            else:
+                stats.unarchived_variants += 1
             continue
 
         was_archived = local_variant.archived
+        if local_product.archived:
+            payload["archived"] = True
         if _apply_changes(local_variant, payload): stats.updated_variants += 1
-        if was_archived:
+        if not local_variant.archived and was_archived:
             stats.unarchived_variants += 1
 
     for local_variant in local_variants:

@@ -55,7 +55,15 @@ async def get_products_for_category(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_categories_for_product(session: AsyncSession, product_id: int, *, category_id: int | None = None, offset: int = 0, limit: int = 100) -> list[ProductCategory]:
+async def get_categories_for_product(
+    session: AsyncSession,
+    product_id: int,
+    *,
+    category_id: int | None = None,
+    offset: int = 0,
+    limit: int = 100,
+    include_archived: bool = False,
+) -> list[ProductCategory]:
     stmt = (
         select(ProductCategory)
         .join(ProductByCategory, ProductByCategory.category_id == ProductCategory.id)
@@ -63,6 +71,7 @@ async def get_categories_for_product(session: AsyncSession, product_id: int, *, 
     )
 
     if category_id is not None: stmt = stmt.where(ProductByCategory.category_id == category_id)
+    if not include_archived: stmt = stmt.where(ProductCategory.archived.is_(False))
     stmt = stmt.order_by(ProductByCategory.id.desc()).offset(offset).limit(limit)
     return list((await session.execute(stmt)).scalars().all())
 

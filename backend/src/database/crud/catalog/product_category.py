@@ -13,18 +13,30 @@ async def create_product_category(session: AsyncSession, data: ProductCategoryCr
     return product_category
 
 
-async def get_product_category_by_id(session: AsyncSession, product_category_id: int) -> ProductCategory | None:
+async def get_product_category_by_id(session: AsyncSession, product_category_id: int, *, include_archived: bool = False) -> ProductCategory | None:
     stmt = select(ProductCategory).where(ProductCategory.id == product_category_id)
+    if not include_archived: stmt = stmt.where(ProductCategory.archived.is_(False))
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_product_category_by_name(session: AsyncSession, name: str) -> ProductCategory | None:
+async def get_product_category_by_name(session: AsyncSession, name: str, *, include_archived: bool = False) -> ProductCategory | None:
     stmt = select(ProductCategory).where(ProductCategory.name == name)
+    if not include_archived: stmt = stmt.where(ProductCategory.archived.is_(False))
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_product_categories(session: AsyncSession, *, q: str | None = None, name: str | None = None, offset: int = 0, limit: int = 100, sort: str | None = None) -> list[ProductCategory]:
+async def get_product_categories(
+    session: AsyncSession,
+    *,
+    q: str | None = None,
+    name: str | None = None,
+    offset: int = 0,
+    limit: int = 100,
+    sort: str | None = None,
+    include_archived: bool = False,
+) -> list[ProductCategory]:
     stmt = select(ProductCategory)
+    if not include_archived: stmt = stmt.where(ProductCategory.archived.is_(False))
     if name is not None: stmt = stmt.where(ProductCategory.name == name)
     if q: stmt = stmt.where(or_(ProductCategory.name.ilike(f"%{q}%"), ProductCategory.description.ilike(f"%{q}%")))
 
