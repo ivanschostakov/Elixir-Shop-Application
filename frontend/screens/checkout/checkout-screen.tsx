@@ -101,11 +101,15 @@ function normalizeCheckoutAmountInput(value: string) {
 }
 
 function formatBenefitTitle(option: BenefitOptionResponse) {
-    if (option.discount_percent) {
-        return `${option.title} ${Number(option.discount_percent).toLocaleString("ru-RU", { maximumFractionDigits: 2 })}%`
+    if (["app_referral", "app_promo", "website_coupon"].includes(option.source_kind)) {
+        return "Промокод"
     }
 
-    return option.title
+    if (option.source_kind === "website_discount_entitlement") {
+        return "Персональное предложение"
+    }
+
+    return "Скидка"
 }
 
 export default function CheckoutScreen() {

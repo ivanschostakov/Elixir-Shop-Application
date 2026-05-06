@@ -180,6 +180,13 @@ export const cartScreenStyles = StyleSheet.create({
         minHeight: 40,
         paddingHorizontal: spacing.sm,
     },
+    promoTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "800",
+        lineHeight: 20,
+        paddingHorizontal: spacing.xs,
+    },
     promoStatusText: {
         fontSize: 12,
         fontWeight: "700",

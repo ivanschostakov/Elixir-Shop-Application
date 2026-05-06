@@ -548,6 +548,7 @@ export default function CartScreen() {
                 <View style={cartScreenStyles.contentSurface}>
                     <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
                         <View style={cartScreenStyles.summaryCard}>
+                            <Text style={cartScreenStyles.promoTitle}>{t("cart.promoCodeTitle")}</Text>
                             <TextInput
                                 autoCapitalize="characters"
                                 autoCorrect={false}

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 
 import { setBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
 import { setBasketSnapshot } from "@/hooks/basket/basket-store"
@@ -17,7 +17,7 @@ export function useBasketMutations(): UseBasketMutationsResult {
     const [updating, setUpdating] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
-    const runMutation = async (mutation: () => Promise<BasketRead>) => {
+    const runMutation = useCallback(async (mutation: () => Promise<BasketRead>) => {
         setUpdating(true)
         setError(null)
 
@@ -33,43 +33,56 @@ export function useBasketMutations(): UseBasketMutationsResult {
         } finally {
             setUpdating(false)
         }
-    }
+    }, [])
 
-    return {
-        updating,
-        error,
-        addItem: (variantId, quantity = 1) => {
-            assertPositiveInteger(variantId, "variant id")
-            assertPositiveInteger(quantity, "quantity")
+    const addItem = useCallback((variantId: number, quantity = 1) => {
+        assertPositiveInteger(variantId, "variant id")
+        assertPositiveInteger(quantity, "quantity")
 
-            return runMutation(() =>
-                addBasketItem({
-                    quantity,
-                    variant_id: variantId,
-                })
-            )
-        },
-        updateItemQuantity: (itemId, quantity) => {
-            assertPositiveInteger(itemId, "item id")
-            assertPositiveInteger(quantity, "quantity")
+        return runMutation(() =>
+            addBasketItem({
+                quantity,
+                variant_id: variantId,
+            })
+        )
+    }, [runMutation])
 
-            return runMutation(() =>
-                updateBasketItem(itemId, {
-                    quantity,
-                })
-            )
-        },
-        removeItem: (itemId) => {
-            assertPositiveInteger(itemId, "item id")
-            return runMutation(() => removeBasketItem(itemId))
-        },
-        clear: () => runMutation(() => clearBasket()),
-        restoreDraft: async (draftId) => {
-            assertPositiveInteger(draftId, "draft id")
+    const updateItemQuantity = useCallback((itemId: number, quantity: number) => {
+        assertPositiveInteger(itemId, "item id")
+        assertPositiveInteger(quantity, "quantity")
 
-            const nextBasket = await runMutation(() => restoreDraftToBasket(draftId))
-            setBasketDraftEditingId(draftId)
-            return nextBasket
-        },
-    }
+        return runMutation(() =>
+            updateBasketItem(itemId, {
+                quantity,
+            })
+        )
+    }, [runMutation])
+
+    const removeItem = useCallback((itemId: number) => {
+        assertPositiveInteger(itemId, "item id")
+        return runMutation(() => removeBasketItem(itemId))
+    }, [runMutation])
+
+    const clear = useCallback(() => runMutation(() => clearBasket()), [runMutation])
+
+    const restoreDraft = useCallback(async (draftId: number) => {
+        assertPositiveInteger(draftId, "draft id")
+
+        const nextBasket = await runMutation(() => restoreDraftToBasket(draftId))
+        setBasketDraftEditingId(draftId)
+        return nextBasket
+    }, [runMutation])
+
+    return useMemo(
+        () => ({
+            updating,
+            error,
+            addItem,
+            updateItemQuantity,
+            removeItem,
+            clear,
+            restoreDraft,
+        }),
+        [addItem, clear, error, removeItem, restoreDraft, updateItemQuantity, updating],
+    )
 }
