@@ -20,7 +20,10 @@ function normalizeMessage(message: string, fallback: string) {
         return fallback
     }
 
-    if (loweredMessage.includes("invalid credentials")) {
+    if (
+        loweredMessage.includes("invalid credentials") ||
+        loweredMessage.includes("invalid website credentials")
+    ) {
         return INVALID_CREDENTIALS_MESSAGE
     }
 
@@ -71,12 +74,12 @@ export function isBackendError(error: unknown) {
 }
 
 export function getErrorMessage(error: unknown, fallback = "Unknown error") {
-    if (error instanceof ApiError && [401, 403].includes(error.status)) {
-        return AUTH_REQUIRED_MESSAGE
-    }
-
     if (error instanceof ApiError && error.status >= 500) {
         return BACKEND_UNAVAILABLE_MESSAGE
+    }
+
+    if (error instanceof ApiError && [401, 403].includes(error.status)) {
+        return normalizeMessage(error.message, AUTH_REQUIRED_MESSAGE)
     }
 
     if (error instanceof Error && error.message) {

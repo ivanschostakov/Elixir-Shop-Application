@@ -51,6 +51,7 @@ function normalizeAuthErrorMessage(rawMessage: string, fallbackMessage: string) 
 
     if (
         loweredMessage.includes("invalid credentials") ||
+        loweredMessage.includes("invalid website credentials") ||
         loweredMessage.includes("could not validate credentials")
     ) {
         return translate("auth.error.invalidCredentials")

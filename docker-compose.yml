@@ -24,6 +24,7 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      AUTH_LOGIN_WEBSITE_FIRST_ENABLED: "true"
       GOOGLE_APPLICATION_CREDENTIALS: /app/backend/.secrets/application_default_credentials.json
     extra_hosts:
       - "host.docker.internal:host-gateway"
