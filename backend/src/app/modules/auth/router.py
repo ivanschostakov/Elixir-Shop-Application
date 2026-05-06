@@ -210,6 +210,7 @@ async def login(
 ) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
     await _apply_auth_rate_limit(request, scope="auth:login", principal=payload.login)
 
+    website_auth_error: HTTPException | None = None
     if AUTH_LOGIN_WEBSITE_FIRST_ENABLED:
         try:
             website_user, _ = await login_with_website_identity(
@@ -219,11 +220,20 @@ async def login(
                 website_identity_client=website_identity_client,
             )
             return await build_auth_tokens_response(website_user, db)
-        except HTTPException:
-            # Keep local login available even when website auth rejects credentials or is temporarily unavailable.
-            pass
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+                # Keep app username login available when the same credentials are not valid on the website.
+                pass
+            else:
+                website_auth_error = exc
 
-    user = await get_plain_login_user(payload, db)
+    try:
+        user = await get_plain_login_user(payload, db)
+    except HTTPException as exc:
+        if website_auth_error is not None:
+            raise website_auth_error from exc
+        raise
+
     if AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA and await is_admin_user(db, user.id):
         return await build_auth_tokens_response(user, db)
     try:
