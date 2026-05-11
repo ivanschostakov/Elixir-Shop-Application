@@ -3,7 +3,7 @@ import type { GetProductsOptions, ProductApiSort } from "@/services/api/products
 export type ProductBrowseSort = ProductApiSort
 
 export const PRODUCT_BROWSE_LIMIT = 100
-export const PRODUCT_DISCOVER_PAGE_SIZE = 24
+export const PRODUCT_DISCOVER_PAGE_SIZE = 16
 
 type BuildProductBrowseQueryOptionsArgs = {
     categoryId?: number | null
