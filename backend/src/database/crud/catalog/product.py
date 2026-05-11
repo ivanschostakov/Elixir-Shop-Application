@@ -28,6 +28,13 @@ def _normalized_product_sku_expression():
     return expr
 
 
+def _normalized_product_name_expression():
+    expr = func.lower(Product.name)
+    for token in ("-", "_", " ", ".", "/", "\\"):
+        expr = func.replace(expr, token, "")
+    return expr
+
+
 def _has_product_image(*, product_id: int | None = None, system_id) -> bool:
     return resolve_product_image_path(product_id=product_id, system_id=system_id) is not None
 
@@ -92,6 +99,7 @@ async def get_products(
         predicates = []
         compact_sku_variants: set[str] = set()
         normalized_product_sku = _normalized_product_sku_expression()
+        normalized_product_name = _normalized_product_name_expression()
         for variant in query_variants:
             pattern = f"%{variant}%"
             predicates.extend(
@@ -104,6 +112,7 @@ async def get_products(
             if compact_sku and compact_sku not in compact_sku_variants:
                 compact_sku_variants.add(compact_sku)
                 predicates.append(normalized_product_sku.ilike(f"%{compact_sku}%"))
+                predicates.append(normalized_product_name.ilike(f"%{compact_sku}%"))
         if predicates:
             stmt = stmt.where(or_(*predicates))
 
