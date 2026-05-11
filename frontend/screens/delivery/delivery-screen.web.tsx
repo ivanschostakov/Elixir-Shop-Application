@@ -585,7 +585,7 @@ export default function DeliveryScreen() {
             setSelectionError(
                 lookupError instanceof Error
                     ? lookupError.message
-                    : "Не удалось определить координаты выбранного адреса.",
+                    : translate("delivery.searchAddressResolveMessage"),
             )
         }
     }

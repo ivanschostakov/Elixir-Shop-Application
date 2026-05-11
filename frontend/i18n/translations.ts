@@ -311,6 +311,8 @@ export const ruTranslations = {
     "delivery.pickupPointOfficePage": "Просмотреть",
     "delivery.pickupPointOfficePageErrorTitle": "Не удалось открыть страницу пункта выдачи",
     "delivery.pickupPointOfficePageErrorMessage": "Попробуйте открыть страницу еще раз чуть позже.",
+    "delivery.searchAddressNotFoundTitle": "Не удалось найти адрес",
+    "delivery.searchAddressResolveMessage": "Не удалось определить координаты выбранного адреса.",
     "checkout.mapUnavailable": "Карта оформления заказа пока недоступна в веб-версии.",
     "favorites.emptyMessage": "Пока нет избранных товаров.",
     "favorites.emptyDescription": "Сохраняйте понравившиеся товары, и они будут ждать вас здесь. А пока можно присмотреть что-нибудь новое.",
@@ -615,6 +617,8 @@ export const ruTranslations = {
     "common.themeLight": "Светлая тема",
     "common.themeDark": "Темная тема",
     "common.viewAll": "Смотреть все",
+    "common.errorTitle": "Ошибка",
+    "common.unknownError": "Неизвестная ошибка",
     "discover.articlesTitle": "Статьи скоро появятся",
     "discover.articlesDescription": "Эта вкладка готова для будущего редакционного контента, как только статьи станут доступны.",
     "chat.title": "Чат",
@@ -725,9 +729,12 @@ export const ruTranslations = {
     "auth.error.verifyFallback": "Не удалось подтвердить email.",
     "auth.error.resendCodeFallback": "Не удалось отправить код повторно.",
     "auth.error.invalidCredentials": "Неверный логин или пароль.",
+    "auth.error.authRequired": "Требуется вход в аккаунт.",
     "auth.error.invalidCode": "Неверный или просроченный код подтверждения.",
     "auth.error.backendUnavailable": "Сервер временно недоступен. Попробуйте еще раз чуть позже.",
     "auth.error.alertTitle": "Ошибка входа",
+    "auth.requiredAlertTitle": "Требуется вход",
+    "auth.requiredAlertMessage": "Это действие доступно только для авторизованных пользователей.",
 } as const
 
 export type Language = "ru" | "en"
@@ -1056,6 +1063,8 @@ const enTranslations: Record<TranslationKey, string> = {
     "delivery.pickupPointOfficePage": "View",
     "delivery.pickupPointOfficePageErrorTitle": "Could not open pickup point page",
     "delivery.pickupPointOfficePageErrorMessage": "Try opening the page again a little later.",
+    "delivery.searchAddressNotFoundTitle": "Could not find address",
+    "delivery.searchAddressResolveMessage": "Could not determine coordinates for the selected address.",
 
     "checkout.mapUnavailable": "The checkout map is not available in the web version yet.",
 
@@ -1368,6 +1377,8 @@ const enTranslations: Record<TranslationKey, string> = {
     "common.themeLight": "Light theme",
     "common.themeDark": "Dark theme",
     "common.viewAll": "View all",
+    "common.errorTitle": "Error",
+    "common.unknownError": "Unknown error",
 
     "chat.title": "Chat",
     "chat.statusOnline": "online",
@@ -1483,12 +1494,21 @@ const enTranslations: Record<TranslationKey, string> = {
     "auth.error.verifyFallback": "Could not confirm email.",
     "auth.error.resendCodeFallback": "Could not resend the code.",
     "auth.error.invalidCredentials": "Invalid username or password.",
+    "auth.error.authRequired": "Sign in is required.",
     "auth.error.invalidCode": "Invalid or expired verification code.",
     "auth.error.backendUnavailable": "The server is temporarily unavailable. Please try again a little later.",
     "auth.error.alertTitle": "Sign-in error",
+    "auth.requiredAlertTitle": "Sign in required",
+    "auth.requiredAlertMessage": "This action is available only to signed-in users.",
 }
 
-export function translate(key: TranslationKey, language: Language = "ru") {
+let activeLanguage: Language = "ru"
+
+export function setTranslationLanguage(language: Language) {
+    activeLanguage = language
+}
+
+export function translate(key: TranslationKey, language: Language = activeLanguage) {
     if (language === "en") {
         return enTranslations[key]
     }

@@ -1,16 +1,28 @@
 import { Alert } from "react-native"
 
+import { translate } from "@/i18n/translations"
 import { ApiError } from "@/services/api/client"
 
-const BACKEND_UNAVAILABLE_MESSAGE = "Сервер временно недоступен. Попробуйте еще раз чуть позже."
-const INVALID_CREDENTIALS_MESSAGE = "Неверный логин или пароль."
-const AUTH_REQUIRED_MESSAGE = "Требуется вход в аккаунт."
-const INVALID_VERIFICATION_CODE_MESSAGE = "Неверный или просроченный код подтверждения."
-const ALERT_TITLE = "Ошибка"
 const ALERT_DEDUP_WINDOW_MS = 1200
 
 let lastAlertMessage = ""
 let lastAlertAt = 0
+
+function getBackendUnavailableMessage() {
+    return translate("auth.error.backendUnavailable")
+}
+
+function getInvalidCredentialsMessage() {
+    return translate("auth.error.invalidCredentials")
+}
+
+function getAuthRequiredMessage() {
+    return translate("auth.error.authRequired")
+}
+
+function getInvalidVerificationCodeMessage() {
+    return translate("auth.error.invalidCode")
+}
 
 function normalizeMessage(message: string, fallback: string) {
     const trimmedMessage = message.trim()
@@ -24,18 +36,18 @@ function normalizeMessage(message: string, fallback: string) {
         loweredMessage.includes("invalid credentials") ||
         loweredMessage.includes("invalid website credentials")
     ) {
-        return INVALID_CREDENTIALS_MESSAGE
+        return getInvalidCredentialsMessage()
     }
 
     if (loweredMessage.includes("could not validate credentials")) {
-        return AUTH_REQUIRED_MESSAGE
+        return getAuthRequiredMessage()
     }
 
     if (
         loweredMessage.includes("invalid verification code") ||
         loweredMessage.includes("invalid or expired verification code")
     ) {
-        return INVALID_VERIFICATION_CODE_MESSAGE
+        return getInvalidVerificationCodeMessage()
     }
 
     if (
@@ -47,7 +59,7 @@ function normalizeMessage(message: string, fallback: string) {
         loweredMessage.includes("request timed out") ||
         loweredMessage.includes("service is temporarily unavailable")
     ) {
-        return BACKEND_UNAVAILABLE_MESSAGE
+        return getBackendUnavailableMessage()
     }
 
     return trimmedMessage
@@ -73,23 +85,25 @@ export function isBackendError(error: unknown) {
     )
 }
 
-export function getErrorMessage(error: unknown, fallback = "Unknown error") {
+export function getErrorMessage(error: unknown, fallback?: string) {
+    const resolvedFallback = fallback ?? translate("common.unknownError")
+
     if (error instanceof ApiError && error.status >= 500) {
-        return BACKEND_UNAVAILABLE_MESSAGE
+        return getBackendUnavailableMessage()
     }
 
     if (error instanceof ApiError && [401, 403].includes(error.status)) {
-        return normalizeMessage(error.message, AUTH_REQUIRED_MESSAGE)
+        return normalizeMessage(error.message, getAuthRequiredMessage())
     }
 
     if (error instanceof Error && error.message) {
-        return normalizeMessage(error.message, fallback)
+        return normalizeMessage(error.message, resolvedFallback)
     }
 
-    return fallback
+    return resolvedFallback
 }
 
-export function showBackendErrorAlert(error: unknown, fallback = BACKEND_UNAVAILABLE_MESSAGE) {
+export function showBackendErrorAlert(error: unknown, fallback?: string) {
     if (!isBackendError(error)) {
         return
     }
@@ -98,7 +112,7 @@ export function showBackendErrorAlert(error: unknown, fallback = BACKEND_UNAVAIL
         return
     }
 
-    const message = getErrorMessage(error, fallback)
+    const message = getErrorMessage(error, fallback ?? getBackendUnavailableMessage())
     const now = Date.now()
 
     if (message === lastAlertMessage && now - lastAlertAt < ALERT_DEDUP_WINDOW_MS) {
@@ -107,5 +121,5 @@ export function showBackendErrorAlert(error: unknown, fallback = BACKEND_UNAVAIL
 
     lastAlertMessage = message
     lastAlertAt = now
-    Alert.alert(ALERT_TITLE, message)
+    Alert.alert(translate("common.errorTitle"), message)
 }

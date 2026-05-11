@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import * as SecureStore from "expo-secure-store"
 import { Platform } from "react-native"
 
-import { translate, type Language } from "@/i18n/translations"
+import { setTranslationLanguage, translate, type Language } from "@/i18n/translations"
 import { LanguageContext, useLanguage } from "@/providers/language-provider.context"
 import type { LanguageProviderProps } from "@/providers/language-provider.types"
 
@@ -54,6 +54,10 @@ async function persistLanguage(language: Language) {
 
 export function LanguageProvider({ children }: LanguageProviderProps) {
     const [language, setLanguageState] = useState<Language>(getDeviceLanguage)
+
+    useEffect(() => {
+        setTranslationLanguage(language)
+    }, [language])
 
     useEffect(() => {
         let isMounted = true

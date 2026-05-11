@@ -1273,9 +1273,9 @@ export default function DeliveryScreen() {
             const message =
                 selectionError instanceof Error
                     ? selectionError.message
-                    : "Не удалось определить координаты выбранного адреса."
+                    : translate("delivery.searchAddressResolveMessage")
 
-            Alert.alert("Не удалось найти адрес", message)
+            Alert.alert(translate("delivery.searchAddressNotFoundTitle"), message)
         }
     }
 

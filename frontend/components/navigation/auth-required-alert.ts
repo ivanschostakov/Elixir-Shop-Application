@@ -1,20 +1,22 @@
 import { Alert } from "react-native"
 
+import { translate } from "@/i18n/translations"
+
 type AuthRequiredAlertOptions = {
     onLogin: () => void
 }
 
 export function showAuthRequiredAlert({ onLogin }: AuthRequiredAlertOptions) {
     Alert.alert(
-        "Требуется вход",
-        "Это действие доступно только для авторизованных пользователей.",
+        translate("auth.requiredAlertTitle"),
+        translate("auth.requiredAlertMessage"),
         [
             {
-                text: "Отмена",
+                text: translate("common.cancel"),
                 style: "destructive",
             },
             {
-                text: "Войти",
+                text: translate("auth.entry.login"),
                 onPress: onLogin,
             },
         ],
