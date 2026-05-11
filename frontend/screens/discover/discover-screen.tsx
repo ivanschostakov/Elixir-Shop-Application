@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { ActivityIndicator, FlatList, Platform, Text, View, useWindowDimensions } from "react-native"
+import { ActivityIndicator, FlatList, Platform, View, useWindowDimensions } from "react-native"
 import { useLocalSearchParams } from "expo-router"
 
 import { EmptyState } from "@/components/content/empty-state"
@@ -208,10 +208,6 @@ export default function DiscoverScreen() {
                     <View
                         style={discoverScreenStyles.controlsWrap}
                     >
-                        <View style={discoverScreenStyles.catalogHeader}>
-                            <Text style={discoverScreenStyles.catalogEyebrow}>{t("discover.latestEyebrow")}</Text>
-                            <Text style={discoverScreenStyles.catalogTitle}>{t("discover.latestTitle")}</Text>
-                        </View>
                         <ProductBrowseControls
                             categories={categories}
                             categoryId={categoryId}

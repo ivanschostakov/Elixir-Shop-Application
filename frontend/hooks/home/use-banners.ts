@@ -6,7 +6,7 @@ export function useBanners(enabled = true) {
     const { data: banners, error, loading } = useAsyncData<Banner[]>({
         deps: [],
         enabled,
-        fetcher: () => getBanners({ limit: 10, sort: "priority_desc" }),
+        fetcher: () => getBanners({ limit: 1, sort: "priority_desc" }),
         initialData: [],
     })
 

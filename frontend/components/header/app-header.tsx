@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Alert, Animated, Pressable, Text, View, useWindowDimensions } from "react-native"
 import { BlurView } from "expo-blur"
-import { LinearGradient } from "expo-linear-gradient"
-import { usePathname, useRouter } from "expo-router"
+import { useLocalSearchParams, usePathname, useRouter } from "expo-router"
 import { Path, Svg } from "react-native-svg"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
@@ -30,6 +29,7 @@ import { colors } from "@/theme/colors"
 
 export default function AppHeader({ template }: AppHeaderProps) {
     const pathname = usePathname()
+    const params = useLocalSearchParams<{ q?: string | string[] }>()
     const router = useRouter()
     const topInset = useSafeAreaInsets().top
     const { height: windowHeight } = useWindowDimensions()
@@ -46,13 +46,14 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const entranceStyle = useEntranceAnimation({ translateY: -6 })
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [isSearchMode, setIsSearchMode] = useState(false)
+    const autoOpenedQueryRef = useRef<string | null>(null)
     const headerVariant = template.header
     const title = template.title ?? ""
     const showBackButton = !isPrimaryAppRoute(pathname)
     const canToggleSearch = headerVariant === "search" || (headerVariant === "tabs" && pathname === ROUTES.discover)
-    const isDiscoverUnifiedHeader = headerVariant === "tabs" && pathname === ROUTES.discover
     const isBasketPage = pathname === ROUTES.basket
     const hasBasketItems = (basket?.items_count ?? 0) > 0
+    const incomingQuery = (Array.isArray(params.q) ? params.q[0] : params.q)?.trim() ?? ""
 
     useEffect(() => {
         setIsMenuOpen(false)
@@ -64,6 +65,20 @@ export default function AppHeader({ template }: AppHeaderProps) {
             setIsSearchMode(false)
         }
     }, [canToggleSearch])
+
+    useEffect(() => {
+        if (pathname !== ROUTES.discover || !canToggleSearch || !incomingQuery) {
+            autoOpenedQueryRef.current = null
+            return
+        }
+
+        if (autoOpenedQueryRef.current === incomingQuery) {
+            return
+        }
+
+        autoOpenedQueryRef.current = incomingQuery
+        setIsSearchMode(true)
+    }, [canToggleSearch, incomingQuery, pathname])
 
     const handleSearchToggle = () => {
         if (!canToggleSearch) {
@@ -198,6 +213,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
         if (isSearchMode) {
             return (
                 <HeaderSearchPanel
+                    initialQuery={incomingQuery}
                     onClose={() => setIsSearchMode(false)}
                     pathname={pathname}
                     styles={styles}
@@ -214,7 +230,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
         if (headerVariant === "tabs") {
             return (
                 <View style={styles.centerSlotContent}>
-                    <ContentTabBar tabs={tabs} variant={isDiscoverUnifiedHeader ? "onColor" : "default"} />
+                    <ContentTabBar tabs={tabs} variant="default" />
                 </View>
             )
         }
@@ -230,19 +246,10 @@ export default function AppHeader({ template }: AppHeaderProps) {
         <Animated.View
             style={[
                 styles.wrapper,
-                isDiscoverUnifiedHeader && styles.wrapperDiscoverUnified,
                 headerVariant === "overlay" && styles.wrapperOverlay,
                 entranceStyle,
             ]}
         >
-            {isDiscoverUnifiedHeader ? (
-                <LinearGradient
-                    colors={["#FF6F93", "#FF88B0", "#FFC96B"]}
-                    end={{ x: 1, y: 0 }}
-                    start={{ x: 0, y: 0 }}
-                    style={styles.wrapperDiscoverGradient}
-                />
-            ) : null}
             {isSearchMode ? (
                 <Pressable
                     accessibilityLabel={t("nav.closeSearch")}

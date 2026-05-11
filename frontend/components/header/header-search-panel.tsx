@@ -17,6 +17,7 @@ import { useProductSearch } from "@/hooks/products/use-product-search"
 import { colors } from "@/theme/colors"
 
 export function HeaderSearchPanel({
+    initialQuery,
     onClose,
     pathname,
     styles,
@@ -32,6 +33,19 @@ export function HeaderSearchPanel({
             clearSearch()
         }
     }, [clearSearch, visible])
+
+    useEffect(() => {
+        if (!visible) {
+            return
+        }
+
+        const nextQuery = (initialQuery ?? "").trim()
+        if (!nextQuery) {
+            return
+        }
+
+        setQuery(nextQuery)
+    }, [initialQuery, setQuery, visible])
 
     if (!visible) {
         return null

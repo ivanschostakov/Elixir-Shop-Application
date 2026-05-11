@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react"
 import { Stack, usePathname, useRouter } from "expo-router"
 import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from "@react-navigation/native"
-import { LinearGradient } from "expo-linear-gradient"
 import { Image, Platform, Text, View } from "react-native"
 import {
     PanGestureHandler,
@@ -54,7 +53,6 @@ function AppShellContent() {
         getDefaultScreenChromeTemplate(pathname, isReady && isAuthenticated),
         screenChromeTemplate,
     )
-    const isDiscoverRoute = pathname === ROUTES.discover
 
     const shellEdges: ("top" | "bottom" | "left" | "right")[] =
         chromeTemplate.mode === "fullscreen"
@@ -96,15 +94,6 @@ function AppShellContent() {
 
     return (
         <View style={appShellStyles.container}>
-            {isDiscoverRoute ? (
-                <LinearGradient
-                    colors={["#FF6F93", "#FF88B0", "#FFC96B"]}
-                    end={{ x: 1, y: 0 }}
-                    start={{ x: 0, y: 0 }}
-                    pointerEvents="none"
-                    style={[appShellStyles.discoverTopGradient, { height: topInset + 1 }]}
-                />
-            ) : null}
             {hasDynamicIsland ? (
                 <View
                     pointerEvents="none"

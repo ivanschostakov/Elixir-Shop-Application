@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react"
 import {
     ActivityIndicator,
     Image,
-    Linking,
     Pressable,
     ScrollView,
     Text,
@@ -29,18 +28,52 @@ import { homeScreenStyles } from "@/screens/home/home-screen.styles"
 import { colors } from "@/theme/colors"
 import { formatMoney } from "@/utils/formatting"
 
-const fallbackBannerImage = require("@/assets/images/discover-banner.jpg")
+const homeBannerImage = require("@/assets/images/home-ghk-banner.png")
+const API_BANNER_LOCAL_IMAGE_MAP: Record<string, number> = {
+    "ghk-cu-home-banner": homeBannerImage,
+}
 
-function resolveBannerImageUri(imagePath: string): string {
-    if (/^https?:\/\//i.test(imagePath)) {
-        return imagePath
+function resolveBannerImageSource(imagePath: string | null | undefined): { uri: string } | number {
+    if (imagePath && API_BANNER_LOCAL_IMAGE_MAP[imagePath]) {
+        return API_BANNER_LOCAL_IMAGE_MAP[imagePath]
     }
 
-    if (imagePath.startsWith("/")) {
-        return `${API_BASE_URL}${imagePath}`
+    if (typeof imagePath === "string" && imagePath.length > 0) {
+        if (/^https?:\/\//i.test(imagePath)) {
+            return { uri: imagePath }
+        }
+
+        if (imagePath.startsWith("/")) {
+            return { uri: `${API_BASE_URL}${imagePath}` }
+        }
     }
 
-    return imagePath
+    return homeBannerImage
+}
+
+function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab: string } {
+    const fallback = { q: "ghk-cu", tab: "products" }
+    const trimmedLink = (link ?? "").trim()
+    if (!trimmedLink) {
+        return fallback
+    }
+
+    let candidate: URL
+    try {
+        candidate = trimmedLink.startsWith("http")
+            ? new URL(trimmedLink)
+            : new URL(trimmedLink, "https://elixir.local")
+    } catch {
+        return fallback
+    }
+
+    if (candidate.pathname !== ROUTES.discover) {
+        return fallback
+    }
+
+    const q = candidate.searchParams.get("q")?.trim() || fallback.q
+    const tab = candidate.searchParams.get("tab")?.trim() || fallback.tab
+    return { q, tab }
 }
 
 export default function HomeScreen() {
@@ -48,9 +81,9 @@ export default function HomeScreen() {
     const topInset = useSafeAreaInsets().top
     const { t } = useLanguage()
     const { isAuthenticated } = useAuth()
+    const { banners } = useBanners(true)
     const { categories } = useProductCategories(true)
     const { loading: isSearchLoading, products: searchedProducts, query, setQuery } = useProductSearch(true)
-    const { banners } = useBanners(true)
     const [orderDrafts, setOrderDrafts] = useState<OrderDraftRead[]>([])
     const [isLoadingOrderDrafts, setIsLoadingOrderDrafts] = useState(false)
 
@@ -61,6 +94,7 @@ export default function HomeScreen() {
         [categories],
     )
     const primaryBanner = banners[0] ?? null
+    const bannerImageSource = resolveBannerImageSource(primaryBanner?.image_path)
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -95,27 +129,15 @@ export default function HomeScreen() {
     }, [isAuthenticated])
 
     const handleBannerPress = () => {
-        if (!primaryBanner) {
-            return
-        }
-
-        if (primaryBanner.inner_link) {
-            if (/^https?:\/\//i.test(primaryBanner.inner_link)) {
-                void Linking.openURL(primaryBanner.inner_link)
-            } else {
-                router.push(primaryBanner.inner_link as never)
-            }
-            return
-        }
-
-        if (primaryBanner.outer_link) {
-            void Linking.openURL(primaryBanner.outer_link)
-        }
+        const target = resolveDiscoverRoute(primaryBanner?.inner_link)
+        router.push({
+            pathname: ROUTES.discover,
+            params: {
+                q: target.q,
+                tab: target.tab,
+            },
+        })
     }
-
-    const bannerImageSource = primaryBanner?.image_path
-        ? { uri: resolveBannerImageUri(primaryBanner.image_path) }
-        : fallbackBannerImage
 
     return (
         <CatalogTemplate
@@ -195,20 +217,21 @@ export default function HomeScreen() {
                                 ))}
                             </ScrollView>
                         ) : null}
-
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={t("discover.latestTitle")}
-                            onPress={handleBannerPress}
-                            style={({ pressed }) => [
-                                homeScreenStyles.promoBanner,
-                                pressed && homeScreenStyles.promoBannerPressed,
-                            ]}
-                        >
-                            <Image source={bannerImageSource} resizeMode="cover" style={homeScreenStyles.promoImage} />
-                        </Pressable>
                     </View>
                 </LinearGradient>
+                <View style={homeScreenStyles.promoBannerSection}>
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={t("discover.latestTitle")}
+                        onPress={handleBannerPress}
+                        style={({ pressed }) => [
+                            homeScreenStyles.promoBanner,
+                            pressed && homeScreenStyles.promoBannerPressed,
+                        ]}
+                    >
+                        <Image source={bannerImageSource} resizeMode="cover" style={homeScreenStyles.promoImage} />
+                    </Pressable>
+                </View>
 
                 <View style={homeScreenStyles.ordersBlock}>
                     <View style={homeScreenStyles.ordersHeader}>

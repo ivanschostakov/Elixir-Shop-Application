@@ -37,22 +37,6 @@ export const discoverScreenStyles = StyleSheet.create({
         paddingVertical: spacing.md,
         width: "100%",
     },
-    catalogHeader: {
-        marginBottom: spacing.sm,
-        paddingHorizontal: spacing.xs,
-    },
-    catalogEyebrow: {
-        color: colors.stateText,
-        fontSize: 12,
-        fontWeight: "700",
-        textTransform: "uppercase",
-    },
-    catalogTitle: {
-        color: colors.text,
-        fontSize: 20,
-        fontWeight: "800",
-        marginTop: spacing.xs,
-    },
     gridRow: {
         backgroundColor: colors.surface,
         borderRadius: 28,
