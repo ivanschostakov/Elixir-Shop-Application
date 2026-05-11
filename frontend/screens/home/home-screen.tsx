@@ -28,6 +28,21 @@ import { homeScreenStyles } from "@/screens/home/home-screen.styles"
 import { colors } from "@/theme/colors"
 import { formatMoney } from "@/utils/formatting"
 
+function getMediaBaseUrl(): string {
+    const trimmedApiBaseUrl = API_BASE_URL.replace(/\/+$/, "")
+    if (!trimmedApiBaseUrl) {
+        return ""
+    }
+
+    try {
+        return new URL(trimmedApiBaseUrl).origin
+    } catch {
+        return trimmedApiBaseUrl.replace(/\/api$/i, "")
+    }
+}
+
+const MEDIA_BASE_URL = getMediaBaseUrl()
+
 function resolveBannerImageSource(imagePath: string | null | undefined): { uri: string } {
     if (typeof imagePath === "string" && imagePath.length > 0) {
         if (/^https?:\/\//i.test(imagePath)) {
@@ -35,11 +50,11 @@ function resolveBannerImageSource(imagePath: string | null | undefined): { uri: 
         }
 
         if (imagePath.startsWith("/")) {
-            return { uri: `${API_BASE_URL}${imagePath}` }
+            return { uri: `${MEDIA_BASE_URL}${imagePath}` }
         }
     }
 
-    return { uri: `${API_BASE_URL}/media/banners/ghk-cu-banner.png` }
+    return { uri: `${MEDIA_BASE_URL}/media/banners/ghk-cu-banner.jpg` }
 }
 
 function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab: string } {
@@ -58,7 +73,8 @@ function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab
         return fallback
     }
 
-    if (candidate.pathname !== ROUTES.discover) {
+    const normalizedPath = candidate.pathname.replace(/\/+$/, "")
+    if (normalizedPath !== ROUTES.discover) {
         return fallback
     }
 

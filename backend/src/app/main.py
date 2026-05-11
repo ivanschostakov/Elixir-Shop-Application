@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from uvicorn import Config, Server
@@ -45,6 +45,23 @@ app.add_middleware(
 )
 app.mount("/media", StaticFiles(directory="media"), name="media")
 app.include_router(api_router)
+
+
+@app.middleware("http")
+async def media_cache_control(request: Request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/media/"):
+        return response
+
+    if response.status_code != 200:
+        return response
+
+    # Versioned media can be cached for longer; non-versioned media still gets short CDN/browser cache.
+    if request.query_params.get("v"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
+        response.headers["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 @app.get("/")

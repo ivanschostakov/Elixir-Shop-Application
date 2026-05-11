@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, FlatList, Platform, View, useWindowDimensions } from "react-native"
-import { useLocalSearchParams } from "expo-router"
+import { useLocalSearchParams, useRouter } from "expo-router"
 
 import { EmptyState } from "@/components/content/empty-state"
 import { ProductBrowseControls } from "@/components/content/product-browse-controls"
 import { ProductCard } from "@/components/content/product-card"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
+import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
 import { resolveContentTab } from "@/hooks/navigation/use-content-tabs"
 import type { ProductBrowseSort } from "@/hooks/products/product-browse"
@@ -76,12 +77,19 @@ function parseCategoryId(input: string | string[] | undefined): number | null {
     return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : null
 }
 
+function parseQuery(input: string | string[] | undefined): string {
+    const rawValue = Array.isArray(input) ? input[0] : input
+    return (rawValue ?? "").trim()
+}
+
 export default function DiscoverScreen() {
+    const router = useRouter()
     const { t } = useLanguage()
     const { width: windowWidth } = useWindowDimensions()
-    const params = useLocalSearchParams<{ tab?: string | string[]; categoryId?: string | string[] }>()
+    const params = useLocalSearchParams<{ tab?: string | string[]; categoryId?: string | string[]; q?: string | string[] }>()
     const isProductsTab = resolveContentTab(params.tab) === "products"
     const incomingCategoryId = parseCategoryId(params.categoryId)
+    const query = parseQuery(params.q)
     const isWeb = Platform.OS === "web"
     const isDesktop = isWeb && windowWidth >= 1100
     const isTablet = isWeb && windowWidth >= 760
@@ -99,12 +107,15 @@ export default function DiscoverScreen() {
     } = useInfiniteProductCatalog({
         categoryId,
         enabled: isProductsTab,
+        query,
         sort,
     })
     const displayedProducts = useMemo(
         () => (isProductsTab ? catalogProducts : []),
         [catalogProducts, isProductsTab],
     )
+    const hasSearchQuery = query.length > 0
+    const hasNoResults = isProductsTab && !isLoading && !screenError && displayedProducts.length === 0
     const rowGap = isDesktop ? 16 : 12
     const columnGap = rowGap
     const maxContentWidth = isDesktop ? 1180 : isTablet ? 960 : undefined
@@ -170,6 +181,57 @@ export default function DiscoverScreen() {
         )
     }
 
+    if (hasNoResults) {
+        return (
+            <CatalogTemplate style={discoverScreenStyles.screen}>
+                <View style={discoverScreenStyles.screen}>
+                    <View style={discoverScreenStyles.controlsWrap}>
+                        <ProductBrowseControls
+                            categories={categories}
+                            categoryId={categoryId}
+                            onChangeCategoryId={setCategoryId}
+                            onChangeSort={setSort}
+                            sort={sort}
+                        />
+                    </View>
+                    <View style={discoverScreenStyles.emptyContent}>
+                        <EmptyState
+                            actionVariant={hasSearchQuery ? "link" : undefined}
+                            sticker={STICKERS.noProducts}
+                            eyebrow={t("discover.latestEyebrow")}
+                            title={hasSearchQuery ? t("discover.emptySearchTitle") : t("discover.emptyBrowseTitle")}
+                            description={
+                                hasSearchQuery
+                                    ? t("discover.emptySearchDescription")
+                                    : t("discover.emptyBrowseDescription")
+                            }
+                            actionLabel={hasSearchQuery ? t("discover.clearSearch") : undefined}
+                            onPressAction={
+                                hasSearchQuery
+                                    ? () => {
+                                        if (categoryId !== null) {
+                                            router.replace({
+                                                pathname: ROUTES.discover,
+                                                params: { tab: "products", categoryId: String(categoryId) },
+                                            })
+                                            return
+                                        }
+
+                                        router.replace({
+                                            pathname: ROUTES.discover,
+                                            params: { tab: "products" },
+                                        })
+                                    }
+                                    : undefined
+                            }
+                            variant="plain"
+                        />
+                    </View>
+                </View>
+            </CatalogTemplate>
+        )
+    }
+
     return (
         <CatalogTemplate style={discoverScreenStyles.screen}>
             <FlatList
@@ -228,14 +290,7 @@ export default function DiscoverScreen() {
                             title={t("discover.errorTitle")}
                             description={screenError}
                         />
-                    ) : (
-                        <EmptyState
-                            sticker={STICKERS.noProducts}
-                            eyebrow={t("discover.latestEyebrow")}
-                            title={t("discover.emptyBrowseTitle")}
-                            description={t("discover.emptyBrowseDescription")}
-                        />
-                    )
+                    ) : null
                 }
                 ListFooterComponent={
                     !isProductsTab || !loadingMore ? null : (
