@@ -10,7 +10,7 @@ class AuthUserRead(BaseModel):
 
     id: int
     username: str
-    email: str
+    email: EmailStr
     name: str
     surname: str
     phone_number: str | None = None

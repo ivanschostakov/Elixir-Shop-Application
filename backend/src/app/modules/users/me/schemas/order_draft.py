@@ -1,7 +1,7 @@
 from decimal import Decimal
 import re
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from src.database.limits import (
     CURRENCY_CODE_MAX_LENGTH,
@@ -15,7 +15,6 @@ from src.integrations.delivery.schemas import CountryCode, DeliveryMode, Deliver
 from src.normalize import normalize_person_name
 
 RECIPIENT_PHONE_RE = re.compile(r"^\+?\d{10,15}$")
-RECIPIENT_EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 class DeliveryCalculationPayload(BaseModel):
@@ -60,7 +59,7 @@ class UpdateOrderDraftRecipientPayload(BaseModel):
     name: str = Field(min_length=1, max_length=PERSON_NAME_MAX_LENGTH)
     surname: str = Field(min_length=1, max_length=PERSON_NAME_MAX_LENGTH)
     phone: str = Field(min_length=1, max_length=WEBSITE_PHONE_MAX_LENGTH)
-    email: str = Field(min_length=1, max_length=EMAIL_MAX_LENGTH)
+    email: EmailStr = Field(max_length=EMAIL_MAX_LENGTH)
 
     @field_validator("name", "surname")
     @classmethod
@@ -80,11 +79,8 @@ class UpdateOrderDraftRecipientPayload(BaseModel):
 
     @field_validator("email")
     @classmethod
-    def _validate_email(cls, value: str) -> str:
-        normalized = value.strip().lower()
-        if not RECIPIENT_EMAIL_RE.fullmatch(normalized):
-            raise ValueError("Email format is invalid")
-        return normalized
+    def _validate_email(cls, value: EmailStr) -> str:
+        return str(value).strip().lower()
 
 
 class UpdateOrderDraftPayload(BaseModel):

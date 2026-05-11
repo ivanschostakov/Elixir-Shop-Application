@@ -1,6 +1,6 @@
 from dataclasses import Field
 from pathlib import Path
-from pydantic import ConfigDict, BaseModel
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 from config import WORKING_DIR, AMOCRM_PLAYWRIGHT_HEADLESS, AMOCRM_ACCOUNT_ID, AMOCRM_LOGIN_PASSWORD, \
     AMOCRM_LOGIN_EMAIL, AMOCRM_AUTH_CODE, AMOCRM_REFRESH_TOKEN, AMOCRM_ACCESS_TOKEN, AMOCRM_REDIRECT_URI, \
@@ -16,7 +16,7 @@ class AmoCRMConfig(BaseModel):
     access_token: str | None = AMOCRM_ACCESS_TOKEN
     refresh_token: str | None = AMOCRM_REFRESH_TOKEN
     auth_code: str | None = AMOCRM_AUTH_CODE
-    login_email: str | None = AMOCRM_LOGIN_EMAIL
+    login_email: EmailStr | None = AMOCRM_LOGIN_EMAIL
     login_password: str | None = AMOCRM_LOGIN_PASSWORD
     account_id: str | None = AMOCRM_ACCOUNT_ID
     playwright_headless: bool = AMOCRM_PLAYWRIGHT_HEADLESS

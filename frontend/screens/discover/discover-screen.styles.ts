@@ -40,12 +40,16 @@ export const discoverScreenStyles = StyleSheet.create({
     gridRow: {
         backgroundColor: colors.surface,
         borderRadius: 28,
-        justifyContent: "space-between",
+        flexDirection: "row",
         overflow: "hidden",
         paddingHorizontal: 0,
     },
     gridItem: {
+        width: "100%",
+    },
+    gridItemColumn: {
         flex: 1,
+        minWidth: 0,
     },
     gridItemCard: {
         borderRadius: 0,

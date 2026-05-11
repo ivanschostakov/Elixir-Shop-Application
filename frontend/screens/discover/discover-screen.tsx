@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, FlatList, Platform, View, useWindowDimensions } from "react-native"
 import { useLocalSearchParams } from "expo-router"
 
@@ -24,6 +24,48 @@ const discoverBrowseMemory: {
     sort: "newest",
 }
 
+const PHONE_LAYOUT_WIDTH = 680
+const TABLET_LAYOUT_WIDTH = 980
+const DESKTOP_LAYOUT_WIDTH = 1280
+const MAX_GRID_COLUMNS = 5
+
+function getMinimumCardWidth(layoutWidth: number): number {
+    if (layoutWidth >= DESKTOP_LAYOUT_WIDTH) {
+        return 220
+    }
+
+    if (layoutWidth >= TABLET_LAYOUT_WIDTH) {
+        return 200
+    }
+
+    if (layoutWidth > PHONE_LAYOUT_WIDTH) {
+        return 188
+    }
+
+    return 152
+}
+
+function resolveGridColumnCount(layoutWidth: number, columnGap: number): number {
+    const minimumCardWidth = getMinimumCardWidth(layoutWidth)
+    const projectedColumns = Math.floor((layoutWidth + columnGap) / (minimumCardWidth + columnGap))
+    const maxColumns = layoutWidth <= PHONE_LAYOUT_WIDTH ? 2 : MAX_GRID_COLUMNS
+
+    return Math.max(2, Math.min(maxColumns, projectedColumns))
+}
+
+function chunkIntoRows<TItem>(items: TItem[], columns: number): TItem[][] {
+    if (!items.length) {
+        return []
+    }
+
+    const rows: TItem[][] = []
+    for (let index = 0; index < items.length; index += columns) {
+        rows.push(items.slice(index, index + columns))
+    }
+
+    return rows
+}
+
 export default function DiscoverScreen() {
     const { t } = useLanguage()
     const { width: windowWidth } = useWindowDimensions()
@@ -32,6 +74,7 @@ export default function DiscoverScreen() {
     const isWeb = Platform.OS === "web"
     const isDesktop = isWeb && windowWidth >= 1100
     const isTablet = isWeb && windowWidth >= 760
+    const [listWidth, setListWidth] = useState(0)
     const [categoryId, setCategoryId] = useState<number | null>(() => discoverBrowseMemory.categoryId)
     const [sort, setSort] = useState<ProductBrowseSort>(() => discoverBrowseMemory.sort)
     const trackedCategoryIdRef = useRef<number | null>(null)
@@ -47,10 +90,19 @@ export default function DiscoverScreen() {
         enabled: isProductsTab,
         sort,
     })
-    const displayedProducts = isProductsTab ? catalogProducts : []
-    const numColumns = isDesktop ? 3 : 2
+    const displayedProducts = useMemo(
+        () => (isProductsTab ? catalogProducts : []),
+        [catalogProducts, isProductsTab],
+    )
     const rowGap = isDesktop ? 16 : 12
+    const columnGap = rowGap
     const maxContentWidth = isDesktop ? 1180 : isTablet ? 960 : undefined
+    const layoutWidth = listWidth > 0 ? listWidth : (maxContentWidth ? Math.min(windowWidth, maxContentWidth) : windowWidth)
+    const numColumns = resolveGridColumnCount(layoutWidth, columnGap)
+    const productRows = useMemo(
+        () => chunkIntoRows(displayedProducts, numColumns),
+        [displayedProducts, numColumns],
+    )
 
     useEffect(() => {
         discoverBrowseMemory.categoryId = categoryId
@@ -104,15 +156,29 @@ export default function DiscoverScreen() {
     return (
         <CatalogTemplate style={discoverScreenStyles.screen}>
             <FlatList
-                data={displayedProducts}
-                keyExtractor={(product) => String(product.id)}
-                numColumns={numColumns}
-                columnWrapperStyle={[
-                    discoverScreenStyles.gridRow,
-                    { marginBottom: rowGap },
-                ]}
+                data={productRows}
+                extraData={numColumns}
+                keyExtractor={(row, index) => {
+                    const firstId = row[0]?.id
+                    const lastId = row[row.length - 1]?.id
+
+                    if (firstId === undefined || lastId === undefined) {
+                        return `discover-row-${index}`
+                    }
+
+                    return `discover-row-${firstId}-${lastId}`
+                }}
                 contentContainerStyle={discoverScreenStyles.listContent}
                 keyboardShouldPersistTaps="handled"
+                onLayout={({ nativeEvent }) => {
+                    const nextWidth = Math.floor(nativeEvent.layout.width)
+
+                    if (nextWidth <= 0 || nextWidth === listWidth) {
+                        return
+                    }
+
+                    setListWidth(nextWidth)
+                }}
                 style={[
                     discoverScreenStyles.list,
                     maxContentWidth ? { alignSelf: "center", maxWidth: maxContentWidth, width: "100%" } : null,
@@ -161,9 +227,23 @@ export default function DiscoverScreen() {
                         </View>
                     )
                 }
-                renderItem={({ item }) => (
+                renderItem={({ item, index }) => (
                     <View style={discoverScreenStyles.gridItem}>
-                        <ProductCard product={item} style={discoverScreenStyles.gridItemCard} />
+                        <View
+                            style={[
+                                discoverScreenStyles.gridRow,
+                                {
+                                    columnGap,
+                                    marginBottom: index === productRows.length - 1 ? 0 : rowGap,
+                                },
+                            ]}
+                        >
+                            {item.map((product) => (
+                                <View key={product.id} style={discoverScreenStyles.gridItemColumn}>
+                                    <ProductCard product={product} style={discoverScreenStyles.gridItemCard} />
+                                </View>
+                            ))}
+                        </View>
                     </View>
                 )}
                 showsVerticalScrollIndicator={false}

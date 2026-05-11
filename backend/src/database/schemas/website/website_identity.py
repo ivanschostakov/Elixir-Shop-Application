@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from config import ufa_now
 
@@ -102,7 +102,7 @@ class WebsiteIdentityBase(BaseModel):
     user_id: int = Field(gt=0)
     website_user_id: int = Field(gt=0)
     website_login: str = Field(min_length=1, max_length=WEBSITE_LOGIN_MAX_LENGTH)
-    website_email: str | None = Field(default=None, max_length=WEBSITE_EMAIL_MAX_LENGTH)
+    website_email: EmailStr | None = Field(default=None, max_length=WEBSITE_EMAIL_MAX_LENGTH)
     website_name: str | None = Field(default=None, max_length=WEBSITE_LOGIN_MAX_LENGTH)
     website_last_name: str | None = Field(default=None, max_length=WEBSITE_LOGIN_MAX_LENGTH)
     website_second_name: str | None = Field(default=None, max_length=WEBSITE_LOGIN_MAX_LENGTH)
@@ -130,7 +130,7 @@ class WebsiteIdentityCreate(WebsiteIdentityBase):
 class WebsiteIdentityUpdate(BaseModel):
     website_user_id: int | None = Field(default=None, gt=0)
     website_login: str | None = Field(default=None, min_length=1, max_length=WEBSITE_LOGIN_MAX_LENGTH)
-    website_email: str | None = Field(default=None, max_length=WEBSITE_EMAIL_MAX_LENGTH)
+    website_email: EmailStr | None = Field(default=None, max_length=WEBSITE_EMAIL_MAX_LENGTH)
     website_name: str | None = Field(default=None, max_length=WEBSITE_LOGIN_MAX_LENGTH)
     website_last_name: str | None = Field(default=None, max_length=WEBSITE_LOGIN_MAX_LENGTH)
     website_second_name: str | None = Field(default=None, max_length=WEBSITE_LOGIN_MAX_LENGTH)

@@ -356,6 +356,7 @@ export function ProductInfoTabs({
                                     key={tab.key}
                                     accessibilityRole="button"
                                     accessibilityState={{ selected: isActive }}
+                                    collapsable={false}
                                     onLayout={(event) => {
                                         onTabLayout(tab.key, event.nativeEvent.layout)
                                     }}
