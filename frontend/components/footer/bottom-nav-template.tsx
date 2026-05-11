@@ -3,6 +3,7 @@ import { router } from "expo-router"
 
 import {
     BasketIcon,
+    DiscoverIcon,
     ProfileIcon,
     SavedIcon,
     SearchIcon,
@@ -29,9 +30,16 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
 
     const footerItems = [
         {
+            key: ROUTES.home,
+            accessibilityLabel: t("nav.home"),
+            icon: <SearchIcon color={pathname === ROUTES.home ? colors.primary : colors.mutedText} />,
+            isActive: pathname === ROUTES.home,
+            route: ROUTES.home,
+        },
+        {
             key: ROUTES.discover,
             accessibilityLabel: t("nav.discover"),
-            icon: <SearchIcon color={pathname === ROUTES.discover ? colors.primary : colors.mutedText} />,
+            icon: <DiscoverIcon color={pathname === ROUTES.discover ? colors.primary : colors.mutedText} />,
             isActive: pathname === ROUTES.discover,
             route: ROUTES.discover,
         },

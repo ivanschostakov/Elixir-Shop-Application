@@ -2,6 +2,7 @@ from .app_integrity import app_integrity_router
 from .app_version import app_version_router
 from .admin import admin_referrals_router
 from .auth import auth_router
+from .banners import banners_router
 from .favorites import favourites_query_router, favourites_router
 from .health import health_router
 from .payments import payments_router
@@ -14,6 +15,7 @@ from .requisites import requisites_router
 
 __all__ = [
     "auth_router",
+    "banners_router",
     "app_integrity_router",
     "app_version_router",
     "admin_referrals_router",

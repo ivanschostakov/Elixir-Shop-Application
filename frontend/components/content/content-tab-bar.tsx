@@ -10,7 +10,7 @@ type TabLayout = {
     x: number
 }
 
-export function ContentTabBar({ tabs }: ContentTabBarProps) {
+export function ContentTabBar({ tabs, variant = "default" }: ContentTabBarProps) {
     const activeTabKey = tabs.find((tab) => tab.isActive)?.key ?? tabs[0]?.key ?? null
     const tabSignature = useMemo(() => tabs.map((tab) => tab.key).join("|"), [tabs])
     const [tabLayouts, setTabLayouts] = useState<Record<string, TabLayout>>({})
@@ -101,7 +101,9 @@ export function ContentTabBar({ tabs }: ContentTabBarProps) {
                     <Text
                         style={[
                             contentStyles.topTabLabel,
+                            variant === "onColor" && contentStyles.topTabLabelOnColor,
                             tab.isActive && contentStyles.topTabLabelActive,
+                            tab.isActive && variant === "onColor" && contentStyles.topTabLabelActiveOnColor,
                         ]}
                     >
                         {tab.label}
@@ -113,6 +115,7 @@ export function ContentTabBar({ tabs }: ContentTabBarProps) {
                     pointerEvents="none"
                     style={[
                         contentStyles.topTabIndicator,
+                        variant === "onColor" && contentStyles.topTabIndicatorOnColor,
                         {
                             transform: [{ translateX: indicatorX }],
                             width: indicatorWidth,

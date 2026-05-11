@@ -11,6 +11,18 @@ export const getHeaderStyles = (topInset: number, windowHeight: number) =>
             position: "relative",
             zIndex: 20,
         },
+        wrapperDiscoverUnified: {
+            backgroundColor: "transparent",
+            paddingBottom: 0,
+        },
+        wrapperDiscoverGradient: {
+            bottom: 0,
+            left: 0,
+            position: "absolute",
+            right: 0,
+            top: 0,
+            zIndex: 0,
+        },
         wrapperOverlay: {
             backgroundColor: colors.surfaceOverlay,
             left: 0,

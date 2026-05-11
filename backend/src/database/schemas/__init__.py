@@ -32,6 +32,7 @@ from .basket.basket_item import (
     BasketProductSummaryRead,
     BasketVariantSummaryRead,
 )
+from .catalog.banner import BannerBase, BannerCreate, BannerRead, BannerUpdate
 from .catalog.product import ProductBase, ProductCreate, ProductRead, ProductUpdate, ProductWithVariantsRead
 from .catalog.product_category import ProductCategoryBase, ProductCategoryCreate, ProductCategoryRead, ProductCategoryUpdate
 from .catalog.products_by_category import ProductByCategoryBase, ProductByCategoryCreate, ProductByCategoryRead, ProductByCategoryUpdate
@@ -113,6 +114,10 @@ __all__ = [
     "AIMessageUsageCreate",
     "AIMessageUsageRead",
     "AvatarResponse",
+    "BannerBase",
+    "BannerCreate",
+    "BannerRead",
+    "BannerUpdate",
     "BasketBase",
     "BasketCreate",
     "BasketRead",

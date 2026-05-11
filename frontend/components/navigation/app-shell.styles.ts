@@ -11,6 +11,13 @@ export const appShellStyles = StyleSheet.create({
     safeArea: {
         flex: 1,
     },
+    discoverTopGradient: {
+        left: 0,
+        position: "absolute",
+        right: 0,
+        top: 0,
+        zIndex: 1,
+    },
     brandLabelOverlay: {
         alignItems: "center",
         left: 0,
@@ -45,5 +52,6 @@ export const appShellStyles = StyleSheet.create({
         flex: 1,
         minHeight: 0,
         backgroundColor: colors.background,
+        zIndex: 2,
     },
 })

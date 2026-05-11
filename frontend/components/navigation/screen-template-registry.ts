@@ -10,7 +10,7 @@ export function getDefaultScreenTemplateKind(pathname: string): ScreenTemplateKi
         return "map-flow"
     }
 
-    if (pathname === ROUTES.discover || pathname === ROUTES.favorites) {
+    if (pathname === ROUTES.home || pathname === ROUTES.discover || pathname === ROUTES.favorites) {
         return "catalog"
     }
 
@@ -41,6 +41,15 @@ export function getDefaultScreenChromeTemplate(
             footer: "none",
             header: "none",
             mode: "fullscreen",
+            title,
+        }
+    }
+
+    if (pathname === ROUTES.home) {
+        return {
+            footer: "nav",
+            header: "none",
+            mode: "standard",
             title,
         }
     }

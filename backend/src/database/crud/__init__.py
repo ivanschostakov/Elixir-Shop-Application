@@ -60,6 +60,14 @@ from .catalog.product import (
     get_similar_products,
     update_product,
 )
+from .catalog.banner import (
+    create_banner,
+    delete_banner,
+    get_banner_by_id,
+    get_banner_by_image_path,
+    get_banners,
+    update_banner,
+)
 from .catalog.review import get_product_reviews
 from .catalog.review import get_review_by_id
 from .catalog.review import create_product_review
@@ -233,6 +241,12 @@ __all__ = [
     "has_user_purchased_product",
     "get_similar_products",
     "update_product",
+    "create_banner",
+    "delete_banner",
+    "get_banner_by_id",
+    "get_banner_by_image_path",
+    "get_banners",
+    "update_banner",
     "create_product_category",
     "delete_product_category",
     "get_product_categories",

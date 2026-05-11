@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Alert, Animated, Pressable, Text, View, useWindowDimensions } from "react-native"
 import { BlurView } from "expo-blur"
+import { LinearGradient } from "expo-linear-gradient"
 import { usePathname, useRouter } from "expo-router"
 import { Path, Svg } from "react-native-svg"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -49,6 +50,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const title = template.title ?? ""
     const showBackButton = !isPrimaryAppRoute(pathname)
     const canToggleSearch = headerVariant === "search" || (headerVariant === "tabs" && pathname === ROUTES.discover)
+    const isDiscoverUnifiedHeader = headerVariant === "tabs" && pathname === ROUTES.discover
     const isBasketPage = pathname === ROUTES.basket
     const hasBasketItems = (basket?.items_count ?? 0) > 0
 
@@ -212,7 +214,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
         if (headerVariant === "tabs") {
             return (
                 <View style={styles.centerSlotContent}>
-                    <ContentTabBar tabs={tabs} />
+                    <ContentTabBar tabs={tabs} variant={isDiscoverUnifiedHeader ? "onColor" : "default"} />
                 </View>
             )
         }
@@ -225,7 +227,22 @@ export default function AppHeader({ template }: AppHeaderProps) {
     }
 
     return (
-        <Animated.View style={[styles.wrapper, headerVariant === "overlay" && styles.wrapperOverlay, entranceStyle]}>
+        <Animated.View
+            style={[
+                styles.wrapper,
+                isDiscoverUnifiedHeader && styles.wrapperDiscoverUnified,
+                headerVariant === "overlay" && styles.wrapperOverlay,
+                entranceStyle,
+            ]}
+        >
+            {isDiscoverUnifiedHeader ? (
+                <LinearGradient
+                    colors={["#FF6F93", "#FF88B0", "#FFC96B"]}
+                    end={{ x: 1, y: 0 }}
+                    start={{ x: 0, y: 0 }}
+                    style={styles.wrapperDiscoverGradient}
+                />
+            ) : null}
             {isSearchMode ? (
                 <Pressable
                     accessibilityLabel={t("nav.closeSearch")}

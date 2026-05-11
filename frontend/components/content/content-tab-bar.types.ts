@@ -7,4 +7,5 @@ export type ContentTabBarItem = {
 
 export type ContentTabBarProps = {
     tabs: ContentTabBarItem[]
+    variant?: "default" | "onColor"
 }

@@ -24,6 +24,7 @@ export const ROUTES = {
 const PRODUCT_ROUTE_PREFIX = "/products/"
 
 const headerTitleKeys: Record<string, TranslationKey> = {
+    [ROUTES.home]: "route.home",
     [ROUTES.discover]: "route.discover",
     [ROUTES.chat]: "route.chat",
     [ROUTES.basket]: "route.basket",
@@ -41,6 +42,7 @@ const headerTitleKeys: Record<string, TranslationKey> = {
 }
 
 export const PRIMARY_APP_ROUTES = [
+    ROUTES.home,
     ROUTES.discover,
     ROUTES.favorites,
     ROUTES.chat,
@@ -108,5 +110,5 @@ export function getRouteTitle(pathname: string) {
         return translate("route.product")
     }
 
-    return translate(headerTitleKeys[pathname] ?? headerTitleKeys[ROUTES.discover])
+    return translate(headerTitleKeys[pathname] ?? headerTitleKeys[ROUTES.home])
 }

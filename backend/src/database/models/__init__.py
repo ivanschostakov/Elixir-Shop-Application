@@ -15,6 +15,7 @@ from .benefits.app_promo import AppPromo
 from .benefits.business_ledger_entry import BusinessLedgerEntry
 from .benefits.order_benefit_application import OrderBenefitApplication
 from .catalog.product import Product
+from .catalog.banner import Banner
 from .catalog.product_category import ProductCategory
 from .catalog.products_by_category import ProductByCategory
 from .catalog.review import Review
@@ -56,6 +57,7 @@ __all__ = [
     "AppAttestKey",
     "AppIntegrityChallenge",
     "Attachment",
+    "Banner",
     "Basket",
     "BasketItem",
     "BusinessLedgerEntry",

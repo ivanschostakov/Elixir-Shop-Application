@@ -1,5 +1,6 @@
 export const ruTranslations = {
     "app.name": "Elixir Peptide",
+    "route.home": "Главная",
     "route.discover": "Обзор",
     "route.chat": "Чат",
     "route.basket": "Корзина",
@@ -742,6 +743,7 @@ export type TranslationKey = keyof typeof ruTranslations
 
 const enTranslations: Record<TranslationKey, string> = {
     "app.name": "Elixir Peptide",
+    "route.home": "Home",
     "route.discover": "Browse",
     "route.chat": "Chat",
     "route.basket": "Cart",

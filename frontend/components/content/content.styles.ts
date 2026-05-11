@@ -119,9 +119,15 @@ export const contentStyles = StyleSheet.create({
         fontSize: 15,
         fontWeight: "700",
     },
+    topTabLabelOnColor: {
+        color: "rgba(255, 255, 255, 0.78)",
+    },
     topTabLabelActive: {
         color: colors.text,
         fontWeight: "800",
+    },
+    topTabLabelActiveOnColor: {
+        color: "#FFFFFF",
     },
     topTabIndicator: {
         backgroundColor: colors.primary,
@@ -130,6 +136,9 @@ export const contentStyles = StyleSheet.create({
         height: 3,
         left: 0,
         position: "absolute",
+    },
+    topTabIndicatorOnColor: {
+        backgroundColor: "#FFFFFF",
     },
     browseControls: {
         flexDirection: "row",
