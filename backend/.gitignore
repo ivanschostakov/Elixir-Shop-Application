@@ -37,6 +37,11 @@ pip-wheel-metadata/
 logs/
 *.log
 media/
+!media/
+media/*
+!media/banners/
+media/banners/*
+!media/banners/ghk-cu-banner.png
 tmp/
 *.pid
 .secrets/

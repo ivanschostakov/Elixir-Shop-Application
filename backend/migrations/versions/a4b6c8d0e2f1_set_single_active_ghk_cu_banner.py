@@ -32,7 +32,7 @@ def upgrade() -> None:
             VALUES (:image_path, :inner_link, :outer_link, :priority, false, now(), now())
             """
         ).bindparams(
-            image_path="ghk-cu-home-banner",
+            image_path="/media/banners/ghk-cu-banner.png",
             inner_link="/discover?tab=products&q=ghk-cu",
             outer_link=None,
             priority=1000,
@@ -46,4 +46,4 @@ def downgrade() -> None:
     if not inspector.has_table("banners"):
         return
 
-    op.execute(sa.text("DELETE FROM banners WHERE image_path = :image_path").bindparams(image_path="ghk-cu-home-banner"))
+    op.execute(sa.text("DELETE FROM banners WHERE image_path = :image_path").bindparams(image_path="/media/banners/ghk-cu-banner.png"))

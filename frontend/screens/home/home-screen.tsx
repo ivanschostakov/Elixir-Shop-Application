@@ -28,16 +28,7 @@ import { homeScreenStyles } from "@/screens/home/home-screen.styles"
 import { colors } from "@/theme/colors"
 import { formatMoney } from "@/utils/formatting"
 
-const homeBannerImage = require("@/assets/images/home-ghk-banner.png")
-const API_BANNER_LOCAL_IMAGE_MAP: Record<string, number> = {
-    "ghk-cu-home-banner": homeBannerImage,
-}
-
-function resolveBannerImageSource(imagePath: string | null | undefined): { uri: string } | number {
-    if (imagePath && API_BANNER_LOCAL_IMAGE_MAP[imagePath]) {
-        return API_BANNER_LOCAL_IMAGE_MAP[imagePath]
-    }
-
+function resolveBannerImageSource(imagePath: string | null | undefined): { uri: string } {
     if (typeof imagePath === "string" && imagePath.length > 0) {
         if (/^https?:\/\//i.test(imagePath)) {
             return { uri: imagePath }
@@ -48,7 +39,7 @@ function resolveBannerImageSource(imagePath: string | null | undefined): { uri: 
         }
     }
 
-    return homeBannerImage
+    return { uri: `${API_BASE_URL}/media/banners/ghk-cu-banner.png` }
 }
 
 function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab: string } {
