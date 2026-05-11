@@ -24,6 +24,7 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      POSTGRES_HOST: 172.18.0.1
       AUTH_LOGIN_WEBSITE_FIRST_ENABLED: "true"
       GOOGLE_APPLICATION_CREDENTIALS: /app/backend/.secrets/application_default_credentials.json
     extra_hosts:
@@ -50,6 +51,7 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      POSTGRES_HOST: 172.18.0.1
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -70,6 +72,7 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      POSTGRES_HOST: 172.18.0.1
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -90,6 +93,7 @@ services:
       - ./backend/.env
     environment:
       REDIS_URL: redis://redis:6379/0
+      POSTGRES_HOST: 172.18.0.1
       WEBSITE_IDENTITY_SYNC_INTERVAL_MINUTES: "60"
       WEBSITE_IDENTITY_SYNC_STALE_MINUTES: "50"
       WEBSITE_IDENTITY_SYNC_BATCH_SIZE: "50"
