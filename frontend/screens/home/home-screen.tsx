@@ -18,7 +18,7 @@ import { Path, Svg } from "react-native-svg"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { ContentRail } from "@/components/content/content-rail"
-import { HeaderMenu } from "@/components/header/header-menu"
+import { HeaderMenu, HeaderMenuPopup } from "@/components/header/header-menu"
 import { getHeaderStyles } from "@/components/header/app-header.styles"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES, getProductRoute } from "@/constants/routes"
@@ -59,6 +59,7 @@ function getMediaBaseUrl(): string {
 const MEDIA_BASE_URL = getMediaBaseUrl()
 const FALLBACK_BANNER_IMAGE_VERSION = "square-20260512"
 const BANNER_AUTOPLAY_INTERVAL_MS = 5000
+const HOME_MENU_POPUP_VERTICAL_OFFSET = 61
 
 function getHomeGradientColors(accentName: ThemeAccentName, isDarkMode: boolean) {
     if (accentName === "blackWhite") {
@@ -478,10 +479,7 @@ export default function HomeScreen() {
                         colors={topGradientColors}
                         end={{ x: 1, y: 0 }}
                         start={{ x: 0, y: 0 }}
-                        style={[
-                            homeScreenStyles.topGradientSection,
-                            isHomeMenuOpen && homeScreenStyles.topGradientSectionMenuOpen,
-                        ]}
+                        style={homeScreenStyles.topGradientSection}
                     >
                         <View style={[homeScreenStyles.topGradientContent, { paddingTop: topInset + 14 }]}>
                             <View style={[homeScreenStyles.searchInputWrap, { backgroundColor: searchFieldBackgroundColor }]}>
@@ -529,6 +527,7 @@ export default function HomeScreen() {
                                         onSetLanguage={setLanguage}
                                         onToggleTheme={toggleTheme}
                                         onToggle={() => setIsHomeMenuOpen((currentValue) => !currentValue)}
+                                        renderPopup={false}
                                         styles={homeHeaderMenuStyles}
                                         t={t}
                                         accentColor={accentPalette.primary}
@@ -575,6 +574,40 @@ export default function HomeScreen() {
                             ) : null}
                         </View>
                     </LinearGradient>
+                    {isHomeMenuOpen ? (
+                        <HeaderMenuPopup
+                            isAuthenticated={isAuthenticated}
+                            onClose={() => setIsHomeMenuOpen(false)}
+                            onOpenContacts={() => {
+                                setIsHomeMenuOpen(false)
+                                router.push(ROUTES.contacts)
+                            }}
+                            onOpenPublicOffer={() => {
+                                setIsHomeMenuOpen(false)
+                                router.push(ROUTES.publicOffer)
+                            }}
+                            onOpenRequisites={() => {
+                                setIsHomeMenuOpen(false)
+                                router.push(ROUTES.requisites)
+                            }}
+                            onSignIn={() => {
+                                setIsHomeMenuOpen(false)
+                                router.push(ROUTES.login)
+                            }}
+                            onSignOut={signOut}
+                            onSetLanguage={setLanguage}
+                            onToggleTheme={toggleTheme}
+                            popupStyle={[
+                                homeScreenStyles.homeMenuPopup,
+                                { top: topInset + HOME_MENU_POPUP_VERTICAL_OFFSET },
+                            ]}
+                            styles={homeHeaderMenuStyles}
+                            t={t}
+                            accentColor={accentPalette.primary}
+                            language={language}
+                            themeName={themeName}
+                        />
+                    ) : null}
                 </View>
                 <View style={homeScreenStyles.promoBannerSection}>
                     <View style={homeScreenStyles.promoBanner}>

@@ -25,12 +25,12 @@ export const homeScreenStyles = StyleSheet.create({
         marginBottom: 0,
         overflow: "hidden",
     },
-    topGradientSectionMenuOpen: {
-        overflow: "visible",
-    },
     topGradientContent: {
         paddingBottom: spacing.md,
         paddingHorizontal: spacing.md,
+    },
+    homeMenuPopup: {
+        right: spacing.md * 2,
     },
     searchInputWrap: {
         alignItems: "center",

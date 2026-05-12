@@ -1,10 +1,11 @@
+import type { StyleProp, ViewStyle } from "react-native"
+
 import type { AppHeaderStyles } from "@/components/header/app-header.styles"
 import type { Language } from "@/i18n/translations"
 import type { LanguageContextValue } from "@/providers/language-provider.types"
 import type { ThemeName } from "@/theme/colors"
 
-export type HeaderMenuProps = {
-    isOpen: boolean
+export type HeaderMenuContentProps = {
     isAuthenticated: boolean
     onClose: () => void
     onOpenContacts: () => void
@@ -14,10 +15,16 @@ export type HeaderMenuProps = {
     onSignOut: () => Promise<void>
     onSetLanguage?: (language: Language) => void
     onToggleTheme?: () => void
-    onToggle: () => void
     styles: AppHeaderStyles
     t: LanguageContextValue["t"]
     language?: Language
     accentColor?: string
+    popupStyle?: StyleProp<ViewStyle>
     themeName?: ThemeName
+}
+
+export type HeaderMenuProps = HeaderMenuContentProps & {
+    isOpen: boolean
+    onToggle: () => void
+    renderPopup?: boolean
 }
