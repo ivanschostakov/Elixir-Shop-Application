@@ -13,6 +13,11 @@ export const homeScreenStyles = StyleSheet.create({
     },
     topGradientSectionWrap: {
         backgroundColor: colors.surface,
+        position: "relative",
+        zIndex: 5,
+    },
+    topGradientSectionWrapMenuOpen: {
+        zIndex: 80,
     },
     topGradientSection: {
         borderBottomLeftRadius: 28,
@@ -20,59 +25,12 @@ export const homeScreenStyles = StyleSheet.create({
         marginBottom: 0,
         overflow: "hidden",
     },
+    topGradientSectionMenuOpen: {
+        overflow: "visible",
+    },
     topGradientContent: {
         paddingBottom: spacing.md,
         paddingHorizontal: spacing.md,
-    },
-    topMenuRow: {
-        alignItems: "flex-end",
-        marginBottom: spacing.sm,
-        position: "relative",
-        zIndex: 5,
-    },
-    topMenuButton: {
-        alignItems: "center",
-        backgroundColor: colors.surface,
-        borderRadius: 12,
-        borderWidth: 1,
-        height: 42,
-        justifyContent: "center",
-        width: 42,
-    },
-    topMenuButtonPressed: {
-        opacity: 0.85,
-    },
-    topMenuIcon: {
-        width: 16,
-        gap: 3,
-    },
-    topMenuLine: {
-        borderRadius: 999,
-        height: 2,
-        width: "100%",
-    },
-    topMenuPopup: {
-        backgroundColor: colors.surface,
-        borderRadius: 14,
-        marginTop: spacing.xs,
-        minWidth: 178,
-        overflow: "hidden",
-        paddingVertical: spacing.xs,
-        position: "absolute",
-        right: 0,
-        top: 44,
-    },
-    topMenuItem: {
-        minHeight: 38,
-        justifyContent: "center",
-        paddingHorizontal: spacing.md,
-    },
-    topMenuItemPressed: {
-        backgroundColor: colors.surfaceMuted,
-    },
-    topMenuItemText: {
-        fontSize: 13,
-        fontWeight: "700",
     },
     searchInputWrap: {
         alignItems: "center",
@@ -91,6 +49,15 @@ export const homeScreenStyles = StyleSheet.create({
         color: colors.text,
         flex: 1,
         fontSize: 16,
+    },
+    searchInputActions: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: spacing.xs,
+        justifyContent: "flex-end",
+        minWidth: 34,
+        position: "relative",
+        zIndex: 95,
     },
     searchPreviewRow: {
         gap: spacing.sm,
@@ -131,6 +98,8 @@ export const homeScreenStyles = StyleSheet.create({
         marginBottom: spacing.md,
         overflow: "hidden",
         paddingTop: spacing.md,
+        position: "relative",
+        zIndex: 1,
     },
     promoBannerPressed: {
         opacity: 0.93,

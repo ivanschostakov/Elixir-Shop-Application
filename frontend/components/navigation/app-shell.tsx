@@ -60,8 +60,10 @@ function AppShellContent() {
             : pathname === ROUTES.home
               ? []
               : ["top"]
-    const hasDynamicIsland = Platform.OS === "ios" && topInset >= 51
-    const brandLabelTop = Math.max(2, topInset - 44)
+    const shouldShowBrandOverlay = pathname === ROUTES.home
+    const brandLabelTop = Platform.OS === "ios"
+        ? Math.max(2, topInset - 44)
+        : Math.max(4, topInset - 14)
     const currentPrimaryRouteIndex = PRIMARY_APP_ROUTES.findIndex((route) => route === pathname)
     const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
 
@@ -94,7 +96,7 @@ function AppShellContent() {
 
     return (
         <View style={appShellStyles.container}>
-            {hasDynamicIsland ? (
+            {shouldShowBrandOverlay ? (
                 <View
                     pointerEvents="none"
                     style={[appShellStyles.brandLabelOverlay, { top: brandLabelTop }]}

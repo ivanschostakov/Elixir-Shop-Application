@@ -105,7 +105,6 @@ export function ContentTabBar({ tabs, variant = "default" }: ContentTabBarProps)
                             contentStyles.topTabLabel,
                             variant === "onColor" && contentStyles.topTabLabelOnColor,
                             tab.isActive && contentStyles.topTabLabelActive,
-                            tab.isActive && variant !== "onColor" && { color: accentPalette.primary },
                             tab.isActive && variant === "onColor" && contentStyles.topTabLabelActiveOnColor,
                         ]}
                     >

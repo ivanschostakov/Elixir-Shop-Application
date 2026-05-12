@@ -5,7 +5,7 @@ const darkSurface = "#111827"
 const darkGray = "#1F2937"
 export const archivedPrimaryBlue = "rgb(31, 100, 155)"
 export const vividPrimaryBlue = "#0A84FF"
-export type ThemeAccentName = "vividBlue" | "archivedBlue" | "teal" | "emerald" | "rose" | "amber"
+export type ThemeAccentName = "vividBlue" | "archivedBlue" | "teal" | "emerald" | "rose" | "amber" | "blackWhite"
 
 export type ThemeAccentPalette = {
     primary: string
@@ -17,40 +17,53 @@ export type ThemeAccentPalette = {
 export const themeAccentPalettes: Record<ThemeAccentName, ThemeAccentPalette> = {
     vividBlue: {
         primary: vividPrimaryBlue,
-        primaryPressed: "#096FE0",
-        primaryMuted: "#EAF3FF",
+        primaryPressed: "#0068D9",
+        primaryMuted: "#E8F2FF",
         onPrimary: "#FFFFFF",
     },
     archivedBlue: {
         primary: archivedPrimaryBlue,
-        primaryPressed: "#1B4E7B",
+        primaryPressed: "#174B76",
         primaryMuted: "rgba(31, 100, 155, 0.16)",
         onPrimary: "#FFFFFF",
     },
     teal: {
-        primary: "#6EC9C3",
-        primaryPressed: "#59BBB4",
-        primaryMuted: "#EEF9F8",
-        onPrimary: "#113835",
+        primary: "#FFB300",
+        primaryPressed: "#D97706",
+        primaryMuted: "#FFF0D6",
+        onPrimary: "#FFFFFF",
     },
     emerald: {
-        primary: "#77D8B2",
-        primaryPressed: "#62CBA2",
-        primaryMuted: "#EEF9F4",
-        onPrimary: "#133D2D",
+        primary: "#B0124F",
+        primaryPressed: "#8F0E40",
+        primaryMuted: "#FFE4EE",
+        onPrimary: "#FFFFFF",
     },
     rose: {
-        primary: "#F19AAF",
-        primaryPressed: "#E489A0",
-        primaryMuted: "#FFF2F6",
-        onPrimary: "#5A2332",
+        primary: "#8A3FFC",
+        primaryPressed: "#6D28D9",
+        primaryMuted: "#F1E8FF",
+        onPrimary: "#FFFFFF",
     },
     amber: {
-        primary: "#F4C27D",
-        primaryPressed: "#E7B26A",
-        primaryMuted: "#FFF7EA",
-        onPrimary: "#5A3A0E",
+        primary: "#2DD66F",
+        primaryPressed: "#20A957",
+        primaryMuted: "#E5FBEA",
+        onPrimary: "#06140A",
     },
+    blackWhite: {
+        primary: "#0F1115",
+        primaryPressed: "#050607",
+        primaryMuted: "#EEF1F5",
+        onPrimary: "#FFFFFF",
+    },
+}
+
+export const darkBlackWhiteAccentPalette: ThemeAccentPalette = {
+    primary: "#F8FAFC",
+    primaryPressed: "#E2E8F0",
+    primaryMuted: "rgba(248, 250, 252, 0.18)",
+    onPrimary: "#0F1115",
 }
 
 export const lightColors = {

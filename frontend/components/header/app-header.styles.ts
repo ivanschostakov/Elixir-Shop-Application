@@ -246,8 +246,8 @@ export const getHeaderStyles = (topInset: number, windowHeight: number) =>
             paddingHorizontal: 10,
             paddingVertical: 10,
             boxShadow: "0px 8px 18px rgba(12, 54, 81, 0.16)",
-            elevation: 8,
-            zIndex: 10,
+            elevation: 120,
+            zIndex: 120,
         },
         menuSection: {
             alignItems: "center",

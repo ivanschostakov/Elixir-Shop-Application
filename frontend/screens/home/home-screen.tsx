@@ -8,6 +8,7 @@ import {
     ScrollView,
     Text,
     TextInput,
+    useWindowDimensions,
     View,
 } from "react-native"
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native"
@@ -17,6 +18,8 @@ import { Path, Svg } from "react-native-svg"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { ContentRail } from "@/components/content/content-rail"
+import { HeaderMenu } from "@/components/header/header-menu"
+import { getHeaderStyles } from "@/components/header/app-header.styles"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES, getProductRoute } from "@/constants/routes"
 import { useBanners } from "@/hooks/home/use-banners"
@@ -36,7 +39,7 @@ import { clearOrderDraftSnapshot, getOrderDraftSnapshot } from "@/hooks/order-dr
 import { getDraftUpdateErrorMessage } from "@/components/content/recent-order-drafts-rail.utils"
 import { getDiscoverCategoryIcon } from "@/screens/discover/discover-category-icons"
 import { homeScreenStyles } from "@/screens/home/home-screen.styles"
-import { colors } from "@/theme/colors"
+import { colors, lightColors, type ThemeAccentName } from "@/theme/colors"
 import type { Banner } from "@/types/banner"
 import { formatMoney } from "@/utils/formatting"
 
@@ -57,57 +60,23 @@ const MEDIA_BASE_URL = getMediaBaseUrl()
 const FALLBACK_BANNER_IMAGE_VERSION = "square-20260512"
 const BANNER_AUTOPLAY_INTERVAL_MS = 5000
 
-function parseColorToRgb(color: string): [number, number, number] | null {
-    if (/^#[\da-f]{6}$/i.test(color)) {
-        return [
-            Number.parseInt(color.slice(1, 3), 16),
-            Number.parseInt(color.slice(3, 5), 16),
-            Number.parseInt(color.slice(5, 7), 16),
-        ]
+function getHomeGradientColors(accentName: ThemeAccentName, isDarkMode: boolean) {
+    if (accentName === "blackWhite") {
+        return isDarkMode
+            ? (["#0B0D10", "#1A1D24"] as const)
+            : (["#FFFFFF", "#E9EEF7"] as const)
     }
 
-    const rgbMatch = color.match(/^rgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/i)
-    if (rgbMatch) {
-        return [
-            Number(rgbMatch[1]) || 0,
-            Number(rgbMatch[2]) || 0,
-            Number(rgbMatch[3]) || 0,
-        ]
+    const gradientCombos: Record<Exclude<ThemeAccentName, "blackWhite">, readonly [string, string]> = {
+        vividBlue: ["#0A84FF", "#4B2DFF"],
+        archivedBlue: ["#1F649B", "#7C3AED"],
+        teal: ["#FFB300", "#FF4D6D"],
+        emerald: ["#B0124F", "#FF3D81"],
+        rose: ["#8A3FFC", "#00A3FF"],
+        amber: ["#16A34A", "#5EF28A"],
     }
 
-    return null
-}
-
-function mixColor(color: string, target: [number, number, number], ratio: number) {
-    const rgb = parseColorToRgb(color)
-    if (!rgb) {
-        return color
-    }
-
-    const safeRatio = Math.max(0, Math.min(1, ratio))
-    const [r, g, b] = rgb
-    const [tr, tg, tb] = target
-
-    const nextR = Math.round(r + (tr - r) * safeRatio)
-    const nextG = Math.round(g + (tg - g) * safeRatio)
-    const nextB = Math.round(b + (tb - b) * safeRatio)
-    return `rgb(${nextR}, ${nextG}, ${nextB})`
-}
-
-function getHomeGradientColors(primaryColor: string, isDarkMode: boolean) {
-    if (isDarkMode) {
-        return [
-            mixColor(primaryColor, [12, 17, 27], 0.56),
-            mixColor(primaryColor, [12, 17, 27], 0.34),
-            primaryColor,
-        ] as const
-    }
-
-    return [
-        mixColor(primaryColor, [255, 255, 255], 0.58),
-        mixColor(primaryColor, [255, 255, 255], 0.32),
-        primaryColor,
-    ] as const
+    return gradientCombos[accentName]
 }
 const orderStatusColors = {
     created: {
@@ -228,9 +197,11 @@ export default function HomeScreen() {
     const router = useRouter()
     const colorScheme = useColorScheme()
     const topInset = useSafeAreaInsets().top
-    const { t } = useLanguage()
-    const { accentPalette } = useTheme()
-    const { isAuthenticated } = useAuth()
+    const { height: windowHeight } = useWindowDimensions()
+    const homeHeaderMenuStyles = getHeaderStyles(topInset, windowHeight)
+    const { language, setLanguage, t } = useLanguage()
+    const { accentName, accentPalette, themeName, toggleTheme } = useTheme()
+    const { isAuthenticated, signOut } = useAuth()
     const { banners } = useBanners(true)
     const { categories } = useProductCategories(true)
     const { loading: isSearchLoading, products: searchedProducts, query, setQuery } = useProductSearch(true)
@@ -263,12 +234,13 @@ export default function HomeScreen() {
     const hasSearchQuery = query.trim().length > 0
     const isDarkMode = colorScheme === "dark"
     const topGradientColors = useMemo(
-        () => getHomeGradientColors(accentPalette.primary, isDarkMode),
-        [accentPalette.primary, isDarkMode],
+        () => getHomeGradientColors(accentName, isDarkMode),
+        [accentName, isDarkMode],
     )
     const quickCatalogIconBackground = accentPalette.primary
-    const searchPlaceholderColor = isDarkMode ? colors.onPrimary : colors.mutedText
-    const searchTextColor = isDarkMode ? colors.onPrimary : colors.text
+    const searchPlaceholderColor = lightColors.mutedText
+    const searchTextColor = lightColors.text
+    const searchFieldBackgroundColor = lightColors.surface
     const searchPreviewProducts = useMemo(() => searchedProducts.slice(0, 4), [searchedProducts])
     const quickCatalogCategories = useMemo(
         () => categories.filter((category) => getDiscoverCategoryIcon(category.id)),
@@ -284,6 +256,31 @@ export default function HomeScreen() {
     const shouldShowDraftsSection = isLoadingOrderDrafts || orderDrafts.length > 0
     const shouldShowOrdersBlock = isAuthenticated && (shouldShowActiveOrdersSection || shouldShowDraftsSection)
     const isDraftDeleting = useCallback((draftId: number) => deletingDraftIds.includes(draftId), [deletingDraftIds])
+    const activeOrderCardToneStyle = isDarkMode
+        ? null
+        : {
+            backgroundColor: colors.surface,
+        }
+    const activeOrderImagesToneStyle = isDarkMode
+        ? null
+        : {
+            backgroundColor: colors.surfaceMuted,
+        }
+    const activeOrderImagePlaceholderToneStyle = isDarkMode
+        ? null
+        : {
+            backgroundColor: colors.borderSoft,
+        }
+    const activeOrderSubtitleToneStyle = isDarkMode
+        ? null
+        : {
+            color: colors.text,
+        }
+    const activeOrderMetaToneStyle = isDarkMode
+        ? null
+        : {
+            color: colors.stateText,
+        }
 
     const handleDeleteDraft = useCallback(async (draftId: number) => {
         if (deletingDraftIds.includes(draftId)) {
@@ -455,12 +452,6 @@ export default function HomeScreen() {
         })
     }
 
-    const homeMenuItems = [
-        { key: "profile", label: t("route.profile"), route: ROUTES.profile },
-        { key: "favorites", label: t("route.favorites"), route: ROUTES.favorites },
-        { key: "contacts", label: t("nav.contacts"), route: ROUTES.contacts },
-    ] as const
-
     return (
         <CatalogTemplate
             chromeTemplate={{
@@ -477,58 +468,23 @@ export default function HomeScreen() {
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
             >
-                <View style={homeScreenStyles.topGradientSectionWrap}>
+                <View
+                    style={[
+                        homeScreenStyles.topGradientSectionWrap,
+                        isHomeMenuOpen && homeScreenStyles.topGradientSectionWrapMenuOpen,
+                    ]}
+                >
                     <LinearGradient
                         colors={topGradientColors}
                         end={{ x: 1, y: 0 }}
                         start={{ x: 0, y: 0 }}
-                        style={homeScreenStyles.topGradientSection}
+                        style={[
+                            homeScreenStyles.topGradientSection,
+                            isHomeMenuOpen && homeScreenStyles.topGradientSectionMenuOpen,
+                        ]}
                     >
                         <View style={[homeScreenStyles.topGradientContent, { paddingTop: topInset + 14 }]}>
-                            <View style={homeScreenStyles.topMenuRow}>
-                                <Pressable
-                                    accessibilityLabel={t("nav.menu")}
-                                    accessibilityRole="button"
-                                    onPress={() => setIsHomeMenuOpen((currentValue) => !currentValue)}
-                                    style={({ pressed }) => [
-                                        homeScreenStyles.topMenuButton,
-                                        { borderColor: accentPalette.primaryMuted },
-                                        pressed && homeScreenStyles.topMenuButtonPressed,
-                                    ]}
-                                >
-                                    <View style={homeScreenStyles.topMenuIcon}>
-                                        <View style={[homeScreenStyles.topMenuLine, { backgroundColor: accentPalette.primary }]} />
-                                        <View style={[homeScreenStyles.topMenuLine, { backgroundColor: accentPalette.primary }]} />
-                                        <View style={[homeScreenStyles.topMenuLine, { backgroundColor: accentPalette.primary }]} />
-                                    </View>
-                                </Pressable>
-
-                                {isHomeMenuOpen ? (
-                                    <View style={homeScreenStyles.topMenuPopup}>
-                                        {homeMenuItems.map((menuItem) => (
-                                            <Pressable
-                                                key={menuItem.key}
-                                                accessibilityRole="button"
-                                                accessibilityLabel={menuItem.label}
-                                                onPress={() => {
-                                                    setIsHomeMenuOpen(false)
-                                                    router.push(menuItem.route)
-                                                }}
-                                                style={({ pressed }) => [
-                                                    homeScreenStyles.topMenuItem,
-                                                    pressed && homeScreenStyles.topMenuItemPressed,
-                                                ]}
-                                            >
-                                                <Text style={[homeScreenStyles.topMenuItemText, { color: accentPalette.primary }]}>
-                                                    {menuItem.label}
-                                                </Text>
-                                            </Pressable>
-                                        ))}
-                                    </View>
-                                ) : null}
-                            </View>
-
-                            <View style={homeScreenStyles.searchInputWrap}>
+                            <View style={[homeScreenStyles.searchInputWrap, { backgroundColor: searchFieldBackgroundColor }]}>
                                 <View style={homeScreenStyles.searchIconWrap}>
                                     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                                         <Path
@@ -547,7 +503,39 @@ export default function HomeScreen() {
                                     style={[homeScreenStyles.searchInput, { color: searchTextColor }]}
                                     value={query}
                                 />
-                                {isSearchLoading ? <ActivityIndicator color={accentPalette.primary} size="small" /> : null}
+                                <View style={homeScreenStyles.searchInputActions}>
+                                    {isSearchLoading ? <ActivityIndicator color={accentPalette.primary} size="small" /> : null}
+                                    <HeaderMenu
+                                        isOpen={isHomeMenuOpen}
+                                        isAuthenticated={isAuthenticated}
+                                        onClose={() => setIsHomeMenuOpen(false)}
+                                        onOpenContacts={() => {
+                                            setIsHomeMenuOpen(false)
+                                            router.push(ROUTES.contacts)
+                                        }}
+                                        onOpenPublicOffer={() => {
+                                            setIsHomeMenuOpen(false)
+                                            router.push(ROUTES.publicOffer)
+                                        }}
+                                        onOpenRequisites={() => {
+                                            setIsHomeMenuOpen(false)
+                                            router.push(ROUTES.requisites)
+                                        }}
+                                        onSignIn={() => {
+                                            setIsHomeMenuOpen(false)
+                                            router.push(ROUTES.login)
+                                        }}
+                                        onSignOut={signOut}
+                                        onSetLanguage={setLanguage}
+                                        onToggleTheme={toggleTheme}
+                                        onToggle={() => setIsHomeMenuOpen((currentValue) => !currentValue)}
+                                        styles={homeHeaderMenuStyles}
+                                        t={t}
+                                        accentColor={accentPalette.primary}
+                                        language={language}
+                                        themeName={themeName}
+                                    />
+                                </View>
                             </View>
 
                             {hasSearchQuery && searchPreviewProducts.length ? (
@@ -673,9 +661,7 @@ export default function HomeScreen() {
                                                     { backgroundColor: quickCatalogIconBackground },
                                                 ]}
                                             >
-                                                {CategoryIcon ? (
-                                                    <CategoryIcon width={30} height={30} color={accentPalette.onPrimary} />
-                                                ) : null}
+                                                {CategoryIcon ? <CategoryIcon width={30} height={30} color="#FFFFFF" /> : null}
                                             </View>
                                             <Text
                                                 ellipsizeMode="tail"
@@ -722,10 +708,11 @@ export default function HomeScreen() {
                                                     }}
                                                     style={({ pressed }) => [
                                                         homeScreenStyles.activeOrderCard,
+                                                        activeOrderCardToneStyle,
                                                         pressed && homeScreenStyles.activeOrderCardPressed,
                                                     ]}
                                                 >
-                                                    <View style={homeScreenStyles.activeOrderImages}>
+                                                    <View style={[homeScreenStyles.activeOrderImages, activeOrderImagesToneStyle]}>
                                                         {orderItemsPreview.length ? (
                                                             orderItemsPreview.map((item) => (
                                                                 item.image_url ? (
@@ -743,6 +730,7 @@ export default function HomeScreen() {
                                                                         key={`${order.id}-${item.id}-${item.variant_id}`}
                                                                         style={[
                                                                             homeScreenStyles.activeOrderImagePlaceholder,
+                                                                            activeOrderImagePlaceholderToneStyle,
                                                                             isSingleOrderImage && homeScreenStyles.activeOrderImageSingle,
                                                                         ]}
                                                                     />
@@ -752,6 +740,7 @@ export default function HomeScreen() {
                                                             <View
                                                                 style={[
                                                                     homeScreenStyles.activeOrderImagePlaceholder,
+                                                                    activeOrderImagePlaceholderToneStyle,
                                                                     homeScreenStyles.activeOrderImageSingle,
                                                                 ]}
                                                             />
@@ -776,11 +765,17 @@ export default function HomeScreen() {
                                                                     {statusDisplay.label}
                                                                 </Text>
                                                             </View>
-                                                            <Text numberOfLines={1} style={homeScreenStyles.activeOrderMeta}>
+                                                            <Text
+                                                                numberOfLines={1}
+                                                                style={[homeScreenStyles.activeOrderMeta, activeOrderMetaToneStyle]}
+                                                            >
                                                                 #{order.order_number}
                                                             </Text>
                                                         </View>
-                                                        <Text numberOfLines={2} style={homeScreenStyles.activeOrderSubtitle}>
+                                                        <Text
+                                                            numberOfLines={2}
+                                                            style={[homeScreenStyles.activeOrderSubtitle, activeOrderSubtitleToneStyle]}
+                                                        >
                                                             {`${order.items_count} • ${subtitle}`}
                                                         </Text>
                                                     </View>

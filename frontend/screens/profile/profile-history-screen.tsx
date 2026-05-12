@@ -599,7 +599,7 @@ export default function ProfileHistoryScreen() {
             slots: {
                 headerCenter: (
                     <View style={profileHistoryScreenStyles.headerTabsSlot}>
-                        <ContentTabBar tabs={tabs} />
+                        <ContentTabBar tabs={tabs} variant="default" />
                     </View>
                 ),
             },

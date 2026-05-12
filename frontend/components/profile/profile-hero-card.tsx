@@ -6,6 +6,7 @@ import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-va
 import type { ProfileHeroCardProps } from "@/components/profile/profile-hero-card.types"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
+import { colors } from "@/theme/colors"
 
 export function ProfileHeroCard({
     avatarUri,
@@ -20,13 +21,16 @@ export function ProfileHeroCard({
 }: ProfileHeroCardProps) {
     const [isAvatarViewerOpen, setIsAvatarViewerOpen] = useState(false)
     const { t } = useLanguage()
-    const { accentPalette } = useTheme()
+    const { accentName, accentPalette, themeName } = useTheme()
     const { handleCopy } = useCopyableProfileValue({ t })
     const usernameValue = username ? `@${username}` : null
+    const isMonochromeDark = accentName === "blackWhite" && themeName === "dark"
+    const heroBackgroundColor = isMonochromeDark ? colors.surface : accentPalette.primary
+    const avatarInitialColor = isMonochromeDark ? colors.text : accentPalette.primary
 
     return (
         <>
-            <View style={[ProfileScreenStyles.heroCard, { backgroundColor: accentPalette.primary }]}>
+            <View style={[ProfileScreenStyles.heroCard, { backgroundColor: heroBackgroundColor }]}>
                 <View style={ProfileScreenStyles.heroGlow} />
 
                 <View style={ProfileScreenStyles.heroTopRow}>
@@ -47,7 +51,7 @@ export function ProfileHeroCard({
                                     resizeMode="cover"
                                 />
                             ) : (
-                                <Text style={[ProfileScreenStyles.avatarText, { color: accentPalette.primary }]}>
+                                <Text style={[ProfileScreenStyles.avatarText, { color: avatarInitialColor }]}>
                                     {initials || "U"}
                                 </Text>
                             )}

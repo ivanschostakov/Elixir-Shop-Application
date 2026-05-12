@@ -67,7 +67,7 @@ export function ProductInfoTabs({
     reviewsSubmitting,
     t,
 }: ProductInfoTabsProps) {
-    const { accentPalette } = useTheme()
+    const { accentPalette, themeName } = useTheme()
     const detailsFallback = t("product.detailsNotProvided")
     const overviewHtml = hasRenderableHtmlContent(product.description) ? product.description : null
     const usageHtml = hasRenderableHtmlContent(product.usage) ? product.usage : null
@@ -438,7 +438,11 @@ export function ProductInfoTabs({
                                         style={[
                                             productScreenStyle.infoTabButtonText,
                                             isActive && productScreenStyle.infoTabButtonTextActive,
-                                            isActive && { color: accentPalette.primary },
+                                            {
+                                                color: isActive
+                                                    ? (themeName === "dark" ? "#FFFFFF" : "#111827")
+                                                    : (themeName === "dark" ? "rgba(255, 255, 255, 0.82)" : "rgba(17, 24, 39, 0.72)"),
+                                            },
                                         ]}
                                         adjustsFontSizeToFit
                                         minimumFontScale={0.82}

@@ -4,7 +4,12 @@ import { Appearance, Platform } from "react-native"
 
 import { ThemeContext } from "@/providers/theme-provider.context"
 import type { ThemeProviderProps } from "@/providers/theme-provider.types"
-import { themeAccentPalettes, type ThemeAccentName, type ThemeName } from "@/theme/colors"
+import {
+    darkBlackWhiteAccentPalette,
+    themeAccentPalettes,
+    type ThemeAccentName,
+    type ThemeName,
+} from "@/theme/colors"
 
 const THEME_STORAGE_KEY = "elixirpeptide-theme"
 const THEME_ACCENT_STORAGE_KEY = "elixirpeptide-theme-accent"
@@ -22,6 +27,7 @@ function isThemeAccentName(value: string | null): value is StoredThemeAccentName
         value === "emerald" ||
         value === "rose" ||
         value === "amber" ||
+        value === "blackWhite" ||
         value === "blue"
     )
 }
@@ -168,7 +174,9 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
             isDark: themeName === "dark",
             themeName,
             accentName,
-            accentPalette: themeAccentPalettes[accentName],
+            accentPalette: accentName === "blackWhite" && themeName === "dark"
+                ? darkBlackWhiteAccentPalette
+                : themeAccentPalettes[accentName],
             setAccentName,
             toggleTheme,
         }),

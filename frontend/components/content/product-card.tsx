@@ -12,12 +12,14 @@ import type { ProductCardProps } from "@/components/content/product-card.types"
 import { getProductRoute } from "@/constants/routes"
 import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-value"
 import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
 
 const STAR_PATH = "M12 2.5L14.86 8.28L21.24 9.21L16.62 13.71L17.71 20.07L12 17.07L6.29 20.07L7.38 13.71L2.76 9.21L9.14 8.28L12 2.5Z"
 
 export function ProductCard({ product, style }: ProductCardProps) {
     const router = useRouter()
     const { t } = useLanguage()
+    const { accentPalette } = useTheme()
     const { handleCopy } = useCopyableProfileValue({ t })
     const subtitle = getProductContentSubtitle(product)
     const priceDisplay = getProductPriceDisplay(product)
@@ -112,10 +114,13 @@ export function ProductCard({ product, style }: ProductCardProps) {
                         }}
                         style={({ pressed }) => [
                             contentStyles.productMetaBadge,
+                            { backgroundColor: accentPalette.primaryMuted },
                             pressed && contentStyles.productMetaBadgePressed,
                         ]}
                     >
-                        <Text style={contentStyles.productMetaBadgeText}>{product.sku}</Text>
+                        <Text style={[contentStyles.productMetaBadgeText, { color: accentPalette.primary }]}>
+                            {product.sku}
+                        </Text>
                     </Pressable>
                 </View>
             ) : null}

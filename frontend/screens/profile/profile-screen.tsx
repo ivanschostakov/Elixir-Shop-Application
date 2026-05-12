@@ -113,7 +113,15 @@ export default function ProfileScreen() {
         t,
     })
     const shouldShowReferralDetails = Boolean(referralProfile?.referrer_promo_code)
-    const accentOptions: ThemeAccentName[] = ["vividBlue", "archivedBlue", "teal", "emerald", "rose", "amber"]
+    const accentOptions: ThemeAccentName[] = [
+        "vividBlue",
+        "archivedBlue",
+        "teal",
+        "emerald",
+        "rose",
+        "amber",
+        "blackWhite",
+    ]
     const accentLabel = language === "ru"
         ? "Акцент"
         : language === "kz"
