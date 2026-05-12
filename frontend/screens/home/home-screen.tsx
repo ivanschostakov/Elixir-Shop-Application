@@ -30,8 +30,7 @@ import { deleteOrderDraft, getOrderDrafts } from "@/services/api/order-drafts"
 import { API_BASE_URL } from "@/services/api/constants"
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
 import { getOrders } from "@/services/api/orders"
-import type { OrderRead } from "@/services/api/orders.types"
-import { ORDER_STATUS_LABEL_KEYS } from "@/screens/profile/profile-history-screen.utils"
+import type { OrderRead, OrderStatusCode } from "@/services/api/orders.types"
 import { clearOrderDraftSnapshot, getOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { getDraftUpdateErrorMessage } from "@/components/content/recent-order-drafts-rail.utils"
 import { getDiscoverCategoryIcon } from "@/screens/discover/discover-category-icons"
@@ -58,6 +57,58 @@ const FALLBACK_BANNER_IMAGE_VERSION = "square-20260512"
 const BANNER_AUTOPLAY_INTERVAL_MS = 5000
 const LIGHT_HOME_GRADIENT_COLORS = ["#FF6F93", "#FF88B0", "#FFC96B"] as const
 const DARK_HOME_GRADIENT_COLORS = ["#0A84FF", "#12B7B0", "#34D399"] as const
+const orderStatusColors = {
+    created: {
+        label: "Заказ создан",
+        bg: "#F3F4F6",
+        text: "#374151",
+    },
+    invoice_sent: {
+        label: "Ожидаем оплату",
+        bg: "#FEF3C7",
+        text: "#92400E",
+    },
+    paid: {
+        label: "Оплачен",
+        bg: "#DCFCE7",
+        text: "#166534",
+    },
+    waiting_response: {
+        label: "Ждём ваш ответ",
+        bg: "#EDE9FE",
+        text: "#5B21B6",
+    },
+    packaged: {
+        label: "Собираем заказ",
+        bg: "#DBEAFE",
+        text: "#1E40AF",
+    },
+    sent: {
+        label: "В пути",
+        bg: "#E0F2FE",
+        text: "#075985",
+    },
+    delivered: {
+        label: "Готов к выдаче",
+        bg: "#CCFBF1",
+        text: "#0F766E",
+    },
+    completed: {
+        label: "Получен",
+        bg: "#ECFDF5",
+        text: "#047857",
+    },
+    canceled: {
+        label: "Отменён",
+        bg: "#FEE2E2",
+        text: "#991B1B",
+    },
+    refund_declined: {
+        label: "Возврат отклонён",
+        bg: "#FFE4E6",
+        text: "#9F1239",
+    },
+} satisfies Record<OrderStatusCode, { label: string; bg: string; text: string }>
 
 function appendImageVersion(uri: string, version: string | null | undefined): string {
     const trimmedVersion = version?.trim()
@@ -550,10 +601,7 @@ export default function HomeScreen() {
                                 ) : (
                                     <ScrollView horizontal contentContainerStyle={homeScreenStyles.activeOrdersRow} showsHorizontalScrollIndicator={false}>
                                         {activeOrders.map((order) => {
-                                            const previewItem = order.items[0] ?? null
-                                            const statusLabel = t(
-                                                ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created",
-                                            )
+                                            const statusDisplay = orderStatusColors[order.status_code] ?? orderStatusColors.created
                                             const subtitle = order.delivery_string || order.delivery_address?.full_address || "—"
 
                                             return (
@@ -569,21 +617,46 @@ export default function HomeScreen() {
                                                         pressed && homeScreenStyles.activeOrderCardPressed,
                                                     ]}
                                                 >
-                                                    {previewItem?.image_url ? (
-                                                        <Image
-                                                            source={{ uri: previewItem.image_url }}
-                                                            style={homeScreenStyles.activeOrderImage}
-                                                            resizeMode="cover"
-                                                        />
-                                                    ) : (
-                                                        <View style={homeScreenStyles.activeOrderImagePlaceholder} />
-                                                    )}
+                                                    <View style={homeScreenStyles.activeOrderImages}>
+                                                        {order.items.length ? (
+                                                            order.items.map((item) => (
+                                                                item.image_url ? (
+                                                                    <Image
+                                                                        key={`${order.id}-${item.id}-${item.variant_id}`}
+                                                                        source={{ uri: item.image_url }}
+                                                                        style={homeScreenStyles.activeOrderImage}
+                                                                        resizeMode="cover"
+                                                                    />
+                                                                ) : (
+                                                                    <View
+                                                                        key={`${order.id}-${item.id}-${item.variant_id}`}
+                                                                        style={homeScreenStyles.activeOrderImagePlaceholder}
+                                                                    />
+                                                                )
+                                                            ))
+                                                        ) : (
+                                                            <View style={homeScreenStyles.activeOrderImagePlaceholder} />
+                                                        )}
+                                                    </View>
 
                                                     <View style={homeScreenStyles.activeOrderBody}>
-                                                        <View style={homeScreenStyles.activeOrderTopRow}>
-                                                            <Text numberOfLines={1} style={homeScreenStyles.activeOrderStatus}>
-                                                                {statusLabel}
-                                                            </Text>
+                                                        <View style={homeScreenStyles.activeOrderStatusBlock}>
+                                                            <View
+                                                                style={[
+                                                                    homeScreenStyles.activeOrderStatusBadge,
+                                                                    { backgroundColor: statusDisplay.bg },
+                                                                ]}
+                                                            >
+                                                                <Text
+                                                                    numberOfLines={2}
+                                                                    style={[
+                                                                        homeScreenStyles.activeOrderStatusText,
+                                                                        { color: statusDisplay.text },
+                                                                    ]}
+                                                                >
+                                                                    {statusDisplay.label}
+                                                                </Text>
+                                                            </View>
                                                             <Text numberOfLines={1} style={homeScreenStyles.activeOrderMeta}>
                                                                 #{order.order_number}
                                                             </Text>
