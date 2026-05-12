@@ -119,7 +119,15 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
     snapshot = _resolve_snapshot(order)
     selected_delivery = snapshot.get("selected_delivery") or {}
     address = selected_delivery.get("address") or {}
+    tariff = selected_delivery.get("tariff") or {}
     delivery_mode = (selected_delivery.get("deliveryMode") or "").strip().lower()
+
+    configured_tariff_code = tariff.get("tariff_code")
+    if isinstance(configured_tariff_code, str):
+        configured_tariff_code = configured_tariff_code.strip()
+        configured_tariff_code = int(configured_tariff_code) if configured_tariff_code.isdigit() else None
+    if not isinstance(configured_tariff_code, int):
+        configured_tariff_code = cdek_client.tariff_codes["office" if delivery_mode == "office" else "door"]
 
     city_code = await cdek_client.get_city_code_by_coordinates(order.delivery_address.latitude, order.delivery_address.longitude)
     log.info(
@@ -132,7 +140,7 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
     order_body: dict[str, Any] = {
         "type": 1,
         "number": str(order.order_number),
-        "tariff_code": cdek_client.tariff_codes["office" if delivery_mode == "office" else "door"],
+        "tariff_code": configured_tariff_code,
         "comment": "Заказ из мобильного приложения",
         "recipient": _build_cdek_recipient(order),
         "sender": {"name": CDEK_SENDER_NAME, "phones": [{"number": CDEK_SENDER_PHONE}]},

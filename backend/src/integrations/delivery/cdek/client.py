@@ -211,13 +211,55 @@ class AsyncCDEKClient:
         if address: to_location["address"] = address
         if city: to_location["city"] = city
 
-        response = await self._request("POST", "/v2/calculator/tariff", json={
-            "tariff_code": self.tariff_codes[mode],
+        # Keep calculation behavior aligned with Shop-Webapp:
+        # request tariff list and select the requested tariff code from the provider response.
+        expected_tariff_code = self.tariff_codes[mode]
+        response = await self._request("POST", "/v2/calculator/tarifflist", json={
+            "type": 2,
             "from_location": self.from_location,
             "to_location": to_location,
-            "packages": [self.cargo]
+            "packages": [self.cargo],
         })
-        return CDEKCalculatedDelivery.model_validate(response)
+        if not isinstance(response, dict):
+            raise external_service_http_exception(
+                service="cdek",
+                operation="calculate_delivery",
+                public_detail="Delivery provider returned invalid tariff list response",
+                raw_detail=response,
+            )
+
+        raw_tariffs = response.get("tariff_codes")
+        if not isinstance(raw_tariffs, list):
+            raise external_service_http_exception(
+                service="cdek",
+                operation="calculate_delivery",
+                public_detail="Delivery provider returned invalid tariff list payload",
+                raw_detail=response,
+            )
+
+        selected_tariff: dict[str, Any] | None = None
+        fallback_tariff: dict[str, Any] | None = None
+        for candidate in raw_tariffs:
+            if not isinstance(candidate, dict):
+                continue
+            if candidate.get("errors"):
+                continue
+            if fallback_tariff is None:
+                fallback_tariff = candidate
+            if candidate.get("tariff_code") == expected_tariff_code:
+                selected_tariff = candidate
+                break
+
+        effective_tariff = selected_tariff or fallback_tariff
+        if effective_tariff is None:
+            raise external_service_http_exception(
+                service="cdek",
+                operation="calculate_delivery",
+                public_detail="No available delivery tariffs for requested route",
+                raw_detail=response,
+            )
+
+        return CDEKCalculatedDelivery.model_validate(effective_tariff)
 
 
 cdek_client = AsyncCDEKClient()
