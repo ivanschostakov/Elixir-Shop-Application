@@ -330,7 +330,6 @@ def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
             "/api/v1/users/me/profile/personal-data",
             headers=headers,
             json={
-                "username": f"guest_updated_{token}",
                 "username": f"gupd_{token[:8]}",
                 "email": f"guest_updated_{token}@example.com",
                 "name": "Updated",
