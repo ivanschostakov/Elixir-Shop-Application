@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -127,9 +128,22 @@ async def get_or_create_referral_profile(db: AsyncSession, *, user: User | None 
     if profile is not None:
         return profile
 
-    profile = ReferralProfile(user_id=resolved_user_id, current_discount_percent=Decimal("0.00"))
-    db.add(profile)
-    await db.flush()
+    insert_stmt = (
+        insert(ReferralProfile)
+        .values(user_id=resolved_user_id, current_discount_percent=Decimal("0.00"))
+        .on_conflict_do_nothing(index_elements=[ReferralProfile.user_id])
+        .returning(ReferralProfile.id)
+    )
+    created_profile_id = (await db.execute(insert_stmt)).scalar_one_or_none()
+
+    if created_profile_id is not None:
+        profile = await db.get(ReferralProfile, created_profile_id)
+    else:
+        profile = await get_referral_profile_by_user_id(db, resolved_user_id)
+
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create referral profile")
+
     return profile
 
 
