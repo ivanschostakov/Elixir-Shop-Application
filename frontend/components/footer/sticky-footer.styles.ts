@@ -30,6 +30,9 @@ export const stickyFooterStyles = StyleSheet.create({
     stack: {
         gap: 0,
     },
+    actionKeyboardLayer: {
+        width: "100%",
+    },
     actionSection: {
         paddingHorizontal: spacing.md,
         paddingTop: spacing.sm,

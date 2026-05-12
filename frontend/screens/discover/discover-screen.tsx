@@ -123,7 +123,7 @@ export default function DiscoverScreen() {
     const hasSearchQuery = query.length > 0
     const hasNoResults = isProductsTab && !isLoading && !screenError && displayedProducts.length === 0
     const rowGap = isDesktop ? 16 : 12
-    const columnGap = rowGap
+    const columnGap = 0
     const maxContentWidth = isDesktop ? 1180 : isTablet ? 960 : undefined
     const layoutWidth = listWidth > 0 ? listWidth : (maxContentWidth ? Math.min(windowWidth, maxContentWidth) : windowWidth)
     const numColumns = resolveGridColumnCount(layoutWidth, columnGap)

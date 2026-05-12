@@ -133,14 +133,15 @@ export const recentOrderDraftsRailStyles = StyleSheet.create({
     },
     cardDeleteBadge: {
         alignItems: "center",
-        backgroundColor: colors.surfaceOverlay,
+        backgroundColor: "#FDECEF",
         borderRadius: 999,
-        height: 32,
+        borderWidth: 0,
+        height: 26,
         justifyContent: "center",
         position: "absolute",
         right: 12,
         top: 12,
-        width: 32,
+        width: 26,
         zIndex: 2,
     },
     cardDeleteBadgePressed: {

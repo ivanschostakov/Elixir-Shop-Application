@@ -787,7 +787,7 @@ export const chatScreenStyles = StyleSheet.create({
     sendButtonMicIconWrap: {
         alignItems: "center",
         justifyContent: "center",
-        transform: [{ translateY: -0.5 }],
+        transform: [{ translateY: 0.5 }],
     },
     sendButtonRecordingLayer: {
         ...StyleSheet.absoluteFillObject,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     ActivityIndicator,
+    Alert,
     Image,
     Pressable,
     useColorScheme,
@@ -25,9 +26,14 @@ import { useProductSearch } from "@/hooks/products/use-product-search"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
-import { getOrderDrafts } from "@/services/api/order-drafts"
+import { deleteOrderDraft, getOrderDrafts } from "@/services/api/order-drafts"
 import { API_BASE_URL } from "@/services/api/constants"
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
+import { getOrders } from "@/services/api/orders"
+import type { OrderRead } from "@/services/api/orders.types"
+import { ORDER_STATUS_LABEL_KEYS } from "@/screens/profile/profile-history-screen.utils"
+import { clearOrderDraftSnapshot, getOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
+import { getDraftUpdateErrorMessage } from "@/components/content/recent-order-drafts-rail.utils"
 import { getDiscoverCategoryIcon } from "@/screens/discover/discover-category-icons"
 import { homeScreenStyles } from "@/screens/home/home-screen.styles"
 import { colors } from "@/theme/colors"
@@ -142,6 +148,9 @@ export default function HomeScreen() {
     })
     const [orderDrafts, setOrderDrafts] = useState<OrderDraftRead[]>([])
     const [isLoadingOrderDrafts, setIsLoadingOrderDrafts] = useState(false)
+    const [activeOrders, setActiveOrders] = useState<OrderRead[]>([])
+    const [isLoadingActiveOrders, setIsLoadingActiveOrders] = useState(false)
+    const [deletingDraftIds, setDeletingDraftIds] = useState<number[]>([])
     const [activeBannerIndex, setActiveBannerIndex] = useState(0)
     const [bannerWidth, setBannerWidth] = useState(0)
     const bannerScrollRef = useRef<ScrollView>(null)
@@ -163,6 +172,50 @@ export default function HomeScreen() {
     const recommendationRailLoadingMore = isAuthenticated ? recommendationsLoadingMore : guestCatalogLoadingMore
     const hasMoreRecommendationRail = isAuthenticated ? hasMoreRecommendations : hasMoreGuestCatalog
     const loadMoreRecommendationRail = isAuthenticated ? loadMoreRecommendations : loadMoreGuestCatalog
+    const shouldShowActiveOrdersSection = isLoadingActiveOrders || activeOrders.length > 0
+    const shouldShowDraftsSection = isLoadingOrderDrafts || orderDrafts.length > 0
+    const shouldShowOrdersBlock = isAuthenticated && (shouldShowActiveOrdersSection || shouldShowDraftsSection)
+    const isDraftDeleting = useCallback((draftId: number) => deletingDraftIds.includes(draftId), [deletingDraftIds])
+
+    const handleDeleteDraft = useCallback(async (draftId: number) => {
+        if (deletingDraftIds.includes(draftId)) {
+            return
+        }
+
+        setDeletingDraftIds((currentIds) => [...currentIds, draftId])
+
+        try {
+            await deleteOrderDraft(draftId)
+            if (getOrderDraftSnapshot()?.id === draftId) {
+                clearOrderDraftSnapshot()
+            }
+            setOrderDrafts((currentDrafts) => currentDrafts.filter((draft) => draft.id !== draftId))
+        } catch (deleteError) {
+            Alert.alert(getDraftUpdateErrorMessage(deleteError, t("cart.recentDraftsDeleteFailed")))
+        } finally {
+            setDeletingDraftIds((currentIds) => currentIds.filter((id) => id !== draftId))
+        }
+    }, [deletingDraftIds, t])
+
+    const handleConfirmDeleteDraft = useCallback((draftId: number) => {
+        Alert.alert(
+            t("cart.recentDraftsDeleteConfirmTitle"),
+            t("cart.recentDraftsDeleteConfirmMessage"),
+            [
+                {
+                    text: t("common.cancel"),
+                    style: "cancel",
+                },
+                {
+                    text: t("cart.recentDraftsDeleteAction"),
+                    style: "destructive",
+                    onPress: () => {
+                        void handleDeleteDraft(draftId)
+                    },
+                },
+            ],
+        )
+    }, [handleDeleteDraft, t])
 
     const handleHomeScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
@@ -193,6 +246,8 @@ export default function HomeScreen() {
         if (!isAuthenticated) {
             setOrderDrafts([])
             setIsLoadingOrderDrafts(false)
+            setActiveOrders([])
+            setIsLoadingActiveOrders(false)
             return
         }
 
@@ -213,6 +268,38 @@ export default function HomeScreen() {
             .finally(() => {
                 if (!isCancelled) {
                     setIsLoadingOrderDrafts(false)
+                }
+            })
+
+        return () => {
+            isCancelled = true
+        }
+    }, [isAuthenticated])
+
+    useEffect(() => {
+        if (!isAuthenticated) {
+            setActiveOrders([])
+            setIsLoadingActiveOrders(false)
+            return
+        }
+
+        let isCancelled = false
+        setIsLoadingActiveOrders(true)
+
+        void getOrders({ history_bucket: "active", limit: 12 })
+            .then((orders) => {
+                if (!isCancelled) {
+                    setActiveOrders(orders)
+                }
+            })
+            .catch(() => {
+                if (!isCancelled) {
+                    setActiveOrders([])
+                }
+            })
+            .finally(() => {
+                if (!isCancelled) {
+                    setIsLoadingActiveOrders(false)
                 }
             })
 
@@ -448,49 +535,146 @@ export default function HomeScreen() {
                     </View>
                 </View>
 
-                {isAuthenticated ? (
+                {shouldShowOrdersBlock ? (
                     <View style={homeScreenStyles.ordersBlock}>
-                        <View style={homeScreenStyles.ordersHeader}>
-                            <Text style={homeScreenStyles.ordersEyebrow}>{t("cart.recentDraftsEyebrow")}</Text>
-                            <Text style={homeScreenStyles.ordersTitle}>{t("cart.recentDraftsTitle")}</Text>
-                        </View>
+                        {shouldShowActiveOrdersSection ? (
+                            <>
+                                <View style={homeScreenStyles.ordersHeader}>
+                                    <Text style={homeScreenStyles.ordersTitle}>Заказы</Text>
+                                </View>
 
-                        {isLoadingOrderDrafts ? (
-                            <View style={homeScreenStyles.orderLoadingWrap}>
-                                <ActivityIndicator color={colors.primary} />
-                            </View>
-                        ) : orderDrafts.length ? (
-                            <ScrollView horizontal contentContainerStyle={homeScreenStyles.ordersRow} showsHorizontalScrollIndicator={false}>
-                                {orderDrafts.map((draft) => {
-                                    const total = formatMoney(Number(draft.grand_total), draft.currency)
-                                    return (
-                                        <Pressable
-                                            key={draft.id}
-                                            accessibilityLabel={`${t("cart.recentDraftsOpenDraft")} ${draft.id}`}
-                                            accessibilityRole="button"
-                                            onPress={() => {
-                                                router.push(`${ROUTES.checkout}?draftId=${draft.id}`)
-                                            }}
-                                            style={({ pressed }) => [homeScreenStyles.orderCard, pressed && homeScreenStyles.orderCardPressed]}
-                                        >
-                                            <Text numberOfLines={1} style={homeScreenStyles.orderCardTitle}>
-                                                #{draft.id}
-                                            </Text>
-                                            <Text numberOfLines={1} style={homeScreenStyles.orderCardMeta}>
-                                                {draft.items_count} {t("cart.positionsLabel")}
-                                            </Text>
-                                            <Text numberOfLines={1} style={homeScreenStyles.orderCardTotal}>
-                                                {total ?? "—"}
-                                            </Text>
-                                        </Pressable>
-                                    )
-                                })}
-                            </ScrollView>
-                        ) : (
-                            <View style={homeScreenStyles.orderEmptyCard}>
-                                <Text style={homeScreenStyles.orderEmptyText}>{t("cart.emptyDescriptionWithDrafts")}</Text>
-                            </View>
-                        )}
+                                {isLoadingActiveOrders ? (
+                                    <View style={homeScreenStyles.orderLoadingWrap}>
+                                        <ActivityIndicator color={colors.primary} />
+                                    </View>
+                                ) : (
+                                    <ScrollView horizontal contentContainerStyle={homeScreenStyles.activeOrdersRow} showsHorizontalScrollIndicator={false}>
+                                        {activeOrders.map((order) => {
+                                            const previewItem = order.items[0] ?? null
+                                            const statusLabel = t(
+                                                ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created",
+                                            )
+                                            const subtitle = order.delivery_string || order.delivery_address?.full_address || "—"
+
+                                            return (
+                                                <Pressable
+                                                    key={order.id}
+                                                    accessibilityLabel={`${t("home.activeOrdersOpen")} #${order.order_number}`}
+                                                    accessibilityRole="button"
+                                                    onPress={() => {
+                                                        router.push({ pathname: ROUTES.payment, params: { orderId: String(order.id) } })
+                                                    }}
+                                                    style={({ pressed }) => [
+                                                        homeScreenStyles.activeOrderCard,
+                                                        pressed && homeScreenStyles.activeOrderCardPressed,
+                                                    ]}
+                                                >
+                                                    {previewItem?.image_url ? (
+                                                        <Image
+                                                            source={{ uri: previewItem.image_url }}
+                                                            style={homeScreenStyles.activeOrderImage}
+                                                            resizeMode="cover"
+                                                        />
+                                                    ) : (
+                                                        <View style={homeScreenStyles.activeOrderImagePlaceholder} />
+                                                    )}
+
+                                                    <View style={homeScreenStyles.activeOrderBody}>
+                                                        <View style={homeScreenStyles.activeOrderTopRow}>
+                                                            <Text numberOfLines={1} style={homeScreenStyles.activeOrderStatus}>
+                                                                {statusLabel}
+                                                            </Text>
+                                                            <Text numberOfLines={1} style={homeScreenStyles.activeOrderMeta}>
+                                                                #{order.order_number}
+                                                            </Text>
+                                                        </View>
+                                                        <Text numberOfLines={2} style={homeScreenStyles.activeOrderSubtitle}>
+                                                            {`${order.items_count} • ${subtitle}`}
+                                                        </Text>
+                                                    </View>
+                                                </Pressable>
+                                            )
+                                        })}
+                                    </ScrollView>
+                                )}
+                            </>
+                        ) : null}
+
+                        {shouldShowActiveOrdersSection && shouldShowDraftsSection ? (
+                            <View style={homeScreenStyles.ordersSeparator} />
+                        ) : null}
+
+                        {shouldShowDraftsSection ? (
+                            <>
+                                <View style={homeScreenStyles.ordersHeader}>
+                                    <Text style={homeScreenStyles.ordersTitle}>Продолжите оформление</Text>
+                                </View>
+
+                                {isLoadingOrderDrafts ? (
+                                    <View style={homeScreenStyles.orderLoadingWrap}>
+                                        <ActivityIndicator color={colors.primary} />
+                                    </View>
+                                ) : (
+                                    <ScrollView horizontal contentContainerStyle={homeScreenStyles.ordersRow} showsHorizontalScrollIndicator={false}>
+                                        {orderDrafts.map((draft) => {
+                                            const total = formatMoney(Number(draft.grand_total), draft.currency)
+                                            const deleting = isDraftDeleting(draft.id)
+                                            return (
+                                                <Pressable
+                                                    key={draft.id}
+                                                    accessibilityLabel={`${t("cart.recentDraftsOpenDraft")} ${draft.id}`}
+                                                    accessibilityRole="button"
+                                                    onPress={() => {
+                                                        router.push(`${ROUTES.checkout}?draftId=${draft.id}`)
+                                                    }}
+                                                    style={({ pressed }) => [homeScreenStyles.orderCard, pressed && homeScreenStyles.orderCardPressed]}
+                                                >
+                                                    <Pressable
+                                                        accessibilityLabel={t("cart.recentDraftsDeleteAction")}
+                                                        accessibilityRole="button"
+                                                        disabled={deleting}
+                                                        hitSlop={10}
+                                                        onPress={(event) => {
+                                                            event.stopPropagation()
+                                                            handleConfirmDeleteDraft(draft.id)
+                                                        }}
+                                                        style={({ pressed }) => [
+                                                            homeScreenStyles.orderCardDeleteBadge,
+                                                            deleting && homeScreenStyles.orderCardDeleteBadgeDisabled,
+                                                            pressed && homeScreenStyles.orderCardDeleteBadgePressed,
+                                                        ]}
+                                                    >
+                                                        <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+                                                            <Path
+                                                                d="M6 6L18 18"
+                                                                stroke="#E11D48"
+                                                                strokeLinecap="round"
+                                                                strokeWidth={3.2}
+                                                            />
+                                                            <Path
+                                                                d="M18 6L6 18"
+                                                                stroke="#E11D48"
+                                                                strokeLinecap="round"
+                                                                strokeWidth={3.2}
+                                                            />
+                                                        </Svg>
+                                                    </Pressable>
+                                                    <Text numberOfLines={1} style={homeScreenStyles.orderCardTitle}>
+                                                        #{draft.id}
+                                                    </Text>
+                                                    <Text numberOfLines={1} style={homeScreenStyles.orderCardMeta}>
+                                                        {draft.items_count} {t("cart.positionsLabel")}
+                                                    </Text>
+                                                    <Text numberOfLines={1} style={homeScreenStyles.orderCardTotal}>
+                                                        {total ?? "—"}
+                                                    </Text>
+                                                </Pressable>
+                                            )
+                                        })}
+                                    </ScrollView>
+                                )}
+                            </>
+                        ) : null}
                     </View>
                 ) : null}
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     Image,
     Platform,
@@ -11,21 +12,24 @@ import {
 } from "react-native"
 import { router } from "expo-router"
 import LottieView from "lottie-react-native"
+import { Path, Svg } from "react-native-svg"
 
 import { EmptyState } from "@/components/content/empty-state"
 import {
     getDraftDescription,
     getModeBadgeStyle,
     formatMoney,
+    getDraftUpdateErrorMessage,
 } from "@/components/content/recent-order-drafts-rail.utils"
 import { contentStyles } from "@/components/content/content.styles"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
+import { clearOrderDraftSnapshot, getOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { getOrderDraftTitle } from "@/hooks/order-draft/order-draft.utils"
 import { usePaginatedData } from "@/hooks/shared/use-paginated-data"
 import { useLanguage } from "@/providers/language-provider"
-import { getOrderDrafts } from "@/services/api/order-drafts"
+import { deleteOrderDraft, getOrderDrafts } from "@/services/api/order-drafts"
 import type { GetOrderDraftsQuery, OrderDraftRead } from "@/services/api/order-drafts.types"
 import { colors } from "@/theme/colors"
 import { DateRangeSheetField } from "./profile-history-screen"
@@ -56,12 +60,52 @@ function buildDraftsQuery(filters: ProfileDraftFilters, limit: number, offset: n
     }
 }
 
-function DraftHistoryCard({ draft }: { draft: OrderDraftRead }) {
+function DraftHistoryCard({ draft, onDraftDeleted }: { draft: OrderDraftRead, onDraftDeleted: (draftId: number) => void }) {
     const { t } = useLanguage()
     const title = getOrderDraftTitle(draft)
     const subtitle = draft.delivery_address?.full_address || getDraftDescription(draft)
     const totalLabel = formatMoney(Number(draft.grand_total), draft.currency) ?? draft.grand_total
     const visibleItems = draft.items.slice(0, 4)
+    const [isDeleting, setIsDeleting] = useState(false)
+
+    const handleDeleteDraft = async () => {
+        if (isDeleting) {
+            return
+        }
+
+        setIsDeleting(true)
+        try {
+            await deleteOrderDraft(draft.id)
+            if (getOrderDraftSnapshot()?.id === draft.id) {
+                clearOrderDraftSnapshot()
+            }
+            onDraftDeleted(draft.id)
+        } catch (deleteError) {
+            Alert.alert(getDraftUpdateErrorMessage(deleteError, t("cart.recentDraftsDeleteFailed")))
+        } finally {
+            setIsDeleting(false)
+        }
+    }
+
+    const handleConfirmDeleteDraft = () => {
+        Alert.alert(
+            t("cart.recentDraftsDeleteConfirmTitle"),
+            t("cart.recentDraftsDeleteConfirmMessage"),
+            [
+                {
+                    text: t("common.cancel"),
+                    style: "cancel",
+                },
+                {
+                    text: t("cart.recentDraftsDeleteAction"),
+                    style: "destructive",
+                    onPress: () => {
+                        void handleDeleteDraft()
+                    },
+                },
+            ],
+        )
+    }
 
     return (
         <Pressable
@@ -75,6 +119,37 @@ function DraftHistoryCard({ draft }: { draft: OrderDraftRead }) {
                 pressed && profileHistoryScreenStyles.historyCardPressed,
             ]}
         >
+            <Pressable
+                accessibilityLabel={t("cart.recentDraftsDeleteAction")}
+                accessibilityRole="button"
+                disabled={isDeleting}
+                hitSlop={10}
+                onPress={(event) => {
+                    event.stopPropagation()
+                    handleConfirmDeleteDraft()
+                }}
+                style={({ pressed }) => [
+                    profileHistoryScreenStyles.historyCardDeleteBadge,
+                    isDeleting && profileHistoryScreenStyles.historyCardDeleteBadgeDisabled,
+                    pressed && profileHistoryScreenStyles.historyCardDeleteBadgePressed,
+                ]}
+            >
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+                    <Path
+                        d="M6 6L18 18"
+                        stroke="#E11D48"
+                        strokeLinecap="round"
+                        strokeWidth={3.4}
+                    />
+                    <Path
+                        d="M18 6L6 18"
+                        stroke="#E11D48"
+                        strokeLinecap="round"
+                        strokeWidth={3.4}
+                    />
+                </Svg>
+            </Pressable>
+
             <View style={profileHistoryScreenStyles.historyCardCollage}>
                 {visibleItems.map((item, index) => (
                     <View
@@ -142,6 +217,7 @@ export default function ProfileDraftsScreen() {
     const emptyDraftsSticker = STICKERS.orderHistoryEmpty || STICKERS.favoritesEmpty
     const listRef = useRef<FlatList<OrderDraftRead> | null>(null)
     const [filters, setFilters] = useState<ProfileDraftFilters>(EMPTY_FILTERS)
+    const [deletedDraftIds, setDeletedDraftIds] = useState<number[]>([])
     const isWeb = Platform.OS === "web"
     const isDesktop = isWeb && windowWidth >= 1100
     const isTablet = isWeb && windowWidth >= 760
@@ -159,9 +235,17 @@ export default function ProfileDraftsScreen() {
         getKey: (item) => String(item.id),
         pageSize: PAGE_SIZE,
     })
+    const visibleDrafts = useMemo(
+        () => items.filter((draft) => !deletedDraftIds.includes(draft.id)),
+        [deletedDraftIds, items],
+    )
 
     useEffect(() => {
         listRef.current?.scrollToOffset({ offset: 0, animated: false })
+    }, [filters.createdFrom, filters.createdTo])
+
+    useEffect(() => {
+        setDeletedDraftIds([])
     }, [filters.createdFrom, filters.createdTo])
 
     const emptyStateDescription = useMemo(
@@ -174,10 +258,15 @@ export default function ProfileDraftsScreen() {
     const renderItem = useCallback(
         ({ item }: { item: OrderDraftRead }) => (
             <View style={profileHistoryScreenStyles.cardWrap}>
-                <DraftHistoryCard draft={item} />
+                <DraftHistoryCard
+                    draft={item}
+                    onDraftDeleted={(draftId) => {
+                        setDeletedDraftIds((currentIds) => [...currentIds, draftId])
+                    }}
+                />
             </View>
         ),
-        [],
+        [setDeletedDraftIds],
     )
 
     return (
@@ -186,9 +275,9 @@ export default function ProfileDraftsScreen() {
                 ref={listRef}
                 contentContainerStyle={[
                     profileHistoryScreenStyles.listContent,
-                    items.length === 0 ? profileHistoryScreenStyles.listContentEmpty : null,
+                    visibleDrafts.length === 0 ? profileHistoryScreenStyles.listContentEmpty : null,
                 ]}
-                data={items}
+                data={visibleDrafts}
                 keyExtractor={(item) => String(item.id)}
                 keyboardShouldPersistTaps="handled"
                 ListEmptyComponent={

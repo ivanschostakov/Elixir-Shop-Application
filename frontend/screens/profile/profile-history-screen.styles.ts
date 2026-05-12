@@ -46,10 +46,30 @@ export const profileHistoryScreenStyles = StyleSheet.create({
         gap: spacing.md,
         overflow: "hidden",
         padding: 12,
+        position: "relative",
     },
     historyCardPressed: {
         opacity: 0.86,
         transform: [{ scale: 0.99 }],
+    },
+    historyCardDeleteBadge: {
+        alignItems: "center",
+        backgroundColor: "#FDECEF",
+        borderRadius: 999,
+        borderWidth: 0,
+        height: 22,
+        justifyContent: "center",
+        position: "absolute",
+        right: 12,
+        top: 12,
+        width: 22,
+        zIndex: 2,
+    },
+    historyCardDeleteBadgePressed: {
+        opacity: 0.8,
+    },
+    historyCardDeleteBadgeDisabled: {
+        opacity: 0.5,
     },
     historyCardCollage: {
         aspectRatio: 1,

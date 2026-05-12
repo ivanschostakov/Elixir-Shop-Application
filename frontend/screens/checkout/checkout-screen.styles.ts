@@ -203,7 +203,7 @@ export const checkoutScreenStyles = StyleSheet.create({
     },
     recipientEditorSheet: {
         gap: 18,
-        paddingBottom: 20,
+        paddingBottom: 0,
         paddingTop: 12,
     },
     recipientEditorKeyboardAvoiding: {

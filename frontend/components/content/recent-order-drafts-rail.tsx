@@ -29,7 +29,6 @@ import { getOrderDraftTitle } from "@/hooks/order-draft/order-draft.utils"
 import { useLanguage } from "@/providers/language-provider"
 import { getBasketErrorMessage } from "@/screens/cart/cart-screen.utils"
 import { deleteOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
-import { colors } from "@/theme/colors"
 import { recentOrderDraftsRailStyles } from "./recent-order-drafts-rail.styles"
 
 function RecentOrderDraftCard({ draft, onDraftUpdated, onDraftDeleted }: RecentOrderDraftCardProps) {
@@ -170,39 +169,16 @@ function RecentOrderDraftCard({ draft, onDraftUpdated, onDraftDeleted }: RecentO
             >
                 <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
                     <Path
-                        d="M4 6H20L18.4199 20.2209C18.3074 21.2337 17.4512 22 16.4321 22H7.56786C6.54876 22 5.69264 21.2337 5.5801 20.2209L4 6Z"
-                        stroke={colors.text}
+                        d="M6 6L18 18"
+                        stroke="#E11D48"
                         strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
+                        strokeWidth={3.2}
                     />
                     <Path
-                        d="M7.34491 3.14716C7.67506 2.44685 8.37973 2 9.15396 2H14.846C15.6203 2 16.3249 2.44685 16.6551 3.14716L18 6H6L7.34491 3.14716Z"
-                        stroke={colors.text}
+                        d="M18 6L6 18"
+                        stroke="#E11D48"
                         strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                    />
-                    <Path
-                        d="M2 6H22"
-                        stroke={colors.text}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                    />
-                    <Path
-                        d="M10 11V16"
-                        stroke={colors.text}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                    />
-                    <Path
-                        d="M14 11V16"
-                        stroke={colors.text}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
+                        strokeWidth={3.2}
                     />
                 </Svg>
             </Pressable>

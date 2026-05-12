@@ -1,4 +1,4 @@
-import { Animated, View } from "react-native"
+import { Animated, KeyboardAvoidingView, Platform, View } from "react-native"
 import { usePathname } from "expo-router"
 import { SafeAreaView } from "react-native-safe-area-context"
 
@@ -62,11 +62,17 @@ export default function StickyFooter({ template }: StickyFooterProps) {
         return (
             <Animated.View style={[stickyFooterStyles.footerBase, stickyFooterStyles.elevatedSurface, entranceStyle]}>
                 <View style={stickyFooterStyles.stack}>
-                    <View style={stickyFooterStyles.actionSection}>
-                        {showCustomAction
-                            ? template.slots?.footer
-                            : <BottomActionTemplate variant={showProductAction ? "product" : "basket"} />}
-                    </View>
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === "ios" ? "padding" : "height"}
+                        keyboardVerticalOffset={0}
+                        style={stickyFooterStyles.actionKeyboardLayer}
+                    >
+                        <View style={stickyFooterStyles.actionSection}>
+                            {showCustomAction
+                                ? template.slots?.footer
+                                : <BottomActionTemplate variant={showProductAction ? "product" : "basket"} />}
+                        </View>
+                    </KeyboardAvoidingView>
                     <BottomNavTemplate pathname={pathname} />
                 </View>
             </Animated.View>

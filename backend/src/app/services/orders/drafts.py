@@ -31,6 +31,7 @@ from .draft_normalization import (
     _build_new_recipient_data,
     _normalize_order_draft_text,
 )
+from .common import _normalize_phone
 
 
 async def _get_or_create_delivery_recipient(session: AsyncSession, *, data: DeliveryRecipientCreate):
@@ -54,6 +55,27 @@ async def _get_or_create_delivery_address(session: AsyncSession, *, data: Delive
     )
     if address is not None: return address
     return await create_delivery_address(session, data, commit=False)
+
+
+def _is_self_like_recipient(*, recipient, user: User) -> bool:
+    recipient_name = str(recipient.name or "").strip().lower()
+    recipient_surname = str(recipient.surname or "").strip().lower()
+    recipient_email = str(recipient.email or "").strip().lower()
+    recipient_phone = _normalize_phone(recipient.phone) or ""
+    user_name = str(user.name or "").strip().lower()
+    user_surname = str(user.surname or "").strip().lower()
+    user_email = str(user.email or "").strip().lower()
+    user_phone = _normalize_phone(user.phone_number) or ""
+    return (
+        recipient_name == user_name
+        and recipient_surname == user_surname
+        and recipient_email == user_email
+        and recipient_phone == user_phone
+    )
+
+
+def _filter_self_like_recipients(*, recipients: list, user: User) -> list:
+    return [recipient for recipient in recipients if not _is_self_like_recipient(recipient=recipient, user=user)]
 
 
 async def create_order_draft_for_user(session: AsyncSession, *, user: User, payload) -> OrderDraft:
@@ -221,8 +243,15 @@ async def get_order_draft_checkout_options_for_user(session: AsyncSession, *, us
     if draft is None: return None
 
     addresses = await get_delivery_addresses(session, user_id=user.id, limit=limit)
-    recipients = await get_delivery_recipients(session, user.id, limit=limit)
-    if draft.recipient is not None and not any(recipient.id == draft.recipient.id for recipient in recipients):
+    recipients = _filter_self_like_recipients(
+        recipients=await get_delivery_recipients(session, user.id, limit=limit),
+        user=user,
+    )
+    if (
+        draft.recipient is not None
+        and not _is_self_like_recipient(recipient=draft.recipient, user=user)
+        and not any(recipient.id == draft.recipient.id for recipient in recipients)
+    ):
         recipients.insert(0, draft.recipient)
 
     return OrderDraftCheckoutOptionsRead(

@@ -1481,7 +1481,7 @@ export default function CheckoutScreen() {
 
                         <KeyboardAvoidingView
                             behavior={Platform.OS === "ios" ? "padding" : "height"}
-                            keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+                            keyboardVerticalOffset={0}
                             style={checkoutScreenStyles.recipientEditorKeyboardAvoiding}
                         >
                             <View style={[contentStyles.browsePickerSheet, checkoutScreenStyles.recipientEditorSheet]}>

@@ -25,6 +25,7 @@ from src.app.services.orders.fulfillment_payloads import normalize_address_for_c
 from src.app.services.recommendations import record_purchase
 from src.app.services.security import hash_password
 from src.database.crud import create_delivery_address, create_delivery_recipient, create_order, get_order_by_id
+from src.database.crud import get_delivery_recipient_by_fields
 from src.database.crud.auth.user import create_user, get_user_by_email, get_user_by_username
 from src.database.models import OrderItem, Product, User, Variant
 from src.database.schemas import (
@@ -207,17 +208,23 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
     )
 
     delivery_address = await create_delivery_address(session, _delivery_address_create(user.id, payload.delivery_address), commit=False)
-    recipient = await create_delivery_recipient(
-        session,
-        DeliveryRecipientCreate(
-            user_id=user.id,
-            name=payload.recipient.name,
-            surname=payload.recipient.surname,
-            phone=payload.recipient.phone,
-            email=normalized_email,
-        ),
-        commit=False,
+    recipient_data = DeliveryRecipientCreate(
+        user_id=user.id,
+        name=payload.recipient.name,
+        surname=payload.recipient.surname,
+        phone=payload.recipient.phone,
+        email=normalized_email,
     )
+    recipient = await get_delivery_recipient_by_fields(
+        session,
+        user_id=recipient_data.user_id,
+        name=recipient_data.name,
+        surname=recipient_data.surname,
+        phone=recipient_data.phone,
+        email=recipient_data.email,
+    )
+    if recipient is None:
+        recipient = await create_delivery_recipient(session, recipient_data, commit=False)
 
     basket_subtotal = Decimal("0.00")
     total_quantity = 0

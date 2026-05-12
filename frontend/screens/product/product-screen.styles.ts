@@ -331,7 +331,7 @@ export const productScreenStyle = StyleSheet.create({
     infoTabsRail: {
         flex: 1,
         minWidth: 0,
-        paddingBottom: 6,
+        paddingBottom: 3,
         position: "relative",
     },
     infoTabsRow: {
@@ -344,7 +344,7 @@ export const productScreenStyle = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         minHeight: 32,
-        paddingBottom: 6,
+        paddingBottom: 2,
         paddingHorizontal: 2,
         paddingTop: 2,
     },

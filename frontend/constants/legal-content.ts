@@ -1,6 +1,20 @@
 import type { RequisiteRead } from "@/types/requisite"
 
-const REQUISITES_SOCIALS_MARKDOWN = `## Соцсети
+export const LEGAL_CONTACTS_MARKDOWN = `# Контакты
+
+Мы всегда рады помочь вам и ответить на все ваши вопросы.
+
+## Телефон
++7 961 038 79 77
++7 964 951 90 12
+
+## E-mail
+elixirpeptide@yandex.ru
+
+## Режим работы
+Пн - Вс: 10:00 - 20:00
+
+## Соцсети
 
 ### Telegram чат
 @peptide_rus
@@ -18,21 +32,7 @@ const REQUISITES_SOCIALS_MARKDOWN = `## Соцсети
 @elixir.peptide
 
 ### Сайт
-https://elixirpeptide.ru`
-
-export const LEGAL_CONTACTS_MARKDOWN = `# Контакты
-
-Мы всегда рады помочь вам и ответить на все ваши вопросы.
-
-## Телефон
-+7 961 038 79 77
-+7 964 951 90 12
-
-## E-mail
-elixirpeptide@yandex.ru
-
-## Режим работы
-Пн - Вс: 10:00 - 20:00
+https://elixirpeptide.ru
 `
 
 export const LEGAL_OFFER_MARKDOWN = `# Публичная оферта
@@ -78,7 +78,7 @@ export const LEGAL_OFFER_MARKDOWN = `# Публичная оферта
 
 export function buildRequisitesMarkdown(requisites: RequisiteRead[]): string {
     if (requisites.length === 0) {
-        return `# Реквизиты\n\nРеквизиты пока не загружены.\n\n${REQUISITES_SOCIALS_MARKDOWN}`
+        return "# Реквизиты\n\nРеквизиты пока не загружены."
     }
 
     const sections = requisites.map((requisite) => {
@@ -88,5 +88,5 @@ export function buildRequisitesMarkdown(requisites: RequisiteRead[]): string {
         return `## ${requisite.title}\n\n${pairs}`
     })
 
-    return `# Реквизиты\n\n${sections.join("\n\n")}\n\n${REQUISITES_SOCIALS_MARKDOWN}`
+    return `# Реквизиты\n\n${sections.join("\n\n")}`
 }

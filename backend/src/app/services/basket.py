@@ -39,11 +39,33 @@ from src.database.schemas import (
 from src.product_media import build_products_media_url
 
 from .orders.draft_normalization import _build_new_delivery_address_data, _build_new_recipient_data
+from .orders.common import _normalize_phone
 
 
 def _product_image_url(request: Request, product) -> str: return build_products_media_url(str(request.base_url), product.image_path)
 def _variant_image_url(request: Request, variant) -> str: return build_products_media_url(str(request.base_url), variant.image_path)
 def _basket_conflict(detail: str) -> HTTPException: return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+
+
+def _is_self_like_recipient(*, recipient, user: User) -> bool:
+    recipient_name = str(recipient.name or "").strip().lower()
+    recipient_surname = str(recipient.surname or "").strip().lower()
+    recipient_email = str(recipient.email or "").strip().lower()
+    recipient_phone = _normalize_phone(recipient.phone) or ""
+    user_name = str(user.name or "").strip().lower()
+    user_surname = str(user.surname or "").strip().lower()
+    user_email = str(user.email or "").strip().lower()
+    user_phone = _normalize_phone(user.phone_number) or ""
+    return (
+        recipient_name == user_name
+        and recipient_surname == user_surname
+        and recipient_email == user_email
+        and recipient_phone == user_phone
+    )
+
+
+def _filter_self_like_recipients(*, recipients: list, user: User) -> list:
+    return [recipient for recipient in recipients if not _is_self_like_recipient(recipient=recipient, user=user)]
 
 
 def serialize_basket(request: Request, basket: Basket) -> BasketRead:
@@ -138,11 +160,18 @@ async def _get_serialized_basket(request: Request, db: AsyncSession, user_id: in
 async def get_basket_checkout_options_for_user(db: AsyncSession, *, user: User, limit: int = 20) -> OrderDraftCheckoutOptionsRead:
     basket = await _ensure_basket(db, user.id)
     addresses = await get_delivery_addresses(db, user_id=user.id, limit=limit)
-    recipients = await get_delivery_recipients(db, user.id, limit=limit)
+    recipients = _filter_self_like_recipients(
+        recipients=await get_delivery_recipients(db, user.id, limit=limit),
+        user=user,
+    )
 
     if basket.delivery_address is not None and not any(address.id == basket.delivery_address.id for address in addresses):
         addresses.insert(0, basket.delivery_address)
-    if basket.recipient is not None and not any(recipient.id == basket.recipient.id for recipient in recipients):
+    if (
+        basket.recipient is not None
+        and not _is_self_like_recipient(recipient=basket.recipient, user=user)
+        and not any(recipient.id == basket.recipient.id for recipient in recipients)
+    ):
         recipients.insert(0, basket.recipient)
 
     return OrderDraftCheckoutOptionsRead(

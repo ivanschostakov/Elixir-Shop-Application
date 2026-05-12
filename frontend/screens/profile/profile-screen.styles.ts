@@ -187,6 +187,9 @@ export const ProfileScreenStyles = StyleSheet.create({
         borderBottomLeftRadius: 0,
         borderBottomRightRadius: 0,
     },
+    sectionCardFlat: {
+        borderRadius: 0,
+    },
     sectionTitle: {
         color: colors.text,
         fontSize: 20,

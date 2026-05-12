@@ -20,13 +20,10 @@ import type { PersonalDataUpdatePayload } from "@/services/auth/auth.types"
 import { getErrorMessage } from "@/utils/errors"
 
 type PersonalDataForm = {
-    username: string
     name: string
     surname: string
     email: string
     phoneNumber: string
-    password: string
-    repeatPassword: string
 }
 
 function normalizeFormText(value: string) {
@@ -37,13 +34,10 @@ export default function PersonalDataScreen() {
     const { t } = useLanguage()
     const { updatePersonalData, user } = useAuth()
     const [form, setForm] = useState<PersonalDataForm>({
-        username: user?.username ?? "",
         name: user?.name ?? "",
         surname: user?.surname ?? "",
         email: user?.email ?? "",
         phoneNumber: user?.phoneNumber ?? "",
-        password: "",
-        repeatPassword: "",
     })
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
     const [isSaving, setIsSaving] = useState(false)
@@ -51,15 +45,12 @@ export default function PersonalDataScreen() {
     useEffect(() => {
         setForm((current) => ({
             ...current,
-            username: user?.username ?? "",
             name: user?.name ?? "",
             surname: user?.surname ?? "",
             email: user?.email ?? "",
             phoneNumber: user?.phoneNumber ?? "",
-            password: "",
-            repeatPassword: "",
         }))
-    }, [user?.email, user?.name, user?.phoneNumber, user?.surname, user?.username])
+    }, [user?.email, user?.name, user?.phoneNumber, user?.surname])
 
     const payload = useMemo<PersonalDataUpdatePayload | null>(() => {
         if (!user) {
@@ -67,16 +58,11 @@ export default function PersonalDataScreen() {
         }
 
         const nextPayload: PersonalDataUpdatePayload = {}
-        const username = normalizeFormText(form.username)
         const name = normalizeFormText(form.name)
         const surname = normalizeFormText(form.surname)
         const email = normalizeFormText(form.email).toLowerCase()
         const phoneNumber = normalizeFormText(form.phoneNumber)
-        const password = form.password
 
-        if (username && username !== user.username) {
-            nextPayload.username = username
-        }
         if (name && name !== user.name) {
             nextPayload.name = name
         }
@@ -89,9 +75,6 @@ export default function PersonalDataScreen() {
         if (phoneNumber !== (user.phoneNumber ?? "")) {
             nextPayload.phone_number = phoneNumber || null
         }
-        if (password) {
-            nextPayload.password = password
-        }
 
         return Object.keys(nextPayload).length ? nextPayload : null
     }, [form, user])
@@ -101,20 +84,16 @@ export default function PersonalDataScreen() {
             return false
         }
 
-        const username = normalizeFormText(form.username)
         const name = normalizeFormText(form.name)
         const surname = normalizeFormText(form.surname)
         const email = normalizeFormText(form.email).toLowerCase()
         const phoneNumber = normalizeFormText(form.phoneNumber)
 
         return (
-            username !== user.username
-            || name !== user.name
+            name !== user.name
             || surname !== user.surname
             || email !== user.email.toLowerCase()
             || phoneNumber !== (user.phoneNumber ?? "")
-            || form.password.length > 0
-            || form.repeatPassword.length > 0
         )
     }, [form, user])
 
@@ -130,26 +109,13 @@ export default function PersonalDataScreen() {
             return
         }
 
-        const username = normalizeFormText(form.username)
         const name = normalizeFormText(form.name)
         const surname = normalizeFormText(form.surname)
         const email = normalizeFormText(form.email)
 
-        if (!username || !name || !surname || !email) {
+        if (!name || !surname || !email) {
             setErrorMessage(t("profile.personalData.required"))
             return
-        }
-
-        if (form.password || form.repeatPassword) {
-            if (form.password.length < 8) {
-                setErrorMessage(t("auth.error.passwordLength"))
-                return
-            }
-
-            if (form.password !== form.repeatPassword) {
-                setErrorMessage(t("auth.error.passwordMismatch"))
-                return
-            }
         }
 
         if (!payload) {
@@ -162,11 +128,6 @@ export default function PersonalDataScreen() {
 
         try {
             await updatePersonalData(payload)
-            setForm((current) => ({
-                ...current,
-                password: "",
-                repeatPassword: "",
-            }))
             Alert.alert(t("profile.personalData.savedTitle"), t("profile.personalData.savedMessage"))
         } catch (saveError) {
             setErrorMessage(getErrorMessage(saveError, t("profile.personalData.saveFailed")))
@@ -222,7 +183,7 @@ export default function PersonalDataScreen() {
                 scrollViewStyle={ProfileScreenStyles.container}
                 style={ProfileScreenStyles.screen}
             >
-                <View style={ProfileScreenStyles.sectionCard}>
+                <View style={[ProfileScreenStyles.sectionCard, ProfileScreenStyles.sectionCardFlat]}>
                     <Text style={ProfileScreenStyles.sectionDescription}>{t("profile.personalData.subtitle")}</Text>
 
                     {errorMessage ? (
@@ -230,19 +191,6 @@ export default function PersonalDataScreen() {
                             <Text style={ProfileScreenStyles.errorText}>{errorMessage}</Text>
                         </View>
                     ) : null}
-
-                    <View style={ProfileScreenStyles.formGroup}>
-                        <Text style={ProfileScreenStyles.formLabel}>{t("profile.personalData.loginLabel")}</Text>
-                        <TextInput
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            onChangeText={updateField("username")}
-                            placeholder={t("auth.register.usernamePlaceholder")}
-                            placeholderTextColor="#94A3B8"
-                            style={ProfileScreenStyles.formInput}
-                            value={form.username}
-                        />
-                    </View>
 
                     <View style={ProfileScreenStyles.formGroup}>
                         <Text style={ProfileScreenStyles.formLabel}>{t("profile.personalData.nameLabel")}</Text>
@@ -294,36 +242,6 @@ export default function PersonalDataScreen() {
                             style={ProfileScreenStyles.formInput}
                             textContentType="telephoneNumber"
                             value={form.phoneNumber}
-                        />
-                    </View>
-
-                    <View style={ProfileScreenStyles.formGroup}>
-                        <Text style={ProfileScreenStyles.formLabel}>{t("profile.personalData.passwordLabel")}</Text>
-                        <TextInput
-                            autoCapitalize="none"
-                            autoComplete="new-password"
-                            onChangeText={updateField("password")}
-                            placeholder={t("profile.personalData.passwordPlaceholder")}
-                            placeholderTextColor="#94A3B8"
-                            secureTextEntry
-                            style={ProfileScreenStyles.formInput}
-                            textContentType="newPassword"
-                            value={form.password}
-                        />
-                    </View>
-
-                    <View style={ProfileScreenStyles.formGroup}>
-                        <Text style={ProfileScreenStyles.formLabel}>{t("profile.personalData.repeatPasswordLabel")}</Text>
-                        <TextInput
-                            autoCapitalize="none"
-                            autoComplete="new-password"
-                            onChangeText={updateField("repeatPassword")}
-                            placeholder={t("profile.personalData.repeatPasswordPlaceholder")}
-                            placeholderTextColor="#94A3B8"
-                            secureTextEntry
-                            style={ProfileScreenStyles.formInput}
-                            textContentType="newPassword"
-                            value={form.repeatPassword}
                         />
                     </View>
 
