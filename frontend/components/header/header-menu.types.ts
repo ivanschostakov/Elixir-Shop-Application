@@ -12,11 +12,12 @@ export type HeaderMenuProps = {
     onOpenRequisites: () => void
     onSignIn: () => void
     onSignOut: () => Promise<void>
-    onToggleLanguage?: () => void
+    onSetLanguage?: (language: Language) => void
     onToggleTheme?: () => void
     onToggle: () => void
     styles: AppHeaderStyles
     t: LanguageContextValue["t"]
     language?: Language
+    accentColor?: string
     themeName?: ThemeName
 }

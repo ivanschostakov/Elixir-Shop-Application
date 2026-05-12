@@ -307,6 +307,22 @@ export const getHeaderStyles = (topInset: number, windowHeight: number) =>
             justifyContent: "center",
             width: 32,
         },
+        languageToggleTrack: {
+            width: 116,
+            paddingHorizontal: 3,
+            flexDirection: "row",
+            justifyContent: "space-between",
+        },
+        languageToggleOption: {
+            alignItems: "center",
+            borderRadius: 13,
+            height: 28,
+            justifyContent: "center",
+            width: 34,
+        },
+        languageToggleOptionActive: {
+            backgroundColor: colors.surface,
+        },
         languageToggleFlag: {
             fontSize: 18,
             lineHeight: 22,

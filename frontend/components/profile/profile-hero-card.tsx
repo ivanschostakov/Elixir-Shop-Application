@@ -5,6 +5,7 @@ import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
 import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-value"
 import type { ProfileHeroCardProps } from "@/components/profile/profile-hero-card.types"
 import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
 
 export function ProfileHeroCard({
     avatarUri,
@@ -19,12 +20,13 @@ export function ProfileHeroCard({
 }: ProfileHeroCardProps) {
     const [isAvatarViewerOpen, setIsAvatarViewerOpen] = useState(false)
     const { t } = useLanguage()
+    const { accentPalette } = useTheme()
     const { handleCopy } = useCopyableProfileValue({ t })
     const usernameValue = username ? `@${username}` : null
 
     return (
         <>
-            <View style={ProfileScreenStyles.heroCard}>
+            <View style={[ProfileScreenStyles.heroCard, { backgroundColor: accentPalette.primary }]}>
                 <View style={ProfileScreenStyles.heroGlow} />
 
                 <View style={ProfileScreenStyles.heroTopRow}>
@@ -45,7 +47,9 @@ export function ProfileHeroCard({
                                     resizeMode="cover"
                                 />
                             ) : (
-                                <Text style={ProfileScreenStyles.avatarText}>{initials || "U"}</Text>
+                                <Text style={[ProfileScreenStyles.avatarText, { color: accentPalette.primary }]}>
+                                    {initials || "U"}
+                                </Text>
                             )}
                         </View>
                     </Pressable>
@@ -139,6 +143,7 @@ export function ProfileHeroCard({
                                 }}
                                 style={({ pressed }) => [
                                     ProfileScreenStyles.avatarViewerPrimaryAction,
+                                    { backgroundColor: accentPalette.primary },
                                     (pressed || isUpdatingAvatar) && ProfileScreenStyles.avatarViewerActionPressed,
                                 ]}
                             >

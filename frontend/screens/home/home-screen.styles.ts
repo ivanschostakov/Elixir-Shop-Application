@@ -204,6 +204,11 @@ export const homeScreenStyles = StyleSheet.create({
         height: 36,
         width: 36,
     },
+    activeOrderImageSingle: {
+        width: 76,
+        height: 76,
+        borderRadius: 12,
+    },
     activeOrderImagePlaceholder: {
         backgroundColor: "#253245",
         borderRadius: 9,

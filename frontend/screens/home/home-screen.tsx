@@ -603,6 +603,8 @@ export default function HomeScreen() {
                                         {activeOrders.map((order) => {
                                             const statusDisplay = orderStatusColors[order.status_code] ?? orderStatusColors.created
                                             const subtitle = order.delivery_string || order.delivery_address?.full_address || "—"
+                                            const orderItemsPreview = order.items.slice(0, 4)
+                                            const isSingleOrderImage = orderItemsPreview.length <= 1
 
                                             return (
                                                 <Pressable
@@ -618,24 +620,35 @@ export default function HomeScreen() {
                                                     ]}
                                                 >
                                                     <View style={homeScreenStyles.activeOrderImages}>
-                                                        {order.items.length ? (
-                                                            order.items.map((item) => (
+                                                        {orderItemsPreview.length ? (
+                                                            orderItemsPreview.map((item) => (
                                                                 item.image_url ? (
                                                                     <Image
                                                                         key={`${order.id}-${item.id}-${item.variant_id}`}
                                                                         source={{ uri: item.image_url }}
-                                                                        style={homeScreenStyles.activeOrderImage}
-                                                                        resizeMode="cover"
+                                                                        style={[
+                                                                            homeScreenStyles.activeOrderImage,
+                                                                            isSingleOrderImage && homeScreenStyles.activeOrderImageSingle,
+                                                                        ]}
+                                                                        resizeMode="contain"
                                                                     />
                                                                 ) : (
                                                                     <View
                                                                         key={`${order.id}-${item.id}-${item.variant_id}`}
-                                                                        style={homeScreenStyles.activeOrderImagePlaceholder}
+                                                                        style={[
+                                                                            homeScreenStyles.activeOrderImagePlaceholder,
+                                                                            isSingleOrderImage && homeScreenStyles.activeOrderImageSingle,
+                                                                        ]}
                                                                     />
                                                                 )
                                                             ))
                                                         ) : (
-                                                            <View style={homeScreenStyles.activeOrderImagePlaceholder} />
+                                                            <View
+                                                                style={[
+                                                                    homeScreenStyles.activeOrderImagePlaceholder,
+                                                                    homeScreenStyles.activeOrderImageSingle,
+                                                                ]}
+                                                            />
                                                         )}
                                                     </View>
 

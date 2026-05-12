@@ -4,6 +4,47 @@ const darkPage = "#070A0F"
 const darkSurface = "#111827"
 const darkGray = "#1F2937"
 export const archivedPrimaryBlue = "rgb(31, 100, 155)"
+export type ThemeAccentName = "blue" | "teal" | "emerald" | "rose" | "amber"
+
+export type ThemeAccentPalette = {
+    primary: string
+    primaryPressed: string
+    primaryMuted: string
+    onPrimary: string
+}
+
+export const themeAccentPalettes: Record<ThemeAccentName, ThemeAccentPalette> = {
+    blue: {
+        primary: archivedPrimaryBlue,
+        primaryPressed: "#1B4E7B",
+        primaryMuted: "rgba(31, 100, 155, 0.16)",
+        onPrimary: "#FFFFFF",
+    },
+    teal: {
+        primary: "#0F766E",
+        primaryPressed: "#115E59",
+        primaryMuted: "rgba(15, 118, 110, 0.16)",
+        onPrimary: "#FFFFFF",
+    },
+    emerald: {
+        primary: "#059669",
+        primaryPressed: "#047857",
+        primaryMuted: "rgba(5, 150, 105, 0.16)",
+        onPrimary: "#FFFFFF",
+    },
+    rose: {
+        primary: "#E11D48",
+        primaryPressed: "#BE123C",
+        primaryMuted: "rgba(225, 29, 72, 0.16)",
+        onPrimary: "#FFFFFF",
+    },
+    amber: {
+        primary: "#D97706",
+        primaryPressed: "#B45309",
+        primaryMuted: "rgba(217, 119, 6, 0.17)",
+        onPrimary: "#FFFFFF",
+    },
+}
 
 export const lightColors = {
     background: "#FFFFFF",

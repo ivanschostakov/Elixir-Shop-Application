@@ -9,7 +9,7 @@ import type { LanguageProviderProps } from "@/providers/language-provider.types"
 const LANGUAGE_STORAGE_KEY = "elixirpeptide-language"
 
 function isLanguage(value: string | null): value is Language {
-    return value === "ru" || value === "en"
+    return value === "ru" || value === "en" || value === "kz"
 }
 
 function getWebStorage() {
@@ -22,6 +22,10 @@ function getWebStorage() {
 
 function getDeviceLanguage(): Language {
     const locale = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase()
+    if (locale.startsWith("kk") || locale.startsWith("kz")) {
+        return "kz"
+    }
+
     return locale.startsWith("en") ? "en" : "ru"
 }
 
@@ -79,7 +83,7 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
     }, [])
 
     const toggleLanguage = useCallback(() => {
-        setLanguage(language === "en" ? "ru" : "en")
+        setLanguage(language === "ru" ? "en" : language === "en" ? "kz" : "ru")
     }, [language, setLanguage])
 
     const t = useCallback((key: Parameters<typeof translate>[0]) => translate(key, language), [language])

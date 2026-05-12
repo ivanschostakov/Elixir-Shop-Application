@@ -3,7 +3,66 @@ import { Alert } from "react-native"
 import * as ImagePicker from "expo-image-picker"
 
 import type { UseProfileAvatarParams } from "@/hooks/profile/use-profile-avatar.types"
+import { API_BASE_URL } from "@/services/api/constants"
 import { deleteMyAvatar, getMyAvatar, uploadMyAvatar } from "@/services/api/users"
+
+const SUPPORTED_AVATAR_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
+
+function getApiOrigin() {
+    try {
+        return new URL(API_BASE_URL).origin
+    } catch {
+        return ""
+    }
+}
+
+function resolveAvatarUri(uri: string | null | undefined) {
+    if (!uri) {
+        return null
+    }
+
+    const trimmedUri = uri.trim()
+    if (!trimmedUri) {
+        return null
+    }
+
+    const apiOrigin = getApiOrigin()
+    if (!apiOrigin) {
+        return trimmedUri
+    }
+
+    if (trimmedUri.startsWith("/")) {
+        return `${apiOrigin}${trimmedUri}`
+    }
+
+    try {
+        const avatarUrl = new URL(trimmedUri)
+        const apiBaseUrl = new URL(apiOrigin)
+
+        if (avatarUrl.pathname.startsWith("/media/avatars/")) {
+            avatarUrl.protocol = apiBaseUrl.protocol
+            avatarUrl.host = apiBaseUrl.host
+            return avatarUrl.toString()
+        }
+
+        return trimmedUri
+    } catch {
+        return trimmedUri
+    }
+}
+
+function normalizeAvatarMimeType(mimeType: string | null | undefined) {
+    if (!mimeType) {
+        return "image/jpeg"
+    }
+
+    const normalizedMimeType = mimeType.toLowerCase()
+    if (SUPPORTED_AVATAR_MIME_TYPES.has(normalizedMimeType)) {
+        return normalizedMimeType
+    }
+
+    return "image/jpeg"
+}
 
 export function useProfileAvatar({ userId, t }: UseProfileAvatarParams) {
     const [avatarUri, setAvatarUri] = useState<string | null>(null)
@@ -23,7 +82,7 @@ export function useProfileAvatar({ userId, t }: UseProfileAvatarParams) {
                 const avatar = await getMyAvatar()
 
                 if (isMounted) {
-                    setAvatarUri(avatar.image_url)
+                    setAvatarUri(resolveAvatarUri(avatar.image_url))
                 }
             } catch {
                 if (isMounted) {
@@ -120,12 +179,17 @@ export function useProfileAvatar({ userId, t }: UseProfileAvatarParams) {
             const uploadedImage = await uploadMyAvatar({
                 uri: nextAvatarUri,
                 fileName: asset?.fileName,
-                mimeType: asset?.mimeType,
+                mimeType: normalizeAvatarMimeType(asset?.mimeType),
             })
 
-            setAvatarUri(uploadedImage.image_url)
-        } catch {
-            Alert.alert(t("profile.photoErrorTitle"), t("profile.photoErrorMessage"))
+            setAvatarUri(resolveAvatarUri(uploadedImage.image_url))
+        } catch (uploadError) {
+            Alert.alert(
+                t("profile.photoErrorTitle"),
+                uploadError instanceof Error && uploadError.message
+                    ? uploadError.message
+                    : t("profile.photoErrorMessage"),
+            )
         } finally {
             setIsUpdatingAvatar(false)
         }

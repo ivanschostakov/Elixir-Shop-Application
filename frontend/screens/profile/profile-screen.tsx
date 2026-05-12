@@ -11,6 +11,7 @@ import { useProfileAvatar } from "@/hooks/profile/use-profile-avatar"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
 import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
 import { checkMyBenefits } from "@/services/api/benefits"
 import type { BenefitCheckResponse, BenefitOptionResponse } from "@/services/api/benefits.types"
@@ -18,6 +19,7 @@ import { attachMyReferrerCode, detachMyReferrerCode, getMyReferralProfile } from
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { formatMoney } from "@/utils/formatting"
 import { getProfileInitials } from "@/utils/profile/get-profile-initials"
+import type { ThemeAccentName } from "@/theme/colors"
 
 function formatProfileMoney(value: string | null | undefined) {
     return formatMoney(Number(value ?? 0), "RUB") ?? "0 ₽"
@@ -66,7 +68,8 @@ function getProfileBenefitKey(option: BenefitOptionResponse) {
 
 export default function ProfileScreen() {
     const { deleteAccount, signOut, user } = useAuth()
-    const { t } = useLanguage()
+    const { language, setLanguage, t } = useLanguage()
+    const { accentName, accentPalette, setAccentName, themeName, toggleTheme } = useTheme()
     const fullName = [user?.name, user?.surname].filter(Boolean).join(" ").trim()
     const displayName = fullName || t("profile.fallbackName")
     const initials = getProfileInitials(displayName)
@@ -110,6 +113,12 @@ export default function ProfileScreen() {
         t,
     })
     const shouldShowReferralDetails = Boolean(referralProfile?.referrer_promo_code)
+    const accentOptions: ThemeAccentName[] = ["blue", "teal", "emerald", "rose", "amber"]
+    const accentLabel = language === "ru"
+        ? "Акцент"
+        : language === "kz"
+          ? "Негізгі түс"
+          : "Accent"
 
     useFocusEffect(
         useCallback(() => {
@@ -312,6 +321,95 @@ export default function ProfileScreen() {
             </Pressable>
 
             <View style={ProfileScreenStyles.sectionCard}>
+                <Text style={ProfileScreenStyles.sectionTitle}>{t("profile.language")}</Text>
+                <Text style={ProfileScreenStyles.sectionDescription}>{t("profile.languageSubtitle")}</Text>
+                <View style={ProfileScreenStyles.preferencesChipRow}>
+                    {[
+                        { code: "ru" as const, label: "🇷🇺 RU" },
+                        { code: "en" as const, label: "🇬🇧 EN" },
+                        { code: "kz" as const, label: "🇰🇿 KZ" },
+                    ].map((languageOption) => (
+                        <Pressable
+                            key={languageOption.code}
+                            accessibilityRole="button"
+                            accessibilityLabel={languageOption.label}
+                            onPress={() => setLanguage(languageOption.code)}
+                            style={({ pressed }) => [
+                                ProfileScreenStyles.preferenceChip,
+                                language === languageOption.code && [
+                                    ProfileScreenStyles.preferenceChipActive,
+                                    {
+                                        borderColor: accentPalette.primary,
+                                        backgroundColor: accentPalette.primaryMuted,
+                                    },
+                                ],
+                                pressed && ProfileScreenStyles.preferenceChipPressed,
+                            ]}
+                        >
+                            <Text
+                                style={[
+                                    ProfileScreenStyles.preferenceChipText,
+                                    language === languageOption.code && [
+                                        ProfileScreenStyles.preferenceChipTextActive,
+                                        { color: accentPalette.primary },
+                                    ],
+                                ]}
+                            >
+                                {languageOption.label}
+                            </Text>
+                        </Pressable>
+                    ))}
+                </View>
+                <View style={ProfileScreenStyles.themeModeRow}>
+                    <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={themeName === "dark" ? t("common.themeDark") : t("common.themeLight")}
+                        onPress={toggleTheme}
+                        style={({ pressed }) => [
+                            ProfileScreenStyles.preferenceChip,
+                            ProfileScreenStyles.themeModeChip,
+                            pressed && ProfileScreenStyles.preferenceChipPressed,
+                        ]}
+                    >
+                        <Text style={ProfileScreenStyles.preferenceChipText}>
+                            {themeName === "dark" ? t("common.themeDark") : t("common.themeLight")}
+                        </Text>
+                    </Pressable>
+                </View>
+                <Text style={ProfileScreenStyles.detailLabel}>{accentLabel}</Text>
+                <View style={ProfileScreenStyles.colorSwatchRow}>
+                    {accentOptions.map((accentOption) => (
+                        <Pressable
+                            key={accentOption}
+                            accessibilityRole="button"
+                            accessibilityLabel={accentOption}
+                            onPress={() => setAccentName(accentOption)}
+                            style={({ pressed }) => [
+                                ProfileScreenStyles.colorSwatchShell,
+                                accentName === accentOption && ProfileScreenStyles.colorSwatchShellActive,
+                                pressed && ProfileScreenStyles.preferenceChipPressed,
+                            ]}
+                        >
+                            <View
+                                style={[
+                                    ProfileScreenStyles.colorSwatch,
+                                    { backgroundColor: accentOption === accentName
+                                        ? accentPalette.primary
+                                        : ({
+                                            blue: "rgb(31, 100, 155)",
+                                            teal: "#0F766E",
+                                            emerald: "#059669",
+                                            rose: "#E11D48",
+                                            amber: "#D97706",
+                                        }[accentOption]) },
+                                ]}
+                            />
+                        </Pressable>
+                    ))}
+                </View>
+            </View>
+
+            <View style={ProfileScreenStyles.sectionCard}>
                 <Text style={ProfileScreenStyles.sectionTitle}>{t("profile.referral.attachCodeLabel")}</Text>
                 {shouldShowReferralDetails && referralProfile?.referrer_promo_code ? (
                     <View style={ProfileScreenStyles.detailStack}>
@@ -474,6 +572,29 @@ export default function ProfileScreen() {
                     </View>
                 </View>
             ) : null}
+
+            <Pressable
+                accessibilityLabel={t("nav.favorites")}
+                accessibilityRole="button"
+                onPress={() => router.push(ROUTES.favorites)}
+                style={({ pressed }) => [
+                    ProfileScreenStyles.historyCardButton,
+                    pressed && ProfileScreenStyles.historyCardButtonPressed,
+                ]}
+            >
+                <View style={ProfileScreenStyles.sectionCard}>
+                    <View style={ProfileScreenStyles.historyCardHeader}>
+                        <View style={ProfileScreenStyles.historyCardCopy}>
+                            <Text style={ProfileScreenStyles.historyCardTitle}>{t("route.favorites")}</Text>
+                            <Text style={ProfileScreenStyles.historyCardSubtitle}>{t("nav.favorites")}</Text>
+                        </View>
+
+                        <Text style={ProfileScreenStyles.historyCardArrow}>
+                            {">"}
+                        </Text>
+                    </View>
+                </View>
+            </Pressable>
 
             <Pressable
                 accessibilityLabel={t("profile.history.open")}

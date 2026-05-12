@@ -25,7 +25,6 @@ import { useContentTabs } from "@/hooks/navigation/use-content-tabs"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
-import { colors } from "@/theme/colors"
 
 export default function AppHeader({ template }: AppHeaderProps) {
     const pathname = usePathname()
@@ -34,11 +33,11 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const topInset = useSafeAreaInsets().top
     const { height: windowHeight } = useWindowDimensions()
     const styles = getHeaderStyles(topInset, windowHeight)
-    const { isDark, themeName, toggleTheme } = useTheme()
+    const { accentPalette, isDark, themeName, toggleTheme } = useTheme()
     const { isAuthenticated, signOut } = useAuth()
     const { basket } = useBasket()
     const { clear, error: basketError, updating: basketUpdating } = useBasketMutations()
-    const { language, t, toggleLanguage } = useLanguage()
+    const { language, setLanguage, t } = useLanguage()
     const { tabs } = useContentTabs(pathname, {
         articles: t("common.articles"),
         products: t("common.products"),
@@ -128,7 +127,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
                     hitSlop={12}
                 >
                     <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                        <Path d={BACK_ARROW_PATH} fill={colors.primary} />
+                        <Path d={BACK_ARROW_PATH} fill={accentPalette.primary} />
                     </Svg>
                 </Pressable>
             )
@@ -144,7 +143,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
                     hitSlop={12}
                 >
                     <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                        <Path d={isSearchMode ? CLOSE_ICON_PATH : SEARCH_ICON_PATH} fill={colors.primary} />
+                        <Path d={isSearchMode ? CLOSE_ICON_PATH : SEARCH_ICON_PATH} fill={accentPalette.primary} />
                     </Svg>
                 </Pressable>
             )
@@ -171,7 +170,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
                     <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
                         <Path
                             d={CLEAR_ICON_PATH}
-                            stroke={colors.primary}
+                            stroke={accentPalette.primary}
                             strokeWidth={2}
                             strokeLinecap="round"
                             strokeLinejoin="round"
@@ -203,11 +202,12 @@ export default function AppHeader({ template }: AppHeaderProps) {
                     router.push(ROUTES.login)
                 }}
                 onSignOut={signOut}
-                onToggleLanguage={toggleLanguage}
+                onSetLanguage={setLanguage}
                 onToggleTheme={toggleTheme}
                 onToggle={() => setIsMenuOpen((currentValue) => !currentValue)}
                 styles={styles}
                 t={t}
+                accentColor={accentPalette.primary}
                 language={language}
                 themeName={themeName}
             />

@@ -264,6 +264,62 @@ export const ProfileScreenStyles = StyleSheet.create({
         height: 1,
         backgroundColor: colors.border,
     },
+    preferencesChipRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: spacing.sm,
+    },
+    preferenceChip: {
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: colors.borderSoft,
+        backgroundColor: colors.surfaceElevated,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+    preferenceChipActive: {
+        borderColor: colors.primary,
+        backgroundColor: colors.primaryMuted,
+    },
+    preferenceChipPressed: {
+        opacity: 0.9,
+    },
+    preferenceChipText: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: "700",
+    },
+    preferenceChipTextActive: {
+        color: colors.primary,
+    },
+    themeModeRow: {
+        marginTop: spacing.xs,
+    },
+    themeModeChip: {
+        alignSelf: "flex-start",
+    },
+    colorSwatchRow: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: spacing.sm,
+    },
+    colorSwatchShell: {
+        width: 34,
+        height: 34,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: colors.borderSoft,
+        padding: 4,
+        backgroundColor: colors.surface,
+    },
+    colorSwatchShellActive: {
+        borderColor: colors.text,
+    },
+    colorSwatch: {
+        width: "100%",
+        height: "100%",
+        borderRadius: 999,
+    },
     loadingBox: {
         alignItems: "center",
         justifyContent: "center",

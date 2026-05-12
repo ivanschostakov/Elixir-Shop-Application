@@ -46,7 +46,6 @@ const headerTitleKeys: Record<string, TranslationKey> = {
 export const PRIMARY_APP_ROUTES = [
     ROUTES.home,
     ROUTES.discover,
-    ROUTES.favorites,
     ROUTES.chat,
     ROUTES.basket,
     ROUTES.profile,

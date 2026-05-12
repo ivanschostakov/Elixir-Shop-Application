@@ -20,24 +20,20 @@ export function HeaderMenu({
     onOpenRequisites,
     onSignIn,
     onSignOut,
-    onToggleLanguage,
+    onSetLanguage,
     onToggleTheme,
     onToggle,
     styles,
     t,
+    accentColor,
     themeName,
 }: HeaderMenuProps) {
+    const actionColor = accentColor ?? colors.primary
     const canToggleTheme = Boolean(onToggleTheme && themeName)
-    const canToggleLanguage = Boolean(onToggleLanguage && language)
+    const canToggleLanguage = Boolean(onSetLanguage && language)
     const isDarkTheme = themeName === "dark"
-    const isEnglish = language === "en"
     const themeToggleProgress = useRef(new Animated.Value(isDarkTheme ? 1 : 0)).current
-    const languageToggleProgress = useRef(new Animated.Value(isEnglish ? 1 : 0)).current
     const thumbTranslateX = themeToggleProgress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, THEME_TOGGLE_THUMB_TRANSLATE_X],
-    })
-    const languageThumbTranslateX = languageToggleProgress.interpolate({
         inputRange: [0, 1],
         outputRange: [0, THEME_TOGGLE_THUMB_TRANSLATE_X],
     })
@@ -49,14 +45,6 @@ export function HeaderMenu({
             useNativeDriver: true,
         }).start()
     }, [isDarkTheme, themeToggleProgress])
-
-    useEffect(() => {
-        Animated.timing(languageToggleProgress, {
-            duration: 180,
-            toValue: isEnglish ? 1 : 0,
-            useNativeDriver: true,
-        }).start()
-    }, [isEnglish, languageToggleProgress])
 
     return (
         <>
@@ -103,7 +91,7 @@ export function HeaderMenu({
                                             <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
                                                 <Path
                                                     d={SUN_ICON_PATH}
-                                                    stroke={isDarkTheme ? colors.mutedText : colors.primary}
+                                                    stroke={isDarkTheme ? colors.mutedText : actionColor}
                                                     strokeLinecap="round"
                                                     strokeLinejoin="round"
                                                     strokeWidth={2}
@@ -114,7 +102,7 @@ export function HeaderMenu({
                                             <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
                                                 <Path
                                                     d={MOON_ICON_PATH}
-                                                    stroke={isDarkTheme ? colors.primary : colors.mutedText}
+                                                    stroke={isDarkTheme ? actionColor : colors.mutedText}
                                                     strokeLinecap="round"
                                                     strokeLinejoin="round"
                                                     strokeWidth={2}
@@ -131,36 +119,28 @@ export function HeaderMenu({
 
                     {canToggleLanguage ? (
                         <>
-                            <Pressable
-                                accessibilityLabel={t("nav.toggleLanguage")}
-                                accessibilityRole="button"
-                                accessibilityState={{ checked: isEnglish }}
-                                onPress={() => {
-                                    onToggleLanguage?.()
-                                }}
-                                style={({ pressed }) => [
-                                    styles.themeToggleAction,
-                                    pressed && styles.menuActionPressed,
-                                ]}
-                            >
-                                <View style={styles.themeToggleTrack}>
-                                    <View pointerEvents="none" style={styles.themeToggleTrackFill} />
-                                    <Animated.View
-                                        style={[
-                                            styles.themeToggleThumb,
-                                            { transform: [{ translateX: languageThumbTranslateX }] },
-                                        ]}
-                                    />
-                                    <View pointerEvents="none" style={styles.themeToggleIcons}>
-                                        <View style={styles.themeToggleIconSlot}>
-                                            <Text style={styles.languageToggleFlag}>🇷🇺</Text>
-                                        </View>
-                                        <View style={styles.themeToggleIconSlot}>
-                                            <Text style={styles.languageToggleFlag}>🇬🇧</Text>
-                                        </View>
-                                    </View>
+                            <View style={styles.themeToggleAction}>
+                                <View style={[styles.themeToggleTrack, styles.languageToggleTrack]}>
+                                    {(["ru", "en", "kz"] as const).map((languageOption) => (
+                                        <Pressable
+                                            key={languageOption}
+                                            accessibilityLabel={`${t("nav.toggleLanguage")} ${languageOption.toUpperCase()}`}
+                                            accessibilityRole="button"
+                                            accessibilityState={{ selected: languageOption === language }}
+                                            onPress={() => onSetLanguage?.(languageOption)}
+                                            style={({ pressed }) => [
+                                                styles.languageToggleOption,
+                                                languageOption === language && styles.languageToggleOptionActive,
+                                                pressed && styles.menuActionPressed,
+                                            ]}
+                                        >
+                                            <Text style={styles.languageToggleFlag}>
+                                                {languageOption === "ru" ? "🇷🇺" : languageOption === "en" ? "🇬🇧" : "🇰🇿"}
+                                            </Text>
+                                        </Pressable>
+                                    ))}
                                 </View>
-                            </Pressable>
+                            </View>
 
                             <View style={styles.menuDivider} />
                         </>
@@ -175,7 +155,7 @@ export function HeaderMenu({
                         }}
                         style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}
                     >
-                        <Text style={styles.menuActionText}>{t("nav.contacts")}</Text>
+                        <Text style={[styles.menuActionText, { color: actionColor }]}>{t("nav.contacts")}</Text>
                     </Pressable>
 
                     <Pressable
@@ -187,7 +167,7 @@ export function HeaderMenu({
                         }}
                         style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}
                     >
-                        <Text style={styles.menuActionText}>{t("nav.requisites")}</Text>
+                        <Text style={[styles.menuActionText, { color: actionColor }]}>{t("nav.requisites")}</Text>
                     </Pressable>
 
                     <Pressable
@@ -199,7 +179,7 @@ export function HeaderMenu({
                         }}
                         style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}
                     >
-                        <Text style={styles.menuActionText}>{t("nav.publicOffer")}</Text>
+                        <Text style={[styles.menuActionText, { color: actionColor }]}>{t("nav.publicOffer")}</Text>
                     </Pressable>
 
                     <View style={styles.menuDivider} />
@@ -218,7 +198,7 @@ export function HeaderMenu({
                         }}
                         style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}
                     >
-                        <Text style={styles.signOutText}>
+                        <Text style={[styles.signOutText, { color: actionColor }]}>
                             {isAuthenticated ? t("common.signOut") : t("auth.login.submit")}
                         </Text>
                     </Pressable>
