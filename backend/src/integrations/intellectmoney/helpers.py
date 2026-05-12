@@ -140,8 +140,16 @@ def parse_payment_state(data: dict[str, Any]) -> dict[str, Any]:
     qr_image = form_3ds.get("SbpQrCodeImage")
     if isinstance(qr_image, str):
         normalized_qr_image = qr_image.strip()
-        if normalized_qr_image and not normalized_qr_image.startswith("data:"):
-            qr_image = f"data:image/png;base64,{normalized_qr_image}"
+        if normalized_qr_image.startswith("data:"):
+            # Some providers include newlines/whitespace in long data URIs; keep MIME prefix and compact payload.
+            header, separator, payload = normalized_qr_image.partition(",")
+            if separator:
+                qr_image = f"{header},{''.join(payload.split())}"
+            else:
+                qr_image = normalized_qr_image
+        elif normalized_qr_image:
+            compact_payload = "".join(normalized_qr_image.split())
+            qr_image = f"data:image/png;base64,{compact_payload}"
 
     return {
         "payment_step": payment_step,

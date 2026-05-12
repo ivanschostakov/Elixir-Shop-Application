@@ -315,10 +315,22 @@ export default function PaymentScreen() {
     }, [order?.currency, order?.delivery_total, orderDraft?.currency, orderDraft?.delivery_total])
     const qrSourceUri = payment?.qr_image ?? null
     const qrLinkTarget = payment?.qr_url?.trim() || null
-    const qrImageSource = useMemo(
-        () => (qrSourceUri ? { uri: qrSourceUri, cache: "force-cache" as const } : null),
-        [qrSourceUri],
-    )
+    const qrImageSource = useMemo(() => {
+        if (!qrSourceUri) {
+            return null
+        }
+
+        const normalizedUri = qrSourceUri.trim()
+        if (!normalizedUri) {
+            return null
+        }
+
+        if (normalizedUri.startsWith("data:")) {
+            return { uri: normalizedUri } as const
+        }
+
+        return { uri: normalizedUri, cache: "force-cache" as const }
+    }, [qrSourceUri])
     const shouldRenderQrImage = Boolean(qrImageSource && !isQrImageFailed)
     const hasResolvedOrderInfo = Boolean(
         (order?.delivery_address ?? orderDraft?.delivery_address)
@@ -860,6 +872,12 @@ export default function PaymentScreen() {
     useEffect(() => {
         setIsQrImageFailed(false)
     }, [qrSourceUri])
+
+    useEffect(() => {
+        if (phase === "sbp") {
+            setIsQrImageFailed(false)
+        }
+    }, [payment, phase])
 
     useEffect(() => {
         const shouldPlayCelebrate = phase === "success" || phase === "pending"

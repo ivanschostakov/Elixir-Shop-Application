@@ -9,7 +9,7 @@ import httpx
 from fastapi import Request
 from PIL import Image, UnidentifiedImageError
 
-from config import MEDIA_DIR, ORDERS_MEDIA_DIR
+from config import MEDIA_DIR, ORDERS_MEDIA_DIR, PUBLIC_API_BASE_URL
 
 QR_EXTENSION = ".png"
 
@@ -28,7 +28,7 @@ def find_order_payment_qr_path(user_id: int, order_id: int) -> Path | None:
 def build_order_payment_qr_url(request: Request, image_path: Path | None) -> str | None:
     if image_path is None: return None
 
-    base_url = str(request.base_url).rstrip("/")
+    base_url = (PUBLIC_API_BASE_URL or str(request.base_url)).rstrip("/")
     version = int(image_path.stat().st_mtime_ns)
     try: relative_path = image_path.relative_to(MEDIA_DIR).as_posix()
     except ValueError: relative_path = f"orders/{image_path.name}"
