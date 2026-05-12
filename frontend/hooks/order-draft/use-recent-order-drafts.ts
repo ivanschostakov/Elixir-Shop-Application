@@ -9,9 +9,10 @@ type UseRecentOrderDraftsResult = {
     reload: () => Promise<OrderDraftRead[] | null>
 }
 
-export function useRecentOrderDrafts(limit = 6): UseRecentOrderDraftsResult {
+export function useRecentOrderDrafts(limit = 6, enabled = true): UseRecentOrderDraftsResult {
     const { data, error, loading, reload } = useAsyncData<OrderDraftRead[]>({
         deps: [limit],
+        enabled,
         fetcher: () => getOrderDrafts({ limit }),
         initialData: [],
     })

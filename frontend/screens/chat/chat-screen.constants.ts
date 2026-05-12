@@ -13,6 +13,7 @@ export const DIRECT_ATTACHMENT_URI_PATTERN = /^(asset|content|data|file|http|htt
 export const SAFE_LINK_PROTOCOL_PATTERN = /^(https?:\/\/|mailto:)/i
 export const INTERNAL_PRODUCT_LINK_PATTERN = /^\/products\/(\d+)(?:[/?#].*)?$/
 export const CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD = 140
+export const IOS_MINIMUM_VOICE_RECORDING_BUILD = 28
 export const CHAT_RECORDING_AUDIO_MODE = {
     allowsRecording: true,
     interruptionMode: "doNotMix",

@@ -42,6 +42,7 @@ import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useRecentOrderDrafts } from "@/hooks/order-draft/use-recent-order-drafts"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
+import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { CartBasketItem } from "@/screens/cart/cart-basket-item"
 import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
@@ -65,6 +66,7 @@ import type { BasketItemRead } from "@/types/basket"
 export default function CartScreen() {
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()
+    const { isAuthenticated } = useAuth()
     const { basket, error: basketLoadError, loading, reload } = useBasket()
     const { clear, error: basketActionError, removeItem, updateItemQuantity, updating } = useBasketMutations()
     const basketDraftEditingId = useBasketDraftEditingId()
@@ -79,7 +81,7 @@ export default function CartScreen() {
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const swipeableRefs = useRef<Record<number, Swipeable | null>>({})
     const routeDraftIdParam = Array.isArray(params.draftId) ? params.draftId[0] : params.draftId
-    const { orderDrafts: recentOrderDrafts, loading: recentOrderDraftsLoading } = useRecentOrderDrafts(1)
+    const { orderDrafts: recentOrderDrafts, loading: recentOrderDraftsLoading } = useRecentOrderDrafts(1, isAuthenticated)
     const {
         data: referralProfile,
         reload: reloadReferralProfile,
@@ -91,7 +93,7 @@ export default function CartScreen() {
         initialData: null,
         resetOnLoad: true,
     })
-    const hasRecentOrderDrafts = recentOrderDrafts.length > 0
+    const hasRecentOrderDrafts = isAuthenticated && recentOrderDrafts.length > 0
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,

@@ -83,8 +83,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow Elixir Peptide to access your photos so you can attach images to chat messages.",
-          "cameraPermission": "Allow Elixir Peptide to access your camera so you can take profile pictures.",
-          "microphonePermission": false
+          "cameraPermission": "Allow Elixir Peptide to access your camera so you can take profile pictures."
         }
       ],
       [
@@ -101,7 +100,6 @@
         "expo-camera",
         {
           "cameraPermission": "Allow Elixir Peptide to access your camera so you can take profile pictures.",
-          "microphonePermission": false,
           "recordAudioAndroid": false
         }
       ],

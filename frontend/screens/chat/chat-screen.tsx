@@ -26,6 +26,7 @@ import {
     useAudioRecorder,
     useAudioRecorderState,
 } from "expo-audio"
+import * as Application from "expo-application"
 import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
 import * as MediaLibrary from "expo-media-library"
@@ -80,11 +81,17 @@ import {
     CHAT_BACKGROUND_LIGHT,
     CHAT_IDLE_AUDIO_MODE,
     CHAT_RECORDING_AUDIO_MODE,
+    IOS_MINIMUM_VOICE_RECORDING_BUILD,
     INTERNAL_PRODUCT_LINK_PATTERN,
     MESSAGE_IMAGE_MAX_WIDTH,
     RECENT_PHOTO_LIMIT,
     SAFE_LINK_PROTOCOL_PATTERN,
 } from "@/screens/chat/chat-screen.constants"
+
+function nativeBuildNumber() {
+    const parsedBuild = Number(Application.nativeBuildVersion)
+    return Number.isFinite(parsedBuild) ? parsedBuild : 0
+}
 
 export default function ChatScreen() {
     const router = useRouter()
@@ -124,6 +131,8 @@ export default function ChatScreen() {
     const composerOffset = composerBottomInset + 72 + (attachments.length > 0 ? 50 : 0) + (voiceStatusVisible ? 40 : 0)
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
     const messageTextWidth = Math.max(180, Math.min(screenWidth * 0.74, 330))
+    const voiceRecordingSupported =
+        __DEV__ || Platform.OS !== "ios" || nativeBuildNumber() >= IOS_MINIMUM_VOICE_RECORDING_BUILD
     const cameraPreviewActive =
         attachmentSheetVisible &&
         attachmentMode === "photo" &&
@@ -402,6 +411,11 @@ export default function ChatScreen() {
             return
         }
 
+        if (!voiceRecordingSupported) {
+            Alert.alert(t("chat.voiceUpdateRequiredTitle"), t("chat.voiceUpdateRequiredMessage"))
+            return
+        }
+
         Keyboard.dismiss()
 
         try {
@@ -420,7 +434,7 @@ export default function ChatScreen() {
             Alert.alert(t("chat.voiceTranscriptionFailedTitle"), t("chat.voiceTranscriptionFailedMessage"))
             await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined)
         }
-    }, [audioRecorder, sending, t, voiceTranscribing])
+    }, [audioRecorder, sending, t, voiceRecordingSupported, voiceTranscribing])
 
     const stopVoiceRecording = useCallback(async () => {
         if (!voiceRecording || voiceTranscribing) {

@@ -433,63 +433,51 @@ export default function HomeScreen() {
                     </View>
                 </View>
 
-                <View style={homeScreenStyles.ordersBlock}>
-                    <View style={homeScreenStyles.ordersHeader}>
-                        <Text style={homeScreenStyles.ordersEyebrow}>{t("cart.recentDraftsEyebrow")}</Text>
-                        <Text style={homeScreenStyles.ordersTitle}>{t("cart.recentDraftsTitle")}</Text>
-                    </View>
+                {isAuthenticated ? (
+                    <View style={homeScreenStyles.ordersBlock}>
+                        <View style={homeScreenStyles.ordersHeader}>
+                            <Text style={homeScreenStyles.ordersEyebrow}>{t("cart.recentDraftsEyebrow")}</Text>
+                            <Text style={homeScreenStyles.ordersTitle}>{t("cart.recentDraftsTitle")}</Text>
+                        </View>
 
-                    {!isAuthenticated ? (
-                        <Pressable
-                            accessibilityLabel={t("auth.entry.login")}
-                            accessibilityRole="button"
-                            onPress={() => {
-                                router.push(ROUTES.login)
-                            }}
-                            style={({ pressed }) => [
-                                homeScreenStyles.orderLoginCard,
-                                pressed && homeScreenStyles.orderLoginCardPressed,
-                            ]}
-                        >
-                            <Text style={homeScreenStyles.orderLoginCardText}>{t("cart.openDraftsCta")}</Text>
-                        </Pressable>
-                    ) : isLoadingOrderDrafts ? (
-                        <View style={homeScreenStyles.orderLoadingWrap}>
-                            <ActivityIndicator color={colors.primary} />
-                        </View>
-                    ) : orderDrafts.length ? (
-                        <ScrollView horizontal contentContainerStyle={homeScreenStyles.ordersRow} showsHorizontalScrollIndicator={false}>
-                            {orderDrafts.map((draft) => {
-                                const total = formatMoney(Number(draft.grand_total), draft.currency)
-                                return (
-                                    <Pressable
-                                        key={draft.id}
-                                        accessibilityLabel={`${t("cart.recentDraftsOpenDraft")} ${draft.id}`}
-                                        accessibilityRole="button"
-                                        onPress={() => {
-                                            router.push(`${ROUTES.checkout}?draftId=${draft.id}`)
-                                        }}
-                                        style={({ pressed }) => [homeScreenStyles.orderCard, pressed && homeScreenStyles.orderCardPressed]}
-                                    >
-                                        <Text numberOfLines={1} style={homeScreenStyles.orderCardTitle}>
-                                            #{draft.id}
-                                        </Text>
-                                        <Text numberOfLines={1} style={homeScreenStyles.orderCardMeta}>
-                                            {draft.items_count} {t("cart.positionsLabel")}
-                                        </Text>
-                                        <Text numberOfLines={1} style={homeScreenStyles.orderCardTotal}>
-                                            {total ?? "—"}
-                                        </Text>
-                                    </Pressable>
-                                )
-                            })}
-                        </ScrollView>
-                    ) : (
-                        <View style={homeScreenStyles.orderEmptyCard}>
-                            <Text style={homeScreenStyles.orderEmptyText}>{t("cart.emptyDescriptionWithDrafts")}</Text>
-                        </View>
-                    )}
-                </View>
+                        {isLoadingOrderDrafts ? (
+                            <View style={homeScreenStyles.orderLoadingWrap}>
+                                <ActivityIndicator color={colors.primary} />
+                            </View>
+                        ) : orderDrafts.length ? (
+                            <ScrollView horizontal contentContainerStyle={homeScreenStyles.ordersRow} showsHorizontalScrollIndicator={false}>
+                                {orderDrafts.map((draft) => {
+                                    const total = formatMoney(Number(draft.grand_total), draft.currency)
+                                    return (
+                                        <Pressable
+                                            key={draft.id}
+                                            accessibilityLabel={`${t("cart.recentDraftsOpenDraft")} ${draft.id}`}
+                                            accessibilityRole="button"
+                                            onPress={() => {
+                                                router.push(`${ROUTES.checkout}?draftId=${draft.id}`)
+                                            }}
+                                            style={({ pressed }) => [homeScreenStyles.orderCard, pressed && homeScreenStyles.orderCardPressed]}
+                                        >
+                                            <Text numberOfLines={1} style={homeScreenStyles.orderCardTitle}>
+                                                #{draft.id}
+                                            </Text>
+                                            <Text numberOfLines={1} style={homeScreenStyles.orderCardMeta}>
+                                                {draft.items_count} {t("cart.positionsLabel")}
+                                            </Text>
+                                            <Text numberOfLines={1} style={homeScreenStyles.orderCardTotal}>
+                                                {total ?? "—"}
+                                            </Text>
+                                        </Pressable>
+                                    )
+                                })}
+                            </ScrollView>
+                        ) : (
+                            <View style={homeScreenStyles.orderEmptyCard}>
+                                <Text style={homeScreenStyles.orderEmptyText}>{t("cart.emptyDescriptionWithDrafts")}</Text>
+                            </View>
+                        )}
+                    </View>
+                ) : null}
 
                 {recommendedProducts.length ? (
                     <View style={homeScreenStyles.recommendationsSection}>
