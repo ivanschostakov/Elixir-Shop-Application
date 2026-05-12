@@ -44,6 +44,7 @@ import type { PaymentStatusRead } from "@/services/api/payments.types"
 import { clearGuestCart } from "@/services/guest-cart"
 import { syncOrderStatusNotifications } from "@/services/notifications/order-status-notifications"
 import type { OrderDraftItemRead, OrderDraftRead } from "@/services/api/order-drafts.types"
+import { ORDER_STATUS_LABEL_KEYS } from "@/screens/profile/profile-history-screen.utils"
 import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 import { parsePositiveRouteId } from "@/utils/route-params"
 
@@ -54,15 +55,15 @@ type SummarySection = "contact" | "items"
 const FINAL_STOP_STATUSES = new Set(["error", "canceled", "refunded", "hold", "partial"])
 const PAYMENT_CHROME_TEMPLATE = { footer: "none" } as const
 const CONFETTI_COLORS = ["#E94E77", "#F6C85F", "#3CAEA3", "#20639B", "#F17300", "#7B61FF"] as const
-const CONFETTI_PIECES = Array.from({ length: 30 }, (_, index) => ({
+const CONFETTI_PIECES = Array.from({ length: 64 }, (_, index) => ({
     color: CONFETTI_COLORS[index % CONFETTI_COLORS.length],
-    delay: (index % 6) * 24,
-    drift: ((index % 7) - 3) * 12,
+    delay: (index % 8) * 18,
+    drift: ((index % 9) - 4) * 16,
     left: 5 + ((index * 31) % 90),
     rotation: index % 2 === 0 ? "210deg" : "-180deg",
-    size: 6 + (index % 4),
-    top: -24 - (index % 5) * 10,
-    travel: 260 + (index % 6) * 28,
+    size: 7 + (index % 6),
+    top: -24 - (index % 7) * 12,
+    travel: 320 + (index % 8) * 34,
 }))
 
 function getPaymentStateError(payment: PaymentStatusRead | null, fallback: string) {
@@ -322,6 +323,9 @@ export default function PaymentScreen() {
         && resolvedRecipient
         && resolvedItemsCount > 0,
     )
+    const resolvedOrderStatusLabel = order?.status_code
+        ? t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created")
+        : null
     const canContinue = hasResolvedOrderInfo && !submitting
     const canRetry = Boolean(orderDraft || order?.id || payment?.order_id) && (payment ? payment.can_retry : true)
     const missingStateMessage = orderLoadError ?? t("payment.orderMissingMessage")
@@ -850,12 +854,20 @@ export default function PaymentScreen() {
     }, [phase, payment?.order_id])
 
     useEffect(() => {
-        if (phase !== "success") {
+        const shouldPlayCelebrate = phase === "success" || phase === "pending"
+        if (!shouldPlayCelebrate) {
+            confettiProgress.stopAnimation()
+            confettiProgress.setValue(0)
             setIsSuccessVisualReady(false)
             return
         }
 
-        setIsSuccessVisualReady(false)
+        if (phase === "success") {
+            setIsSuccessVisualReady(false)
+        } else {
+            setIsSuccessVisualReady(true)
+        }
+
         confettiProgress.setValue(0)
         Animated.timing(confettiProgress, {
             toValue: 1,
@@ -863,6 +875,11 @@ export default function PaymentScreen() {
             easing: Easing.out(Easing.cubic),
             useNativeDriver: true,
         }).start()
+
+        if (phase !== "success") {
+            return
+        }
+
         const timeoutId = setTimeout(() => {
             setIsSuccessVisualReady(true)
         }, 1200)
@@ -963,7 +980,7 @@ export default function PaymentScreen() {
                         {STICKERS.cherryCongrats.kind === "lottie" ? (
                             <LottieView
                                 autoPlay
-                                loop={false}
+                                loop
                                 onAnimationLoaded={() => {
                                     setIsSuccessVisualReady(true)
                                 }}
@@ -974,25 +991,11 @@ export default function PaymentScreen() {
                             <View style={paymentScreenStyles.visualPlaceholder} />
                         )}
                         <View style={paymentScreenStyles.successCopy}>
-                            <Text style={paymentScreenStyles.successBadge}>{t("payment.successEyebrow")}</Text>
+                            <Text style={paymentScreenStyles.successBadge}>
+                                {resolvedOrderStatusLabel ?? t("payment.successEyebrow")}
+                            </Text>
                             <Text style={paymentScreenStyles.successTitle}>{t("payment.successTitle")}</Text>
                             <Text style={paymentScreenStyles.successMessage}>{successMessage}</Text>
-                            {resolvedOrderNumber ? (
-                                <Pressable
-                                    accessibilityLabel={t("payment.copyOrderNumber")}
-                                    accessibilityRole="button"
-                                    onPress={() => {
-                                        void handleCopyOrderCode()
-                                    }}
-                                    style={({ pressed }) => [
-                                        paymentScreenStyles.successOrderBox,
-                                        pressed && paymentScreenStyles.successOrderBoxPressed,
-                                    ]}
-                                >
-                                    <Text style={paymentScreenStyles.successOrderLabel}>{t("payment.orderNumber")}</Text>
-                                    <Text style={paymentScreenStyles.successOrderValue}>#{resolvedOrderNumber}</Text>
-                                </Pressable>
-                            ) : null}
                         </View>
                     </View>
                 </View>
@@ -1002,26 +1005,25 @@ export default function PaymentScreen() {
         if (phase === "pending") {
             return (
                 <View style={paymentScreenStyles.visualCard}>
-                    <View style={paymentScreenStyles.failureVisualBody}>
-                        <Text style={paymentScreenStyles.successBadge}>{t("payment.pendingLaterEyebrow")}</Text>
-                        <Text style={paymentScreenStyles.sectionTitle}>{t("payment.pendingLaterTitle")}</Text>
-                        <Text style={paymentScreenStyles.stateText}>{t("payment.pendingLaterMessage")}</Text>
-                        {resolvedOrderNumber ? (
-                            <Pressable
-                                accessibilityLabel={t("payment.copyOrderNumber")}
-                                accessibilityRole="button"
-                                onPress={() => {
-                                    void handleCopyOrderCode()
-                                }}
-                                style={({ pressed }) => [
-                                    paymentScreenStyles.successOrderBox,
-                                    pressed && paymentScreenStyles.successOrderBoxPressed,
-                                ]}
-                            >
-                                <Text style={paymentScreenStyles.successOrderLabel}>{t("payment.orderNumber")}</Text>
-                                <Text style={paymentScreenStyles.successOrderValue}>#{resolvedOrderNumber}</Text>
-                            </Pressable>
-                        ) : null}
+                    {renderConfettiOverlay()}
+                    <View style={[paymentScreenStyles.visualWrap, paymentScreenStyles.successVisualWrap]}>
+                        {STICKERS.cherryCongrats.kind === "lottie" ? (
+                            <LottieView
+                                autoPlay
+                                loop
+                                source={STICKERS.cherryCongrats.source}
+                                style={paymentScreenStyles.successAnimation}
+                            />
+                        ) : (
+                            <View style={paymentScreenStyles.visualPlaceholder} />
+                        )}
+                        <View style={paymentScreenStyles.successCopy}>
+                            <Text style={paymentScreenStyles.successBadge}>
+                                {resolvedOrderStatusLabel ?? t("payment.pending")}
+                            </Text>
+                            <Text style={paymentScreenStyles.successTitle}>{t("payment.pendingLaterTitle")}</Text>
+                            <Text style={paymentScreenStyles.successMessage}>{t("payment.pendingLaterMessage")}</Text>
+                        </View>
                     </View>
                 </View>
             )
