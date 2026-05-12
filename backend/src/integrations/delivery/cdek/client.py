@@ -258,7 +258,17 @@ class AsyncCDEKClient:
                 raw_detail=response,
             )
 
-        return CDEKCalculatedDelivery.model_validate(effective_tariff)
+        normalized_tariff = dict(effective_tariff)
+        if normalized_tariff.get("weight_calc") in (None, ""):
+            normalized_tariff["weight_calc"] = self.cargo["weight"]
+        if normalized_tariff.get("currency") in (None, ""):
+            normalized_tariff["currency"] = (
+                response.get("currency")
+                if isinstance(response.get("currency"), str) and response.get("currency")
+                else "RUB"
+            )
+
+        return CDEKCalculatedDelivery.model_validate(normalized_tariff)
 
 
 cdek_client = AsyncCDEKClient()
