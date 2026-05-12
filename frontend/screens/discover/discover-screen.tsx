@@ -86,9 +86,15 @@ export default function DiscoverScreen() {
     const router = useRouter()
     const { t } = useLanguage()
     const { width: windowWidth } = useWindowDimensions()
-    const params = useLocalSearchParams<{ tab?: string | string[]; categoryId?: string | string[]; q?: string | string[] }>()
+    const params = useLocalSearchParams<{
+        tab?: string | string[]
+        categoryId?: string | string[]
+        q?: string | string[]
+        resetCategory?: string | string[]
+    }>()
     const isProductsTab = resolveContentTab(params.tab) === "products"
     const incomingCategoryId = parseCategoryId(params.categoryId)
+    const shouldResetCategory = parseQuery(params.resetCategory) === "1"
     const query = parseQuery(params.q)
     const isWeb = Platform.OS === "web"
     const isDesktop = isWeb && windowWidth >= 1100
@@ -132,10 +138,15 @@ export default function DiscoverScreen() {
     }, [categoryId, sort])
 
     useEffect(() => {
+        if (shouldResetCategory) {
+            setCategoryId(null)
+            return
+        }
+
         if (incomingCategoryId !== null) {
             setCategoryId(incomingCategoryId)
         }
-    }, [incomingCategoryId])
+    }, [incomingCategoryId, shouldResetCategory])
 
     useEffect(() => {
         if (
@@ -315,6 +326,17 @@ export default function DiscoverScreen() {
                                     <ProductCard product={product} style={discoverScreenStyles.gridItemCard} />
                                 </View>
                             ))}
+                            {item.length < numColumns
+                                ? Array.from({ length: numColumns - item.length }).map((_, emptyIndex) => (
+                                    <View
+                                        key={`discover-empty-slot-${index}-${emptyIndex}`}
+                                        style={[
+                                            discoverScreenStyles.gridItemColumn,
+                                            discoverScreenStyles.gridItemPlaceholder,
+                                        ]}
+                                    />
+                                ))
+                                : null}
                         </View>
                     </View>
                 )}

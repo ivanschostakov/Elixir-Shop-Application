@@ -51,6 +51,9 @@ export const discoverScreenStyles = StyleSheet.create({
         flex: 1,
         minWidth: 0,
     },
+    gridItemPlaceholder: {
+        backgroundColor: "transparent",
+    },
     gridItemCard: {
         borderRadius: 0,
         overflow: "visible",

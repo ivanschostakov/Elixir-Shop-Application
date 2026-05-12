@@ -11,10 +11,13 @@ export const homeScreenStyles = StyleSheet.create({
     content: {
         paddingBottom: spacing.lg,
     },
+    topGradientSectionWrap: {
+        backgroundColor: colors.surface,
+    },
     topGradientSection: {
         borderBottomLeftRadius: 28,
         borderBottomRightRadius: 28,
-        marginBottom: spacing.md,
+        marginBottom: 0,
         overflow: "hidden",
     },
     topGradientContent: {
@@ -72,21 +75,31 @@ export const homeScreenStyles = StyleSheet.create({
         overflow: "hidden",
     },
     promoBannerSection: {
+        backgroundColor: colors.surface,
+        borderBottomLeftRadius: 22,
+        borderBottomRightRadius: 22,
         marginBottom: spacing.md,
-        marginHorizontal: spacing.sm,
+        overflow: "hidden",
+        paddingTop: spacing.md,
     },
     promoBannerPressed: {
         opacity: 0.93,
     },
+    promoBannerTap: {
+        backgroundColor: colors.surface,
+        borderRadius: 22,
+        overflow: "hidden",
+        width: "100%",
+    },
     promoImage: {
-        height: 166,
+        aspectRatio: 16 / 9,
+        borderRadius: 22,
         width: "100%",
     },
     ordersBlock: {
         backgroundColor: colors.surface,
         borderRadius: 24,
         marginBottom: spacing.md,
-        marginHorizontal: spacing.sm,
         paddingBottom: spacing.md,
         paddingHorizontal: spacing.md,
         paddingTop: spacing.md,
@@ -167,50 +180,42 @@ export const homeScreenStyles = StyleSheet.create({
         fontSize: 13,
         lineHeight: 19,
     },
-    quickCatalogBlock: {
-        backgroundColor: colors.surface,
-        borderRadius: 24,
+    recommendationsSection: {
         marginBottom: spacing.md,
-        marginHorizontal: spacing.sm,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.md,
     },
-    quickCatalogTitle: {
-        color: colors.text,
-        fontSize: 18,
-        fontWeight: "800",
-        marginBottom: spacing.sm,
+    quickCatalogInBanner: {
+        backgroundColor: colors.surface,
+        paddingBottom: spacing.md,
+        paddingTop: spacing.sm,
     },
     quickCatalogRow: {
         flexDirection: "row",
         gap: spacing.sm,
-        paddingRight: spacing.sm,
     },
     quickCatalogItem: {
         alignItems: "center",
-        minWidth: 68,
-        width: 72,
+        width: 78,
     },
     quickCatalogItemPressed: {
         opacity: 0.9,
     },
     quickCatalogIcon: {
         alignItems: "center",
-        backgroundColor: colors.surfaceMuted,
-        borderColor: colors.border,
+        backgroundColor: colors.primary,
         borderRadius: 14,
-        borderWidth: 1,
         justifyContent: "center",
-        marginBottom: spacing.xs + 1,
+        marginBottom: spacing.xs,
         overflow: "hidden",
         padding: 8,
-        height: 48,
-        width: 48,
+        height: 52,
+        width: 52,
     },
     quickCatalogLabel: {
         color: colors.text,
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: "600",
+        lineHeight: 14,
         textAlign: "center",
+        width: 76,
     },
 })

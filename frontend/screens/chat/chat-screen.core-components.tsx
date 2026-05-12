@@ -19,7 +19,6 @@ import { motion } from "@/theme/motion"
 import { chatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { SAFE_LINK_PROTOCOL_PATTERN } from "@/screens/chat/chat-screen.constants"
 import { markdownToHtml } from "@/screens/chat/chat-markdown"
-import MicrophoneSvgIcon from "@/assets/icons/chat/microphone-alt-svgrepo-com.svg"
 import type {
     AIInteractiveAction,
     AIInteractivePayload,
@@ -775,19 +774,33 @@ export function SendActionButton({
                     {isActive ? (
                         <Svg fill="none" height={22} viewBox="0 0 24 24" width={22}>
                             <Path
-                                d="M4 20 21 12 4 4l3.5 8L4 20Z"
-                                stroke={colors.onPrimary}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={1.9}
+                                fillRule="evenodd"
+                                clipRule="evenodd"
+                                d="M9.93935 12.6464L7.69211 11.8973L7.69211 11.8973L7.6921 11.8973C5.3389 11.1129 4.16229 10.7207 4.16229 9.99997C4.16229 9.27921 5.3389 8.88701 7.69212 8.10261L16.2053 5.26488C17.8611 4.71295 18.689 4.43699 19.126 4.87401C19.563 5.31102 19.287 6.13892 18.7351 7.79471L15.8974 16.3079L15.8974 16.3079L15.8974 16.3079C15.113 18.6611 14.7208 19.8377 14 19.8377C13.2793 19.8377 12.8871 18.6611 12.1026 16.3079L11.3536 14.0606L15.7071 9.70708C16.0976 9.31656 16.0976 8.68339 15.7071 8.29287C15.3166 7.90234 14.6834 7.90234 14.2929 8.29287L9.93935 12.6464Z"
+                                fill={colors.onPrimary}
                             />
                         </Svg>
                     ) : (
-                        <MicrophoneSvgIcon
-                            color={recording ? colors.onPrimary : isDark ? "#E8F0F6" : "#0E0E0E"}
-                            height={24}
-                            width={24}
-                        />
+                        <Svg fill="none" height={24} viewBox="0 0 24 24" width={24}>
+                            <Path
+                                d="M8 2H16V11C16 13.2091 14.2091 15 12 15V15C9.79086 15 8 13.2091 8 11V2Z"
+                                fill={recording ? colors.onPrimary : isDark ? "#E8F0F6" : "#0E0E0E"}
+                            />
+                            <Path
+                                d="M5 11C5 12.8565 5.7375 14.637 7.05025 15.9497C8.36301 17.2625 10.1435 18 12 18C13.8565 18 15.637 17.2625 16.9497 15.9497C18.2625 14.637 19 12.8565 19 11"
+                                stroke={recording ? colors.onPrimary : isDark ? "#E8F0F6" : "#0E0E0E"}
+                                strokeWidth={2}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                            <Path
+                                d="M12 21V19"
+                                stroke={recording ? colors.onPrimary : isDark ? "#E8F0F6" : "#0E0E0E"}
+                                strokeWidth={2}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            />
+                        </Svg>
                     )}
                 </Animated.View>
                 <Animated.View

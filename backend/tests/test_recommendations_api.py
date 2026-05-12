@@ -930,6 +930,42 @@ def test_home_recommendations_fall_back_to_newest_products_without_affinity(
     ]
 
 
+def test_home_recommendations_continue_with_remaining_catalog_after_ranked_products(
+    client: TestClient,
+    registered_user,
+    category_factory,
+    product_factory,
+):
+    affinity_category_id = category_factory("home-ranked-first")
+    catalog_category_id = category_factory("home-ranked-fallback")
+    viewed_source = product_factory(category_ids=[affinity_category_id], price=Decimal("8.00"))
+    first_ranked_candidate = product_factory(category_ids=[affinity_category_id], price=Decimal("9.00"))
+    second_ranked_candidate = product_factory(category_ids=[affinity_category_id], price=Decimal("10.00"))
+    older_catalog_product = product_factory(category_ids=[catalog_category_id], price=Decimal("11.00"))
+    newer_catalog_product = product_factory(category_ids=[catalog_category_id], price=Decimal("12.00"))
+
+    view_response = client.post(
+        "/api/v1/users/me/recommendations/views",
+        headers=registered_user["headers"],
+        json={"product_id": viewed_source["product_id"]},
+    )
+    assert view_response.status_code == 204, view_response.text
+
+    response = client.get(
+        "/api/v1/users/me/recommendations",
+        headers=registered_user["headers"],
+        params={"surface": "home", "limit": 4},
+    )
+    assert response.status_code == 200, response.text
+
+    assert [item["id"] for item in response.json()] == [
+        second_ranked_candidate["product_id"],
+        first_ranked_candidate["product_id"],
+        newer_catalog_product["product_id"],
+        older_catalog_product["product_id"],
+    ]
+
+
 def test_home_recommendations_support_offset_pagination(
     client: TestClient,
     registered_user,

@@ -6,17 +6,17 @@ import {
     View,
     type Animated,
 } from "react-native"
-import { Path, Svg } from "react-native-svg"
 import Swipeable from "react-native-gesture-handler/Swipeable"
 
 import { ListCard } from "@/components/content/list-card"
-import { BOOKMARK, BOOKMARK_VIEWBOX } from "@/constants/bookmark"
+import { SavedIcon } from "@/components/footer/sticky-footer.icons"
 import { useLanguage } from "@/providers/language-provider"
 import { SwipeDeleteActionProps } from "@/screens/cart/cart-basket-item.types"
 import { FULL_SWIPE_REMOVE_TRIGGER } from "@/screens/cart/cart-screen.constants"
 import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
 import { favoritesScreenStyles } from "@/screens/favorites/favorites-screen.styles"
 import type { FavoriteProductItemProps } from "@/screens/favorites/favorite-product-item.types"
+import { colors } from "@/theme/colors"
 
 function FavoriteSwipeAction({
     disabled,
@@ -101,9 +101,7 @@ export function FavoriteProductItem({ isRemoving, onRemove, product }: FavoriteP
                 isRemoving && favoritesScreenStyles.bookmarkButtonDisabled,
             ]}
         >
-            <Svg width={28} height={28} viewBox={BOOKMARK_VIEWBOX} fill="none">
-                <Path d={BOOKMARK} fill="#FFC83D" />
-            </Svg>
+            <SavedIcon color={colors.favorite} />
         </Pressable>
     )
 

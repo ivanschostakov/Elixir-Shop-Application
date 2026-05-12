@@ -503,6 +503,42 @@ async def _load_home_fallback_products(
     return list((await session.execute(stmt)).scalars().all())
 
 
+async def _slice_home_recommendation_feed(
+    session: AsyncSession,
+    *,
+    ranked_products: list[Product],
+    offset: int,
+    limit: int,
+    excluded_product_ids: set[int],
+) -> list[Product]:
+    if limit < 1:
+        return []
+
+    ranked_product_ids = {product.id for product in ranked_products}
+    if offset < len(ranked_products):
+        page_products = ranked_products[offset:offset + limit]
+        remaining_limit = limit - len(page_products)
+        if remaining_limit < 1:
+            return page_products
+
+        page_products.extend(
+            await _load_home_fallback_products(
+                session,
+                offset=0,
+                limit=remaining_limit,
+                excluded_product_ids=excluded_product_ids | ranked_product_ids,
+            )
+        )
+        return page_products
+
+    return await _load_home_fallback_products(
+        session,
+        offset=offset - len(ranked_products),
+        limit=limit,
+        excluded_product_ids=excluded_product_ids | ranked_product_ids,
+    )
+
+
 async def record_product_view(
     session: AsyncSession,
     *,
@@ -635,8 +671,9 @@ async def get_recommended_products_for_user(
     excluded_product_ids.update(source_product_ids)
 
     if surface == "home" and not user_top_categories:
-        return await _load_home_fallback_products(
+        return await _slice_home_recommendation_feed(
             session,
+            ranked_products=[],
             offset=resolved_offset,
             limit=resolved_limit,
             excluded_product_ids=excluded_product_ids,
@@ -652,6 +689,14 @@ async def get_recommended_products_for_user(
         draft_id=draft_id,
     )
     if not target_category_ids:
+        if surface == "home":
+            return await _slice_home_recommendation_feed(
+                session,
+                ranked_products=[],
+                offset=resolved_offset,
+                limit=resolved_limit,
+                excluded_product_ids=excluded_product_ids,
+            )
         return []
 
     candidate_products = await _load_candidate_products(
@@ -660,6 +705,14 @@ async def get_recommended_products_for_user(
         excluded_product_ids=excluded_product_ids,
     )
     if not candidate_products:
+        if surface == "home":
+            return await _slice_home_recommendation_feed(
+                session,
+                ranked_products=[],
+                offset=resolved_offset,
+                limit=resolved_limit,
+                excluded_product_ids=excluded_product_ids,
+            )
         return []
 
     candidate_categories_by_product_id = await _load_product_categories_by_product_id(
@@ -672,4 +725,13 @@ async def get_recommended_products_for_user(
         categories_by_product_id=candidate_categories_by_product_id,
         category_affinity=category_affinity,
     )
+    if surface == "home":
+        return await _slice_home_recommendation_feed(
+            session,
+            ranked_products=ranked_products,
+            offset=resolved_offset,
+            limit=resolved_limit,
+            excluded_product_ids=excluded_product_ids,
+        )
+
     return ranked_products[resolved_offset:resolved_offset + resolved_limit]

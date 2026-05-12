@@ -4,9 +4,9 @@ import { router } from "expo-router"
 import {
     BasketIcon,
     DiscoverIcon,
+    HomeIcon,
     ProfileIcon,
     SavedIcon,
-    SearchIcon,
     SmileBubbleIcon,
 } from "@/components/footer/sticky-footer.icons"
 import type { BottomNavTemplateProps } from "@/components/footer/bottom-nav-template.types"
@@ -32,7 +32,7 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
         {
             key: ROUTES.home,
             accessibilityLabel: t("nav.home"),
-            icon: <SearchIcon color={pathname === ROUTES.home ? colors.primary : colors.mutedText} />,
+            icon: <HomeIcon color={pathname === ROUTES.home ? colors.primary : colors.mutedText} />,
             isActive: pathname === ROUTES.home,
             route: ROUTES.home,
         },
