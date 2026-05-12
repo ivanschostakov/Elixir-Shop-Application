@@ -1154,7 +1154,10 @@ export default function DeliveryScreen() {
             return
         }
 
-        if (shouldShowPickupFooterExtension) {
+        const isSamePickupPointSelected =
+            pickupPointDraft?.provider === provider && pickupPointDraft.code === code
+
+        if (shouldShowPickupFooterExtension && isSamePickupPointSelected) {
             return
         }
 
@@ -1231,7 +1234,7 @@ export default function DeliveryScreen() {
         } finally {
             setIsResolvingPickupPoint(false)
         }
-    }, [activeCountryCode, clearResults, moveToRegion, shouldShowPickupFooterExtension])
+    }, [activeCountryCode, clearResults, moveToRegion, pickupPointDraft, shouldShowPickupFooterExtension])
 
     const handlePressResult = async (item: DeliveryGeoSuggestResult) => {
         Keyboard.dismiss()
@@ -1458,6 +1461,7 @@ export default function DeliveryScreen() {
                                           visibleMarkerCount: mapMarkers.length,
                                       })
                                       clearPendingDoorResolution()
+                                      setIsPickupFooterExpanded(false)
                                       setPickupPointDraft(null)
                                       setPickupPointError(null)
                                       void resolveDoorDeliveryPoint(

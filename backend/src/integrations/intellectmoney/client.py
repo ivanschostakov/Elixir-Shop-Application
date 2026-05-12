@@ -13,7 +13,15 @@ from config import (
     INTELLECTMONEY_SIGN_SECRET_KEY,
 )
 from .errors import IntellectMoneyError
-from .helpers import as_str, safe_form_for_log, response_body_for_log, is_hash_error, webhook_payload_value
+from .helpers import (
+    amount,
+    as_str,
+    is_hash_error,
+    parse_payment_state,
+    response_body_for_log,
+    safe_form_for_log,
+    webhook_payload_value,
+)
 
 
 class AsyncIntellectMoney:
@@ -61,6 +69,14 @@ class AsyncIntellectMoney:
             if normalized and normalized not in secrets: secrets.append(normalized)
 
         return secrets
+
+    @staticmethod
+    def amount(value: Decimal | float | int | str) -> str:
+        return amount(value)
+
+    @staticmethod
+    def parse_payment_state(data: dict[str, Any]) -> dict[str, Any]:
+        return parse_payment_state(data)
     
     async def _post_form(self, path: str, form_data: dict[str, Any], *sign_parts: Any) -> dict[str, Any]:
         headers = self._headers(*sign_parts)

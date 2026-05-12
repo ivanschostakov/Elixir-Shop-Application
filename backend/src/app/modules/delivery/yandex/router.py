@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 
+from config import YANDEX_DELIVERY_POINTS_ENABLED
 from src.app.services.cache import build_cache_key, get_cache_service
 from src.integrations.delivery.yandex import YandexDeliveryClient, get_yandex_delivery_client, YandexCalculatedDelivery
 from src.integrations.delivery.schemas import DeliveryPointMarker, DeliveryPoint
@@ -10,6 +11,9 @@ YANDEX_POINT_CACHE_TTL_SECONDS = 6 * 60 * 60
 
 @yandex_router.get("/delivery-point-markers", response_model=list[DeliveryPointMarker])
 async def yandex_get_delivery_point_markers(yandex: YandexDeliveryClient = Depends(get_yandex_delivery_client)):
+    if not YANDEX_DELIVERY_POINTS_ENABLED:
+        return []
+
     cache = get_cache_service()
     base_key = build_cache_key(route="delivery:yandex:markers", params={})
     cache_key = await cache.versioned_key("delivery_yandex", base_key)

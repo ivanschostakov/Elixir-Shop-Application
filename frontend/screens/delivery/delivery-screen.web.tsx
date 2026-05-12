@@ -463,6 +463,7 @@ export default function DeliveryScreen() {
                 return
             }
 
+            setIsPickupFooterExpanded(false)
             setPickupPointDraft(null)
             setPickupPointError(null)
             setSelectionError(null)
@@ -472,7 +473,10 @@ export default function DeliveryScreen() {
     )
 
     const handlePressDeliveryPoint = useCallback(async (provider: DeliveryPointProvider, code: string) => {
-        if (shouldShowPickupFooterExtension) {
+        const isSamePickupPointSelected =
+            pickupPointDraft?.provider === provider && pickupPointDraft.code === code
+
+        if (shouldShowPickupFooterExtension && isSamePickupPointSelected) {
             return
         }
 
@@ -547,7 +551,7 @@ export default function DeliveryScreen() {
         } finally {
             setIsResolvingPickupPoint(false)
         }
-    }, [activeCountryCode, clearResults, shouldShowPickupFooterExtension])
+    }, [activeCountryCode, clearResults, pickupPointDraft, shouldShowPickupFooterExtension])
 
     const handlePressResult = async (result: DeliveryGeoSuggestResult) => {
         try {
