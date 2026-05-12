@@ -335,14 +335,18 @@ export const productScreenStyle = StyleSheet.create({
         position: "relative",
     },
     infoTabsRow: {
+        alignItems: "center",
         flexDirection: "row",
-        gap: spacing.xs,
+        justifyContent: "space-between",
+        width: "100%",
     },
     infoTabButton: {
         alignItems: "center",
         justifyContent: "center",
         minHeight: 32,
-        paddingHorizontal: spacing.xs,
+        paddingBottom: 6,
+        paddingHorizontal: 2,
+        paddingTop: 2,
     },
     infoTabButtonText: {
         color: colors.mutedText,

@@ -35,13 +35,6 @@ export const deliveryScreenStyles = StyleSheet.create({
         justifyContent: "center",
         zIndex: 2,
     },
-    loadingOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        zIndex: 30,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: colors.veil,
-    },
     loadingCard: {
         minWidth: 160,
         flexDirection: "row",

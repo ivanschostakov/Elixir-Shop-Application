@@ -1,6 +1,7 @@
 import * as ImagePicker from "expo-image-picker"
-import { useState } from "react"
-import { Animated, Image, Pressable, Text, TextInput, View } from "react-native"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Animated, Easing, Image, Pressable, Text, TextInput, View } from "react-native"
+import type { LayoutChangeEvent } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
 import { HtmlContent, hasRenderableHtmlContent } from "@/components/content/html-content"
@@ -8,8 +9,16 @@ import {
     REVIEW_STAR_PATH,
 } from "@/screens/product/product-screen.constants"
 import { productScreenStyle } from "@/screens/product/product-screen.styles"
+import type { ProductInfoTabKey } from "@/screens/product/product-screen.types"
 import type { ProductInfoTabsProps } from "@/screens/product/product-info-tabs.types"
 import type { UploadableReviewAttachment } from "@/types/product"
+
+const INFO_TAB_INDICATOR_ANIMATION_MS = 220
+
+type InfoTabLayout = {
+    width: number
+    x: number
+}
 
 function StarRating({
     rating,
@@ -45,12 +54,9 @@ function StarRating({
 
 export function ProductInfoTabs({
     activeInfoTab,
-    indicatorWidth,
-    indicatorX,
     onChangeTab,
     onCopySku,
     onSubmitReview,
-    onTabLayout,
     product,
     reviewEligibilityLoading,
     reviews,
@@ -58,7 +64,6 @@ export function ProductInfoTabs({
     reviewsError,
     reviewsLoading,
     reviewsSubmitting,
-    showIndicator,
     t,
 }: ProductInfoTabsProps) {
     const detailsFallback = t("product.detailsNotProvided")
@@ -76,24 +81,77 @@ export function ProductInfoTabs({
     const [draftReviewText, setDraftReviewText] = useState("")
     const [draftReviewAttachments, setDraftReviewAttachments] = useState<UploadableReviewAttachment[]>([])
     const [submitError, setSubmitError] = useState<string | null>(null)
-    const infoTabs = [
-        {
-            key: "overview" as const,
-            label: t("product.tabOverview"),
-        },
-        {
-            key: "usage" as const,
-            label: t("product.tabUsage"),
-        },
-        {
-            key: "details" as const,
-            label: t("product.tabDetails"),
-        },
-        {
-            key: "reviews" as const,
-            label: `${t("product.tabReviews")} (${reviewCount})`,
-        },
-    ]
+    const [infoTabLayouts, setInfoTabLayouts] = useState<Partial<Record<ProductInfoTabKey, InfoTabLayout>>>({})
+    const infoTabIndicatorX = useRef(new Animated.Value(0)).current
+    const infoTabIndicatorWidth = useRef(new Animated.Value(0)).current
+    const hasMountedInfoTabIndicator = useRef(false)
+    const infoTabs = useMemo(
+        () => [
+            {
+                key: "overview" as const,
+                label: t("product.tabOverview"),
+            },
+            {
+                key: "usage" as const,
+                label: t("product.tabUsage"),
+            },
+            {
+                key: "details" as const,
+                label: t("product.tabDetails"),
+            },
+            {
+                key: "reviews" as const,
+                label: `${t("product.tabReviews")} (${reviewCount})`,
+            },
+        ],
+        [reviewCount, t],
+    )
+    const activeInfoTabLayout = infoTabLayouts[activeInfoTab]
+
+    const handleInfoTabLayout = useCallback((tabKey: ProductInfoTabKey, event: LayoutChangeEvent) => {
+        const { width, x } = event.nativeEvent.layout
+
+        setInfoTabLayouts((currentLayouts) => {
+            const existingLayout = currentLayouts[tabKey]
+
+            if (existingLayout && existingLayout.width === width && existingLayout.x === x) {
+                return currentLayouts
+            }
+
+            return {
+                ...currentLayouts,
+                [tabKey]: { width, x },
+            }
+        })
+    }, [])
+
+    useEffect(() => {
+        if (!activeInfoTabLayout) {
+            return
+        }
+
+        if (!hasMountedInfoTabIndicator.current) {
+            infoTabIndicatorX.setValue(activeInfoTabLayout.x)
+            infoTabIndicatorWidth.setValue(activeInfoTabLayout.width)
+            hasMountedInfoTabIndicator.current = true
+            return
+        }
+
+        Animated.parallel([
+            Animated.timing(infoTabIndicatorX, {
+                duration: INFO_TAB_INDICATOR_ANIMATION_MS,
+                easing: Easing.out(Easing.cubic),
+                toValue: activeInfoTabLayout.x,
+                useNativeDriver: false,
+            }),
+            Animated.timing(infoTabIndicatorWidth, {
+                duration: INFO_TAB_INDICATOR_ANIMATION_MS,
+                easing: Easing.out(Easing.cubic),
+                toValue: activeInfoTabLayout.width,
+                useNativeDriver: false,
+            }),
+        ]).start()
+    }, [activeInfoTabLayout, infoTabIndicatorWidth, infoTabIndicatorX])
 
     const renderActiveInfoTab = () => {
         if (activeInfoTab === "overview") {
@@ -356,9 +414,8 @@ export function ProductInfoTabs({
                                     key={tab.key}
                                     accessibilityRole="button"
                                     accessibilityState={{ selected: isActive }}
-                                    collapsable={false}
                                     onLayout={(event) => {
-                                        onTabLayout(tab.key, event.nativeEvent.layout)
+                                        handleInfoTabLayout(tab.key, event)
                                     }}
                                     onPress={() => {
                                         onChangeTab(tab.key)
@@ -370,6 +427,9 @@ export function ProductInfoTabs({
                                             productScreenStyle.infoTabButtonText,
                                             isActive && productScreenStyle.infoTabButtonTextActive,
                                         ]}
+                                        adjustsFontSizeToFit
+                                        minimumFontScale={0.82}
+                                        numberOfLines={1}
                                     >
                                         {tab.label}
                                     </Text>
@@ -377,14 +437,14 @@ export function ProductInfoTabs({
                             )
                         })}
                     </View>
-                    {showIndicator ? (
+                    {activeInfoTabLayout ? (
                         <Animated.View
+                            pointerEvents="none"
                             style={[
                                 productScreenStyle.infoTabIndicator,
-                                { pointerEvents: "none" },
                                 {
-                                    transform: [{ translateX: indicatorX }],
-                                    width: indicatorWidth,
+                                    transform: [{ translateX: infoTabIndicatorX }],
+                                    width: infoTabIndicatorWidth,
                                 },
                             ]}
                         />

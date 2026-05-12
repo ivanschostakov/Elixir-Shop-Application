@@ -1,7 +1,7 @@
 import { createURL } from "expo-linking"
 import * as Clipboard from "expo-clipboard"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Alert, Animated, Share } from "react-native"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { Alert, Share } from "react-native"
 
 import { getProductRoute } from "@/constants/routes"
 import { AUTH_REQUIRED_PROMPTED_ERROR } from "@/hooks/products/use-product-favourite"
@@ -15,7 +15,6 @@ import {
 } from "@/screens/product/product-screen.constants"
 import type {
     ProductInfoTabKey,
-    ProductInfoTabLayout,
 } from "@/screens/product/product-screen.types"
 import { getPreferredVariantId } from "@/screens/product/product-screen.utils"
 import type { ProductWithVariantsRead } from "@/types/product"
@@ -99,68 +98,10 @@ export function useSelectedProductVariant(
 
 export function useProductInfoTabs(productId: number | null) {
     const [activeInfoTab, setActiveInfoTab] = useState<ProductInfoTabKey>(DEFAULT_PRODUCT_INFO_TAB)
-    const [tabLayouts, setTabLayouts] = useState<Partial<Record<ProductInfoTabKey, ProductInfoTabLayout>>>({})
-    const infoTabIndicatorX = useRef(new Animated.Value(0)).current
-    const infoTabIndicatorWidth = useRef(new Animated.Value(0)).current
-    const hasMountedInfoTabIndicator = useRef(false)
 
     useEffect(() => {
         setActiveInfoTab(DEFAULT_PRODUCT_INFO_TAB)
-        setTabLayouts({})
-        hasMountedInfoTabIndicator.current = false
-        infoTabIndicatorX.setValue(0)
-        infoTabIndicatorWidth.setValue(0)
-    }, [infoTabIndicatorWidth, infoTabIndicatorX, productId])
-
-    useEffect(() => {
-        const activeLayout = tabLayouts[activeInfoTab]
-
-        if (!activeLayout) {
-            return
-        }
-
-        if (!hasMountedInfoTabIndicator.current) {
-            infoTabIndicatorX.setValue(activeLayout.x)
-            infoTabIndicatorWidth.setValue(activeLayout.width)
-            hasMountedInfoTabIndicator.current = true
-            return
-        }
-
-        Animated.parallel([
-            Animated.timing(infoTabIndicatorX, {
-                duration: 180,
-                toValue: activeLayout.x,
-                useNativeDriver: false,
-            }),
-            Animated.timing(infoTabIndicatorWidth, {
-                duration: 180,
-                toValue: activeLayout.width,
-                useNativeDriver: false,
-            }),
-        ]).start()
-    }, [activeInfoTab, infoTabIndicatorWidth, infoTabIndicatorX, tabLayouts])
-
-    const handleInfoTabLayout = useCallback(
-        (tabKey: ProductInfoTabKey, layout: ProductInfoTabLayout) => {
-            setTabLayouts((currentLayouts) => {
-                const existingLayout = currentLayouts[tabKey]
-
-                if (
-                    existingLayout &&
-                    existingLayout.width === layout.width &&
-                    existingLayout.x === layout.x
-                ) {
-                    return currentLayouts
-                }
-
-                return {
-                    ...currentLayouts,
-                    [tabKey]: layout,
-                }
-            })
-        },
-        [],
-    )
+    }, [productId])
 
     const handleInfoTabChange = useCallback((tabKey: ProductInfoTabKey) => {
         setActiveInfoTab((currentTabKey) => (currentTabKey === tabKey ? currentTabKey : tabKey))
@@ -169,10 +110,6 @@ export function useProductInfoTabs(productId: number | null) {
     return {
         activeInfoTab,
         handleInfoTabChange,
-        handleInfoTabLayout,
-        infoTabIndicatorWidth,
-        infoTabIndicatorX,
-        showIndicator: Boolean(tabLayouts[activeInfoTab]),
     }
 }
 

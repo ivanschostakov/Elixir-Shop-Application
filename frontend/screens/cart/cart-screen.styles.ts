@@ -2,6 +2,8 @@ import { StyleSheet } from "react-native"
 import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
+const CART_SEPARATOR_COLOR = "rgba(148, 163, 184, 0.18)"
+
 export const cartScreenStyles = StyleSheet.create({
     container: {
         flex: 1,
@@ -139,8 +141,8 @@ export const cartScreenStyles = StyleSheet.create({
         gap: spacing.sm,
     },
     summaryFooter: {
-        borderTopColor: colors.border,
-        borderTopWidth: 1,
+        borderTopColor: CART_SEPARATOR_COLOR,
+        borderTopWidth: StyleSheet.hairlineWidth,
         gap: spacing.xs,
         paddingHorizontal: spacing.lg,
         paddingBottom: spacing.sm,
@@ -375,8 +377,8 @@ export const cartScreenStyles = StyleSheet.create({
     },
     itemsSection: {
         backgroundColor: colors.surface,
-        borderTopColor: colors.divider,
-        borderTopWidth: 1,
+        borderTopColor: CART_SEPARATOR_COLOR,
+        borderTopWidth: StyleSheet.hairlineWidth,
         gap: 0,
     },
     itemsSectionCard: {
@@ -392,8 +394,8 @@ export const cartScreenStyles = StyleSheet.create({
     },
     recommendationsSection: {
         backgroundColor: colors.surface,
-        borderTopColor: colors.divider,
-        borderTopWidth: 1,
+        borderTopColor: CART_SEPARATOR_COLOR,
+        borderTopWidth: StyleSheet.hairlineWidth,
         paddingBottom: spacing.md,
         paddingTop: spacing.md,
     },
@@ -413,18 +415,20 @@ export const cartScreenStyles = StyleSheet.create({
         lineHeight: 18,
     },
     itemCard: {
-        alignItems: "flex-start",
+        alignItems: "stretch",
         backgroundColor: colors.surface,
         borderRadius: 22,
         flexDirection: "row",
-        gap: spacing.xs,
-        padding: spacing.sm,
+        gap: spacing.sm,
+        paddingHorizontal: 0,
+        paddingVertical: spacing.sm,
     },
     itemCardUnavailable: {
         backgroundColor: colors.surface,
         opacity: 0.9,
     },
     itemMediaColumn: {
+        justifyContent: "flex-end",
         width: 112,
     },
     itemImageButton: {
@@ -455,7 +459,7 @@ export const cartScreenStyles = StyleSheet.create({
     itemContent: {
         flex: 1,
         gap: spacing.xs,
-        justifyContent: "flex-start",
+        justifyContent: "space-between",
         minWidth: 0,
     },
     itemDetailsButton: {

@@ -48,10 +48,6 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
     const {
         activeInfoTab,
         handleInfoTabChange,
-        handleInfoTabLayout,
-        infoTabIndicatorWidth,
-        infoTabIndicatorX,
-        showIndicator,
     } = useProductInfoTabs(product?.id ?? null)
     const { handleBookmarkPress, handleCopyShareLink, handleSharePress } = useProductScreenActions({
         favouriteError,
@@ -364,12 +360,9 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                     <View style={productScreenStyle.sectionStack}>
                         <ProductInfoTabs
                             activeInfoTab={activeInfoTab}
-                            indicatorWidth={infoTabIndicatorWidth}
-                            indicatorX={infoTabIndicatorX}
                             onChangeTab={handleInfoTabChange}
                             onCopySku={handleCopy}
                             onSubmitReview={handleSubmitReview}
-                            onTabLayout={handleInfoTabLayout}
                             product={product}
                             reviewEligibilityLoading={reviewEligibilityLoading}
                             reviews={reviews}
@@ -377,7 +370,6 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                             reviewsError={reviewsError}
                             reviewsLoading={reviewsLoading}
                             reviewsSubmitting={reviewsSubmitting}
-                            showIndicator={showIndicator}
                             t={t}
                         />
                     </View>

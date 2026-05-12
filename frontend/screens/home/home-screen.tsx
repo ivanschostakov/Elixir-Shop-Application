@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     ActivityIndicator,
     Image,
@@ -9,7 +9,7 @@ import {
     TextInput,
     View,
 } from "react-native"
-import type { NativeScrollEvent, NativeSyntheticEvent } from "react-native"
+import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native"
 import { useRouter } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
 import { Path, Svg } from "react-native-svg"
@@ -30,6 +30,7 @@ import type { OrderDraftRead } from "@/services/api/order-drafts.types"
 import { getDiscoverCategoryIcon } from "@/screens/discover/discover-category-icons"
 import { homeScreenStyles } from "@/screens/home/home-screen.styles"
 import { colors } from "@/theme/colors"
+import type { Banner } from "@/types/banner"
 import { formatMoney } from "@/utils/formatting"
 
 function getMediaBaseUrl(): string {
@@ -47,6 +48,9 @@ function getMediaBaseUrl(): string {
 
 const MEDIA_BASE_URL = getMediaBaseUrl()
 const FALLBACK_BANNER_IMAGE_VERSION = "square-20260512"
+const BANNER_AUTOPLAY_INTERVAL_MS = 5000
+const LIGHT_HOME_GRADIENT_COLORS = ["#FF6F93", "#FF88B0", "#FFC96B"] as const
+const DARK_HOME_GRADIENT_COLORS = ["#0A84FF", "#12B7B0", "#34D399"] as const
 
 function appendImageVersion(uri: string, version: string | null | undefined): string {
     const trimmedVersion = version?.trim()
@@ -127,17 +131,23 @@ export default function HomeScreen() {
     } = useRecommendations({ surface: "home" })
     const [orderDrafts, setOrderDrafts] = useState<OrderDraftRead[]>([])
     const [isLoadingOrderDrafts, setIsLoadingOrderDrafts] = useState(false)
+    const [activeBannerIndex, setActiveBannerIndex] = useState(0)
+    const [bannerWidth, setBannerWidth] = useState(0)
+    const bannerScrollRef = useRef<ScrollView>(null)
 
     const hasSearchQuery = query.trim().length > 0
     const isDarkMode = colorScheme === "dark"
-    const quickCatalogIconBackground = isDarkMode ? "#2563EB" : colors.primary
+    const topGradientColors = isDarkMode ? DARK_HOME_GRADIENT_COLORS : LIGHT_HOME_GRADIENT_COLORS
+    const quickCatalogIconBackground = colors.primary
+    const searchPlaceholderColor = isDarkMode ? colors.onPrimary : colors.mutedText
+    const searchTextColor = isDarkMode ? colors.onPrimary : colors.text
     const searchPreviewProducts = useMemo(() => searchedProducts.slice(0, 4), [searchedProducts])
     const quickCatalogCategories = useMemo(
         () => categories.filter((category) => getDiscoverCategoryIcon(category.id)),
         [categories],
     )
-    const primaryBanner = banners[0] ?? null
-    const bannerImageSource = resolveBannerImageSource(primaryBanner?.image_path, primaryBanner?.updated_at)
+    const visibleBanners = useMemo<(Banner | null)[]>(() => (banners.length > 0 ? banners : [null]), [banners])
+    const bannerCount = visibleBanners.length
 
     const handleHomeScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
@@ -146,6 +156,23 @@ export default function HomeScreen() {
             void loadMoreRecommendations()
         }
     }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
+
+    const handleBannerLayout = useCallback((event: LayoutChangeEvent) => {
+        const nextWidth = Math.round(event.nativeEvent.layout.width)
+        setBannerWidth((currentWidth) => (currentWidth === nextWidth ? currentWidth : nextWidth))
+    }, [])
+
+    const handleBannerScrollEnd = useCallback(
+        (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+            if (bannerWidth <= 0) {
+                return
+            }
+
+            const nextIndex = Math.round(event.nativeEvent.contentOffset.x / bannerWidth)
+            setActiveBannerIndex(Math.min(Math.max(nextIndex, 0), bannerCount - 1))
+        },
+        [bannerCount, bannerWidth],
+    )
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -179,8 +206,35 @@ export default function HomeScreen() {
         }
     }, [isAuthenticated])
 
-    const handleBannerPress = () => {
-        const target = resolveDiscoverRoute(primaryBanner?.inner_link)
+    useEffect(() => {
+        if (activeBannerIndex < bannerCount) {
+            return
+        }
+
+        setActiveBannerIndex(0)
+        bannerScrollRef.current?.scrollTo({ animated: false, x: 0 })
+    }, [activeBannerIndex, bannerCount])
+
+    useEffect(() => {
+        if (bannerCount <= 1 || bannerWidth <= 0) {
+            return
+        }
+
+        const intervalId = setInterval(() => {
+            setActiveBannerIndex((currentIndex) => {
+                const nextIndex = (currentIndex + 1) % bannerCount
+                bannerScrollRef.current?.scrollTo({ animated: true, x: nextIndex * bannerWidth })
+                return nextIndex
+            })
+        }, BANNER_AUTOPLAY_INTERVAL_MS)
+
+        return () => {
+            clearInterval(intervalId)
+        }
+    }, [bannerCount, bannerWidth])
+
+    const handleBannerPress = (banner: Banner | null) => {
+        const target = resolveDiscoverRoute(banner?.inner_link)
         router.push({
             pathname: ROUTES.discover,
             params: {
@@ -209,7 +263,7 @@ export default function HomeScreen() {
             >
                 <View style={homeScreenStyles.topGradientSectionWrap}>
                     <LinearGradient
-                        colors={["#FF6F93", "#FF88B0", "#FFC96B"]}
+                        colors={topGradientColors}
                         end={{ x: 1, y: 0 }}
                         start={{ x: 0, y: 0 }}
                         style={homeScreenStyles.topGradientSection}
@@ -220,7 +274,7 @@ export default function HomeScreen() {
                                     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                                         <Path
                                             d="M11 4a7 7 0 1 0 4.47 12.39l4.07 4.08 1.42-1.42-4.08-4.07A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"
-                                            fill={colors.mutedText}
+                                            fill={searchPlaceholderColor}
                                         />
                                     </Svg>
                                 </View>
@@ -229,9 +283,9 @@ export default function HomeScreen() {
                                     autoCorrect={false}
                                     onChangeText={setQuery}
                                     placeholder={t("discover.searchPlaceholder")}
-                                    placeholderTextColor={colors.mutedText}
+                                    placeholderTextColor={searchPlaceholderColor}
                                     returnKeyType="search"
-                                    style={homeScreenStyles.searchInput}
+                                    style={[homeScreenStyles.searchInput, { color: searchTextColor }]}
                                     value={query}
                                 />
                                 {isSearchLoading ? <ActivityIndicator color={colors.primary} size="small" /> : null}
@@ -277,17 +331,59 @@ export default function HomeScreen() {
                 </View>
                 <View style={homeScreenStyles.promoBannerSection}>
                     <View style={homeScreenStyles.promoBanner}>
-                        <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={t("discover.latestTitle")}
-                            onPress={handleBannerPress}
-                            style={({ pressed }) => [
-                                homeScreenStyles.promoBannerTap,
-                                pressed && homeScreenStyles.promoBannerPressed,
-                            ]}
-                        >
-                            <Image source={bannerImageSource} resizeMode="contain" style={homeScreenStyles.promoImage} />
-                        </Pressable>
+                        <View style={homeScreenStyles.promoBannerViewport} onLayout={handleBannerLayout}>
+                            <ScrollView
+                                ref={bannerScrollRef}
+                                bounces={false}
+                                decelerationRate="fast"
+                                horizontal
+                                onMomentumScrollEnd={handleBannerScrollEnd}
+                                pagingEnabled
+                                scrollEnabled={bannerCount > 1}
+                                scrollEventThrottle={16}
+                                showsHorizontalScrollIndicator={false}
+                                style={homeScreenStyles.promoBannerCarousel}
+                            >
+                                {visibleBanners.map((banner, index) => {
+                                    const bannerImageSource = resolveBannerImageSource(
+                                        banner?.image_path,
+                                        banner?.updated_at,
+                                    )
+                                    return (
+                                        <Pressable
+                                            key={banner?.id ?? `fallback-banner-${index}`}
+                                            accessibilityRole="button"
+                                            accessibilityLabel={t("discover.latestTitle")}
+                                            onPress={() => handleBannerPress(banner)}
+                                            style={({ pressed }) => [
+                                                homeScreenStyles.promoBannerTap,
+                                                bannerWidth > 0 ? { width: bannerWidth } : null,
+                                                pressed && homeScreenStyles.promoBannerPressed,
+                                            ]}
+                                        >
+                                            <Image
+                                                source={bannerImageSource}
+                                                resizeMode="contain"
+                                                style={homeScreenStyles.promoImage}
+                                            />
+                                        </Pressable>
+                                    )
+                                })}
+                            </ScrollView>
+                            {banners.length > 0 ? (
+                                <View pointerEvents="none" style={homeScreenStyles.promoBannerIndicators}>
+                                    {visibleBanners.map((banner, index) => (
+                                        <View
+                                            key={banner?.id ?? `fallback-banner-indicator-${index}`}
+                                            style={[
+                                                homeScreenStyles.promoBannerIndicator,
+                                                index === activeBannerIndex && homeScreenStyles.promoBannerIndicatorActive,
+                                            ]}
+                                        />
+                                    ))}
+                                </View>
+                            ) : null}
+                        </View>
                         <View style={homeScreenStyles.quickCatalogInBanner}>
                             <ScrollView
                                 horizontal

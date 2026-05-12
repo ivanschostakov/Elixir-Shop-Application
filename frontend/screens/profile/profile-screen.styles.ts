@@ -3,6 +3,9 @@ import { StyleSheet } from "react-native"
 import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
+const PROFILE_PLACEHOLDER_BACKGROUND = "#EAF3FF"
+const PROFILE_PLACEHOLDER_TEXT = "#0A84FF"
+
 export const ProfileScreenStyles = StyleSheet.create({
     screen: {
         flex: 1,
@@ -65,7 +68,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         overflow: "hidden",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: colors.primaryMuted,
+        backgroundColor: PROFILE_PLACEHOLDER_BACKGROUND,
     },
     avatarImage: {
         width: "100%",
@@ -73,7 +76,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         borderRadius: 999,
     },
     avatarText: {
-        color: colors.primary,
+        color: PROFILE_PLACEHOLDER_TEXT,
         fontSize: 28,
         fontWeight: "800",
     },
@@ -522,7 +525,7 @@ export const ProfileScreenStyles = StyleSheet.create({
         overflow: "hidden",
         borderWidth: 3,
         borderColor: "rgba(255,255,255,0.16)",
-        backgroundColor: "#d9ecfb",
+        backgroundColor: PROFILE_PLACEHOLDER_BACKGROUND,
         alignItems: "center",
         justifyContent: "center",
     },
@@ -537,10 +540,10 @@ export const ProfileScreenStyles = StyleSheet.create({
         borderRadius: 999,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#d9ecfb",
+        backgroundColor: PROFILE_PLACEHOLDER_BACKGROUND,
     },
     avatarViewerPlaceholderText: {
-        color: colors.primary,
+        color: PROFILE_PLACEHOLDER_TEXT,
         fontSize: 88,
         fontWeight: "800",
     },

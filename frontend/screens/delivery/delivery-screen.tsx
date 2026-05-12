@@ -215,9 +215,7 @@ export default function DeliveryScreen() {
     } = useDeliveryPointMarkers(activeCountryCode, {
         enabled: shouldLoadPickupMarkers,
     })
-    const isMapKitInitializing = mapKitStatus === "loading"
     const isMapKitReady = mapKitStatus === "ready"
-    const isMapLoading = isMapKitInitializing || (isMapKitReady && !hasNativeMapLoaded)
     const shouldBlockPickupMarkers =
         isMapKitReady
         && !deliveryPointsError
@@ -1427,15 +1425,7 @@ export default function DeliveryScreen() {
                     </KeyboardAvoidingView>
                 </View>
             }
-            overlay={
-                isMapLoading ? (
-                    <View style={deliveryScreenStyles.loadingOverlay}>
-                        <View style={deliveryScreenStyles.loadingCard}>
-                            <ActivityIndicator color={colors.primary} size="large" />
-                        </View>
-                    </View>
-                ) : null
-            }
+            overlay={null}
             style={deliveryScreenStyles.viewport}
         >
             <View collapsable={false} style={deliveryScreenStyles.mapBox}>

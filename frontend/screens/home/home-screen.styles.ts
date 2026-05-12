@@ -70,7 +70,7 @@ export const homeScreenStyles = StyleSheet.create({
         paddingVertical: spacing.xs + 2,
     },
     promoBanner: {
-        backgroundColor: "rgba(255, 255, 255, 0.9)",
+        backgroundColor: colors.surface,
         borderRadius: 22,
         overflow: "hidden",
     },
@@ -85,15 +85,47 @@ export const homeScreenStyles = StyleSheet.create({
     promoBannerPressed: {
         opacity: 0.93,
     },
+    promoBannerCarousel: {
+        width: "100%",
+    },
+    promoBannerIndicator: {
+        backgroundColor: "rgba(107, 114, 128, 0.3)",
+        borderRadius: 999,
+        flex: 1,
+        height: 2,
+    },
+    promoBannerIndicatorActive: {
+        backgroundColor: "rgba(107, 114, 128, 0.78)",
+        flex: 1.7,
+        height: 3,
+    },
+    promoBannerIndicators: {
+        alignItems: "center",
+        bottom: 0,
+        flexDirection: "row",
+        gap: spacing.xs,
+        justifyContent: "center",
+        left: 0,
+        position: "absolute",
+        right: 0,
+    },
     promoBannerTap: {
         backgroundColor: colors.surface,
-        borderRadius: 22,
+        borderTopLeftRadius: 22,
+        borderTopRightRadius: 22,
+        overflow: "hidden",
+        width: "100%",
+    },
+    promoBannerViewport: {
+        borderTopLeftRadius: 22,
+        borderTopRightRadius: 22,
         overflow: "hidden",
         width: "100%",
     },
     promoImage: {
         aspectRatio: 16 / 9,
-        borderRadius: 22,
+        borderTopLeftRadius: 22,
+        borderTopRightRadius: 22,
         width: "100%",
     },
     ordersBlock: {

@@ -110,16 +110,21 @@ export default function CheckoutScreen() {
         () => (isBasketCheckout && basket ? buildCheckoutDraftFromBasket(basket) : savedOrderDraft),
         [basket, isBasketCheckout, savedOrderDraft],
     )
+    const recommendationsSurface = isBasketCheckout ? "cart" : "draft"
+    const recommendationsDraftId = isBasketCheckout ? null : orderDraft?.id ?? null
+    const shouldLoadRecommendations = Boolean(
+        orderDraft?.items.length && (isBasketCheckout || recommendationsDraftId),
+    )
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,
         loadingMore: recommendationsLoadingMore,
         products: recommendedProducts,
     } = useRecommendations({
-        surface: "draft",
-        draftId: !isBasketCheckout ? orderDraft?.id ?? null : null,
+        surface: recommendationsSurface,
+        draftId: recommendationsDraftId,
         limit: 6,
-        enabled: Boolean(!isBasketCheckout && orderDraft?.id && orderDraft.items.length),
+        enabled: shouldLoadRecommendations,
         deps: [orderDraft?.updated_at ?? null, orderDraft?.items.length ?? 0],
     })
     const { data: checkoutOptions, loading: optionsLoading, reload: reloadCheckoutOptions } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
