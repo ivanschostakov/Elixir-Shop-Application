@@ -9,6 +9,34 @@ type LegalContentProps = {
     hideFirstHeading?: boolean
 }
 
+type AppFirstLinkTarget = {
+    appUrl?: string
+    webUrl: string
+}
+
+const SOCIAL_HANDLE_LINKS: Record<string, AppFirstLinkTarget> = {
+    "@peptide_rus": {
+        appUrl: "tg://resolve?domain=peptide_rus",
+        webUrl: "https://t.me/peptide_rus",
+    },
+    "@peptide_slim": {
+        appUrl: "tg://resolve?domain=peptide_slim",
+        webUrl: "https://t.me/peptide_slim",
+    },
+    "@elixirpeptidebot": {
+        appUrl: "tg://resolve?domain=elixirpeptidebot",
+        webUrl: "https://t.me/elixirpeptidebot",
+    },
+    "@elixirpeptide": {
+        appUrl: "tg://resolve?domain=elixirpeptide",
+        webUrl: "https://t.me/elixirpeptide",
+    },
+    "@elixir.peptide": {
+        appUrl: "instagram://user?username=elixir.peptide",
+        webUrl: "https://www.instagram.com/elixir.peptide/",
+    },
+}
+
 function getLineKind(line: string) {
     if (line.startsWith("### ")) {
         return "h3"
@@ -41,6 +69,7 @@ export function LegalContent({ markdown, hideFirstHeading = false }: LegalConten
 
     const phoneRegex = /(?:\+\d[\d\s\-()]{7,}\d)/
     const emailRegex = /([^\s@]+@[^\s@]+\.[^\s@]+)/
+    const urlRegex = /(https?:\/\/[^\s]+)/i
 
     const handleCopy = async (value: string) => {
         await Clipboard.setStringAsync(value)
@@ -85,6 +114,32 @@ export function LegalContent({ markdown, hideFirstHeading = false }: LegalConten
         }
 
         await Linking.openURL(url)
+    }
+
+    const openWebUrl = async (url: string) => {
+        try {
+            await Linking.openURL(url)
+        } catch {
+            await handleCopy(url)
+        }
+    }
+
+    const openAppFirstLink = async ({ appUrl, webUrl }: AppFirstLinkTarget) => {
+        if (appUrl) {
+            try {
+                await Linking.openURL(appUrl)
+                return
+            } catch {
+                // Fallback to web URL when app scheme is unavailable.
+            }
+        }
+
+        await openWebUrl(webUrl)
+    }
+
+    const getFirstUrl = (value: string) => {
+        const match = value.match(urlRegex)
+        return match?.[0] ?? null
     }
 
     let hasHiddenFirstHeading = false
@@ -146,15 +201,26 @@ export function LegalContent({ markdown, hideFirstHeading = false }: LegalConten
 
                 const detectedEmail = getFirstEmail(value)
                 const detectedPhone = getFirstPhone(value)
+                const detectedUrl = getFirstUrl(value)
+                const socialLink = SOCIAL_HANDLE_LINKS[value]
                 const isEmail = Boolean(detectedEmail)
                 const isPhone = Boolean(detectedPhone)
-                const shouldOpenLink = isEmail || isPhone
+                const isUrl = Boolean(detectedUrl)
+                const isSocialHandle = Boolean(socialLink)
+                const shouldOpenLink = isEmail || isPhone || isUrl || isSocialHandle
 
                 return (
                     <Pressable
                         key={`body-${index}`}
                         onPress={() => {
                             if (shouldOpenLink) {
+                                if (socialLink) {
+                                    void openAppFirstLink(socialLink).catch(() => {
+                                        void handleCopy(value)
+                                    })
+                                    return
+                                }
+
                                 if (detectedEmail) {
                                     void openEmail(detectedEmail).catch(() => {
                                         void handleCopy(detectedEmail)
@@ -169,13 +235,20 @@ export function LegalContent({ markdown, hideFirstHeading = false }: LegalConten
                                     return
                                 }
 
+                                if (detectedUrl) {
+                                    void openWebUrl(detectedUrl).catch(() => {
+                                        void handleCopy(detectedUrl)
+                                    })
+                                    return
+                                }
+
                                 return
                             }
 
                             void handleCopy(value)
                         }}
                     >
-                        <Text style={isEmail || isPhone ? legalContentStyles.bodyLink : legalContentStyles.body}>
+                        <Text style={shouldOpenLink ? legalContentStyles.bodyLink : legalContentStyles.body}>
                             {value}
                         </Text>
                     </Pressable>

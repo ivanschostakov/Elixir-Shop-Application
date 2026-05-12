@@ -781,33 +781,35 @@ export function SendActionButton({
                             />
                         </Svg>
                     ) : (
-                        <Svg fill="none" height={22} viewBox="0 0 24 24" width={22}>
-                            <Path
-                                d="M8 2H16V11C16 13.2091 14.2091 15 12 15V15C9.79086 15 8 13.2091 8 11V2Z"
-                                fill={recording ? colors.onPrimary : isDark ? "#E8F0F6" : "#0E0E0E"}
-                            />
-                            <Path
-                                d="M5 11C5 12.8565 5.7375 14.637 7.05025 15.9497C8.36301 17.2625 10.1435 18 12 18C13.8565 18 15.637 17.2625 16.9497 15.9497C18.2625 14.637 19 12.8565 19 11"
-                                stroke={recording ? colors.onPrimary : isDark ? "#E8F0F6" : "#0E0E0E"}
-                                strokeWidth={2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
-                            <Path
-                                d="M12 21V19"
-                                stroke={recording ? colors.onPrimary : isDark ? "#E8F0F6" : "#0E0E0E"}
-                                strokeWidth={2}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
-                        </Svg>
+                        <View style={chatScreenStyles.sendButtonMicIconWrap}>
+                            <Svg fill="none" height={20} viewBox="0 0 24 24" width={20}>
+                                <Path
+                                    d="M8 2H16V11C16 13.2091 14.2091 15 12 15V15C9.79086 15 8 13.2091 8 11V2Z"
+                                    fill={recording ? colors.onPrimary : "#12161A"}
+                                />
+                                <Path
+                                    d="M5 11C5 12.8565 5.7375 14.637 7.05025 15.9497C8.36301 17.2625 10.1435 18 12 18C13.8565 18 15.637 17.2625 16.9497 15.9497C18.2625 14.637 19 12.8565 19 11"
+                                    stroke={recording ? colors.onPrimary : "#12161A"}
+                                    strokeWidth={2}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                />
+                                <Path
+                                    d="M12 21V19"
+                                    stroke={recording ? colors.onPrimary : "#12161A"}
+                                    strokeWidth={2}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                />
+                            </Svg>
+                        </View>
                     )}
                 </Animated.View>
                 <Animated.View
                     pointerEvents="none"
                     style={[chatScreenStyles.sendButtonSpinnerLayer, { opacity: spinnerOpacity }]}
                 >
-                    <ActivityIndicator color={isActive ? colors.onPrimary : isDark ? "#E8F0F6" : "#151515"} />
+                    <ActivityIndicator color={isActive ? colors.onPrimary : "#12161A"} />
                 </Animated.View>
             </Animated.View>
         </Pressable>

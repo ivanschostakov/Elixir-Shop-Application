@@ -769,7 +769,7 @@ export default function ChatScreen() {
                         <Svg fill="none" height={20} viewBox="0 0 24 24" width={20}>
                             <Path
                                 d="M15.5 5.5 9 12l6.5 6.5"
-                                stroke={isDark ? "#E7EEF5" : "#0A0A0A"}
+                                stroke="#12161A"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                                 strokeWidth={2.2}
@@ -961,7 +961,7 @@ export default function ChatScreen() {
                                         voiceStatusVisible ? chatScreenStyles.sendButtonDisabled : null,
                                     ]}
                                 >
-                                    <AttachmentSvgIcon color={isDark ? "#E8F0F6" : "#0E0E0E"} height={28} width={28} />
+                                    <AttachmentSvgIcon color="#12161A" height={28} width={28} />
                                 </Pressable>
 
                                 <View style={chatScreenStyles.composerInputWrap}>
