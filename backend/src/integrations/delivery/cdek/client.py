@@ -57,7 +57,7 @@ class AsyncCDEKClient:
         }
     
     @property
-    def cargo(self) -> dict[str, int]: return {"length": 25, "width": 10, "height": 15, "weight": 100}
+    def cargo(self) -> dict[str, int]: return {"length": 18, "width": 7, "height": 24, "weight": 357}
 
     async def aclose(self) -> None: await self._httpx_client.aclose()
 
@@ -200,16 +200,15 @@ class AsyncCDEKClient:
 
     async def calculate_delivery(self, latitude: float, longitude: float, mode: CdekDeliveryMode, *, country_code: CountryCode | None = None, postal_code: str | None = None, address: str | None = None, city: str | None = None) -> CDEKCalculatedDelivery:
         city_code = await self.get_city_code_by_coordinates(latitude, longitude)
-        to_location: dict[str, Any] = {
-            "code": city_code,
-            "latitude": latitude,
-            "longitude": longitude,
-        }
-
-        if country_code: to_location["country_code"] = country_code
-        if postal_code: to_location["postal_code"] = postal_code
-        if address: to_location["address"] = address
-        if city: to_location["city"] = city
+        to_location: dict[str, Any] = {"code": city_code}
+        if country_code:
+            to_location["country_code"] = country_code
+        if postal_code:
+            to_location["postal_code"] = postal_code
+        if city:
+            to_location["city"] = city
+        if mode == "door" and address:
+            to_location["address"] = address
 
         # Keep calculation behavior aligned with Shop-Webapp:
         # request tariff list and select the requested tariff code from the provider response.
