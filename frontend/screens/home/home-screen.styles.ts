@@ -24,6 +24,56 @@ export const homeScreenStyles = StyleSheet.create({
         paddingBottom: spacing.md,
         paddingHorizontal: spacing.md,
     },
+    topMenuRow: {
+        alignItems: "flex-end",
+        marginBottom: spacing.sm,
+        position: "relative",
+        zIndex: 5,
+    },
+    topMenuButton: {
+        alignItems: "center",
+        backgroundColor: colors.surface,
+        borderRadius: 12,
+        borderWidth: 1,
+        height: 42,
+        justifyContent: "center",
+        width: 42,
+    },
+    topMenuButtonPressed: {
+        opacity: 0.85,
+    },
+    topMenuIcon: {
+        width: 16,
+        gap: 3,
+    },
+    topMenuLine: {
+        borderRadius: 999,
+        height: 2,
+        width: "100%",
+    },
+    topMenuPopup: {
+        backgroundColor: colors.surface,
+        borderRadius: 14,
+        marginTop: spacing.xs,
+        minWidth: 178,
+        overflow: "hidden",
+        paddingVertical: spacing.xs,
+        position: "absolute",
+        right: 0,
+        top: 44,
+    },
+    topMenuItem: {
+        minHeight: 38,
+        justifyContent: "center",
+        paddingHorizontal: spacing.md,
+    },
+    topMenuItemPressed: {
+        backgroundColor: colors.surfaceMuted,
+    },
+    topMenuItemText: {
+        fontSize: 13,
+        fontWeight: "700",
+    },
     searchInputWrap: {
         alignItems: "center",
         backgroundColor: colors.surface,

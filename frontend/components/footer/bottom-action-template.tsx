@@ -12,6 +12,7 @@ import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useRememberedProductVariantSelection } from "@/hooks/products/product-variant-selection-store"
 import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
 import { updateOrderDraft } from "@/services/api/order-drafts"
 
 export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
@@ -19,6 +20,7 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     const router = useRouter()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()
+    const { accentPalette } = useTheme()
     const { basket } = useBasket()
     const [isOpeningCheckout, setIsOpeningCheckout] = useState(false)
     const { addItem, clear, error: basketError, removeItem, updateItemQuantity, updating } = useBasketMutations()
@@ -138,7 +140,7 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     if (variant === "product") {
         if (selectedBasketItem) {
             return (
-                <View style={stickyFooterStyles.quantityControl}>
+                <View style={[stickyFooterStyles.quantityControl, { backgroundColor: accentPalette.primary }]}>
                     <Pressable
                         accessibilityLabel={t("cart.decreaseQuantity")}
                         accessibilityRole="button"
@@ -188,11 +190,14 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
                 }}
                 style={({ pressed }) => [
                     stickyFooterStyles.actionButton,
+                    { backgroundColor: accentPalette.primary },
                     isProductActionDisabled && stickyFooterStyles.actionButtonDisabled,
-                    pressed && stickyFooterStyles.actionButtonPressed,
+                    pressed && { backgroundColor: accentPalette.primaryPressed },
                 ]}
             >
-                <Text style={stickyFooterStyles.actionButtonText}>{t("product.chooseDosagesCta")}</Text>
+                <Text style={[stickyFooterStyles.actionButtonText, { color: accentPalette.onPrimary }]}>
+                    {t("product.chooseDosagesCta")}
+                </Text>
             </Pressable>
         )
     }
@@ -209,11 +214,12 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
             }}
             style={({ pressed }) => [
                 stickyFooterStyles.actionButton,
+                { backgroundColor: accentPalette.primary },
                 isOpeningCheckout && stickyFooterStyles.actionButtonDisabled,
-                pressed && stickyFooterStyles.actionButtonPressed,
+                pressed && { backgroundColor: accentPalette.primaryPressed },
             ]}
         >
-            <Text style={stickyFooterStyles.actionButtonText}>{basketActionLabel}</Text>
+            <Text style={[stickyFooterStyles.actionButtonText, { color: accentPalette.onPrimary }]}>{basketActionLabel}</Text>
         </Pressable>
     )
 }

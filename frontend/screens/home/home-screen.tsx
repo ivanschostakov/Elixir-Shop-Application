@@ -26,6 +26,7 @@ import { useProductSearch } from "@/hooks/products/use-product-search"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
 import { deleteOrderDraft, getOrderDrafts } from "@/services/api/order-drafts"
 import { API_BASE_URL } from "@/services/api/constants"
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
@@ -55,8 +56,59 @@ function getMediaBaseUrl(): string {
 const MEDIA_BASE_URL = getMediaBaseUrl()
 const FALLBACK_BANNER_IMAGE_VERSION = "square-20260512"
 const BANNER_AUTOPLAY_INTERVAL_MS = 5000
-const LIGHT_HOME_GRADIENT_COLORS = ["#FF6F93", "#FF88B0", "#FFC96B"] as const
-const DARK_HOME_GRADIENT_COLORS = ["#0A84FF", "#12B7B0", "#34D399"] as const
+
+function parseColorToRgb(color: string): [number, number, number] | null {
+    if (/^#[\da-f]{6}$/i.test(color)) {
+        return [
+            Number.parseInt(color.slice(1, 3), 16),
+            Number.parseInt(color.slice(3, 5), 16),
+            Number.parseInt(color.slice(5, 7), 16),
+        ]
+    }
+
+    const rgbMatch = color.match(/^rgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)$/i)
+    if (rgbMatch) {
+        return [
+            Number(rgbMatch[1]) || 0,
+            Number(rgbMatch[2]) || 0,
+            Number(rgbMatch[3]) || 0,
+        ]
+    }
+
+    return null
+}
+
+function mixColor(color: string, target: [number, number, number], ratio: number) {
+    const rgb = parseColorToRgb(color)
+    if (!rgb) {
+        return color
+    }
+
+    const safeRatio = Math.max(0, Math.min(1, ratio))
+    const [r, g, b] = rgb
+    const [tr, tg, tb] = target
+
+    const nextR = Math.round(r + (tr - r) * safeRatio)
+    const nextG = Math.round(g + (tg - g) * safeRatio)
+    const nextB = Math.round(b + (tb - b) * safeRatio)
+    return `rgb(${nextR}, ${nextG}, ${nextB})`
+}
+
+function getHomeGradientColors(primaryColor: string, isDarkMode: boolean) {
+    if (isDarkMode) {
+        return [
+            mixColor(primaryColor, [12, 17, 27], 0.56),
+            mixColor(primaryColor, [12, 17, 27], 0.34),
+            primaryColor,
+        ] as const
+    }
+
+    return [
+        mixColor(primaryColor, [255, 255, 255], 0.58),
+        mixColor(primaryColor, [255, 255, 255], 0.32),
+        primaryColor,
+    ] as const
+}
 const orderStatusColors = {
     created: {
         label: "Заказ создан",
@@ -177,6 +229,7 @@ export default function HomeScreen() {
     const colorScheme = useColorScheme()
     const topInset = useSafeAreaInsets().top
     const { t } = useLanguage()
+    const { accentPalette } = useTheme()
     const { isAuthenticated } = useAuth()
     const { banners } = useBanners(true)
     const { categories } = useProductCategories(true)
@@ -204,12 +257,16 @@ export default function HomeScreen() {
     const [deletingDraftIds, setDeletingDraftIds] = useState<number[]>([])
     const [activeBannerIndex, setActiveBannerIndex] = useState(0)
     const [bannerWidth, setBannerWidth] = useState(0)
+    const [isHomeMenuOpen, setIsHomeMenuOpen] = useState(false)
     const bannerScrollRef = useRef<ScrollView>(null)
 
     const hasSearchQuery = query.trim().length > 0
     const isDarkMode = colorScheme === "dark"
-    const topGradientColors = isDarkMode ? DARK_HOME_GRADIENT_COLORS : LIGHT_HOME_GRADIENT_COLORS
-    const quickCatalogIconBackground = colors.primary
+    const topGradientColors = useMemo(
+        () => getHomeGradientColors(accentPalette.primary, isDarkMode),
+        [accentPalette.primary, isDarkMode],
+    )
+    const quickCatalogIconBackground = accentPalette.primary
     const searchPlaceholderColor = isDarkMode ? colors.onPrimary : colors.mutedText
     const searchTextColor = isDarkMode ? colors.onPrimary : colors.text
     const searchPreviewProducts = useMemo(() => searchedProducts.slice(0, 4), [searchedProducts])
@@ -398,6 +455,12 @@ export default function HomeScreen() {
         })
     }
 
+    const homeMenuItems = [
+        { key: "profile", label: t("route.profile"), route: ROUTES.profile },
+        { key: "favorites", label: t("route.favorites"), route: ROUTES.favorites },
+        { key: "contacts", label: t("nav.contacts"), route: ROUTES.contacts },
+    ] as const
+
     return (
         <CatalogTemplate
             chromeTemplate={{
@@ -422,6 +485,49 @@ export default function HomeScreen() {
                         style={homeScreenStyles.topGradientSection}
                     >
                         <View style={[homeScreenStyles.topGradientContent, { paddingTop: topInset + 14 }]}>
+                            <View style={homeScreenStyles.topMenuRow}>
+                                <Pressable
+                                    accessibilityLabel={t("nav.menu")}
+                                    accessibilityRole="button"
+                                    onPress={() => setIsHomeMenuOpen((currentValue) => !currentValue)}
+                                    style={({ pressed }) => [
+                                        homeScreenStyles.topMenuButton,
+                                        { borderColor: accentPalette.primaryMuted },
+                                        pressed && homeScreenStyles.topMenuButtonPressed,
+                                    ]}
+                                >
+                                    <View style={homeScreenStyles.topMenuIcon}>
+                                        <View style={[homeScreenStyles.topMenuLine, { backgroundColor: accentPalette.primary }]} />
+                                        <View style={[homeScreenStyles.topMenuLine, { backgroundColor: accentPalette.primary }]} />
+                                        <View style={[homeScreenStyles.topMenuLine, { backgroundColor: accentPalette.primary }]} />
+                                    </View>
+                                </Pressable>
+
+                                {isHomeMenuOpen ? (
+                                    <View style={homeScreenStyles.topMenuPopup}>
+                                        {homeMenuItems.map((menuItem) => (
+                                            <Pressable
+                                                key={menuItem.key}
+                                                accessibilityRole="button"
+                                                accessibilityLabel={menuItem.label}
+                                                onPress={() => {
+                                                    setIsHomeMenuOpen(false)
+                                                    router.push(menuItem.route)
+                                                }}
+                                                style={({ pressed }) => [
+                                                    homeScreenStyles.topMenuItem,
+                                                    pressed && homeScreenStyles.topMenuItemPressed,
+                                                ]}
+                                            >
+                                                <Text style={[homeScreenStyles.topMenuItemText, { color: accentPalette.primary }]}>
+                                                    {menuItem.label}
+                                                </Text>
+                                            </Pressable>
+                                        ))}
+                                    </View>
+                                ) : null}
+                            </View>
+
                             <View style={homeScreenStyles.searchInputWrap}>
                                 <View style={homeScreenStyles.searchIconWrap}>
                                     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
@@ -441,7 +547,7 @@ export default function HomeScreen() {
                                     style={[homeScreenStyles.searchInput, { color: searchTextColor }]}
                                     value={query}
                                 />
-                                {isSearchLoading ? <ActivityIndicator color={colors.primary} size="small" /> : null}
+                                {isSearchLoading ? <ActivityIndicator color={accentPalette.primary} size="small" /> : null}
                             </View>
 
                             {hasSearchQuery && searchPreviewProducts.length ? (
@@ -568,7 +674,7 @@ export default function HomeScreen() {
                                                 ]}
                                             >
                                                 {CategoryIcon ? (
-                                                    <CategoryIcon width={30} height={30} color={colors.onPrimary} />
+                                                    <CategoryIcon width={30} height={30} color={accentPalette.onPrimary} />
                                                 ) : null}
                                             </View>
                                             <Text
@@ -596,7 +702,7 @@ export default function HomeScreen() {
 
                                 {isLoadingActiveOrders ? (
                                     <View style={homeScreenStyles.orderLoadingWrap}>
-                                        <ActivityIndicator color={colors.primary} />
+                                        <ActivityIndicator color={accentPalette.primary} />
                                     </View>
                                 ) : (
                                     <ScrollView horizontal contentContainerStyle={homeScreenStyles.activeOrdersRow} showsHorizontalScrollIndicator={false}>
@@ -698,7 +804,7 @@ export default function HomeScreen() {
 
                                 {isLoadingOrderDrafts ? (
                                     <View style={homeScreenStyles.orderLoadingWrap}>
-                                        <ActivityIndicator color={colors.primary} />
+                                        <ActivityIndicator color={accentPalette.primary} />
                                     </View>
                                 ) : (
                                     <ScrollView horizontal contentContainerStyle={homeScreenStyles.ordersRow} showsHorizontalScrollIndicator={false}>

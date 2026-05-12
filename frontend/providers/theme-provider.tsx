@@ -8,13 +8,34 @@ import { themeAccentPalettes, type ThemeAccentName, type ThemeName } from "@/the
 
 const THEME_STORAGE_KEY = "elixirpeptide-theme"
 const THEME_ACCENT_STORAGE_KEY = "elixirpeptide-theme-accent"
+type StoredThemeAccentName = ThemeAccentName | "blue"
 
 function isThemeName(value: string | null): value is ThemeName {
     return value === "light" || value === "dark"
 }
 
-function isThemeAccentName(value: string | null): value is ThemeAccentName {
-    return value === "blue" || value === "teal" || value === "emerald" || value === "rose" || value === "amber"
+function isThemeAccentName(value: string | null): value is StoredThemeAccentName {
+    return (
+        value === "vividBlue" ||
+        value === "archivedBlue" ||
+        value === "teal" ||
+        value === "emerald" ||
+        value === "rose" ||
+        value === "amber" ||
+        value === "blue"
+    )
+}
+
+function normalizeThemeAccentName(value: string | null): ThemeAccentName | null {
+    if (!isThemeAccentName(value)) {
+        return null
+    }
+
+    if (value === "blue") {
+        return "archivedBlue"
+    }
+
+    return value
 }
 
 function getWebStorage() {
@@ -55,12 +76,12 @@ async function persistTheme(themeName: ThemeName) {
 async function readStoredAccent(): Promise<ThemeAccentName | null> {
     if (Platform.OS === "web") {
         const storedAccentName = getWebStorage()?.getItem(THEME_ACCENT_STORAGE_KEY) ?? null
-        return isThemeAccentName(storedAccentName) ? storedAccentName : null
+        return normalizeThemeAccentName(storedAccentName)
     }
 
     try {
         const storedAccentName = await SecureStore.getItemAsync(THEME_ACCENT_STORAGE_KEY)
-        return isThemeAccentName(storedAccentName) ? storedAccentName : null
+        return normalizeThemeAccentName(storedAccentName)
     } catch {
         return null
     }
@@ -89,7 +110,7 @@ function getSystemThemeName(): ThemeName {
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
     const [themeName, setThemeName] = useState<ThemeName>(getSystemThemeName)
-    const [accentName, setAccentNameState] = useState<ThemeAccentName>("blue")
+    const [accentName, setAccentNameState] = useState<ThemeAccentName>("vividBlue")
 
     useEffect(() => {
         let isMounted = true

@@ -56,9 +56,9 @@ export function HeaderMenu({
                 hitSlop={12}
             >
                 <View style={styles.menuIcon}>
-                    <View style={styles.menuLine} />
-                    <View style={styles.menuLine} />
-                    <View style={styles.menuLine} />
+                    <View style={[styles.menuLine, { backgroundColor: actionColor }]} />
+                    <View style={[styles.menuLine, { backgroundColor: actionColor }]} />
+                    <View style={[styles.menuLine, { backgroundColor: actionColor }]} />
                 </View>
             </Pressable>
 

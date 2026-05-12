@@ -11,6 +11,7 @@ import {
 import { productScreenStyle } from "@/screens/product/product-screen.styles"
 import type { ProductInfoTabKey } from "@/screens/product/product-screen.types"
 import type { ProductInfoTabsProps } from "@/screens/product/product-info-tabs.types"
+import { useTheme } from "@/providers/theme-provider"
 import type { UploadableReviewAttachment } from "@/types/product"
 
 const INFO_TAB_INDICATOR_ANIMATION_MS = 220
@@ -66,6 +67,7 @@ export function ProductInfoTabs({
     reviewsSubmitting,
     t,
 }: ProductInfoTabsProps) {
+    const { accentPalette } = useTheme()
     const detailsFallback = t("product.detailsNotProvided")
     const overviewHtml = hasRenderableHtmlContent(product.description) ? product.description : null
     const usageHtml = hasRenderableHtmlContent(product.usage) ? product.usage : null
@@ -182,6 +184,7 @@ export function ProductInfoTabs({
                                         style={[
                                             productScreenStyle.detailValue,
                                             productScreenStyle.detailValueSku,
+                                            { color: accentPalette.primary },
                                         ]}
                                     >
                                         {productSku}
@@ -243,6 +246,10 @@ export function ProductInfoTabs({
                                         style={({ pressed }) => [
                                             productScreenStyle.reviewRatingOption,
                                             isActive && productScreenStyle.reviewRatingOptionActive,
+                                            isActive && {
+                                                backgroundColor: accentPalette.primary,
+                                                borderColor: accentPalette.primary,
+                                            },
                                             pressed && productScreenStyle.reviewRatingOptionPressed,
                                         ]}
                                     >
@@ -250,6 +257,7 @@ export function ProductInfoTabs({
                                             style={[
                                                 productScreenStyle.reviewRatingOptionText,
                                                 isActive && productScreenStyle.reviewRatingOptionTextActive,
+                                                isActive && { color: accentPalette.onPrimary },
                                             ]}
                                         >
                                             {rating}
@@ -288,11 +296,12 @@ export function ProductInfoTabs({
                             }}
                             style={({ pressed }) => [
                                 productScreenStyle.reviewSubmitButton,
+                                { backgroundColor: accentPalette.primary },
                                 reviewsSubmitting && productScreenStyle.reviewSubmitButtonDisabled,
-                                pressed && productScreenStyle.reviewSubmitButtonPressed,
+                                pressed && { backgroundColor: accentPalette.primaryPressed },
                             ]}
                         >
-                            <Text style={productScreenStyle.reviewSubmitButtonText}>
+                            <Text style={[productScreenStyle.reviewSubmitButtonText, { color: accentPalette.onPrimary }]}>
                                 {reviewsSubmitting ? t("product.reviewSubmitLoading") : t("product.reviewSubmit")}
                             </Text>
                         </Pressable>
@@ -330,11 +339,14 @@ export function ProductInfoTabs({
                             }}
                             style={({ pressed }) => [
                                 productScreenStyle.reviewPhotoButton,
+                                { borderColor: accentPalette.primary, backgroundColor: accentPalette.primaryMuted },
                                 reviewsSubmitting && productScreenStyle.reviewSubmitButtonDisabled,
                                 pressed && productScreenStyle.reviewPhotoButtonPressed,
                             ]}
                         >
-                            <Text style={productScreenStyle.reviewPhotoButtonText}>{t("product.reviewAddPhoto")}</Text>
+                            <Text style={[productScreenStyle.reviewPhotoButtonText, { color: accentPalette.primary }]}>
+                                {t("product.reviewAddPhoto")}
+                            </Text>
                         </Pressable>
                         {draftReviewAttachments.length > 0 ? (
                             <View style={productScreenStyle.reviewAttachmentPreviewRow}>
@@ -426,6 +438,7 @@ export function ProductInfoTabs({
                                         style={[
                                             productScreenStyle.infoTabButtonText,
                                             isActive && productScreenStyle.infoTabButtonTextActive,
+                                            isActive && { color: accentPalette.primary },
                                         ]}
                                         adjustsFontSizeToFit
                                         minimumFontScale={0.82}
@@ -445,6 +458,7 @@ export function ProductInfoTabs({
                                 {
                                     transform: [{ translateX: infoTabIndicatorX }],
                                     width: infoTabIndicatorWidth,
+                                    backgroundColor: accentPalette.primary,
                                 },
                             ]}
                         />

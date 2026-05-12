@@ -4,7 +4,8 @@ const darkPage = "#070A0F"
 const darkSurface = "#111827"
 const darkGray = "#1F2937"
 export const archivedPrimaryBlue = "rgb(31, 100, 155)"
-export type ThemeAccentName = "blue" | "teal" | "emerald" | "rose" | "amber"
+export const vividPrimaryBlue = "#0A84FF"
+export type ThemeAccentName = "vividBlue" | "archivedBlue" | "teal" | "emerald" | "rose" | "amber"
 
 export type ThemeAccentPalette = {
     primary: string
@@ -14,35 +15,41 @@ export type ThemeAccentPalette = {
 }
 
 export const themeAccentPalettes: Record<ThemeAccentName, ThemeAccentPalette> = {
-    blue: {
+    vividBlue: {
+        primary: vividPrimaryBlue,
+        primaryPressed: "#096FE0",
+        primaryMuted: "#EAF3FF",
+        onPrimary: "#FFFFFF",
+    },
+    archivedBlue: {
         primary: archivedPrimaryBlue,
         primaryPressed: "#1B4E7B",
         primaryMuted: "rgba(31, 100, 155, 0.16)",
         onPrimary: "#FFFFFF",
     },
     teal: {
-        primary: "#0F766E",
-        primaryPressed: "#115E59",
-        primaryMuted: "rgba(15, 118, 110, 0.16)",
-        onPrimary: "#FFFFFF",
+        primary: "#6EC9C3",
+        primaryPressed: "#59BBB4",
+        primaryMuted: "#EEF9F8",
+        onPrimary: "#113835",
     },
     emerald: {
-        primary: "#059669",
-        primaryPressed: "#047857",
-        primaryMuted: "rgba(5, 150, 105, 0.16)",
-        onPrimary: "#FFFFFF",
+        primary: "#77D8B2",
+        primaryPressed: "#62CBA2",
+        primaryMuted: "#EEF9F4",
+        onPrimary: "#133D2D",
     },
     rose: {
-        primary: "#E11D48",
-        primaryPressed: "#BE123C",
-        primaryMuted: "rgba(225, 29, 72, 0.16)",
-        onPrimary: "#FFFFFF",
+        primary: "#F19AAF",
+        primaryPressed: "#E489A0",
+        primaryMuted: "#FFF2F6",
+        onPrimary: "#5A2332",
     },
     amber: {
-        primary: "#D97706",
-        primaryPressed: "#B45309",
-        primaryMuted: "rgba(217, 119, 6, 0.17)",
-        onPrimary: "#FFFFFF",
+        primary: "#F4C27D",
+        primaryPressed: "#E7B26A",
+        primaryMuted: "#FFF7EA",
+        onPrimary: "#5A3A0E",
     },
 }
 

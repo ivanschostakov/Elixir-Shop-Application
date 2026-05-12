@@ -19,7 +19,7 @@ import { attachMyReferrerCode, detachMyReferrerCode, getMyReferralProfile } from
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { formatMoney } from "@/utils/formatting"
 import { getProfileInitials } from "@/utils/profile/get-profile-initials"
-import type { ThemeAccentName } from "@/theme/colors"
+import { themeAccentPalettes, type ThemeAccentName } from "@/theme/colors"
 
 function formatProfileMoney(value: string | null | undefined) {
     return formatMoney(Number(value ?? 0), "RUB") ?? "0 ₽"
@@ -113,7 +113,7 @@ export default function ProfileScreen() {
         t,
     })
     const shouldShowReferralDetails = Boolean(referralProfile?.referrer_promo_code)
-    const accentOptions: ThemeAccentName[] = ["blue", "teal", "emerald", "rose", "amber"]
+    const accentOptions: ThemeAccentName[] = ["vividBlue", "archivedBlue", "teal", "emerald", "rose", "amber"]
     const accentLabel = language === "ru"
         ? "Акцент"
         : language === "kz"
@@ -267,16 +267,28 @@ export default function ProfileScreen() {
                         }}
                         style={({ pressed }) => [
                             stickyFooterStyles.actionButton,
+                            { backgroundColor: accentPalette.primary },
                             isApplyingProfilePromo && stickyFooterStyles.actionButtonDisabled,
-                            pressed && !isApplyingProfilePromo && stickyFooterStyles.actionButtonPressed,
+                            pressed && !isApplyingProfilePromo && { backgroundColor: accentPalette.primaryPressed },
                         ]}
                     >
-                        <Text style={stickyFooterStyles.actionButtonText}>{footerCtaLabel}</Text>
+                        <Text style={[stickyFooterStyles.actionButtonText, { color: accentPalette.onPrimary }]}>
+                            {footerCtaLabel}
+                        </Text>
                     </Pressable>
                 ),
             },
         }
-    }, [handleApplyProfilePromo, isApplyingProfilePromo, normalizedProfilePromoCode, shouldShowReferralDetails, t])
+    }, [
+        accentPalette.onPrimary,
+        accentPalette.primary,
+        accentPalette.primaryPressed,
+        handleApplyProfilePromo,
+        isApplyingProfilePromo,
+        normalizedProfilePromoCode,
+        shouldShowReferralDetails,
+        t,
+    ])
 
     return (
         <FeedTemplate
@@ -393,15 +405,7 @@ export default function ProfileScreen() {
                             <View
                                 style={[
                                     ProfileScreenStyles.colorSwatch,
-                                    { backgroundColor: accentOption === accentName
-                                        ? accentPalette.primary
-                                        : ({
-                                            blue: "rgb(31, 100, 155)",
-                                            teal: "#0F766E",
-                                            emerald: "#059669",
-                                            rose: "#E11D48",
-                                            amber: "#D97706",
-                                        }[accentOption]) },
+                                    { backgroundColor: themeAccentPalettes[accentOption].primary },
                                 ]}
                             />
                         </Pressable>

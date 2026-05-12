@@ -3,6 +3,7 @@ import { Animated, Pressable, Text, View, type LayoutChangeEvent } from "react-n
 
 import { contentStyles } from "@/components/content/content.styles"
 import type { ContentTabBarProps } from "@/components/content/content-tab-bar.types"
+import { useTheme } from "@/providers/theme-provider"
 export type { ContentTabBarItem } from "@/components/content/content-tab-bar.types"
 
 type TabLayout = {
@@ -11,6 +12,7 @@ type TabLayout = {
 }
 
 export function ContentTabBar({ tabs, variant = "default" }: ContentTabBarProps) {
+    const { accentPalette } = useTheme()
     const activeTabKey = tabs.find((tab) => tab.isActive)?.key ?? tabs[0]?.key ?? null
     const tabSignature = useMemo(() => tabs.map((tab) => tab.key).join("|"), [tabs])
     const [tabLayouts, setTabLayouts] = useState<Record<string, TabLayout>>({})
@@ -103,6 +105,7 @@ export function ContentTabBar({ tabs, variant = "default" }: ContentTabBarProps)
                             contentStyles.topTabLabel,
                             variant === "onColor" && contentStyles.topTabLabelOnColor,
                             tab.isActive && contentStyles.topTabLabelActive,
+                            tab.isActive && variant !== "onColor" && { color: accentPalette.primary },
                             tab.isActive && variant === "onColor" && contentStyles.topTabLabelActiveOnColor,
                         ]}
                     >
@@ -119,6 +122,7 @@ export function ContentTabBar({ tabs, variant = "default" }: ContentTabBarProps)
                         {
                             transform: [{ translateX: indicatorX }],
                             width: indicatorWidth,
+                            backgroundColor: variant === "onColor" ? "#FFFFFF" : accentPalette.primary,
                         },
                     ]}
                 />
