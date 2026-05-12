@@ -5,6 +5,7 @@ from .auth import auth_router
 from .banners import banners_router
 from .favorites import favourites_query_router, favourites_router
 from .health import health_router
+from .guest import guest_router
 from .payments import payments_router
 from .product_categories import product_categories_router
 from .products import products_router
@@ -22,6 +23,7 @@ __all__ = [
     "favourites_query_router",
     "favourites_router",
     "health_router",
+    "guest_router",
     "payments_router",
     "product_categories_router",
     "products_router",

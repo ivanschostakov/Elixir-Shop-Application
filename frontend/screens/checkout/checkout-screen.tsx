@@ -73,6 +73,7 @@ import {
 import { getBasketCheckoutOptions, restoreDraftToBasket, updateBasketCheckout, updateBasketItem } from "@/services/api/basket"
 import { checkMyBenefits } from "@/services/api/benefits"
 import type { BenefitCheckResponse, BenefitOptionResponse } from "@/services/api/benefits.types"
+import { checkGuestEmail } from "@/services/api/guest"
 import { createOrderDraft, getOrderDraftOptions, updateOrderDraft } from "@/services/api/order-drafts"
 import type {
     DeliveryRecipientRead,
@@ -82,6 +83,7 @@ import type {
 } from "@/services/api/order-drafts.types"
 import { attachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
 import type { ReferralProfileResponse } from "@/services/api/users.types"
+import { updateGuestBasketCheckout, updateGuestCartItemQuantity } from "@/services/guest-cart"
 import { colors } from "@/theme/colors"
 
 function formatBenefitTitle(option: BenefitOptionResponse) {
@@ -97,7 +99,7 @@ function formatBenefitTitle(option: BenefitOptionResponse) {
 }
 
 export default function CheckoutScreen() {
-    const { user } = useAuth()
+    const { isAuthenticated, user } = useAuth()
     const { t } = useLanguage()
     const params = useLocalSearchParams<{ code?: string | string[], draftId?: string | string[] }>()
     const draftId = parseDraftId(params.draftId)
@@ -113,7 +115,7 @@ export default function CheckoutScreen() {
     const recommendationsSurface = isBasketCheckout ? "cart" : "draft"
     const recommendationsDraftId = isBasketCheckout ? null : orderDraft?.id ?? null
     const shouldLoadRecommendations = Boolean(
-        orderDraft?.items.length && (isBasketCheckout || recommendationsDraftId),
+        isAuthenticated && orderDraft?.items.length && (isBasketCheckout || recommendationsDraftId),
     )
     const {
         hasMore: hasMoreRecommendations,
@@ -128,10 +130,17 @@ export default function CheckoutScreen() {
         deps: [orderDraft?.updated_at ?? null, orderDraft?.items.length ?? 0],
     })
     const { data: checkoutOptions, loading: optionsLoading, reload: reloadCheckoutOptions } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
-        deps: [isBasketCheckout, orderDraft?.id ?? null],
+        deps: [isBasketCheckout, isAuthenticated, orderDraft?.id ?? null],
         enabled: Boolean(orderDraft?.id),
         fetcher: async () => {
             if (isBasketCheckout) {
+                if (!isAuthenticated) {
+                    return {
+                        addresses: [],
+                        recipients: [],
+                    }
+                }
+
                 return getBasketCheckoutOptions()
             }
 
@@ -150,7 +159,7 @@ export default function CheckoutScreen() {
         setData: setReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
         deps: [orderDraft?.id ?? null, isBasketCheckout],
-        enabled: Boolean(orderDraft),
+        enabled: Boolean(orderDraft && isAuthenticated),
         fetcher: getMyReferralProfile,
         initialData: null,
         resetOnLoad: true,
@@ -177,10 +186,11 @@ export default function CheckoutScreen() {
     const attachedPromoCode = referralProfile?.referrer_promo_code ?? null
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(!hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
     const activeEnteredPromoCode = hasAttachedPromoCode ? null : appliedPromoCode
     const loadBenefitCheck = useCallback(async (code: string | null) => {
-        if (!orderDraft) {
+        if (!orderDraft || !isAuthenticated) {
+            setBenefitCheck(null)
             return null
         }
 
@@ -196,7 +206,7 @@ export default function CheckoutScreen() {
         } catch {
             return null
         }
-    }, [orderDraft])
+    }, [isAuthenticated, orderDraft])
 
     useEffect(() => {
         if (!routePromoCode || appliedRoutePromoCodeRef.current === routePromoCode) {
@@ -209,7 +219,8 @@ export default function CheckoutScreen() {
     }, [routePromoCode])
 
     useEffect(() => {
-        if (!orderDraft) {
+        if (!orderDraft || !isAuthenticated) {
+            setBenefitCheck(null)
             return
         }
 
@@ -220,7 +231,7 @@ export default function CheckoutScreen() {
         return () => {
             clearTimeout(timeoutId)
         }
-    }, [activeEnteredPromoCode, loadBenefitCheck, orderDraft])
+    }, [activeEnteredPromoCode, isAuthenticated, loadBenefitCheck, orderDraft])
 
     useEffect(() => {
         if (!orderDraft) {
@@ -242,14 +253,15 @@ export default function CheckoutScreen() {
 
     useFocusEffect(
         useCallback(() => {
-            if (orderDraft) {
+            if (orderDraft && isAuthenticated) {
                 void reloadReferralProfile({ showLoading: false })
             }
-        }, [orderDraft, reloadReferralProfile]),
+        }, [isAuthenticated, orderDraft, reloadReferralProfile]),
     )
 
     const savedRecipient = getDraftRecipient(orderDraft)
     const selfRecipient = getSelfRecipient(user)
+    const hasSelfRecipient = Boolean(selfRecipient)
     const currentRecipient = savedRecipient ?? selfRecipient
     const deliveryCost = orderDraft
         ? formatMoney(Number(orderDraft.delivery_total), orderDraft.currency)
@@ -289,7 +301,7 @@ export default function CheckoutScreen() {
     const isPositionsBusy = isRestoringDraft || isUpdatingPositions
     const isAddProductsBusy = isRestoringDraft
     const handleApplyPromoCode = useCallback(async () => {
-        if (!normalizedPromoCode || !orderDraft || isCheckingPromoCode || hasAttachedPromoCode) {
+        if (!isAuthenticated || !normalizedPromoCode || !orderDraft || isCheckingPromoCode || hasAttachedPromoCode) {
             return
         }
 
@@ -344,6 +356,7 @@ export default function CheckoutScreen() {
     }, [
         activeEnteredPromoCode,
         hasAttachedPromoCode,
+        isAuthenticated,
         isCheckingPromoCode,
         loadBenefitCheck,
         normalizedPromoCode,
@@ -504,7 +517,7 @@ export default function CheckoutScreen() {
         t,
     ])
     useApplyScreenTemplate("feed", checkoutChromeTemplate)
-    const recipientPrimaryText = savedRecipient ? formatRecipientName(savedRecipient) : t("checkout.recipientForMyself")
+    const recipientPrimaryText = currentRecipient ? formatRecipientName(currentRecipient) : t("checkout.selectRecipient")
     const availableRecipients = useMemo(() => {
         return orderDraft ? buildAvailableRecipients(orderDraft, checkoutOptions) : []
     }, [checkoutOptions, orderDraft])
@@ -533,7 +546,7 @@ export default function CheckoutScreen() {
         }
 
         if (!savedRecipient) {
-            const selfRecipientKey = SELF_RECIPIENT_VALUE
+            const selfRecipientKey = hasSelfRecipient ? SELF_RECIPIENT_VALUE : ADD_NEW_RECIPIENT_VALUE
             setSelectedRecipientKey(selfRecipientKey)
             setDraftRecipientKey(selfRecipientKey)
             return
@@ -542,7 +555,7 @@ export default function CheckoutScreen() {
         const activeRecipient = availableRecipients.find((option) => option.id === savedRecipient.id)
         setSelectedRecipientKey(activeRecipient?.id ?? savedRecipient.id)
         setDraftRecipientKey(activeRecipient?.id ?? savedRecipient.id)
-    }, [availableRecipients, orderDraft, savedRecipient])
+    }, [availableRecipients, hasSelfRecipient, orderDraft, savedRecipient])
 
     useEffect(() => {
         if (!orderDraft) {
@@ -697,7 +710,9 @@ export default function CheckoutScreen() {
 
     const updateCheckoutMeta = async (payload: Parameters<typeof updateOrderDraft>[1]) => {
         if (isBasketCheckout) {
-            const nextBasket = await updateBasketCheckout(payload)
+            const nextBasket = isAuthenticated
+                ? await updateBasketCheckout(payload)
+                : await updateGuestBasketCheckout(payload)
             await applyUpdatedBasket(nextBasket)
             return
         }
@@ -832,7 +847,9 @@ export default function CheckoutScreen() {
 
         try {
             if (isBasketCheckout) {
-                const nextBasket = await updateBasketItem(item.id, { quantity: nextQuantity })
+                const nextBasket = isAuthenticated
+                    ? await updateBasketItem(item.id, { quantity: nextQuantity })
+                    : await updateGuestCartItemQuantity(item.id, nextQuantity)
                 setBasketSnapshot(nextBasket)
                 return
             }
@@ -962,6 +979,34 @@ export default function CheckoutScreen() {
         setIsSavingRecipient(true)
 
         try {
+            if (!isAuthenticated) {
+                const emailCheck = await checkGuestEmail(email)
+                if (emailCheck.exists) {
+                    Alert.alert(
+                        t("checkout.existingEmailTitle"),
+                        t("checkout.existingEmailMessage"),
+                        [
+                            {
+                                text: t("checkout.existingEmailClear"),
+                                style: "cancel",
+                                onPress: () => {
+                                    setRecipientForm((current) => ({ ...current, email: "" }))
+                                    setRecipientFormErrors((current) => ({ ...current, email: undefined }))
+                                },
+                            },
+                            {
+                                text: t("auth.entry.login"),
+                                onPress: () => {
+                                    setIsRecipientEditorOpen(false)
+                                    router.push(ROUTES.login)
+                                },
+                            },
+                        ],
+                    )
+                    return
+                }
+            }
+
             await updateCheckoutMeta({
                 new_recipient: {
                     name: firstName,
@@ -1114,33 +1159,37 @@ export default function CheckoutScreen() {
                             </View>
                         </Pressable>
 
-                        <View style={checkoutScreenStyles.detailsSheetDivider} />
+                        {isAuthenticated ? (
+                            <>
+                                <View style={checkoutScreenStyles.detailsSheetDivider} />
 
-                        <View style={checkoutScreenStyles.detailsSheetRow}>
-                            <Text numberOfLines={1} style={checkoutScreenStyles.detailsSheetLabel}>
-                                {t("checkout.promoCodeTitle")}
-                            </Text>
-                            <View style={checkoutScreenStyles.detailsSheetTrailing}>
-                                <View style={checkoutScreenStyles.detailsSheetTextBlock}>
-                                    <TextInput
-                                        autoCapitalize="characters"
-                                        autoCorrect={false}
-                                        editable={!hasAttachedPromoCode}
-                                        onChangeText={handlePromoCodeChange}
-                                        placeholder={t("checkout.promoCodePlaceholder")}
-                                        placeholderTextColor="#94A3B8"
-                                        style={checkoutScreenStyles.detailsSheetInput}
-                                        value={displayedPromoCode}
-                                    />
+                                <View style={checkoutScreenStyles.detailsSheetRow}>
+                                    <Text numberOfLines={1} style={checkoutScreenStyles.detailsSheetLabel}>
+                                        {t("checkout.promoCodeTitle")}
+                                    </Text>
+                                    <View style={checkoutScreenStyles.detailsSheetTrailing}>
+                                        <View style={checkoutScreenStyles.detailsSheetTextBlock}>
+                                            <TextInput
+                                                autoCapitalize="characters"
+                                                autoCorrect={false}
+                                                editable={!hasAttachedPromoCode}
+                                                onChangeText={handlePromoCodeChange}
+                                                placeholder={t("checkout.promoCodePlaceholder")}
+                                                placeholderTextColor="#94A3B8"
+                                                style={checkoutScreenStyles.detailsSheetInput}
+                                                value={displayedPromoCode}
+                                            />
+                                        </View>
+                                    </View>
                                 </View>
-                            </View>
-                        </View>
-                        {hasAttachedPromoCode ? (
-                            <View style={checkoutScreenStyles.detailsSheetHintRow}>
-                                <Text style={[checkoutScreenStyles.detailsSheetHintText, checkoutScreenStyles.detailsSheetHintTextSuccess]}>
-                                    {t("checkout.promoCodeAlreadyApplied")}
-                                </Text>
-                            </View>
+                                {hasAttachedPromoCode ? (
+                                    <View style={checkoutScreenStyles.detailsSheetHintRow}>
+                                        <Text style={[checkoutScreenStyles.detailsSheetHintText, checkoutScreenStyles.detailsSheetHintTextSuccess]}>
+                                            {t("checkout.promoCodeAlreadyApplied")}
+                                        </Text>
+                                    </View>
+                                ) : null}
+                            </>
                         ) : null}
                     </View>
 
@@ -1350,11 +1399,13 @@ export default function CheckoutScreen() {
                                     }}
                                     style={contentStyles.browsePicker}
                                 >
-                                    <Picker.Item
-                                        key={SELF_RECIPIENT_VALUE}
-                                        label={t("checkout.recipientForMyself")}
-                                        value={SELF_RECIPIENT_VALUE}
-                                    />
+                                    {hasSelfRecipient ? (
+                                        <Picker.Item
+                                            key={SELF_RECIPIENT_VALUE}
+                                            label={t("checkout.recipientForMyself")}
+                                            value={SELF_RECIPIENT_VALUE}
+                                        />
+                                    ) : null}
                                     {availableRecipients.map((option) => {
                                         return (
                                             <Picker.Item

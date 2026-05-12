@@ -57,6 +57,7 @@ import {
 } from "@/hooks/delivery/delivery-point-selection-store"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useDeliveryPointMarkers } from "@/hooks/delivery/use-delivery-point-markers"
+import { useAuth } from "@/providers/auth-provider"
 import { translate } from "@/i18n/translations"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
 import {
@@ -75,6 +76,7 @@ import type {
 } from "@/services/api/delivery.types"
 import { updateBasketCheckout } from "@/services/api/basket"
 import { updateOrderDraft } from "@/services/api/order-drafts"
+import { updateGuestBasketCheckout } from "@/services/guest-cart"
 import { initializeYandexMapKit } from "@/services/maps/yandex-mapkit"
 import {
     DOOR_DELIVERY_PROVIDER,
@@ -132,6 +134,7 @@ export default function DeliveryScreen() {
     const params = useLocalSearchParams<{ draftId?: string | string[]; syncBasket?: string | string[] }>()
     const checkoutDraftId = parseDraftId(params.draftId)
     const shouldSyncBasketItems = parseBooleanSearchParam(params.syncBasket)
+    const { isAuthenticated } = useAuth()
     const insets = useSafeAreaInsets()
     const mapRef = useRef<ClusteredYamap | null>(null)
     const pendingDeliveryPointCodeRef = useRef<string | null>(null)
@@ -1009,9 +1012,13 @@ export default function DeliveryScreen() {
                           )
                         : null
                 const nextBasket = checkoutDraftId === null
-                    ? await updateBasketCheckout({
-                          new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
-                      })
+                    ? isAuthenticated
+                        ? await updateBasketCheckout({
+                              new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                          })
+                        : await updateGuestBasketCheckout({
+                              new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                          })
                     : null
 
                 if (nextDraft !== null) {
@@ -1052,7 +1059,7 @@ export default function DeliveryScreen() {
 
         setIsResolvingPickupPoint(true)
         void choosePickupPoint()
-    }, [activeCountryCode, checkoutDraftId, clearResults, moveToRegion, pickupPointDraft, router, shouldSyncBasketItems])
+    }, [activeCountryCode, checkoutDraftId, clearResults, isAuthenticated, moveToRegion, pickupPointDraft, router, shouldSyncBasketItems])
 
     const handleCopyPickupInfo = useCallback(async (value: string) => {
         if (!value) {
@@ -1092,9 +1099,13 @@ export default function DeliveryScreen() {
                           )
                         : null
                 const nextBasket = checkoutDraftId === null
-                    ? await updateBasketCheckout({
-                          new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
-                      })
+                    ? isAuthenticated
+                        ? await updateBasketCheckout({
+                              new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                          })
+                        : await updateGuestBasketCheckout({
+                              new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                          })
                     : null
 
                 if (nextDraft !== null) {
@@ -1123,7 +1134,7 @@ export default function DeliveryScreen() {
 
         setIsResolvingDoorAddress(true)
         void chooseDoorDelivery()
-    }, [activeCountryCode, checkoutDraftId, doorDeliveryDraft, router, shouldSyncBasketItems])
+    }, [activeCountryCode, checkoutDraftId, doorDeliveryDraft, isAuthenticated, router, shouldSyncBasketItems])
 
     const handleOpenDeliveryPointOfficePage = useCallback(async (code: string) => {
         const officeUrl = `https://www.cdek.ru/ru/offices/view/${encodeURIComponent(code)}/`

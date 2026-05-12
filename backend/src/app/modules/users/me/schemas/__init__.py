@@ -5,6 +5,7 @@ from .order import CreateOrderPayload, CreatePaymentPayload, PaymentMethod, Paym
 from .recommendations import RecommendationCategoryViewPayload, RecommendationSurface, RecommendationViewPayload
 from .referrals import DepositLedgerEntryRead, DepositRead, ReferrerCodeAttachPayload, ReferrerCodeCheckPayload, ReferrerCodeCheckRead, ReferralProfileRead
 from .search_queries import CreateRecentSearchQueryPayload
+from .profile import PersonalDataUpdatePayload
 
 __all__ = [
     "AIChatResponse",
@@ -25,6 +26,7 @@ __all__ = [
     "DepositRead",
     "PaymentMethod",
     "PaymentStatusRead",
+    "PersonalDataUpdatePayload",
     "ReferrerCodeAttachPayload",
     "ReferrerCodeCheckPayload",
     "ReferrerCodeCheckRead",

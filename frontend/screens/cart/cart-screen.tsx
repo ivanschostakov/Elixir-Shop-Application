@@ -88,7 +88,7 @@ export default function CartScreen() {
         setData: setReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
         deps: [basket?.items.length ?? 0],
-        enabled: Boolean(basket?.items.length),
+        enabled: Boolean(isAuthenticated && basket?.items.length),
         fetcher: getMyReferralProfile,
         initialData: null,
         resetOnLoad: true,
@@ -112,15 +112,15 @@ export default function CartScreen() {
     const attachedPromoCode = referralProfile?.referrer_promo_code ?? null
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(!hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
     const activeEnteredPromoCode = hasAttachedPromoCode ? null : appliedPromoCode
 
     useFocusEffect(
         useCallback(() => {
-            if (basket?.items.length) {
+            if (basket?.items.length && isAuthenticated) {
                 void reloadReferralProfile({ showLoading: false })
             }
-        }, [basket?.items.length, reloadReferralProfile]),
+        }, [basket?.items.length, isAuthenticated, reloadReferralProfile]),
     )
 
     useEffect(() => {
@@ -138,7 +138,8 @@ export default function CartScreen() {
     }, [basketDraftEditingId, routeDraftIdParam])
 
     const loadCartBenefitCheck = useCallback(async (code: string | null) => {
-        if (!basket) {
+        if (!basket || !isAuthenticated) {
+            setBenefitCheck(null)
             return null
         }
 
@@ -153,16 +154,16 @@ export default function CartScreen() {
         } catch {
             return null
         }
-    }, [basket])
+    }, [basket, isAuthenticated])
 
     useEffect(() => {
-        if (!basket?.items.length) {
+        if (!basket?.items.length || !isAuthenticated) {
             setBenefitCheck(null)
             return
         }
 
         void loadCartBenefitCheck(activeEnteredPromoCode)
-    }, [activeEnteredPromoCode, basket?.items.length, loadCartBenefitCheck])
+    }, [activeEnteredPromoCode, basket?.items.length, isAuthenticated, loadCartBenefitCheck])
 
     const handleRemoveItem = async (itemId: number) => {
         try {
@@ -363,7 +364,7 @@ export default function CartScreen() {
         : null
     const grandTotalLabel = grandTotalAmount !== null ? formatProductPrice(grandTotalAmount) : null
     const handleApplyPromoCode = useCallback(async () => {
-        if (!normalizedPromoCode || !basket || isCheckingPromoCode || hasAttachedPromoCode) {
+        if (!isAuthenticated || !normalizedPromoCode || !basket || isCheckingPromoCode || hasAttachedPromoCode) {
             return
         }
 
@@ -421,6 +422,7 @@ export default function CartScreen() {
         activeEnteredPromoCode,
         basket,
         hasAttachedPromoCode,
+        isAuthenticated,
         isCheckingPromoCode,
         loadCartBenefitCheck,
         normalizedPromoCode,
@@ -509,7 +511,7 @@ export default function CartScreen() {
                         </Pressable>
                     </View>
                 ),
-                headerLeft: (
+                headerLeft: isAuthenticated ? (
                     <Pressable
                         accessibilityLabel={t("cart.saveDraftCta")}
                         accessibilityRole="button"
@@ -547,7 +549,7 @@ export default function CartScreen() {
                             />
                         </Svg>
                     </Pressable>
-                ),
+                ) : null,
             },
         }
     }, [
@@ -561,6 +563,7 @@ export default function CartScreen() {
         handleSaveDraft,
         hasUnappliedPromoCode,
         isFooterCtaDisabled,
+        isAuthenticated,
         isSavingDraft,
         originalGrandTotalLabel,
         subtotalLabel,
@@ -660,38 +663,40 @@ export default function CartScreen() {
             >
                 <View style={cartScreenStyles.contentSurface}>
                     <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
-                        <View style={cartScreenStyles.summaryCard}>
-                            <View style={cartScreenStyles.promoInputShell}>
-                                <TextInput
-                                    autoCapitalize="characters"
-                                    autoCorrect={false}
-                                    editable={!hasAttachedPromoCode}
-                                    onChangeText={handlePromoCodeChange}
-                                    placeholder={t("cart.promoCodePlaceholder")}
-                                    style={cartScreenStyles.promoInput}
-                                    value={displayedPromoCode}
-                                />
-                                {promoCode && !hasAttachedPromoCode ? (
-                                    <Pressable
-                                        accessibilityLabel={t("cart.clearPromoCode")}
-                                        accessibilityRole="button"
-                                        hitSlop={8}
-                                        onPress={handleClearPromoCode}
-                                        style={({ pressed }) => [
-                                            cartScreenStyles.promoClearButton,
-                                            pressed && cartScreenStyles.promoClearButtonPressed,
-                                        ]}
-                                    >
-                                        <Text style={cartScreenStyles.promoClearButtonText}>×</Text>
-                                    </Pressable>
+                        {isAuthenticated ? (
+                            <View style={cartScreenStyles.summaryCard}>
+                                <View style={cartScreenStyles.promoInputShell}>
+                                    <TextInput
+                                        autoCapitalize="characters"
+                                        autoCorrect={false}
+                                        editable={!hasAttachedPromoCode}
+                                        onChangeText={handlePromoCodeChange}
+                                        placeholder={t("cart.promoCodePlaceholder")}
+                                        style={cartScreenStyles.promoInput}
+                                        value={displayedPromoCode}
+                                    />
+                                    {promoCode && !hasAttachedPromoCode ? (
+                                        <Pressable
+                                            accessibilityLabel={t("cart.clearPromoCode")}
+                                            accessibilityRole="button"
+                                            hitSlop={8}
+                                            onPress={handleClearPromoCode}
+                                            style={({ pressed }) => [
+                                                cartScreenStyles.promoClearButton,
+                                                pressed && cartScreenStyles.promoClearButtonPressed,
+                                            ]}
+                                        >
+                                            <Text style={cartScreenStyles.promoClearButtonText}>×</Text>
+                                        </Pressable>
+                                    ) : null}
+                                </View>
+                                {hasAttachedPromoCode ? (
+                                    <Text style={[cartScreenStyles.promoStatusText, cartScreenStyles.promoStatusTextSuccess]}>
+                                        {t("cart.promoCodeAlreadyApplied")}
+                                    </Text>
                                 ) : null}
                             </View>
-                            {hasAttachedPromoCode ? (
-                                <Text style={[cartScreenStyles.promoStatusText, cartScreenStyles.promoStatusTextSuccess]}>
-                                    {t("cart.promoCodeAlreadyApplied")}
-                                </Text>
-                            ) : null}
-                        </View>
+                        ) : null}
 
                         <View style={cartScreenStyles.summaryFooter}>
                             <View style={cartScreenStyles.summaryStats}>

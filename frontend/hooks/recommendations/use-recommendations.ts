@@ -1,6 +1,7 @@
 import { useCallback } from "react"
 
 import { usePaginatedData } from "@/hooks/shared/use-paginated-data"
+import { useAuth } from "@/providers/auth-provider"
 import { getRecommendations } from "@/services/api/recommendations"
 import type { RecommendationSurface } from "@/services/api/recommendations.types"
 import type { ProductWithVariantsRead } from "@/types/product"
@@ -22,6 +23,7 @@ export function useRecommendations({
     enabled = true,
     deps = [],
 }: UseRecommendationsOptions) {
+    const { isAuthenticated } = useAuth()
     const pageSize = limit ?? (surface === "home" ? 8 : 6)
 
     const fetchRecommendationPage = useCallback(async ({
@@ -51,7 +53,7 @@ export function useRecommendations({
         reload,
     } = usePaginatedData<ProductWithVariantsRead>({
         deps: [surface, productId, draftId, pageSize, ...deps],
-        enabled,
+        enabled: enabled && isAuthenticated,
         fetchPage: fetchRecommendationPage,
         getKey: (product) => product.id,
         pageSize,

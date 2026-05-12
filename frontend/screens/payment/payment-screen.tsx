@@ -35,12 +35,15 @@ import {
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
 import { paymentScreenStyles } from "@/screens/payment/payment-screen.styles"
+import { createGuestOrder, isGuestEmailExistsError } from "@/services/api/guest"
+import type { GuestOrderPayload } from "@/services/api/guest.types"
 import { createOrder, getOrder, repeatOrder } from "@/services/api/orders"
 import type { OrderItemRead, OrderRead } from "@/services/api/orders.types"
 import { createPayment, getPaymentStatus } from "@/services/api/payments"
 import type { PaymentStatusRead } from "@/services/api/payments.types"
+import { clearGuestCart } from "@/services/guest-cart"
 import { syncOrderStatusNotifications } from "@/services/notifications/order-status-notifications"
-import type { OrderDraftItemRead } from "@/services/api/order-drafts.types"
+import type { OrderDraftItemRead, OrderDraftRead } from "@/services/api/order-drafts.types"
 import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 import { parsePositiveRouteId } from "@/utils/route-params"
 
@@ -114,8 +117,50 @@ function mergePaymentState(previous: PaymentStatusRead | null, next: PaymentStat
     }
 }
 
+function buildGuestOrderPayload(orderDraft: OrderDraftRead, paymentMethod: PaymentMethod): GuestOrderPayload {
+    const deliveryAddress = orderDraft.delivery_address
+    const recipient = getDraftRecipient(orderDraft)
+
+    if (!deliveryAddress || !recipient) {
+        throw new Error("Guest order requires delivery and recipient data")
+    }
+
+    return {
+        items: orderDraft.items.map((item) => ({
+            variant_id: item.variant_id,
+            quantity: item.quantity,
+        })),
+        delivery_address: {
+            mode: deliveryAddress.mode,
+            provider: deliveryAddress.provider,
+            country_code: deliveryAddress.country_code,
+            name: deliveryAddress.name,
+            full_address: deliveryAddress.full_address,
+            details: deliveryAddress.details,
+            city: deliveryAddress.city,
+            postal_code: deliveryAddress.postal_code,
+            latitude: deliveryAddress.latitude,
+            longitude: deliveryAddress.longitude,
+            provider_reference: deliveryAddress.provider_reference,
+            delivery_calculation: {
+                delivery_sum: Number(orderDraft.delivery_total),
+                period_min: orderDraft.delivery_period_min ?? 0,
+                period_max: orderDraft.delivery_period_max ?? 0,
+                currency: orderDraft.currency,
+            },
+        },
+        recipient: {
+            name: recipient.name,
+            surname: recipient.surname,
+            phone: recipient.phone,
+            email: recipient.email,
+        },
+        payment_method: paymentMethod,
+    }
+}
+
 export default function PaymentScreen() {
-    const { user } = useAuth()
+    const { acceptSession, isAuthenticated, user } = useAuth()
     const { t } = useLanguage()
     const params = useLocalSearchParams<{
         code?: string | string[]
@@ -379,14 +424,20 @@ export default function PaymentScreen() {
                     throw new Error(t("payment.orderMissingMessage"))
                 }
 
-                nextOrder = await createOrder({
-                    ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
-                    ...(routePromoCode ? { code: routePromoCode } : {}),
-                    ...(routeDepositSpend ? { requested_deposit_amount: routeDepositSpend } : {}),
-                    payment_method: effectiveMethod,
-                })
-                if (isBasketCheckout) {
+                if (isBasketCheckout && !isAuthenticated) {
+                    const guestOrderResponse = await createGuestOrder(buildGuestOrderPayload(orderDraft, effectiveMethod))
+                    acceptSession(guestOrderResponse)
+                    nextOrder = guestOrderResponse.order
+                    await clearGuestCart({ updateSnapshot: false })
                     clearBasketSnapshot()
+
+                    if (!guestOrderResponse.credentials_email_sent) {
+                        Alert.alert(
+                            t("payment.credentialsEmailFailedTitle"),
+                            t("payment.credentialsEmailFailedMessage"),
+                        )
+                    }
+
                     router.replace({
                         pathname: ROUTES.payment,
                         params: {
@@ -394,6 +445,23 @@ export default function PaymentScreen() {
                             paymentMethod: effectiveMethod,
                         },
                     })
+                } else {
+                    nextOrder = await createOrder({
+                        ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
+                        ...(routePromoCode ? { code: routePromoCode } : {}),
+                        ...(routeDepositSpend ? { requested_deposit_amount: routeDepositSpend } : {}),
+                        payment_method: effectiveMethod,
+                    })
+                    if (isBasketCheckout) {
+                        clearBasketSnapshot()
+                        router.replace({
+                            pathname: ROUTES.payment,
+                            params: {
+                                orderId: String(nextOrder.id),
+                                paymentMethod: effectiveMethod,
+                            },
+                        })
+                    }
                 }
                 setOrder(nextOrder)
                 void syncOrderStatusNotifications({ requestPermissions: true })
@@ -422,13 +490,39 @@ export default function PaymentScreen() {
         } catch (paymentError) {
             const fallback = order ? t("payment.paymentCreateFailed") : t("payment.orderCreateFailed")
             const message = getErrorMessage(paymentError, fallback)
+
+            if (isGuestEmailExistsError(paymentError)) {
+                setErrorMessage(t("checkout.existingEmailMessage"))
+                Alert.alert(
+                    t("checkout.existingEmailTitle"),
+                    t("checkout.existingEmailMessage"),
+                    [
+                        {
+                            text: t("payment.backToCheckout"),
+                            style: "cancel",
+                            onPress: () => {
+                                router.replace(ROUTES.checkout)
+                            },
+                        },
+                        {
+                            text: t("auth.entry.login"),
+                            onPress: () => {
+                                router.replace(ROUTES.login)
+                            },
+                        },
+                    ],
+                )
+                setPhase("failure")
+                return
+            }
+
             setErrorMessage(message)
             showBackendErrorAlert(paymentError, message)
             setPhase("failure")
         } finally {
             setSubmitting(false)
         }
-    }, [isBasketCheckout, order, orderDraft, routeDepositSpend, routePromoCode, selectedMethod, t])
+    }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, routeDepositSpend, routePromoCode, selectedMethod, t])
 
     const footerCtaState = useMemo(() => {
         if (loading || loadingOrder) {

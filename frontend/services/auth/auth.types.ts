@@ -103,4 +103,13 @@ export type AuthUser = {
     displayName: string
 }
 
+export type PersonalDataUpdatePayload = {
+    username?: string
+    email?: string
+    name?: string
+    surname?: string
+    phone_number?: string | null
+    password?: string
+}
+
 export type MapTokens = (payload: BackendAuthTokens) => AuthTokens

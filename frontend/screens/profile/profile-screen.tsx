@@ -288,6 +288,29 @@ export default function ProfileScreen() {
                 onRemovePhoto={handleRemovePhoto}
             />
 
+            <Pressable
+                accessibilityLabel={t("profile.personalData.open")}
+                accessibilityRole="button"
+                onPress={() => router.push(ROUTES.personalData)}
+                style={({ pressed }) => [
+                    ProfileScreenStyles.historyCardButton,
+                    pressed && ProfileScreenStyles.historyCardButtonPressed,
+                ]}
+            >
+                <View style={ProfileScreenStyles.sectionCard}>
+                    <View style={ProfileScreenStyles.historyCardHeader}>
+                        <View style={ProfileScreenStyles.historyCardCopy}>
+                            <Text style={ProfileScreenStyles.historyCardTitle}>{t("profile.personalData.title")}</Text>
+                            <Text style={ProfileScreenStyles.historyCardSubtitle}>{t("profile.personalData.subtitle")}</Text>
+                        </View>
+
+                        <Text style={ProfileScreenStyles.historyCardArrow}>
+                            {">"}
+                        </Text>
+                    </View>
+                </View>
+            </Pressable>
+
             <View style={ProfileScreenStyles.sectionCard}>
                 <Text style={ProfileScreenStyles.sectionTitle}>{t("profile.referral.attachCodeLabel")}</Text>
                 {shouldShowReferralDetails && referralProfile?.referrer_promo_code ? (

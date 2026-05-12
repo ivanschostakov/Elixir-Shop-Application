@@ -3,7 +3,14 @@ import { useCallback, useMemo, useState } from "react"
 import { setBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
 import { setBasketSnapshot } from "@/hooks/basket/basket-store"
 import type { UseBasketMutationsResult } from "@/hooks/basket/use-basket.types"
+import { useAuth } from "@/providers/auth-provider"
 import { addBasketItem, clearBasket, removeBasketItem, restoreDraftToBasket, updateBasketItem } from "@/services/api/basket"
+import {
+    addGuestCartItem,
+    clearGuestCart,
+    removeGuestCartItem,
+    updateGuestCartItemQuantity,
+} from "@/services/guest-cart"
 import type { BasketRead } from "@/types/basket"
 import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 
@@ -14,6 +21,7 @@ function assertPositiveInteger(value: number, label: string) {
 }
 
 export function useBasketMutations(): UseBasketMutationsResult {
+    const { isAuthenticated } = useAuth()
     const [updating, setUpdating] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
@@ -39,39 +47,53 @@ export function useBasketMutations(): UseBasketMutationsResult {
         assertPositiveInteger(variantId, "variant id")
         assertPositiveInteger(quantity, "quantity")
 
-        return runMutation(() =>
-            addBasketItem({
-                quantity,
-                variant_id: variantId,
-            })
-        )
-    }, [runMutation])
+        return runMutation(() => (
+            isAuthenticated
+                ? addBasketItem({
+                      quantity,
+                      variant_id: variantId,
+                  })
+                : addGuestCartItem(variantId, quantity)
+        ))
+    }, [isAuthenticated, runMutation])
 
     const updateItemQuantity = useCallback((itemId: number, quantity: number) => {
         assertPositiveInteger(itemId, "item id")
         assertPositiveInteger(quantity, "quantity")
 
-        return runMutation(() =>
-            updateBasketItem(itemId, {
-                quantity,
-            })
-        )
-    }, [runMutation])
+        return runMutation(() => (
+            isAuthenticated
+                ? updateBasketItem(itemId, {
+                      quantity,
+                  })
+                : updateGuestCartItemQuantity(itemId, quantity)
+        ))
+    }, [isAuthenticated, runMutation])
 
     const removeItem = useCallback((itemId: number) => {
         assertPositiveInteger(itemId, "item id")
-        return runMutation(() => removeBasketItem(itemId))
-    }, [runMutation])
+        return runMutation(() => (
+            isAuthenticated
+                ? removeBasketItem(itemId)
+                : removeGuestCartItem(itemId)
+        ))
+    }, [isAuthenticated, runMutation])
 
-    const clear = useCallback(() => runMutation(() => clearBasket()), [runMutation])
+    const clear = useCallback(() => (
+        runMutation(() => (isAuthenticated ? clearBasket() : clearGuestCart()))
+    ), [isAuthenticated, runMutation])
 
     const restoreDraft = useCallback(async (draftId: number) => {
         assertPositiveInteger(draftId, "draft id")
 
+        if (!isAuthenticated) {
+            throw new Error("Authentication is required")
+        }
+
         const nextBasket = await runMutation(() => restoreDraftToBasket(draftId))
         setBasketDraftEditingId(draftId)
         return nextBasket
-    }, [runMutation])
+    }, [isAuthenticated, runMutation])
 
     return useMemo(
         () => ({

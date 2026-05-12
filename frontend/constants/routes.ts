@@ -13,6 +13,7 @@ export const ROUTES = {
     login: "/login",
     payment: "/payment",
     profile: "/profile",
+    personalData: "/personal-data",
     profileDrafts: "/profile-drafts",
     profileHistory: "/profile-history",
     websiteAccount: "/website-account",
@@ -33,6 +34,7 @@ const headerTitleKeys: Record<string, TranslationKey> = {
     [ROUTES.favorites]: "route.favorites",
     [ROUTES.payment]: "route.payment",
     [ROUTES.profile]: "route.profile",
+    [ROUTES.personalData]: "route.personalData",
     [ROUTES.profileDrafts]: "route.profileDrafts",
     [ROUTES.profileHistory]: "route.profileHistory",
     [ROUTES.websiteAccount]: "route.websiteAccount",
@@ -53,11 +55,8 @@ export const PRIMARY_APP_ROUTES = [
 const ACCOUNT_REQUIRED_ROUTES = [
     ROUTES.favorites,
     ROUTES.chat,
-    ROUTES.basket,
-    ROUTES.checkout,
-    ROUTES.delivery,
-    ROUTES.payment,
     ROUTES.profile,
+    ROUTES.personalData,
     ROUTES.profileDrafts,
     ROUTES.profileHistory,
     ROUTES.websiteAccount,
@@ -97,9 +96,8 @@ export function isAccountRequiredRoute(pathname: string) {
     return ACCOUNT_REQUIRED_ROUTES.includes(normalizedPath as (typeof ACCOUNT_REQUIRED_ROUTES)[number])
 }
 
-export function shouldShowAppChrome(pathname: string, isAuthenticated: boolean) {
+export function shouldShowAppChrome(pathname: string, _isAuthenticated: boolean) {
     return (
-        isAuthenticated &&
         !isAuthRoute(pathname) &&
         !FULLSCREEN_ROUTES.includes(pathname as (typeof FULLSCREEN_ROUTES)[number])
     )

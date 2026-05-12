@@ -1,5 +1,5 @@
 import { ENDPOINTS } from "@/services/api/constants"
-import { apiDelete, apiGet, apiPost } from "@/services/api/client"
+import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api/client"
 import {
     clearAuthTokens,
     getAuthTokens,
@@ -18,6 +18,7 @@ import type {
     LoginResult,
     LoginVerificationRequiredResponse,
     LoginVerifyPayload,
+    PersonalDataUpdatePayload,
     RegistrationCodeResendPayload,
     RegistrationCodeSentResponse,
     RegistrationPayload,
@@ -31,6 +32,7 @@ export type {
     LoginResult,
     LoginVerificationRequiredResponse,
     LoginVerifyPayload,
+    PersonalDataUpdatePayload,
     RegistrationCodeResendPayload,
     RegistrationPayload,
     RegistrationStartedResponse,
@@ -40,6 +42,10 @@ export { getErrorMessage as getAuthErrorMessage } from "@/utils/errors"
 
 function authPath(path: string) {
     return `${ENDPOINTS.AUTH}${path}`
+}
+
+function usersPath(path: string) {
+    return `${ENDPOINTS.USERS}${path}`
 }
 
 function mapTokens(payload: BackendAuthTokens): AuthTokens {
@@ -90,6 +96,11 @@ export async function authenticate(credentials: LoginCredentials): Promise<Login
         verificationRequired: false,
         user: mapUser(response.user),
     }
+}
+
+export function applyAuthTokensWithUser(response: AuthTokensWithUserResponse): AuthUser {
+    setAuthTokens(mapTokens(response))
+    return mapUser(response.user)
 }
 
 export async function verifyLogin(payload: LoginVerifyPayload): Promise<AuthUser> {
@@ -187,5 +198,13 @@ export async function deleteAccount() {
 
 export async function getCurrentUser(): Promise<AuthUser> {
     const response = await apiGet<BackendAuthUser>(authPath("/me"))
+    return mapUser(response)
+}
+
+export async function updateCurrentUserPersonalData(payload: PersonalDataUpdatePayload): Promise<AuthUser> {
+    const response = await apiPatch<BackendAuthUser, PersonalDataUpdatePayload>(
+        usersPath("/me/profile/personal-data"),
+        payload,
+    )
     return mapUser(response)
 }

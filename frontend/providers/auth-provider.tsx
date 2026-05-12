@@ -4,6 +4,7 @@ import { AppState, type AppStateStatus } from "react-native"
 
 import {
     authenticate,
+    applyAuthTokensWithUser,
     deleteAccount as deleteAccountRequest,
     getCurrentUser,
     getAuthErrorMessage,
@@ -12,6 +13,7 @@ import {
     registerAccount,
     resendLoginCode as resendLoginCodeRequest,
     resendRegistrationCode as resendRegistrationCodeRequest,
+    updateCurrentUserPersonalData,
     verifyLogin as verifyLoginRequest,
     verifyRegistration as verifyRegistrationRequest,
 } from "@/services/auth/auth"
@@ -30,9 +32,11 @@ import type {
     LoginCredentials,
     LoginResult,
     LoginVerifyPayload,
+    PersonalDataUpdatePayload,
     RegistrationCodeResendPayload,
     RegistrationPayload,
     RegistrationVerifyPayload,
+    AuthTokensWithUserResponse,
 } from "@/services/auth/auth.types"
 import {
     clearAuthTokens,
@@ -245,6 +249,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     }
 
+    const acceptSession = (response: AuthTokensWithUserResponse) => {
+        const nextUser = applyAuthTokensWithUser(response)
+        setUser(nextUser)
+        return nextUser
+    }
+
+    const updatePersonalData = async (payload: PersonalDataUpdatePayload) => {
+        try {
+            const nextUser = await updateCurrentUserPersonalData(payload)
+            setUser(nextUser)
+            return nextUser
+        } catch (error) {
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.registerFallback")))
+        }
+    }
+
     const signOut = async () => {
         try {
             await unregisterOrderStatusNotifications()
@@ -283,6 +303,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 register,
                 verifyRegistration,
                 resendRegistrationCode,
+                acceptSession,
+                updatePersonalData,
                 signOut,
                 deleteAccount,
             }}

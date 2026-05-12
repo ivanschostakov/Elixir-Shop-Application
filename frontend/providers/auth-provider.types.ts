@@ -2,10 +2,12 @@ import type { ReactNode } from "react"
 
 import type {
     AuthUser,
+    AuthTokensWithUserResponse,
     LoginCredentials,
     LoginResult,
     LoginVerificationRequiredResponse,
     LoginVerifyPayload,
+    PersonalDataUpdatePayload,
     RegistrationCodeResendPayload,
     RegistrationCodeSentResponse,
     RegistrationPayload,
@@ -23,6 +25,8 @@ export type AuthContextValue = {
     register: (payload: RegistrationPayload) => Promise<RegistrationStartedResponse>
     verifyRegistration: (payload: RegistrationVerifyPayload) => Promise<void>
     resendRegistrationCode: (payload: RegistrationCodeResendPayload) => Promise<RegistrationCodeSentResponse>
+    acceptSession: (response: AuthTokensWithUserResponse) => AuthUser
+    updatePersonalData: (payload: PersonalDataUpdatePayload) => Promise<AuthUser>
     signOut: () => Promise<void>
     deleteAccount: () => Promise<void>
 }

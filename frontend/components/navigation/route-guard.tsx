@@ -34,7 +34,7 @@ export function ProtectedRoute({ children, redirectTo = ROUTES.home }: RouteGuar
         return <AuthLoadingScreen />
     }
 
-    if (!isAuthenticated) {
+    if (!isAuthenticated && isAccountRequiredRoute(pathname)) {
         return <Redirect href={redirectTo} />
     }
 

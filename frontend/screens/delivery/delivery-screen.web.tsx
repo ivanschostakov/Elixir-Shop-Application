@@ -35,6 +35,7 @@ import {
     useSelectedDeliveryPoint,
 } from "@/hooks/delivery/delivery-point-selection-store"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
+import { useAuth } from "@/providers/auth-provider"
 import { translate } from "@/i18n/translations"
 import { useDeliveryPointMarkers } from "@/hooks/delivery/use-delivery-point-markers"
 import {
@@ -54,6 +55,7 @@ import type {
 } from "@/services/api/delivery.types"
 import { updateBasketCheckout } from "@/services/api/basket"
 import { updateOrderDraft } from "@/services/api/order-drafts"
+import { updateGuestBasketCheckout } from "@/services/guest-cart"
 import {
     DOOR_DELIVERY_PROVIDER,
     DEFAULT_DELIVERY_POINT,
@@ -95,6 +97,7 @@ export default function DeliveryScreen() {
     const params = useLocalSearchParams<{ draftId?: string | string[]; syncBasket?: string | string[] }>()
     const checkoutDraftId = parseDraftId(params.draftId)
     const shouldSyncBasketItems = parseBooleanSearchParam(params.syncBasket)
+    const { isAuthenticated } = useAuth()
     const { width: windowWidth } = useWindowDimensions()
     const isDesktop = windowWidth >= 1100
     const isTablet = windowWidth >= 760
@@ -629,9 +632,13 @@ export default function DeliveryScreen() {
                           )
                         : null
                 const nextBasket = checkoutDraftId === null
-                    ? await updateBasketCheckout({
-                          new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
-                      })
+                    ? isAuthenticated
+                        ? await updateBasketCheckout({
+                              new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                          })
+                        : await updateGuestBasketCheckout({
+                              new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                          })
                     : null
 
                 if (nextDraft !== null) {
@@ -661,7 +668,7 @@ export default function DeliveryScreen() {
 
         setIsResolvingPickupPoint(true)
         void choosePickupPoint()
-    }, [activeCountryCode, checkoutDraftId, pickupPointDraft, router, shouldSyncBasketItems])
+    }, [activeCountryCode, checkoutDraftId, isAuthenticated, pickupPointDraft, router, shouldSyncBasketItems])
 
     const handleCopyPickupInfo = useCallback(async (value: string) => {
         if (!value) {
@@ -711,9 +718,13 @@ export default function DeliveryScreen() {
                           )
                         : null
                 const nextBasket = checkoutDraftId === null
-                    ? await updateBasketCheckout({
-                          new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
-                      })
+                    ? isAuthenticated
+                        ? await updateBasketCheckout({
+                              new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                          })
+                        : await updateGuestBasketCheckout({
+                              new_delivery_address: buildOrderDraftAddressUpdatePayload(orderDraftPayload, false).new_delivery_address,
+                          })
                     : null
 
                 if (nextDraft !== null) {
@@ -742,7 +753,7 @@ export default function DeliveryScreen() {
 
         setIsResolvingDoorAddress(true)
         void chooseDoorDelivery()
-    }, [activeCountryCode, checkoutDraftId, doorDeliveryDraft, router, shouldSyncBasketItems])
+    }, [activeCountryCode, checkoutDraftId, doorDeliveryDraft, isAuthenticated, router, shouldSyncBasketItems])
 
     return (
         <MapFlowTemplate

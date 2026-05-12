@@ -7,6 +7,7 @@ export const ENDPOINTS = {
     AUTH: "/v1/auth",
     BANNERS: "/v1/banners",
     DELIVERY: "/v1/delivery",
+    GUEST: "/v1/guest",
     PAYMENTS: "/v1/payments",
     PRODUCT_CATEGORIES: "/v1/product-categories",
     PRODUCTS: "/v1/products",

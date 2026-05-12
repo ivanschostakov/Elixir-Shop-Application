@@ -1,4 +1,5 @@
 import { useAsyncData } from "@/hooks/shared/use-async-data"
+import { useAuth } from "@/providers/auth-provider"
 import { getProductReviewEligibility } from "@/services/api/products"
 
 function assertValidProductId(productId: number) {
@@ -8,8 +9,10 @@ function assertValidProductId(productId: number) {
 }
 
 export function useProductReviewEligibility(productId: number) {
+    const { isAuthenticated } = useAuth()
     const { data, error, loading, reload } = useAsyncData({
         deps: [productId],
+        enabled: isAuthenticated,
         fetcher: async () => {
             assertValidProductId(productId)
             return getProductReviewEligibility(productId)
