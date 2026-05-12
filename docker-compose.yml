@@ -32,9 +32,16 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    user: "0:0"
     ports:
       - "127.0.0.1:8000:8000"
-    command: ["python", "run.py"]
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        mkdir -p /app/backend/media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
+        && exec su -s /bin/sh app -c "python run.py"
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
@@ -57,7 +64,14 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: ["python", "-m", "src.workers.notifications"]
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        mkdir -p /app/backend/media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
+        && exec su -s /bin/sh app -c "python -m src.workers.notifications"
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
@@ -78,7 +92,14 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: ["python", "-m", "src.workers.moysklad_sync"]
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        mkdir -p /app/backend/media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
+        && exec su -s /bin/sh app -c "python -m src.workers.moysklad_sync"
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
@@ -104,7 +125,14 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: ["python", "-m", "src.workers.website_identity_sync"]
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        mkdir -p /app/backend/media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
+        && exec su -s /bin/sh app -c "python -m src.workers.website_identity_sync"
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs

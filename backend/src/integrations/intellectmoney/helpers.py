@@ -6,6 +6,9 @@ from typing import Any
 
 import httpx
 
+MAX_LOG_STRING_LENGTH = 1024
+MAX_LOG_LIST_ITEMS = 20
+
 
 def as_str(value: Any) -> str:
     if value is None: return ""
@@ -52,9 +55,69 @@ def safe_form_value_for_log(key: str, value: Any) -> str:
 
 
 def safe_form_for_log(form_data: dict[str, Any]) -> dict[str, str]: return {str(key): safe_form_value_for_log(str(key), value) for key, value in sorted(form_data.items())}
+
+
+def _truncate_text(value: str, *, max_length: int = MAX_LOG_STRING_LENGTH) -> str:
+    if len(value) <= max_length:
+        return value
+    trimmed = value[:max_length]
+    return f"{trimmed}...<truncated {len(value) - max_length} chars>"
+
+
+def _redacted_blob_summary(value: Any) -> str:
+    raw = str(value or "")
+    return f"<redacted len={len(raw)}>"
+
+
+def _sanitize_for_log(value: Any, key: str | None = None) -> Any:
+    normalized_key = (key or "").strip().lower()
+
+    if normalized_key in {"sbpqrcodeimage", "qr_image"}:
+        return _redacted_blob_summary(value)
+
+    if normalized_key == "form3ds":
+        raw = str(value or "")
+        if not raw:
+            return ""
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return _truncate_text(raw)
+        return _sanitize_for_log(parsed, key="form3ds_payload")
+
+    if isinstance(value, dict):
+        return {
+            str(item_key): _sanitize_for_log(item_value, key=str(item_key))
+            for item_key, item_value in value.items()
+        }
+
+    if isinstance(value, list):
+        sanitized_items = [
+            _sanitize_for_log(item)
+            for item in value[:MAX_LOG_LIST_ITEMS]
+        ]
+        if len(value) > MAX_LOG_LIST_ITEMS:
+            sanitized_items.append(f"<truncated {len(value) - MAX_LOG_LIST_ITEMS} items>")
+        return sanitized_items
+
+    if isinstance(value, str):
+        return _truncate_text(value)
+
+    return value
+
+
 def response_body_for_log(response: httpx.Response) -> str:
-    try: return response.text
-    except UnicodeDecodeError: return response.content.decode("utf-8", "replace")
+    try:
+        payload = response.json()
+        sanitized_payload = _sanitize_for_log(payload)
+        return json.dumps(sanitized_payload, ensure_ascii=False)
+    except ValueError:
+        pass
+
+    try:
+        return _truncate_text(response.text)
+    except UnicodeDecodeError:
+        return _truncate_text(response.content.decode("utf-8", "replace"))
 
 
 def webhook_payload_value(payload: dict[str, Any], key: str) -> Any:
