@@ -52,3 +52,20 @@ def test_parse_payment_state_is_available_on_client():
         "qr_url": "https://example.com/qr",
         "qr_image": "data:image/png;base64,AAA",
     }
+
+
+def test_parse_payment_state_normalizes_raw_base64_qr_image():
+    client = AsyncIntellectMoney()
+
+    parsed = client.parse_payment_state(
+        {
+            "Result": {
+                "PaymentStep": "SendTo3DS",
+                "Form3DS": '{"SbpQrCodeUrl":"https://example.com/qr","SbpQrCodeImage":"QUJD"}',
+            },
+        }
+    )
+
+    assert parsed["payment_step"] == "SendTo3DS"
+    assert parsed["qr_url"] == "https://example.com/qr"
+    assert parsed["qr_image"] == "data:image/png;base64,QUJD"

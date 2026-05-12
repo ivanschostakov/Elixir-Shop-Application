@@ -196,6 +196,7 @@ export default function PaymentScreen() {
     const [loadingOrder, setLoadingOrder] = useState(false)
     const [orderLoadError, setOrderLoadError] = useState<string | null>(null)
     const [isQrVisualReady, setIsQrVisualReady] = useState(false)
+    const [isQrImageFailed, setIsQrImageFailed] = useState(false)
     const [isSuccessVisualReady, setIsSuccessVisualReady] = useState(false)
     const [isContactExpanded, setIsContactExpanded] = useState(true)
     const [isItemsExpanded, setIsItemsExpanded] = useState(true)
@@ -312,12 +313,13 @@ export default function PaymentScreen() {
         }
         return formatMoney(Number(deliveryTotal), currency)
     }, [order?.currency, order?.delivery_total, orderDraft?.currency, orderDraft?.delivery_total])
-    const qrSourceUri = payment?.qr_image ?? payment?.qr_url ?? null
+    const qrSourceUri = payment?.qr_image ?? null
     const qrLinkTarget = payment?.qr_url?.trim() || null
     const qrImageSource = useMemo(
         () => (qrSourceUri ? { uri: qrSourceUri, cache: "force-cache" as const } : null),
         [qrSourceUri],
     )
+    const shouldRenderQrImage = Boolean(qrImageSource && !isQrImageFailed)
     const hasResolvedOrderInfo = Boolean(
         (order?.delivery_address ?? orderDraft?.delivery_address)
         && resolvedRecipient
@@ -847,11 +849,17 @@ export default function PaymentScreen() {
     useEffect(() => {
         if (phase !== "sbp") {
             setIsQrVisualReady(false)
+            setIsQrImageFailed(false)
             return
         }
 
         setIsQrVisualReady(false)
+        setIsQrImageFailed(false)
     }, [phase, payment?.order_id])
+
+    useEffect(() => {
+        setIsQrImageFailed(false)
+    }, [qrSourceUri])
 
     useEffect(() => {
         const shouldPlayCelebrate = phase === "success" || phase === "pending"
@@ -947,20 +955,26 @@ export default function PaymentScreen() {
                                 pressed && qrLinkTarget && paymentScreenStyles.qrFramePressed,
                             ]}
                         >
-                            {qrImageSource ? (
+                            {shouldRenderQrImage ? (
                                 <Image
                                     resizeMode="contain"
-                                    source={qrImageSource}
+                                    source={qrImageSource!}
                                     style={paymentScreenStyles.qrImage}
                                     onError={() => {
+                                        setIsQrImageFailed(true)
                                         setIsQrVisualReady(true)
                                     }}
                                     onLoad={() => {
+                                        setIsQrImageFailed(false)
                                         setIsQrVisualReady(true)
                                     }}
                                 />
                             ) : (
-                                <View style={paymentScreenStyles.visualPlaceholder} />
+                                <View style={paymentScreenStyles.qrPlaceholder}>
+                                    <Text style={paymentScreenStyles.qrPlaceholderText}>
+                                        {qrLinkTarget ? t("payment.tapToPayPlaceholder") : t("payment.qrUnavailable")}
+                                    </Text>
+                                </View>
                             )}
                         </Pressable>
                     </View>

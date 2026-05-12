@@ -137,8 +137,14 @@ def parse_payment_state(data: dict[str, Any]) -> dict[str, Any]:
         try: form_3ds = json.loads(form_3ds_raw)
         except json.JSONDecodeError: form_3ds = {}
 
+    qr_image = form_3ds.get("SbpQrCodeImage")
+    if isinstance(qr_image, str):
+        normalized_qr_image = qr_image.strip()
+        if normalized_qr_image and not normalized_qr_image.startswith("data:"):
+            qr_image = f"data:image/png;base64,{normalized_qr_image}"
+
     return {
         "payment_step": payment_step,
         "qr_url": form_3ds.get("SbpQrCodeUrl"),
-        "qr_image": form_3ds.get("SbpQrCodeImage"),
+        "qr_image": qr_image,
     }
