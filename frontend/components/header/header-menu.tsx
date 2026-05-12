@@ -12,11 +12,13 @@ const THEME_TOGGLE_THUMB_TRANSLATE_X = 40
 
 export function HeaderMenu({
     isOpen,
+    isAuthenticated,
     language,
     onClose,
     onOpenContacts,
     onOpenPublicOffer,
     onOpenRequisites,
+    onSignIn,
     onSignOut,
     onToggleLanguage,
     onToggleTheme,
@@ -203,15 +205,22 @@ export function HeaderMenu({
                     <View style={styles.menuDivider} />
 
                     <Pressable
-                        accessibilityLabel={t("nav.signOut")}
+                        accessibilityLabel={isAuthenticated ? t("nav.signOut") : t("auth.login.submit")}
                         accessibilityRole="button"
                         onPress={() => {
                             onClose()
-                            void onSignOut()
+                            if (isAuthenticated) {
+                                void onSignOut()
+                                return
+                            }
+
+                            onSignIn()
                         }}
                         style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}
                     >
-                        <Text style={styles.signOutText}>{t("common.signOut")}</Text>
+                        <Text style={styles.signOutText}>
+                            {isAuthenticated ? t("common.signOut") : t("auth.login.submit")}
+                        </Text>
                     </Pressable>
                 </View>
             ) : null}

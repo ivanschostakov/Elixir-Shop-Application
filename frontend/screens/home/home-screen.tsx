@@ -20,6 +20,7 @@ import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES, getProductRoute } from "@/constants/routes"
 import { useBanners } from "@/hooks/home/use-banners"
 import { useProductCategories } from "@/hooks/products/use-product-categories"
+import { useInfiniteProductCatalog } from "@/hooks/products/use-infinite-product-catalog"
 import { useProductSearch } from "@/hooks/products/use-product-search"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useAuth } from "@/providers/auth-provider"
@@ -129,6 +130,16 @@ export default function HomeScreen() {
         products: recommendedProducts,
         loadingMore: recommendationsLoadingMore,
     } = useRecommendations({ surface: "home" })
+    const {
+        hasMore: hasMoreGuestCatalog,
+        loadMore: loadMoreGuestCatalog,
+        products: guestCatalogProducts,
+        loadingMore: guestCatalogLoadingMore,
+    } = useInfiniteProductCatalog({
+        enabled: !isAuthenticated,
+        pageSize: 8,
+        sort: "newest",
+    })
     const [orderDrafts, setOrderDrafts] = useState<OrderDraftRead[]>([])
     const [isLoadingOrderDrafts, setIsLoadingOrderDrafts] = useState(false)
     const [activeBannerIndex, setActiveBannerIndex] = useState(0)
@@ -148,14 +159,18 @@ export default function HomeScreen() {
     )
     const visibleBanners = useMemo<(Banner | null)[]>(() => (banners.length > 0 ? banners : [null]), [banners])
     const bannerCount = visibleBanners.length
+    const recommendationRailProducts = isAuthenticated ? recommendedProducts : guestCatalogProducts
+    const recommendationRailLoadingMore = isAuthenticated ? recommendationsLoadingMore : guestCatalogLoadingMore
+    const hasMoreRecommendationRail = isAuthenticated ? hasMoreRecommendations : hasMoreGuestCatalog
+    const loadMoreRecommendationRail = isAuthenticated ? loadMoreRecommendations : loadMoreGuestCatalog
 
     const handleHomeScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
         const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y)
-        if (distanceFromBottom < 360 && hasMoreRecommendations && !recommendationsLoadingMore) {
-            void loadMoreRecommendations()
+        if (distanceFromBottom < 360 && hasMoreRecommendationRail && !recommendationRailLoadingMore) {
+            void loadMoreRecommendationRail()
         }
-    }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
+    }, [hasMoreRecommendationRail, loadMoreRecommendationRail, recommendationRailLoadingMore])
 
     const handleBannerLayout = useCallback((event: LayoutChangeEvent) => {
         const nextWidth = Math.round(event.nativeEvent.layout.width)
@@ -479,7 +494,7 @@ export default function HomeScreen() {
                     </View>
                 ) : null}
 
-                {recommendedProducts.length ? (
+                {recommendationRailProducts.length ? (
                     <View style={homeScreenStyles.recommendationsSection}>
                         <ContentRail
                             title={t("recommendations.title")}
@@ -487,8 +502,8 @@ export default function HomeScreen() {
                             layout="grid"
                             gridVariant="discover"
                             mergeHeaderWithFirstRow
-                            loadingMore={recommendationsLoadingMore}
-                            products={recommendedProducts}
+                            loadingMore={recommendationRailLoadingMore}
+                            products={recommendationRailProducts}
                         />
                     </View>
                 ) : null}

@@ -5,9 +5,11 @@ import {
     Alert,
     Image,
     Keyboard,
+    KeyboardAvoidingView,
     Modal,
     type NativeScrollEvent,
     type NativeSyntheticEvent,
+    Platform,
     Pressable,
     ScrollView,
     Text,
@@ -29,6 +31,7 @@ import { setSelectedDeliveryCountry } from "@/hooks/delivery/delivery-country-se
 import { setSelectedDeliveryPoint } from "@/hooks/delivery/delivery-point-selection-store"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useOrderDraft } from "@/hooks/order-draft/use-order-draft"
+import { useInfiniteProductCatalog } from "@/hooks/products/use-infinite-product-catalog"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
@@ -129,6 +132,20 @@ export default function CheckoutScreen() {
         enabled: shouldLoadRecommendations,
         deps: [orderDraft?.updated_at ?? null, orderDraft?.items.length ?? 0],
     })
+    const {
+        hasMore: hasMoreGuestCatalog,
+        loadMore: loadMoreGuestCatalog,
+        loadingMore: guestCatalogLoadingMore,
+        products: guestCatalogProducts,
+    } = useInfiniteProductCatalog({
+        enabled: Boolean(!isAuthenticated && orderDraft?.items.length),
+        pageSize: 6,
+        sort: "newest",
+    })
+    const recommendationRailProducts = isAuthenticated ? recommendedProducts : guestCatalogProducts
+    const recommendationRailLoadingMore = isAuthenticated ? recommendationsLoadingMore : guestCatalogLoadingMore
+    const hasMoreRecommendationRail = isAuthenticated ? hasMoreRecommendations : hasMoreGuestCatalog
+    const loadMoreRecommendationRail = isAuthenticated ? loadMoreRecommendations : loadMoreGuestCatalog
     const { data: checkoutOptions, loading: optionsLoading, reload: reloadCheckoutOptions } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
         deps: [isBasketCheckout, isAuthenticated, orderDraft?.id ?? null],
         enabled: Boolean(orderDraft?.id),
@@ -415,7 +432,7 @@ export default function CheckoutScreen() {
     }, [handleApplyPromoCode, handlePressPay, hasUnappliedPromoCode])
 
     const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-        if (!hasMoreRecommendations || recommendationsLoadingMore) {
+        if (!hasMoreRecommendationRail || recommendationRailLoadingMore) {
             return
         }
 
@@ -424,9 +441,9 @@ export default function CheckoutScreen() {
             (event.nativeEvent.contentOffset.y + event.nativeEvent.layoutMeasurement.height)
 
         if (distanceFromBottom <= 240) {
-            void loadMoreRecommendations()
+            void loadMoreRecommendationRail()
         }
-    }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
+    }, [hasMoreRecommendationRail, loadMoreRecommendationRail, recommendationRailLoadingMore])
 
     const checkoutChromeTemplate = useMemo(() => {
         if (!orderDraft) {
@@ -1297,15 +1314,15 @@ export default function CheckoutScreen() {
                         </ScrollView>
                     </View>
 
-                    {recommendedProducts.length ? (
+                    {recommendationRailProducts.length ? (
                         <ContentRail
                             title={t("recommendations.title")}
                             description={t("recommendations.productDescription")}
                             layout="grid"
                             gridVariant="discover"
                             mergeHeaderWithFirstRow
-                            loadingMore={recommendationsLoadingMore}
-                            products={recommendedProducts}
+                            loadingMore={recommendationRailLoadingMore}
+                            products={recommendationRailProducts}
                         />
                     ) : null}
 
@@ -1462,145 +1479,151 @@ export default function CheckoutScreen() {
                             style={contentStyles.browsePickerDismissArea}
                         />
 
-                        <View style={[contentStyles.browsePickerSheet, checkoutScreenStyles.recipientEditorSheet]}>
-                            <View style={checkoutScreenStyles.recipientEditorHeader}>
-                                <Text numberOfLines={2} style={checkoutScreenStyles.recipientEditorTitle}>
-                                    {t("checkout.recipientAddNew")}
-                                </Text>
+                        <KeyboardAvoidingView
+                            behavior={Platform.OS === "ios" ? "padding" : "height"}
+                            keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+                            style={checkoutScreenStyles.recipientEditorKeyboardAvoiding}
+                        >
+                            <View style={[contentStyles.browsePickerSheet, checkoutScreenStyles.recipientEditorSheet]}>
+                                <View style={checkoutScreenStyles.recipientEditorHeader}>
+                                    <Text numberOfLines={2} style={checkoutScreenStyles.recipientEditorTitle}>
+                                        {t("checkout.recipientAddNew")}
+                                    </Text>
+
+                                    <Pressable
+                                        accessibilityLabel={t("common.close")}
+                                        accessibilityRole="button"
+                                        onPress={handleCloseRecipientEditor}
+                                        style={({ pressed }) => [
+                                            checkoutScreenStyles.recipientEditorCloseButton,
+                                            pressed && checkoutScreenStyles.recipientEditorCloseButtonPressed,
+                                        ]}
+                                    >
+                                        <Text style={checkoutScreenStyles.recipientEditorCloseText}>×</Text>
+                                    </Pressable>
+                                </View>
+
+                                <View style={checkoutScreenStyles.recipientEditorFields}>
+                                    <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                        <TextInput
+                                            autoCapitalize="words"
+                                            onChangeText={(value) => {
+                                                setRecipientForm((current) => ({ ...current, firstName: value }))
+                                                setRecipientFormErrors((current) => ({ ...current, firstName: undefined }))
+                                            }}
+                                            placeholder={t("checkout.recipientNamePlaceholder")}
+                                            placeholderTextColor={colors.mutedText}
+                                            style={[
+                                                checkoutScreenStyles.recipientEditorInput,
+                                                recipientFormErrors.firstName && checkoutScreenStyles.recipientEditorInputError,
+                                            ]}
+                                            value={recipientForm.firstName}
+                                        />
+                                        {recipientFormErrors.firstName ? (
+                                            <Text style={checkoutScreenStyles.recipientEditorFieldError}>
+                                                {recipientFormErrors.firstName}
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                    <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                        <TextInput
+                                            autoCapitalize="words"
+                                            onChangeText={(value) => {
+                                                setRecipientForm((current) => ({ ...current, lastName: value }))
+                                                setRecipientFormErrors((current) => ({ ...current, lastName: undefined }))
+                                            }}
+                                            placeholder={t("checkout.recipientSurnamePlaceholder")}
+                                            placeholderTextColor={colors.mutedText}
+                                            style={[
+                                                checkoutScreenStyles.recipientEditorInput,
+                                                recipientFormErrors.lastName && checkoutScreenStyles.recipientEditorInputError,
+                                            ]}
+                                            value={recipientForm.lastName}
+                                        />
+                                        {recipientFormErrors.lastName ? (
+                                            <Text style={checkoutScreenStyles.recipientEditorFieldError}>
+                                                {recipientFormErrors.lastName}
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                    <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                        <TextInput
+                                            autoComplete="tel"
+                                            keyboardType="phone-pad"
+                                            onChangeText={(value) => {
+                                                setRecipientForm((current) => ({ ...current, phone: value }))
+                                                setRecipientFormErrors((current) => ({ ...current, phone: undefined }))
+                                            }}
+                                            placeholder={t("checkout.recipientPhonePlaceholder")}
+                                            placeholderTextColor={colors.mutedText}
+                                            style={[
+                                                checkoutScreenStyles.recipientEditorInput,
+                                                recipientFormErrors.phone && checkoutScreenStyles.recipientEditorInputError,
+                                            ]}
+                                            textContentType="telephoneNumber"
+                                            value={recipientForm.phone}
+                                        />
+                                        {recipientFormErrors.phone ? (
+                                            <Text style={checkoutScreenStyles.recipientEditorFieldError}>
+                                                {recipientFormErrors.phone}
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                    <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                        <TextInput
+                                            autoCapitalize="none"
+                                            autoComplete="email"
+                                            keyboardType="email-address"
+                                            onChangeText={(value) => {
+                                                setRecipientForm((current) => ({ ...current, email: value }))
+                                                setRecipientFormErrors((current) => ({ ...current, email: undefined }))
+                                            }}
+                                            placeholder={t("checkout.recipientEmailPlaceholder")}
+                                            placeholderTextColor={colors.mutedText}
+                                            style={[
+                                                checkoutScreenStyles.recipientEditorInput,
+                                                recipientFormErrors.email && checkoutScreenStyles.recipientEditorInputError,
+                                            ]}
+                                            textContentType="emailAddress"
+                                            value={recipientForm.email}
+                                        />
+                                        {recipientFormErrors.email ? (
+                                            <Text style={checkoutScreenStyles.recipientEditorFieldError}>
+                                                {recipientFormErrors.email}
+                                            </Text>
+                                        ) : null}
+                                    </View>
+                                </View>
 
                                 <Pressable
-                                    accessibilityLabel={t("common.close")}
+                                    accessibilityLabel={t("checkout.recipientCreateAction")}
                                     accessibilityRole="button"
-                                    onPress={handleCloseRecipientEditor}
+                                    disabled={!isRecipientFormValid || isSavingRecipient}
+                                    onPress={() => {
+                                        void handleSaveRecipient()
+                                    }}
                                     style={({ pressed }) => [
-                                        checkoutScreenStyles.recipientEditorCloseButton,
-                                        pressed && checkoutScreenStyles.recipientEditorCloseButtonPressed,
+                                        checkoutScreenStyles.recipientEditorSubmitButton,
+                                        (!isRecipientFormValid || isSavingRecipient)
+                                            && checkoutScreenStyles.recipientEditorSubmitButtonDisabled,
+                                        pressed
+                                            && isRecipientFormValid
+                                            && !isSavingRecipient
+                                            && checkoutScreenStyles.recipientEditorSubmitButtonPressed,
                                     ]}
                                 >
-                                    <Text style={checkoutScreenStyles.recipientEditorCloseText}>×</Text>
+                                    <Text
+                                        style={[
+                                            checkoutScreenStyles.recipientEditorSubmitButtonText,
+                                            (!isRecipientFormValid || isSavingRecipient)
+                                                && checkoutScreenStyles.recipientEditorSubmitButtonTextDisabled,
+                                        ]}
+                                    >
+                                        {t("checkout.recipientCreateAction")}
+                                    </Text>
                                 </Pressable>
                             </View>
-
-                            <View style={checkoutScreenStyles.recipientEditorFields}>
-                                <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
-                                    <TextInput
-                                        autoCapitalize="words"
-                                        onChangeText={(value) => {
-                                            setRecipientForm((current) => ({ ...current, firstName: value }))
-                                            setRecipientFormErrors((current) => ({ ...current, firstName: undefined }))
-                                        }}
-                                        placeholder={t("checkout.recipientNamePlaceholder")}
-                                        placeholderTextColor={colors.mutedText}
-                                        style={[
-                                            checkoutScreenStyles.recipientEditorInput,
-                                            recipientFormErrors.firstName && checkoutScreenStyles.recipientEditorInputError,
-                                        ]}
-                                        value={recipientForm.firstName}
-                                    />
-                                    {recipientFormErrors.firstName ? (
-                                        <Text style={checkoutScreenStyles.recipientEditorFieldError}>
-                                            {recipientFormErrors.firstName}
-                                        </Text>
-                                    ) : null}
-                                </View>
-                                <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
-                                    <TextInput
-                                        autoCapitalize="words"
-                                        onChangeText={(value) => {
-                                            setRecipientForm((current) => ({ ...current, lastName: value }))
-                                            setRecipientFormErrors((current) => ({ ...current, lastName: undefined }))
-                                        }}
-                                        placeholder={t("checkout.recipientSurnamePlaceholder")}
-                                        placeholderTextColor={colors.mutedText}
-                                        style={[
-                                            checkoutScreenStyles.recipientEditorInput,
-                                            recipientFormErrors.lastName && checkoutScreenStyles.recipientEditorInputError,
-                                        ]}
-                                        value={recipientForm.lastName}
-                                    />
-                                    {recipientFormErrors.lastName ? (
-                                        <Text style={checkoutScreenStyles.recipientEditorFieldError}>
-                                            {recipientFormErrors.lastName}
-                                        </Text>
-                                    ) : null}
-                                </View>
-                                <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
-                                    <TextInput
-                                        autoComplete="tel"
-                                        keyboardType="phone-pad"
-                                        onChangeText={(value) => {
-                                            setRecipientForm((current) => ({ ...current, phone: value }))
-                                            setRecipientFormErrors((current) => ({ ...current, phone: undefined }))
-                                        }}
-                                        placeholder={t("checkout.recipientPhonePlaceholder")}
-                                        placeholderTextColor={colors.mutedText}
-                                        style={[
-                                            checkoutScreenStyles.recipientEditorInput,
-                                            recipientFormErrors.phone && checkoutScreenStyles.recipientEditorInputError,
-                                        ]}
-                                        textContentType="telephoneNumber"
-                                        value={recipientForm.phone}
-                                    />
-                                    {recipientFormErrors.phone ? (
-                                        <Text style={checkoutScreenStyles.recipientEditorFieldError}>
-                                            {recipientFormErrors.phone}
-                                        </Text>
-                                    ) : null}
-                                </View>
-                                <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
-                                    <TextInput
-                                        autoCapitalize="none"
-                                        autoComplete="email"
-                                        keyboardType="email-address"
-                                        onChangeText={(value) => {
-                                            setRecipientForm((current) => ({ ...current, email: value }))
-                                            setRecipientFormErrors((current) => ({ ...current, email: undefined }))
-                                        }}
-                                        placeholder={t("checkout.recipientEmailPlaceholder")}
-                                        placeholderTextColor={colors.mutedText}
-                                        style={[
-                                            checkoutScreenStyles.recipientEditorInput,
-                                            recipientFormErrors.email && checkoutScreenStyles.recipientEditorInputError,
-                                        ]}
-                                        textContentType="emailAddress"
-                                        value={recipientForm.email}
-                                    />
-                                    {recipientFormErrors.email ? (
-                                        <Text style={checkoutScreenStyles.recipientEditorFieldError}>
-                                            {recipientFormErrors.email}
-                                        </Text>
-                                    ) : null}
-                                </View>
-                            </View>
-
-                            <Pressable
-                                accessibilityLabel={t("checkout.recipientCreateAction")}
-                                accessibilityRole="button"
-                                disabled={!isRecipientFormValid || isSavingRecipient}
-                                onPress={() => {
-                                    void handleSaveRecipient()
-                                }}
-                                style={({ pressed }) => [
-                                    checkoutScreenStyles.recipientEditorSubmitButton,
-                                    (!isRecipientFormValid || isSavingRecipient)
-                                        && checkoutScreenStyles.recipientEditorSubmitButtonDisabled,
-                                    pressed
-                                        && isRecipientFormValid
-                                        && !isSavingRecipient
-                                        && checkoutScreenStyles.recipientEditorSubmitButtonPressed,
-                                ]}
-                            >
-                                <Text
-                                    style={[
-                                        checkoutScreenStyles.recipientEditorSubmitButtonText,
-                                        (!isRecipientFormValid || isSavingRecipient)
-                                            && checkoutScreenStyles.recipientEditorSubmitButtonTextDisabled,
-                                    ]}
-                                >
-                                    {t("checkout.recipientCreateAction")}
-                                </Text>
-                            </Pressable>
-                        </View>
+                        </KeyboardAvoidingView>
                     </View>
                 </Modal>
             </View>

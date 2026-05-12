@@ -28,16 +28,28 @@ export const cartScreenStyles = StyleSheet.create({
         paddingVertical: spacing.lg,
         width: "100%",
     },
-    emptyDraftLink: {
+    emptyActionsRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        flexWrap: "wrap",
+        justifyContent: "center",
+        rowGap: spacing.xs,
+    },
+    emptyActionLink: {
         alignItems: "center",
         justifyContent: "center",
         minHeight: 36,
-        paddingHorizontal: spacing.md,
+        paddingHorizontal: spacing.sm,
     },
-    emptyDraftLinkText: {
+    emptyActionText: {
         color: colors.primary,
+        fontSize: 15,
+        fontWeight: "700",
+    },
+    emptyActionDivider: {
+        color: colors.mutedText,
         fontSize: 14,
-        fontWeight: "800",
+        fontWeight: "700",
     },
     loadingContainer: {
         backgroundColor: colors.surface,

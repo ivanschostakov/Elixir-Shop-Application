@@ -5,10 +5,12 @@ import type { ThemeName } from "@/theme/colors"
 
 export type HeaderMenuProps = {
     isOpen: boolean
+    isAuthenticated: boolean
     onClose: () => void
     onOpenContacts: () => void
     onOpenPublicOffer: () => void
     onOpenRequisites: () => void
+    onSignIn: () => void
     onSignOut: () => Promise<void>
     onToggleLanguage?: () => void
     onToggleTheme?: () => void

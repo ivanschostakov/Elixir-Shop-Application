@@ -222,3 +222,23 @@ def test_referrer_code_rejects_own_promo(client: TestClient, registered_user_fac
         json={"code": own_code},
     )
     assert attach_response.status_code == 400, attach_response.text
+
+
+def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_factory):
+    buyer = registered_user_factory(email_prefix="buyer")
+
+    first_response = client.get(
+        "/api/v1/users/me/referral-profile",
+        headers=buyer["headers"],
+    )
+    assert first_response.status_code == 200, first_response.text
+
+    second_response = client.get(
+        "/api/v1/users/me/referral-profile",
+        headers=buyer["headers"],
+    )
+    assert second_response.status_code == 200, second_response.text
+
+    with Session(sync_engine) as session:
+        profile_count = session.query(ReferralProfile).filter(ReferralProfile.user_id == buyer["user_id"]).count()
+        assert profile_count == 1

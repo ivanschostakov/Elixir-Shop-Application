@@ -781,7 +781,7 @@ export function SendActionButton({
                             />
                         </Svg>
                     ) : (
-                        <Svg fill="none" height={24} viewBox="0 0 24 24" width={24}>
+                        <Svg fill="none" height={22} viewBox="0 0 24 24" width={22}>
                             <Path
                                 d="M8 2H16V11C16 13.2091 14.2091 15 12 15V15C9.79086 15 8 13.2091 8 11V2Z"
                                 fill={recording ? colors.onPrimary : isDark ? "#E8F0F6" : "#0E0E0E"}

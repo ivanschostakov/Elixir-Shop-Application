@@ -206,6 +206,9 @@ export const checkoutScreenStyles = StyleSheet.create({
         paddingBottom: 20,
         paddingTop: 12,
     },
+    recipientEditorKeyboardAvoiding: {
+        width: "100%",
+    },
     recipientEditorHeader: {
         alignItems: "flex-start",
         flexDirection: "row",

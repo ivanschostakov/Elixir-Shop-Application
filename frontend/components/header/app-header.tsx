@@ -35,7 +35,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const { height: windowHeight } = useWindowDimensions()
     const styles = getHeaderStyles(topInset, windowHeight)
     const { isDark, themeName, toggleTheme } = useTheme()
-    const { signOut } = useAuth()
+    const { isAuthenticated, signOut } = useAuth()
     const { basket } = useBasket()
     const { clear, error: basketError, updating: basketUpdating } = useBasketMutations()
     const { language, t, toggleLanguage } = useLanguage()
@@ -184,6 +184,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
         return (
             <HeaderMenu
                 isOpen={isMenuOpen}
+                isAuthenticated={isAuthenticated}
                 onClose={() => setIsMenuOpen(false)}
                 onOpenContacts={() => {
                     setIsMenuOpen(false)
@@ -196,6 +197,10 @@ export default function AppHeader({ template }: AppHeaderProps) {
                 onOpenRequisites={() => {
                     setIsMenuOpen(false)
                     router.push(ROUTES.requisites)
+                }}
+                onSignIn={() => {
+                    setIsMenuOpen(false)
+                    router.push(ROUTES.login)
                 }}
                 onSignOut={signOut}
                 onToggleLanguage={toggleLanguage}

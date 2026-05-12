@@ -40,6 +40,7 @@ import {
 } from "@/hooks/delivery/delivery-point-selection-store"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useRecentOrderDrafts } from "@/hooks/order-draft/use-recent-order-drafts"
+import { useInfiniteProductCatalog } from "@/hooks/products/use-infinite-product-catalog"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useAuth } from "@/providers/auth-provider"
@@ -105,6 +106,20 @@ export default function CartScreen() {
         enabled: Boolean(basket?.items.length),
         deps: [basket?.updated_at ?? null, basket?.items.length ?? 0],
     })
+    const {
+        hasMore: hasMoreGuestCatalog,
+        loadMore: loadMoreGuestCatalog,
+        loadingMore: guestCatalogLoadingMore,
+        products: guestCatalogProducts,
+    } = useInfiniteProductCatalog({
+        enabled: Boolean(!isAuthenticated && basket?.items.length),
+        pageSize: 6,
+        sort: "newest",
+    })
+    const recommendationRailProducts = isAuthenticated ? recommendedProducts : guestCatalogProducts
+    const recommendationRailLoadingMore = isAuthenticated ? recommendationsLoadingMore : guestCatalogLoadingMore
+    const hasMoreRecommendationRail = isAuthenticated ? hasMoreRecommendations : hasMoreGuestCatalog
+    const loadMoreRecommendationRail = isAuthenticated ? loadMoreRecommendations : loadMoreGuestCatalog
     const normalizedPromoCode = useMemo(() => {
         const trimmedCode = promoCode.trim()
         return trimmedCode ? trimmedCode : null
@@ -220,7 +235,7 @@ export default function CartScreen() {
     }
 
     const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-        if (!hasMoreRecommendations || recommendationsLoadingMore) {
+        if (!hasMoreRecommendationRail || recommendationRailLoadingMore) {
             return
         }
 
@@ -229,9 +244,9 @@ export default function CartScreen() {
             (event.nativeEvent.contentOffset.y + event.nativeEvent.layoutMeasurement.height)
 
         if (distanceFromBottom <= 240) {
-            void loadMoreRecommendations()
+            void loadMoreRecommendationRail()
         }
-    }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
+    }, [hasMoreRecommendationRail, loadMoreRecommendationRail, recommendationRailLoadingMore])
 
     const resolveCreateDraftPayload = useCallback(async (): Promise<CreateOrderDraftPayload> => {
         if (selectedDeliveryPoint?.deliveryCalculation) {
@@ -623,26 +638,39 @@ export default function CartScreen() {
                 >
                     <View style={cartScreenStyles.emptyContent}>
                         <EmptyState
-                            actionVariant="link"
                             sticker={STICKERS.cartEmpty}
                             description={t(hasRecentOrderDrafts ? "cart.emptyDescriptionWithDrafts" : "cart.emptyDescription")}
-                            actionLabel={t("cart.primaryCta")}
-                            onPressAction={() => router.push(ROUTES.discover)}
                             variant="plain"
                         />
-                        {hasRecentOrderDrafts && !recentOrderDraftsLoading ? (
+                        <View style={cartScreenStyles.emptyActionsRow}>
                             <Pressable
-                                accessibilityLabel={t("cart.openDraftsCta")}
+                                accessibilityLabel={t("cart.primaryCta")}
                                 accessibilityRole="button"
-                                onPress={() => router.push(ROUTES.profileDrafts)}
+                                onPress={() => router.push(ROUTES.discover)}
                                 style={({ pressed }) => [
-                                    cartScreenStyles.emptyDraftLink,
+                                    cartScreenStyles.emptyActionLink,
                                     pressed && cartScreenStyles.pressed,
                                 ]}
                             >
-                                <Text style={cartScreenStyles.emptyDraftLinkText}>{t("cart.openDraftsCta")}</Text>
+                                <Text style={cartScreenStyles.emptyActionText}>{t("cart.primaryCta")}</Text>
                             </Pressable>
-                        ) : null}
+                            {hasRecentOrderDrafts && !recentOrderDraftsLoading ? (
+                                <>
+                                    <Text style={cartScreenStyles.emptyActionDivider}>·</Text>
+                                    <Pressable
+                                        accessibilityLabel={t("cart.openDraftsCta")}
+                                        accessibilityRole="button"
+                                        onPress={() => router.push(ROUTES.profileDrafts)}
+                                        style={({ pressed }) => [
+                                            cartScreenStyles.emptyActionLink,
+                                            pressed && cartScreenStyles.pressed,
+                                        ]}
+                                    >
+                                        <Text style={cartScreenStyles.emptyActionText}>{t("cart.openDraftsCta")}</Text>
+                                    </Pressable>
+                                </>
+                            ) : null}
+                        </View>
                     </View>
                 </ScrollView>
             </View>
@@ -823,7 +851,7 @@ export default function CartScreen() {
                         </View>
                     ) : null}
 
-                    {recommendedProducts.length ? (
+                    {recommendationRailProducts.length ? (
                         <View style={cartScreenStyles.recommendationsSection}>
                             <ContentRail
                                 title={t("recommendations.title")}
@@ -831,8 +859,8 @@ export default function CartScreen() {
                                 layout="grid"
                                 gridVariant="discover"
                                 mergeHeaderWithFirstRow
-                                loadingMore={recommendationsLoadingMore}
-                                products={recommendedProducts}
+                                loadingMore={recommendationRailLoadingMore}
+                                products={recommendationRailProducts}
                             />
                         </View>
                     ) : null}

@@ -255,6 +255,13 @@ export default function RegisterScreen() {
                 <Pressable onPress={() => router.push(ROUTES.login)}>
                     <Text style={authSharedStyles.helperLink}>{t("auth.register.goToLogin")}</Text>
                 </Pressable>
+                <Text style={authSharedStyles.helperText}>·</Text>
+                <Pressable
+                    onPress={() => router.replace(ROUTES.discover)}
+                    style={({ pressed }) => [pressed && authSharedStyles.textLinkDisabled]}
+                >
+                    <Text style={authSharedStyles.helperLink}>{t("auth.continueAsGuest")}</Text>
+                </Pressable>
             </View>
         </AuthFormLayout>
     )

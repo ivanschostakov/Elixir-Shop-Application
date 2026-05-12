@@ -7,6 +7,7 @@ from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -119,12 +120,25 @@ async def get_referral_profile_by_user_id(db: AsyncSession, user_id: int) -> Ref
     return (await db.execute(select(ReferralProfile).where(ReferralProfile.user_id == user_id))).scalar_one_or_none()
 
 
+def _is_referral_profile_user_unique_violation(error: IntegrityError) -> bool:
+    constraint_name = getattr(getattr(error, "orig", None), "constraint_name", None)
+    if constraint_name == "referral_profiles_user_id_key":
+        return True
+
+    diag_constraint_name = getattr(getattr(getattr(error, "orig", None), "diag", None), "constraint_name", None)
+    if diag_constraint_name == "referral_profiles_user_id_key":
+        return True
+
+    return "referral_profiles_user_id_key" in str(error)
+
+
 async def get_or_create_referral_profile(db: AsyncSession, *, user: User | None = None, user_id: int | None = None) -> ReferralProfile:
     resolved_user_id = user.id if user is not None else user_id
     if resolved_user_id is None:
         raise ValueError("user or user_id is required")
 
-    profile = await get_referral_profile_by_user_id(db, resolved_user_id)
+    with db.no_autoflush:
+        profile = await get_referral_profile_by_user_id(db, resolved_user_id)
     if profile is not None:
         return profile
 
@@ -134,12 +148,19 @@ async def get_or_create_referral_profile(db: AsyncSession, *, user: User | None 
         .on_conflict_do_nothing(index_elements=[ReferralProfile.user_id])
         .returning(ReferralProfile.id)
     )
-    created_profile_id = (await db.execute(insert_stmt)).scalar_one_or_none()
+    created_profile_id: int | None = None
+    try:
+        async with db.begin_nested():
+            created_profile_id = (await db.execute(insert_stmt)).scalar_one_or_none()
+    except IntegrityError as exc:
+        if not _is_referral_profile_user_unique_violation(exc):
+            raise
 
     if created_profile_id is not None:
         profile = await db.get(ReferralProfile, created_profile_id)
     else:
-        profile = await get_referral_profile_by_user_id(db, resolved_user_id)
+        with db.no_autoflush:
+            profile = await get_referral_profile_by_user_id(db, resolved_user_id)
 
     if profile is None:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Could not create referral profile")

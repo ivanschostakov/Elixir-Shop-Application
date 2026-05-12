@@ -736,12 +736,14 @@ export const chatScreenStyles = StyleSheet.create({
         ...liquidGlassBlue,
         alignItems: "center",
         justifyContent: "center",
+        overflow: "visible",
         ...glassShadow,
     },
     circleButtonPressable: {
         width: 46,
         height: 46,
         borderRadius: 23,
+        overflow: "visible",
     },
     circleButtonPressed: {
         opacity: 0.86,
