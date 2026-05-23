@@ -2,8 +2,7 @@ import re
 
 
 def _normalize_phone(phone: str | None) -> str | None:
-    if phone is None:
-        return None
+    if phone is None: return None
     normalized = re.sub(r"[\s()-]", "", str(phone).strip())
     return normalized or None
 

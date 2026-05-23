@@ -24,21 +24,13 @@ async def get_my_referral_profile(db: AsyncSession = Depends(get_db), current_us
 
 
 @my_referral_profile_router.post("/referrer-code/check", response_model=ReferrerCodeCheckRead, status_code=status.HTTP_200_OK)
-async def check_my_referrer_code(
-    payload: ReferrerCodeCheckPayload,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> ReferrerCodeCheckRead:
+async def check_my_referrer_code(payload: ReferrerCodeCheckPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> ReferrerCodeCheckRead:
     result = await check_referrer_code(db, user=current_user, code=payload.code)
     return ReferrerCodeCheckRead.model_validate(result)
 
 
 @my_referral_profile_router.post("/referrer-code", response_model=ReferralProfileRead, status_code=status.HTTP_200_OK)
-async def attach_my_referrer_code(
-    payload: ReferrerCodeAttachPayload,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> ReferralProfileRead:
+async def attach_my_referrer_code(payload: ReferrerCodeAttachPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> ReferralProfileRead:
     await attach_referrer_code(db, user=current_user, code=payload.code, confirmed=payload.confirmed)
     summary = await get_referral_profile_summary(db, user=current_user)
     await db.commit()
@@ -46,10 +38,7 @@ async def attach_my_referrer_code(
 
 
 @my_referral_profile_router.delete("/referrer-code", response_model=ReferralProfileRead, status_code=status.HTTP_200_OK)
-async def detach_my_referrer_code(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> ReferralProfileRead:
+async def detach_my_referrer_code(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> ReferralProfileRead:
     await detach_referrer_code(db, user=current_user)
     summary = await get_referral_profile_summary(db, user=current_user)
     await db.commit()

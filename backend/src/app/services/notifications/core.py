@@ -80,7 +80,23 @@ async def deactivate_stock_notifications_for_favourite_product(session: AsyncSes
 
 
 async def sync_favourite_stock_notification_subscriptions(session: AsyncSession) -> int:
-    rows = (await session.execute(select(FavouredProduct.user_id, Variant, StockNotificationSubscription).join(Variant, Variant.product_id == FavouredProduct.product_id).outerjoin(StockNotificationSubscription, (StockNotificationSubscription.user_id == FavouredProduct.user_id) & (StockNotificationSubscription.variant_id == Variant.id)).where(Variant.archived.is_(False), Variant.stock <= NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, (StockNotificationSubscription.id.is_(None)) | (StockNotificationSubscription.is_active.is_(False))).order_by(FavouredProduct.id.asc(), Variant.id.asc()).limit(NOTIFICATION_BATCH_SIZE))).all()
+    stmt = (
+        select(FavouredProduct.user_id, Variant, StockNotificationSubscription)
+        .join(Variant, Variant.product_id == FavouredProduct.product_id)
+        .outerjoin(
+            StockNotificationSubscription,
+            (StockNotificationSubscription.user_id == FavouredProduct.user_id)
+            & (StockNotificationSubscription.variant_id == Variant.id),
+        )
+        .where(
+            Variant.archived.is_(False),
+            Variant.stock <= NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD,
+            (StockNotificationSubscription.id.is_(None)) | (StockNotificationSubscription.is_active.is_(False)),
+        )
+        .order_by(FavouredProduct.id.asc(), Variant.id.asc())
+        .limit(NOTIFICATION_BATCH_SIZE)
+    )
+    rows = (await session.execute(stmt)).all()
 
     synced_count = 0
     for user_id, variant, subscription in rows:

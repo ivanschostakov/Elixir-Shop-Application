@@ -74,20 +74,14 @@ def _completed_clause(order_model: type["Order"]) -> ColumnElement[bool]:
     )
 
 
-def build_history_bucket_clause(
-    order_model: type["Order"],
-    history_bucket: OrderHistoryBucket,
-) -> ColumnElement[bool]:
+def build_history_bucket_clause(order_model: type["Order"], history_bucket: OrderHistoryBucket) -> ColumnElement[bool]:
     completed_clause = _completed_clause(order_model)
     if history_bucket == "completed":
         return completed_clause
     return not_(completed_clause)
 
 
-def build_status_code_clause(
-    order_model: type["Order"],
-    status_code: OrderStatusCode,
-) -> ColumnElement[bool]:
+def build_status_code_clause(order_model: type["Order"], status_code: OrderStatusCode) -> ColumnElement[bool]:
     if status_code == "created":
         return and_(
             build_history_bucket_clause(order_model, "active"),

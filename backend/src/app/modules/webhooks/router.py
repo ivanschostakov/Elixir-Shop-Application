@@ -1,26 +1,13 @@
-import codecs
 import logging
 import re
-
-from ipaddress import ip_address, ip_network
-from typing import Any
-from urllib.parse import parse_qs, parse_qsl
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import PlainTextResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 
-from config import (
-    AMOCRM_ACCOUNT_ID,
-    AMOCRM_WEBHOOK_ALLOWED_ACCOUNT_IDS,
-    AMOCRM_WEBHOOK_ALLOWED_IPS,
-    AMOCRM_WEBHOOK_ALLOWED_SUBDOMAINS,
-    WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
-    WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
-)
-from src.app.services.rate_limit import enforce_rate_limit
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.services.orders import apply_amocrm_status_update, reconcile_sbp_payment
+from src.app.services.rate_limit import enforce_rate_limit
 from src.database import get_db
 from src.database.crud import get_order_by_amocrm_lead_id, get_order_by_code, get_order_by_id, get_order_by_invoice_id, update_order
 from src.database.crud.webhooks import payload_digest, register_webhook_delivery
@@ -28,154 +15,32 @@ from src.database.schemas import OrderUpdate
 from src.integrations.amocrm import get_amocrm_client
 from src.integrations.intellectmoney import get_intellectmoney_client
 
+from .service import _amocrm_payload_int, _amocrm_webhook_verified, _coerce_amocrm_int, _first_payload_value, _header_value, _parse_intellectmoney_payload, _request_client_ip
+from config import WEBHOOK_RATE_LIMIT_MAX_REQUESTS, WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
+
 webhooks_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 log = logging.getLogger(__name__)
 amocrm_client = get_amocrm_client()
 intellectmoney = get_intellectmoney_client()
 
-_INTELLECTMONEY_PAYLOAD_KEYS = {
-    "eshopaccount": "EshopAccount",
-    "eshopid": "EshopId",
-    "hash": "Hash",
-    "orderid": "OrderId",
-    "paymentdata": "PaymentData",
-    "paymentid": "PaymentId",
-    "paymentstatus": "PaymentStatus",
-    "recipientamount": "RecipientAmount",
-    "recipientcurrency": "RecipientCurrency",
-    "recipientoriginalamount": "RecipientOriginalAmount",
-    "secretkey": "SecretKey",
-    "servicename": "ServiceName",
-    "useremail": "UserEmail",
-    "username": "UserName",
-}
-
-
-def _coerce_amocrm_int(value: Any, field: str) -> int:
-    raw = value or "0"
-    try: return int(raw)
-    except (TypeError, ValueError): return 0
-
-
-def _amocrm_payload_int(payload: dict[str, list[str]], key: str) -> int:
-    raw = (payload.get(key) or ["0"])[0] or "0"
-    return _coerce_amocrm_int(raw, key)
-
-
-def _intellectmoney_form_charset(content_type: str | None) -> str:
-    match = re.search(r"(?i)(?:^|;)\s*charset\s*=\s*([^;]+)", content_type or "")
-    charset = (match.group(1).strip().strip("\"'") if match else "") or "utf-8"
-    if charset.lower() in {"windows-1251", "win-1251"}: charset = "cp1251"
-    try: codecs.lookup(charset)
-    except LookupError: return "utf-8"
-    return charset
-
-
-def _parse_intellectmoney_payload(body: bytes, content_type: str | None) -> tuple[dict[str, str], str]:
-    charset = _intellectmoney_form_charset(content_type)
-    text = body.decode(charset, "replace")
-    payload: dict[str, str] = {}
-    for key, value in parse_qsl(text, keep_blank_values=True, encoding=charset, errors="replace"):
-        canonical_key = _INTELLECTMONEY_PAYLOAD_KEYS.get(str(key).lower(), str(key))
-        payload[canonical_key] = str(value)
-
-    return payload, charset
-
-
-def _header_value(request: Request, *names: str) -> str | None:
-    for name in names:
-        value = (request.headers.get(name) or "").strip()
-        if value:
-            return value
-    return None
-
-
-def _first_payload_value(payload: dict[str, list[str]], key: str) -> str:
-    return str((payload.get(key) or [""])[0] or "").strip()
-
-
-def _request_client_ip(request: Request) -> str:
-    forwarded_for = _header_value(request, "x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip()
-    real_ip = _header_value(request, "x-real-ip")
-    if real_ip:
-        return real_ip
-    return (request.client.host if request.client else "").strip()
-
-
-def _ip_allowed(ip_raw: str, allowed_networks: list[str]) -> bool:
-    if not allowed_networks:
-        return True
-    try:
-        client_ip = ip_address(ip_raw)
-    except ValueError:
-        return False
-    for network_raw in allowed_networks:
-        candidate = network_raw.strip()
-        if not candidate:
-            continue
-        try:
-            if "/" in candidate:
-                if client_ip in ip_network(candidate, strict=False):
-                    return True
-            elif client_ip == ip_address(candidate):
-                return True
-        except ValueError:
-            continue
-    return False
-
-
-def _amocrm_webhook_verified(request: Request, payload: dict[str, list[str]]) -> bool:
-    account_id = _first_payload_value(payload, "account[id]")
-    account_subdomain = _first_payload_value(payload, "account[subdomain]").lower()
-    allowed_account_ids = [value.strip() for value in AMOCRM_WEBHOOK_ALLOWED_ACCOUNT_IDS if value.strip()]
-    if not allowed_account_ids and AMOCRM_ACCOUNT_ID:
-        allowed_account_ids = [str(AMOCRM_ACCOUNT_ID).strip()]
-    allowed_subdomains = [value.strip().lower() for value in AMOCRM_WEBHOOK_ALLOWED_SUBDOMAINS if value.strip()]
-    if allowed_account_ids and account_id not in allowed_account_ids:
-        return False
-    if allowed_subdomains and account_subdomain not in allowed_subdomains:
-        return False
-    return _ip_allowed(_request_client_ip(request), AMOCRM_WEBHOOK_ALLOWED_IPS)
-
 
 @webhooks_router.post("/amocrm")
 async def amocrm_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    await enforce_rate_limit(
-        request,
-        scope="webhooks:amocrm",
-        limit=WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
-    )
+    await enforce_rate_limit(request, scope="webhooks:amocrm", limit=WEBHOOK_RATE_LIMIT_MAX_REQUESTS, window_seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS)
     body = await request.body()
     raw_text = body.decode("utf-8", "replace")
     log.info("amoCRM webhook inbound headers=%s body=%s", dict(request.headers), raw_text)
     payload = parse_qs(raw_text, keep_blank_values=True)
     if not _amocrm_webhook_verified(request, payload):
-        log.warning(
-            "amoCRM webhook rejected verification account_id=%s subdomain=%s source_ip=%s",
-            _first_payload_value(payload, "account[id]"),
-            _first_payload_value(payload, "account[subdomain]"),
-            _request_client_ip(request),
-        )
+        log.warning("amoCRM webhook rejected verification account_id=%s subdomain=%s source_ip=%s",_first_payload_value(payload, "account[id]"), _first_payload_value(payload, "account[subdomain]"), _request_client_ip(request))
         return JSONResponse({"ok": False, "error": "webhook verification failed"}, status_code=403)
 
     delivery_id = _header_value(request, "x-delivery-id", "x-request-id", "x-webhook-id", "x-amocrm-delivery-id")
     signature = _header_value(request, "x-amocrm-signature", "x-signature", "x-hub-signature", "x-hub-signature-256")
     signature_timestamp = _header_value(request, "x-signature-timestamp", "x-amocrm-signature-timestamp", "x-timestamp")
-    if signature_timestamp is None:
-        signature_timestamp = (payload.get("timestamp") or [None])[0]
-    accepted = await register_webhook_delivery(
-        db,
-        provider="amocrm",
-        delivery_id=delivery_id,
-        signature=signature,
-        signature_timestamp=signature_timestamp,
-        payload_hash=payload_digest(body),
-    )
-    if not accepted:
-        return JSONResponse({"ok": True, "ignored": "duplicate"})
+    if signature_timestamp is None: signature_timestamp = (payload.get("timestamp") or [None])[0]
+    accepted = await register_webhook_delivery(db, provider="amocrm", delivery_id=delivery_id, signature=signature, signature_timestamp=signature_timestamp, payload_hash=payload_digest(body))
+    if not accepted: return JSONResponse({"ok": True, "ignored": "duplicate"})
 
     lead_id = _amocrm_payload_int(payload, "leads[status][0][id]")
     status_id = _amocrm_payload_int(payload, "leads[status][0][status_id]")
@@ -201,46 +66,29 @@ async def amocrm_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     if order is None: return JSONResponse({"ok": True, "ignored": "order not found"})
 
     updated_order = await apply_amocrm_status_update(db, order=order, status_id=status_id)
-    return JSONResponse(
-        {
-            "ok": True,
-            "order_id": updated_order.id,
-            "lead_id": lead_id,
-            "status_id": status_id,
-        }
-    )
+    return JSONResponse({
+        "ok": True,
+        "order_id": updated_order.id,
+        "lead_id": lead_id,
+        "status_id": status_id,
+    })
 
 
 @webhooks_router.post("/intellectmoney")
 async def intellectmoney_webhook(request: Request, db: AsyncSession = Depends(get_db)):
-    await enforce_rate_limit(
-        request,
-        scope="webhooks:intellectmoney",
-        limit=WEBHOOK_RATE_LIMIT_MAX_REQUESTS,
-        window_seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS,
-    )
+    await enforce_rate_limit(request, scope="webhooks:intellectmoney", limit=WEBHOOK_RATE_LIMIT_MAX_REQUESTS, window_seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS)
     body = await request.body()
     content_type = request.headers.get("content-type")
     payload, _ = _parse_intellectmoney_payload(body, content_type)
 
-    if not intellectmoney.verify_webhook_hash(payload):
-        return PlainTextResponse("ERROR", status_code=400)
+    if not intellectmoney.verify_webhook_hash(payload): return PlainTextResponse("ERROR", status_code=400)
 
     delivery_id = _header_value(request, "x-delivery-id", "x-request-id", "x-webhook-id")
-    if not delivery_id:
-        delivery_id = payload.get("PaymentId") or payload.get("OrderId")
+    if not delivery_id: delivery_id = payload.get("PaymentId") or payload.get("OrderId")
     signature = payload.get("Hash")
     signature_timestamp = payload.get("PaymentData")
-    accepted = await register_webhook_delivery(
-        db,
-        provider="intellectmoney",
-        delivery_id=delivery_id,
-        signature=signature,
-        signature_timestamp=signature_timestamp,
-        payload_hash=payload_digest(body),
-    )
-    if not accepted:
-        return PlainTextResponse("OK")
+    accepted = await register_webhook_delivery(db, provider="intellectmoney", delivery_id=delivery_id, signature=signature, signature_timestamp=signature_timestamp, payload_hash=payload_digest(body))
+    if not accepted: return PlainTextResponse("OK")
 
     order_id_raw = payload.get("OrderId") or ""
     order = None

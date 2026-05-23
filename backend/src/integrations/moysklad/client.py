@@ -1,16 +1,25 @@
 import asyncio
+from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 import logging
 from typing import Any
+from uuid import UUID
 
 import httpx
 
 from .rows import build_variant_rows, build_product_rows, EXCLUDED_PATHS
-from .schemas import MoySkladCatalogSyncStats, MoySkladInitialRelinkStats
+from .schemas import (
+    MoySkladCatalogSyncStats,
+    MoySkladCounterpartySyncResult,
+    MoySkladCustomerOrderSyncResult,
+    MoySkladInitialRelinkStats,
+)
 
-from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_TOKEN, MOY_SKLAD_TIMEOUT_SECONDS
-from src.normalize import optional_str
+from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, UFA_TZ
+from src.normalize import coerce_uuid, normalize_email, normalize_phone, optional_str
 
 logger = logging.getLogger(__name__)
+
 
 class MoySkladClient:
     def __init__(self, token: str | None = MOY_SKLAD_TOKEN, base_url: str | None = MOY_SKLAD_BASE_URL, timeout: int = MOY_SKLAD_TIMEOUT_SECONDS) -> None:
@@ -21,6 +30,26 @@ class MoySkladClient:
         self._lock = asyncio.Lock()
 
     def is_configured(self) -> bool: return bool(self._token and self._base_url)
+
+    @property
+    def base_url(self) -> str:
+        return self._base_url.rstrip("/")
+
+    def entity_href(self, entity_type: str, entity_id: UUID | str) -> str:
+        return f"{self.base_url}/entity/{entity_type}/{entity_id}"
+
+    @staticmethod
+    def _meta_payload(*, href: str, entity_type: str) -> dict[str, Any]:
+        return {"meta": {"href": href, "type": entity_type, "mediaType": "application/json"}}
+
+    @staticmethod
+    def _money_to_minor(value: Decimal) -> int:
+        return int((Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    @staticmethod
+    def _format_moment(moment: datetime) -> str:
+        normalized = moment if moment.tzinfo is not None else moment.replace(tzinfo=UFA_TZ)
+        return normalized.astimezone(UFA_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
     async def client(self) -> httpx.AsyncClient:
         if not self.is_configured(): raise RuntimeError("MoySklad integration is not configured")
@@ -57,12 +86,158 @@ class MoySkladClient:
             offset += 100
         return rows
 
-    async def fetch_catalog_rows(client: MoySkladClient):
+    async def _get_entity_by_id(self, entity_type: str, entity_id: UUID) -> dict[str, Any] | None:
+        http_client = await self.client()
+        try:
+            response = await http_client.get(f"/entity/{entity_type}/{entity_id}")
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return None
+            raise
+        data = response.json()
+        return data if isinstance(data, dict) else None
+
+    async def _find_entity_by_external_code(self, entity_type: str, external_code: str) -> dict[str, Any] | None:
+        rows: list[dict[str, Any]] = []
+        try:
+            filtered = await self.get_page(f"/entity/{entity_type}", limit=100, filter=f"externalCode={external_code}")
+            candidate_rows = filtered.get("rows")
+            if isinstance(candidate_rows, list):
+                rows.extend(row for row in candidate_rows if isinstance(row, dict))
+        except httpx.HTTPStatusError as exc:
+            logger.debug("MoySklad %s filter lookup failed: %s", entity_type, exc)
+
+        if not rows:
+            try:
+                searched = await self.get_page(f"/entity/{entity_type}", limit=100, search=external_code)
+                candidate_rows = searched.get("rows")
+                if isinstance(candidate_rows, list):
+                    rows.extend(row for row in candidate_rows if isinstance(row, dict))
+            except httpx.HTTPStatusError as exc:
+                logger.debug("MoySklad %s search lookup failed: %s", entity_type, exc)
+
+        for row in rows:
+            if optional_str(row.get("externalCode")) == external_code:
+                return row
+        return None
+
+    async def _create_entity(self, entity_type: str, payload: dict[str, Any]) -> dict[str, Any]:
+        http_client = await self.client()
+        response = await http_client.post(f"/entity/{entity_type}", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise RuntimeError(f"MoySklad returned invalid {entity_type} create response")
+        return data
+
+    async def _update_entity(self, entity_type: str, entity_id: UUID, payload: dict[str, Any]) -> dict[str, Any]:
+        http_client = await self.client()
+        response = await http_client.put(f"/entity/{entity_type}/{entity_id}", json=payload)
+        response.raise_for_status()
+        data = response.json()
+        if not isinstance(data, dict):
+            raise RuntimeError(f"MoySklad returned invalid {entity_type} update response")
+        return data
+
+    def build_customerorder_position(self, *, assortment_entity_type: str, assortment_id: UUID, quantity: int, unit_price: Decimal) -> dict[str, Any]:
+        return {
+            "assortment": self._meta_payload(
+                href=self.entity_href(assortment_entity_type, assortment_id),
+                entity_type=assortment_entity_type,
+            ),
+            "quantity": int(quantity),
+            "price": self._money_to_minor(unit_price),
+        }
+
+    async def resolve_or_sync_counterparty(self, *, existing_counterparty_id: UUID | None, external_code: str, sync_id: UUID, name: str, email: str | None, phone: str | None, actual_address: str | None) -> MoySkladCounterpartySyncResult:
+        counterparty_data: dict[str, Any] | None = None
+
+        if existing_counterparty_id is not None:
+            counterparty_data = await self._get_entity_by_id("counterparty", existing_counterparty_id)
+        if counterparty_data is None:
+            counterparty_data = await self._find_entity_by_external_code("counterparty", external_code)
+
+        payload: dict[str, Any] = {"name": name, "externalCode": external_code}
+        normalized_email = normalize_email(email)
+        normalized_phone = normalize_phone(phone)
+        normalized_address = optional_str(actual_address)
+        if normalized_email:
+            payload["email"] = normalized_email
+        if normalized_phone:
+            payload["phone"] = normalized_phone
+        if normalized_address:
+            payload["actualAddress"] = normalized_address
+
+        created = False
+        if counterparty_data is None:
+            payload["syncId"] = str(sync_id)
+            counterparty_data = await self._create_entity("counterparty", payload)
+            created = True
+
+        counterparty_id = coerce_uuid(counterparty_data.get("id"))
+        if counterparty_id is None:
+            raise RuntimeError("MoySklad counterparty response is missing a valid id")
+
+        updated = False
+        if not created:
+            await self._update_entity("counterparty", counterparty_id, payload)
+            updated = True
+
+        return MoySkladCounterpartySyncResult(
+            counterparty_id=counterparty_id,
+            external_code=external_code,
+            created=created,
+            updated=updated,
+        )
+
+    async def resolve_or_sync_customerorder(self, *, existing_customerorder_id: UUID | None, external_code: str, sync_id: UUID, organization_id: UUID, counterparty_id: UUID, positions: list[dict[str, Any]], moment: datetime, description: str | None) -> MoySkladCustomerOrderSyncResult:
+        customerorder_data: dict[str, Any] | None = None
+
+        if existing_customerorder_id is not None:
+            customerorder_data = await self._get_entity_by_id("customerorder", existing_customerorder_id)
+        if customerorder_data is None:
+            customerorder_data = await self._find_entity_by_external_code("customerorder", external_code)
+
+        payload: dict[str, Any] = {
+            "externalCode": external_code,
+            "organization": self._meta_payload(
+                href=self.entity_href("organization", organization_id),
+                entity_type="organization",
+            ),
+            "agent": self._meta_payload(
+                href=self.entity_href("counterparty", counterparty_id),
+                entity_type="counterparty",
+            ),
+            "positions": positions,
+            "moment": self._format_moment(moment),
+        }
+        normalized_description = optional_str(description)
+        if normalized_description:
+            payload["description"] = normalized_description
+
+        created = False
+        if customerorder_data is None:
+            payload["syncId"] = str(sync_id)
+            customerorder_data = await self._create_entity("customerorder", payload)
+            created = True
+
+        customerorder_id = coerce_uuid(customerorder_data.get("id"))
+        if customerorder_id is None:
+            raise RuntimeError("MoySklad customerorder response is missing a valid id")
+
+        return MoySkladCustomerOrderSyncResult(
+            customerorder_id=customerorder_id,
+            external_code=external_code,
+            created=created,
+        )
+
+    async def fetch_catalog_rows(self):
         logger.info("MoySklad catalog fetch started")
         products, variants, stocks = await asyncio.gather(
-            client.get_all("/entity/product", filter="pathName!=Товары интернет-магазинов/elixirpeptide.ru"),
-            client.get_all("/entity/variant", expand="product"),
-            client.get_all("/report/stock/all"),
+            self.get_all("/entity/product", filter="pathName!=Товары интернет-магазинов/elixirpeptide.ru"),
+            self.get_all("/entity/variant", expand="product"),
+            self.get_all("/report/stock/all"),
         )
 
         products = [p for p in products if p.get("pathName") not in EXCLUDED_PATHS]

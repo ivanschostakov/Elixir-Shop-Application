@@ -52,13 +52,7 @@ async def create_product(session: AsyncSession, data: ProductCreate) -> Product:
     return product
 
 
-async def get_product_by_id(
-    session: AsyncSession,
-    product_id: int,
-    *,
-    include_out_of_stock: bool = True,
-    include_archived: bool = False,
-) -> Product | None:
+async def get_product_by_id(session: AsyncSession, product_id: int, *, include_out_of_stock: bool = True, include_archived: bool = False) -> Product | None:
     stmt = select(Product).options(selectinload(Product.variants)).where(Product.id == product_id)
     if not include_out_of_stock:
         stmt = stmt.where(_in_stock_product_clause())
@@ -75,18 +69,7 @@ async def get_product_by_sku(session: AsyncSession, sku: str) -> Product | None:
     return (await session.execute(select(Product).where(Product.sku == sku))).scalar_one_or_none()
 
 
-async def get_products(
-    session: AsyncSession,
-    *,
-    q: str | None = None,
-    sku: str | None = None,
-    min_priority: int | None = None,
-    category_id: int | None = None,
-    offset: int = 0,
-    limit: int = 100,
-    sort: str = None,
-    include_archived: bool = False,
-) -> list[Product]:
+async def get_products(session: AsyncSession, *, q: str | None = None, sku: str | None = None, min_priority: int | None = None, category_id: int | None = None, offset: int = 0, limit: int = 100, sort: str = None, include_archived: bool = False) -> list[Product]:
     stmt = select(Product).options(selectinload(Product.variants))
     if not include_archived:
         stmt = stmt.where(_not_archived_product_clause())
@@ -133,13 +116,7 @@ async def get_products(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_similar_products(
-    session: AsyncSession,
-    *,
-    product_id: int,
-    offset: int = 0,
-    limit: int = 6,
-) -> list[Product]:
+async def get_similar_products(session: AsyncSession, *, product_id: int, offset: int = 0, limit: int = 6) -> list[Product]:
     category_ids_stmt = select(ProductByCategory.category_id).where(ProductByCategory.product_id == product_id)
     category_ids = [int(category_id) for category_id in (await session.execute(category_ids_stmt)).scalars().all()]
     if not category_ids:
@@ -174,14 +151,7 @@ async def get_similar_products(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_priority_products(
-    session: AsyncSession,
-    *,
-    min_priority: int = 1,
-    offset: int = 0,
-    limit: int = 100,
-    include_archived: bool = False,
-) -> list[Product]:
+async def get_priority_products(session: AsyncSession, *, min_priority: int = 1, offset: int = 0, limit: int = 100, include_archived: bool = False) -> list[Product]:
     stmt = (
         select(Product)
         .options(selectinload(Product.variants))

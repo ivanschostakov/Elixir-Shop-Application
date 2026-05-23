@@ -84,34 +84,20 @@ def serialize_basket(request: Request, basket: Basket) -> BasketRead:
         total_quantity += item.quantity
         total_amount += line_total
 
-        items.append(
-            BasketItemRead(
-                id=item.id,
-                variant_id=item.variant_id,
-                quantity=item.quantity,
-                unit_price=unit_price,
-                line_total=line_total,
-                available_quantity=available_quantity,
-                is_available=is_available,
-                product=BasketProductSummaryRead(
-                    id=item.product.id,
-                    sku=item.product.sku,
-                    name=item.product.name,
-                    in_stock=item.product.in_stock,
-                    image_url=_product_image_url(request, item.product),
-                ),
-                variant=BasketVariantSummaryRead(
-                    id=item.variant.id,
-                    sku=item.variant.sku,
-                    name=item.variant.name,
-                    stock=item.variant.stock,
-                    price=item.variant.price,
-                    image_url=_variant_image_url(request, item.variant),
-                ),
-                created_at=item.created_at,
-                updated_at=item.updated_at,
-            )
-        )
+        items.append(BasketItemRead(id=item.id, variant_id=item.variant_id, quantity=item.quantity, unit_price=unit_price, line_total=line_total, available_quantity=available_quantity, is_available=is_available, product=BasketProductSummaryRead(
+            id=item.product.id,
+            sku=item.product.sku,
+            name=item.product.name,
+            in_stock=item.product.in_stock,
+            image_url=_product_image_url(request, item.product),
+        ), variant=BasketVariantSummaryRead(
+            id=item.variant.id,
+            sku=item.variant.sku,
+            name=item.variant.name,
+            stock=item.variant.stock,
+            price=item.variant.price,
+            image_url=_variant_image_url(request, item.variant),
+        ), created_at=item.created_at, updated_at=item.updated_at))
 
     return BasketRead(
         id=basket.id,
@@ -160,19 +146,13 @@ async def _get_serialized_basket(request: Request, db: AsyncSession, user_id: in
 async def get_basket_checkout_options_for_user(db: AsyncSession, *, user: User, limit: int = 20) -> OrderDraftCheckoutOptionsRead:
     basket = await _ensure_basket(db, user.id)
     addresses = await get_delivery_addresses(db, user_id=user.id, limit=limit)
-    recipients = _filter_self_like_recipients(
-        recipients=await get_delivery_recipients(db, user.id, limit=limit),
-        user=user,
-    )
-
-    if basket.delivery_address is not None and not any(address.id == basket.delivery_address.id for address in addresses):
-        addresses.insert(0, basket.delivery_address)
+    recipients = _filter_self_like_recipients(recipients=await get_delivery_recipients(db, user.id, limit=limit), user=user)
+    if basket.delivery_address is not None and not any(address.id == basket.delivery_address.id for address in addresses): addresses.insert(0, basket.delivery_address)
     if (
         basket.recipient is not None
         and not _is_self_like_recipient(recipient=basket.recipient, user=user)
         and not any(recipient.id == basket.recipient.id for recipient in recipients)
-    ):
-        recipients.insert(0, basket.recipient)
+    ): recipients.insert(0, basket.recipient)
 
     return OrderDraftCheckoutOptionsRead(
         addresses=[DeliveryAddressRead.model_validate(address) for address in addresses],
@@ -206,16 +186,13 @@ async def _get_or_create_delivery_address(db: AsyncSession, *, data: DeliveryAdd
 async def update_basket_checkout_for_user(request: Request, db: AsyncSession, *, user: User, payload) -> BasketRead:
     basket = await _ensure_basket(db, user.id)
 
-    if "recipient_id" in payload.model_fields_set and payload.new_recipient is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing recipient or create a new one")
-    if payload.delivery_address_id is not None and payload.new_delivery_address is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing address or create a new one")
+    if "recipient_id" in payload.model_fields_set and payload.new_recipient is not None: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing recipient or create a new one")
+    if payload.delivery_address_id is not None and payload.new_delivery_address is not None: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing address or create a new one")
 
     update_data: dict[str, Decimal | int | str | None] = {}
 
     if "recipient_id" in payload.model_fields_set:
-        if payload.recipient_id is None:
-            update_data["recipient_id"] = None
+        if payload.recipient_id is None: update_data["recipient_id"] = None
         else:
             recipient = await get_delivery_recipient_by_id(db, payload.recipient_id, user_id=user.id)
             if recipient is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery recipient not found")
@@ -231,13 +208,10 @@ async def update_basket_checkout_for_user(request: Request, db: AsyncSession, *,
         update_data["delivery_address_id"] = address.id
 
     if payload.new_delivery_address is not None:
-        address = await _get_or_create_delivery_address(
-            db,
-            data=_build_new_delivery_address_data(
-                SimpleNamespace(user_id=user.id, delivery_address=basket.delivery_address),
-                payload.new_delivery_address,
-            ),
-        )
+        address = await _get_or_create_delivery_address(db, data=_build_new_delivery_address_data(
+            SimpleNamespace(user_id=user.id, delivery_address=basket.delivery_address),
+            payload.new_delivery_address,
+        ))
         update_data["delivery_address_id"] = address.id
         if payload.new_delivery_address.delivery_calculation is not None:
             update_data["delivery_total"] = payload.new_delivery_address.delivery_calculation.delivery_sum
@@ -307,16 +281,7 @@ async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, u
         if variant is None: raise _basket_conflict("Order draft contains unavailable items")
         if variant.archived or variant.stock <= 0 or draft_item.quantity > variant.stock: raise _basket_conflict("Order draft contains unavailable items")
 
-        restored_items.append(
-            BasketItem(
-                basket_id=basket.id,
-                user_id=user_id,
-                product_id=variant.product_id,
-                variant_id=variant.id,
-                quantity=draft_item.quantity,
-                price=variant.price,
-            )
-        )
+        restored_items.append(BasketItem(basket_id=basket.id, user_id=user_id, product_id=variant.product_id, variant_id=variant.id, quantity=draft_item.quantity, price=variant.price))
 
     await db.execute(delete(BasketItem).where(BasketItem.basket_id == basket.id))
     db.add_all(restored_items)

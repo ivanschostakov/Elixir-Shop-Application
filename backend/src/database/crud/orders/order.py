@@ -23,12 +23,7 @@ def _order_load_options():
     )
 
 
-async def create_order(
-    session: AsyncSession,
-    data: OrderCreate,
-    *,
-    commit: bool = True,
-) -> Order:
+async def create_order(session: AsyncSession, data: OrderCreate, *, commit: bool = True) -> Order:
     order = Order(**data.model_dump())
     session.add(order)
     await session.flush()
@@ -111,17 +106,7 @@ async def get_order_by_amocrm_lead_id(session: AsyncSession, lead_id: int) -> Or
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_orders_for_user(
-    session: AsyncSession,
-    user_id: int,
-    *,
-    history_bucket: OrderHistoryBucket | None = None,
-    status_code: OrderStatusCode | None = None,
-    created_from: datetime | None = None,
-    created_to: datetime | None = None,
-    limit: int = 20,
-    offset: int = 0,
-) -> list[Order]:
+async def get_orders_for_user(session: AsyncSession, user_id: int, *, history_bucket: OrderHistoryBucket | None = None, status_code: OrderStatusCode | None = None, created_from: datetime | None = None, created_to: datetime | None = None, limit: int = 20, offset: int = 0) -> list[Order]:
     stmt = (
         select(Order)
         .options(*_order_load_options())

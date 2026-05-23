@@ -37,12 +37,7 @@ def is_kiparis_code(code: str | None) -> bool:
     return bool(normalized and normalized.casefold() == KIPARIS_CODE.casefold())
 
 
-def calculate_level_one_commission_percent(
-    *,
-    referrer_discount_percent: Decimal | int | float | str | None,
-    referral_discount_percent: Decimal | int | float | str | None,
-    promo_code: str | None,
-) -> Decimal:
+def calculate_level_one_commission_percent(*, referrer_discount_percent: Decimal | int | float | str | None, referral_discount_percent: Decimal | int | float | str | None, promo_code: str | None) -> Decimal:
     referrer_percent = quantize_percent(referrer_discount_percent)
     referral_percent = quantize_percent(referral_discount_percent)
 

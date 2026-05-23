@@ -28,9 +28,7 @@ async def get_cdek_door_addresses(session: AsyncSession, *, user_id: int | None 
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def update_cdek_door_address(
-    session: AsyncSession, address: CdekDoorAddress, data: CdekDoorAddressUpdate, *, commit: bool = True
-) -> CdekDoorAddress:
+async def update_cdek_door_address(session: AsyncSession, address: CdekDoorAddress, data: CdekDoorAddressUpdate, *, commit: bool = True) -> CdekDoorAddress:
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(address, field, value)
     if commit:

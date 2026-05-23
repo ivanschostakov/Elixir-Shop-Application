@@ -146,9 +146,11 @@ async def sync_website_identity_payload_for_user(db: AsyncSession, *, user: User
         website_identity = await _upsert_website_identity_for_user(db, user=synced_user, payload=payload)
         await seed_referral_profile_from_website_payload(db, user=synced_user, website_identity=website_identity, payload=payload)
         await db.commit()
+
     except Exception:
         await db.rollback()
         raise
+
     refreshed_identity = await get_website_identity_by_id(db, website_identity.id)
     assert refreshed_identity is not None
     return refreshed_identity

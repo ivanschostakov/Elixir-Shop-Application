@@ -1,9 +1,11 @@
 from datetime import datetime
 from decimal import Decimal
+import uuid
 from typing import Any
 
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, String, text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -71,6 +73,7 @@ class Order(Base, IdPkMixin, TimestampMixin):
     delivery_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     delivery_provider_ref: Mapped[str | None] = mapped_column(String(length=EXTERNAL_ID_MAX_LENGTH), nullable=True)
     yandex_request_id: Mapped[str | None] = mapped_column(String(length=EXTERNAL_ID_MAX_LENGTH), nullable=True)
+    moysklad_customerorder_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_canceled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))

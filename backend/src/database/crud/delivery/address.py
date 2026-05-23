@@ -5,12 +5,7 @@ from src.database.models import DeliveryAddress
 from src.database.schemas import DeliveryAddressCreate
 
 
-async def create_delivery_address(
-    session: AsyncSession,
-    data: DeliveryAddressCreate,
-    *,
-    commit: bool = True,
-) -> DeliveryAddress:
+async def create_delivery_address(session: AsyncSession, data: DeliveryAddressCreate, *, commit: bool = True) -> DeliveryAddress:
     address = DeliveryAddress(**data.model_dump())
     session.add(address)
     await session.flush()
@@ -27,19 +22,7 @@ async def get_delivery_address_by_id(session: AsyncSession, address_id: int) -> 
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_delivery_address_by_fields(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    mode: str,
-    provider: str,
-    country_code: str,
-    full_address: str,
-    details: str | None,
-    city: str | None,
-    postal_code: str | None,
-    provider_reference: str | None,
-) -> DeliveryAddress | None:
+async def get_delivery_address_by_fields(session: AsyncSession, *, user_id: int, mode: str, provider: str, country_code: str, full_address: str, details: str | None, city: str | None, postal_code: str | None, provider_reference: str | None) -> DeliveryAddress | None:
     stmt = (
         select(DeliveryAddress)
         .where(DeliveryAddress.user_id == user_id)
@@ -62,13 +45,7 @@ async def get_delivery_address_by_fields(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_delivery_addresses(
-    session: AsyncSession,
-    *,
-    user_id: int | None = None,
-    offset: int = 0,
-    limit: int = 100,
-) -> list[DeliveryAddress]:
+async def get_delivery_addresses(session: AsyncSession, *, user_id: int | None = None, offset: int = 0, limit: int = 100) -> list[DeliveryAddress]:
     stmt = select(DeliveryAddress)
     if user_id is not None:
         stmt = stmt.where(DeliveryAddress.user_id == user_id)

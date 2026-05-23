@@ -80,3 +80,29 @@ class MoySkladInitialRelinkStats:
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+@dataclass
+class MoySkladCounterpartySyncResult:
+    counterparty_id: uuid.UUID
+    external_code: str
+    created: bool = False
+    updated: bool = False
+
+
+@dataclass
+class MoySkladCustomerOrderSyncResult:
+    customerorder_id: uuid.UUID
+    external_code: str
+    created: bool = False
+
+
+@dataclass
+class MoySkladOrderSyncResult:
+    enabled: bool
+    skipped_reason: str | None = None
+    counterparty: MoySkladCounterpartySyncResult | None = None
+    customerorder: MoySkladCustomerOrderSyncResult | None = None
+
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)

@@ -20,6 +20,7 @@ from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCo
 from src.database.schemas import DeliveryRecipientCreate, OrderCreate, OrderDraftCreate
 from src.integrations.amocrm import get_amocrm_client
 from src.integrations.delivery.cdek import get_cdek_client
+from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
 
 from .common import _delivery_string, _normalize_phone
 from .crm import ensure_order_has_amocrm_lead
@@ -41,13 +42,15 @@ async def _get_or_create_self_recipient(session: AsyncSession, *, user: User):
     email = (user.email or "").strip().lower()
     phone = _normalize_phone(user.phone_number) or ""
     recipient = await get_delivery_recipient_by_fields(session, user_id=user.id, name=user.name, surname=user.surname, phone=phone, email=email)
-    if recipient is not None: return recipient
-
+    if recipient is not None:
+        return recipient
     return await create_delivery_recipient(session, DeliveryRecipientCreate(user_id=user.id, name=user.name, surname=user.surname, phone=phone, email=email), commit=False)
+
 
 async def _clear_order_draft_references(session: AsyncSession, *, draft_id: int) -> None:
     linked_orders = list((await session.execute(select(Order).where(Order.draft_id == draft_id))).scalars().all())
-    if not linked_orders: return
+    if not linked_orders:
+        return
 
     for linked_order in linked_orders:
         linked_order.draft = None
@@ -56,20 +59,49 @@ async def _clear_order_draft_references(session: AsyncSession, *, draft_id: int)
     await session.flush()
 
 def _build_selected_delivery_payload(draft: OrderDraft) -> tuple[str, dict[str, Any]]:
-    if draft.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
+    if draft.delivery_address is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
 
     delivery_address = draft.delivery_address
-    address_payload = {"code": delivery_address.provider_reference, "name": delivery_address.name, "address": delivery_address.full_address, "formatted": delivery_address.full_address, "full_address": delivery_address.full_address, "details": delivery_address.details, "city": delivery_address.city, "postal_code": delivery_address.postal_code, "country_code": delivery_address.country_code, "latitude": delivery_address.latitude, "longitude": delivery_address.longitude, "provider_reference": delivery_address.provider_reference, }
+    address_payload = {
+        "code": delivery_address.provider_reference,
+        "name": delivery_address.name,
+        "address": delivery_address.full_address,
+        "formatted": delivery_address.full_address,
+        "full_address": delivery_address.full_address,
+        "details": delivery_address.details,
+        "city": delivery_address.city,
+        "postal_code": delivery_address.postal_code,
+        "country_code": delivery_address.country_code,
+        "latitude": delivery_address.latitude,
+        "longitude": delivery_address.longitude,
+        "provider_reference": delivery_address.provider_reference,
+    }
     delivery_total = float(draft.delivery_total)
 
     if delivery_address.provider == "CDEK":
         delivery_mode = "office" if delivery_address.mode == "pickup" else "door"
-        payload = {"deliveryMode": delivery_mode, "tariff": {"tariff_code": get_cdek_client().tariff_codes[delivery_mode], "tariff_name": delivery_mode, "delivery_sum": delivery_total, }, "address": address_payload, "delivery_sum": delivery_total, }
+        payload = {
+            "deliveryMode": delivery_mode,
+            "tariff": {
+                "tariff_code": get_cdek_client().tariff_codes[delivery_mode],
+                "tariff_name": delivery_mode,
+                "delivery_sum": delivery_total,
+            },
+            "address": address_payload,
+            "delivery_sum": delivery_total,
+        }
         return "CDEK", payload
 
     if delivery_address.provider == "YANDEX":
-        if delivery_address.mode != "pickup":raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Yandex door delivery is not supported in this flow")
-        payload = {"deliveryMode": "self_pickup", "tariff": {"tariff_name": "self_pickup", }, "address": address_payload, "delivery_sum": delivery_total, }
+        if delivery_address.mode != "pickup":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Yandex door delivery is not supported in this flow")
+        payload = {
+            "deliveryMode": "self_pickup",
+            "tariff": {"tariff_name": "self_pickup"},
+            "address": address_payload,
+            "delivery_sum": delivery_total,
+        }
         return "YANDEX", payload
 
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported delivery provider")
@@ -103,19 +135,40 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
     }
 
 
-def _build_checkout_snapshot(
-    draft: OrderDraft,
-    *,
-    payment_method: str,
-    selected_delivery_service: str,
-    selected_delivery_payload: dict[str, Any],
-    resolved_benefits: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    if draft.recipient is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Recipient is required")
+def _checkout_snapshot_item(item) -> dict[str, Any]:
+    return {
+        "id": item.product_id,
+        "featureId": item.variant_id,
+        "name": item.product_name,
+        "product_name": item.product_name,
+        "feature_name": item.variant_name,
+        "code": item.product_sku,
+        "qty": item.quantity,
+        "price": float(item.unit_price),
+        "subtotal": float(item.line_total),
+    }
 
-    items = [{"id": item.product_id, "featureId": item.variant_id, "name": item.product_name, "product_name": item.product_name, "feature_name": item.variant_name, "code": item.product_sku, "qty": item.quantity, "price": float(item.unit_price), "subtotal": float(item.line_total)} for item in draft.items]
 
-    return {"source": "shop_application", "payment_method": payment_method, "contact_info": {"name": draft.recipient.name, "surname": draft.recipient.surname, "phone": draft.recipient.phone, "email": draft.recipient.email, }, "checkout_data": {"items": items, "total": float(draft.basket_subtotal), }, "benefits": _json_safe_benefits(resolved_benefits), "selected_delivery": deepcopy(selected_delivery_payload), "selected_delivery_service": selected_delivery_service, "commentary": draft.comment or "Не указан", "order_date": datetime.now(timezone.utc).isoformat()}
+def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any], resolved_benefits: dict[str, Any] | None = None) -> dict[str, Any]:
+    if draft.recipient is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Recipient is required")
+    items = [_checkout_snapshot_item(item) for item in draft.items]
+    return {
+        "source": "shop_application",
+        "payment_method": payment_method,
+        "contact_info": {
+            "name": draft.recipient.name,
+            "surname": draft.recipient.surname,
+            "phone": draft.recipient.phone,
+            "email": draft.recipient.email,
+        },
+        "checkout_data": {"items": items, "total": float(draft.basket_subtotal)},
+        "benefits": _json_safe_benefits(resolved_benefits),
+        "selected_delivery": deepcopy(selected_delivery_payload),
+        "selected_delivery_service": selected_delivery_service,
+        "commentary": draft.comment or "Не указан",
+        "order_date": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 async def _active_referral_relationship(session: AsyncSession, *, user_id: int) -> ReferralRelationship | None:
@@ -215,15 +268,7 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
         await session.flush()
 
 
-async def _resolve_checkout_benefits(
-    session: AsyncSession,
-    *,
-    user: User,
-    subtotal: Decimal,
-    currency: str,
-    entered_code: str | None,
-    requested_deposit_amount: Decimal | None,
-) -> dict[str, Any]:
+async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subtotal: Decimal, currency: str, entered_code: str | None, requested_deposit_amount: Decimal | None) -> dict[str, Any]:
     return await resolve_benefits_for_user(
         session,
         user=user,
@@ -233,15 +278,79 @@ async def _resolve_checkout_benefits(
         requested_deposit_amount=requested_deposit_amount,
     )
 
-async def create_order_from_draft_for_user(
-    session: AsyncSession,
-    *,
-    user: User,
-    draft_id: int,
-    payment_method: str,
-    entered_code: str | None = None,
-    requested_deposit_amount: Decimal | None = None,
-) -> Order:
+
+def _build_order_create_data(*, user_id: int, delivery_address_id: int, recipient_id: int, order_code: str, items_count: int, total_quantity: int, basket_subtotal: Decimal, delivery_total: Decimal, grand_total: Decimal, currency: str, delivery_period_min: int | None, delivery_period_max: int | None, comment: str | None, delivery_string: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any], checkout_snapshot: dict[str, Any], payment_method: str) -> OrderCreate:
+    return OrderCreate(
+        draft_id=None,
+        user_id=user_id,
+        delivery_address_id=delivery_address_id,
+        recipient_id=recipient_id,
+        order_code=order_code,
+        status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"),
+        items_count=items_count,
+        total_quantity=total_quantity,
+        basket_subtotal=basket_subtotal,
+        delivery_total=delivery_total,
+        grand_total=grand_total,
+        currency=currency,
+        delivery_period_min=delivery_period_min,
+        delivery_period_max=delivery_period_max,
+        comment=comment,
+        delivery_string=delivery_string,
+        selected_delivery_service=selected_delivery_service,
+        selected_delivery_payload=selected_delivery_payload,
+        checkout_snapshot=checkout_snapshot,
+        payment_method=payment_method,
+        payment_provider=None,
+        payment_status="draft",
+        payment_invoice_id=None,
+        payment_paid_at=None,
+        payment_error=None,
+        amocrm_lead_id=None,
+        delivery_created_at=None,
+        delivery_provider_ref=None,
+        yandex_request_id=None,
+        is_active=True,
+        is_paid=False,
+        is_canceled=False,
+        is_shipped=False,
+    )
+
+
+def _build_order_item_from_draft_item(*, user_id: int, order_id: int, item) -> OrderItem:
+    return OrderItem(
+        user_id=user_id,
+        order_id=order_id,
+        product_id=item.product_id,
+        variant_id=item.variant_id,
+        product_name=item.product_name,
+        product_sku=item.product_sku,
+        variant_name=item.variant_name,
+        variant_sku=item.variant_sku,
+        quantity=item.quantity,
+        unit_price=item.unit_price,
+        line_total=item.line_total,
+    )
+
+
+def _build_order_item_from_basket_row(*, user_id: int, order_id: int, row: tuple[BasketItem, Decimal, Decimal]) -> OrderItem:
+    item, unit_price, line_total = row
+    return OrderItem(
+        user_id=user_id,
+        order_id=order_id,
+        product_id=item.product_id,
+        variant_id=item.variant_id,
+        product_name=item.product.name,
+        product_sku=item.product.sku,
+        variant_name=item.variant.name,
+        variant_sku=item.variant.sku,
+        quantity=item.quantity,
+        unit_price=unit_price,
+        line_total=line_total,
+    )
+
+
+async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, requested_deposit_amount: Decimal | None = None) -> Order:
     draft = await get_order_draft_by_id(session, draft_id, user_id=user.id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
 
@@ -284,9 +393,28 @@ async def create_order_from_draft_for_user(
     delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
 
     order_code = await _generate_order_code(session)
-    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=draft.delivery_address_id, recipient_id=draft.recipient_id, order_code=order_code, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=draft.items_count, total_quantity=draft.total_quantity, basket_subtotal=draft.basket_subtotal, delivery_total=draft.delivery_total, grand_total=grand_total, currency=draft.currency, delivery_period_min=draft.delivery_period_min, delivery_period_max=draft.delivery_period_max, comment=draft.comment, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
-
-    order_items = [OrderItem(user_id=user.id, order_id=order.id, product_id=item.product_id, variant_id=item.variant_id, product_name=item.product_name, product_sku=item.product_sku, variant_name=item.variant_name, variant_sku=item.variant_sku, quantity=item.quantity, unit_price=item.unit_price, line_total=item.line_total) for item in draft.items]
+    order_create = _build_order_create_data(
+        user_id=user.id,
+        delivery_address_id=draft.delivery_address_id,
+        recipient_id=draft.recipient_id,
+        order_code=order_code,
+        items_count=draft.items_count,
+        total_quantity=draft.total_quantity,
+        basket_subtotal=draft.basket_subtotal,
+        delivery_total=draft.delivery_total,
+        grand_total=grand_total,
+        currency=draft.currency,
+        delivery_period_min=draft.delivery_period_min,
+        delivery_period_max=draft.delivery_period_max,
+        comment=draft.comment,
+        delivery_string=delivery_string,
+        selected_delivery_service=selected_delivery_service,
+        selected_delivery_payload=selected_delivery_payload,
+        checkout_snapshot=checkout_snapshot,
+        payment_method=payment_method,
+    )
+    order = await create_order(session, order_create, commit=False)
+    order_items = [_build_order_item_from_draft_item(user_id=user.id, order_id=order.id, item=item) for item in draft.items]
     session.add_all(order_items)
     await session.flush()
     await _persist_order_benefit_applications(session, order=order, user=user, resolved_benefits=resolved_benefits)
@@ -298,18 +426,12 @@ async def create_order_from_draft_for_user(
 
     created_order = await get_order_by_id(session, order.id, user_id=user.id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
+    await sync_order_to_moysklad_safe(session, order=created_order, user=user)
 
     return created_order
 
 
-async def create_order_from_basket_for_user(
-    session: AsyncSession,
-    *,
-    user: User,
-    payment_method: str,
-    entered_code: str | None = None,
-    requested_deposit_amount: Decimal | None = None,
-) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, requested_deposit_amount: Decimal | None = None) -> Order:
     basket = await get_basket_by_user_id(session, user.id)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
     if basket.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
@@ -382,9 +504,28 @@ async def create_order_from_basket_for_user(
     delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
 
     order_code = await _generate_order_code(session)
-    order = await create_order(session, OrderCreate(draft_id=None, user_id=user.id, delivery_address_id=basket.delivery_address_id, recipient_id=basket.recipient_id, order_code=order_code, status=amocrm_client.STATUS_WORDS.get(amocrm_client.STATUS_IDS["main"], "Создан"), items_count=len(order_item_rows), total_quantity=total_quantity, basket_subtotal=basket_subtotal, delivery_total=basket.delivery_total, grand_total=grand_total, currency=basket.currency, delivery_period_min=basket.delivery_period_min, delivery_period_max=basket.delivery_period_max, comment=None, delivery_string=delivery_string, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, checkout_snapshot=checkout_snapshot, payment_method=payment_method, payment_provider=None, payment_status="draft", payment_invoice_id=None, payment_paid_at=None, payment_error=None, amocrm_lead_id=None, delivery_created_at=None, delivery_provider_ref=None, yandex_request_id=None, is_active=True, is_paid=False, is_canceled=False, is_shipped=False), commit=False)
-
-    order_items = [OrderItem(user_id=user.id, order_id=order.id, product_id=item.product_id, variant_id=item.variant_id, product_name=item.product.name, product_sku=item.product.sku, variant_name=item.variant.name, variant_sku=item.variant.sku, quantity=item.quantity, unit_price=unit_price, line_total=line_total) for item, unit_price, line_total in order_item_rows]
+    order_create = _build_order_create_data(
+        user_id=user.id,
+        delivery_address_id=basket.delivery_address_id,
+        recipient_id=basket.recipient_id,
+        order_code=order_code,
+        items_count=len(order_item_rows),
+        total_quantity=total_quantity,
+        basket_subtotal=basket_subtotal,
+        delivery_total=basket.delivery_total,
+        grand_total=grand_total,
+        currency=basket.currency,
+        delivery_period_min=basket.delivery_period_min,
+        delivery_period_max=basket.delivery_period_max,
+        comment=None,
+        delivery_string=delivery_string,
+        selected_delivery_service=selected_delivery_service,
+        selected_delivery_payload=selected_delivery_payload,
+        checkout_snapshot=checkout_snapshot,
+        payment_method=payment_method,
+    )
+    order = await create_order(session, order_create, commit=False)
+    order_items = [_build_order_item_from_basket_row(user_id=user.id, order_id=order.id, row=row) for row in order_item_rows]
     session.add_all(order_items)
     await session.flush()
     await _persist_order_benefit_applications(session, order=order, user=user, resolved_benefits=resolved_benefits)
@@ -401,6 +542,7 @@ async def create_order_from_basket_for_user(
 
     created_order = await get_order_by_id(session, order.id, user_id=user.id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
+    await sync_order_to_moysklad_safe(session, order=created_order, user=user)
     return created_order
 
 

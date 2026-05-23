@@ -38,79 +38,52 @@ from src.database.schemas import (
     UserCreate,
 )
 from src.integrations.amocrm import get_amocrm_client
+from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
 
 amocrm_client = get_amocrm_client()
 
 
 def _normalize_guest_items(items: list[GuestBasketItemPayload]) -> dict[int, int]:
     normalized: dict[int, int] = {}
-    for item in items:
-        normalized[item.variant_id] = normalized.get(item.variant_id, 0) + item.quantity
-    if any(quantity > 100 for quantity in normalized.values()):
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Quantity is invalid")
+    for item in items: normalized[item.variant_id] = normalized.get(item.variant_id, 0) + item.quantity
+    if any(quantity > 100 for quantity in normalized.values()): raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Quantity is invalid")
     return normalized
 
 
 async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[int, int], *, lock: bool = False) -> dict[int, Variant]:
-    if not items_by_variant_id:
-        return {}
-
+    if not items_by_variant_id: return {}
     stmt = select(Variant).options(selectinload(Variant.product)).where(Variant.id.in_(items_by_variant_id.keys()))
-    if lock:
-        stmt = stmt.with_for_update()
+    if lock: stmt = stmt.with_for_update()
     variants = list((await session.execute(stmt)).scalars().all())
     return {variant.id: variant for variant in variants}
 
 
 def _validate_guest_variants(items_by_variant_id: dict[int, int], variants_by_id: dict[int, Variant]) -> None:
-    if len(variants_by_id) != len(items_by_variant_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
-
+    if len(variants_by_id) != len(items_by_variant_id): raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
     for variant_id, quantity in items_by_variant_id.items():
         variant = variants_by_id[variant_id]
-        if variant.archived or variant.stock <= 0:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
-        if quantity > variant.stock:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
+        if variant.archived or variant.stock <= 0: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
+        if quantity > variant.stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
 
 
-def _guest_basket_item_read(
-    request: Request,
-    *,
-    variant: Variant,
-    quantity: int,
-    now: datetime,
-) -> BasketItemRead:
+def _guest_basket_item_read(request: Request, *, variant: Variant, quantity: int, now: datetime) -> BasketItemRead:
     product = variant.product
-    if product is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
+    if product is None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
     line_total = variant.price * quantity
-    return BasketItemRead(
+    return BasketItemRead(id=variant.id, variant_id=variant.id, quantity=quantity, unit_price=variant.price, line_total=line_total, available_quantity=max(variant.stock, 0), is_available=variant.stock > 0 and quantity <= variant.stock, product=BasketProductSummaryRead(
+        id=product.id,
+        sku=product.sku,
+        name=product.name,
+        in_stock=product.in_stock,
+        image_url=_product_image_url(request, product),
+    ), variant=BasketVariantSummaryRead(
         id=variant.id,
-        variant_id=variant.id,
-        quantity=quantity,
-        unit_price=variant.price,
-        line_total=line_total,
-        available_quantity=max(variant.stock, 0),
-        is_available=variant.stock > 0 and quantity <= variant.stock,
-        product=BasketProductSummaryRead(
-            id=product.id,
-            sku=product.sku,
-            name=product.name,
-            in_stock=product.in_stock,
-            image_url=_product_image_url(request, product),
-        ),
-        variant=BasketVariantSummaryRead(
-            id=variant.id,
-            sku=variant.sku,
-            name=variant.name,
-            stock=variant.stock,
-            price=variant.price,
-            image_url=_variant_image_url(request, variant),
-        ),
-        created_at=now,
-        updated_at=now,
-    )
+        sku=variant.sku,
+        name=variant.name,
+        stock=variant.stock,
+        price=variant.price,
+        image_url=_variant_image_url(request, variant),
+    ), created_at=now, updated_at=now)
 
 
 async def quote_guest_basket(session: AsyncSession, request: Request, payload: list[GuestBasketItemPayload]) -> GuestBasketQuoteRead:
@@ -155,15 +128,12 @@ async def quote_guest_basket(session: AsyncSession, request: Request, payload: l
 async def generate_guest_username(session: AsyncSession) -> str:
     for _ in range(30):
         username = f"guest{secrets.token_hex(5)}"
-        if await get_user_by_username(session, username) is None:
-            return username
+        if await get_user_by_username(session, username) is None: return username
+
     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate username")
 
 
-def generate_guest_password() -> str:
-    return secrets.token_urlsafe(12)
-
-
+def generate_guest_password() -> str: return secrets.token_urlsafe(12)
 def _delivery_address_create(user_id: int, payload: GuestDeliveryAddressPayload) -> DeliveryAddressCreate:
     return DeliveryAddressCreate(
         user_id=user_id,
@@ -184,8 +154,7 @@ def _delivery_address_create(user_id: int, payload: GuestDeliveryAddressPayload)
 async def create_guest_order(session: AsyncSession, request: Request, payload: GuestOrderPayload) -> tuple[User, str, Any]:
     normalized_email = str(payload.recipient.email).strip().lower()
     existing_user = await get_user_by_email(session, normalized_email)
-    if existing_user is not None and existing_user.is_active:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "email_exists", "message": "User with this email already exists"})
+    if existing_user is not None and existing_user.is_active: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "email_exists", "message": "User with this email already exists"})
 
     items_by_variant_id = _normalize_guest_items(payload.items)
     variants_by_id = await _load_guest_variants(session, items_by_variant_id, lock=True)
@@ -193,38 +162,20 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
 
     username = await generate_guest_username(session)
     password = generate_guest_password()
-    user = await create_user(
-        session,
-        UserCreate(
-            username=username,
-            email=normalized_email,
-            name=payload.recipient.name,
-            surname=payload.recipient.surname,
-            phone_number=payload.recipient.phone,
-            password_hash=hash_password(password),
-            is_verified=True,
-        ),
-        commit=False,
-    )
-
-    delivery_address = await create_delivery_address(session, _delivery_address_create(user.id, payload.delivery_address), commit=False)
-    recipient_data = DeliveryRecipientCreate(
-        user_id=user.id,
+    user = await create_user(session, UserCreate(
+        username=username,
+        email=normalized_email,
         name=payload.recipient.name,
         surname=payload.recipient.surname,
-        phone=payload.recipient.phone,
-        email=normalized_email,
-    )
-    recipient = await get_delivery_recipient_by_fields(
-        session,
-        user_id=recipient_data.user_id,
-        name=recipient_data.name,
-        surname=recipient_data.surname,
-        phone=recipient_data.phone,
-        email=recipient_data.email,
-    )
-    if recipient is None:
-        recipient = await create_delivery_recipient(session, recipient_data, commit=False)
+        phone_number=payload.recipient.phone,
+        password_hash=hash_password(password),
+        is_verified=True,
+    ), commit=False)
+
+    delivery_address = await create_delivery_address(session, _delivery_address_create(user.id, payload.delivery_address), commit=False)
+    recipient_data = DeliveryRecipientCreate(user_id=user.id, name=payload.recipient.name, surname=payload.recipient.surname, phone=payload.recipient.phone, email=normalized_email)
+    recipient = await get_delivery_recipient_by_fields(session, user_id=recipient_data.user_id, name=recipient_data.name, surname=recipient_data.surname, phone=recipient_data.phone, email=recipient_data.email)
+    if recipient is None: recipient = await create_delivery_recipient(session, recipient_data, commit=False)
 
     basket_subtotal = Decimal("0.00")
     total_quantity = 0
@@ -321,34 +272,28 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
         quantity = items_by_variant_id[variant_id]
         variant = variants_by_id[variant_id]
         product = variant.product
-        if product is None:
-            continue
+        if product is None: continue
         line_total = variant.price * quantity
-        order_items.append(
-            OrderItem(
-                user_id=user.id,
-                order_id=order.id,
-                product_id=product.id,
-                variant_id=variant.id,
-                product_name=product.name,
-                product_sku=product.sku,
-                variant_name=variant.name,
-                variant_sku=variant.sku,
-                quantity=quantity,
-                unit_price=variant.price,
-                line_total=line_total,
-            )
-        )
+        order_items.append(OrderItem(
+            user_id=user.id,
+            order_id=order.id,
+            product_id=product.id,
+            variant_id=variant.id,
+            product_name=product.name,
+            product_sku=product.sku,
+            variant_name=variant.name,
+            variant_sku=variant.sku,
+            quantity=quantity,
+            unit_price=variant.price,
+            line_total=line_total,
+        ))
     session.add_all(order_items)
     await session.flush()
-    for order_item in order_items:
-        await record_purchase(session, user_id=user.id, product_id=order_item.product_id, quantity=order_item.quantity, commit=False)
+    for order_item in order_items: await record_purchase(session, user_id=user.id, product_id=order_item.product_id, quantity=order_item.quantity, commit=False)
     await ensure_order_has_amocrm_lead(session, order, user=user)
     await session.commit()
     await session.refresh(user)
-
     created_order = await get_order_by_id(session, order.id, user_id=user.id)
-    if created_order is None:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
-
+    if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
+    await sync_order_to_moysklad_safe(session, order=created_order, user=user)
     return user, password, created_order

@@ -19,13 +19,7 @@ async def get_user_push_tokens(session: AsyncSession, *, user_id: int) -> list[U
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def upsert_user_push_token(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    data: UserPushTokenUpsert,
-    commit: bool = True,
-) -> UserPushToken:
+async def upsert_user_push_token(session: AsyncSession, *, user_id: int, data: UserPushTokenUpsert, commit: bool = True) -> UserPushToken:
     push_token = await get_user_push_token_by_expo_token(session, data.expo_push_token)
     if push_token is None:
         push_token = UserPushToken(

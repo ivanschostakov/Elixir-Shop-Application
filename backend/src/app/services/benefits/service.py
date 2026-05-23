@@ -118,13 +118,7 @@ def _best_applicable(options: list[ResolvedDiscountOption], *, source_kind: str 
     return candidates[0] if candidates else None
 
 
-def _stack_discount_options(
-    *,
-    app_referral_option: ResolvedDiscountOption | None,
-    entitlement_options: list[ResolvedDiscountOption],
-    code_matches: list[ResolvedDiscountOption],
-    subtotal: Decimal,
-) -> tuple[list[dict], Decimal, Decimal]:
+def _stack_discount_options(*, app_referral_option: ResolvedDiscountOption | None, entitlement_options: list[ResolvedDiscountOption], code_matches: list[ResolvedDiscountOption], subtotal: Decimal) -> tuple[list[dict], Decimal, Decimal]:
     ordered_options: list[ResolvedDiscountOption] = []
     if app_referral_option is not None and app_referral_option.is_applicable:
         ordered_options.append(app_referral_option)
@@ -151,13 +145,7 @@ def _stack_discount_options(
     return stacked, discount_total, running_total
 
 
-def _resolve_deposit_option(
-    *,
-    balance: Decimal,
-    subtotal_after_discounts: Decimal,
-    requested_deposit_amount: Decimal | None,
-    currency: str | None,
-) -> dict:
+def _resolve_deposit_option(*, balance: Decimal, subtotal_after_discounts: Decimal, requested_deposit_amount: Decimal | None, currency: str | None) -> dict:
     requested_amount = quantize_money(requested_deposit_amount)
     max_applicable_amount = min(balance, subtotal_after_discounts)
     applicable_amount = Decimal("0.00")
@@ -186,16 +174,7 @@ def _resolve_deposit_option(
     }
 
 
-async def resolve_benefits_for_user(
-    db: AsyncSession,
-    *,
-    user: User,
-    entered_code: str | None = None,
-    subtotal: Decimal | None = None,
-    currency: str | None = None,
-    requested_bonus_amount: Decimal | None = None,
-    requested_deposit_amount: Decimal | None = None,
-) -> dict:
+async def resolve_benefits_for_user(db: AsyncSession, *, user: User, entered_code: str | None = None, subtotal: Decimal | None = None, currency: str | None = None, requested_bonus_amount: Decimal | None = None, requested_deposit_amount: Decimal | None = None) -> dict:
     normalized_code = lower_optional_str(entered_code)
     trimmed_code = optional_str(entered_code)
     effective_subtotal, subtotal_source = await _resolve_subtotal(db, user_id=user.id, explicit_subtotal=subtotal)

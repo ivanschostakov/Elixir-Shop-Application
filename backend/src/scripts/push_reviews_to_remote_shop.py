@@ -77,14 +77,7 @@ def _ensure_remote_env() -> None:
         )
 
 
-def _build_review_key(
-    *,
-    user_id: int,
-    product_id: int,
-    value: int,
-    text_value: str | None,
-    created_at: Any,
-) -> tuple[int, int, int, str | None, Any]:
+def _build_review_key(*, user_id: int, product_id: int, value: int, text_value: str | None, created_at: Any) -> tuple[int, int, int, str | None, Any]:
     return (user_id, product_id, value, text_value, created_at)
 
 
@@ -241,13 +234,7 @@ async def _load_remote_user_maps(conn) -> tuple[set[str], dict[str, int], set[st
     return user_columns, user_id_by_email, set(email_by_remote_id.values())
 
 
-async def _create_remote_user_if_missing(
-    conn,
-    *,
-    user_columns: set[str],
-    review: LocalReviewRow,
-    remote_emails: set[str],
-) -> int | None:
+async def _create_remote_user_if_missing(conn, *, user_columns: set[str], review: LocalReviewRow, remote_emails: set[str]) -> int | None:
     email = review.user_email
     if email in remote_emails:
         row = (await conn.execute(text("select id from public.users where email = :email"), {"email": email})).first()

@@ -9,13 +9,7 @@ from src.database.models.catalog.review_attachment import ReviewAttachment
 from src.database.schemas import ReviewCreate
 
 
-async def get_product_reviews(
-    session: AsyncSession,
-    *,
-    product_id: int,
-    offset: int = 0,
-    limit: int = 20,
-) -> list[Review]:
+async def get_product_reviews(session: AsyncSession, *, product_id: int, offset: int = 0, limit: int = 20) -> list[Review]:
     stmt = (
         select(Review)
         .options(
@@ -30,11 +24,7 @@ async def get_product_reviews(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_review_by_id(
-    session: AsyncSession,
-    *,
-    review_id: int,
-) -> Review | None:
+async def get_review_by_id(session: AsyncSession, *, review_id: int) -> Review | None:
     stmt = (
         select(Review)
         .options(
@@ -46,14 +36,7 @@ async def get_review_by_id(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def create_product_review(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    product_id: int,
-    data: ReviewCreate,
-    commit: bool = True,
-) -> Review:
+async def create_product_review(session: AsyncSession, *, user_id: int, product_id: int, data: ReviewCreate, commit: bool = True) -> Review:
     review = Review(
         user_id=user_id,
         product_id=product_id,
@@ -68,14 +51,7 @@ async def create_product_review(
     return review
 
 
-async def create_review_attachment(
-    session: AsyncSession,
-    *,
-    review_id: int,
-    filename: str,
-    mime_type: str | None,
-    commit: bool = False,
-) -> ReviewAttachment:
+async def create_review_attachment(session: AsyncSession, *, review_id: int, filename: str, mime_type: str | None, commit: bool = False) -> ReviewAttachment:
     attachment = ReviewAttachment(
         review_id=review_id,
         filename=filename,
@@ -89,12 +65,7 @@ async def create_review_attachment(
     return attachment
 
 
-async def has_user_purchased_product(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    product_id: int,
-) -> bool:
+async def has_user_purchased_product(session: AsyncSession, *, user_id: int, product_id: int) -> bool:
     stmt = (
         select(OrderItem.id)
         .join(Order, Order.id == OrderItem.order_id)
@@ -109,11 +80,7 @@ async def has_user_purchased_product(
     return (await session.execute(stmt)).scalar_one_or_none() is not None
 
 
-async def get_product_review_stats(
-    session: AsyncSession,
-    *,
-    product_ids: list[int],
-) -> dict[int, tuple[float, int]]:
+async def get_product_review_stats(session: AsyncSession, *, product_ids: list[int]) -> dict[int, tuple[float, int]]:
     if not product_ids:
         return {}
 

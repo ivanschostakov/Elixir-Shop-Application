@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import ufa_now
@@ -48,6 +48,18 @@ async def revoke_user_session(session: AsyncSession, user_session: UserSession, 
     await session.commit()
     await session.refresh(user_session)
     return user_session
+
+
+async def revoke_active_user_sessions(session: AsyncSession, *, user_id: int, revoked_at: datetime | None = None, commit: bool = True) -> int:
+    effective_revoked_at = revoked_at or ufa_now()
+    result = await session.execute(
+        update(UserSession)
+        .where(UserSession.user_id == user_id, UserSession.revoked_at.is_(None))
+        .values(revoked_at=effective_revoked_at)
+    )
+    if commit:
+        await session.commit()
+    return int(result.rowcount or 0)
 
 
 async def delete_user_session(session: AsyncSession, user_session: UserSession) -> None:

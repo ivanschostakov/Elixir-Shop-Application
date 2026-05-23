@@ -22,11 +22,6 @@ async def get_my_website_identity(current_user: User = Depends(get_current_user)
 
 
 @my_website_identity_router.post("/link", response_model=WebsiteIdentityRead, status_code=status.HTTP_200_OK)
-async def link_my_website_identity(
-    payload: WebsiteIdentityLoginPayload,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-    website_identity_client: WebsiteIdentityClient = Depends(get_website_identity_client),
-) -> WebsiteIdentityRead:
+async def link_my_website_identity(payload: WebsiteIdentityLoginPayload, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db), website_identity_client: WebsiteIdentityClient = Depends(get_website_identity_client)) -> WebsiteIdentityRead:
     website_identity = await link_website_identity_to_user(db, user=current_user, login=payload.login, password=payload.password, website_identity_client=website_identity_client)
     return WebsiteIdentityRead.model_validate(website_identity)

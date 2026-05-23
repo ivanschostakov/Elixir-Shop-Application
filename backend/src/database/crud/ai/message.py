@@ -64,12 +64,7 @@ async def delete_ai_message(session: AsyncSession, message: AIMessage, *, commit
     if commit: await session.commit()
 
 
-async def create_ai_message_usage(
-    session: AsyncSession,
-    data: AIMessageUsageCreate,
-    *,
-    commit: bool = True,
-) -> AIMessageUsage:
+async def create_ai_message_usage(session: AsyncSession, data: AIMessageUsageCreate, *, commit: bool = True) -> AIMessageUsage:
     usage = AIMessageUsage(**data.model_dump())
     session.add(usage)
     await session.flush()

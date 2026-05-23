@@ -17,6 +17,7 @@ from .user_session import (
     get_user_session_by_id,
     get_user_session_by_refresh_token_hash,
     get_user_sessions,
+    revoke_active_user_sessions,
     revoke_user_session,
     update_user_session,
 )

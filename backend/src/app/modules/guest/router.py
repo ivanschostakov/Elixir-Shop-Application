@@ -38,21 +38,13 @@ async def _guest_rate_limit(request: Request, *, scope: str, principal: str | No
 
 
 @guest_router.post("/basket/quote", response_model=GuestBasketQuoteRead, status_code=status.HTTP_200_OK)
-async def quote_guest_basket_route(
-    payload: GuestBasketQuotePayload,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> GuestBasketQuoteRead:
+async def quote_guest_basket_route(payload: GuestBasketQuotePayload, request: Request, db: AsyncSession = Depends(get_db)) -> GuestBasketQuoteRead:
     await _guest_rate_limit(request, scope="guest:basket_quote")
     return await quote_guest_basket(db, request, payload.items)
 
 
 @guest_router.post("/email/check", response_model=GuestEmailCheckResponse, status_code=status.HTTP_200_OK)
-async def check_guest_email(
-    payload: GuestEmailCheckPayload,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> GuestEmailCheckResponse:
+async def check_guest_email(payload: GuestEmailCheckPayload, request: Request, db: AsyncSession = Depends(get_db)) -> GuestEmailCheckResponse:
     normalized_email = str(payload.email).strip().lower()
     await _guest_rate_limit(request, scope="guest:email_check", principal=normalized_email)
     existing_user = await get_user_by_email(db, normalized_email)
@@ -60,30 +52,18 @@ async def check_guest_email(
 
 
 @guest_router.post("/orders", response_model=GuestOrderResponse, status_code=status.HTTP_201_CREATED)
-async def create_guest_order_route(
-    payload: GuestOrderPayload,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-) -> GuestOrderResponse:
+async def create_guest_order_route(payload: GuestOrderPayload, request: Request, db: AsyncSession = Depends(get_db)) -> GuestOrderResponse:
     normalized_email = str(payload.recipient.email).strip().lower()
     await _guest_rate_limit(request, scope="guest:orders", principal=normalized_email)
     user, generated_password, order = await create_guest_order(db, request, payload)
 
     refresh_token = create_refresh_token()
-    session = await create_user_session(
-        db,
-        UserSessionCreate(user_id=user.id, refresh_token_hash=hash_refresh_token(refresh_token)),
-    )
+    session = await create_user_session(db, UserSessionCreate(user_id=user.id, refresh_token_hash=hash_refresh_token(refresh_token)))
     access_token = create_access_token(user_id=user.id, session_id=session.id)
 
     credentials_email_sent = True
     credentials_email_error = None
-    try:
-        await send_generated_account_credentials_email(
-            to_email=user.email,
-            username=user.username,
-            password=generated_password,
-        )
+    try: await send_generated_account_credentials_email(to_email=user.email, username=user.username, password=generated_password)
     except (EmailVerificationConfigError, EmailVerificationDeliveryError):
         credentials_email_sent = False
         credentials_email_error = "Could not send credentials email"

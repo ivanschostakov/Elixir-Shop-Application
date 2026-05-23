@@ -128,12 +128,7 @@ def _button_key_aliases(value: str) -> list[str]:
     return aliases
 
 
-def _action_rows_from_button_rows(
-    *,
-    actions: list[AIInteractiveAction],
-    button_rows: list[list[str]],
-    action_id_by_key: dict[str, str],
-) -> list[AIInteractiveActionRow]:
+def _action_rows_from_button_rows(*, actions: list[AIInteractiveAction], button_rows: list[list[str]], action_id_by_key: dict[str, str]) -> list[AIInteractiveActionRow]:
     action_ids = {action.id for action in actions}
     used_ids: set[str] = set()
     rows: list[AIInteractiveActionRow] = []

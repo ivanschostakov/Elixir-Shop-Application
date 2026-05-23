@@ -7,14 +7,7 @@ from config import ufa_now
 from src.database.models.auth.email_verification_code import EmailVerificationCode
 
 
-async def create_email_verification_code(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    code_hash: str,
-    expires_at: datetime,
-    commit: bool = True,
-) -> EmailVerificationCode:
+async def create_email_verification_code(session: AsyncSession, *, user_id: int, code_hash: str, expires_at: datetime, commit: bool = True) -> EmailVerificationCode:
     verification_code = EmailVerificationCode(user_id=user_id, code_hash=code_hash, expires_at=expires_at)
     session.add(verification_code)
     if commit:

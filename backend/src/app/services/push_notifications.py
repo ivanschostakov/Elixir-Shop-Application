@@ -44,35 +44,26 @@ def _build_order_status_data(order: Order) -> dict[str, Any]:
 
 
 def _normalize_route_path(path: str | None) -> str | None:
-    if not path:
-        return None
-
+    if not path: return None
     normalized = path.strip()
-    if not normalized:
-        return None
+    if not normalized: return None
 
     if "://" in normalized:
         parsed = urlsplit(normalized)
         normalized = parsed.path or "/"
-    else:
-        normalized = normalized.split("?", maxsplit=1)[0].split("#", maxsplit=1)[0]
+    else: normalized = normalized.split("?", maxsplit=1)[0].split("#", maxsplit=1)[0]
 
-    if not normalized.startswith("/"):
-        normalized = f"/{normalized}"
-
+    if not normalized.startswith("/"): normalized = f"/{normalized}"
     normalized = normalized.rstrip("/") or "/"
     return normalized
 
 
 def _as_positive_int(value: Any) -> int | None:
     parsed_number = None
-    if isinstance(value, int):
-        parsed_number = value
+    if isinstance(value, int): parsed_number = value
     elif isinstance(value, str) and value.strip():
-        try:
-            parsed_number = int(value)
-        except ValueError:
-            parsed_number = None
+        try: parsed_number = int(value)
+        except ValueError: parsed_number = None
 
     if parsed_number is None or parsed_number <= 0:
         return None
@@ -89,155 +80,91 @@ def _resolve_notification_redirect_path(data: dict[str, Any]) -> str | None:
 
     if notification_type in {"restock", "review_reminder"}:
         product_id = _as_positive_int(data.get("product_id"))
-        if product_id is not None:
-            return f"/products/{product_id}"
+        if product_id is not None: return f"/products/{product_id}"
         return "/discover"
 
-    if notification_type == "inactive_customer":
-        return "/discover"
-    if notification_type == "abandoned_cart":
-        return "/basket"
-    if notification_type == "ai_reply":
-        return "/chat"
+    if notification_type == "inactive_customer": return "/discover"
+    if notification_type == "abandoned_cart": return "/basket"
+    if notification_type == "ai_reply": return "/chat"
     return None
 
 
 def _should_skip_push_for_current_path(*, current_path: str | None, data: dict[str, Any]) -> bool:
     redirect_path = _normalize_route_path(_resolve_notification_redirect_path(data))
-    if redirect_path is None:
-        return False
+    if redirect_path is None: return False
     return _normalize_route_path(current_path) == redirect_path
 
 
-def _build_push_messages(
-    push_tokens,
-    *,
-    title: str,
-    body: str,
-    data: dict[str, Any],
-    channel_id: str = "default",
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "to": push_token.expo_push_token,
-            "title": title,
-            "body": body,
-            "data": data,
-            "sound": "default",
-            "channelId": channel_id,
-        }
-        for push_token in push_tokens
-    ]
+def _build_push_messages(push_tokens, *, title: str, body: str, data: dict[str, Any], channel_id: str = "default") -> list[dict[str, Any]]:
+    return [{
+        "to": push_token.expo_push_token,
+        "title": title,
+        "body": body,
+        "data": data,
+        "sound": "default",
+        "channelId": channel_id,
+    } for push_token in push_tokens]
 
 
 async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> set[str]:
-    if not messages:
-        return set()
-
+    if not messages: return set()
     async with httpx.AsyncClient(timeout=EXPO_PUSH_TIMEOUT_SECONDS) as client:
-        response = await client.post(
-            EXPO_PUSH_API_URL,
-            json=messages,
-            headers={
-                "Accept": "application/json",
-                "Accept-Encoding": "gzip, deflate",
-                "Content-Type": "application/json",
-            },
-        )
+        response = await client.post(EXPO_PUSH_API_URL, json=messages, headers={
+            "Accept": "application/json",
+            "Accept-Encoding": "gzip, deflate",
+            "Content-Type": "application/json",
+        })
         response.raise_for_status()
         payload = response.json()
 
     invalid_tokens: set[str] = set()
     tickets = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(tickets, list):
-        return invalid_tokens
+    if not isinstance(tickets, list): return invalid_tokens
 
     for message, ticket in zip(messages, tickets, strict=False):
-        if not isinstance(ticket, dict):
-            continue
+        if not isinstance(ticket, dict): continue
         details = ticket.get("details")
         error_code = details.get("error") if isinstance(details, dict) else None
         if error_code == "DeviceNotRegistered":
             token = message.get("to")
-            if isinstance(token, str):
-                invalid_tokens.add(token)
+            if isinstance(token, str): invalid_tokens.add(token)
             continue
 
-        if ticket.get("status") == "error":
-            log.warning("Expo push notification error: %s", ticket)
+        if ticket.get("status") == "error": log.warning("Expo push notification error: %s", ticket)
 
     return invalid_tokens
 
 
 async def _delete_invalid_push_tokens(session: AsyncSession, *, push_tokens, invalid_tokens: set[str]) -> None:
-    if not invalid_tokens:
-        return
-
+    if not invalid_tokens: return
     removed_any = False
     for push_token in push_tokens:
-        if push_token.expo_push_token not in invalid_tokens:
-            continue
+        if push_token.expo_push_token not in invalid_tokens: continue
         await delete_user_push_token(session, push_token, commit=False)
         removed_any = True
 
-    if removed_any:
-        await session.commit()
+    if removed_any: await session.commit()
 
 
-async def send_push_to_user(
-    session: AsyncSession,
-    *,
-    user_id: int,
-    title: str,
-    body: str,
-    data: dict[str, Any],
-    channel_id: str = "default",
-) -> bool:
+async def send_push_to_user(session: AsyncSession, *, user_id: int, title: str, body: str, data: dict[str, Any], channel_id: str = "default") -> bool:
     push_tokens = await get_user_push_tokens(session, user_id=user_id)
-    if not push_tokens:
-        return False
+    if not push_tokens: return False
 
-    target_push_tokens = [
-        push_token
-        for push_token in push_tokens
-        if not _should_skip_push_for_current_path(current_path=push_token.current_path, data=data)
-    ]
-    if not target_push_tokens:
-        return False
+    target_push_tokens = [push_token for push_token in push_tokens if not _should_skip_push_for_current_path(current_path=push_token.current_path, data=data)]
+    if not target_push_tokens: return False
 
-    messages = _build_push_messages(
-        target_push_tokens,
-        title=title,
-        body=body,
-        data=data,
-        channel_id=channel_id,
-    )
+    messages = _build_push_messages(target_push_tokens, title=title, body=body, data=data, channel_id=channel_id)
     invalid_tokens = await _send_expo_push_messages(messages)
     await _delete_invalid_push_tokens(session, push_tokens=target_push_tokens, invalid_tokens=invalid_tokens)
     return True
 
 
 async def send_order_status_change_notification(session: AsyncSession, order: Order) -> None:
-    try:
-        await send_push_to_user(
-            session,
-            user_id=order.user_id,
-            title=f"Заказ №{order.order_number}",
-            body=_build_order_status_body(order),
-            data=_build_order_status_data(order),
-        )
-    except Exception:
-        return log.exception("Failed to send order status notification for order %s", order.order_number)
-
+    try: await send_push_to_user(session, user_id=order.user_id, title=f"Заказ №{order.order_number}", body=_build_order_status_body(order), data=_build_order_status_data(order))
+    except Exception as e: log.exception(f"Failed to send order status notification for order: {e} %s", order.order_number)
     return None
 
 
-async def send_order_status_change_notification_if_needed(
-    session: AsyncSession,
-    *,
-    previous_status: str | None,
-    order: Order,
-) -> None:
-    if normalize_order_status(previous_status) == normalize_order_status(order.status):
-        return
+async def send_order_status_change_notification_if_needed(session: AsyncSession, *, previous_status: str | None, order: Order) -> None:
+    if normalize_order_status(previous_status) == normalize_order_status(order.status): return
     await send_order_status_change_notification(session, order)

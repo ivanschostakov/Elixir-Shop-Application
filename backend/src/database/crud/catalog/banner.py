@@ -20,14 +20,7 @@ async def get_banner_by_id(session: AsyncSession, banner_id: int, *, include_arc
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_banners(
-    session: AsyncSession,
-    *,
-    offset: int = 0,
-    limit: int = 100,
-    sort: str | None = None,
-    include_archived: bool = False,
-) -> list[Banner]:
+async def get_banners(session: AsyncSession, *, offset: int = 0, limit: int = 100, sort: str | None = None, include_archived: bool = False) -> list[Banner]:
     stmt = select(Banner)
     if not include_archived:
         stmt = stmt.where(Banner.archived.is_(False))

@@ -16,12 +16,7 @@ def _order_draft_load_options():
     )
 
 
-async def create_order_draft(
-    session: AsyncSession,
-    data: OrderDraftCreate,
-    *,
-    commit: bool = True,
-) -> OrderDraft:
+async def create_order_draft(session: AsyncSession, data: OrderDraftCreate, *, commit: bool = True) -> OrderDraft:
     draft = OrderDraft(**data.model_dump())
     session.add(draft)
     await session.flush()
@@ -90,16 +85,7 @@ async def get_latest_named_order_draft_for_user(session: AsyncSession, user_id: 
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_order_drafts_for_user(
-    session: AsyncSession,
-    user_id: int,
-    *,
-    limit: int | None = 10,
-    offset: int = 0,
-    created_from: datetime | None = None,
-    created_to: datetime | None = None,
-    named_only: bool = False,
-) -> list[OrderDraft]:
+async def get_order_drafts_for_user(session: AsyncSession, user_id: int, *, limit: int | None = 10, offset: int = 0, created_from: datetime | None = None, created_to: datetime | None = None, named_only: bool = False) -> list[OrderDraft]:
     stmt = (
         select(OrderDraft)
         .options(*_order_draft_load_options())

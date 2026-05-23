@@ -18,36 +18,19 @@ recommendations_router = APIRouter(prefix="/recommendations", tags=["recommendat
 
 
 @recommendations_router.post("/views", status_code=status.HTTP_204_NO_CONTENT)
-async def create_my_recommendation_view(
-    payload: RecommendationViewPayload,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
+async def create_my_recommendation_view(payload: RecommendationViewPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
     await record_product_view(db, user_id=current_user.id, product_id=payload.product_id, variant_id=payload.variant_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @recommendations_router.post("/categories/views", status_code=status.HTTP_204_NO_CONTENT)
-async def create_my_recommendation_category_view(
-    payload: RecommendationCategoryViewPayload,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> Response:
+async def create_my_recommendation_category_view(payload: RecommendationCategoryViewPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
     await record_category_view(db, user_id=current_user.id, category_id=payload.category_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @recommendations_router.get("", response_model=list[ProductWithVariantsRead], status_code=status.HTTP_200_OK)
-async def list_my_recommendations(
-    request: Request,
-    surface: RecommendationSurface = Query(...),
-    product_id: int | None = Query(default=None, ge=1),
-    draft_id: int | None = Query(default=None, ge=1),
-    limit: int | None = Query(default=None, ge=1, le=20),
-    offset: int = Query(default=0, ge=0),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-) -> list[ProductWithVariantsRead]:
+async def list_my_recommendations(request: Request, surface: RecommendationSurface = Query(...), product_id: int | None = Query(default=None, ge=1), draft_id: int | None = Query(default=None, ge=1), limit: int | None = Query(default=None, ge=1, le=20), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[ProductWithVariantsRead]:
     products = await get_recommended_products_for_user(db, user_id=current_user.id, surface=surface, product_id=product_id, draft_id=draft_id, limit=limit, offset=offset)
     discount_context = await get_user_product_price_discount_context(db, current_user)
     return serialize_products_with_variants(request, products, discount_context=discount_context)

@@ -25,16 +25,7 @@ async def get_product_category_by_name(session: AsyncSession, name: str, *, incl
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_product_categories(
-    session: AsyncSession,
-    *,
-    q: str | None = None,
-    name: str | None = None,
-    offset: int = 0,
-    limit: int = 100,
-    sort: str | None = None,
-    include_archived: bool = False,
-) -> list[ProductCategory]:
+async def get_product_categories(session: AsyncSession, *, q: str | None = None, name: str | None = None, offset: int = 0, limit: int = 100, sort: str | None = None, include_archived: bool = False) -> list[ProductCategory]:
     stmt = select(ProductCategory)
     if not include_archived: stmt = stmt.where(ProductCategory.archived.is_(False))
     if name is not None: stmt = stmt.where(ProductCategory.name == name)

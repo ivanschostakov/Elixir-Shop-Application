@@ -33,15 +33,7 @@ async def get_product_by_category_links(session: AsyncSession, *, product_id: in
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_products_for_category(
-    session: AsyncSession,
-    category_id: int,
-    *,
-    product_id: int | None = None,
-    offset: int = 0,
-    limit: int = 100,
-    include_archived: bool = False,
-) -> list[Product]:
+async def get_products_for_category(session: AsyncSession, category_id: int, *, product_id: int | None = None, offset: int = 0, limit: int = 100, include_archived: bool = False) -> list[Product]:
     stmt = (
         select(Product)
         .join(ProductByCategory, ProductByCategory.product_id == Product.id)
@@ -55,15 +47,7 @@ async def get_products_for_category(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_categories_for_product(
-    session: AsyncSession,
-    product_id: int,
-    *,
-    category_id: int | None = None,
-    offset: int = 0,
-    limit: int = 100,
-    include_archived: bool = False,
-) -> list[ProductCategory]:
+async def get_categories_for_product(session: AsyncSession, product_id: int, *, category_id: int | None = None, offset: int = 0, limit: int = 100, include_archived: bool = False) -> list[ProductCategory]:
     stmt = (
         select(ProductCategory)
         .join(ProductByCategory, ProductByCategory.category_id == ProductCategory.id)

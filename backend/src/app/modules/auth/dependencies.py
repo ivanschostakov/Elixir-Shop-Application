@@ -24,25 +24,19 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials | None = De
     try:
         user_id = int(payload["sub"])
         session_id = int(payload["sid"])
+
     except (KeyError, TypeError, ValueError): raise unauthorized_exception() from None
 
     user_session = await get_user_session_by_id(db, session_id)
-    if user_session is None or user_session.user_id != user_id or user_session.revoked_at is not None:
-        raise unauthorized_exception()
-    if user_session.expires_at <= ufa_now():
-        raise unauthorized_exception("Session has expired")
+    if user_session is None or user_session.user_id != user_id or user_session.revoked_at is not None: raise unauthorized_exception()
+    if user_session.expires_at <= ufa_now(): raise unauthorized_exception("Session has expired")
     user = await get_user_by_id(db, user_id)
     if user is None or not user.is_active: raise unauthorized_exception()
-
     return user
 
 
-async def get_optional_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: AsyncSession = Depends(get_db),
-) -> User | None:
-    if credentials is None:
-        return None
+async def get_optional_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme), db: AsyncSession = Depends(get_db)) -> User | None:
+    if credentials is None: return None
     return await get_current_user(credentials=credentials, db=db)
 
 
