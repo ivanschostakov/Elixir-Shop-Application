@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID, MOY_SKLAD_SALES_CHANNEL_HREF
+from config import AMOCRM_BASE_DOMAIN, MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID, MOY_SKLAD_SALES_CHANNEL_HREF
 from src.database.models import Order, Product, User, Variant
 from src.normalize import coerce_uuid, extract_dict, optional_str
 
@@ -213,14 +213,25 @@ def _moysklad_attr_values(order: Order) -> dict[str, Any]:
     benefits = extract_dict(snapshot.get("benefits"))
     data = _moysklad_order_data(order)
     raw_values = extract_dict(data.get("attributes"))
-    values: dict[str, Any] = {"delivery_cost": optional_str(raw_values.get("delivery_cost")) or _delivery_cost_value(order), "created_by_widget": raw_values.get("created_by_widget") if isinstance(raw_values.get("created_by_widget"), bool) else True}
+    values: dict[str, Any] = {"delivery_cost": optional_str(raw_values.get("delivery_cost")) or _delivery_cost_value(order), "created_by_widget": False}
 
     promo_code = optional_str(raw_values.get("promo_code")) or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code"))
     if promo_code: values["promo_code"] = promo_code
-    for key in ("deal_link", "client_waybill_link", "tracking_number", "site_order_link", "delivery_tracking"):
+    deal_link = _amocrm_lead_link(order) or optional_str(raw_values.get("deal_link")) or optional_str(data.get("deal_link"))
+    if deal_link: values["deal_link"] = deal_link
+    for key in ("client_waybill_link", "tracking_number", "site_order_link", "delivery_tracking"):
         value = optional_str(raw_values.get(key)) or optional_str(data.get(key))
         if value: values[key] = value
     return values
+
+
+def _amocrm_lead_link(order: Order) -> str | None:
+    lead_id = optional_str(order.__dict__.get("amocrm_lead_id"))
+    domain = optional_str(AMOCRM_BASE_DOMAIN)
+    if not lead_id or not domain: return None
+    normalized_domain = domain.replace("https://", "").replace("http://", "").strip("/")
+    if not normalized_domain: return None
+    return f"https://{normalized_domain}/leads/detail/{lead_id}"
 
 
 def _maybe_meta_row(value: Any, *, entity_type: str) -> dict[str, Any] | None:
