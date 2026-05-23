@@ -65,7 +65,7 @@ def downgrade() -> None:
     if _table_exists(inspector, "orders"):
         order_indexes = _index_names(inspector, "orders")
         if "ix_orders_moysklad_customerorder_id" in order_indexes:
-op.drop_index("ix_orders_moysklad_customerorder_id", table_name="orders")
+            op.drop_index("ix_orders_moysklad_customerorder_id", table_name="orders")
         order_columns = _column_names(inspector, "orders")
         if "moysklad_customerorder_id" in order_columns:
             op.drop_column("orders", "moysklad_customerorder_id")
