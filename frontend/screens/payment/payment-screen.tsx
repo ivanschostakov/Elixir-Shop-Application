@@ -487,8 +487,12 @@ export default function PaymentScreen() {
 
             const nextPayment = await createPayment({ order_id: nextOrder.id })
             setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
+            const resolvedNextMethod =
+                resolvePaymentMethod(nextPayment.payment_method)
+                ?? resolvePaymentMethod(nextOrder.payment_method)
+                ?? effectiveMethod
 
-            if (nextPayment.payment_method === "later") {
+            if (resolvedNextMethod === "later" || nextPayment.payment_status === "pending") {
                 setPhase("pending")
                 return
             }
@@ -872,6 +876,13 @@ export default function PaymentScreen() {
     useEffect(() => {
         setIsQrImageFailed(false)
     }, [qrSourceUri])
+
+    useEffect(() => {
+        if (phase !== "sbp" || shouldRenderQrImage) {
+            return
+        }
+        setIsQrVisualReady(true)
+    }, [phase, shouldRenderQrImage])
 
     useEffect(() => {
         if (phase === "sbp") {

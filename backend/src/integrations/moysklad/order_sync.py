@@ -332,6 +332,8 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
 async def sync_order_to_moysklad_safe(session: AsyncSession, *, order: Order, user: User) -> MoySkladOrderSyncResult:
     try: return await sync_order_to_moysklad(session, order=order, user=user)
     except Exception:
+        order_id = order.__dict__.get("id")
+        user_id = user.__dict__.get("id")
         await session.rollback()
-        log.exception("MoySklad order sync failed order_id=%s user_id=%s", order.id, user.id)
+        log.exception("MoySklad order sync failed order_id=%s user_id=%s", order_id, user_id)
         return MoySkladOrderSyncResult(enabled=MOY_SKLAD_ORDER_SYNC_ENABLED, skipped_reason="sync_error")

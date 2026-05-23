@@ -15,10 +15,19 @@ EXCLUDED_PATHS = {
     "Товары интернет-магазинов/https://elixirpeptide.ru/",
     "Пасхалка",
 }
+EXCLUDED_NAME_PREFIXES = ("пакет",)
+EXCLUDED_NAME_PARTS = ("сырье", "сырьё")
 
 
 def synthetic_variant_id(product_id: UUID) -> UUID:
     return uuid5(NAMESPACE_URL, f"elixir-shop:moysklad:synthetic-variant:{product_id}")
+
+
+def is_excluded_product_name(name_raw: str | None) -> bool:
+    if not name_raw: return False
+    normalized = name_raw.casefold()
+    if normalized.startswith(EXCLUDED_NAME_PREFIXES): return True
+    return any(part in normalized for part in EXCLUDED_NAME_PARTS)
 
 
 def build_product_rows(products: list[dict[str, Any]], stats: MoySkladCatalogSyncStats):
@@ -36,7 +45,7 @@ def build_product_rows(products: list[dict[str, Any]], stats: MoySkladCatalogSyn
         if external_code and "#" in external_code:
             stats.skipped_products_variant_external_code += 1
             continue
-        if name_raw and name_raw.casefold().startswith(("пакет",)):
+        if is_excluded_product_name(name_raw):
             stats.skipped_products_excluded_name += 1
             continue
 

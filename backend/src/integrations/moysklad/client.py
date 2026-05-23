@@ -364,8 +364,14 @@ class MoySkladClient:
 
     async def create_customer_order(self, payload: dict[str, Any]) -> dict[str, Any]:
         http_client = await self.client()
-        response = await http_client.post("/entity/customerorder", json=payload)
-        response.raise_for_status()
+        try:
+            response = await http_client.post("/entity/customerorder", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            body = exc.response.text if exc.response is not None else ""
+            logger.error("MoySklad customerorder create failed status=%s body=%s external_code=%s", status_code, body[:4000], payload.get("externalCode"))
+            raise
         data = response.json()
         if not isinstance(data, dict): raise RuntimeError("MoySklad returned invalid customerorder create response")
         return data
