@@ -142,10 +142,8 @@ def _shipment_address_full(order: Order) -> dict[str, Any] | None:
     result: dict[str, Any] = {"addInfo": full}
     city = optional_str(address.get("city"))
     postal = optional_str(address.get("postal_code"))
-    country = optional_str(address.get("country_code"))
     if city: result["city"] = city
     if postal: result["postalCode"] = postal
-    if country: result["country"] = country
     return result
 
 
