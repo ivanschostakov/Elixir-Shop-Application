@@ -70,12 +70,13 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/elixir-watermark-blue.png",
-          "resizeMode": "cover",
-          "backgroundColor": "#ffffff",
+          "image": "./assets/images/splash-icon.png",
+          "resizeMode": "contain",
+          "imageWidth": 220,
+          "backgroundColor": "#2D6AA3",
           "dark": {
-            "image": "./assets/images/elixir-watermark-blue.png",
-            "backgroundColor": "#000000"
+            "image": "./assets/images/splash-icon.png",
+            "backgroundColor": "#2D6AA3"
           }
         }
       ],
