@@ -418,8 +418,14 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
             sales_channel=refs["sales_channel"],
         )
 
+    needs_commit = False
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:
         order.moysklad_customerorder_id = customerorder_result.customerorder_id
+        needs_commit = True
+    if invoiceout_result is not None and order.moysklad_invoiceout_id != invoiceout_result.invoiceout_id:
+        order.moysklad_invoiceout_id = invoiceout_result.invoiceout_id
+        needs_commit = True
+    if needs_commit:
         await session.flush()
         await session.commit()
 

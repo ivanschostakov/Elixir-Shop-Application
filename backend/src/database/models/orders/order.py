@@ -74,6 +74,7 @@ class Order(Base, IdPkMixin, TimestampMixin):
     delivery_provider_ref: Mapped[str | None] = mapped_column(String(length=EXTERNAL_ID_MAX_LENGTH), nullable=True)
     yandex_request_id: Mapped[str | None] = mapped_column(String(length=EXTERNAL_ID_MAX_LENGTH), nullable=True)
     moysklad_customerorder_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    moysklad_invoiceout_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     is_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_canceled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
