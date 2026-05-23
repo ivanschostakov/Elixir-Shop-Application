@@ -170,12 +170,14 @@ class AsyncCDEKClient:
         return response
 
     async def get_city_code_by_coordinates(self, latitude: float, longitude: float) -> int:
+        self.log.info("CDEK calculate_delivery step=resolve_city:start latitude=%s longitude=%s", latitude, longitude)
         city_candidates = await self._request("GET", "/v2/location/cities", params={
             "lat": latitude,
             "long": longitude,
             "size": 1,
             "page": 0,
         })
+        self.log.info("CDEK calculate_delivery step=resolve_city:response response_type=%s candidates_count=%s", type(city_candidates).__name__, len(city_candidates) if isinstance(city_candidates, list) else None)
 
         if not isinstance(city_candidates, list) or not city_candidates:
             raise external_service_http_exception(
@@ -187,6 +189,7 @@ class AsyncCDEKClient:
 
         city_candidate = city_candidates[0]
         city_code = city_candidate.get("code")
+        self.log.info("CDEK calculate_delivery step=resolve_city:candidate city_code=%s city=%s postal_code=%s", city_code, city_candidate.get("city"), city_candidate.get("postal_code"))
 
         if not isinstance(city_code, int):
             raise external_service_http_exception(
@@ -196,9 +199,11 @@ class AsyncCDEKClient:
                 raw_detail={"latitude": latitude, "longitude": longitude, "response": city_candidate},
             )
 
+        self.log.info("CDEK calculate_delivery step=resolve_city:done city_code=%s", city_code)
         return city_code
 
     async def calculate_delivery(self, latitude: float, longitude: float, mode: CdekDeliveryMode, *, country_code: CountryCode | None = None, postal_code: str | None = None, address: str | None = None, city: str | None = None) -> CDEKCalculatedDelivery:
+        self.log.info("CDEK calculate_delivery step=start latitude=%s longitude=%s mode=%s country_code=%s postal_code=%s city=%s has_address=%s", latitude, longitude, mode, country_code, postal_code, city, bool(address))
         city_code = await self.get_city_code_by_coordinates(latitude, longitude)
         to_location: dict[str, Any] = {"code": city_code}
         if country_code:
@@ -209,16 +214,20 @@ class AsyncCDEKClient:
             to_location["city"] = city
         if mode == "door" and address:
             to_location["address"] = address
+        self.log.info("CDEK calculate_delivery step=build_to_location city_code=%s country_code=%s postal_code=%s city=%s has_address=%s", to_location.get("code"), to_location.get("country_code"), to_location.get("postal_code"), to_location.get("city"), "address" in to_location)
 
         # Keep calculation behavior aligned with Shop-Webapp:
         # request tariff list and select the requested tariff code from the provider response.
         expected_tariff_code = self.tariff_codes[mode]
-        response = await self._request("POST", "/v2/calculator/tarifflist", json={
+        payload = {
             "type": 2,
             "from_location": self.from_location,
             "to_location": to_location,
             "packages": [self.cargo],
-        })
+        }
+        self.log.info("CDEK calculate_delivery step=request_tarifflist expected_tariff_code=%s package=%s", expected_tariff_code, self.cargo)
+        response = await self._request("POST", "/v2/calculator/tarifflist", json=payload)
+        self.log.info("CDEK calculate_delivery step=tarifflist_response response_type=%s keys=%s", type(response).__name__, sorted(response.keys()) if isinstance(response, dict) else None)
         if not isinstance(response, dict):
             raise external_service_http_exception(
                 service="cdek",
@@ -228,6 +237,7 @@ class AsyncCDEKClient:
             )
 
         raw_tariffs = response.get("tariff_codes")
+        self.log.info("CDEK calculate_delivery step=parse_tariffs tariffs_type=%s tariffs_count=%s", type(raw_tariffs).__name__, len(raw_tariffs) if isinstance(raw_tariffs, list) else None)
         if not isinstance(raw_tariffs, list):
             raise external_service_http_exception(
                 service="cdek",
@@ -238,16 +248,24 @@ class AsyncCDEKClient:
 
         selected_tariff: dict[str, Any] | None = None
         fallback_tariff: dict[str, Any] | None = None
-        for candidate in raw_tariffs:
+        skipped_non_dict = 0
+        skipped_with_errors = 0
+        for index, candidate in enumerate(raw_tariffs):
             if not isinstance(candidate, dict):
+                skipped_non_dict += 1
                 continue
             if candidate.get("errors"):
+                skipped_with_errors += 1
+                self.log.info("CDEK calculate_delivery step=scan_tariffs skip_error index=%s tariff_code=%s errors=%s", index, candidate.get("tariff_code"), candidate.get("errors"))
                 continue
             if fallback_tariff is None:
                 fallback_tariff = candidate
+                self.log.info("CDEK calculate_delivery step=scan_tariffs fallback_set index=%s tariff_code=%s delivery_sum=%s", index, candidate.get("tariff_code"), candidate.get("delivery_sum"))
             if candidate.get("tariff_code") == expected_tariff_code:
                 selected_tariff = candidate
+                self.log.info("CDEK calculate_delivery step=scan_tariffs expected_found index=%s tariff_code=%s delivery_sum=%s", index, candidate.get("tariff_code"), candidate.get("delivery_sum"))
                 break
+        self.log.info("CDEK calculate_delivery step=scan_tariffs_done scanned=%s skipped_non_dict=%s skipped_with_errors=%s selected=%s fallback=%s", len(raw_tariffs), skipped_non_dict, skipped_with_errors, bool(selected_tariff), bool(fallback_tariff))
 
         effective_tariff = selected_tariff or fallback_tariff
         if effective_tariff is None:
@@ -257,18 +275,23 @@ class AsyncCDEKClient:
                 public_detail="No available delivery tariffs for requested route",
                 raw_detail=response,
             )
+        self.log.info("CDEK calculate_delivery step=effective_tariff source=%s tariff_code=%s delivery_sum=%s period_min=%s period_max=%s", "selected" if selected_tariff else "fallback", effective_tariff.get("tariff_code"), effective_tariff.get("delivery_sum"), effective_tariff.get("period_min"), effective_tariff.get("period_max"))
 
         normalized_tariff = dict(effective_tariff)
         if normalized_tariff.get("weight_calc") in (None, ""):
             normalized_tariff["weight_calc"] = self.cargo["weight"]
+            self.log.info("CDEK calculate_delivery step=normalize weight_calc_default_applied weight_calc=%s", normalized_tariff.get("weight_calc"))
         if normalized_tariff.get("currency") in (None, ""):
             normalized_tariff["currency"] = (
                 response.get("currency")
                 if isinstance(response.get("currency"), str) and response.get("currency")
                 else "RUB"
             )
+            self.log.info("CDEK calculate_delivery step=normalize currency_default_applied currency=%s", normalized_tariff.get("currency"))
 
-        return CDEKCalculatedDelivery.model_validate(normalized_tariff)
+        result = CDEKCalculatedDelivery.model_validate(normalized_tariff)
+        self.log.info("CDEK calculate_delivery step=done delivery_sum=%s period_min=%s period_max=%s weight_calc=%s currency=%s", result.delivery_sum, result.period_min, result.period_max, result.weight_calc, result.currency)
+        return result
 
 
 cdek_client = AsyncCDEKClient()

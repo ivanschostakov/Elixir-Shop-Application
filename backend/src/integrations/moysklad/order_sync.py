@@ -24,6 +24,7 @@ MOY_SKLAD_REQUIRED_STORE_NAME = "Основной склад"
 MOY_SKLAD_STATE_NEW_ORDER = "Новый заказ"
 MOY_SKLAD_STATE_INVOICE_SENT = "Счет отправлен"
 MOY_SKLAD_STATE_INVOICE_PAID = "Счет оплачен"
+MOY_SKLAD_INVOICEOUT_STATE_PAID = "Оплачен"
 MOY_SKLAD_PAYMENT_LATER = "СБП через менеджера"
 MOY_SKLAD_PAYMENT_INTELLECT = "IntellectMoney"
 MOY_SKLAD_DEFAULT_DELIVERY_METHOD_NAMES = {"CDEK": "СДЭК", "YANDEX": "Яндекс.Доставка"}
@@ -182,6 +183,21 @@ def _order_payment_method_name(order: Order) -> str | None:
     return MOY_SKLAD_PAYMENT_LATER if optional_str(order.payment_method).lower() == "later" else MOY_SKLAD_PAYMENT_INTELLECT
 
 
+def _is_intellectmoney_payment(order: Order) -> bool:
+    payment_method = optional_str(order.payment_method).lower()
+    payment_provider = optional_str(order.payment_provider).lower()
+    return payment_method == "sbp" or payment_provider == "intellectmoney"
+
+
+def _invoiceout_external_code(order_id: int) -> str:
+    return f"{build_customerorder_external_code(order_id=order_id)}:invoiceout"
+
+
+def _invoiceout_name(order: Order) -> str:
+    order_code = optional_str(order.__dict__.get("order_code")) or optional_str(order.__dict__.get("id")) or "order"
+    return f"Счет по заказу {order_code}"
+
+
 def _order_state_name(order: Order) -> str:
     return MOY_SKLAD_STATE_NEW_ORDER
 
@@ -277,6 +293,39 @@ async def sync_moysklad_customerorder_state(order: Order, *, state_name: str) ->
         return False
 
 
+async def sync_moysklad_invoiceout_state(order: Order, *, state_name: str) -> bool:
+    normalized_state_name = optional_str(state_name)
+    if not MOY_SKLAD_ORDER_SYNC_ENABLED or not normalized_state_name: return False
+    if not _is_intellectmoney_payment(order): return False
+    order_id = order.__dict__.get("id")
+    if order_id is None: return False
+    moysklad_client = get_moysklad_client()
+    if not moysklad_client.is_configured(): return False
+    try:
+        invoiceout = await moysklad_client.find_invoiceout_by_external_code(_invoiceout_external_code(int(order_id)))
+        if invoiceout is None:
+            log.warning("Skipping MoySklad invoiceout state sync because invoiceout not found order_id=%s state_name=%s", order_id, normalized_state_name)
+            return False
+        invoiceout_id = coerce_uuid(invoiceout.get("id"))
+        if invoiceout_id is None:
+            log.warning("Skipping MoySklad invoiceout state sync because invoiceout id is invalid order_id=%s state_name=%s", order_id, normalized_state_name)
+            return False
+        state = await moysklad_client.find_invoiceout_state_by_name(normalized_state_name)
+        if state is None:
+            log.warning("Skipping MoySklad invoiceout state sync because state not found state_name=%s order_id=%s", normalized_state_name, order_id)
+            return False
+        current_state = invoiceout.get("state") if isinstance(invoiceout, dict) else None
+        current_meta = current_state.get("meta") if isinstance(current_state, dict) else None
+        current_state_href = _href(current_meta.get("href")) if isinstance(current_meta, dict) else None
+        target_state_href = _href((state.get("meta") or {}).get("href"))
+        if current_state_href and target_state_href and current_state_href == target_state_href: return False
+        await moysklad_client.update_invoiceout_state(invoiceout_id, state)
+        return True
+    except Exception:
+        log.exception("MoySklad invoiceout state sync failed order_id=%s state_name=%s", order_id, normalized_state_name)
+        return False
+
+
 async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: User) -> MoySkladOrderSyncResult:
     if not MOY_SKLAD_ORDER_SYNC_ENABLED: return MoySkladOrderSyncResult(enabled=False, skipped_reason="disabled")
 
@@ -350,6 +399,24 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         state=refs["state"],
         sales_channel=refs["sales_channel"],
     )
+    invoiceout_result = None
+    if _is_intellectmoney_payment(order):
+        order_id = int(order.__dict__.get("id") or order.id)
+        invoiceout_external_code = _invoiceout_external_code(order_id)
+        invoiceout_sync_id = build_sync_id(scope="invoiceout", key=invoiceout_external_code)
+        invoiceout_result = await moysklad_client.resolve_or_sync_invoiceout(
+            external_code=invoiceout_external_code,
+            sync_id=invoiceout_sync_id,
+            name=_invoiceout_name(order),
+            organization_id=organization_id,
+            counterparty_id=counterparty_result.counterparty_id,
+            positions=positions,
+            customerorder_id=customerorder_result.customerorder_id,
+            moment=order.created_at,
+            description=_build_order_description(order),
+            store=refs["store"],
+            sales_channel=refs["sales_channel"],
+        )
 
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:
         order.moysklad_customerorder_id = customerorder_result.customerorder_id
@@ -360,6 +427,7 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         enabled=True,
         counterparty=counterparty_result,
         customerorder=customerorder_result,
+        invoiceout=invoiceout_result,
     )
 
 

@@ -98,11 +98,19 @@ class MoySkladCustomerOrderSyncResult:
 
 
 @dataclass
+class MoySkladInvoiceOutSyncResult:
+    invoiceout_id: uuid.UUID
+    external_code: str
+    created: bool = False
+
+
+@dataclass
 class MoySkladOrderSyncResult:
     enabled: bool
     skipped_reason: str | None = None
     counterparty: MoySkladCounterpartySyncResult | None = None
     customerorder: MoySkladCustomerOrderSyncResult | None = None
+    invoiceout: MoySkladInvoiceOutSyncResult | None = None
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)

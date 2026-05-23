@@ -16,7 +16,7 @@ from src.database.crud import update_order
 from src.database.models import Order
 from src.database.schemas import OrderUpdate
 from src.integrations.intellectmoney import IntellectMoneyError, get_intellectmoney_client
-from src.integrations.moysklad.order_sync import MOY_SKLAD_STATE_INVOICE_PAID, MOY_SKLAD_STATE_INVOICE_SENT, sync_moysklad_customerorder_state
+from src.integrations.moysklad.order_sync import MOY_SKLAD_INVOICEOUT_STATE_PAID, MOY_SKLAD_STATE_INVOICE_PAID, MOY_SKLAD_STATE_INVOICE_SENT, sync_moysklad_customerorder_state, sync_moysklad_invoiceout_state
 
 from .crm import _move_lead_to_payment_result_status, _move_lead_to_pending_payment
 from .payment_qr_storage import build_order_payment_qr_url, find_order_payment_qr_path, save_order_payment_qr
@@ -156,6 +156,7 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
         await session.commit()
         await session.refresh(updated_order)
         await sync_moysklad_customerorder_state(updated_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
+        await sync_moysklad_invoiceout_state(updated_order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID)
     return updated_order
 
 
