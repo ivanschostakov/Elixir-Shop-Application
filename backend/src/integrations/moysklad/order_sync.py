@@ -16,6 +16,7 @@ from .idempotency import (
     build_customerorder_external_code,
     build_sync_id,
 )
+from .rows import synthetic_variant_id
 from .schemas import MoySkladOrderSyncResult
 
 log = logging.getLogger(__name__)
@@ -84,6 +85,9 @@ async def _load_assortment_refs(session: AsyncSession, *, variant_ids: list[int]
     rows = (await session.execute(stmt)).all()
     refs: dict[int, tuple[str, UUID]] = {}
     for variant_id, variant_system_id, product_system_id in rows:
+        if variant_system_id is not None and product_system_id is not None and variant_system_id == synthetic_variant_id(product_system_id):
+            refs[int(variant_id)] = ("product", product_system_id)
+            continue
         if variant_system_id is not None:
             refs[int(variant_id)] = ("variant", variant_system_id)
             continue

@@ -427,8 +427,9 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     created_order = await get_order_by_id(session, order.id, user_id=user.id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     await sync_order_to_moysklad_safe(session, order=created_order, user=user)
-
-    return created_order
+    reloaded_order = await get_order_by_id(session, order.id, user_id=user.id)
+    if reloaded_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
+    return reloaded_order
 
 
 async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, requested_deposit_amount: Decimal | None = None) -> Order:
@@ -543,7 +544,9 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     created_order = await get_order_by_id(session, order.id, user_id=user.id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     await sync_order_to_moysklad_safe(session, order=created_order, user=user)
-    return created_order
+    reloaded_order = await get_order_by_id(session, order.id, user_id=user.id)
+    if reloaded_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
+    return reloaded_order
 
 
 async def get_order_for_user(session: AsyncSession, *, user_id: int, order_id: int) -> Order | None: return await get_order_by_id(session, order_id, user_id=user_id)
