@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 import logging
 from typing import Any
 from uuid import UUID
@@ -99,6 +99,7 @@ async def _load_assortment_refs(session: AsyncSession, *, variant_ids: list[int]
 def _build_customerorder_positions(*, moysklad_client: MoySkladClient, assortment_refs: dict[int, tuple[str, UUID]], order: Order) -> tuple[list[dict[str, Any]], list[int]]:
     positions: list[dict[str, Any]] = []
     missing_variant_ids: list[int] = []
+    discount_percent = _order_positions_discount_percent(order)
 
     for item in order.items:
         assortment_ref = assortment_refs.get(int(item.variant_id))
@@ -112,6 +113,7 @@ def _build_customerorder_positions(*, moysklad_client: MoySkladClient, assortmen
             assortment_id=entity_id,
             quantity=item.quantity,
             unit_price=Decimal(item.unit_price),
+            discount=discount_percent,
         ))
 
     return positions, missing_variant_ids
@@ -125,6 +127,25 @@ def _build_order_description(order: Order) -> str:
 
 def _delivery_cost_value(order: Order) -> str:
     return f"{Decimal(order.delivery_total):.2f}"
+
+
+def _decimal_or_zero(value: Any) -> Decimal:
+    try: return Decimal(str(value))
+    except Exception: return Decimal("0.00")
+
+
+def _order_positions_discount_percent(order: Order) -> Decimal:
+    benefits = extract_dict(extract_dict(order.checkout_snapshot).get("benefits"))
+    subtotal = _decimal_or_zero(benefits.get("basket_subtotal"))
+    discount_amount = _decimal_or_zero(benefits.get("stacked_discount_amount"))
+    if discount_amount <= Decimal("0.00"):
+        total_after = _decimal_or_zero(benefits.get("total_after_discounts"))
+        if total_after > Decimal("0.00") and total_after < subtotal: discount_amount = subtotal - total_after
+    if discount_amount <= Decimal("0.00"):
+        options = benefits.get("stacked_discount_options")
+        if isinstance(options, list): discount_amount = sum((_decimal_or_zero(extract_dict(option).get("discount_amount")) for option in options), Decimal("0.00"))
+    if subtotal <= Decimal("0.00") or discount_amount <= Decimal("0.00"): return Decimal("0.00")
+    return max(Decimal("0.00"), min(Decimal("100.00"), ((discount_amount * Decimal("100.00")) / subtotal).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)))
 
 
 def _shipment_address(order: Order) -> str | None:

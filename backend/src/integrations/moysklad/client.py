@@ -302,8 +302,8 @@ class MoySkladClient:
         if moment is not None: payload["moment"] = self._format_moment(moment)
         return payload
 
-    def build_customerorder_position(self, *, assortment_entity_type: str, assortment_id: UUID, quantity: int, unit_price: Decimal) -> dict[str, Any]:
-        return {
+    def build_customerorder_position(self, *, assortment_entity_type: str, assortment_id: UUID, quantity: int, unit_price: Decimal, discount: Decimal | None = None) -> dict[str, Any]:
+        position = {
             "assortment": self._meta_payload(
                 href=self.entity_href(assortment_entity_type, assortment_id),
                 entity_type=assortment_entity_type,
@@ -311,6 +311,10 @@ class MoySkladClient:
             "quantity": int(quantity),
             "price": self._money_to_minor(unit_price),
         }
+        if discount is not None:
+            normalized_discount = max(Decimal("0.00"), min(Decimal("100.00"), Decimal(discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)))
+            if normalized_discount > Decimal("0.00"): position["discount"] = float(normalized_discount)
+        return position
 
     async def get_or_create_counterparty(self, *, existing_counterparty_id: UUID | None, external_code: str, sync_id: UUID, name: str, email: str | None, phone: str | None, actual_address: str | None) -> dict[str, Any]:
         normalized_external_code = optional_str(external_code)
