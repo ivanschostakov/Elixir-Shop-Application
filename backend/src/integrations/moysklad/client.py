@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 from .rows import build_variant_rows, build_product_rows, EXCLUDED_PATHS
-from .schemas import MoySkladCatalogSyncStats
+from .schemas import MoySkladCatalogSyncStats, MoySkladInitialRelinkStats
 
 from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_TOKEN, MOY_SKLAD_TIMEOUT_SECONDS
 from src.normalize import optional_str
@@ -73,6 +73,12 @@ class MoySkladClient:
         stats.fetched_variants = len(variant_rows)
         logger.info("MoySklad catalog rows prepared products=%s variants=%s", stats.fetched_products, stats.fetched_variants)
         return product_rows, variant_rows, stats
+
+    async def initial_relink_system_ids(self, _session, *, dry_run: bool = False) -> MoySkladInitialRelinkStats:
+        logger.warning(
+            "MoySklad initial relink is not implemented in the modular client; returning empty stats."
+        )
+        return MoySkladInitialRelinkStats(dry_run=dry_run)
 
     async def aclose(self) -> None:
         async with self._lock:

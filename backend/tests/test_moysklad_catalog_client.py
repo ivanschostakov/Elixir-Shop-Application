@@ -4,13 +4,13 @@ from uuid import UUID
 import pytest
 
 from src.database.models import Product, Variant
-from src.integrations.moysklad.client import MoySkladClient, upsert_moysklad_catalog_rows
+from src.integrations.moysklad.rows import build_product_rows, build_variant_rows
 from src.integrations.moysklad.schemas import (
     MoySkladCatalogSyncStats,
-    MoySkladInitialRelinkStats,
     MoySkladProductRow,
     MoySkladVariantRow,
 )
+from src.integrations.moysklad.sync import upsert_catalog_rows
 
 
 OLD_PRODUCT_ID = UUID("b019df8a-5a25-11f0-9098-fa163e347889")
@@ -47,7 +47,6 @@ class _FakeSession:
 
 
 def test_moysklad_variant_rows_use_product_meta_id_and_stock_assortment_id():
-    client = MoySkladClient(token="token", base_url="https://example.test", stock_reserve=3)
     stats = MoySkladCatalogSyncStats()
     products = [
         {
@@ -69,13 +68,14 @@ def test_moysklad_variant_rows_use_product_meta_id_and_stock_assortment_id():
     ]
     stocks = [{"assortmentId": str(VARIANT_5_ID), "quantity": 8}]
 
-    product_rows, products_by_external_code, products_by_id = client._build_product_rows(products, stats)
-    variant_rows = client._build_variant_rows(
-        variants=variants,
-        stocks=stocks,
-        products_by_external_code=products_by_external_code,
-        products_by_id=products_by_id,
-        stats=stats,
+    product_rows, products_by_external_code, products_by_id = build_product_rows(products, stats)
+    variant_rows = build_variant_rows(
+        variants,
+        stocks,
+        products_by_external_code,
+        products_by_id,
+        stats,
+        reserve=3,
     )
 
     assert product_rows[0].system_id == NEW_PRODUCT_ID
@@ -86,7 +86,6 @@ def test_moysklad_variant_rows_use_product_meta_id_and_stock_assortment_id():
 
 
 def test_moysklad_variant_rows_strip_parent_product_name():
-    client = MoySkladClient(token="token", base_url="https://example.test")
     stats = MoySkladCatalogSyncStats()
     products = [
         {
@@ -113,13 +112,13 @@ def test_moysklad_variant_rows_strip_parent_product_name():
         },
     ]
 
-    _, products_by_external_code, products_by_id = client._build_product_rows(products, stats)
-    variant_rows = client._build_variant_rows(
-        variants=variants,
-        stocks=[],
-        products_by_external_code=products_by_external_code,
-        products_by_id=products_by_id,
-        stats=stats,
+    _, products_by_external_code, products_by_id = build_product_rows(products, stats)
+    variant_rows = build_variant_rows(
+        variants,
+        [],
+        products_by_external_code,
+        products_by_id,
+        stats,
     )
 
     assert [row.name for row in variant_rows] == ["5 mg", "Standalone 10 mg"]
@@ -127,7 +126,7 @@ def test_moysklad_variant_rows_strip_parent_product_name():
 
 def test_moysklad_product_rows_skip_package_product():
     stats = MoySkladCatalogSyncStats()
-    product_rows, products_by_external_code, products_by_id = MoySkladClient._build_product_rows(
+    product_rows, products_by_external_code, products_by_id = build_product_rows(
         [
             {
                 "id": str(NEW_PRODUCT_ID),
@@ -147,7 +146,7 @@ def test_moysklad_product_rows_skip_package_product():
 
 def test_moysklad_product_row_unarchives_fetched_products():
     stats = MoySkladCatalogSyncStats()
-    product_rows, _, _ = MoySkladClient._build_product_rows(
+    product_rows, _, _ = build_product_rows(
         [
             {
                 "id": str(NEW_PRODUCT_ID),
@@ -188,7 +187,7 @@ async def test_moysklad_upsert_keeps_existing_archived_rows_archived():
     )
     session = _FakeSession(products=[product], variants=[variant])
 
-    stats = await upsert_moysklad_catalog_rows(
+    stats = await upsert_catalog_rows(
         session,
         products=[
             MoySkladProductRow(
@@ -217,37 +216,3 @@ async def test_moysklad_upsert_keeps_existing_archived_rows_archived():
     assert variant.stock == 8
     assert stats.unarchived_products == 0
     assert stats.unarchived_variants == 0
-
-
-def test_initial_relink_variant_matching_uses_characteristics_and_skips_ambiguous():
-    client = MoySkladClient(token="token", base_url="https://example.test")
-    product = Product(id=1, system_id=OLD_PRODUCT_ID, sku="P-001", name="Peptide", description=None, usage=None, expiration=None)
-    local_5 = Variant(id=10, product_id=1, system_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"), sku=None, name="5 mg", stock=0, price=Decimal("0"))
-    local_10 = Variant(id=11, product_id=1, system_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"), sku=None, name="10 mg", stock=0, price=Decimal("0"))
-    stats = MoySkladInitialRelinkStats()
-
-    matches = client._match_variants_for_product(
-        local_product=product,
-        local_variants=[local_5, local_10],
-        moy_variants=[
-            {"id": str(VARIANT_5_ID), "name": "Peptide 5 mg", "characteristics": [{"name": "Dose", "value": "5 mg"}]},
-            {"id": str(VARIANT_10_ID), "name": "Peptide 10 mg", "characteristics": [{"name": "Dose", "value": "10 mg"}]},
-        ],
-        variants_by_system_id={local_5.system_id: local_5, local_10.system_id: local_10},
-        stats=stats,
-    )
-
-    assert [(local.id, new_id) for local, _, new_id, _ in matches] == [(10, VARIANT_5_ID), (11, VARIANT_10_ID)]
-    assert stats.skipped_variants_missing_local == 0
-
-    ambiguous_stats = MoySkladInitialRelinkStats()
-    ambiguous_matches = client._match_variants_for_product(
-        local_product=product,
-        local_variants=[local_5, Variant(id=12, product_id=1, system_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"), sku=None, name="5 mg", stock=0, price=Decimal("0"))],
-        moy_variants=[{"id": str(VARIANT_5_ID), "name": "Peptide 5 mg", "characteristics": [{"name": "Dose", "value": "5 mg"}]}],
-        variants_by_system_id={},
-        stats=ambiguous_stats,
-    )
-
-    assert ambiguous_matches == []
-    assert ambiguous_stats.skipped_variants_ambiguous >= 1

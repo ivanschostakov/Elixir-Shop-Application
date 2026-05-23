@@ -11,7 +11,12 @@ from src.database import SessionLocal
 from src.database.models import Product, Variant
 
 from .client import get_moysklad_client
-from .schemas import MoySkladCatalogSyncStats, MoySkladProductRow, MoySkladVariantRow
+from .schemas import (
+    MoySkladCatalogSyncStats,
+    MoySkladInitialRelinkStats,
+    MoySkladProductRow,
+    MoySkladVariantRow,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +24,8 @@ logger = logging.getLogger(__name__)
 async def upsert_catalog_rows(session: AsyncSession, products: list[MoySkladProductRow], variants: list[MoySkladVariantRow], stats: MoySkladCatalogSyncStats | None = None):
     stats = stats or MoySkladCatalogSyncStats(fetched_products=len(products), fetched_variants=len(variants))
 
-    local_products = list((await session.execute(select(Product))).scalars())
-    local_variants = list((await session.execute(select(Variant))).scalars())
+    local_products = list((await session.execute(select(Product))).scalars().all())
+    local_variants = list((await session.execute(select(Variant))).scalars().all())
 
     products_by_system_id = {p.system_id: p for p in local_products if p.system_id is not None}
     products_by_sku = {p.sku: p for p in local_products}
@@ -78,7 +83,16 @@ async def upsert_products(session, products, stats, by_id, by_sku, by_name, vari
             payload.pop("name", None)
             stats.skipped_products_conflict_name += 1
 
-        if apply_changes(product, payload): stats.updated_products += 1
+        previous_sku = product.sku
+        previous_name = product.name
+        if apply_changes(product, payload):
+            stats.updated_products += 1
+            if product.sku != previous_sku:
+                by_sku.pop(previous_sku, None)
+            if product.name != previous_name:
+                by_name.pop(previous_name, None)
+            by_sku[product.sku] = product
+            by_name[product.name] = product
 
 
 async def upsert_variants(session, variants, stats, products_by_id, variants_by_id, variants_by_product_id):
@@ -133,7 +147,7 @@ def update_product_stock(products, incoming_ids, variants_by_product_id, stats):
 async def sync_moysklad_product_catalog():
     started = time.perf_counter()
     moysklad_client = get_moysklad_client()
-    product_rows, variant_rows, stats = moysklad_client.fetch_catalog_rows()
+    product_rows, variant_rows, stats = await moysklad_client.fetch_catalog_rows()
 
     async with SessionLocal() as session:
         try:
@@ -153,10 +167,30 @@ async def sync_moysklad_product_catalog():
             raise
 
 
+async def run_moysklad_initial_relink(*, dry_run: bool = False) -> MoySkladInitialRelinkStats:
+    moysklad_client = get_moysklad_client()
+    relink_fn = getattr(moysklad_client, "initial_relink_system_ids", None)
+
+    if relink_fn is None:
+        raise RuntimeError(
+            "MoySklad initial relink is not available in the modular client implementation."
+        )
+
+    async with SessionLocal() as session:
+        stats = await relink_fn(session, dry_run=dry_run)
+        if dry_run: await session.rollback()
+        else: await session.commit()
+        cache = get_cache_service()
+        await cache.bump_namespace("catalog")
+        await cache.bump_namespace("product")
+        return stats
+
+
 def apply_changes(model: Any, payload: dict[str, Any]) -> bool:
     changed = False
     for field, value in payload.items():
         if getattr(model, field) == value: continue
         setattr(model, field, value)
         changed = True
+
     return changed
