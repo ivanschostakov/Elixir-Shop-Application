@@ -6,9 +6,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID
+from config import MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID, MOY_SKLAD_SALES_CHANNEL_HREF
 from src.database.models import Order, Product, User, Variant
-from src.normalize import coerce_uuid, optional_str
+from src.normalize import coerce_uuid, extract_dict, optional_str
 
 from .client import MoySkladClient, get_moysklad_client
 from .idempotency import (
@@ -19,6 +19,13 @@ from .idempotency import (
 from .schemas import MoySkladOrderSyncResult
 
 log = logging.getLogger(__name__)
+MOY_SKLAD_REQUIRED_STORE_NAME = "Основной склад"
+MOY_SKLAD_STATE_NEW_ORDER = "Новый заказ"
+MOY_SKLAD_STATE_INVOICE_SENT = "Счет отправлен"
+MOY_SKLAD_STATE_INVOICE_PAID = "Счет оплачен"
+MOY_SKLAD_PAYMENT_LATER = "СБП через менеджера"
+MOY_SKLAD_PAYMENT_INTELLECT = "IntellectMoney"
+MOY_SKLAD_DEFAULT_DELIVERY_METHOD_NAMES = {"CDEK": "СДЭК", "YANDEX": "Яндекс.Доставка"}
 
 
 def _full_name(user: User, order: Order) -> str:
@@ -112,6 +119,130 @@ def _build_order_description(order: Order) -> str:
     return order.order_code
 
 
+def _delivery_cost_value(order: Order) -> str:
+    return f"{Decimal(order.delivery_total):.2f}"
+
+
+def _shipment_address(order: Order) -> str | None:
+    if order.delivery_address is not None:
+        full = optional_str(order.delivery_address.full_address)
+        if full: return full
+    return optional_str(order.delivery_string)
+
+
+def _shipment_address_full(order: Order) -> dict[str, Any] | None:
+    payload = extract_dict(order.selected_delivery_payload)
+    address = extract_dict(payload.get("address"))
+    full = optional_str(address.get("full_address")) or optional_str(address.get("formatted")) or optional_str(address.get("address")) or _shipment_address(order)
+    if not full: return None
+    result: dict[str, Any] = {"addInfo": full}
+    city = optional_str(address.get("city"))
+    postal = optional_str(address.get("postal_code"))
+    country = optional_str(address.get("country_code"))
+    if city: result["city"] = city
+    if postal: result["postalCode"] = postal
+    if country: result["country"] = country
+    return result
+
+
+def _moysklad_order_data(order: Order) -> dict[str, Any]:
+    return extract_dict(extract_dict(order.checkout_snapshot).get("moysklad"))
+
+
+def _href(value: Any) -> str | None:
+    normalized = optional_str(value)
+    if not normalized or not normalized.startswith(("http://", "https://")): return None
+    return normalized
+
+
+def _order_payment_method_name(order: Order) -> str | None:
+    return MOY_SKLAD_PAYMENT_LATER if optional_str(order.payment_method).lower() == "later" else MOY_SKLAD_PAYMENT_INTELLECT
+
+
+def _order_state_name(order: Order) -> str:
+    return MOY_SKLAD_STATE_NEW_ORDER
+
+
+def _order_delivery_method_name(order: Order) -> str | None:
+    selected_delivery_service = optional_str(order.selected_delivery_service)
+    if not selected_delivery_service: return None
+    return MOY_SKLAD_DEFAULT_DELIVERY_METHOD_NAMES.get(selected_delivery_service.upper())
+
+
+async def _moysklad_custom_attr_refs(moysklad_client: MoySkladClient, order: Order) -> dict[str, str]:
+    refs: dict[str, str] = {}
+    payment_method_name = _order_payment_method_name(order)
+    if payment_method_name:
+        payment_method = await moysklad_client.find_customerorder_customentity_value("payment_method", payment_method_name)
+        payment_method_href = _href((payment_method or {}).get("meta", {}).get("href"))
+        if payment_method_href: refs["payment_method"] = payment_method_href
+
+    delivery_method_name = _order_delivery_method_name(order)
+    if delivery_method_name:
+        delivery_method = await moysklad_client.find_customerorder_customentity_value("delivery_method", delivery_method_name)
+        delivery_method_href = _href((delivery_method or {}).get("meta", {}).get("href"))
+        if delivery_method_href: refs["delivery_method"] = delivery_method_href
+    return refs
+
+
+def _moysklad_attr_values(order: Order) -> dict[str, Any]:
+    snapshot = extract_dict(order.checkout_snapshot)
+    benefits = extract_dict(snapshot.get("benefits"))
+    data = _moysklad_order_data(order)
+    raw_values = extract_dict(data.get("attributes"))
+    values: dict[str, Any] = {"delivery_cost": optional_str(raw_values.get("delivery_cost")) or _delivery_cost_value(order), "created_by_widget": raw_values.get("created_by_widget") if isinstance(raw_values.get("created_by_widget"), bool) else True}
+
+    promo_code = optional_str(raw_values.get("promo_code")) or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code"))
+    if promo_code: values["promo_code"] = promo_code
+    for key in ("deal_link", "client_waybill_link", "tracking_number", "site_order_link", "delivery_tracking"):
+        value = optional_str(raw_values.get(key)) or optional_str(data.get(key))
+        if value: values[key] = value
+    return values
+
+
+def _maybe_meta_row(value: Any, *, entity_type: str) -> dict[str, Any] | None:
+    if isinstance(value, dict) and isinstance(value.get("meta"), dict): return {"meta": value["meta"]}
+    if isinstance(value, dict):
+        href = optional_str(value.get("href"))
+        if href: return {"meta": {"href": href, "type": optional_str(value.get("type")) or entity_type, "mediaType": "application/json"}}
+    href = optional_str(value)
+    if not href: return None
+    return {"meta": {"href": href, "type": entity_type, "mediaType": "application/json"}}
+
+
+async def _resolve_customerorder_refs(moysklad_client: MoySkladClient, order: Order) -> dict[str, dict[str, Any] | None]:
+    store = _maybe_meta_row(await moysklad_client.find_store_by_name(MOY_SKLAD_REQUIRED_STORE_NAME), entity_type="store")
+    state = _maybe_meta_row(await moysklad_client.find_customerorder_state_by_name(_order_state_name(order)), entity_type="state")
+
+    sales_channel = _maybe_meta_row(MOY_SKLAD_SALES_CHANNEL_HREF, entity_type="saleschannel")
+
+    return {"store": store, "state": state, "sales_channel": sales_channel}
+
+
+async def sync_moysklad_customerorder_state(order: Order, *, state_name: str) -> bool:
+    normalized_state_name = optional_str(state_name)
+    if not MOY_SKLAD_ORDER_SYNC_ENABLED or not normalized_state_name: return False
+    if order.moysklad_customerorder_id is None: return False
+    moysklad_client = get_moysklad_client()
+    if not moysklad_client.is_configured(): return False
+    try:
+        state = await moysklad_client.find_customerorder_state_by_name(normalized_state_name)
+        if state is None:
+            log.warning("Skipping MoySklad customerorder state sync because state not found state_name=%s order_id=%s", normalized_state_name, order.id)
+            return False
+        current_order = await moysklad_client.get_customer_order(order.moysklad_customerorder_id)
+        current_state = current_order.get("state") if isinstance(current_order, dict) else None
+        current_meta = current_state.get("meta") if isinstance(current_state, dict) else None
+        current_state_href = _href(current_meta.get("href")) if isinstance(current_meta, dict) else None
+        target_state_href = _href((state.get("meta") or {}).get("href"))
+        if current_state_href and target_state_href and current_state_href == target_state_href: return False
+        await moysklad_client.update_customer_order_state(order.moysklad_customerorder_id, state)
+        return True
+    except Exception:
+        log.exception("MoySklad customerorder state sync failed order_id=%s moysklad_customerorder_id=%s state_name=%s", order.id, order.moysklad_customerorder_id, normalized_state_name)
+        return False
+
+
 async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: User) -> MoySkladOrderSyncResult:
     if not MOY_SKLAD_ORDER_SYNC_ENABLED: return MoySkladOrderSyncResult(enabled=False, skipped_reason="disabled")
 
@@ -164,6 +295,11 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
 
     customerorder_external_code = build_customerorder_external_code(order_id=order.id)
     customerorder_sync_id = build_sync_id(scope="customerorder", key=customerorder_external_code)
+    refs = await _resolve_customerorder_refs(moysklad_client, order)
+    if refs["store"] is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="store_not_configured", counterparty=counterparty_result)
+    if refs["state"] is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="state_not_configured", counterparty=counterparty_result)
+    if refs["sales_channel"] is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="sales_channel_not_configured", counterparty=counterparty_result)
+    attributes = moysklad_client.build_customerorder_attributes(values=_moysklad_attr_values(order), custom_refs=await _moysklad_custom_attr_refs(moysklad_client, order))
     customerorder_result = await moysklad_client.resolve_or_sync_customerorder(
         existing_customerorder_id=order.moysklad_customerorder_id,
         external_code=customerorder_external_code,
@@ -173,6 +309,12 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         positions=positions,
         moment=order.created_at,
         description=_build_order_description(order),
+        shipment_address=_shipment_address(order),
+        shipment_address_full=_shipment_address_full(order),
+        attributes=attributes,
+        store=refs["store"],
+        state=refs["state"],
+        sales_channel=refs["sales_channel"],
     )
 
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:

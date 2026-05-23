@@ -16,6 +16,7 @@ from src.database.crud import update_order
 from src.database.models import Order
 from src.database.schemas import OrderUpdate
 from src.integrations.intellectmoney import IntellectMoneyError, get_intellectmoney_client
+from src.integrations.moysklad.order_sync import MOY_SKLAD_STATE_INVOICE_PAID, MOY_SKLAD_STATE_INVOICE_SENT, sync_moysklad_customerorder_state
 
 from .crm import _move_lead_to_payment_result_status, _move_lead_to_pending_payment
 from .payment_qr_storage import build_order_payment_qr_url, find_order_payment_qr_path, save_order_payment_qr
@@ -154,6 +155,7 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
         await finalize_paid_order_referral_effects(session, updated_order)
         await session.commit()
         await session.refresh(updated_order)
+        await sync_moysklad_customerorder_state(updated_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
     return updated_order
 
 
@@ -216,7 +218,9 @@ async def create_payment_for_order(session: AsyncSession, *, request: Request, o
         if payment_step not in PENDING_PAYMENT_STEPS: order = await reconcile_sbp_payment(session, order, payment_step=payment_step, invoice_id=invoice_id)
         else:
             order = await update_order( session, order, OrderUpdate(payment_status=_payment_status_from_step(payment_step)), commit=True)
-            if saved_qr_image or qr_image or qr_url: order = await _move_lead_to_pending_payment(session, order)
+            if saved_qr_image or qr_image or qr_url:
+                order = await _move_lead_to_pending_payment(session, order)
+                await sync_moysklad_customerorder_state(order, state_name=MOY_SKLAD_STATE_INVOICE_SENT)
 
         return _payment_status_payload(order, payment_step=payment_step, qr_url=qr_url, qr_image=saved_qr_image or qr_image, expires_at=expires_at)
 
@@ -250,5 +254,7 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
 
     order = await _ensure_persisted_paid_state(session, order)
     saved_qr_image = await _resolve_payment_qr_image(request, order, qr_image=qr_image, qr_url=qr_url)
-    if payment_step in PENDING_PAYMENT_STEPS and (saved_qr_image or qr_image or qr_url): order = await _move_lead_to_pending_payment(session, order)
+    if payment_step in PENDING_PAYMENT_STEPS and (saved_qr_image or qr_image or qr_url):
+        order = await _move_lead_to_pending_payment(session, order)
+        await sync_moysklad_customerorder_state(order, state_name=MOY_SKLAD_STATE_INVOICE_SENT)
     return _payment_status_payload(order, payment_step=payment_step, qr_url=qr_url, qr_image=saved_qr_image or qr_image)
