@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import AMOCRM_BASE_DOMAIN, MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID, MOY_SKLAD_SALES_CHANNEL_HREF
 from src.database.models import Order, Product, User, Variant
-from src.normalize import coerce_uuid, extract_dict, optional_str
+from src.normalize import coerce_uuid, extract_dict, lower_optional_str, optional_str
 
 from .client import MoySkladClient, get_moysklad_client
 from .idempotency import (
@@ -44,7 +44,8 @@ def _full_name(user: User, order: Order) -> str:
     if fallback_name: return fallback_name
 
     email_fallback = optional_str(user.email)
-    return email_fallback or f"User {user.id}"
+    if email_fallback: return email_fallback
+    return f"User {user.__dict__.get('id') or 'unknown'}"
 
 
 def _counterparty_email(user: User, order: Order) -> str | None:
@@ -180,12 +181,12 @@ def _href(value: Any) -> str | None:
 
 
 def _order_payment_method_name(order: Order) -> str | None:
-    return MOY_SKLAD_PAYMENT_LATER if optional_str(order.payment_method).lower() == "later" else MOY_SKLAD_PAYMENT_INTELLECT
+    return MOY_SKLAD_PAYMENT_LATER if lower_optional_str(order.payment_method) == "later" else MOY_SKLAD_PAYMENT_INTELLECT
 
 
 def _is_intellectmoney_payment(order: Order) -> bool:
-    payment_method = optional_str(order.payment_method).lower()
-    payment_provider = optional_str(order.payment_provider).lower()
+    payment_method = lower_optional_str(order.payment_method)
+    payment_provider = lower_optional_str(order.payment_provider)
     return payment_method == "sbp" or payment_provider == "intellectmoney"
 
 
@@ -336,7 +337,8 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     organization_id = _configured_organization_id()
     if organization_id is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="organization_not_configured")
 
-    counterparty_external_code = build_counterparty_external_code(user_id=user.id)
+    user_id = int(user.__dict__.get("id") or user.id)
+    counterparty_external_code = build_counterparty_external_code(user_id=user_id)
     counterparty_sync_id = build_sync_id(scope="counterparty", key=counterparty_external_code)
     counterparty_result = await moysklad_client.resolve_or_sync_counterparty(
         existing_counterparty_id=user.moysklad_counterparty_id,
@@ -442,6 +444,9 @@ async def sync_order_to_moysklad_safe(session: AsyncSession, *, order: Order, us
     except Exception:
         order_id = order.__dict__.get("id")
         user_id = user.__dict__.get("id")
-        await session.rollback()
-        log.exception("MoySklad order sync failed order_id=%s user_id=%s", order_id, user_id)
+        requires_rollback = not session.is_active
+        if requires_rollback:
+            try: await session.rollback()
+            except Exception: log.exception("MoySklad rollback after sync failure also failed order_id=%s user_id=%s", order_id, user_id)
+        log.exception("MoySklad order sync failed order_id=%s user_id=%s rollback=%s", order_id, user_id, requires_rollback)
         return MoySkladOrderSyncResult(enabled=MOY_SKLAD_ORDER_SYNC_ENABLED, skipped_reason="sync_error")

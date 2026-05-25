@@ -351,16 +351,17 @@ def _build_order_item_from_basket_row(*, user_id: int, order_id: int, row: tuple
 
 
 async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, requested_deposit_amount: Decimal | None = None) -> Order:
-    draft = await get_order_draft_by_id(session, draft_id, user_id=user.id)
+    user_id = int(user.__dict__.get("id") or user.id)
+    draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
 
-    existing_order = await get_order_by_draft_id(session, draft.id, user_id=user.id)
+    existing_order = await get_order_by_draft_id(session, draft.id, user_id=user_id)
     if existing_order is not None:
         await _clear_order_draft_references(session, draft_id=draft.id)
         await delete_order_draft(session, draft, commit=False)
         await session.commit()
 
-        refreshed_order = await get_order_by_id(session, existing_order.id, user_id=user.id)
+        refreshed_order = await get_order_by_id(session, existing_order.id, user_id=user_id)
         if refreshed_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load existing order")
         return refreshed_order
 
@@ -394,7 +395,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
 
     order_code = await _generate_order_code(session)
     order_create = _build_order_create_data(
-        user_id=user.id,
+        user_id=user_id,
         delivery_address_id=draft.delivery_address_id,
         recipient_id=draft.recipient_id,
         order_code=order_code,
@@ -414,27 +415,28 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
         payment_method=payment_method,
     )
     order = await create_order(session, order_create, commit=False)
-    order_items = [_build_order_item_from_draft_item(user_id=user.id, order_id=order.id, item=item) for item in draft.items]
+    order_items = [_build_order_item_from_draft_item(user_id=user_id, order_id=order.id, item=item) for item in draft.items]
     session.add_all(order_items)
     await session.flush()
     await _persist_order_benefit_applications(session, order=order, user=user, resolved_benefits=resolved_benefits)
-    for item in draft.items: await record_purchase(session, user_id=user.id, product_id=item.product_id, quantity=item.quantity, commit=False)
+    for item in draft.items: await record_purchase(session, user_id=user_id, product_id=item.product_id, quantity=item.quantity, commit=False)
     await ensure_order_has_amocrm_lead(session, order, user=user)
     await _clear_order_draft_references(session, draft_id=draft.id)
     await delete_order_draft(session, draft, commit=False)
     await session.commit()
 
-    created_order = await get_order_by_id(session, order.id, user_id=user.id)
+    created_order = await get_order_by_id(session, order.id, user_id=user_id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     created_order_id = int(order.__dict__.get("id") or created_order.__dict__.get("id") or created_order.id)
     await sync_order_to_moysklad_safe(session, order=created_order, user=user)
-    reloaded_order = await get_order_by_id(session, created_order_id, user_id=user.id)
+    reloaded_order = await get_order_by_id(session, created_order_id, user_id=user_id)
     if reloaded_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     return reloaded_order
 
 
 async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, requested_deposit_amount: Decimal | None = None) -> Order:
-    basket = await get_basket_by_user_id(session, user.id)
+    user_id = int(user.__dict__.get("id") or user.id)
+    basket = await get_basket_by_user_id(session, user_id)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
     if basket.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
 
@@ -507,7 +509,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
 
     order_code = await _generate_order_code(session)
     order_create = _build_order_create_data(
-        user_id=user.id,
+        user_id=user_id,
         delivery_address_id=basket.delivery_address_id,
         recipient_id=basket.recipient_id,
         order_code=order_code,
@@ -527,11 +529,11 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
         payment_method=payment_method,
     )
     order = await create_order(session, order_create, commit=False)
-    order_items = [_build_order_item_from_basket_row(user_id=user.id, order_id=order.id, row=row) for row in order_item_rows]
+    order_items = [_build_order_item_from_basket_row(user_id=user_id, order_id=order.id, row=row) for row in order_item_rows]
     session.add_all(order_items)
     await session.flush()
     await _persist_order_benefit_applications(session, order=order, user=user, resolved_benefits=resolved_benefits)
-    for item, _, _ in order_item_rows: await record_purchase(session, user_id=user.id, product_id=item.product_id, quantity=item.quantity, commit=False)
+    for item, _, _ in order_item_rows: await record_purchase(session, user_id=user_id, product_id=item.product_id, quantity=item.quantity, commit=False)
     await ensure_order_has_amocrm_lead(session, order, user=user)
     await session.execute(delete(BasketItem).where(BasketItem.basket_id == basket.id))
     basket.delivery_address_id = None
@@ -542,11 +544,11 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     basket.delivery_period_max = None
     await session.commit()
 
-    created_order = await get_order_by_id(session, order.id, user_id=user.id)
+    created_order = await get_order_by_id(session, order.id, user_id=user_id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     created_order_id = int(order.__dict__.get("id") or created_order.__dict__.get("id") or created_order.id)
     await sync_order_to_moysklad_safe(session, order=created_order, user=user)
-    reloaded_order = await get_order_by_id(session, created_order_id, user_id=user.id)
+    reloaded_order = await get_order_by_id(session, created_order_id, user_id=user_id)
     if reloaded_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     return reloaded_order
 
