@@ -218,7 +218,7 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
         delivery_period_max=payload.delivery_address.delivery_calculation.period_max,
         comment=None,
     )
-    selected_delivery_service, selected_delivery_payload = _build_selected_delivery_payload(checkout_source)
+    selected_delivery_service, selected_delivery_payload = await _build_selected_delivery_payload(checkout_source)
     checkout_snapshot = _build_checkout_snapshot(
         checkout_source,
         payment_method=payload.payment_method,

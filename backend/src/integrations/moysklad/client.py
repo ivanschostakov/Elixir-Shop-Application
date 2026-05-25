@@ -191,11 +191,69 @@ class MoySkladClient:
     async def get_stores(self) -> list[dict[str, Any]]:
         return await self.get_all("/entity/store")
 
+    async def get_countries(self) -> list[dict[str, Any]]:
+        return await self.get_all("/entity/country")
+
     async def get_saleschannels(self) -> list[dict[str, Any]]:
         return await self.get_all("/entity/saleschannel")
 
     async def get_employees(self) -> list[dict[str, Any]]:
         return await self.get_all("/entity/employee")
+
+    async def find_country_by_name_or_code(self, *values: str) -> dict[str, Any] | None:
+        normalized_names = [name.casefold() for name in (optional_str(raw) for raw in values) if name]
+        normalized_codes = [code.upper() for code in (optional_str(raw) for raw in values) if code]
+        if not normalized_names and not normalized_codes:
+            return None
+
+        countries = await self.get_countries()
+        for row in countries:
+            code = optional_str(row.get("code"))
+            if code and code.upper() in normalized_codes:
+                return row
+
+        for row in countries:
+            row_name = optional_str(row.get("name"))
+            if row_name and row_name.casefold() in normalized_names:
+                return row
+
+        return None
+
+    async def find_region_by_name(self, name: str, *, country_id: UUID | None = None) -> dict[str, Any] | None:
+        normalized_name = optional_str(name)
+        if not normalized_name:
+            return None
+
+        data = await self.get_page("/entity/region", limit=200, search=normalized_name)
+        rows = data.get("rows")
+        if not isinstance(rows, list):
+            return None
+
+        normalized_key = normalized_name.casefold()
+        candidate_rows = [row for row in rows if isinstance(row, dict)]
+        if country_id is not None:
+            filtered: list[dict[str, Any]] = []
+            for row in candidate_rows:
+                country_row = row.get("country")
+                country_meta = country_row.get("meta") if isinstance(country_row, dict) else None
+                country_href = optional_str(country_meta.get("href")) if isinstance(country_meta, dict) else None
+                row_country_id = coerce_uuid(country_href.rsplit("/", 1)[-1]) if country_href else None
+                if row_country_id == country_id:
+                    filtered.append(row)
+            if filtered:
+                candidate_rows = filtered
+
+        exact_match = next(
+            (
+                row
+                for row in candidate_rows
+                if optional_str(row.get("name")) and optional_str(row.get("name")).casefold() == normalized_key
+            ),
+            None,
+        )
+        if exact_match is not None:
+            return exact_match
+        return candidate_rows[0] if candidate_rows else None
 
     async def get_customerorder_metadata(self) -> dict[str, Any]:
         http_client = await self.client()

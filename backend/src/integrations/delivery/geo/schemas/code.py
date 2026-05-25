@@ -16,7 +16,11 @@ class GeoCodeResult(BaseModel):
     address: str
     title: str
     subtitle: str
+    country: str | None = None
     city: str | None = None
+    region: str | None = None
+    street: str | None = None
+    house: str | None = None
     kind: str
     precision: str | None = None
     country_code: str | None = None
@@ -46,7 +50,11 @@ class GeoCodeResult(BaseModel):
             address=meta.get("text", ""),
             title=geo_object.get("name", ""),
             subtitle=geo_object.get("description", ""),
+            country=parse_country(address),
             city=parse_city(address),
+            region=parse_region(address),
+            street=parse_street(address),
+            house=parse_house(address),
             kind=meta.get("kind", ""),
             precision=meta.get("precision"),
             country_code=parse_country_code(address),
@@ -92,6 +100,26 @@ def parse_city(address: dict[str, Any]) -> str | None:
         or parse_address_component(address, {"area"})
         or parse_address_component(address, {"district"})
     )
+
+
+def parse_country(address: dict[str, Any]) -> str | None:
+    return parse_address_component(address, {"country"})
+
+
+def parse_region(address: dict[str, Any]) -> str | None:
+    return (
+        parse_address_component(address, {"province"})
+        or parse_address_component(address, {"area"})
+        or parse_address_component(address, {"district"})
+    )
+
+
+def parse_street(address: dict[str, Any]) -> str | None:
+    return parse_address_component(address, {"street"})
+
+
+def parse_house(address: dict[str, Any]) -> str | None:
+    return parse_address_component(address, {"house"})
 
 
 def parse_address_component(address: dict[str, Any], kinds: set[str]) -> str | None:

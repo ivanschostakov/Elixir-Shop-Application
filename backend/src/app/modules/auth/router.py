@@ -18,6 +18,7 @@ from src.app.services.auth import (
 from src.database import get_db
 from src.database.models.auth.user import User
 from src.database.schemas.website.website_identity import WebsiteIdentityRead
+from src.app.services.email_verification import generate_email_verification_code, send_user_verification_code_email
 from src.integrations.website_identity import WebsiteIdentityClient, get_website_identity_client
 
 from .dependencies import get_current_user

@@ -1,5 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 import logging
+import re
 from typing import Any
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import AMOCRM_BASE_DOMAIN, MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID, MOY_SKLAD_SALES_CHANNEL_HREF
 from src.database.models import Order, Product, User, Variant
+from src.integrations.delivery.schemas import COUNTRY_NAMES
 from src.normalize import coerce_uuid, extract_dict, lower_optional_str, optional_str
 
 from .client import MoySkladClient, get_moysklad_client
@@ -28,6 +30,11 @@ MOY_SKLAD_INVOICEOUT_STATE_PAID = "Оплачен"
 MOY_SKLAD_PAYMENT_LATER = "СБП через менеджера"
 MOY_SKLAD_PAYMENT_INTELLECT = "IntellectMoney"
 MOY_SKLAD_DEFAULT_DELIVERY_METHOD_NAMES = {"CDEK": "СДЭК", "YANDEX": "Яндекс.Доставка"}
+_STREET_HINT_RE = re.compile(r"\b(ул\.?|улиц|пр-?кт|просп|пер\.?|переул|бул\.?|бульв|наб\.?|набереж|ш\.?|шоссе|проезд|пр-д|пл\.?|площадь|аллея|тупик)\b", re.IGNORECASE)
+_HOUSE_RE = re.compile(r"\b(?:д\.?|дом)\s*([0-9A-Za-zА-Яа-я/-]+(?:\s*(?:к(?:орп)?\.?|стр\.?|с)\s*[0-9A-Za-zА-Яа-я/-]+)?)", re.IGNORECASE)
+_APARTMENT_RE = re.compile(r"\b(?:кв\.?|квартира|ап\.?|apartment|офис|оф\.?)\s*([0-9A-Za-zА-Яа-я/-]+)", re.IGNORECASE)
+_REGION_HINT_RE = re.compile(r"\b(обл\.?|область|край|респ\.?|республика|автономный округ|ао)\b", re.IGNORECASE)
+_BUILDING_HINT_RE = re.compile(r"\b(корп\.?|корпус|стр\.?|строение|лит\.?)\b", re.IGNORECASE)
 
 
 def _full_name(user: User, order: Order) -> str:
@@ -157,16 +164,99 @@ def _shipment_address(order: Order) -> str | None:
     return optional_str(order.delivery_string)
 
 
-def _shipment_address_full(order: Order) -> dict[str, Any] | None:
+def _address_segments(full: str) -> list[str]:
+    return [segment.strip() for segment in full.split(",") if optional_str(segment)]
+
+
+def _extract_street(full: str) -> str | None:
+    for segment in _address_segments(full):
+        if _STREET_HINT_RE.search(segment):
+            return segment
+    return None
+
+
+def _extract_house(full: str, *, street: str | None = None) -> str | None:
+    explicit = _HOUSE_RE.search(full)
+    if explicit:
+        return optional_str(explicit.group(1))
+
+    segments = _address_segments(full)
+    if not segments:
+        return None
+    if street is None:
+        street = _extract_street(full)
+    if not street:
+        return None
+
+    for index, segment in enumerate(segments):
+        if segment != street:
+            continue
+        if index + 1 >= len(segments):
+            return None
+        next_segment = segments[index + 1]
+        if not re.fullmatch(r"[0-9A-Za-zА-Яа-я/-]+", next_segment):
+            return None
+        if index + 2 < len(segments) and _BUILDING_HINT_RE.search(segments[index + 2]):
+            return f"{next_segment}, {segments[index + 2]}"
+        return next_segment
+    return None
+
+
+def _extract_apartment(full: str) -> str | None:
+    apartment = _APARTMENT_RE.search(full)
+    if apartment:
+        return optional_str(apartment.group(1))
+    return None
+
+
+def _extract_region(full: str) -> str | None:
+    for segment in _address_segments(full):
+        if _REGION_HINT_RE.search(segment):
+            return segment
+    return None
+
+
+def _country_name_from_payload(country_name: Any, country_code: Any) -> str | None:
+    normalized_name = optional_str(country_name)
+    if normalized_name:
+        return normalized_name
+    normalized_code = optional_str(country_code)
+    if not normalized_code:
+        return None
+    return COUNTRY_NAMES.get(normalized_code.upper())  # type: ignore[arg-type]
+
+
+async def _shipment_address_full(order: Order, *, moysklad_client: MoySkladClient) -> dict[str, Any] | None:
     payload = extract_dict(order.selected_delivery_payload)
     address = extract_dict(payload.get("address"))
     full = optional_str(address.get("full_address")) or optional_str(address.get("formatted")) or optional_str(address.get("address")) or _shipment_address(order)
     if not full: return None
+
     result: dict[str, Any] = {"addInfo": full}
-    city = optional_str(address.get("city"))
-    postal = optional_str(address.get("postal_code"))
+    city = optional_str(address.get("city")) or (optional_str(order.delivery_address.city) if order.delivery_address is not None else None)
+    postal = optional_str(address.get("postal_code")) or (optional_str(order.delivery_address.postal_code) if order.delivery_address is not None else None)
+    details = optional_str(address.get("details")) or (optional_str(order.delivery_address.details) if order.delivery_address is not None else None)
+    street = optional_str(address.get("street")) or _extract_street(full)
+    house = optional_str(address.get("house")) or _extract_house(full, street=street)
+    apartment = optional_str(address.get("apartment")) or _extract_apartment(full)
+    region_name = optional_str(address.get("region")) or _extract_region(full)
+    country_code = optional_str(address.get("country_code")) or (optional_str(order.delivery_address.country_code) if order.delivery_address is not None else None)
+    country_name = _country_name_from_payload(address.get("country"), country_code)
+    country_row = await moysklad_client.find_country_by_name_or_code(country_code or "", country_name or "")
+
     if city: result["city"] = city
     if postal: result["postalCode"] = postal
+    if details: result["comment"] = details
+    if street: result["street"] = street
+    if house: result["house"] = house
+    if apartment: result["apartment"] = apartment
+    if country_row and isinstance(country_row.get("meta"), dict):
+        result["country"] = {"meta": country_row["meta"]}
+    if region_name:
+        country_id = coerce_uuid(country_row.get("id")) if country_row is not None else None
+        region_row = await moysklad_client.find_region_by_name(region_name, country_id=country_id)
+        if region_row and isinstance(region_row.get("meta"), dict):
+            result["region"] = {"meta": region_row["meta"]}
     return result
 
 
@@ -395,7 +485,7 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         moment=order.created_at,
         description=_build_order_description(order),
         shipment_address=_shipment_address(order),
-        shipment_address_full=_shipment_address_full(order),
+        shipment_address_full=await _shipment_address_full(order, moysklad_client=moysklad_client),
         attributes=attributes,
         store=refs["store"],
         state=refs["state"],

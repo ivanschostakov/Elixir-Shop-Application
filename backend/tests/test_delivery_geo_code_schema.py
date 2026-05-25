@@ -16,6 +16,13 @@ def test_geocode_result_parses_bounds_and_precision() -> None:
                                     "Address": {
                                         "country_code": "ru",
                                         "postal_code": None,
+                                        "Components": [
+                                            {"kind": "country", "name": "Россия"},
+                                            {"kind": "province", "name": "Москва"},
+                                            {"kind": "locality", "name": "Москва"},
+                                            {"kind": "street", "name": "Тверская улица"},
+                                            {"kind": "house", "name": "7"},
+                                        ],
                                     },
                                 },
                             },
@@ -43,6 +50,11 @@ def test_geocode_result_parses_bounds_and_precision() -> None:
     assert result.kind == "street"
     assert result.precision == "street"
     assert result.country_code == "RU"
+    assert result.country == "Россия"
+    assert result.region == "Москва"
+    assert result.city == "Москва"
+    assert result.street == "Тверская улица"
+    assert result.house == "7"
     assert result.bounds is not None
     assert result.bounds.south_west.lon == 37.596516
     assert result.bounds.south_west.lat == 55.756933
