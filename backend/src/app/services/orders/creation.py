@@ -280,6 +280,7 @@ async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subto
 
 
 def _build_order_create_data(*, user_id: int, delivery_address_id: int, recipient_id: int, order_code: str, items_count: int, total_quantity: int, basket_subtotal: Decimal, delivery_total: Decimal, grand_total: Decimal, currency: str, delivery_period_min: int | None, delivery_period_max: int | None, comment: str | None, delivery_string: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any], checkout_snapshot: dict[str, Any], payment_method: str) -> OrderCreate:
+    payment_status = "pending" if payment_method.strip().lower() == "later" else "draft"
     return OrderCreate(
         draft_id=None,
         user_id=user_id,
@@ -302,7 +303,7 @@ def _build_order_create_data(*, user_id: int, delivery_address_id: int, recipien
         checkout_snapshot=checkout_snapshot,
         payment_method=payment_method,
         payment_provider=None,
-        payment_status="draft",
+        payment_status=payment_status,
         payment_invoice_id=None,
         payment_paid_at=None,
         payment_error=None,

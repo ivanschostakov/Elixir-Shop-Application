@@ -752,9 +752,76 @@ export default function PaymentScreen() {
 
         const paymentMethod = (order.payment_method || "").toLowerCase()
         if (paymentMethod === "later") {
+            if (order.is_paid || order.payment_status === "paid") {
+                setPhase("success")
+                setErrorMessage(null)
+                return
+            }
+
+            if (order.payment_status && FINAL_STOP_STATUSES.has(order.payment_status)) {
+                setPhase("failure")
+                setErrorMessage(getPaymentStateError(
+                    {
+                        status: "success",
+                        order_id: order.id,
+                        order_code: order.order_code,
+                        order_number: order.order_number,
+                        payment_method: order.payment_method,
+                        payment_status: order.payment_status,
+                        payment_step: null,
+                        invoice_id: order.payment_invoice_id,
+                        qr_url: null,
+                        qr_image: null,
+                        expires_at: null,
+                        is_paid: order.is_paid,
+                        can_retry: order.payment_status === "canceled" || order.payment_status === "error",
+                    },
+                    t("payment.failureMessage"),
+                ))
+                return
+            }
+
             if (order.payment_status === "pending") {
                 setPhase("pending")
+                setErrorMessage(null)
+                return
             }
+
+            const requestId = paymentStatusRequestIdRef.current + 1
+            paymentStatusRequestIdRef.current = requestId
+            setPhase("processing")
+            setErrorMessage(null)
+
+            void (async () => {
+                try {
+                    const nextPayment = await createPayment({ order_id: order.id })
+                    if (paymentStatusRequestIdRef.current !== requestId) {
+                        return
+                    }
+                    setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
+
+                    if (nextPayment.is_paid || nextPayment.payment_status === "paid") {
+                        setPhase("success")
+                        return
+                    }
+
+                    if (nextPayment.payment_status && FINAL_STOP_STATUSES.has(nextPayment.payment_status)) {
+                        setPhase("failure")
+                        setErrorMessage(getPaymentStateError(nextPayment, t("payment.failureMessage")))
+                        return
+                    }
+
+                    setPhase("pending")
+                } catch (resumeError) {
+                    if (paymentStatusRequestIdRef.current !== requestId) {
+                        return
+                    }
+                    setPhase("failure")
+                    const message = getErrorMessage(resumeError, t("payment.paymentCreateFailed"))
+                    setErrorMessage(message)
+                    showBackendErrorAlert(resumeError, message)
+                }
+            })()
             return
         }
 
