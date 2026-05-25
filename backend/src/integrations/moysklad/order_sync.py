@@ -232,7 +232,7 @@ async def _shipment_address_full(order: Order, *, moysklad_client: MoySkladClien
     full = optional_str(address.get("full_address")) or optional_str(address.get("formatted")) or optional_str(address.get("address")) or _shipment_address(order)
     if not full: return None
 
-    result: dict[str, Any] = {"addInfo": full}
+    result: dict[str, Any] = {}
     city = optional_str(address.get("city")) or (optional_str(order.delivery_address.city) if order.delivery_address is not None else None)
     postal = optional_str(address.get("postal_code")) or (optional_str(order.delivery_address.postal_code) if order.delivery_address is not None else None)
     details = optional_str(address.get("details")) or (optional_str(order.delivery_address.details) if order.delivery_address is not None else None)
@@ -257,6 +257,11 @@ async def _shipment_address_full(order: Order, *, moysklad_client: MoySkladClien
         region_row = await moysklad_client.find_region_by_name(region_name, country_id=country_id)
         if region_row and isinstance(region_row.get("meta"), dict):
             result["region"] = {"meta": region_row["meta"]}
+    # MoySklad renders shipmentAddressFull as a combined human string.
+    # Sending the full address in addInfo alongside structured fields duplicates the address in UI.
+    has_structured_location = any(result.get(field_name) for field_name in ("city", "postalCode", "street", "house", "apartment"))
+    if not has_structured_location:
+        result["addInfo"] = full
     return result
 
 

@@ -68,6 +68,7 @@ def test_shipment_address_full_includes_structured_fields_and_refs():
     assert result["comment"] == "Подъезд 2"
     assert result["country"]["meta"]["type"] == "country"
     assert result["region"]["meta"]["type"] == "region"
+    assert "addInfo" not in result
 
 
 def test_shipment_address_full_extracts_house_and_apartment_from_full_address():
@@ -95,3 +96,27 @@ def test_shipment_address_full_extracts_house_and_apartment_from_full_address():
     assert result["street"] == "пер. Большой Тишинский"
     assert result["house"] == "26, корп. 15-16"
     assert result["apartment"] == "88"
+    assert "addInfo" not in result
+
+
+def test_shipment_address_full_keeps_add_info_as_fallback_when_no_structured_location():
+    order = SimpleNamespace(
+        selected_delivery_payload={
+            "address": {
+                "full_address": "Пункт выдачи CDEK MSK-777, код 1035",
+                "country_code": "RU",
+            }
+        },
+        delivery_address=SimpleNamespace(
+            city=None,
+            postal_code=None,
+            details=None,
+            country_code="RU",
+        ),
+        delivery_string=None,
+    )
+
+    result = asyncio.run(order_sync._shipment_address_full(order, moysklad_client=_MoySkladClientStub()))
+
+    assert result is not None
+    assert result["addInfo"] == "Пункт выдачи CDEK MSK-777, код 1035"
