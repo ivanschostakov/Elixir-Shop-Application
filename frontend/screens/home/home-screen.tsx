@@ -64,17 +64,17 @@ const HOME_MENU_POPUP_VERTICAL_OFFSET = 61
 function getHomeGradientColors(accentName: ThemeAccentName, isDarkMode: boolean) {
     if (accentName === "blackWhite") {
         return isDarkMode
-            ? (["#0B0D10", "#1A1D24"] as const)
-            : (["#FFFFFF", "#E9EEF7"] as const)
+            ? (["#0B0D10", "#24212E"] as const)
+            : (["#FFFFFF", "#DDE7F3"] as const)
     }
 
     const gradientCombos: Record<Exclude<ThemeAccentName, "blackWhite">, readonly [string, string]> = {
-        vividBlue: ["#0A84FF", "#4B2DFF"],
-        archivedBlue: ["#1F649B", "#7C3AED"],
+        vividBlue: ["#0A84FF", "#7C3AED"],
+        archivedBlue: ["#1F649B", "#00B8D9"],
         teal: ["#FFB300", "#FF4D6D"],
-        emerald: ["#B0124F", "#FF3D81"],
+        emerald: ["#0F9F6E", "#B0124F"],
         rose: ["#8A3FFC", "#00A3FF"],
-        amber: ["#16A34A", "#5EF28A"],
+        amber: ["#16A34A", "#FACC15"],
     }
 
     return gradientCombos[accentName]

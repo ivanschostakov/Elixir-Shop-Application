@@ -60,7 +60,7 @@ function AppShellContent() {
             : pathname === ROUTES.home
               ? []
               : ["top"]
-    const shouldShowBrandOverlay = pathname === ROUTES.home
+    const shouldShowBrandOverlay = true
     const brandLabelTop = Platform.OS === "ios"
         ? Math.max(2, topInset - 44)
         : Math.max(4, topInset - 14)
