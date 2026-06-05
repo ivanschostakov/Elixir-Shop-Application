@@ -14,7 +14,7 @@ from .payloads import build_contact_create_payload, build_contact_update_payload
 from .schemas.lead import LeadStatusUpdatePayload
 from .transport import AmoCRMTransport
 from .utils import extract_email_from_contact_obj, extract_phone_from_contact_obj, normalize_phone
-from config import AMOCRM_ACCESS_TOKEN, AMOCRM_ACCOUNT_ID, AMOCRM_AUTH_CODE, AMOCRM_BASE_DOMAIN, AMOCRM_CLIENT_ID, AMOCRM_CLIENT_SECRET, AMOCRM_LOGIN_EMAIL, AMOCRM_LOGIN_PASSWORD, AMOCRM_PLAYWRIGHT_HEADLESS, AMOCRM_REDIRECT_URI, AMOCRM_REFRESH_TOKEN, WORKING_DIR
+from config import AMOCRM_ACCESS_TOKEN, AMOCRM_ACCOUNT_ID, AMOCRM_AUTH_CODE, AMOCRM_BASE_DOMAIN, AMOCRM_CLIENT_ID, AMOCRM_CLIENT_SECRET, AMOCRM_LOGIN_EMAIL, AMOCRM_LOGIN_PASSWORD, AMOCRM_PLAYWRIGHT_HEADLESS, AMOCRM_PROXY_URL, AMOCRM_REDIRECT_URI, AMOCRM_REFRESH_TOKEN, WORKING_DIR
 
 
 class AsyncAmoCRM:
@@ -23,15 +23,16 @@ class AsyncAmoCRM:
     _auth_page = None
     _auth_session_lock = None
 
-    def __init__(self, *, base_domain: str | None = AMOCRM_BASE_DOMAIN, client_id: str | None = AMOCRM_CLIENT_ID, client_secret: str | None = AMOCRM_CLIENT_SECRET, redirect_uri: str | None = AMOCRM_REDIRECT_URI, access_token: str | None = AMOCRM_ACCESS_TOKEN, refresh_token: str | None = AMOCRM_REFRESH_TOKEN, auth_code: str | None = AMOCRM_AUTH_CODE, login_email: str | None = AMOCRM_LOGIN_EMAIL, login_password: str | None = AMOCRM_LOGIN_PASSWORD, account_id: str | None = AMOCRM_ACCOUNT_ID, playwright_headless: bool = AMOCRM_PLAYWRIGHT_HEADLESS) -> None:
+    def __init__(self, *, base_domain: str | None = AMOCRM_BASE_DOMAIN, client_id: str | None = AMOCRM_CLIENT_ID, client_secret: str | None = AMOCRM_CLIENT_SECRET, redirect_uri: str | None = AMOCRM_REDIRECT_URI, access_token: str | None = AMOCRM_ACCESS_TOKEN, refresh_token: str | None = AMOCRM_REFRESH_TOKEN, auth_code: str | None = AMOCRM_AUTH_CODE, login_email: str | None = AMOCRM_LOGIN_EMAIL, login_password: str | None = AMOCRM_LOGIN_PASSWORD, account_id: str | None = AMOCRM_ACCOUNT_ID, playwright_headless: bool = AMOCRM_PLAYWRIGHT_HEADLESS, proxy_url: str | None = AMOCRM_PROXY_URL) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.auth_code = (auth_code or "").strip() or None
         self.login_email = (login_email or "").strip() or None
         self.login_password = login_password
         self.account_id = (account_id or "").strip() or None
         self.playwright_headless = playwright_headless
+        self.proxy_url = (proxy_url or "").strip() or None
         self._auth_code_lock = asyncio.Lock()
-        self.transport = AmoCRMTransport(base_domain=(base_domain or "").strip(), client_id=client_id or "", client_secret=client_secret or "", redirect_uri=redirect_uri or "", access_token=access_token, refresh_token=refresh_token, save_tokens_callback=self._save_env_values)
+        self.transport = AmoCRMTransport(base_domain=(base_domain or "").strip(), client_id=client_id or "", client_secret=client_secret or "", redirect_uri=redirect_uri or "", access_token=access_token, refresh_token=refresh_token, proxy_url=self.proxy_url, save_tokens_callback=self._save_env_values)
         self.PIPELINE_ID = PIPELINE_ID
         self.STATUS_IDS = STATUS_IDS
         self.STATUS_WORDS = STATUS_WORDS
@@ -67,12 +68,16 @@ class AsyncAmoCRM:
                 )
                 if self.__class__._playwright is None:
                     self.__class__._playwright = await async_playwright().start()
-                self.__class__._auth_context = await self.__class__._playwright.chromium.launch_persistent_context(
-                    user_data_dir=str(profile_dir),
-                    headless=self.playwright_headless,
-                    viewport={"width": 1280, "height": 900},
-                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-web-security", "--disable-features=IsolateOrigins,site-per-process"],
-                )
+                launch_kwargs = {
+                    "user_data_dir": str(profile_dir),
+                    "headless": self.playwright_headless,
+                    "viewport": {"width": 1280, "height": 900},
+                    "args": ["--no-sandbox", "--disable-dev-shm-usage"],
+                }
+                if self.proxy_url:
+                    launch_kwargs["proxy"] = {"server": self.proxy_url}
+                    self.logger.info("Using amoCRM Playwright proxy: %s", self.proxy_url)
+                self.__class__._auth_context = await self.__class__._playwright.chromium.launch_persistent_context(**launch_kwargs)
                 pages = self.__class__._auth_context.pages
                 self.__class__._auth_page = pages[0] if pages else await self.__class__._auth_context.new_page()
             return self.__class__._auth_page

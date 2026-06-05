@@ -12,13 +12,14 @@ from .schemas.oauth import AuthorizationCodeRequest, OAuthTokenResponse, Refresh
 
 
 class AmoCRMTransport:
-    def __init__(self, *, base_domain: str, client_id: str, client_secret: str, redirect_uri: str, access_token: str | None = None, refresh_token: str | None = None, save_tokens_callback: Callable[[dict[str, str]], None] | None = None) -> None:
+    def __init__(self, *, base_domain: str, client_id: str, client_secret: str, redirect_uri: str, access_token: str | None = None, refresh_token: str | None = None, proxy_url: str | None = None, save_tokens_callback: Callable[[dict[str, str]], None] | None = None) -> None:
         self.base_domain = base_domain.strip()
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.access_token = access_token
         self.refresh_token = refresh_token
+        self.proxy_url = (proxy_url or "").strip() or None
         self.expires_at = datetime.now(UTC) + timedelta(minutes=10)
         self._save_tokens_callback = save_tokens_callback
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -44,7 +45,7 @@ class AmoCRMTransport:
         url = f"https://{self.base_domain}/oauth2/access_token"
         raw_payload = payload.model_dump(mode="json")
         safe_payload = self._redact_oauth_payload(raw_payload)
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, proxy=self.proxy_url) as client:
             response = await client.post(url, json=raw_payload)
         if response.status_code >= 400:
             self.logger.error(
@@ -82,7 +83,7 @@ class AmoCRMTransport:
         await self.ensure_token_valid()
         headers = kwargs.pop("headers", {})
         headers["Authorization"] = f"Bearer {self.access_token}"
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, proxy=self.proxy_url) as client:
             response = await client.request(method=method, url=f"https://{self.base_domain}{endpoint}", headers=headers, **kwargs)
             if response.status_code in {401, 403}:
                 await self.refresh()
