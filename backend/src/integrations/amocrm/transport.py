@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 
 from datetime import UTC, datetime, timedelta
@@ -19,6 +21,7 @@ class AmoCRMTransport:
         self.refresh_token = refresh_token
         self.expires_at = datetime.now(UTC) + timedelta(minutes=10)
         self._save_tokens_callback = save_tokens_callback
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def _ensure_config(self) -> None:
         missing = []
@@ -28,15 +31,35 @@ class AmoCRMTransport:
         if not self.redirect_uri: missing.append("AMOCRM_REDIRECT_URI")
         if missing: raise HTTPException(status_code=503, detail=f"Missing amoCRM config: {', '.join(missing)}")
 
+    @staticmethod
+    def _redact_oauth_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        redacted = dict(payload)
+        for key in ("client_secret", "code", "refresh_token"):
+            if redacted.get(key):
+                redacted[key] = "<redacted>"
+        return redacted
+
     async def _request_token(self, payload: AuthorizationCodeRequest | RefreshTokenRequest) -> OAuthTokenResponse:
         self._ensure_config()
-        async with httpx.AsyncClient(timeout=30.0) as client: response = await client.post(f"https://{self.base_domain}/oauth2/access_token", json=payload.model_dump(mode="json"))
+        url = f"https://{self.base_domain}/oauth2/access_token"
+        raw_payload = payload.model_dump(mode="json")
+        safe_payload = self._redact_oauth_payload(raw_payload)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=raw_payload)
         if response.status_code >= 400:
+            self.logger.error(
+                "AmoCRM OAuth token request failed | method=POST | url=%s | json=%s | status=%s | content_type=%s | response=%s",
+                url,
+                safe_payload,
+                response.status_code,
+                response.headers.get("content-type"),
+                response.text[:1000],
+            )
             raise external_service_http_exception(
                 service="amocrm",
                 operation=f"oauth:{payload.grant_type}",
                 public_detail="amoCRM authentication failed",
-                raw_detail={"status_code": response.status_code, "body": response.text},
+                raw_detail={"status_code": response.status_code, "body": response.text, "request": {"method": "POST", "url": url, "json": safe_payload}},
             )
         data = OAuthTokenResponse.model_validate(response.json())
         self.access_token = data.access_token

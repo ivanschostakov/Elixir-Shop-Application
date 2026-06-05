@@ -1,9 +1,12 @@
+import asyncio
 import logging
+import os
 import re
 
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 from fastapi import HTTPException
 
 from .constants import CF, PAID_STATUS_IDS, PIPELINE_ID, STATUS_IDS, STATUS_WORDS
@@ -15,6 +18,11 @@ from config import AMOCRM_ACCESS_TOKEN, AMOCRM_ACCOUNT_ID, AMOCRM_AUTH_CODE, AMO
 
 
 class AsyncAmoCRM:
+    _playwright = None
+    _auth_context = None
+    _auth_page = None
+    _auth_session_lock = None
+
     def __init__(self, *, base_domain: str | None = AMOCRM_BASE_DOMAIN, client_id: str | None = AMOCRM_CLIENT_ID, client_secret: str | None = AMOCRM_CLIENT_SECRET, redirect_uri: str | None = AMOCRM_REDIRECT_URI, access_token: str | None = AMOCRM_ACCESS_TOKEN, refresh_token: str | None = AMOCRM_REFRESH_TOKEN, auth_code: str | None = AMOCRM_AUTH_CODE, login_email: str | None = AMOCRM_LOGIN_EMAIL, login_password: str | None = AMOCRM_LOGIN_PASSWORD, account_id: str | None = AMOCRM_ACCOUNT_ID, playwright_headless: bool = AMOCRM_PLAYWRIGHT_HEADLESS) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.auth_code = (auth_code or "").strip() or None
@@ -22,6 +30,7 @@ class AsyncAmoCRM:
         self.login_password = login_password
         self.account_id = (account_id or "").strip() or None
         self.playwright_headless = playwright_headless
+        self._auth_code_lock = asyncio.Lock()
         self.transport = AmoCRMTransport(base_domain=(base_domain or "").strip(), client_id=client_id or "", client_secret=client_secret or "", redirect_uri=redirect_uri or "", access_token=access_token, refresh_token=refresh_token, save_tokens_callback=self._save_env_values)
         self.PIPELINE_ID = PIPELINE_ID
         self.STATUS_IDS = STATUS_IDS
@@ -34,6 +43,39 @@ class AsyncAmoCRM:
         if not self.login_email: missing.append("AMOCRM_LOGIN_EMAIL")
         if not self.login_password: missing.append("AMOCRM_LOGIN_PASSWORD")
         if missing: raise HTTPException(status_code=503, detail=f"Missing amoCRM Playwright auth config: {', '.join(missing)}")
+
+    @classmethod
+    def _get_auth_session_lock(cls) -> asyncio.Lock:
+        if cls._auth_session_lock is None:
+            cls._auth_session_lock = asyncio.Lock()
+        return cls._auth_session_lock
+
+    async def _get_auth_page(self):
+        async with self._get_auth_session_lock():
+            if self.__class__._auth_context is None or self.__class__._auth_page is None or self.__class__._auth_page.is_closed():
+                try:
+                    from playwright.async_api import async_playwright
+                except ModuleNotFoundError as exc:
+                    raise HTTPException(status_code=503, detail="Playwright is not installed for amoCRM interactive authorization") from exc
+
+                profile_dir = Path(os.getenv("AMOCRM_PLAYWRIGHT_USER_DATA_DIR") or (WORKING_DIR / "logs" / ".amocrm_playwright_profile"))
+                profile_dir.mkdir(parents=True, exist_ok=True)
+                self.logger.info(
+                    "Starting persistent amoCRM Playwright session | profile=%s | headless=%s",
+                    profile_dir,
+                    self.playwright_headless,
+                )
+                if self.__class__._playwright is None:
+                    self.__class__._playwright = await async_playwright().start()
+                self.__class__._auth_context = await self.__class__._playwright.chromium.launch_persistent_context(
+                    user_data_dir=str(profile_dir),
+                    headless=self.playwright_headless,
+                    viewport={"width": 1280, "height": 900},
+                    args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-web-security", "--disable-features=IsolateOrigins,site-per-process"],
+                )
+                pages = self.__class__._auth_context.pages
+                self.__class__._auth_page = pages[0] if pages else await self.__class__._auth_context.new_page()
+            return self.__class__._auth_page
 
     def _save_env_values(self, values: dict[str, str]) -> None:
         if not values: return
@@ -53,27 +95,78 @@ class AsyncAmoCRM:
     async def _get_new_auth_code(self) -> str:
         self.transport._ensure_config()
         self._ensure_playwright_auth_config()
-        try: from playwright.async_api import async_playwright
-        except ModuleNotFoundError as exc: raise HTTPException(status_code=503, detail="Playwright is not installed for amoCRM interactive authorization") from exc
-        auth_url = f"https://www.amocrm.ru/oauth?client_id={self.transport.client_id}&redirect_uri={self.transport.redirect_uri}&response_type=code"
-        self.logger.warning("Launching Playwright to get a new amoCRM authorization code")
-        async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=self.playwright_headless)
+        query = urlencode({"client_id": self.transport.client_id, "redirect_uri": self.transport.redirect_uri, "response_type": "code"})
+        auth_url = f"https://www.amocrm.ru/oauth?{query}"
+        self.logger.warning("Reusing persistent Playwright session to get a new amoCRM authorization code")
+
+        async with self._auth_code_lock:
+            page = await self._get_auth_page()
+            await page.goto(auth_url, wait_until="domcontentloaded", timeout=45000)
+
             try:
-                page = await browser.new_page()
-                await page.goto(auth_url, wait_until="domcontentloaded")
-                try: await page.wait_for_selector('input[name="username"]', timeout=5000); await page.fill('input[name="username"]', self.login_email or ""); await page.fill('input[name="password"]', self.login_password or ""); await page.click('button[type="submit"]'); self.logger.info("Logged into amoCRM via Playwright")
-                except Exception as exc: self.logger.info("amoCRM login form not shown; continuing with existing session | error=%s", exc)
-                try: await page.wait_for_selector("select.js-accounts-list", timeout=40000); self.account_id and await page.select_option("select.js-accounts-list", value=self.account_id); await page.click("button.js-accept"); self.logger.info("Selected amoCRM account %s and accepted OAuth permissions", self.account_id or "<default>")
-                except Exception as exc: self.logger.info("amoCRM account picker not shown; continuing without account selection | error=%s", exc)
-                redirect_prefix = self.transport.redirect_uri.rstrip("/")
-                try: await page.wait_for_url(lambda url: str(url).startswith(redirect_prefix), timeout=30000)
-                except Exception as exc: raise HTTPException(status_code=502, detail={"service": "amocrm", "stage": "playwright_redirect", "error": str(exc), "url": page.url}) from exc
-                code = parse_qs(urlparse(page.url).query).get("code", [None])[0]
-                if not code: raise HTTPException(status_code=502, detail={"service": "amocrm", "stage": "playwright_code", "error": "Failed to extract amoCRM authorization code from redirect URL", "url": page.url})
-                self.logger.info("Received a new amoCRM authorization code via Playwright")
-                return str(code)
-            finally: await browser.close()
+                await page.wait_for_selector('input[name="username"]', timeout=5000)
+                await page.fill('input[name="username"]', self.login_email or "")
+                await page.fill('input[name="password"]', self.login_password or "")
+                await page.click('button[type="submit"]')
+                self.logger.info("Logged into amoCRM via persistent Playwright session")
+                try:
+                    await page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception:
+                    pass
+            except Exception as exc:
+                self.logger.info("amoCRM login form not shown; using saved browser session | error=%s", exc)
+
+            try:
+                await page.wait_for_selector("select.js-accounts-list", timeout=10000)
+                if self.account_id:
+                    await page.select_option("select.js-accounts-list", value=self.account_id)
+                    self.logger.info("Selected amoCRM account %s", self.account_id)
+            except Exception as exc:
+                self.logger.info("amoCRM account picker not shown or already selected | error=%s", exc)
+
+            clicked = False
+            for selector in ("button.js-accept", 'button:has-text("Разрешить")', 'button:has-text("Allow")', 'button[type="submit"]'):
+                try:
+                    locator = page.locator(selector)
+                    if await locator.count():
+                        await locator.first.click(timeout=5000)
+                        clicked = True
+                        self.logger.info("Clicked amoCRM authorization button via selector %s", selector)
+                        break
+                except Exception as exc:
+                    self.logger.debug("amoCRM authorization button selector failed: %s | %s", selector, exc)
+            if not clicked:
+                self.logger.info("No amoCRM authorization button visible; waiting for redirect/code anyway")
+
+            redirect_prefix = self.transport.redirect_uri.rstrip("/")
+            try:
+                await page.wait_for_function(
+                    "(redirectUri) => { const href = window.location.href; return href.startsWith(redirectUri) && href.includes('code='); }",
+                    arg=redirect_prefix,
+                    timeout=45000,
+                )
+            except Exception as exc:
+                title = ""
+                try:
+                    title = await page.title()
+                except Exception:
+                    pass
+                raise HTTPException(
+                    status_code=502,
+                    detail={
+                        "service": "amocrm",
+                        "stage": "playwright_redirect",
+                        "error": str(exc),
+                        "url": page.url,
+                        "title": title,
+                    },
+                ) from exc
+
+            code = parse_qs(urlparse(page.url).query).get("code", [None])[0]
+            if not code:
+                raise HTTPException(status_code=502, detail={"service": "amocrm", "stage": "playwright_code", "error": "Failed to extract amoCRM authorization code from redirect URL", "url": page.url})
+            self.logger.info("Received a new amoCRM authorization code via persistent Playwright session")
+            return str(code)
 
     async def _authorize(self, code: str | None = None) -> None:
         candidate_code = (code or self.auth_code or "").strip() or None
