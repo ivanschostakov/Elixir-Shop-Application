@@ -31,7 +31,7 @@ REMOTE_REQUIRED_ENV = (
 class LocalReviewRow:
     review_id: int
     user_email: str
-    user_username: str
+    user_login: str
     user_password_hash: str
     user_name: str
     user_surname: str
@@ -94,7 +94,7 @@ async def _load_local_reviews(*, limit: int | None) -> tuple[list[LocalReviewRow
             select(
                 Review.id,
                 User.email,
-                User.username,
+                User.phone_number,
                 User.password_hash,
                 User.name,
                 User.surname,
@@ -123,7 +123,7 @@ async def _load_local_reviews(*, limit: int | None) -> tuple[list[LocalReviewRow
             LocalReviewRow(
                 review_id=int(review_id),
                 user_email=user_email,
-                user_username=user_username,
+                user_login=user_login,
                 user_password_hash=user_password_hash,
                 user_name=user_name,
                 user_surname=user_surname,
@@ -142,7 +142,7 @@ async def _load_local_reviews(*, limit: int | None) -> tuple[list[LocalReviewRow
             for (
                 review_id,
                 user_email,
-                user_username,
+                user_login,
                 user_password_hash,
                 user_name,
                 user_surname,
@@ -243,7 +243,7 @@ async def _create_remote_user_if_missing(conn, *, user_columns: set[str], review
     insert_fields: dict[str, Any] = {"email": email}
 
     if "username" in user_columns:
-        insert_fields["username"] = review.user_username
+        insert_fields["username"] = review.user_login
     if "password_hash" in user_columns:
         insert_fields["password_hash"] = review.user_password_hash
     if "name" in user_columns:

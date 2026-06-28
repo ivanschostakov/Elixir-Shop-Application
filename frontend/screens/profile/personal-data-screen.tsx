@@ -69,11 +69,11 @@ export default function PersonalDataScreen() {
         if (surname && surname !== user.surname) {
             nextPayload.surname = surname
         }
-        if (email && email !== user.email.toLowerCase()) {
-            nextPayload.email = email
+        if (email !== (user.email ?? "").toLowerCase()) {
+            nextPayload.email = email || null
         }
         if (phoneNumber !== (user.phoneNumber ?? "")) {
-            nextPayload.phone_number = phoneNumber || null
+            nextPayload.phone_number = phoneNumber
         }
 
         return Object.keys(nextPayload).length ? nextPayload : null
@@ -92,7 +92,7 @@ export default function PersonalDataScreen() {
         return (
             name !== user.name
             || surname !== user.surname
-            || email !== user.email.toLowerCase()
+            || email !== (user.email ?? "").toLowerCase()
             || phoneNumber !== (user.phoneNumber ?? "")
         )
     }, [form, user])
@@ -113,7 +113,9 @@ export default function PersonalDataScreen() {
         const surname = normalizeFormText(form.surname)
         const email = normalizeFormText(form.email)
 
-        if (!name || !surname || !email) {
+        const phoneNumber = normalizeFormText(form.phoneNumber)
+
+        if (!name || !surname || !phoneNumber) {
             setErrorMessage(t("profile.personalData.required"))
             return
         }

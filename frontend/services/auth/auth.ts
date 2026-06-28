@@ -9,34 +9,31 @@ import type { AuthTokens } from "@/services/auth/session.types"
 import type {
     AuthLogoutResponse,
     AuthRefreshPayload,
+    PhoneAuthSetupResponse,
     AuthTokensWithUserResponse,
     AuthUser,
-    BackendLoginResponse,
     BackendAuthTokens,
     BackendAuthUser,
     LoginCredentials,
-    LoginResult,
-    LoginVerificationRequiredResponse,
-    LoginVerifyPayload,
     PersonalDataUpdatePayload,
-    RegistrationCodeResendPayload,
-    RegistrationCodeSentResponse,
-    RegistrationPayload,
-    RegistrationStartedResponse,
-    RegistrationVerifyPayload,
+    PhoneAuthStartPayload,
+    PhoneAuthStartResponse,
+    PhoneAuthVerificationPayload,
+    PhoneAuthVerificationRequiredResponse,
+    PhoneClaimPayload,
+    PhoneRegisterPayload,
 } from "@/services/auth/auth.types"
 
 export type {
     AuthUser,
     LoginCredentials,
-    LoginResult,
-    LoginVerificationRequiredResponse,
-    LoginVerifyPayload,
     PersonalDataUpdatePayload,
-    RegistrationCodeResendPayload,
-    RegistrationPayload,
-    RegistrationStartedResponse,
-    RegistrationVerifyPayload,
+    PhoneAuthStartPayload,
+    PhoneAuthStartResponse,
+    PhoneAuthVerificationPayload,
+    PhoneAuthVerificationRequiredResponse,
+    PhoneClaimPayload,
+    PhoneRegisterPayload,
 } from "@/services/auth/auth.types"
 export { getErrorMessage as getAuthErrorMessage } from "@/utils/errors"
 
@@ -61,41 +58,26 @@ function mapUser(user: BackendAuthUser): AuthUser {
 
     return {
         id: user.id,
-        username: user.username,
         email: user.email,
         name: user.name,
         surname: user.surname,
         phoneNumber: user.phone_number,
         isActive: user.is_active,
         isVerified: user.is_verified,
-        displayName: displayName || user.username,
+        displayName: displayName || user.phone_number || user.email || `User #${user.id}`,
     }
 }
 
-function isLoginVerificationRequired(response: BackendLoginResponse): response is Extract<BackendLoginResponse, { verification_required: boolean }> {
-    return "verification_required" in response && response.verification_required
+function phoneAuthPath(path: string) {
+    return authPath(`/phone${path}`)
 }
 
-export async function authenticate(credentials: LoginCredentials): Promise<LoginResult> {
-    const response = await apiPost<BackendLoginResponse, LoginCredentials>(
-        authPath("/login"),
-        credentials,
+export async function startPhoneAuth(payload: PhoneAuthStartPayload): Promise<PhoneAuthStartResponse> {
+    return apiPost<PhoneAuthStartResponse, PhoneAuthStartPayload>(
+        phoneAuthPath("/start"),
+        payload,
         { auth: false, retryOnUnauthorized: false },
     )
-
-    if (isLoginVerificationRequired(response)) {
-        return {
-            verificationRequired: true,
-            email: response.email,
-            message: response.message,
-        }
-    }
-
-    setAuthTokens(mapTokens(response))
-    return {
-        verificationRequired: false,
-        user: mapUser(response.user),
-    }
 }
 
 export function applyAuthTokensWithUser(response: AuthTokensWithUserResponse): AuthUser {
@@ -103,9 +85,36 @@ export function applyAuthTokensWithUser(response: AuthTokensWithUserResponse): A
     return mapUser(response.user)
 }
 
-export async function verifyLogin(payload: LoginVerifyPayload): Promise<AuthUser> {
-    const response = await apiPost<AuthTokensWithUserResponse, LoginVerifyPayload>(
-        authPath("/login/verify"),
+export async function loginWithPhone(credentials: LoginCredentials): Promise<AuthUser> {
+    const response = await apiPost<AuthTokensWithUserResponse, LoginCredentials>(
+        phoneAuthPath("/login"),
+        credentials,
+        { auth: false, retryOnUnauthorized: false },
+    )
+
+    setAuthTokens(mapTokens(response))
+    return mapUser(response.user)
+}
+
+export async function claimPhoneAccount(payload: PhoneClaimPayload): Promise<PhoneAuthSetupResponse> {
+    return apiPost<PhoneAuthSetupResponse, PhoneClaimPayload>(
+        phoneAuthPath("/claim"),
+        payload,
+        { auth: false, retryOnUnauthorized: false },
+    )
+}
+
+export async function registerPhoneAccount(payload: PhoneRegisterPayload): Promise<PhoneAuthSetupResponse> {
+    return apiPost<PhoneAuthSetupResponse, PhoneRegisterPayload>(
+        phoneAuthPath("/register"),
+        payload,
+        { auth: false, retryOnUnauthorized: false },
+    )
+}
+
+export async function verifyPhoneAuth(payload: PhoneAuthVerificationPayload): Promise<AuthUser> {
+    const response = await apiPost<AuthTokensWithUserResponse, PhoneAuthVerificationPayload>(
+        phoneAuthPath("/verify"),
         payload,
         { auth: false, retryOnUnauthorized: false },
     )
@@ -114,36 +123,9 @@ export async function verifyLogin(payload: LoginVerifyPayload): Promise<AuthUser
     return mapUser(response.user)
 }
 
-export async function resendLoginCode(payload: LoginCredentials): Promise<LoginVerificationRequiredResponse> {
-    return apiPost<LoginVerificationRequiredResponse, LoginCredentials>(
-        authPath("/login/resend-code"),
-        payload,
-        { auth: false, retryOnUnauthorized: false },
-    )
-}
-
-export async function registerAccount(payload: RegistrationPayload): Promise<RegistrationStartedResponse> {
-    return apiPost<RegistrationStartedResponse, RegistrationPayload>(
-        authPath("/register"),
-        payload,
-        { auth: false, retryOnUnauthorized: false },
-    )
-}
-
-export async function verifyRegistration(payload: RegistrationVerifyPayload): Promise<AuthUser> {
-    const response = await apiPost<AuthTokensWithUserResponse, RegistrationVerifyPayload>(
-        authPath("/register/verify"),
-        payload,
-        { auth: false, retryOnUnauthorized: false },
-    )
-
-    setAuthTokens(mapTokens(response))
-    return mapUser(response.user)
-}
-
-export async function resendRegistrationCode(payload: RegistrationCodeResendPayload): Promise<RegistrationCodeSentResponse> {
-    return apiPost<RegistrationCodeSentResponse, RegistrationCodeResendPayload>(
-        authPath("/register/resend-code"),
+export async function resendPhoneAuthCode(payload: PhoneAuthStartPayload): Promise<PhoneAuthVerificationRequiredResponse> {
+    return apiPost<PhoneAuthVerificationRequiredResponse, PhoneAuthStartPayload>(
+        phoneAuthPath("/resend-code"),
         payload,
         { auth: false, retryOnUnauthorized: false },
     )

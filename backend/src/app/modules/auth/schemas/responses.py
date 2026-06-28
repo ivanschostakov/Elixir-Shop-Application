@@ -9,11 +9,10 @@ class AuthUserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    username: str
-    email: EmailStr
+    email: EmailStr | None = None
     name: str
     surname: str
-    phone_number: str | None = None
+    phone_number: str
     is_active: bool
     is_verified: bool
 

@@ -197,6 +197,12 @@ class MoySkladClient:
 
         return next((row for row in rows if isinstance(row, dict)), None)
 
+    async def update_counterparty_email(self, counterparty_id: UUID, email: str) -> None:
+        normalized_email = normalize_email(email)
+        if not normalized_email:
+            return
+        await self._update_entity("counterparty", counterparty_id, {"email": normalized_email})
+
     async def _create_entity(self, entity_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         http_client = await self.client()
         response = await http_client.post(f"/entity/{entity_type}", json=payload)

@@ -1,5 +1,5 @@
 export type EmailVerificationStepProps = {
-    email: string
+    email: string | null
     isChecking: boolean
     isResending: boolean
     onEditEmail: () => void

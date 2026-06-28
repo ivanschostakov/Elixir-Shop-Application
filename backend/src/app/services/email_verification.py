@@ -32,27 +32,3 @@ async def send_user_verification_code_email(*, to_email: str, code: str) -> None
 
     try: await aiosmtplib.send(msg, hostname=SMTP_HOST, port=SMTP_PORT, start_tls=True, username=SMTP_USER, password=SMTP_PASSWORD, timeout=20)
     except Exception as exc: raise EmailVerificationDeliveryError("Failed to send verification email") from exc
-
-
-async def send_generated_account_credentials_email(*, to_email: str, username: str, password: str) -> None:
-    if not SMTP_USER or not SMTP_PASSWORD: raise EmailVerificationConfigError("SMTP_USER and SMTP_PASSWORD are required to send credentials email")
-    try: import aiosmtplib
-    except ModuleNotFoundError as exc: raise EmailVerificationConfigError("aiosmtplib is required to send credentials email") from exc
-
-    msg = EmailMessage()
-    msg["From"] = f"{SMTP_FROM_NAME} <{SMTP_USER}>"
-    msg["To"] = to_email
-    msg["Subject"] = "Ваш аккаунт ElixirPeptide"
-    msg.set_content(
-        f"""Здравствуйте!
-
-Мы создали аккаунт для вашего заказа в ElixirPeptide.
-
-Логин: {username}
-Пароль: {password}
-
-После входа вы можете изменить логин, пароль и персональные данные в профиле."""
-    )
-
-    try: await aiosmtplib.send(msg, hostname=SMTP_HOST, port=SMTP_PORT, start_tls=True, username=SMTP_USER, password=SMTP_PASSWORD, timeout=20)
-    except Exception as exc: raise EmailVerificationDeliveryError("Failed to send credentials email") from exc

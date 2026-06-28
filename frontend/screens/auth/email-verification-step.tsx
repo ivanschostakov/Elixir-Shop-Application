@@ -68,8 +68,13 @@ export default function EmailVerificationStep({
 
             <View style={authSharedStyles.verificationPanel}>
                 <Text style={authSharedStyles.verificationText}>
-                    {t("auth.verify.description")}{" "}
-                    <Text style={authSharedStyles.verificationEmail}>{email}</Text>.
+                    {t("auth.verify.description")}
+                    {email ? (
+                        <>
+                            {" "}
+                            <Text style={authSharedStyles.verificationEmail}>{email}</Text>.
+                        </>
+                    ) : null}
                 </Text>
 
                 {statusMessage ? (

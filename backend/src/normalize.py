@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import EmailStr, TypeAdapter
 
 from config import UFA_TZ
-from src.database.limits import EMAIL_MAX_LENGTH, USERNAME_MAX_LENGTH
+from src.database.limits import EMAIL_MAX_LENGTH
 
 EMAIL_ADAPTER = TypeAdapter(EmailStr)
 
@@ -145,10 +145,6 @@ def extract_money(value: Any) -> tuple[Decimal | None, str | None]:
 
 
 def extract_dict(value: Any) -> dict[str, Any]: return value if isinstance(value, dict) else {}
-def normalize_username(value: Any, *, fallback: str) -> str:
-    normalized = re.sub(r"[^a-zA-Z0-9_]+", "_", lower_optional_str(value) or "").strip("_")
-    normalized = normalized or fallback
-    return normalized[:USERNAME_MAX_LENGTH] or fallback[:USERNAME_MAX_LENGTH]
 
 def is_valid_uuid(s: str) -> bool:
     try: return uuid.UUID(s) is not None

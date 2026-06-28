@@ -26,7 +26,7 @@ from src.app.services.recommendations import record_purchase
 from src.app.services.security import hash_password
 from src.database.crud import create_delivery_address, create_delivery_recipient, create_order, get_order_by_id
 from src.database.crud import get_delivery_recipient_by_fields
-from src.database.crud.auth.user import create_user, get_user_by_email, get_user_by_username
+from src.database.crud.auth.user import create_user, get_user_by_phone_number
 from src.database.models import OrderItem, Product, User, Variant
 from src.database.schemas import (
     BasketItemRead,
@@ -39,6 +39,7 @@ from src.database.schemas import (
 )
 from src.integrations.amocrm import get_amocrm_client
 from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
+from src.normalize import normalize_phone
 
 amocrm_client = get_amocrm_client()
 
@@ -125,15 +126,9 @@ async def quote_guest_basket(session: AsyncSession, request: Request, payload: l
     )
 
 
-async def generate_guest_username(session: AsyncSession) -> str:
-    for _ in range(30):
-        username = f"guest{secrets.token_hex(5)}"
-        if await get_user_by_username(session, username) is None: return username
-
-    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate username")
-
-
 def generate_guest_password() -> str: return secrets.token_urlsafe(12)
+
+
 def _delivery_address_create(user_id: int, payload: GuestDeliveryAddressPayload) -> DeliveryAddressCreate:
     return DeliveryAddressCreate(
         user_id=user_id,
@@ -151,24 +146,25 @@ def _delivery_address_create(user_id: int, payload: GuestDeliveryAddressPayload)
     )
 
 
-async def create_guest_order(session: AsyncSession, request: Request, payload: GuestOrderPayload) -> tuple[User, str, Any]:
+async def create_guest_order(session: AsyncSession, request: Request, payload: GuestOrderPayload) -> tuple[User, Any]:
+    normalized_phone = normalize_phone(payload.recipient.phone)
     normalized_email = str(payload.recipient.email).strip().lower()
-    existing_user = await get_user_by_email(session, normalized_email)
-    if existing_user is not None and existing_user.is_active: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "email_exists", "message": "User with this email already exists"})
+    if not normalized_phone:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Phone must be in format +79991234567")
+    existing_user = await get_user_by_phone_number(session, normalized_phone)
+    if existing_user is not None and existing_user.is_active:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "phone_exists", "message": "User with this phone already exists"})
 
     items_by_variant_id = _normalize_guest_items(payload.items)
     variants_by_id = await _load_guest_variants(session, items_by_variant_id, lock=True)
     _validate_guest_variants(items_by_variant_id, variants_by_id)
 
-    username = await generate_guest_username(session)
-    password = generate_guest_password()
     user = await create_user(session, UserCreate(
-        username=username,
-        email=normalized_email,
+        email=None,
         name=payload.recipient.name,
         surname=payload.recipient.surname,
-        phone_number=payload.recipient.phone,
-        password_hash=hash_password(password),
+        phone_number=normalized_phone,
+        password_hash=hash_password(generate_guest_password()),
         is_verified=True,
     ), commit=False)
 
@@ -296,4 +292,4 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
     created_order = await get_order_by_id(session, order.id, user_id=user.id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     await sync_order_to_moysklad_safe(session, order=created_order, user=user)
-    return user, password, created_order
+    return user, created_order

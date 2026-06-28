@@ -26,7 +26,6 @@ from .auth.user import (
     get_user_by_email,
     get_user_by_id,
     get_user_by_phone_number,
-    get_user_by_username,
     get_users,
     update_user,
 )
@@ -267,7 +266,6 @@ __all__ = [
     "get_user_by_email",
     "get_user_by_id",
     "get_user_by_phone_number",
-    "get_user_by_username",
     "get_user_push_token_by_expo_token",
     "get_user_push_tokens",
     "get_users",

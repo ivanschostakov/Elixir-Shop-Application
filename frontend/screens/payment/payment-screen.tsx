@@ -35,7 +35,7 @@ import {
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
 import { paymentScreenStyles } from "@/screens/payment/payment-screen.styles"
-import { createGuestOrder, isGuestEmailExistsError } from "@/services/api/guest"
+import { createGuestOrder, isGuestPhoneExistsError } from "@/services/api/guest"
 import type { GuestOrderPayload } from "@/services/api/guest.types"
 import { createOrder, getOrder, repeatOrder } from "@/services/api/orders"
 import type { OrderItemRead, OrderRead } from "@/services/api/orders.types"
@@ -449,13 +449,6 @@ export default function PaymentScreen() {
                     await clearGuestCart({ updateSnapshot: false })
                     clearBasketSnapshot()
 
-                    if (!guestOrderResponse.credentials_email_sent) {
-                        Alert.alert(
-                            t("payment.credentialsEmailFailedTitle"),
-                            t("payment.credentialsEmailFailedMessage"),
-                        )
-                    }
-
                     router.replace({
                         pathname: ROUTES.payment,
                         params: {
@@ -513,11 +506,11 @@ export default function PaymentScreen() {
             const fallback = order ? t("payment.paymentCreateFailed") : t("payment.orderCreateFailed")
             const message = getErrorMessage(paymentError, fallback)
 
-            if (isGuestEmailExistsError(paymentError)) {
-                setErrorMessage(t("checkout.existingEmailMessage"))
+            if (isGuestPhoneExistsError(paymentError)) {
+                setErrorMessage(t("checkout.existingPhoneMessage"))
                 Alert.alert(
-                    t("checkout.existingEmailTitle"),
-                    t("checkout.existingEmailMessage"),
+                    t("checkout.existingPhoneTitle"),
+                    t("checkout.existingPhoneMessage"),
                     [
                         {
                             text: t("payment.backToCheckout"),

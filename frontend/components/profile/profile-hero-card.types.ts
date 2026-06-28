@@ -1,5 +1,6 @@
 export type ProfileHeroCardProps = {
     avatarUri: string | null
+    contactValue?: string | null
     displayName: string
     initials: string
     isActive?: boolean
@@ -7,5 +8,4 @@ export type ProfileHeroCardProps = {
     isVerified?: boolean
     onChangePhoto: () => Promise<void>
     onRemovePhoto: () => Promise<void>
-    username?: string | null
 }

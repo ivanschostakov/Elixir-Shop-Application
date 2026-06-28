@@ -10,9 +10,9 @@ import { colors } from "@/theme/colors"
 
 export function ProfileHeroCard({
     avatarUri,
+    contactValue,
     initials,
     displayName,
-    username,
     isActive,
     isVerified,
     isUpdatingAvatar,
@@ -23,7 +23,6 @@ export function ProfileHeroCard({
     const { t } = useLanguage()
     const { accentName, accentPalette, themeName } = useTheme()
     const { handleCopy } = useCopyableProfileValue({ t })
-    const usernameValue = username ? `@${username}` : null
     const isMonochromeDark = accentName === "blackWhite" && themeName === "dark"
     const heroBackgroundColor = isMonochromeDark ? colors.surface : accentPalette.primary
     const avatarInitialColor = isMonochromeDark ? colors.text : accentPalette.primary
@@ -71,20 +70,19 @@ export function ProfileHeroCard({
                         >
                             <Text style={ProfileScreenStyles.name}>{displayName}</Text>
                         </Pressable>
-                        <Pressable
-                            accessibilityLabel={t("profile.username")}
-                            accessibilityRole={usernameValue ? "button" : undefined}
-                            disabled={!usernameValue}
-                            onPress={() => void handleCopy(usernameValue)}
-                            style={({ pressed }) => [
-                                ProfileScreenStyles.heroInfoButton,
-                                pressed && usernameValue && ProfileScreenStyles.heroInfoButtonPressed,
-                            ]}
-                        >
-                            <Text style={ProfileScreenStyles.handle}>
-                                @{username ?? t("profile.noUsername")}
-                            </Text>
-                        </Pressable>
+                        {contactValue ? (
+                            <Pressable
+                                accessibilityLabel={t("profile.email")}
+                                accessibilityRole="button"
+                                onPress={() => void handleCopy(contactValue)}
+                                style={({ pressed }) => [
+                                    ProfileScreenStyles.heroInfoButton,
+                                    pressed && ProfileScreenStyles.heroInfoButtonPressed,
+                                ]}
+                            >
+                                <Text style={ProfileScreenStyles.handle}>{contactValue}</Text>
+                            </Pressable>
+                        ) : null}
                     </View>
                 </View>
 

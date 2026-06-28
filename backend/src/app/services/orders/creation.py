@@ -44,8 +44,8 @@ async def _generate_order_code(session: AsyncSession) -> str:
 
 
 async def _get_or_create_self_recipient(session: AsyncSession, *, user: User):
-    email = (user.email or "").strip().lower()
     phone = _normalize_phone(user.phone_number) or ""
+    email = (user.email or "").strip().lower()
     recipient = await get_delivery_recipient_by_fields(session, user_id=user.id, name=user.name, surname=user.surname, phone=phone, email=email)
     if recipient is not None:
         return recipient

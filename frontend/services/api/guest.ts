@@ -3,8 +3,8 @@ import { ENDPOINTS } from "@/services/api/constants"
 import type {
     GuestBasketQuotePayload,
     GuestBasketQuoteRead,
-    GuestEmailCheckPayload,
-    GuestEmailCheckResponse,
+    GuestPhoneCheckPayload,
+    GuestPhoneCheckResponse,
     GuestOrderPayload,
     GuestOrderResponse,
 } from "@/services/api/guest.types"
@@ -23,10 +23,10 @@ export function quoteGuestBasket(payload: GuestBasketQuotePayload): Promise<Gues
     )
 }
 
-export function checkGuestEmail(email: string): Promise<GuestEmailCheckResponse> {
-    return apiPost<GuestEmailCheckResponse, GuestEmailCheckPayload>(
-        guestPath("/email/check"),
-        { email },
+export function checkGuestPhone(phone_number: string): Promise<GuestPhoneCheckResponse> {
+    return apiPost<GuestPhoneCheckResponse, GuestPhoneCheckPayload>(
+        guestPath("/phone/check"),
+        { phone_number },
         PUBLIC_REQUEST_OPTIONS,
     )
 }
@@ -39,7 +39,7 @@ export function createGuestOrder(payload: GuestOrderPayload): Promise<GuestOrder
     )
 }
 
-export function isGuestEmailExistsError(error: unknown) {
+export function isGuestPhoneExistsError(error: unknown) {
     if (!(error instanceof ApiError) || error.status !== 409) {
         return false
     }
@@ -54,6 +54,6 @@ export function isGuestEmailExistsError(error: unknown) {
         typeof detail === "object" &&
         detail !== null &&
         "code" in detail &&
-        detail.code === "email_exists"
+        detail.code === "phone_exists"
     )
 }

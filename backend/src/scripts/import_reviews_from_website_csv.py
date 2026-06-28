@@ -31,8 +31,8 @@ DATE_CHANGE_COLUMN = 12
 MODERATED_COLUMN = 13
 
 PLACEHOLDER_USER_ID = 0
-PLACEHOLDER_USERNAME = "site_reviews"
 PLACEHOLDER_EMAIL = "site-reviews+placeholder@elixir.local"
+PLACEHOLDER_PHONE = "+9700000000000"
 PLACEHOLDER_NAME = "С сайта"
 
 
@@ -152,8 +152,8 @@ async def _ensure_placeholder_user(session) -> User:
 
     user = User(
         id=PLACEHOLDER_USER_ID,
-        username=PLACEHOLDER_USERNAME,
         email=PLACEHOLDER_EMAIL,
+        phone_number=PLACEHOLDER_PHONE,
         password_hash=hash_password(secrets.token_urlsafe(32)),
         name=PLACEHOLDER_NAME,
         surname=PLACEHOLDER_NAME,

@@ -1,14 +1,15 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field, field_validator
 
 from src.app.modules.auth.schemas.responses import AuthUserRead
 from src.app.modules.users.me.schemas.order import PaymentMethod
 from src.app.modules.users.me.schemas.order_draft import DeliveryCalculationPayload, UpdateOrderDraftRecipientPayload
-from src.database.limits import EMAIL_MAX_LENGTH
+from src.database.limits import PHONE_NUMBER_MAX_LENGTH
 from src.database.schemas import BasketItemRead, DeliveryAddressRead, DeliveryRecipientRead, OrderRead
 from src.integrations.delivery.schemas import CountryCode, DeliveryMode, DeliveryProvider
+from src.normalize import normalize_phone
 
 
 class GuestBasketItemPayload(BaseModel):
@@ -63,12 +64,20 @@ class GuestOrderPayload(BaseModel):
     payment_method: PaymentMethod
 
 
-class GuestEmailCheckPayload(BaseModel):
-    email: EmailStr = Field(max_length=EMAIL_MAX_LENGTH)
+class GuestPhoneCheckPayload(BaseModel):
+    phone_number: str = Field(min_length=1, max_length=PHONE_NUMBER_MAX_LENGTH)
+
+    @field_validator("phone_number")
+    @classmethod
+    def _validate_phone_number(cls, value: str) -> str:
+        normalized = normalize_phone(value)
+        if not normalized:
+            raise ValueError("Phone must be in format +79991234567")
+        return normalized
 
 
-class GuestEmailCheckResponse(BaseModel):
-    email: EmailStr
+class GuestPhoneCheckResponse(BaseModel):
+    phone_number: str
     exists: bool
 
 
@@ -79,5 +88,3 @@ class GuestOrderResponse(BaseModel):
     token_type: str = "bearer"
     user: AuthUserRead
     order: OrderRead
-    credentials_email_sent: bool
-    credentials_email_error: str | None = None

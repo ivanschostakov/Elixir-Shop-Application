@@ -23,7 +23,6 @@ if "PIL" not in sys.modules:
     sys.modules["PIL"] = pil_module
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
-from src.app.services.email_verification import EmailVerificationDeliveryError
 from src.integrations.amocrm import amocrm_client
 from src.database.models import Order, Product, User, Variant
 
@@ -113,14 +112,14 @@ def _build_pickup_payload() -> dict:
     }
 
 
-def _build_guest_order_payload(*, variant_id: int, email: str, quantity: int = 2) -> dict:
+def _build_guest_order_payload(*, variant_id: int, email: str, phone: str = "+79991234567", quantity: int = 2) -> dict:
     return {
         "items": [{"variant_id": variant_id, "quantity": quantity}],
         "delivery_address": _build_pickup_payload(),
         "recipient": {
             "name": "Иван",
             "surname": "Петров",
-            "phone": "+79991234567",
+            "phone": phone,
             "email": email,
         },
         "payment_method": "later",
@@ -188,20 +187,6 @@ def stub_amocrm(monkeypatch):
     monkeypatch.setattr("src.app.services.orders.crm.amocrm_client", stub_client)
 
 
-@pytest.fixture()
-def sent_credentials_emails(monkeypatch):
-    sent: list[dict[str, str]] = []
-
-    async def fake_send_generated_account_credentials_email(*, to_email: str, username: str, password: str) -> None:
-        sent.append({"to_email": to_email, "username": username, "password": password})
-
-    monkeypatch.setattr(
-        "src.app.modules.guest.router.send_generated_account_credentials_email",
-        fake_send_generated_account_credentials_email,
-    )
-    return sent
-
-
 def test_guest_basket_quote_returns_hydrated_totals_without_auth(client: TestClient, variant_factory):
     catalog = variant_factory(stock=5, price=Decimal("12.50"))
 
@@ -219,18 +204,18 @@ def test_guest_basket_quote_returns_hydrated_totals_without_auth(client: TestCli
     assert _decimal(payload["grand_total"]) == Decimal("25.00")
 
 
-def test_guest_order_creates_user_order_session_and_credentials_email(
+def test_guest_order_creates_user_order_session_and_sets_auth_email_to_null(
     client: TestClient,
     variant_factory,
     stub_amocrm,
-    sent_credentials_emails,
 ):
     catalog = variant_factory(stock=5, price=Decimal("19.00"))
     email = f"guest_order_{uuid.uuid4().hex[:12]}@example.com"
+    phone = "+79991234567"
 
     response = client.post(
         "/api/v1/guest/orders",
-        json=_build_guest_order_payload(variant_id=catalog["variant_id"], email=email),
+        json=_build_guest_order_payload(variant_id=catalog["variant_id"], email=email, phone=phone),
     )
 
     assert response.status_code == 201, response.text
@@ -238,75 +223,47 @@ def test_guest_order_creates_user_order_session_and_credentials_email(
     assert payload["access_token"]
     assert payload["refresh_token"]
     assert payload["session_id"] > 0
-    assert payload["user"]["email"] == email
-    assert payload["user"]["username"].startswith("guest")
-    assert len(payload["user"]["username"]) <= 16
+    assert payload["user"]["email"] is None
+    assert payload["user"]["phone_number"] == phone
     assert payload["order"]["user_id"] == payload["user"]["id"]
     assert payload["order"]["recipient"]["email"] == email
-    assert payload["credentials_email_sent"] is True
-    assert sent_credentials_emails == [
-        {
-            "to_email": email,
-            "username": payload["user"]["username"],
-            "password": sent_credentials_emails[0]["password"],
-        }
-    ]
-    assert sent_credentials_emails[0]["password"]
 
     _delete_user(payload["user"]["id"])
 
 
-def test_guest_order_existing_email_returns_409_and_creates_no_order(
+def test_guest_order_existing_phone_returns_409_and_creates_no_order(
     client: TestClient,
-    registered_user,
+    register_verified_user,
     variant_factory,
     stub_amocrm,
-    sent_credentials_emails,
 ):
     catalog = variant_factory(stock=5, price=Decimal("19.00"))
-    before_count = _count_orders_for_user(registered_user["user_id"])
+    existing_user_payload = register_verified_user({
+        "username": f"gexist_{uuid.uuid4().hex[:8]}",
+        "email": f"guest_existing_{uuid.uuid4().hex[:12]}@example.com",
+        "password": "test-password",
+        "name": "Existing",
+        "surname": "User",
+        "phone_number": "+79991234567",
+    })
+    existing_user_id = existing_user_payload["user"]["id"]
+    before_count = _count_orders_for_user(existing_user_id)
 
-    response = client.post(
-        "/api/v1/guest/orders",
-        json=_build_guest_order_payload(variant_id=catalog["variant_id"], email=registered_user["email"]),
-    )
+    try:
+        response = client.post(
+            "/api/v1/guest/orders",
+            json=_build_guest_order_payload(
+                variant_id=catalog["variant_id"],
+                email=f"new_guest_{uuid.uuid4().hex[:12]}@example.com",
+                phone="+79991234567",
+            ),
+        )
 
-    assert response.status_code == 409, response.text
-    assert response.json()["detail"]["code"] == "email_exists"
-    assert _count_orders_for_user(registered_user["user_id"]) == before_count
-    assert sent_credentials_emails == []
-
-
-def test_guest_order_email_failure_still_returns_order_and_auth(
-    client: TestClient,
-    variant_factory,
-    stub_amocrm,
-    monkeypatch,
-):
-    catalog = variant_factory(stock=5, price=Decimal("19.00"))
-    email = f"guest_email_failure_{uuid.uuid4().hex[:12]}@example.com"
-
-    async def fail_credentials_email(*, to_email: str, username: str, password: str) -> None:
-        raise EmailVerificationDeliveryError("smtp unavailable")
-
-    monkeypatch.setattr(
-        "src.app.modules.guest.router.send_generated_account_credentials_email",
-        fail_credentials_email,
-    )
-
-    response = client.post(
-        "/api/v1/guest/orders",
-        json=_build_guest_order_payload(variant_id=catalog["variant_id"], email=email),
-    )
-
-    assert response.status_code == 201, response.text
-    payload = response.json()
-    assert payload["access_token"]
-    assert payload["order"]["recipient"]["email"] == email
-    assert payload["credentials_email_sent"] is False
-    assert payload["credentials_email_error"]
-
-    _delete_user(payload["user"]["id"])
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "phone_exists"
+        assert _count_orders_for_user(existing_user_id) == before_count
+    finally:
+        _delete_user(existing_user_id)
 
 
 def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
@@ -330,7 +287,6 @@ def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
             "/api/v1/users/me/profile/personal-data",
             headers=headers,
             json={
-                "username": f"gupd_{token[:8]}",
                 "email": f"guest_updated_{token}@example.com",
                 "name": "Updated",
                 "surname": "Customer",
@@ -340,18 +296,10 @@ def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
         )
         assert update_response.status_code == 200, update_response.text
         updated = update_response.json()
-        assert updated["username"] == f"gupd_{token[:8]}"
         assert updated["email"] == f"guest_updated_{token}@example.com"
         assert updated["name"] == "Updated"
         assert updated["surname"] == "Customer"
         assert updated["phone_number"] == "+79990001122"
-
-        duplicate_username_response = client.patch(
-            "/api/v1/users/me/profile/personal-data",
-            headers=headers,
-            json={"username": duplicate_payload["user"]["username"]},
-        )
-        assert duplicate_username_response.status_code == 409, duplicate_username_response.text
 
         duplicate_email_response = client.patch(
             "/api/v1/users/me/profile/personal-data",

@@ -50,16 +50,13 @@ def _basket_conflict(detail: str) -> HTTPException: return HTTPException(status_
 def _is_self_like_recipient(*, recipient, user: User) -> bool:
     recipient_name = str(recipient.name or "").strip().lower()
     recipient_surname = str(recipient.surname or "").strip().lower()
-    recipient_email = str(recipient.email or "").strip().lower()
     recipient_phone = _normalize_phone(recipient.phone) or ""
     user_name = str(user.name or "").strip().lower()
     user_surname = str(user.surname or "").strip().lower()
-    user_email = str(user.email or "").strip().lower()
     user_phone = _normalize_phone(user.phone_number) or ""
     return (
         recipient_name == user_name
         and recipient_surname == user_surname
-        and recipient_email == user_email
         and recipient_phone == user_phone
     )
 

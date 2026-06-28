@@ -24,10 +24,8 @@ if "PIL" not in sys.modules:
     sys.modules["PIL"] = pil_module
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER, ufa_now
-import src.app.modules.auth.router as auth_router_module
 from src.database.models import ReferralProfile, User, WebsiteCoupon, WebsiteDiscountEntitlement, WebsiteIdentity
 from src.integrations.website_identity import website_identity_client
-from src.integrations.website_identity.exceptions import WebsiteIdentityError
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
@@ -425,141 +423,6 @@ def test_website_login_creates_local_user_and_identity(client: TestClient, monke
         assert float(referral_profile.website_seed_purchase_balance) == 190000.0
         assert float(referral_profile.referral_discount_base_total) == 190000.0
         assert float(referral_profile.current_discount_percent) == 19.0
-    finally:
-        _delete_user(user_id)
-
-
-def test_plain_login_uses_website_identity_first_and_returns_tokens(client: TestClient, monkeypatch: pytest.MonkeyPatch):
-    website_user_id = 91000 + (uuid.uuid4().int % 1000000)
-    website_data = _website_payload(
-        website_user_id=website_user_id,
-        login=f"site-login-{website_user_id}",
-        email=f"website_login_{uuid.uuid4().hex[:8]}@example.com",
-        name="Website",
-        surname="First",
-    )
-
-    async def fake_authenticate(*, login: str, password: str) -> dict:
-        assert login == "remote-user"
-        assert password == "remote-pass"
-        return website_data
-
-    monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
-
-    response = client.post("/api/v1/auth/login", json={"login": "remote-user", "password": "remote-pass"})
-
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    user_id = payload["user"]["id"]
-    try:
-        assert payload["user"]["email"] == website_data["user"]["email"]
-        assert payload["user"]["name"] == "Website"
-        assert payload["user"]["surname"] == "First"
-        assert payload["access_token"]
-        assert payload["refresh_token"]
-        assert payload["session_id"] > 0
-
-        website_snapshot_response = client.get(
-            "/api/v1/users/me/website-identity",
-            headers={"Authorization": f"Bearer {payload['access_token']}"},
-        )
-        assert website_snapshot_response.status_code == 200, website_snapshot_response.text
-        assert website_snapshot_response.json()["website_user_id"] == website_user_id
-    finally:
-        _delete_user(user_id)
-
-
-def test_plain_login_falls_back_to_local_credentials_when_website_auth_fails(
-    client: TestClient,
-    register_verified_user,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    token = uuid.uuid4().hex[:12]
-    email = f"plain_login_{token}@example.com"
-    password = "test-password"
-    registration_payload = register_verified_user({
-        "username": f"u{token}",
-        "email": email,
-        "password": password,
-        "name": "Plain",
-        "surname": "Fallback",
-    })
-    user_id = registration_payload["user"]["id"]
-
-    async def fake_authenticate(*, login: str, password: str) -> dict:
-        raise WebsiteIdentityError("Invalid website credentials", status_code=401, error_code="invalid_credentials")
-
-    monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
-
-    try:
-        response = client.post("/api/v1/auth/login", json={"login": f"u{token}", "password": password})
-        assert response.status_code == 200, response.text
-        payload = response.json()
-        assert payload["verification_required"] is True
-        assert payload["email"] == email
-    finally:
-        _delete_user(user_id)
-
-
-def test_plain_login_skips_website_identity_when_toggle_is_disabled(
-    client: TestClient,
-    register_verified_user,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    token = uuid.uuid4().hex[:12]
-    email = f"plain_login_toggle_{token}@example.com"
-    password = "test-password"
-    registration_payload = register_verified_user({
-        "username": f"u{token}",
-        "email": email,
-        "password": password,
-        "name": "Plain",
-        "surname": "Toggle",
-    })
-    user_id = registration_payload["user"]["id"]
-    monkeypatch.setattr(auth_router_module, "AUTH_LOGIN_WEBSITE_FIRST_ENABLED", False)
-
-    async def fail_if_called(*, login: str, password: str) -> dict:
-        raise AssertionError("Website identity authenticate should not be called when toggle is disabled")
-
-    monkeypatch.setattr(website_identity_client, "authenticate", fail_if_called)
-
-    try:
-        response = client.post("/api/v1/auth/login", json={"login": f"u{token}", "password": password})
-        assert response.status_code == 200, response.text
-        payload = response.json()
-        assert payload["verification_required"] is True
-        assert payload["email"] == email
-    finally:
-        _delete_user(user_id)
-
-
-def test_plain_login_rejects_email_identifier_when_local_credentials_match(
-    client: TestClient,
-    register_verified_user,
-    monkeypatch: pytest.MonkeyPatch,
-):
-    token = uuid.uuid4().hex[:12]
-    email = f"plain_login_email_{token}@example.com"
-    password = "test-password"
-    registration_payload = register_verified_user({
-        "username": f"u{token}",
-        "email": email,
-        "password": password,
-        "name": "Plain",
-        "surname": "Email",
-    })
-    user_id = registration_payload["user"]["id"]
-
-    async def fake_authenticate(*, login: str, password: str) -> dict:
-        raise WebsiteIdentityError("Invalid website credentials", status_code=401, error_code="invalid_credentials")
-
-    monkeypatch.setattr(website_identity_client, "authenticate", fake_authenticate)
-
-    try:
-        response = client.post("/api/v1/auth/login", json={"login": email, "password": password})
-        assert response.status_code == 401, response.text
-        assert response.json()["detail"] == "Invalid credentials"
     finally:
         _delete_user(user_id)
 

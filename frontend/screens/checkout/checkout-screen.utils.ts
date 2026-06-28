@@ -93,8 +93,8 @@ export function getSelfRecipient(user: AuthUser | null | undefined): DeliveryRec
         user_id: user.id,
         name: user.name,
         surname: user.surname,
-        phone: user.phoneNumber ?? "",
-        email: user.email,
+        phone: user.phoneNumber,
+        email: user.email ?? "",
         created_at: "",
         updated_at: "",
     }

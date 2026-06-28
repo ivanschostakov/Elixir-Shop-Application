@@ -129,10 +129,13 @@ def serialize_review(request: Request, review: Review) -> ReviewRead:
         created_at=attachment.created_at,
         updated_at=attachment.updated_at,
     ) for attachment in review.attachments]
+    author_label = PLACEHOLDER_SITE_REVIEW_AUTHOR
+    if review.user_id != 0:
+        author_label = (review.user.name or review.user.phone_number or review.user.email or PLACEHOLDER_SITE_REVIEW_AUTHOR).strip()
 
     return ReviewRead(
         id=review.id,
-        author_username=PLACEHOLDER_SITE_REVIEW_AUTHOR if review.user_id == 0 else review.user.username,
+        author_username=author_label or PLACEHOLDER_SITE_REVIEW_AUTHOR,
         product_id=review.product_id,
         value=review.value,
         text=review.text,

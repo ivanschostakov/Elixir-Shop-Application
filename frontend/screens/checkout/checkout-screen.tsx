@@ -76,7 +76,7 @@ import {
 import { getBasketCheckoutOptions, restoreDraftToBasket, updateBasketCheckout, updateBasketItem } from "@/services/api/basket"
 import { checkMyBenefits } from "@/services/api/benefits"
 import type { BenefitCheckResponse, BenefitOptionResponse } from "@/services/api/benefits.types"
-import { checkGuestEmail } from "@/services/api/guest"
+import { checkGuestPhone } from "@/services/api/guest"
 import { createOrderDraft, getOrderDraftOptions, updateOrderDraft } from "@/services/api/order-drafts"
 import type {
     DeliveryRecipientRead,
@@ -997,18 +997,18 @@ export default function CheckoutScreen() {
 
         try {
             if (!isAuthenticated) {
-                const emailCheck = await checkGuestEmail(email)
-                if (emailCheck.exists) {
+                const phoneCheck = await checkGuestPhone(phone)
+                if (phoneCheck.exists) {
                     Alert.alert(
-                        t("checkout.existingEmailTitle"),
-                        t("checkout.existingEmailMessage"),
+                        t("checkout.existingPhoneTitle"),
+                        t("checkout.existingPhoneMessage"),
                         [
                             {
-                                text: t("checkout.existingEmailClear"),
+                                text: t("checkout.existingPhoneClear"),
                                 style: "cancel",
                                 onPress: () => {
-                                    setRecipientForm((current) => ({ ...current, email: "" }))
-                                    setRecipientFormErrors((current) => ({ ...current, email: undefined }))
+                                    setRecipientForm((current) => ({ ...current, phone: "" }))
+                                    setRecipientFormErrors((current) => ({ ...current, phone: undefined }))
                                 },
                             },
                             {

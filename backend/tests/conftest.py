@@ -33,13 +33,13 @@ def client():
 
 @pytest.fixture(autouse=True)
 def stub_email_verification(monkeypatch: pytest.MonkeyPatch):
-    import src.app.modules.auth.router as auth_router_module
+    import src.app.services.auth.service as auth_service_module
 
     async def fake_send_user_verification_code_email(*, to_email: str, code: str) -> None:
         return None
 
-    monkeypatch.setattr(auth_router_module, "generate_email_verification_code", lambda: TEST_EMAIL_VERIFICATION_CODE)
-    monkeypatch.setattr(auth_router_module, "send_user_verification_code_email", fake_send_user_verification_code_email)
+    monkeypatch.setattr(auth_service_module, "generate_email_verification_code", lambda: TEST_EMAIL_VERIFICATION_CODE)
+    monkeypatch.setattr(auth_service_module, "send_user_verification_code_email", fake_send_user_verification_code_email)
 
 
 @pytest.fixture(autouse=True)
@@ -53,12 +53,12 @@ def disable_app_integrity_by_default(monkeypatch: pytest.MonkeyPatch):
 def register_verified_user(client: TestClient):
     def _register(payload: dict) -> dict:
         payload = {"phone_number": "+79990000000", **payload}
-        response = client.post("/api/v1/auth/register", json=payload)
-        assert response.status_code == 201, response.text
+        response = client.post("/api/v1/auth/phone/register", json=payload)
+        assert response.status_code == 200, response.text
 
         verify_response = client.post(
-            "/api/v1/auth/register/verify",
-            json={"email": payload["email"], "code": TEST_EMAIL_VERIFICATION_CODE},
+            "/api/v1/auth/phone/verify",
+            json={"phone_number": payload["phone_number"], "code": TEST_EMAIL_VERIFICATION_CODE},
         )
         assert verify_response.status_code == 200, verify_response.text
         return verify_response.json()

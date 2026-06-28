@@ -22,11 +22,9 @@ async def get_user_by_id(session: AsyncSession, user_id: int) -> User | None:
     return (await session.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
 
 
-async def get_user_by_username(session: AsyncSession, username: str) -> User | None:
-    return (await session.execute(select(User).where(User.username == username))).scalar_one_or_none()
-
-
-async def get_user_by_email(session: AsyncSession, email: str) -> User | None:
+async def get_user_by_email(session: AsyncSession, email: str | None) -> User | None:
+    if not email:
+        return None
     return (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
 
 
@@ -41,7 +39,6 @@ async def get_users(session: AsyncSession, *, q: str | None = None, is_active: b
     if q:
         stmt = stmt.where(
             or_(
-                User.username.ilike(f"%{q}%"),
                 User.email.ilike(f"%{q}%"),
                 User.name.ilike(f"%{q}%"),
                 User.surname.ilike(f"%{q}%"),

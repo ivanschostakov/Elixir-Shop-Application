@@ -31,15 +31,13 @@ export type GuestOrderPayload = {
 
 export type GuestOrderResponse = AuthTokensWithUserResponse & {
     order: OrderRead
-    credentials_email_sent: boolean
-    credentials_email_error: string | null
 }
 
-export type GuestEmailCheckPayload = {
-    email: string
+export type GuestPhoneCheckPayload = {
+    phone_number: string
 }
 
-export type GuestEmailCheckResponse = {
-    email: string
+export type GuestPhoneCheckResponse = {
+    phone_number: string
     exists: boolean
 }
