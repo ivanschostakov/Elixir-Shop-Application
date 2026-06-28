@@ -29,6 +29,7 @@ export function useInfiniteProductCatalog({
         loadMore,
         loading,
         loadingMore,
+        reload,
     } = usePaginatedData({
         deps: [categoryId, normalizedQuery, sort],
         enabled,
@@ -46,5 +47,5 @@ export function useInfiniteProductCatalog({
         pageSize,
     })
 
-    return { products, loading, loadingMore, error, hasMore, loadMore }
+    return { products, loading, loadingMore, error, hasMore, loadMore, reload }
 }

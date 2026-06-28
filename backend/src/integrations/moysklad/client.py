@@ -164,9 +164,37 @@ class MoySkladClient:
         if not isinstance(rows, list): return None
         for row in rows:
             if isinstance(row, dict) and optional_str(row.get("externalCode")) == normalized: return row
+
         for row in rows:
             if not isinstance(row, dict): continue
             if optional_str(row.get("name")) == normalized: return row
+        return next((row for row in rows if isinstance(row, dict)), None)
+
+    @staticmethod
+    def _counterparty_phone_matches(row: dict[str, Any], normalized_phone: str) -> bool:
+        if normalize_phone(row.get("phone")) == normalized_phone: return True
+
+        contactpersons = row.get("contactpersons")
+        if isinstance(contactpersons, dict): contactpersons = contactpersons.get("rows")
+
+        if not isinstance(contactpersons, list): return False
+
+        for contactperson in contactpersons:
+            if isinstance(contactperson, dict) and normalize_phone(contactperson.get("phone")) == normalized_phone: return True
+
+        return False
+
+    async def get_counterparty_by_phone(self, phone: str) -> dict[str, Any] | None:
+        normalized_phone = normalize_phone(phone)
+        if not normalized_phone: return None
+
+        data = await self.get_page("/entity/counterparty", limit=100, search=normalized_phone, expand="contactpersons")
+        rows = data.get("rows")
+        if not isinstance(rows, list): return None
+
+        for row in rows:
+            if isinstance(row, dict) and self._counterparty_phone_matches(row, normalized_phone): return row
+
         return next((row for row in rows if isinstance(row, dict)), None)
 
     async def _create_entity(self, entity_type: str, payload: dict[str, Any]) -> dict[str, Any]:

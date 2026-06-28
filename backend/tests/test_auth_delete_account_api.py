@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 
 def test_delete_account_deactivates_user_and_revokes_session(client: TestClient, register_verified_user, monkeypatch: pytest.MonkeyPatch):
-    import src.app.modules.auth.router as auth_router_module
+    import src.app.services.auth.service as auth_service_module
 
     token = uuid.uuid4().hex[:10]
     payload = {
@@ -15,7 +15,7 @@ def test_delete_account_deactivates_user_and_revokes_session(client: TestClient,
         "name": "Delete",
         "surname": "Me",
     }
-    monkeypatch.setattr(auth_router_module, "AUTH_LOGIN_WEBSITE_FIRST_ENABLED", False)
+    monkeypatch.setattr(auth_service_module, "AUTH_LOGIN_WEBSITE_FIRST_ENABLED", False)
     auth = register_verified_user(payload)
     access_token = auth["access_token"]
 

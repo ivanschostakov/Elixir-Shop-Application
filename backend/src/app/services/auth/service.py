@@ -129,7 +129,14 @@ async def _verify_latest_email_code(user: User, code: str, db: AsyncSession) -> 
 async def register_user(request: Request, payload: UserRegisterPayload, db: AsyncSession) -> UserRegistrationStartedResponse:
     await _apply_auth_rate_limit(request, scope="auth:register", principal=payload.email)
     password_hash = hash_password(payload.password)
-    user_create = UserCreate(username=payload.username, email=payload.email, name=payload.name, surname=payload.surname, password_hash=password_hash)
+    user_create = UserCreate(
+        username=payload.username,
+        email=payload.email,
+        name=payload.name,
+        surname=payload.surname,
+        phone_number=payload.phone_number,
+        password_hash=password_hash,
+    )
 
     try:
         user = await create_user(db, user_create, commit=False)

@@ -33,6 +33,7 @@ export type RegistrationPayload = {
     password: string
     name: string
     surname: string
+    phone_number: string
 }
 
 export type RegistrationStartedResponse = {

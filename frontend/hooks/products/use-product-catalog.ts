@@ -29,7 +29,7 @@ export function useProductCatalog({
 }: UseProductCatalogOptions = {}) {
     const normalizedQuery = query.trim()
     const isEnabled = enabled && (!skipEmptyQuery || normalizedQuery.length > 0)
-    const { data: products, error, loading } = useAsyncData<ProductWithVariantsRead[]>({
+    const { data: products, error, loading, reload } = useAsyncData<ProductWithVariantsRead[]>({
         debounceMs,
         deps: [categoryId, limit, minPriority, normalizedQuery, sort],
         enabled: isEnabled,
@@ -46,5 +46,5 @@ export function useProductCatalog({
         initialData: [],
     })
 
-    return { products, loading, error }
+    return { products, loading, error, reload }
 }

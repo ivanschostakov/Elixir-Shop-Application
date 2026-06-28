@@ -6,7 +6,7 @@ import type { UseProductSearchResult } from "@/hooks/products/use-product-search
 
 export function useProductSearch(enabled = true): UseProductSearchResult {
     const [query, setQuery] = useState("")
-    const { error, loading, products } = useProductCatalog({
+    const { error, loading, products, reload } = useProductCatalog({
         debounceMs: SEARCH_DEBOUNCE_MS,
         enabled,
         limit: 50,
@@ -24,6 +24,7 @@ export function useProductSearch(enabled = true): UseProductSearchResult {
         loading,
         products,
         query,
+        reload,
         setQuery,
     }
 }

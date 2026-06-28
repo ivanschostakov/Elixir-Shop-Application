@@ -4,6 +4,7 @@ import {
     Alert,
     Image,
     Pressable,
+    RefreshControl,
     useColorScheme,
     ScrollView,
     Text,
@@ -60,6 +61,7 @@ const MEDIA_BASE_URL = getMediaBaseUrl()
 const FALLBACK_BANNER_IMAGE_VERSION = "square-20260512"
 const BANNER_AUTOPLAY_INTERVAL_MS = 5000
 const HOME_MENU_POPUP_VERTICAL_OFFSET = 61
+const APPLE_DEVELOPER_BANNER_SEGMENT = "apple-testing-team-banner"
 
 function getHomeGradientColors(accentName: ThemeAccentName, isDarkMode: boolean) {
     if (accentName === "blackWhite") {
@@ -141,7 +143,10 @@ function appendImageVersion(uri: string, version: string | null | undefined): st
     return `${uri}${uri.includes("?") ? "&" : "?"}v=${encodeURIComponent(trimmedVersion)}`
 }
 
-function resolveBannerImageSource(imagePath: string | null | undefined, imageVersion?: string | null): { uri: string } {
+function resolveBannerImageSource(
+    imagePath: string | null | undefined,
+    imageVersion?: string | null,
+): { uri: string } | null {
     const version = imageVersion ?? FALLBACK_BANNER_IMAGE_VERSION
 
     if (typeof imagePath === "string" && imagePath.length > 0) {
@@ -165,7 +170,11 @@ function resolveBannerImageSource(imagePath: string | null | undefined, imageVer
         }
     }
 
-    return { uri: appendImageVersion(`${MEDIA_BASE_URL}/media/banners/ghk-cu-banner.jpg`, version) }
+    return null
+}
+
+function isVisibleHomeBanner(banner: Banner): boolean {
+    return !banner.image_path.includes(APPLE_DEVELOPER_BANNER_SEGMENT)
 }
 
 function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab: string } {
@@ -203,20 +212,22 @@ export default function HomeScreen() {
     const { language, setLanguage, t } = useLanguage()
     const { accentName, accentPalette, themeName, toggleTheme } = useTheme()
     const { isAuthenticated, signOut } = useAuth()
-    const { banners } = useBanners(true)
-    const { categories } = useProductCategories(true)
-    const { loading: isSearchLoading, products: searchedProducts, query, setQuery } = useProductSearch(true)
+    const { banners, reload: reloadBanners } = useBanners(true)
+    const { categories, reload: reloadCategories } = useProductCategories(true)
+    const { loading: isSearchLoading, products: searchedProducts, query, reload: reloadSearchResults, setQuery } = useProductSearch(true)
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,
         products: recommendedProducts,
         loadingMore: recommendationsLoadingMore,
+        reload: reloadRecommendations,
     } = useRecommendations({ surface: "home" })
     const {
         hasMore: hasMoreGuestCatalog,
         loadMore: loadMoreGuestCatalog,
         products: guestCatalogProducts,
         loadingMore: guestCatalogLoadingMore,
+        reload: reloadGuestCatalog,
     } = useInfiniteProductCatalog({
         enabled: !isAuthenticated,
         pageSize: 8,
@@ -230,6 +241,7 @@ export default function HomeScreen() {
     const [activeBannerIndex, setActiveBannerIndex] = useState(0)
     const [bannerWidth, setBannerWidth] = useState(0)
     const [isHomeMenuOpen, setIsHomeMenuOpen] = useState(false)
+    const [isRefreshing, setIsRefreshing] = useState(false)
     const bannerScrollRef = useRef<ScrollView>(null)
 
     const hasSearchQuery = query.trim().length > 0
@@ -247,8 +259,12 @@ export default function HomeScreen() {
         () => categories.filter((category) => getDiscoverCategoryIcon(category.id)),
         [categories],
     )
-    const visibleBanners = useMemo<(Banner | null)[]>(() => (banners.length > 0 ? banners : [null]), [banners])
+    const visibleBanners = useMemo<Banner[]>(
+        () => banners.filter(isVisibleHomeBanner),
+        [banners],
+    )
     const bannerCount = visibleBanners.length
+    const activeBannerUnderlineWidth = bannerCount > 0 && bannerWidth > 0 ? bannerWidth / bannerCount : 0
     const recommendationRailProducts = isAuthenticated ? recommendedProducts : guestCatalogProducts
     const recommendationRailLoadingMore = isAuthenticated ? recommendationsLoadingMore : guestCatalogLoadingMore
     const hasMoreRecommendationRail = isAuthenticated ? hasMoreRecommendations : hasMoreGuestCatalog
@@ -348,39 +364,99 @@ export default function HomeScreen() {
         [bannerCount, bannerWidth],
     )
 
+    const refreshOrderDrafts = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+        if (!isAuthenticated) {
+            setOrderDrafts([])
+            setIsLoadingOrderDrafts(false)
+            return []
+        }
+
+        if (showLoading) {
+            setIsLoadingOrderDrafts(true)
+        }
+
+        try {
+            const drafts = await getOrderDrafts({ limit: 6 })
+            setOrderDrafts(drafts)
+            return drafts
+        } catch {
+            setOrderDrafts([])
+            return []
+        } finally {
+            if (showLoading) {
+                setIsLoadingOrderDrafts(false)
+            }
+        }
+    }, [isAuthenticated])
+
+    const refreshActiveOrders = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
+        if (!isAuthenticated) {
+            setActiveOrders([])
+            setIsLoadingActiveOrders(false)
+            return []
+        }
+
+        if (showLoading) {
+            setIsLoadingActiveOrders(true)
+        }
+
+        try {
+            const orders = await getOrders({ history_bucket: "active", limit: 12 })
+            setActiveOrders(orders)
+            return orders
+        } catch {
+            setActiveOrders([])
+            return []
+        } finally {
+            if (showLoading) {
+                setIsLoadingActiveOrders(false)
+            }
+        }
+    }, [isAuthenticated])
+
+    const handleRefresh = useCallback(async () => {
+        if (isRefreshing) {
+            return
+        }
+
+        setIsRefreshing(true)
+
+        try {
+            await Promise.allSettled([
+                reloadBanners({ showLoading: false }),
+                reloadCategories({ showLoading: false }),
+                hasSearchQuery ? reloadSearchResults() : Promise.resolve(null),
+                isAuthenticated
+                    ? reloadRecommendations({ resetItems: false, showLoading: false })
+                    : reloadGuestCatalog({ resetItems: false, showLoading: false }),
+                refreshOrderDrafts({ showLoading: false }),
+                refreshActiveOrders({ showLoading: false }),
+            ])
+        } finally {
+            setIsRefreshing(false)
+        }
+    }, [
+        hasSearchQuery,
+        isAuthenticated,
+        isRefreshing,
+        refreshActiveOrders,
+        refreshOrderDrafts,
+        reloadBanners,
+        reloadCategories,
+        reloadGuestCatalog,
+        reloadRecommendations,
+        reloadSearchResults,
+    ])
+
     useEffect(() => {
         if (!isAuthenticated) {
             setOrderDrafts([])
             setIsLoadingOrderDrafts(false)
-            setActiveOrders([])
-            setIsLoadingActiveOrders(false)
             return
         }
 
-        let isCancelled = false
-        setIsLoadingOrderDrafts(true)
-
-        void getOrderDrafts({ limit: 6 })
-            .then((drafts) => {
-                if (!isCancelled) {
-                    setOrderDrafts(drafts)
-                }
-            })
-            .catch(() => {
-                if (!isCancelled) {
-                    setOrderDrafts([])
-                }
-            })
-            .finally(() => {
-                if (!isCancelled) {
-                    setIsLoadingOrderDrafts(false)
-                }
-            })
-
-        return () => {
-            isCancelled = true
-        }
-    }, [isAuthenticated])
+        void refreshOrderDrafts()
+    }, [isAuthenticated, refreshOrderDrafts])
 
     useEffect(() => {
         if (!isAuthenticated) {
@@ -389,30 +465,8 @@ export default function HomeScreen() {
             return
         }
 
-        let isCancelled = false
-        setIsLoadingActiveOrders(true)
-
-        void getOrders({ history_bucket: "active", limit: 12 })
-            .then((orders) => {
-                if (!isCancelled) {
-                    setActiveOrders(orders)
-                }
-            })
-            .catch(() => {
-                if (!isCancelled) {
-                    setActiveOrders([])
-                }
-            })
-            .finally(() => {
-                if (!isCancelled) {
-                    setIsLoadingActiveOrders(false)
-                }
-            })
-
-        return () => {
-            isCancelled = true
-        }
-    }, [isAuthenticated])
+        void refreshActiveOrders()
+    }, [isAuthenticated, refreshActiveOrders])
 
     useEffect(() => {
         if (activeBannerIndex < bannerCount) {
@@ -441,7 +495,7 @@ export default function HomeScreen() {
         }
     }, [bannerCount, bannerWidth])
 
-    const handleBannerPress = (banner: Banner | null) => {
+    const handleBannerPress = (banner: Banner) => {
         const target = resolveDiscoverRoute(banner?.inner_link)
         router.push({
             pathname: ROUTES.discover,
@@ -466,12 +520,22 @@ export default function HomeScreen() {
                 contentContainerStyle={homeScreenStyles.content}
                 keyboardShouldPersistTaps="handled"
                 onScroll={handleHomeScroll}
+                refreshControl={
+                    <RefreshControl
+                        onRefresh={() => {
+                            void handleRefresh()
+                        }}
+                        refreshing={isRefreshing}
+                    />
+                }
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
+                stickyHeaderIndices={[0]}
             >
                 <View
                     style={[
                         homeScreenStyles.topGradientSectionWrap,
+                        homeScreenStyles.topGradientSectionWrapSticky,
                         isHomeMenuOpen && homeScreenStyles.topGradientSectionWrapMenuOpen,
                     ]}
                 >
@@ -611,59 +675,68 @@ export default function HomeScreen() {
                 </View>
                 <View style={homeScreenStyles.promoBannerSection}>
                     <View style={homeScreenStyles.promoBanner}>
-                        <View style={homeScreenStyles.promoBannerViewport} onLayout={handleBannerLayout}>
-                            <ScrollView
-                                ref={bannerScrollRef}
-                                bounces={false}
-                                decelerationRate="fast"
-                                horizontal
-                                onMomentumScrollEnd={handleBannerScrollEnd}
-                                pagingEnabled
-                                scrollEnabled={bannerCount > 1}
-                                scrollEventThrottle={16}
-                                showsHorizontalScrollIndicator={false}
-                                style={homeScreenStyles.promoBannerCarousel}
-                            >
-                                {visibleBanners.map((banner, index) => {
-                                    const bannerImageSource = resolveBannerImageSource(
-                                        banner?.image_path,
-                                        banner?.updated_at,
-                                    )
-                                    return (
-                                        <Pressable
-                                            key={banner?.id ?? `fallback-banner-${index}`}
-                                            accessibilityRole="button"
-                                            accessibilityLabel={t("discover.latestTitle")}
-                                            onPress={() => handleBannerPress(banner)}
-                                            style={({ pressed }) => [
-                                                homeScreenStyles.promoBannerTap,
-                                                bannerWidth > 0 ? { width: bannerWidth } : null,
-                                                pressed && homeScreenStyles.promoBannerPressed,
-                                            ]}
-                                        >
-                                            <Image
-                                                source={bannerImageSource}
-                                                resizeMode="contain"
-                                                style={homeScreenStyles.promoImage}
+                        {bannerCount > 0 ? (
+                            <View style={homeScreenStyles.promoBannerViewport} onLayout={handleBannerLayout}>
+                                <ScrollView
+                                    ref={bannerScrollRef}
+                                    bounces={false}
+                                    decelerationRate="fast"
+                                    horizontal
+                                    onMomentumScrollEnd={handleBannerScrollEnd}
+                                    pagingEnabled
+                                    scrollEnabled={bannerCount > 1}
+                                    scrollEventThrottle={16}
+                                    showsHorizontalScrollIndicator={false}
+                                    style={homeScreenStyles.promoBannerCarousel}
+                                >
+                                    {visibleBanners.map((banner, index) => {
+                                        const bannerImageSource = resolveBannerImageSource(
+                                            banner.image_path,
+                                            banner.updated_at,
+                                        )
+                                        if (bannerImageSource === null) {
+                                            return null
+                                        }
+
+                                        return (
+                                            <Pressable
+                                                key={banner.id ?? `banner-${index}`}
+                                                accessibilityRole="button"
+                                                accessibilityLabel={t("discover.latestTitle")}
+                                                onPress={() => handleBannerPress(banner)}
+                                                style={({ pressed }) => [
+                                                    homeScreenStyles.promoBannerTap,
+                                                    bannerWidth > 0 ? { width: bannerWidth } : null,
+                                                    pressed && homeScreenStyles.promoBannerPressed,
+                                                ]}
+                                            >
+                                                <Image
+                                                    source={bannerImageSource}
+                                                    resizeMode="contain"
+                                                    style={homeScreenStyles.promoImage}
+                                                />
+                                            </Pressable>
+                                        )
+                                    })}
+                                </ScrollView>
+                                {bannerCount > 1 ? (
+                                    <View pointerEvents="none" style={homeScreenStyles.promoBannerIndicators}>
+                                        <View style={homeScreenStyles.promoBannerIndicatorTrack} />
+                                        {activeBannerUnderlineWidth > 0 ? (
+                                            <View
+                                                style={[
+                                                    homeScreenStyles.promoBannerIndicatorActive,
+                                                    {
+                                                        left: activeBannerIndex * activeBannerUnderlineWidth,
+                                                        width: activeBannerUnderlineWidth,
+                                                    },
+                                                ]}
                                             />
-                                        </Pressable>
-                                    )
-                                })}
-                            </ScrollView>
-                            {banners.length > 0 ? (
-                                <View pointerEvents="none" style={homeScreenStyles.promoBannerIndicators}>
-                                    {visibleBanners.map((banner, index) => (
-                                        <View
-                                            key={banner?.id ?? `fallback-banner-indicator-${index}`}
-                                            style={[
-                                                homeScreenStyles.promoBannerIndicator,
-                                                index === activeBannerIndex && homeScreenStyles.promoBannerIndicatorActive,
-                                            ]}
-                                        />
-                                    ))}
-                                </View>
-                            ) : null}
-                        </View>
+                                        ) : null}
+                                    </View>
+                                ) : null}
+                            </View>
+                        ) : null}
                         <View style={homeScreenStyles.quickCatalogInBanner}>
                             <ScrollView
                                 horizontal

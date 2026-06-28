@@ -10,14 +10,15 @@ from starlette.datastructures import Headers, UploadFile
 
 import src.app.modules.auth.dependencies as auth_dependencies
 import src.app.modules.users.me.ai_chat as ai_chat_router_module
-import src.app.services.ai_chat_interactive as ai_chat_interactive
-import src.app.services.ai_chat as ai_chat_service
+import src.app.services.ai.chat as ai_chat_service
+import src.app.services.ai.chat_interactive as ai_chat_interactive
 from src.app.main import app
 from src.database import get_db
 from src.database.models import User
 from src.integrations.ai.enums import AttachmentType, BotModel
-from src.integrations.ai.client import ProfessorClient, get_professor_client
-from src.app.services.ai_chat import _attachment_storage_filename, _load_uploads, resolve_user_bot_model
+from src.integrations.ai import get_professor_client
+from src.integrations.ai.client import ProfessorClient
+from src.app.services.ai.chat import _attachment_storage_filename, _load_uploads, resolve_user_bot_model
 from src.app.services.orders.drafts import _normalize_ai_draft_items
 
 
@@ -139,6 +140,9 @@ def _basket_payload() -> dict:
         "items_count": 1,
         "total_quantity": 2,
         "total_amount": "2400.00",
+        "delivery_total": "0.00",
+        "grand_total": "2400.00",
+        "currency": "RUB",
         "has_unavailable_items": False,
         "created_at": now,
         "updated_at": now,

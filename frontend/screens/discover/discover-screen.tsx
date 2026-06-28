@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { ActivityIndicator, FlatList, Platform, View, useWindowDimensions } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
 
@@ -103,25 +103,26 @@ export default function DiscoverScreen() {
     const [categoryId, setCategoryId] = useState<number | null>(() => discoverBrowseMemory.categoryId)
     const [sort, setSort] = useState<ProductBrowseSort>(() => discoverBrowseMemory.sort)
     const trackedCategoryIdRef = useRef<number | null>(null)
-    const { categories } = useProductCategories(isProductsTab)
+    const { categories, reload: reloadCategories } = useProductCategories(isProductsTab)
     const {
         products: catalogProducts,
         loading: isLoading,
         loadingMore,
         error: screenError,
         loadMore,
+        reload: reloadCatalogProducts,
     } = useInfiniteProductCatalog({
         categoryId,
         enabled: isProductsTab,
         query,
         sort,
     })
+    const [refreshing, setRefreshing] = useState(false)
     const displayedProducts = useMemo(
         () => (isProductsTab ? catalogProducts : []),
         [catalogProducts, isProductsTab],
     )
     const hasSearchQuery = query.length > 0
-    const hasNoResults = isProductsTab && !isLoading && !screenError && displayedProducts.length === 0
     const rowGap = isDesktop ? 16 : 12
     const columnGap = 0
     const maxContentWidth = isDesktop ? 1180 : isTablet ? 960 : undefined
@@ -176,6 +177,23 @@ export default function DiscoverScreen() {
         void trackRecommendationCategoryView({ category_id: categoryId }).catch(() => undefined)
     }, [categories, categoryId, isProductsTab])
 
+    const handleRefresh = useCallback(async () => {
+        if (refreshing) {
+            return
+        }
+
+        setRefreshing(true)
+
+        try {
+            await Promise.allSettled([
+                reloadCatalogProducts({ resetItems: false, showLoading: false }),
+                reloadCategories({ showLoading: false }),
+            ])
+        } finally {
+            setRefreshing(false)
+        }
+    }, [refreshing, reloadCatalogProducts, reloadCategories])
+
     if (!isProductsTab) {
         return (
             <CatalogTemplate style={discoverScreenStyles.articleEmptyScreen}>
@@ -187,57 +205,6 @@ export default function DiscoverScreen() {
                         description={t("discover.articlesDescription")}
                         variant="plain"
                     />
-                </View>
-            </CatalogTemplate>
-        )
-    }
-
-    if (hasNoResults) {
-        return (
-            <CatalogTemplate style={discoverScreenStyles.screen}>
-                <View style={discoverScreenStyles.screen}>
-                    <View style={discoverScreenStyles.controlsWrap}>
-                        <ProductBrowseControls
-                            categories={categories}
-                            categoryId={categoryId}
-                            onChangeCategoryId={setCategoryId}
-                            onChangeSort={setSort}
-                            sort={sort}
-                        />
-                    </View>
-                    <View style={discoverScreenStyles.emptyContent}>
-                        <EmptyState
-                            actionVariant={hasSearchQuery ? "link" : undefined}
-                            sticker={STICKERS.noProducts}
-                            eyebrow={t("discover.latestEyebrow")}
-                            title={hasSearchQuery ? t("discover.emptySearchTitle") : t("discover.emptyBrowseTitle")}
-                            description={
-                                hasSearchQuery
-                                    ? t("discover.emptySearchDescription")
-                                    : t("discover.emptyBrowseDescription")
-                            }
-                            actionLabel={hasSearchQuery ? t("discover.clearSearch") : undefined}
-                            onPressAction={
-                                hasSearchQuery
-                                    ? () => {
-                                        if (categoryId !== null) {
-                                            router.replace({
-                                                pathname: ROUTES.discover,
-                                                params: { tab: "products", categoryId: String(categoryId) },
-                                            })
-                                            return
-                                        }
-
-                                        router.replace({
-                                            pathname: ROUTES.discover,
-                                            params: { tab: "products" },
-                                        })
-                                    }
-                                    : undefined
-                            }
-                            variant="plain"
-                        />
-                    </View>
                 </View>
             </CatalogTemplate>
         )
@@ -277,9 +244,16 @@ export default function DiscoverScreen() {
                     void loadMore()
                 }}
                 onEndReachedThreshold={0.6}
+                onRefresh={() => {
+                    void handleRefresh()
+                }}
+                refreshing={refreshing}
                 ListHeaderComponent={
                     <View
-                        style={discoverScreenStyles.controlsWrap}
+                        style={[
+                            discoverScreenStyles.controlsWrap,
+                            discoverScreenStyles.controlsWrapSticky,
+                        ]}
                     >
                         <ProductBrowseControls
                             categories={categories}
@@ -301,7 +275,41 @@ export default function DiscoverScreen() {
                             title={t("discover.errorTitle")}
                             description={screenError}
                         />
-                    ) : null
+                    ) : (
+                        <View style={discoverScreenStyles.emptyContent}>
+                            <EmptyState
+                                actionVariant={hasSearchQuery ? "link" : undefined}
+                                sticker={STICKERS.noProducts}
+                                eyebrow={t("discover.latestEyebrow")}
+                                title={hasSearchQuery ? t("discover.emptySearchTitle") : t("discover.emptyBrowseTitle")}
+                                description={
+                                    hasSearchQuery
+                                        ? t("discover.emptySearchDescription")
+                                        : t("discover.emptyBrowseDescription")
+                                }
+                                actionLabel={hasSearchQuery ? t("discover.clearSearch") : undefined}
+                                onPressAction={
+                                    hasSearchQuery
+                                        ? () => {
+                                            if (categoryId !== null) {
+                                                router.replace({
+                                                    pathname: ROUTES.discover,
+                                                    params: { tab: "products", categoryId: String(categoryId) },
+                                                })
+                                                return
+                                            }
+
+                                            router.replace({
+                                                pathname: ROUTES.discover,
+                                                params: { tab: "products" },
+                                            })
+                                        }
+                                        : undefined
+                                }
+                                variant="plain"
+                            />
+                        </View>
+                    )
                 }
                 ListFooterComponent={
                     !isProductsTab || !loadingMore ? null : (
@@ -341,6 +349,7 @@ export default function DiscoverScreen() {
                     </View>
                 )}
                 showsVerticalScrollIndicator={false}
+                stickyHeaderIndices={[0]}
             />
         </CatalogTemplate>
     )

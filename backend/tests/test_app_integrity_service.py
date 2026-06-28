@@ -5,7 +5,9 @@ from fastapi import HTTPException
 from types import SimpleNamespace
 from starlette.requests import Request
 
-import src.app.services.app_integrity as app_integrity
+import src.app.services.app_integrity.common as app_integrity_common
+import src.app.services.app_integrity.service as app_integrity
+from src.app.services.app_integrity.types import IosAttestationVerification
 
 
 class _ScalarResult:
@@ -97,7 +99,7 @@ def _android_verdict(*, request_hash: str = "test-request-hash", package_name: s
 
 @pytest.mark.anyio
 async def test_app_integrity_enforce_rejects_missing_token(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "enforce")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "enforce")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", "dev-token")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
 
@@ -110,7 +112,7 @@ async def test_app_integrity_enforce_rejects_missing_token(monkeypatch: pytest.M
 
 @pytest.mark.anyio
 async def test_app_integrity_enforce_accepts_dev_token(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "enforce")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "enforce")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", "dev-token")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
 
@@ -122,7 +124,7 @@ async def test_app_integrity_enforce_accepts_dev_token(monkeypatch: pytest.Monke
 
 @pytest.mark.anyio
 async def test_app_integrity_enforce_rejects_action_mismatch(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "enforce")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "enforce")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", "dev-token")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
 
@@ -137,7 +139,7 @@ async def test_app_integrity_enforce_rejects_action_mismatch(monkeypatch: pytest
 
 @pytest.mark.anyio
 async def test_app_integrity_monitor_does_not_reject(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "monitor")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "monitor")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
 
@@ -149,7 +151,7 @@ async def test_app_integrity_enforce_accepts_google_verified_android_token(monke
     async def fake_decode_android_integrity_token(_token: str) -> dict:
         return _android_verdict()
 
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "enforce")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "enforce")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
@@ -168,7 +170,7 @@ async def test_app_integrity_enforce_rejects_android_cert_mismatch(monkeypatch: 
     async def fake_decode_android_integrity_token(_token: str) -> dict:
         return _android_verdict()
 
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "enforce")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "enforce")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
@@ -190,7 +192,7 @@ async def test_app_integrity_enforce_rejects_android_request_hash_mismatch(monke
     async def fake_decode_android_integrity_token(_token: str) -> dict:
         return _android_verdict(request_hash="other-request-hash")
 
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "enforce")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "enforce")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
@@ -213,13 +215,13 @@ async def test_register_ios_app_attest_key_consumes_challenge_and_stores_key(mon
     db = _FakeDb([challenge, None])
 
     def fake_verify_ios_attestation_object(**_kwargs):
-        return app_integrity.IosAttestationVerification(
+        return IosAttestationVerification(
             public_key_pem="public-key-pem",
             receipt_b64="receipt",
             environment="production",
         )
 
-    monkeypatch.setattr(app_integrity, "_verify_ios_attestation_object", fake_verify_ios_attestation_object)
+    monkeypatch.setattr(app_integrity, "verify_ios_attestation_object", fake_verify_ios_attestation_object)
 
     key = await app_integrity.register_ios_app_attest_key(
         db,
@@ -252,13 +254,13 @@ async def test_app_integrity_enforce_accepts_ios_assertion_and_updates_counter(m
         assert kwargs["assertion_b64"] == "assertion"
         return 8
 
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "enforce")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "enforce")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_IOS_TEAM_ID", "TEAMID1234")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_IOS_BUNDLE_ID", "com.example.app")
-    monkeypatch.setattr(app_integrity, "_verify_ios_assertion_signature", fake_verify_ios_assertion_signature)
+    monkeypatch.setattr(app_integrity, "verify_ios_assertion_signature", fake_verify_ios_assertion_signature)
 
     await app_integrity.verify_app_integrity_request(
         _request(_integrity_headers(token="assertion", key_id="key-id")),
@@ -278,7 +280,7 @@ async def test_ios_assertion_rejects_stale_counter_after_consuming_challenge(mon
     app_attest_key = SimpleNamespace(public_key_pem="public-key-pem", counter=8)
     db = _FakeDb([challenge, app_attest_key])
 
-    monkeypatch.setattr(app_integrity, "_verify_ios_assertion_signature", lambda **_kwargs: 8)
+    monkeypatch.setattr(app_integrity, "verify_ios_assertion_signature", lambda **_kwargs: 8)
 
     verified, reason = await app_integrity._verify_ios_app_attest_assertion(
         db,

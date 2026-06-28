@@ -3,12 +3,12 @@ import { useAsyncData } from "@/hooks/shared/use-async-data"
 import type { ProductCategory } from "@/types/product-category"
 
 export function useProductCategories(enabled = true) {
-    const { data: categories, error, loading } = useAsyncData<ProductCategory[]>({
+    const { data: categories, error, loading, reload } = useAsyncData<ProductCategory[]>({
         deps: [],
         enabled,
         fetcher: getProductCategories,
         initialData: [],
     })
 
-    return { categories, loading, error }
+    return { categories, loading, error, reload }
 }

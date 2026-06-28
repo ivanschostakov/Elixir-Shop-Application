@@ -21,6 +21,7 @@ FREE_VECTOR_STORE_ID = "vs_69e94b0c9e048191bf3cd7d79b6efbb6"
 PREMIUM_VECTOR_STORE_ID = "vs_69e94b468f6481919aec96887cf97ac9"
 FREE_MODEL = "gpt-4.1-mini"
 PREMIUM_MODEL = "gpt-4.1"
+_professor_client: "ProfessorClient | None" = None
 
 
 class ProfessorClient(AsyncClient):
@@ -257,7 +258,6 @@ class ProfessorClient(AsyncClient):
 
     async def _run_function_tool_rounds(self, *, response: Response, model: BotModel, conversation_id: str, tools: list[Any], include: list[str] | None, text_config: dict[str, Any] | None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None, max_tool_rounds: int, trace_id: str | None) -> tuple[Response, int, int]:
         if function_tool_executor is None: return response, 0, 0
-
         current_response = response
         tool_rounds = 0
         tool_calls_count = 0
@@ -347,3 +347,10 @@ class ProfessorClient(AsyncClient):
             "tool_rounds": tool_rounds,
             "tool_calls": tool_calls,
         }
+
+
+def get_professor_client() -> ProfessorClient:
+    global _professor_client
+    if _professor_client is None:
+        _professor_client = ProfessorClient()
+    return _professor_client

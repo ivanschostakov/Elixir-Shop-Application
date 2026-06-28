@@ -6,5 +6,6 @@ export type UseProductSearchResult = {
     loading: boolean
     products: ProductWithVariantsRead[]
     query: string
+    reload: () => Promise<ProductWithVariantsRead[] | null>
     setQuery: (query: string) => void
 }

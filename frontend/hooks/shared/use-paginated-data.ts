@@ -7,6 +7,11 @@ type LoadPageArgs = {
     offset: number
 }
 
+type ReloadOptions = {
+    showLoading?: boolean
+    resetItems?: boolean
+}
+
 type UsePaginatedDataOptions<TItem> = {
     deps: readonly unknown[]
     enabled?: boolean
@@ -48,13 +53,22 @@ export function usePaginatedData<TItem>({
         setHasMore(true)
     }, [])
 
-    const reload = useCallback(async () => {
+    const reload = useCallback(async ({
+        showLoading = true,
+        resetItems = true,
+    }: ReloadOptions = {}) => {
         const requestId = requestIdRef.current + 1
         requestIdRef.current = requestId
-        itemsRef.current = []
 
-        setItems([])
-        setLoading(true)
+        if (resetItems) {
+            itemsRef.current = []
+            setItems([])
+        }
+
+        if (showLoading) {
+            setLoading(true)
+        }
+
         setLoadingMore(false)
         setError(null)
         setHasMore(true)
@@ -78,8 +92,11 @@ export function usePaginatedData<TItem>({
                 return null
             }
 
-            itemsRef.current = []
-            setItems([])
+            if (resetItems) {
+                itemsRef.current = []
+                setItems([])
+            }
+
             setError(getErrorMessage(loadError))
             showBackendErrorAlert(loadError)
             setHasMore(false)

@@ -12,9 +12,12 @@ export const homeScreenStyles = StyleSheet.create({
         paddingBottom: spacing.lg,
     },
     topGradientSectionWrap: {
-        backgroundColor: colors.surface,
+        backgroundColor: "transparent",
         position: "relative",
         zIndex: 5,
+    },
+    topGradientSectionWrapSticky: {
+        zIndex: 18,
     },
     topGradientSectionWrapMenuOpen: {
         zIndex: 80,
@@ -107,26 +110,23 @@ export const homeScreenStyles = StyleSheet.create({
     promoBannerCarousel: {
         width: "100%",
     },
-    promoBannerIndicator: {
-        backgroundColor: "rgba(107, 114, 128, 0.3)",
-        borderRadius: 999,
-        flex: 1,
-        height: 2,
-    },
-    promoBannerIndicatorActive: {
-        backgroundColor: "rgba(107, 114, 128, 0.78)",
-        flex: 1.7,
-        height: 3,
-    },
     promoBannerIndicators: {
-        alignItems: "center",
         bottom: 0,
-        flexDirection: "row",
-        gap: spacing.xs,
-        justifyContent: "center",
         left: 0,
         position: "absolute",
         right: 0,
+        width: "100%",
+    },
+    promoBannerIndicatorTrack: {
+        backgroundColor: "rgba(107, 114, 128, 0.22)",
+        height: 2,
+        width: "100%",
+    },
+    promoBannerIndicatorActive: {
+        backgroundColor: "rgba(107, 114, 128, 0.82)",
+        height: 2,
+        position: "absolute",
+        top: 0,
     },
     promoBannerTap: {
         backgroundColor: colors.surface,

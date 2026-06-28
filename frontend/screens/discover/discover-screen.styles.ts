@@ -37,6 +37,9 @@ export const discoverScreenStyles = StyleSheet.create({
         paddingVertical: spacing.md,
         width: "100%",
     },
+    controlsWrapSticky: {
+        zIndex: 12,
+    },
     gridRow: {
         backgroundColor: colors.surface,
         borderRadius: 28,

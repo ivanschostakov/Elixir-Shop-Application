@@ -6,11 +6,12 @@ from fastapi.testclient import TestClient
 import src.app.modules.app_integrity.router as app_integrity_router_module
 import src.app.modules.auth.dependencies as auth_dependencies
 import src.app.modules.users.me.ai_chat as ai_chat_router_module
-import src.app.services.app_integrity as app_integrity
+import src.app.services.app_integrity.common as app_integrity_common
+import src.app.services.app_integrity.service as app_integrity
 from src.app.main import app
 from src.database import get_db
 from src.database.models import User
-from src.integrations.ai.client import get_professor_client
+from src.integrations.ai import get_professor_client
 
 
 def _fake_user() -> User:
@@ -51,7 +52,7 @@ class _FakeDb:
 
 @pytest.fixture(autouse=True)
 def enforce_app_integrity(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_MODE", "enforce")
+    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "enforce")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_DEV_TOKEN", "dev-token")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
 

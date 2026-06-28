@@ -17,12 +17,13 @@ export default function RegisterScreen() {
     const { register, resendRegistrationCode, verifyRegistration } = useAuth()
     const { t } = useLanguage()
     const { handleFieldLayout, scrollRef, scrollToField } = useAuthFormScroll(
-        ["username", "name", "surname", "email", "password", "confirmPassword"] as const,
+        ["username", "name", "surname", "phoneNumber", "email", "password", "confirmPassword"] as const,
     )
     const [step, setStep] = useState<RegistrationStep>("details")
     const [username, setUsername] = useState("")
     const [name, setName] = useState("")
     const [surname, setSurname] = useState("")
+    const [phoneNumber, setPhoneNumber] = useState("")
     const [email, setEmail] = useState("")
     const [password, setPassword] = useState("")
     const [confirmPassword, setConfirmPassword] = useState("")
@@ -41,6 +42,7 @@ export default function RegisterScreen() {
             !username.trim() ||
             !name.trim() ||
             !surname.trim() ||
+            !phoneNumber.trim() ||
             !email.trim() ||
             !password.trim() ||
             !confirmPassword.trim()
@@ -77,6 +79,7 @@ export default function RegisterScreen() {
                 username: username.trim(),
                 name: name.trim(),
                 surname: surname.trim(),
+                phone_number: phoneNumber.trim(),
                 email: email.trim(),
                 password,
             })
@@ -195,6 +198,20 @@ export default function RegisterScreen() {
                     returnKeyType="next"
                     style={authSharedStyles.input}
                     value={surname}
+                />
+            </View>
+
+            <View onLayout={handleFieldLayout("phoneNumber")} style={authSharedStyles.formGroup}>
+                <Text style={authSharedStyles.fieldLabel}>{t("auth.register.phone")}</Text>
+                <TextInput
+                    keyboardType="phone-pad"
+                    onChangeText={setPhoneNumber}
+                    onFocus={() => scrollToField("phoneNumber")}
+                    placeholder={t("auth.register.phonePlaceholder")}
+                    returnKeyType="next"
+                    style={authSharedStyles.input}
+                    textContentType="telephoneNumber"
+                    value={phoneNumber}
                 />
             </View>
 
