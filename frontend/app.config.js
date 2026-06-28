@@ -107,6 +107,7 @@ module.exports = () => {
     const apiBaseUrl = getEnvValue("EXPO_PUBLIC_API_BASE_URL")
     const appJsVersion = getEnvValue("EXPO_PUBLIC_APP_JS_VERSION")
     const androidCloudProjectNumber = getEnvValue("EXPO_PUBLIC_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER")
+    const appIntegrityDevToken = getEnvValue("EXPO_PUBLIC_APP_INTEGRITY_DEV_TOKEN")
     const baseConfig = appJson.expo
     const baseExtra = baseConfig.extra ?? {}
     const baseAppIntegrity = baseExtra.appIntegrity ?? {}
@@ -121,6 +122,7 @@ module.exports = () => {
                 appIntegrity: compactObject({
                     ...baseAppIntegrity,
                     androidCloudProjectNumber,
+                    devToken: appIntegrityDevToken,
                 }),
             }),
         },

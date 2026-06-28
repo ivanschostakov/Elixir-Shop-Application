@@ -73,8 +73,7 @@ async def upsert_products(session, products, stats, by_id, by_sku, by_name, vari
             stats.created_products += 1
             continue
 
-        payload = {"sku": row.sku, "name": row.name}
-        if row.archived: payload["archived"] = True
+        payload = {"sku": row.sku, "name": row.name, "archived": row.archived}
 
         if by_sku.get(row.sku) not in (None, product):
             payload.pop("sku", None)
@@ -85,8 +84,11 @@ async def upsert_products(session, products, stats, by_id, by_sku, by_name, vari
 
         previous_sku = product.sku
         previous_name = product.name
+        was_archived = product.archived
         if apply_changes(product, payload):
             stats.updated_products += 1
+            if was_archived and not product.archived:
+                stats.unarchived_products += 1
             if product.sku != previous_sku:
                 by_sku.pop(previous_sku, None)
             if product.name != previous_name:
@@ -102,7 +104,14 @@ async def upsert_variants(session, variants, stats, products_by_id, variants_by_
             stats.skipped_variants_missing_product += 1
             continue
 
-        payload = {"product_id": product.id, "sku": row.sku, "name": row.name, "stock": row.stock, "price": row.price}
+        payload = {
+            "product_id": product.id,
+            "sku": row.sku,
+            "name": row.name,
+            "stock": row.stock,
+            "price": row.price,
+            "archived": product.archived,
+        }
         variant = variants_by_id.get(row.system_id)
 
         if variant is None:
@@ -113,8 +122,11 @@ async def upsert_variants(session, variants, stats, products_by_id, variants_by_
             stats.created_variants += 1
             continue
 
-        if product.archived: payload["archived"] = True
-        if apply_changes(variant, payload): stats.updated_variants += 1
+        was_archived = variant.archived
+        if apply_changes(variant, payload):
+            stats.updated_variants += 1
+            if was_archived and not variant.archived:
+                stats.unarchived_variants += 1
 
 
 def archive_missing_products(products, incoming_ids, stats):

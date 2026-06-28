@@ -1,7 +1,7 @@
 import * as AppIntegrity from "@expo/app-integrity"
 import * as SecureStore from "expo-secure-store"
 import { Platform } from "react-native"
-import { ANDROID_CLOUD_PROJECT_NUMBER, API_BASE_URL } from "@/config/env"
+import { ANDROID_CLOUD_PROJECT_NUMBER, API_BASE_URL, APP_INTEGRITY_DEV_TOKEN } from "@/config/env"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 
 const IOS_APP_ATTEST_KEY_STORAGE_KEY = "elixirpeptide.appIntegrity.iosKeyId"
@@ -75,6 +75,19 @@ function randomHex(bytesLength: number) {
 
 function buildRequestHash(action: string) {
     return `${action}:${Date.now()}:${randomHex(16)}`
+}
+
+function getDevTokenIntegrityHeaders(action: string): AppIntegrityHeaders | null {
+    if (!__DEV__ || !APP_INTEGRITY_DEV_TOKEN) {
+        return null
+    }
+
+    return {
+        [APP_INTEGRITY_HEADERS.action]: action,
+        [APP_INTEGRITY_HEADERS.platform]: Platform.OS === "android" ? "android" : "ios",
+        [APP_INTEGRITY_HEADERS.requestHash]: buildRequestHash(action),
+        [APP_INTEGRITY_HEADERS.token]: APP_INTEGRITY_DEV_TOKEN,
+    }
 }
 
 function describeIntegrityError(error: unknown) {
@@ -315,6 +328,11 @@ async function getIosIntegrityHeaders(action: string): Promise<AppIntegrityHeade
 export async function getAppIntegrityHeaders(action?: string): Promise<AppIntegrityHeaders> {
     if (!action) {
         return {}
+    }
+
+    const devTokenHeaders = getDevTokenIntegrityHeaders(action)
+    if (devTokenHeaders) {
+        return devTokenHeaders
     }
 
     if (Platform.OS === "web") {

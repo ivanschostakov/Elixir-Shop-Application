@@ -163,7 +163,7 @@ def test_moysklad_product_row_unarchives_fetched_products():
 
 
 @pytest.mark.anyio
-async def test_moysklad_upsert_keeps_existing_archived_rows_archived():
+async def test_moysklad_upsert_unarchives_existing_rows_when_they_return():
     product = Product(
         id=1,
         system_id=NEW_PRODUCT_ID,
@@ -210,9 +210,9 @@ async def test_moysklad_upsert_keeps_existing_archived_rows_archived():
         ],
     )
 
-    assert product.archived is True
-    assert product.in_stock is False
-    assert variant.archived is True
+    assert product.archived is False
+    assert product.in_stock is True
+    assert variant.archived is False
     assert variant.stock == 8
-    assert stats.unarchived_products == 0
-    assert stats.unarchived_variants == 0
+    assert stats.unarchived_products == 1
+    assert stats.unarchived_variants == 1
