@@ -30,7 +30,11 @@ function parseStoredAuthTokens(rawTokens: string | null): AuthTokens | null {
 }
 
 function readWebStoredAuthTokens(): AuthTokens | null {
-    return null
+    if (typeof window === "undefined" || !window.localStorage) {
+        return null
+    }
+
+    return parseStoredAuthTokens(window.localStorage.getItem(AUTH_TOKENS_STORAGE_KEY))
 }
 
 async function readStoredAuthTokens(): Promise<AuthTokens | null> {
@@ -46,7 +50,16 @@ async function readStoredAuthTokens(): Promise<AuthTokens | null> {
 }
 
 function persistWebAuthTokens(tokens: AuthTokens | null) {
-    void tokens
+    if (typeof window === "undefined" || !window.localStorage) {
+        return
+    }
+
+    if (!tokens) {
+        window.localStorage.removeItem(AUTH_TOKENS_STORAGE_KEY)
+        return
+    }
+
+    window.localStorage.setItem(AUTH_TOKENS_STORAGE_KEY, JSON.stringify(tokens))
 }
 
 async function persistAuthTokens(tokens: AuthTokens | null) {

@@ -19,6 +19,7 @@ from starlette import status
 
 from config import ufa_now
 from src.app.modules.auth.dependencies import get_current_user
+from src.app.services.auth.service import verify_telegram_init_data_for_user
 from src.database import get_db
 from src.database.models import AppAttestKey, AppIntegrityChallenge, User
 
@@ -221,8 +222,11 @@ async def verify_app_integrity_request(request: Request, *, action: str, db: Asy
     verified = False
 
     if not token: reason = "missing token"
-    elif platform not in {"ios", "android"}: reason = "unsupported platform"
+    elif platform not in {"ios", "android", "telegram"}: reason = "unsupported platform"
     elif header_action != action: reason = "action mismatch"
+    elif platform == "telegram":
+        if current_user is None: reason = "missing telegram user context"
+        else: verified, reason = verify_telegram_init_data_for_user(token, current_user)
     elif not request_hash: reason = "missing request hash"
     elif APP_INTEGRITY_DEV_TOKEN and hmac.compare_digest(token, APP_INTEGRITY_DEV_TOKEN): verified = True
     else:

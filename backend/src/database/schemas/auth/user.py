@@ -5,7 +5,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from config import ufa_now
 
-from src.database.limits import EMAIL_MAX_LENGTH, PASSWORD_HASH_MAX_LENGTH, PERSON_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH
+from src.database.limits import (
+    EMAIL_MAX_LENGTH,
+    PASSWORD_HASH_MAX_LENGTH,
+    PERSON_NAME_MAX_LENGTH,
+    PHONE_NUMBER_MAX_LENGTH,
+    TELEGRAM_USERNAME_MAX_LENGTH,
+)
 
 
 class UserBase(BaseModel):
@@ -21,6 +27,9 @@ class UserCreate(UserBase):
     last_active_at: datetime = Field(default_factory=ufa_now)
     is_verified: bool = False
     moysklad_counterparty_id: uuid.UUID | None = None
+    telegram_user_id: int | None = Field(default=None, ge=1)
+    telegram_username: str | None = Field(default=None, max_length=TELEGRAM_USERNAME_MAX_LENGTH)
+    telegram_phone_confirmed_at: datetime | None = None
 
 
 class UserUpdate(BaseModel):
@@ -34,6 +43,9 @@ class UserUpdate(BaseModel):
     phone_number: str | None = Field(default=None, min_length=1, max_length=PHONE_NUMBER_MAX_LENGTH)
     contact_id: int | None = Field(default=None, ge=1)
     moysklad_counterparty_id: uuid.UUID | None = None
+    telegram_user_id: int | None = Field(default=None, ge=1)
+    telegram_username: str | None = Field(default=None, max_length=TELEGRAM_USERNAME_MAX_LENGTH)
+    telegram_phone_confirmed_at: datetime | None = None
 
 
 class UserRead(UserBase):

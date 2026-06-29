@@ -9,6 +9,7 @@ from .notifications import *  # noqa: F403
 from .paths import *  # noqa: F403
 from .rate_limits import *  # noqa: F403
 from .security import *  # noqa: F403
+from .telegram import *  # noqa: F403
 
 _EXPORTED_CALLABLES = {
     "_env",

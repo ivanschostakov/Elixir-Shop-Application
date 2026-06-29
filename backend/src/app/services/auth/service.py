@@ -1,7 +1,12 @@
+import hashlib
+import hmac
+import json
 import secrets
+import time
 
 from datetime import timedelta
 from logging import getLogger
+from urllib.parse import parse_qsl
 
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -15,6 +20,8 @@ from config import (
     EMAIL_VERIFICATION_CODE_TTL_MINUTES,
     EMAIL_VERIFICATION_MAX_ATTEMPTS,
     REFRESH_TOKEN_LIFETIME_DAYS,
+    TELEGRAM_AUTH_MAX_AGE_SECONDS,
+    TELEGRAM_BOT_TOKEN,
     ufa_now,
 )
 from src.app.modules.auth.schemas.phone import (
@@ -36,6 +43,10 @@ from src.app.modules.auth.schemas.responses import (
     AuthTokensWithUserResponse,
     AuthUserRead,
 )
+from src.app.modules.auth.schemas.telegram import (
+    TelegramAuthContactRequiredResponse,
+    TelegramAuthPayload,
+)
 from src.app.modules.auth.schemas.website import WebsiteIdentityLoginPayload
 from src.app.services.email_verification import (
     EmailVerificationConfigError,
@@ -53,14 +64,20 @@ from src.database.crud.auth.email_verification_code import (
     create_email_verification_code,
     get_latest_pending_email_verification_code,
 )
-from src.database.crud.auth.user import create_user, get_user_by_email, get_user_by_id, get_user_by_phone_number
+from src.database.crud.auth.user import (
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
+    get_user_by_phone_number,
+    get_user_by_telegram_user_id,
+)
 from src.database.crud.auth.user_session import (
     create_user_session,
     get_user_session_by_id,
     revoke_active_user_sessions,
     update_user_session,
 )
-from src.database.limits import PERSON_NAME_MAX_LENGTH
+from src.database.limits import PERSON_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH, TELEGRAM_USERNAME_MAX_LENGTH
 from src.database.models.auth.user import User
 from src.database.schemas.auth.user import UserCreate
 from src.database.schemas.auth.user_session import UserSessionCreate, UserSessionUpdate
@@ -106,6 +123,112 @@ def _counterparty_name_parts(counterparty: dict[str, object] | None) -> tuple[st
 def _deleted_phone_number(*, user_id: int, timestamp: int) -> str:
     suffix = f"{user_id % 100000:05d}{timestamp % 100000000:08d}"
     return f"+98{suffix}"
+
+
+def _telegram_config_unavailable() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Telegram auth is not configured")
+
+
+def _fit_person_name(value: object, fallback: str) -> str:
+    normalized = optional_str(value) or fallback
+    return normalized[:PERSON_NAME_MAX_LENGTH] or fallback
+
+
+def _fit_telegram_username(value: object) -> str | None:
+    normalized = optional_str(value)
+    return normalized[:TELEGRAM_USERNAME_MAX_LENGTH] if normalized else None
+
+
+def _normalize_telegram_phone(value: object) -> str | None:
+    normalized = normalize_phone(value)
+    if normalized is None:
+        return None
+    if not normalized.startswith("+"):
+        normalized = f"+{normalized}"
+    return normalized[:PHONE_NUMBER_MAX_LENGTH]
+
+
+def _validate_telegram_init_data(init_data: str) -> dict[str, object]:
+    if not TELEGRAM_BOT_TOKEN:
+        raise _telegram_config_unavailable()
+
+    pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=False)
+    values = dict(pairs)
+    received_hash = values.pop("hash", "")
+    if not received_hash:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Telegram auth data")
+
+    data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(values.items()))
+    secret_key = hmac.new(b"WebAppData", TELEGRAM_BOT_TOKEN.encode("utf-8"), hashlib.sha256).digest()
+    expected_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_hash, received_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Telegram auth data")
+
+    try:
+        auth_date = int(values.get("auth_date", "0"))
+    except (TypeError, ValueError):
+        auth_date = 0
+    if auth_date <= 0 or time.time() - auth_date > TELEGRAM_AUTH_MAX_AGE_SECONDS:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Expired Telegram auth data")
+
+    try:
+        user = json.loads(values.get("user", "{}"))
+    except (TypeError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Telegram auth user") from error
+
+    if not isinstance(user, dict):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Telegram auth user")
+    try:
+        telegram_user_id = int(user["id"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Telegram auth user") from error
+    if telegram_user_id <= 0:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Telegram auth user")
+
+    return {
+        "id": telegram_user_id,
+        "first_name": user.get("first_name"),
+        "last_name": user.get("last_name"),
+        "username": user.get("username"),
+        "auth_date": auth_date,
+    }
+
+
+def _apply_telegram_profile(user: User, telegram_user: dict[str, object]) -> bool:
+    changed = False
+    telegram_user_id = int(telegram_user["id"])
+    telegram_username = _fit_telegram_username(telegram_user.get("username"))
+
+    if user.telegram_user_id != telegram_user_id:
+        user.telegram_user_id = telegram_user_id
+        changed = True
+    if user.telegram_username != telegram_username:
+        user.telegram_username = telegram_username
+        changed = True
+
+    return changed
+
+
+def _is_telegram_user_phone_confirmed(user: User, telegram_user_id: int) -> bool:
+    return (
+        user.is_active
+        and user.telegram_user_id == telegram_user_id
+        and user.telegram_phone_confirmed_at is not None
+        and bool(user.phone_number)
+    )
+
+
+def verify_telegram_init_data_for_user(init_data: str, user: User) -> tuple[bool, str | None]:
+    try:
+        telegram_user = _validate_telegram_init_data(init_data)
+    except HTTPException as error:
+        return False, str(error.detail)
+
+    telegram_user_id = int(telegram_user["id"])
+    if not _is_telegram_user_phone_confirmed(user, telegram_user_id):
+        return False, "telegram user is not linked to the current user"
+
+    return True, None
 
 
 async def _apply_auth_rate_limit(request: Request, *, scope: str, principal: str | None = None, verify: bool = False) -> None:
@@ -418,6 +541,97 @@ async def resend_phone_auth_verification_code(request: Request, payload: PhoneAu
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from error
 
     return PhoneAuthCodeSentResponse(phone_number=payload.phone_number, email=user.email, message="Verification code sent")
+
+
+async def login_user_by_telegram(
+    request: Request,
+    payload: TelegramAuthPayload,
+    db: AsyncSession,
+) -> AuthTokensWithUserResponse | TelegramAuthContactRequiredResponse:
+    await _apply_auth_rate_limit(request, scope="auth:telegram")
+    telegram_user = _validate_telegram_init_data(payload.init_data)
+    telegram_user_id = int(telegram_user["id"])
+    user = await get_user_by_telegram_user_id(db, telegram_user_id)
+
+    if user is not None and _is_telegram_user_phone_confirmed(user, telegram_user_id):
+        changed = _apply_telegram_profile(user, telegram_user)
+        if changed:
+            user.last_active_at = ufa_now()
+            await db.commit()
+            await db.refresh(user)
+        return await _build_auth_tokens_response(user, db)
+
+    return TelegramAuthContactRequiredResponse(telegram_user_id=telegram_user_id)
+
+
+async def link_telegram_contact_to_user(
+    db: AsyncSession,
+    *,
+    telegram_user_id: int,
+    phone_number: str,
+    first_name: object = None,
+    last_name: object = None,
+    username: object = None,
+) -> tuple[User | None, str | None]:
+    normalized_phone = _normalize_telegram_phone(phone_number)
+    if telegram_user_id <= 0:
+        return None, "invalid_telegram_user"
+    if not normalized_phone:
+        return None, "invalid_phone"
+
+    telegram_user = {
+        "id": telegram_user_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "username": username,
+    }
+    now = ufa_now()
+    user_by_telegram = await get_user_by_telegram_user_id(db, telegram_user_id)
+    user_by_phone = await get_user_by_phone_number(db, normalized_phone)
+
+    if (
+        user_by_phone is not None
+        and user_by_phone.telegram_user_id is not None
+        and user_by_phone.telegram_user_id != telegram_user_id
+    ):
+        return None, "phone_already_linked_to_another_telegram_user"
+
+    if user_by_telegram is not None and user_by_phone is not None and user_by_telegram.id != user_by_phone.id:
+        return None, "telegram_user_and_phone_belong_to_different_users"
+
+    target_user = user_by_telegram or user_by_phone
+
+    try:
+        if target_user is None:
+            target_user = await create_user(
+                db,
+                UserCreate(
+                    email=None,
+                    password_hash=hash_password(secrets.token_urlsafe(32)),
+                    name=_fit_person_name(first_name, "Telegram"),
+                    surname=_fit_person_name(last_name, "User"),
+                    phone_number=normalized_phone,
+                    is_verified=True,
+                    telegram_user_id=telegram_user_id,
+                    telegram_username=_fit_telegram_username(username),
+                    telegram_phone_confirmed_at=now,
+                ),
+                commit=False,
+            )
+        else:
+            target_user.phone_number = normalized_phone
+            target_user.telegram_phone_confirmed_at = now
+            target_user.last_active_at = now
+            target_user.is_active = True
+            target_user.is_verified = True
+            _apply_telegram_profile(target_user, telegram_user)
+
+        await db.commit()
+        await db.refresh(target_user)
+        return target_user, None
+    except IntegrityError:
+        await db.rollback()
+        return None, "telegram_contact_conflict"
 
 
 async def parse_website_identity_for_user(

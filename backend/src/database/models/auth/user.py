@@ -11,6 +11,7 @@ from src.database.limits import (
     PASSWORD_HASH_MAX_LENGTH,
     PERSON_NAME_MAX_LENGTH,
     PHONE_NUMBER_MAX_LENGTH,
+    TELEGRAM_USERNAME_MAX_LENGTH,
 )
 from src.database.mixins import IdPkMixin, TimestampMixin
 
@@ -29,6 +30,9 @@ class User(Base, IdPkMixin, TimestampMixin):
 
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     phone_number: Mapped[str] = mapped_column(String(length=PHONE_NUMBER_MAX_LENGTH), nullable=False, unique=True)
+    telegram_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True, index=True)
+    telegram_username: Mapped[str | None] = mapped_column(String(length=TELEGRAM_USERNAME_MAX_LENGTH), nullable=True)
+    telegram_phone_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     contact_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     moysklad_counterparty_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
 

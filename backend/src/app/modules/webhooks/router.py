@@ -1,3 +1,5 @@
+import hmac
+import json
 import logging
 import re
 from urllib.parse import parse_qs
@@ -7,6 +9,7 @@ from starlette.responses import JSONResponse, PlainTextResponse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.services.orders import apply_amocrm_status_update, reconcile_sbp_payment
+from src.app.services.auth import link_telegram_contact_to_user
 from src.app.services.rate_limit import enforce_rate_limit
 from src.database import get_db
 from src.database.crud import get_order_by_amocrm_lead_id, get_order_by_code, get_order_by_id, get_order_by_invoice_id, update_order
@@ -16,12 +19,19 @@ from src.integrations.amocrm import get_amocrm_client
 from src.integrations.intellectmoney import get_intellectmoney_client
 
 from .service import _amocrm_payload_int, _amocrm_webhook_verified, _coerce_amocrm_int, _first_payload_value, _header_value, _parse_intellectmoney_payload, _request_client_ip
-from config import WEBHOOK_RATE_LIMIT_MAX_REQUESTS, WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
+from config import TELEGRAM_WEBHOOK_SECRET_TOKEN, WEBHOOK_RATE_LIMIT_MAX_REQUESTS, WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
 
 webhooks_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 log = logging.getLogger(__name__)
 amocrm_client = get_amocrm_client()
 intellectmoney = get_intellectmoney_client()
+
+
+def _telegram_webhook_verified(request: Request) -> bool:
+    if not TELEGRAM_WEBHOOK_SECRET_TOKEN:
+        return True
+    token = (request.headers.get("x-telegram-bot-api-secret-token") or "").strip()
+    return hmac.compare_digest(token, TELEGRAM_WEBHOOK_SECRET_TOKEN)
 
 
 @webhooks_router.post("/amocrm")
@@ -102,3 +112,53 @@ async def intellectmoney_webhook(request: Request, db: AsyncSession = Depends(ge
     order = await update_order(db, order, OrderUpdate(payment_provider="intellectmoney", payment_invoice_id=payload.get("PaymentId") or None), commit=True)
     await reconcile_sbp_payment(db, order, payment_status_code=payment_status_code, payment_data=payload.get("PaymentData"), invoice_id=payload.get("PaymentId"))
     return PlainTextResponse("OK")
+
+
+@webhooks_router.post("/telegram")
+async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db)):
+    await enforce_rate_limit(request, scope="webhooks:telegram", limit=WEBHOOK_RATE_LIMIT_MAX_REQUESTS, window_seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS)
+    if not _telegram_webhook_verified(request):
+        return JSONResponse({"ok": False, "error": "webhook verification failed"}, status_code=403)
+
+    body = await request.body()
+    try:
+        payload = json.loads(body.decode("utf-8", "replace"))
+    except json.JSONDecodeError:
+        return JSONResponse({"ok": False, "error": "invalid json"}, status_code=400)
+    if not isinstance(payload, dict):
+        return JSONResponse({"ok": False, "error": "invalid payload"}, status_code=400)
+
+    delivery_id = str(payload.get("update_id") or "").strip() or None
+    accepted = await register_webhook_delivery(db, provider="telegram", delivery_id=delivery_id, payload_hash=payload_digest(body))
+    if not accepted:
+        return JSONResponse({"ok": True, "ignored": "duplicate"})
+
+    message = payload.get("message")
+    if not isinstance(message, dict):
+        return JSONResponse({"ok": True, "ignored": "no message"})
+
+    contact = message.get("contact")
+    sender = message.get("from")
+    if not isinstance(contact, dict) or not isinstance(sender, dict):
+        return JSONResponse({"ok": True, "ignored": "no contact"})
+
+    try:
+        contact_user_id = int(contact.get("user_id") or 0)
+        sender_user_id = int(sender.get("id") or 0)
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": True, "ignored": "invalid contact user"})
+    if contact_user_id <= 0 or contact_user_id != sender_user_id:
+        return JSONResponse({"ok": True, "ignored": "contact does not belong to sender"})
+
+    user, reason = await link_telegram_contact_to_user(
+        db,
+        telegram_user_id=contact_user_id,
+        phone_number=str(contact.get("phone_number") or ""),
+        first_name=contact.get("first_name") or sender.get("first_name"),
+        last_name=contact.get("last_name") or sender.get("last_name"),
+        username=sender.get("username"),
+    )
+    if user is None:
+        return JSONResponse({"ok": True, "ignored": reason or "contact not linked"})
+
+    return JSONResponse({"ok": True, "user_id": user.id})

@@ -32,6 +32,10 @@ async def get_user_by_phone_number(session: AsyncSession, phone_number: str) -> 
     return (await session.execute(select(User).where(User.phone_number == phone_number))).scalar_one_or_none()
 
 
+async def get_user_by_telegram_user_id(session: AsyncSession, telegram_user_id: int) -> User | None:
+    return (await session.execute(select(User).where(User.telegram_user_id == telegram_user_id))).scalar_one_or_none()
+
+
 async def get_users(session: AsyncSession, *, q: str | None = None, is_active: bool | None = None, is_verified: bool | None = None, offset: int = 0, limit: int = 100) -> list[User]:
     stmt = select(User)
     if is_active is not None: stmt = stmt.where(User.is_active == is_active)

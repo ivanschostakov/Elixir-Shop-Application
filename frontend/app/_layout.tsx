@@ -3,11 +3,12 @@ import "expo-dev-client"
 import { useEffect } from "react"
 import { Asset } from "expo-asset"
 import { router } from "expo-router"
-import { AppState, Platform, Text, View, useColorScheme, type AppStateStatus } from "react-native"
+import { AppState, Platform, useColorScheme, type AppStateStatus } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 
 import AppShell from "@/components/navigation/app-shell"
 import { VersionGate } from "@/components/navigation/version-gate"
+import { TelegramWebAppGate } from "@/components/telegram/telegram-web-app-gate"
 import { AuthProvider } from "@/providers/auth-provider"
 import { LanguageProvider } from "@/providers/language-provider"
 import { ThemeProvider } from "@/providers/theme-provider"
@@ -29,20 +30,6 @@ const CHAT_BACKGROUND_ASSETS = [
 
 const getRootLogErrorMessage = (error: unknown) =>
     error instanceof Error ? error.message : String(error)
-
-function WebTemporarilyDisabledScreen() {
-    return (
-        <View style={rootLayoutStyles.webDisabledScreen}>
-            <View style={rootLayoutStyles.webDisabledCard}>
-                <Text style={rootLayoutStyles.webDisabledEyebrow}>Elixir Peptide</Text>
-                <Text style={rootLayoutStyles.webDisabledTitle}>Web version is temporarily disabled</Text>
-                <Text style={rootLayoutStyles.webDisabledText}>
-                    The app is currently being built mobile-first. Web will come back later when the product flow is finished.
-                </Text>
-            </View>
-        </View>
-    )
-}
 
 export default function RootLayout() {
     const colorScheme = useColorScheme()
@@ -107,25 +94,15 @@ export default function RootLayout() {
         })
     }, [])
 
-    if (Platform.OS === "web") {
-        return (
-            <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
-                <ThemeProvider>
-                    <LanguageProvider>
-                        <WebTemporarilyDisabledScreen />
-                    </LanguageProvider>
-                </ThemeProvider>
-            </GestureHandlerRootView>
-        )
-    }
-
     return (
         <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
             <ThemeProvider>
                 <LanguageProvider>
                     <VersionGate>
                         <AuthProvider>
-                            <AppShell />
+                            <TelegramWebAppGate>
+                                <AppShell />
+                            </TelegramWebAppGate>
                         </AuthProvider>
                     </VersionGate>
                 </LanguageProvider>

@@ -22,6 +22,8 @@ import type {
     PhoneAuthVerificationRequiredResponse,
     PhoneClaimPayload,
     PhoneRegisterPayload,
+    TelegramAuthPayload,
+    TelegramAuthResponse,
 } from "@/services/auth/auth.types"
 
 export type {
@@ -34,6 +36,7 @@ export type {
     PhoneAuthVerificationRequiredResponse,
     PhoneClaimPayload,
     PhoneRegisterPayload,
+    TelegramAuthResponse,
 } from "@/services/auth/auth.types"
 export { getErrorMessage as getAuthErrorMessage } from "@/utils/errors"
 
@@ -127,6 +130,14 @@ export async function resendPhoneAuthCode(payload: PhoneAuthStartPayload): Promi
     return apiPost<PhoneAuthVerificationRequiredResponse, PhoneAuthStartPayload>(
         phoneAuthPath("/resend-code"),
         payload,
+        { auth: false, retryOnUnauthorized: false },
+    )
+}
+
+export async function startTelegramSession(initData: string): Promise<TelegramAuthResponse> {
+    return apiPost<TelegramAuthResponse, TelegramAuthPayload>(
+        authPath("/telegram/session"),
+        { init_data: initData },
         { auth: false, retryOnUnauthorized: false },
     )
 }

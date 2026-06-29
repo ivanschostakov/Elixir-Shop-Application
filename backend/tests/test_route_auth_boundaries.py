@@ -132,7 +132,6 @@ def _product_payload(sku: str = "admin-only-sku") -> dict:
 def _fake_user() -> User:
     return User(
         id=123,
-        username="catalog-user",
         email="catalog-user@example.com",
         password_hash="hash",
         name="Catalog",

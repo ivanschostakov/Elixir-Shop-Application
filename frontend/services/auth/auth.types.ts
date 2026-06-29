@@ -68,6 +68,18 @@ export type AuthTokensWithUserResponse = BackendAuthTokens & {
     user: BackendAuthUser
 }
 
+export type TelegramAuthPayload = {
+    init_data: string
+}
+
+export type TelegramAuthContactRequiredResponse = {
+    contact_required: true
+    telegram_user_id: number
+    message: string
+}
+
+export type TelegramAuthResponse = AuthTokensWithUserResponse | TelegramAuthContactRequiredResponse
+
 export type AuthLogoutResponse = {
     ok: boolean
     message: string

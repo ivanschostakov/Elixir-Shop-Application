@@ -17,7 +17,6 @@ from src.integrations.ai import get_professor_client
 def _fake_user() -> User:
     return User(
         id=123,
-        username="integrity-user",
         email="integrity-user@example.com",
         password_hash="hash",
         name="Integrity",

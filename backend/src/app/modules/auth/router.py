@@ -6,6 +6,7 @@ from src.app.services.auth import (
     claim_user_by_phone,
     delete_user_account,
     login_user_by_phone,
+    login_user_by_telegram,
     logout_user_session,
     parse_website_identity_for_user,
     refresh_user_tokens,
@@ -40,6 +41,7 @@ from .schemas.responses import (
     AuthTokensWithUserResponse,
     AuthUserRead,
 )
+from .schemas.telegram import TelegramAuthContactRequiredResponse, TelegramAuthPayload
 from .schemas.website import WebsiteIdentityLoginPayload
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
@@ -73,6 +75,11 @@ async def phone_verify(request: Request, payload: PhoneAuthVerifyPayload, db: As
 @auth_router.post("/phone/resend-code", response_model=PhoneAuthCodeSentResponse, status_code=status.HTTP_200_OK)
 async def resend_phone_verification_code(request: Request, payload: PhoneAuthCodeResendPayload, db: AsyncSession = Depends(get_db)) -> PhoneAuthCodeSentResponse:
     return await resend_phone_auth_verification_code(request, payload, db)
+
+
+@auth_router.post("/telegram/session", response_model=AuthTokensWithUserResponse | TelegramAuthContactRequiredResponse, status_code=status.HTTP_200_OK)
+async def telegram_session(request: Request, payload: TelegramAuthPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse | TelegramAuthContactRequiredResponse:
+    return await login_user_by_telegram(request, payload, db)
 
 
 @auth_router.post("/website/parse", response_model=WebsiteIdentityRead, status_code=status.HTTP_200_OK, summary="Refresh website identity data")

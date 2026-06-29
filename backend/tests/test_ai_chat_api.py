@@ -25,7 +25,6 @@ from src.app.services.orders.drafts import _normalize_ai_draft_items
 def _fake_user() -> User:
     return User(
         id=123,
-        username="chat-user",
         email="chat-user@example.com",
         password_hash="hash",
         name="Chat",

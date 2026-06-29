@@ -1,4 +1,5 @@
 import * as SecureStore from "expo-secure-store"
+import { Platform } from "react-native"
 
 const DELIVERY_FLOW_LOG_PREFIX = "[delivery-flow]"
 const DELIVERY_FLOW_STORAGE_KEY = "delivery-flow-breadcrumbs"
@@ -22,6 +23,31 @@ const events: DeliveryFlowEvent[] = []
 let writeQueue = Promise.resolve()
 let hasLoadedPersistedEvents = false
 
+function getWebStorage() {
+    if (Platform.OS !== "web" || typeof window === "undefined" || !window.localStorage) {
+        return null
+    }
+
+    return window.localStorage
+}
+
+async function readPersistedEventsPayload() {
+    if (Platform.OS === "web") {
+        return getWebStorage()?.getItem(DELIVERY_FLOW_STORAGE_KEY) ?? null
+    }
+
+    return SecureStore.getItemAsync(DELIVERY_FLOW_STORAGE_KEY)
+}
+
+async function writePersistedEventsPayload(payload: string) {
+    if (Platform.OS === "web") {
+        getWebStorage()?.setItem(DELIVERY_FLOW_STORAGE_KEY, payload)
+        return
+    }
+
+    await SecureStore.setItemAsync(DELIVERY_FLOW_STORAGE_KEY, payload)
+}
+
 const notifyListeners = (event: DeliveryFlowEvent) => {
     const snapshot = getDeliveryFlowEventsSnapshot()
     listeners.forEach((listener) => {
@@ -35,7 +61,7 @@ const loadPersistedEvents = () => {
     }
 
     hasLoadedPersistedEvents = true
-    void SecureStore.getItemAsync(DELIVERY_FLOW_STORAGE_KEY)
+    void readPersistedEventsPayload()
         .then((storedEvents) => {
             if (!storedEvents || events.length > 0) {
                 return
@@ -107,7 +133,7 @@ const persistEvents = () => {
 
     writeQueue = writeQueue
         .catch(() => undefined)
-        .then(() => SecureStore.setItemAsync(DELIVERY_FLOW_STORAGE_KEY, payload))
+        .then(() => writePersistedEventsPayload(payload))
         .catch((error) => {
             console.warn(`${DELIVERY_FLOW_LOG_PREFIX} failed to persist breadcrumb log`, error)
         })
