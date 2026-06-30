@@ -35,8 +35,6 @@ from src.database.models import (
     User,
     UserProductRecommendationSignal,
     Variant,
-    WebsiteDiscountEntitlement,
-    WebsiteIdentity,
 )
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
@@ -190,39 +188,16 @@ def _update_category_signal_timestamp(
 
 
 def _seed_product_price_discount_context(user_id: int) -> None:
-    token = uuid.uuid4().int % 100000000
     with Session(sync_engine) as session:
-        website_identity = WebsiteIdentity(
-            user_id=user_id,
-            website_user_id=800000000 + token,
-            website_login=f"price-site-{token}",
-            website_email=None,
-        )
-        session.add(website_identity)
-        session.flush()
+        user = session.get(User, user_id)
+        assert user is not None
+        user.promo_code = "SITE"
 
         session.add(
             ReferralProfile(
                 user_id=user_id,
-                website_identity_id=website_identity.id,
-                referrer_promo_code="SITE",
-                website_seed_purchase_balance=Decimal("150000.00"),
-                app_paid_purchase_total=Decimal("40000.00"),
                 referral_discount_base_total=Decimal("190000.00"),
-                current_discount_percent=Decimal("19.00"),
-                website_seeded_at=ufa_now(),
-            )
-        )
-        session.add(
-            WebsiteDiscountEntitlement(
-                website_identity_id=website_identity.id,
-                source_kind="group",
-                website_source_id="vip",
-                source_name="VIP",
-                discount_percent=Decimal("5.00"),
-                currency="RUB",
-                is_active=True,
-                is_stackable=True,
+                current_discount_percent=Decimal("17.00"),
             )
         )
         session.commit()
@@ -723,8 +698,8 @@ def test_product_detail_returns_user_discounted_variant_price(
     variant = response.json()["variants"][0]
     assert Decimal(str(variant["price"])) == Decimal("1000.00")
     assert Decimal(str(variant["original_price"])) == Decimal("1000.00")
-    assert Decimal(str(variant["discounted_price"])) == Decimal("769.50")
-    assert Decimal(str(variant["discount_percent"])) == Decimal("23.05")
+    assert Decimal(str(variant["discounted_price"])) == Decimal("830.00")
+    assert Decimal(str(variant["discount_percent"])) == Decimal("17.00")
 
 
 def test_product_similarity_excludes_out_of_stock_products(

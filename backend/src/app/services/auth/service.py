@@ -47,7 +47,6 @@ from src.app.modules.auth.schemas.telegram import (
     TelegramAuthContactRequiredResponse,
     TelegramAuthPayload,
 )
-from src.app.modules.auth.schemas.website import WebsiteIdentityLoginPayload
 from src.app.services.email_verification import (
     EmailVerificationConfigError,
     EmailVerificationDeliveryError,
@@ -59,7 +58,6 @@ from src.app.services.email_verification import (
 from src.app.services.rate_limit import client_ip_from_request, enforce_rate_limit
 from src.app.services.security import create_access_token, hash_password, verify_password
 from src.app.services.security.refresh import create_refresh_token, hash_refresh_token, verify_refresh_token
-from src.app.services.website_identities.service import link_website_identity_to_user
 from src.database.crud.auth.email_verification_code import (
     create_email_verification_code,
     get_latest_pending_email_verification_code,
@@ -81,9 +79,7 @@ from src.database.limits import PERSON_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH,
 from src.database.models.auth.user import User
 from src.database.schemas.auth.user import UserCreate
 from src.database.schemas.auth.user_session import UserSessionCreate, UserSessionUpdate
-from src.database.schemas.website.website_identity import WebsiteIdentityRead
 from src.integrations.moysklad import MoySkladClient
-from src.integrations.website_identity import WebsiteIdentityClient
 from src.normalize import coerce_uuid, normalize_email, normalize_phone, optional_str
 
 logger = getLogger(__name__)
@@ -572,6 +568,7 @@ async def link_telegram_contact_to_user(
     first_name: object = None,
     last_name: object = None,
     username: object = None,
+    moysklad_client: MoySkladClient | None = None,
 ) -> tuple[User | None, str | None]:
     normalized_phone = _normalize_telegram_phone(phone_number)
     if telegram_user_id <= 0:
@@ -588,6 +585,14 @@ async def link_telegram_contact_to_user(
     now = ufa_now()
     user_by_telegram = await get_user_by_telegram_user_id(db, telegram_user_id)
     user_by_phone = await get_user_by_phone_number(db, normalized_phone)
+    counterparty: dict[str, object] | None = None
+    if moysklad_client is not None:
+        try:
+            counterparty = await _get_counterparty_for_phone(normalized_phone, moysklad_client)
+        except Exception:
+            logger.exception("Failed to resolve MoySklad counterparty for Telegram phone")
+            counterparty = None
+    counterparty_id = coerce_uuid(counterparty.get("id")) if isinstance(counterparty, dict) else None
 
     if (
         user_by_phone is not None
@@ -612,6 +617,7 @@ async def link_telegram_contact_to_user(
                     surname=_fit_person_name(last_name, "User"),
                     phone_number=normalized_phone,
                     is_verified=True,
+                    moysklad_counterparty_id=counterparty_id,
                     telegram_user_id=telegram_user_id,
                     telegram_username=_fit_telegram_username(username),
                     telegram_phone_confirmed_at=now,
@@ -619,7 +625,7 @@ async def link_telegram_contact_to_user(
                 commit=False,
             )
         else:
-            target_user.phone_number = normalized_phone
+            _sync_phone_identity_from_counterparty(target_user, phone_number=normalized_phone, counterparty=counterparty)
             target_user.telegram_phone_confirmed_at = now
             target_user.last_active_at = now
             target_user.is_active = True
@@ -632,24 +638,6 @@ async def link_telegram_contact_to_user(
     except IntegrityError:
         await db.rollback()
         return None, "telegram_contact_conflict"
-
-
-async def parse_website_identity_for_user(
-    request: Request,
-    payload: WebsiteIdentityLoginPayload,
-    current_user: User,
-    db: AsyncSession,
-    website_identity_client: WebsiteIdentityClient,
-) -> WebsiteIdentityRead:
-    await _apply_auth_rate_limit(request, scope="auth:website_parse", principal=payload.login)
-    website_identity = await link_website_identity_to_user(
-        db,
-        user=current_user,
-        login=payload.login,
-        password=payload.password,
-        website_identity_client=website_identity_client,
-    )
-    return WebsiteIdentityRead.model_validate(website_identity)
 
 
 async def refresh_user_tokens(request: Request, payload: UserRefreshPayload, db: AsyncSession) -> AuthRefreshResponse:

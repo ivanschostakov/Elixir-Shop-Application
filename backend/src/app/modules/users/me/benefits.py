@@ -13,5 +13,5 @@ my_benefits_router = APIRouter(prefix="/benefits", tags=["my_benefits"])
 
 @my_benefits_router.post("/check", response_model=BenefitCheckRead, status_code=status.HTTP_200_OK)
 async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BenefitCheckRead:
-    resolved = await resolve_benefits_for_user(db, user=current_user, entered_code=payload.code, subtotal=payload.subtotal, currency=payload.currency, requested_bonus_amount=payload.requested_bonus_amount, requested_deposit_amount=payload.requested_deposit_amount)
+    resolved = await resolve_benefits_for_user(db, user=current_user, entered_code=payload.code, subtotal=payload.subtotal, discountable_subtotal=payload.discountable_subtotal, currency=payload.currency)
     return BenefitCheckRead.model_validate(resolved)

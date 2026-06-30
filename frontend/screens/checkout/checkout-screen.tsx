@@ -90,12 +90,8 @@ import { updateGuestBasketCheckout, updateGuestCartItemQuantity } from "@/servic
 import { colors } from "@/theme/colors"
 
 function formatBenefitTitle(option: BenefitOptionResponse) {
-    if (["app_referral", "app_promo", "website_coupon"].includes(option.source_kind)) {
+    if (option.source_kind === "app_referral") {
         return "Промокод"
-    }
-
-    if (option.source_kind === "website_discount_entitlement") {
-        return "Персональное предложение"
     }
 
     return "Скидка"
@@ -200,7 +196,7 @@ export default function CheckoutScreen() {
         const trimmedCode = promoCode.trim()
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
-    const attachedPromoCode = referralProfile?.referrer_promo_code ?? null
+    const attachedPromoCode = referralProfile?.promo_code ?? null
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
     const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
@@ -215,7 +211,6 @@ export default function CheckoutScreen() {
             const nextBenefitCheck = await checkMyBenefits({
                 code,
                 currency: orderDraft.currency,
-                requested_deposit_amount: null,
                 subtotal: orderDraft.basket_subtotal,
             })
             setBenefitCheck(nextBenefitCheck)
@@ -289,14 +284,10 @@ export default function CheckoutScreen() {
     const grandTotal = orderDraft
         ? formatMoney(
             benefitCheck
-                ? Number(benefitCheck.total_after_deposit) + Number(orderDraft.delivery_total)
+                ? Number(benefitCheck.total_after_discounts) + Number(orderDraft.delivery_total)
                 : Number(orderDraft.grand_total),
             orderDraft.currency,
         )
-        : null
-    const depositAppliedAmount = Number(benefitCheck?.deposit_option?.applicable_amount ?? 0)
-    const depositAppliedLabel = depositAppliedAmount > 0
-        ? `−${formatMoney(depositAppliedAmount, benefitCheck?.deposit_option?.currency ?? orderDraft?.currency ?? null)}`
         : null
     const hasDeliveryAddress = Boolean(orderDraft?.delivery_address)
     const hasRecipient = Boolean(currentRecipient)
@@ -487,14 +478,6 @@ export default function CheckoutScreen() {
                                     </Text>
                                 </View>
                             ))}
-                            {depositAppliedLabel ? (
-                                <View style={checkoutScreenStyles.totalRow}>
-                                    <Text style={checkoutScreenStyles.totalLabel}>{t("checkout.depositSpendLabel")}</Text>
-                                    <Text style={[checkoutScreenStyles.totalValue, checkoutScreenStyles.totalValueDiscount]}>
-                                        {depositAppliedLabel}
-                                    </Text>
-                                </View>
-                            ) : null}
                         </View>
 
                         <Pressable
@@ -526,7 +509,6 @@ export default function CheckoutScreen() {
         benefitCheck,
         checkoutFooterCtaLabel,
         deliveryCost,
-        depositAppliedLabel,
         grandTotal,
         handleCheckoutFooterCtaPress,
         isCheckoutFooterCtaDisabled,

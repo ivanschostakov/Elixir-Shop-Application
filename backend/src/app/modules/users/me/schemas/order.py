@@ -1,5 +1,4 @@
 from datetime import datetime
-from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -13,7 +12,6 @@ class CreateOrderPayload(BaseModel):
     draft_id: int | None = Field(default=None, ge=1)
     payment_method: PaymentMethod
     code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
-    requested_deposit_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
 
 
 class CreatePaymentPayload(BaseModel):

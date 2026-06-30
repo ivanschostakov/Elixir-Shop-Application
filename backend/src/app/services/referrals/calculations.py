@@ -1,14 +1,9 @@
 from decimal import ROUND_HALF_UP, Decimal
 
-from src.normalize import optional_str
-
 MONEY_QUANTIZER = Decimal("0.01")
 MIN_PARTICIPANT_DISCOUNT_PERCENT = Decimal("3.00")
-MAX_PERSONAL_DISCOUNT_PERCENT = Decimal("20.00")
-OWN_PROMO_PURCHASE_THRESHOLD = Decimal("100000.00")
-REFERRER_ELIGIBLE_PURCHASE_THRESHOLD = Decimal("100000.00")
-MONTHLY_COMMISSION_ACTIVITY_THRESHOLD = Decimal("10000.00")
-KIPARIS_CODE = "КИПАРИС"
+MAX_PERSONAL_DISCOUNT_PERCENT = Decimal("17.00")
+PERSONAL_DISCOUNT_STEP_SPEND = Decimal("10000.00")
 
 
 def quantize_money(value: Decimal | int | float | str | None) -> Decimal:
@@ -23,38 +18,16 @@ def quantize_percent(value: Decimal | int | float | str | None) -> Decimal:
     return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-def calculate_personal_discount_percent(purchase_total: Decimal | int | float | str | None, *, has_referrer: bool) -> Decimal:
-    if not has_referrer:
+def calculate_personal_discount_percent(
+    purchase_total: Decimal | int | float | str | None,
+    *,
+    has_promo_code: bool | None = None,
+    has_referrer: bool | None = None,
+) -> Decimal:
+    eligible = has_promo_code if has_promo_code is not None else has_referrer
+    if not eligible:
         return Decimal("0.00")
 
     total = quantize_money(purchase_total)
-    stepped_percent = Decimal(max(3, int(total // Decimal("10000.00"))))
+    stepped_percent = Decimal(max(3, int(total // PERSONAL_DISCOUNT_STEP_SPEND)))
     return min(MAX_PERSONAL_DISCOUNT_PERCENT, stepped_percent).quantize(Decimal("0.01"))
-
-
-def is_kiparis_code(code: str | None) -> bool:
-    normalized = optional_str(code)
-    return bool(normalized and normalized.casefold() == KIPARIS_CODE.casefold())
-
-
-def calculate_level_one_commission_percent(*, referrer_discount_percent: Decimal | int | float | str | None, referral_discount_percent: Decimal | int | float | str | None, promo_code: str | None) -> Decimal:
-    referrer_percent = quantize_percent(referrer_discount_percent)
-    referral_percent = quantize_percent(referral_discount_percent)
-
-    if is_kiparis_code(promo_code) and referral_percent >= Decimal("12.00"):
-        return Decimal("0.00")
-
-    if referral_percent >= MAX_PERSONAL_DISCOUNT_PERCENT:
-        return Decimal("3.00")
-
-    return max(Decimal("0.00"), referrer_percent - referral_percent).quantize(Decimal("0.01"))
-
-
-def calculate_super_referrer_commission_percent() -> Decimal:
-    return Decimal("3.00")
-
-
-def calculate_commission_amount(order_subtotal: Decimal | int | float | str | None, commission_percent: Decimal | int | float | str | None) -> Decimal:
-    subtotal = quantize_money(order_subtotal)
-    percent = quantize_percent(commission_percent)
-    return quantize_money(subtotal * percent / Decimal("100.00"))

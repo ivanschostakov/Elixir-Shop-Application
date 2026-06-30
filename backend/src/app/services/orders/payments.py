@@ -11,7 +11,6 @@ from starlette import status
 
 from config import APP_PAYMENT_RETURN_BASE_URL, INTELLECTMONEY_IP_ADDRESS
 from src.app.services.external_errors import external_service_http_exception
-from src.app.services.referrals import finalize_paid_order_referral_effects
 from src.database.crud import update_order
 from src.database.models import Order
 from src.database.schemas import OrderUpdate
@@ -152,9 +151,6 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
 
     updated_order = await update_order(session, order, OrderUpdate(**patch), commit=True)
     if updated_order.payment_status == "paid" or updated_order.is_paid:
-        await finalize_paid_order_referral_effects(session, updated_order)
-        await session.commit()
-        await session.refresh(updated_order)
         await sync_moysklad_customerorder_state(updated_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
         await sync_moysklad_invoiceout_state(updated_order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID)
     return updated_order
@@ -163,9 +159,6 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
 async def _ensure_persisted_paid_state(session: AsyncSession, order: Order) -> Order:
     if order.payment_status != "paid" or order.is_paid: return order
     updated_order = await update_order(session, order, OrderUpdate(is_paid=True), commit=True)
-    await finalize_paid_order_referral_effects(session, updated_order)
-    await session.commit()
-    await session.refresh(updated_order)
     return updated_order
 
 

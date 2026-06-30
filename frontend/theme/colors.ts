@@ -137,7 +137,15 @@ export const darkColors: ThemePalette = {
     onPrimary: "#FFFFFF",
 }
 
-const dynamicColor = (light: string, dark: string) => {
+function colorVariableName(key: string) {
+    return `--elixir-color-${key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`)}`
+}
+
+const dynamicColor = (key: keyof ThemePalette, light: string, dark: string) => {
+    if (Platform.OS === "web") {
+        return `var(${colorVariableName(key)}, ${light})`
+    }
+
     if (Platform.OS !== "ios") {
         return light
     }
@@ -148,6 +156,24 @@ const dynamicColor = (light: string, dark: string) => {
 export const colors = Object.fromEntries(
     Object.keys(lightColors).map((key) => {
         const paletteKey = key as keyof ThemePalette
-        return [paletteKey, dynamicColor(lightColors[paletteKey], darkColors[paletteKey])]
+        return [paletteKey, dynamicColor(paletteKey, lightColors[paletteKey], darkColors[paletteKey])]
     }),
 ) as ThemePalette
+
+export function applyWebThemeColors(themeName: ThemeName) {
+    if (Platform.OS !== "web" || typeof document === "undefined") {
+        return
+    }
+
+    const palette = themeName === "dark" ? darkColors : lightColors
+    const rootStyle = document.documentElement.style
+
+    for (const key of Object.keys(lightColors) as Array<keyof ThemePalette>) {
+        rootStyle.setProperty(colorVariableName(key), palette[key])
+    }
+
+    document.documentElement.style.backgroundColor = palette.pageBackground
+    document.body.style.backgroundColor = palette.pageBackground
+    document.getElementById("root")?.style.setProperty("background-color", palette.pageBackground)
+    rootStyle.colorScheme = themeName
+}

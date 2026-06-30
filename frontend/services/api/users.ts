@@ -2,7 +2,6 @@ import { ENDPOINTS } from "@/services/api/constants"
 import { apiDelete, apiFetch, apiGet, apiPost, apiPostMultipart } from "@/services/api/client"
 import type {
     AvatarResponse,
-    DepositResponse,
     DeleteMyPushTokenPayload,
     DeleteMyPushTokenResponse,
     MyPushTokenResponse,
@@ -72,8 +71,4 @@ export function attachMyReferrerCode(payload: ReferrerCodeAttachPayload) {
 
 export function detachMyReferrerCode() {
     return apiDelete<ReferralProfileResponse>(usersPath("/me/referral-profile/referrer-code"))
-}
-
-export function getMyDeposit() {
-    return apiGet<DepositResponse>(usersPath("/me/deposit"))
 }

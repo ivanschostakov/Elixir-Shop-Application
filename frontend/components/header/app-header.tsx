@@ -3,7 +3,6 @@ import { Alert, Animated, Pressable, Text, View, useWindowDimensions } from "rea
 import { BlurView } from "expo-blur"
 import { useLocalSearchParams, usePathname, useRouter } from "expo-router"
 import { Path, Svg } from "react-native-svg"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { ContentTabBar } from "@/components/content/content-tab-bar"
 import { HeaderMenu } from "@/components/header/header-menu"
@@ -19,6 +18,7 @@ import {
 import { getHeaderStyles } from "@/components/header/app-header.styles"
 import { ROUTES, isPrimaryAppRoute } from "@/constants/routes"
 import { useEntranceAnimation } from "@/hooks/animation/use-entrance-animation"
+import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { useContentTabs } from "@/hooks/navigation/use-content-tabs"
@@ -30,7 +30,7 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const pathname = usePathname()
     const params = useLocalSearchParams<{ q?: string | string[] }>()
     const router = useRouter()
-    const topInset = useSafeAreaInsets().top
+    const topInset = useAppSafeAreaInsets().top
     const { height: windowHeight } = useWindowDimensions()
     const styles = getHeaderStyles(topInset, windowHeight)
     const { accentPalette, isDark, themeName, toggleTheme } = useTheme()

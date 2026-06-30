@@ -53,7 +53,14 @@ async def create_product(session: AsyncSession, data: ProductCreate) -> Product:
 
 
 async def get_product_by_id(session: AsyncSession, product_id: int, *, include_out_of_stock: bool = True, include_archived: bool = False) -> Product | None:
-    stmt = select(Product).options(selectinload(Product.variants)).where(Product.id == product_id)
+    stmt = (
+        select(Product)
+        .options(
+            selectinload(Product.variants),
+            selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
+        )
+        .where(Product.id == product_id)
+    )
     if not include_out_of_stock:
         stmt = stmt.where(_in_stock_product_clause())
     if not include_archived:
@@ -70,7 +77,10 @@ async def get_product_by_sku(session: AsyncSession, sku: str) -> Product | None:
 
 
 async def get_products(session: AsyncSession, *, q: str | None = None, sku: str | None = None, min_priority: int | None = None, category_id: int | None = None, offset: int = 0, limit: int = 100, sort: str = None, include_archived: bool = False) -> list[Product]:
-    stmt = select(Product).options(selectinload(Product.variants))
+    stmt = select(Product).options(
+        selectinload(Product.variants),
+        selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
+    )
     if not include_archived:
         stmt = stmt.where(_not_archived_product_clause())
     if category_id is not None:

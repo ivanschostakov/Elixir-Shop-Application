@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from typing import Any
 
@@ -9,10 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.database.models import ReferralProfile, User
+from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
 from src.normalize import optional_str
-from .calculations import calculate_personal_discount_percent, quantize_money, quantize_percent
+from .calculations import calculate_personal_discount_percent, quantize_money
 
-MAX_REFERRAL_TREE_LEVEL = 3
+MOYSKLAD_MONEY_MINOR_UNITS = Decimal("100.00")
+logger = logging.getLogger(__name__)
 
 
 def normalize_referral_code(code: str | None) -> str | None:
@@ -21,49 +24,52 @@ def normalize_referral_code(code: str | None) -> str | None:
 
 
 def referral_profile_total_purchases(profile: ReferralProfile) -> Decimal:
-    return quantize_money(profile.initial_purchase_balance) + quantize_money(profile.website_seed_purchase_balance) + quantize_money(profile.app_paid_purchase_total)
+    return quantize_money(profile.referral_discount_base_total)
 
 
-def discount_base_from_percent(value: Decimal | int | float | str | None) -> Decimal:
-    percent = quantize_percent(value)
-    if percent >= Decimal("20.00"): return Decimal("200000.00")
-    if percent >= Decimal("4.00"): return quantize_money(percent * Decimal("10000.00"))
-    return Decimal("0.00")
+def user_has_promo_code(user: User) -> bool:
+    return bool(normalize_referral_code(user.promo_code))
 
 
-def website_seed_referral_payload(profile: ReferralProfile) -> dict[str, Any]:
-    seed = profile.website_seed_payload if isinstance(profile.website_seed_payload, dict) else {}
-    payload = seed.get("referral_profile")
-    return payload if isinstance(payload, dict) else {}
+def refresh_profile_discount(profile: ReferralProfile, *, has_promo_code: bool | None = None) -> None:
+    profile.current_discount_percent = calculate_personal_discount_percent(
+        profile.referral_discount_base_total,
+        has_promo_code=bool(has_promo_code),
+    )
 
 
-def website_seed_referral_percent(profile: ReferralProfile) -> Decimal:
-    return quantize_percent(website_seed_referral_payload(profile).get("referral_percent"))
+def moysklad_counterparty_sales_amount_rubles(counterparty: dict[str, Any] | None) -> Decimal:
+    if not isinstance(counterparty, dict):
+        return Decimal("0.00")
+
+    raw_sales_amount = counterparty.get("salesAmount")
+    if raw_sales_amount is None:
+        return Decimal("0.00")
+
+    try:
+        return quantize_money(Decimal(str(raw_sales_amount)) / MOYSKLAD_MONEY_MINOR_UNITS)
+    except Exception:
+        logger.warning("Could not parse MoySklad counterparty salesAmount=%r", raw_sales_amount)
+        return Decimal("0.00")
 
 
-def profile_has_referral_participation(profile: ReferralProfile) -> bool:
-    return bool(profile.referrer_promo_code) or website_seed_referral_percent(profile) > Decimal("0.00")
+async def refresh_profile_discount_from_moysklad(
+    profile: ReferralProfile,
+    *,
+    user: User,
+    moysklad_client: MoySkladClient | None = None,
+) -> None:
+    profile.referral_discount_base_total = Decimal("0.00")
 
+    client = moysklad_client or get_moysklad_client()
+    if user.moysklad_counterparty_id is not None and client.is_configured():
+        try:
+            counterparty = await client.get_counterparty(user.moysklad_counterparty_id)
+            profile.referral_discount_base_total = moysklad_counterparty_sales_amount_rubles(counterparty)
+        except Exception:
+            logger.exception("Could not refresh referral discount base from MoySklad user_id=%s counterparty_id=%s", user.id, user.moysklad_counterparty_id)
 
-def refresh_profile_discount(profile: ReferralProfile) -> None:
-    profile.current_discount_percent = calculate_personal_discount_percent(profile.referral_discount_base_total, has_referrer=profile_has_referral_participation(profile))
-
-
-def website_discount_base_from_referral_data(data: dict[str, Any] | None) -> Decimal:
-    if data is None: return Decimal("0.00")
-    return max(quantize_money(data.get("referral_turnover_amount")), discount_base_from_percent(data.get("referral_percent")))
-
-
-def sync_website_referral_discount_base(profile: ReferralProfile, *, old_website_base: Decimal, new_website_base: Decimal, is_first_website_seed: bool, website_participates: bool) -> None:
-    if not website_participates and not profile.referrer_promo_code:
-        profile.referral_discount_base_total = Decimal("0.00")
-        refresh_profile_discount(profile)
-        return
-
-    current = quantize_money(profile.referral_discount_base_total)
-    if is_first_website_seed: profile.referral_discount_base_total = current + new_website_base if current > Decimal("0.00") else quantize_money(profile.initial_purchase_balance) + quantize_money(profile.app_paid_purchase_total) + new_website_base
-    else: profile.referral_discount_base_total = max(Decimal("0.00"), current - old_website_base) + new_website_base
-    refresh_profile_discount(profile)
+    refresh_profile_discount(profile, has_promo_code=user_has_promo_code(user))
 
 
 async def get_referral_profile_by_user_id(db: AsyncSession, user_id: int) -> ReferralProfile | None:

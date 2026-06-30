@@ -59,16 +59,6 @@ from .users.push_token import (
     UserPushTokenRead,
     UserPushTokenUpsert,
 )
-from .website.website_identity import (
-    WebsiteBonusAccountRead,
-    WebsiteCouponRead,
-    WebsiteDiscountEntitlementRead,
-    WebsiteIdentityBase,
-    WebsiteIdentityCreate,
-    WebsiteIdentityRead,
-    WebsiteIdentityUpdate,
-    WebsiteReferralProfileRead,
-)
 from .orders.draft import (
     OrderDraftBase,
     OrderDraftCheckoutOptionsRead,
@@ -203,14 +193,6 @@ __all__ = [
     "VariantCreate",
     "VariantRead",
     "VariantUpdate",
-    "WebsiteBonusAccountRead",
-    "WebsiteCouponRead",
-    "WebsiteDiscountEntitlementRead",
-    "WebsiteIdentityBase",
-    "WebsiteIdentityCreate",
-    "WebsiteIdentityRead",
-    "WebsiteIdentityUpdate",
-    "WebsiteReferralProfileRead",
     "YandexPickupAddressBase",
     "YandexPickupAddressCreate",
     "YandexPickupAddressRead",

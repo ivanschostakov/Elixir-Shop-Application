@@ -165,7 +165,6 @@ export default function PaymentScreen() {
     const { t } = useLanguage()
     const params = useLocalSearchParams<{
         code?: string | string[]
-        depositSpend?: string | string[]
         draftId?: string | string[]
         paymentMethod?: string | string[]
         orderId?: string | string[]
@@ -174,7 +173,6 @@ export default function PaymentScreen() {
     const routePaymentMethod = parsePaymentMethod(params.paymentMethod)
     const routeOrderId = parsePositiveRouteId(params.orderId)
     const routePromoCode = parseRouteString(params.code)
-    const routeDepositSpend = parseRouteString(params.depositSpend)
     const isBasketCheckout = draftId === null
     const { basket, loading: basketLoading } = useBasket()
     const { orderDraft: savedOrderDraft, error: savedDraftError, loading: savedDraftLoading } = useOrderDraft(draftId)
@@ -460,7 +458,6 @@ export default function PaymentScreen() {
                     nextOrder = await createOrder({
                         ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
                         ...(routePromoCode ? { code: routePromoCode } : {}),
-                        ...(routeDepositSpend ? { requested_deposit_amount: routeDepositSpend } : {}),
                         payment_method: effectiveMethod,
                     })
                     if (isBasketCheckout) {
@@ -537,7 +534,7 @@ export default function PaymentScreen() {
         } finally {
             setSubmitting(false)
         }
-    }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, routeDepositSpend, routePromoCode, selectedMethod, t])
+    }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, routePromoCode, selectedMethod, t])
 
     const footerCtaState = useMemo(() => {
         if (loading || loadingOrder) {

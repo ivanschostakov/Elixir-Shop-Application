@@ -3,17 +3,14 @@ from decimal import Decimal
 from pathlib import Path
 
 from fastapi import Request
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from config import REVIEWS_MEDIA_DIR, ufa_now
-from src.app.services.benefits.options import best_option_key
-from src.app.services.benefits.website import build_website_entitlement_option
+from config import REVIEWS_MEDIA_DIR
+from src.app.services.discounts import product_is_discountable
 from src.app.services.referrals.calculations import calculate_personal_discount_percent, quantize_money, quantize_percent
-from src.app.services.referrals.profile import get_referral_profile_by_user_id, profile_has_referral_participation
+from src.app.services.referrals.profile import get_referral_profile_by_user_id, user_has_promo_code
 from src.app.services.review_attachments import build_review_attachment_url
-from src.database.models import Product, Review, WebsiteIdentity
+from src.database.models import Product, Review
 from src.database.models.auth.user import User
 from src.database.schemas import ProductRead, ProductVariantRead, ProductWithVariantsRead, ReviewAttachmentRead, ReviewRead
 from src.product_media import build_products_media_url
@@ -25,7 +22,6 @@ PLACEHOLDER_SITE_REVIEW_AUTHOR = "С сайта"
 @dataclass(frozen=True, slots=True)
 class ProductPriceDiscountContext:
     app_referral_percent: Decimal = Decimal("0.00")
-    website_discount_entitlements: tuple = ()
 
 
 NO_PRODUCT_PRICE_DISCOUNT_CONTEXT = ProductPriceDiscountContext()
@@ -39,16 +35,16 @@ def review_stats(product_id: int, stats: ReviewStatsByProductId | None) -> tuple
 
 async def get_user_product_discount_percent(db: AsyncSession, user: User | None) -> Decimal:
     if user is None: return Decimal("0.00")
+    if not user_has_promo_code(user): return Decimal("0.00")
     profile = await get_referral_profile_by_user_id(db, user.id)
     if profile is None: return Decimal("0.00")
-    return calculate_personal_discount_percent(profile.referral_discount_base_total, has_referrer=profile_has_referral_participation(profile))
+    return calculate_personal_discount_percent(profile.referral_discount_base_total, has_promo_code=True)
 
 
 async def get_user_product_price_discount_context(db: AsyncSession, user: User | None) -> ProductPriceDiscountContext:
     if user is None: return NO_PRODUCT_PRICE_DISCOUNT_CONTEXT
     app_percent = await get_user_product_discount_percent(db, user)
-    identity = (await db.execute(select(WebsiteIdentity).options(selectinload(WebsiteIdentity.discount_entitlements)).where(WebsiteIdentity.user_id == user.id))).scalar_one_or_none()
-    return ProductPriceDiscountContext(app_referral_percent=app_percent, website_discount_entitlements=tuple(identity.discount_entitlements) if identity else ())
+    return ProductPriceDiscountContext(app_referral_percent=app_percent)
 
 
 def discounted_price(price: Decimal, percent: Decimal) -> Decimal:
@@ -62,28 +58,15 @@ def effective_discount_percent(original: Decimal, discounted: Decimal) -> Decima
     return quantize_percent(((original - discounted) * Decimal("100.00")) / original)
 
 
-def apply_website_discount(price: Decimal, ctx: ProductPriceDiscountContext) -> Decimal:
-    if not ctx.website_discount_entitlements: return price
-
-    options = [build_website_entitlement_option(entitlement, subtotal=price, now=ufa_now()) for entitlement in ctx.website_discount_entitlements]
-    options = sorted((option for option in options if option.is_applicable), key=best_option_key, reverse=True)
-    if not options: return price
-
-    option = options[0]
-    if option.calculation_mode == "percent" and option.discount_percent is not None: return discounted_price(price, option.discount_percent)
-    if option.calculation_mode == "fixed_amount" and option.discount_amount is not None: return max(Decimal("0.00"), quantize_money(price - min(price, quantize_money(option.discount_amount))))
-    return price
-
-
-def resolve_variant_price(price: Decimal, ctx: ProductPriceDiscountContext) -> tuple[Decimal, Decimal, Decimal]:
+def resolve_variant_price(price: Decimal, ctx: ProductPriceDiscountContext, *, product: Product | None = None) -> tuple[Decimal, Decimal, Decimal]:
     original = quantize_money(price)
-    discounted = discounted_price(original, ctx.app_referral_percent)
-    discounted = quantize_money(apply_website_discount(discounted, ctx))
+    discount_percent = ctx.app_referral_percent if product_is_discountable(product) else Decimal("0.00")
+    discounted = discounted_price(original, discount_percent)
     return original, discounted, effective_discount_percent(original, discounted)
 
 
-def serialize_product_variant(request: Request, variant, *, discount_context: ProductPriceDiscountContext = NO_PRODUCT_PRICE_DISCOUNT_CONTEXT) -> ProductVariantRead:
-    original, discounted, percent = resolve_variant_price(variant.price, discount_context)
+def serialize_product_variant(request: Request, variant, *, product: Product | None = None, discount_context: ProductPriceDiscountContext = NO_PRODUCT_PRICE_DISCOUNT_CONTEXT) -> ProductVariantRead:
+    original, discounted, percent = resolve_variant_price(variant.price, discount_context, product=product or getattr(variant, "product", None))
     return ProductVariantRead.model_validate(variant).model_copy(update={
         "image_url": variant_image_url(request, variant),
         "original_price": original,
@@ -99,7 +82,7 @@ def serialize_product(request: Request, product: Product, *, review_stats_by_pro
 
 def serialize_product_with_variants(request: Request, product: Product, *, review_stats_by_product_id: ReviewStatsByProductId | None = None, include_archived_variants: bool = False, discount_context: ProductPriceDiscountContext = NO_PRODUCT_PRICE_DISCOUNT_CONTEXT) -> ProductWithVariantsRead:
     avg, count = review_stats(product.id, review_stats_by_product_id)
-    variants = [serialize_product_variant(request, variant, discount_context=discount_context) for variant in product.variants if include_archived_variants or not variant.archived]
+    variants = [serialize_product_variant(request, variant, product=product, discount_context=discount_context) for variant in product.variants if include_archived_variants or not variant.archived]
     return ProductWithVariantsRead.model_validate(product).model_copy(update={
         "image_url": product_image_url(request, product),
         "variants": variants,

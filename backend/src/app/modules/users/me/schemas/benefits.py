@@ -14,9 +14,8 @@ from src.database.limits import (
 class BenefitCheckPayload(BaseModel):
     code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
     subtotal: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    discountable_subtotal: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     currency: str | None = Field(default=None, max_length=CURRENCY_CODE_MAX_LENGTH)
-    requested_bonus_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
-    requested_deposit_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
 
 
 class BenefitOptionRead(BaseModel):
@@ -43,39 +42,9 @@ class BenefitOptionRead(BaseModel):
     subtotal_after: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
 
 
-class BenefitBonusRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    status: str = Field(max_length=STATUS_MAX_LENGTH)
-    is_available: bool
-    source_record_id: int | None = Field(default=None, ge=1)
-    balance: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    currency: str | None = Field(default=None, max_length=CURRENCY_CODE_MAX_LENGTH)
-    max_applicable_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    requested_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
-    applicable_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    estimated_total_after_bonus: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    reason: str | None = None
-
-
-class BenefitDepositRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    status: str = Field(max_length=STATUS_MAX_LENGTH)
-    is_available: bool
-    balance: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    currency: str | None = Field(default=None, max_length=CURRENCY_CODE_MAX_LENGTH)
-    max_applicable_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    requested_amount: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
-    applicable_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    estimated_total_after_deposit: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    reason: str | None = None
-
-
 class BenefitCheckRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    website_identity_id: int | None = Field(default=None, ge=1)
     referral_profile_id: int | None = Field(default=None, ge=1)
     subtotal_source: str = Field(max_length=SOURCE_KIND_MAX_LENGTH)
     basket_subtotal: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
@@ -89,6 +58,3 @@ class BenefitCheckRead(BaseModel):
     stacked_discount_options: list[BenefitOptionRead] = Field(default_factory=list)
     stacked_discount_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     total_after_discounts: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
-    bonus_option: BenefitBonusRead | None = None
-    deposit_option: BenefitDepositRead | None = None
-    total_after_deposit: Decimal = Field(ge=0, max_digits=14, decimal_places=2)

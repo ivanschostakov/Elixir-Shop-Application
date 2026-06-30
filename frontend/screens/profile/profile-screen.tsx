@@ -47,18 +47,6 @@ function getProfileBenefitTitle(option: BenefitOptionResponse, t: ReturnType<typ
         return t("profile.discounts.appReferral")
     }
 
-    if (option.source_kind === "website_discount_entitlement") {
-        return t("profile.discounts.websitePersonal")
-    }
-
-    if (option.source_kind === "website_coupon") {
-        return t("profile.discounts.websiteCoupon")
-    }
-
-    if (option.source_kind === "app_promo") {
-        return t("profile.discounts.appPromo")
-    }
-
     return t("profile.discounts.discount")
 }
 
@@ -112,7 +100,7 @@ export default function ProfileScreen() {
         userId: user?.id,
         t,
     })
-    const shouldShowReferralDetails = Boolean(referralProfile?.referrer_promo_code)
+    const shouldShowReferralDetails = Boolean(referralProfile?.promo_code)
     const accentOptions: ThemeAccentName[] = [
         "vividBlue",
         "archivedBlue",
@@ -423,7 +411,7 @@ export default function ProfileScreen() {
 
             <View style={ProfileScreenStyles.sectionCard}>
                 <Text style={ProfileScreenStyles.sectionTitle}>{t("profile.referral.attachCodeLabel")}</Text>
-                {shouldShowReferralDetails && referralProfile?.referrer_promo_code ? (
+                {shouldShowReferralDetails && referralProfile?.promo_code ? (
                     <View style={ProfileScreenStyles.detailStack}>
                         <Text style={ProfileScreenStyles.sectionDescription}>
                             {t("profile.referral.attachedHint")}
@@ -431,7 +419,7 @@ export default function ProfileScreen() {
                         <View style={ProfileScreenStyles.detailRow}>
                             <Text style={ProfileScreenStyles.detailLabel}>{t("profile.referral.referrerPromo")}</Text>
                             <Text style={ProfileScreenStyles.detailValue}>
-                                {referralProfile.referrer_promo_code}
+                                {referralProfile.promo_code}
                             </Text>
                         </View>
                         <Pressable
@@ -535,52 +523,22 @@ export default function ProfileScreen() {
                                 {formatProfilePercent(referralProfile.current_discount_percent)}
                             </Text>
                         </View>
-                        <View style={[ProfileScreenStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
-                            <Text style={ProfileScreenStyles.metricLabel}>{t("profile.referral.deposit")}</Text>
-                            <Text style={ProfileScreenStyles.metricValue}>
-                                {formatProfileMoney(referralProfile.deposit_balance)}
-                            </Text>
-                        </View>
-                        <View style={[ProfileScreenStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
-                            <Text style={ProfileScreenStyles.metricLabel}>{t("profile.referral.commissions")}</Text>
-                            <Text style={ProfileScreenStyles.metricValue}>
-                                {formatProfileMoney(referralProfile.accrued_commissions)}
-                            </Text>
-                        </View>
                     </View>
 
                     <View style={ProfileScreenStyles.detailStack}>
                         <View style={ProfileScreenStyles.detailRow}>
-                            <Text style={ProfileScreenStyles.detailLabel}>{t("profile.referral.currentMonth")}</Text>
+                            <Text style={ProfileScreenStyles.detailLabel}>{t("profile.referral.discountBase")}</Text>
                             <Text style={ProfileScreenStyles.detailValue}>
-                                {formatProfileMoney(referralProfile.current_month_purchases)}
-                            </Text>
-                        </View>
-                        <View style={ProfileScreenStyles.detailDivider} />
-                        <View style={ProfileScreenStyles.detailRow}>
-                            <Text style={ProfileScreenStyles.detailLabel}>{t("profile.referral.previousMonth")}</Text>
-                            <Text style={ProfileScreenStyles.detailValue}>
-                                {formatProfileMoney(referralProfile.previous_month_purchases)}
+                                {formatProfileMoney(referralProfile.referral_discount_base_total)}
                             </Text>
                         </View>
                         <View style={ProfileScreenStyles.detailDivider} />
                         <View style={ProfileScreenStyles.detailRow}>
                             <Text style={ProfileScreenStyles.detailLabel}>{t("profile.referral.referrerPromo")}</Text>
                             <Text style={ProfileScreenStyles.detailValue}>
-                                {referralProfile.referrer_promo_code}
+                                {referralProfile.promo_code}
                             </Text>
                         </View>
-                        {referralProfile.own_promo_code ? (
-                            <>
-                                <View style={ProfileScreenStyles.detailDivider} />
-                                <View style={ProfileScreenStyles.detailRow}>
-                                    <Text style={ProfileScreenStyles.detailLabel}>{t("profile.referral.ownPromo")}</Text>
-                                    <Text style={ProfileScreenStyles.detailValue}>
-                                        {referralProfile.own_promo_code}
-                                    </Text>
-                                </View>
-                            </>
-                        ) : null}
                     </View>
                 </View>
             ) : null}

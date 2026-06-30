@@ -197,6 +197,9 @@ class MoySkladClient:
 
         return next((row for row in rows if isinstance(row, dict)), None)
 
+    async def get_counterparty(self, counterparty_id: UUID) -> dict[str, Any] | None:
+        return await self._get_entity_by_id("counterparty", counterparty_id)
+
     async def update_counterparty_email(self, counterparty_id: UUID, email: str) -> None:
         normalized_email = normalize_email(email)
         if not normalized_email:

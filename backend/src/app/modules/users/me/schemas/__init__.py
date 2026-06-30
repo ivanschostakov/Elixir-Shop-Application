@@ -1,9 +1,9 @@
 from .ai_chat import AIChatActionPayload, AIChatActionResponse, AIChatResponse, AIChatTranscriptionResponse, AIChatTurnMetaRead
-from .benefits import BenefitBonusRead, BenefitCheckPayload, BenefitCheckRead, BenefitDepositRead, BenefitOptionRead
+from .benefits import BenefitCheckPayload, BenefitCheckRead, BenefitOptionRead
 from .order_draft import CreateOrderDraftPayload, DeliveryCalculationPayload, UpdateOrderDraftPayload
 from .order import CreateOrderPayload, CreatePaymentPayload, PaymentMethod, PaymentStatusRead
 from .recommendations import RecommendationCategoryViewPayload, RecommendationSurface, RecommendationViewPayload
-from .referrals import DepositLedgerEntryRead, DepositRead, ReferrerCodeAttachPayload, ReferrerCodeCheckPayload, ReferrerCodeCheckRead, ReferralProfileRead
+from .referrals import ReferrerCodeAttachPayload, ReferrerCodeCheckPayload, ReferrerCodeCheckRead, ReferralProfileRead
 from .search_queries import CreateRecentSearchQueryPayload
 from .profile import PersonalDataUpdatePayload
 
@@ -13,17 +13,13 @@ __all__ = [
     "AIChatActionResponse",
     "AIChatTranscriptionResponse",
     "AIChatTurnMetaRead",
-    "BenefitBonusRead",
     "BenefitCheckPayload",
     "BenefitCheckRead",
-    "BenefitDepositRead",
     "BenefitOptionRead",
     "CreateOrderDraftPayload",
     "CreateOrderPayload",
     "CreatePaymentPayload",
     "DeliveryCalculationPayload",
-    "DepositLedgerEntryRead",
-    "DepositRead",
     "PaymentMethod",
     "PaymentStatusRead",
     "PersonalDataUpdatePayload",

@@ -10,6 +10,7 @@ from src.database.limits import (
     PASSWORD_HASH_MAX_LENGTH,
     PERSON_NAME_MAX_LENGTH,
     PHONE_NUMBER_MAX_LENGTH,
+    PROMO_CODE_MAX_LENGTH,
     TELEGRAM_USERNAME_MAX_LENGTH,
 )
 
@@ -27,6 +28,7 @@ class UserCreate(UserBase):
     last_active_at: datetime = Field(default_factory=ufa_now)
     is_verified: bool = False
     moysklad_counterparty_id: uuid.UUID | None = None
+    promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
     telegram_user_id: int | None = Field(default=None, ge=1)
     telegram_username: str | None = Field(default=None, max_length=TELEGRAM_USERNAME_MAX_LENGTH)
     telegram_phone_confirmed_at: datetime | None = None
@@ -43,6 +45,7 @@ class UserUpdate(BaseModel):
     phone_number: str | None = Field(default=None, min_length=1, max_length=PHONE_NUMBER_MAX_LENGTH)
     contact_id: int | None = Field(default=None, ge=1)
     moysklad_counterparty_id: uuid.UUID | None = None
+    promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
     telegram_user_id: int | None = Field(default=None, ge=1)
     telegram_username: str | None = Field(default=None, max_length=TELEGRAM_USERNAME_MAX_LENGTH)
     telegram_phone_confirmed_at: datetime | None = None
@@ -55,5 +58,6 @@ class UserRead(UserBase):
     is_active: bool
     last_active_at: datetime | None
     is_verified: bool
+    promo_code: str | None = None
     created_at: datetime
     updated_at: datetime

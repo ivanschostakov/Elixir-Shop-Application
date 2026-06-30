@@ -14,9 +14,10 @@ from starlette import status
 from config import ufa_now
 from src.app.services.benefits.money import quantize_money
 from src.app.services.benefits.service import resolve_benefits_for_user
+from src.app.services.discounts import discountable_subtotal_for_lines
 from src.app.services.recommendations import record_purchase
 from src.database.crud import create_delivery_recipient, create_order, create_order_draft, delete_order_draft, get_basket_by_user_id, get_delivery_recipient_by_fields, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id, get_orders_for_user as get_orders_for_user_crud
-from src.database.models import BasketItem, Order, OrderBenefitApplication, OrderDraft, OrderDraftItem, OrderItem, ReferralProfile, ReferralRelationship, User, Variant
+from src.database.models import BasketItem, Order, OrderBenefitApplication, OrderDraft, OrderDraftItem, OrderItem, User, Variant
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode, get_order_history_bucket
 from src.database.schemas import DeliveryRecipientCreate, OrderCreate, OrderDraftCreate
 from src.integrations.amocrm import get_amocrm_client
@@ -186,8 +187,6 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
         "basket_subtotal": _json_money(resolved_benefits.get("basket_subtotal")),
         "stacked_discount_amount": _json_money(resolved_benefits.get("stacked_discount_amount")),
         "total_after_discounts": _json_money(resolved_benefits.get("total_after_discounts")),
-        "deposit_amount": _json_money((resolved_benefits.get("deposit_option") or {}).get("applicable_amount")),
-        "total_after_deposit": _json_money(resolved_benefits.get("total_after_deposit")),
         "applications": [
             {
                 "source_kind": option.get("source_kind"),
@@ -237,41 +236,16 @@ def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected
     }
 
 
-async def _active_referral_relationship(session: AsyncSession, *, user_id: int) -> ReferralRelationship | None:
-    stmt = (
-        select(ReferralRelationship)
-        .where(ReferralRelationship.referred_user_id == user_id, ReferralRelationship.is_active.is_(True))
-        .order_by(ReferralRelationship.started_at.desc(), ReferralRelationship.id.desc())
-        .limit(1)
-    )
-    return (await session.execute(stmt)).scalar_one_or_none()
-
-
 async def _persist_order_benefit_applications(session: AsyncSession, *, order: Order, user: User, resolved_benefits: dict[str, Any]) -> None:
     now = ufa_now()
     applications: list[OrderBenefitApplication] = []
-    referral_relationship = await _active_referral_relationship(session, user_id=user.id)
-    referral_profile = None
-    if resolved_benefits.get("referral_profile_id") is not None:
-        referral_profile = (
-            await session.execute(select(ReferralProfile).where(ReferralProfile.id == resolved_benefits["referral_profile_id"]))
-        ).scalar_one_or_none()
 
     for option in resolved_benefits.get("stacked_discount_options", []):
         source_kind = option.get("source_kind")
         source_record_id = option.get("source_record_id")
         kwargs: dict[str, Any] = {}
-        if source_kind == "website_coupon":
-            kwargs["website_coupon_id"] = source_record_id
-        elif source_kind == "website_discount_entitlement":
-            kwargs["website_discount_entitlement_id"] = source_record_id
-        elif source_kind == "app_promo":
-            kwargs["app_promo_id"] = source_record_id
-        elif source_kind == "app_referral":
+        if source_kind == "app_referral":
             kwargs["referral_profile_id"] = source_record_id
-            if referral_relationship is not None:
-                kwargs["referral_relationship_id"] = referral_relationship.id
-                kwargs["referral_promo_code_id"] = referral_relationship.referral_promo_code_id
 
         snapshot = {
             "sequence": option.get("sequence"),
@@ -282,8 +256,7 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
         if source_kind == "app_referral":
             snapshot.update(
                 {
-                    "referrer_user_id": referral_profile.referrer_user_id if referral_profile is not None else None,
-                    "referrer_promo_code": option.get("code"),
+                    "promo_code": option.get("code"),
                 }
             )
 
@@ -291,7 +264,6 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
             OrderBenefitApplication(
                 order_id=order.id,
                 user_id=user.id,
-                website_identity_id=resolved_benefits.get("website_identity_id"),
                 source_kind=source_kind,
                 entered_code=resolved_benefits.get("entered_code"),
                 resolved_code=option.get("code"),
@@ -305,43 +277,19 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
             )
         )
 
-    deposit_option = resolved_benefits.get("deposit_option") or {}
-    deposit_amount = quantize_money(deposit_option.get("applicable_amount")) or Decimal("0.00")
-    if deposit_amount > Decimal("0.00"):
-        applications.append(
-            OrderBenefitApplication(
-                order_id=order.id,
-                user_id=user.id,
-                website_identity_id=resolved_benefits.get("website_identity_id"),
-                source_kind="app_deposit",
-                entered_code=resolved_benefits.get("entered_code"),
-                resolved_code="APP_DEPOSIT",
-                bonus_spent_amount=deposit_amount,
-                currency=deposit_option.get("currency") or resolved_benefits.get("currency") or order.currency,
-                status="applied",
-                applied_at=now,
-                calculation_snapshot={
-                    "balance": str(deposit_option.get("balance")),
-                    "requested_amount": str(deposit_option.get("requested_amount")),
-                    "max_applicable_amount": str(deposit_option.get("max_applicable_amount")),
-                    "estimated_total_after_deposit": str(deposit_option.get("estimated_total_after_deposit")),
-                },
-            )
-        )
-
     if applications:
         session.add_all(applications)
         await session.flush()
 
 
-async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subtotal: Decimal, currency: str, entered_code: str | None, requested_deposit_amount: Decimal | None) -> dict[str, Any]:
+async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal, currency: str, entered_code: str | None) -> dict[str, Any]:
     return await resolve_benefits_for_user(
         session,
         user=user,
         entered_code=entered_code,
         subtotal=subtotal,
+        discountable_subtotal=discountable_subtotal,
         currency=currency,
-        requested_deposit_amount=requested_deposit_amount,
     )
 
 
@@ -417,7 +365,7 @@ def _build_order_item_from_basket_row(*, user_id: int, order_id: int, row: tuple
     )
 
 
-async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, requested_deposit_amount: Decimal | None = None) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
@@ -442,15 +390,19 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     if not draft.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft is empty")
 
     selected_delivery_service, selected_delivery_payload = await _build_selected_delivery_payload(draft)
+    discountable_subtotal = await discountable_subtotal_for_lines(
+        session,
+        ((item.product_id, item.line_total) for item in draft.items),
+    )
     resolved_benefits = await _resolve_checkout_benefits(
         session,
         user=user,
         subtotal=draft.basket_subtotal,
+        discountable_subtotal=discountable_subtotal,
         currency=draft.currency,
         entered_code=entered_code,
-        requested_deposit_amount=requested_deposit_amount,
     )
-    grand_total = (quantize_money(resolved_benefits["total_after_deposit"]) or Decimal("0.00")) + draft.delivery_total
+    grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total
     checkout_snapshot = _build_checkout_snapshot(
         draft,
         payment_method=payment_method,
@@ -501,7 +453,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     return reloaded_order
 
 
-async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, requested_deposit_amount: Decimal | None = None) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     basket = await get_basket_by_user_id(session, user_id)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
@@ -556,15 +508,19 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
         comment=None,
     )
     selected_delivery_service, selected_delivery_payload = await _build_selected_delivery_payload(checkout_source)
+    discountable_subtotal = await discountable_subtotal_for_lines(
+        session,
+        ((item.product_id, line_total) for item, _, line_total in order_item_rows),
+    )
     resolved_benefits = await _resolve_checkout_benefits(
         session,
         user=user,
         subtotal=basket_subtotal,
+        discountable_subtotal=discountable_subtotal,
         currency=basket.currency,
         entered_code=entered_code,
-        requested_deposit_amount=requested_deposit_amount,
     )
-    grand_total = (quantize_money(resolved_benefits["total_after_deposit"]) or Decimal("0.00")) + basket.delivery_total
+    grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total
     checkout_snapshot = _build_checkout_snapshot(
         checkout_source,
         payment_method=payment_method,

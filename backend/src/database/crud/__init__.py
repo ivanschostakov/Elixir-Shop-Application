@@ -132,20 +132,6 @@ from .favorites.favoured_product import (
 from .legal.requisite import create_requisite, delete_requisite, get_requisite_by_id, get_requisites, update_requisite
 from .orders.draft import create_order_draft, delete_order_draft, get_latest_named_order_draft_for_user, get_latest_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
 from .orders.order import create_order, get_order_by_amocrm_lead_id, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_by_invoice_id, get_orders_for_user, update_order
-from .website.website_identity import (
-    create_website_identity,
-    get_website_identity_by_id,
-    get_website_identity_by_user_id,
-    get_website_identity_by_website_user_id,
-    update_website_identity,
-)
-from .website.website_identity_relationships import (
-    sync_website_coupon_snapshots,
-    sync_website_discount_entitlements,
-    upsert_website_bonus_account,
-    upsert_website_referral_profile,
-)
-
 __all__ = [
     "clear_basket",
     "create_ai_attachment",
@@ -284,15 +270,6 @@ __all__ = [
     "get_variant_by_system_id",
     "get_variants",
     "update_variant",
-    "create_website_identity",
-    "get_website_identity_by_id",
-    "get_website_identity_by_user_id",
-    "get_website_identity_by_website_user_id",
-    "update_website_identity",
-    "sync_website_coupon_snapshots",
-    "sync_website_discount_entitlements",
-    "upsert_website_bonus_account",
-    "upsert_website_referral_profile",
     "create_yandex_pickup_address",
     "delete_yandex_pickup_address",
     "get_yandex_pickup_address_by_id",

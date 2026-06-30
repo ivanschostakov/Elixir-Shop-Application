@@ -9,9 +9,7 @@ from uvicorn import Config, Server
 from config import CORS_ALLOWED_ORIGINS
 from src.app.services.cache import get_cache_service
 from .router import api_router
-from ..integrations.bitrix import get_bitrix_sync_api_client
 from ..integrations.ai import get_professor_client
-from ..integrations.website_identity import get_website_identity_client
 from ..integrations.delivery.geo import get_geo_client
 from ..integrations.delivery.cdek import get_cdek_client
 from ..integrations.moysklad import get_moysklad_catalog_client
@@ -26,8 +24,6 @@ async def lifespan(_: FastAPI):
     await get_cache_service().connect()
     try: yield
     finally:
-        await get_bitrix_sync_api_client().aclose()
-        await get_website_identity_client().aclose()
         await get_geo_client().aclose()
         await get_cdek_client().aclose()
         await get_professor_client().aclose()

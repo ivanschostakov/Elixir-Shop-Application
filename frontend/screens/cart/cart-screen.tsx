@@ -124,7 +124,7 @@ export default function CartScreen() {
         const trimmedCode = promoCode.trim()
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
-    const attachedPromoCode = referralProfile?.referrer_promo_code ?? null
+    const attachedPromoCode = referralProfile?.promo_code ?? null
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
     const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
@@ -373,7 +373,7 @@ export default function CartScreen() {
     const grandTotalAmount = basket
         ? (
             hasAppliedDiscount && benefitCheck
-                ? Number(benefitCheck.total_after_deposit) + deliveryAmount
+                ? Number(benefitCheck.total_after_discounts) + deliveryAmount
                 : Number(basket.grand_total)
         )
         : null

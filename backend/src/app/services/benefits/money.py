@@ -33,11 +33,10 @@ def total_after(subtotal: Decimal, discount_amount: Decimal | None) -> Decimal |
     return quantize_money(max(Decimal("0.00"), subtotal - discount_amount))
 
 
-def preferred_currency(*, requested_currency: str | None, available_options: list[ResolvedDiscountOption], bonus_option: dict | None) -> str | None:
+def preferred_currency(*, requested_currency: str | None, available_options: list[ResolvedDiscountOption]) -> str | None:
     normalized_requested_currency = optional_str(requested_currency)
     if normalized_requested_currency: return normalized_requested_currency
     for option in available_options:
         if option.currency: return option.currency
 
-    if bonus_option and bonus_option.get("currency"): return bonus_option["currency"]
     return None

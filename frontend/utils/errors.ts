@@ -32,10 +32,7 @@ function normalizeMessage(message: string, fallback: string) {
         return fallback
     }
 
-    if (
-        loweredMessage.includes("invalid credentials") ||
-        loweredMessage.includes("invalid website credentials")
-    ) {
+    if (loweredMessage.includes("invalid credentials")) {
         return getInvalidCredentialsMessage()
     }
 

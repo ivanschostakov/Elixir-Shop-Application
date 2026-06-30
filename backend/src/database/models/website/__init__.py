@@ -1,6 +1,0 @@
-from .website_bonus_account import WebsiteBonusAccount
-from .website_coupon import WebsiteCoupon
-from .website_discount_entitlement import WebsiteDiscountEntitlement
-from .website_identity import WebsiteIdentity
-from .website_referral_profile import WebsiteReferralProfile
-from .website_sync_event import WebsiteSyncEvent

@@ -338,31 +338,6 @@ export const ProfileScreenStyles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 22,
     },
-    websiteChipRow: {
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: spacing.sm,
-    },
-    websiteChip: {
-        borderRadius: 18,
-        backgroundColor: colors.surfaceElevated,
-        borderWidth: 1,
-        borderColor: colors.borderSoft,
-        minWidth: 96,
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
-        gap: 2,
-    },
-    websiteChipValue: {
-        color: colors.text,
-        fontSize: 18,
-        fontWeight: "800",
-    },
-    websiteChipLabel: {
-        color: colors.mutedText,
-        fontSize: 12,
-        fontWeight: "700",
-    },
     tagList: {
         gap: spacing.sm,
     },

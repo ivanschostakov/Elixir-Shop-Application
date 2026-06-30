@@ -8,7 +8,6 @@ from src.app.services.auth import (
     login_user_by_phone,
     login_user_by_telegram,
     logout_user_session,
-    parse_website_identity_for_user,
     refresh_user_tokens,
     register_user_by_phone,
     resend_phone_auth_verification_code,
@@ -17,9 +16,7 @@ from src.app.services.auth import (
 )
 from src.database import get_db
 from src.database.models.auth.user import User
-from src.database.schemas.website.website_identity import WebsiteIdentityRead
 from src.integrations.moysklad import MoySkladClient, get_moysklad_client
-from src.integrations.website_identity import WebsiteIdentityClient, get_website_identity_client
 
 from .dependencies import get_current_user
 from .schemas.logout import UserLogoutPayload
@@ -42,7 +39,6 @@ from .schemas.responses import (
     AuthUserRead,
 )
 from .schemas.telegram import TelegramAuthContactRequiredResponse, TelegramAuthPayload
-from .schemas.website import WebsiteIdentityLoginPayload
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -80,10 +76,6 @@ async def resend_phone_verification_code(request: Request, payload: PhoneAuthCod
 @auth_router.post("/telegram/session", response_model=AuthTokensWithUserResponse | TelegramAuthContactRequiredResponse, status_code=status.HTTP_200_OK)
 async def telegram_session(request: Request, payload: TelegramAuthPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse | TelegramAuthContactRequiredResponse:
     return await login_user_by_telegram(request, payload, db)
-
-
-@auth_router.post("/website/parse", response_model=WebsiteIdentityRead, status_code=status.HTTP_200_OK, summary="Refresh website identity data")
-async def parse_website_identity(request: Request, payload: WebsiteIdentityLoginPayload, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db), website_identity_client: WebsiteIdentityClient = Depends(get_website_identity_client)) -> WebsiteIdentityRead: return await parse_website_identity_for_user(request, payload, current_user, db, website_identity_client)
 
 
 @auth_router.post("/refresh", response_model=AuthRefreshResponse, status_code=status.HTTP_200_OK)

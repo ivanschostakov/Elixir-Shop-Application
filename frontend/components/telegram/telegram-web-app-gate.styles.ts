@@ -1,11 +1,13 @@
 import { StyleSheet } from "react-native"
 
+import { colors } from "@/theme/colors"
+
 export const telegramWebAppGateStyles = StyleSheet.create({
     screen: {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#f6f8fb",
+        backgroundColor: colors.pageBackground,
         paddingHorizontal: 20,
     },
     panel: {
@@ -13,13 +15,13 @@ export const telegramWebAppGateStyles = StyleSheet.create({
         maxWidth: 460,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: "rgba(15, 23, 42, 0.1)",
-        backgroundColor: "#ffffff",
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
         paddingHorizontal: 24,
         paddingVertical: 26,
     },
     eyebrow: {
-        color: "#52708f",
+        color: colors.stateText,
         fontSize: 12,
         fontWeight: "700",
         letterSpacing: 0,
@@ -27,20 +29,20 @@ export const telegramWebAppGateStyles = StyleSheet.create({
         textTransform: "uppercase",
     },
     title: {
-        color: "#172033",
+        color: colors.text,
         fontSize: 24,
         fontWeight: "800",
         lineHeight: 30,
         marginBottom: 10,
     },
     text: {
-        color: "#526071",
+        color: colors.mutedText,
         fontSize: 15,
         lineHeight: 22,
         marginBottom: 18,
     },
     errorText: {
-        color: "#b42318",
+        color: colors.danger,
         fontSize: 14,
         lineHeight: 20,
         marginBottom: 14,
@@ -50,7 +52,7 @@ export const telegramWebAppGateStyles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         borderRadius: 8,
-        backgroundColor: "#2d6aa3",
+        backgroundColor: colors.primary,
         paddingHorizontal: 18,
     },
     buttonPressed: {
@@ -60,7 +62,7 @@ export const telegramWebAppGateStyles = StyleSheet.create({
         opacity: 0.58,
     },
     buttonText: {
-        color: "#ffffff",
+        color: colors.onPrimary,
         fontSize: 15,
         fontWeight: "800",
         lineHeight: 20,
@@ -71,7 +73,7 @@ export const telegramWebAppGateStyles = StyleSheet.create({
         gap: 10,
     },
     loadingText: {
-        color: "#526071",
+        color: colors.mutedText,
         fontSize: 15,
         lineHeight: 22,
     },

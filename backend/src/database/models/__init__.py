@@ -11,8 +11,6 @@ from .auth.user_push_token import UserPushToken
 from .auth.user_session import UserSession
 from .basket.basket import Basket
 from .basket.basket_item import BasketItem
-from .benefits.app_promo import AppPromo
-from .benefits.business_ledger_entry import BusinessLedgerEntry
 from .benefits.order_benefit_application import OrderBenefitApplication
 from .catalog.product import Product
 from .catalog.banner import Banner
@@ -36,20 +34,10 @@ from .notifications.notification_dispatch import NotificationDispatch
 from .notifications.stock_notification_subscription import StockNotificationSubscription
 from .recommendations.user_category_recommendation_signal import UserCategoryRecommendationSignal
 from .recommendations.user_product_recommendation_signal import UserProductRecommendationSignal
-from .referrals.referral_commission_entry import ReferralCommissionEntry
 from .referrals.referral_profile import ReferralProfile
-from .referrals.referral_promo_code import ReferralPromoCode
-from .referrals.referral_relationship import ReferralRelationship
-from .website.website_bonus_account import WebsiteBonusAccount
-from .website.website_coupon import WebsiteCoupon
-from .website.website_discount_entitlement import WebsiteDiscountEntitlement
-from .website.website_identity import WebsiteIdentity
-from .website.website_referral_profile import WebsiteReferralProfile
-from .website.website_sync_event import WebsiteSyncEvent
 from .webhooks.webhook_delivery import WebhookDelivery
 
 __all__ = [
-    "AppPromo",
     "Admin",
     "AIChat",
     "AIMessage",
@@ -60,7 +48,6 @@ __all__ = [
     "Banner",
     "Basket",
     "BasketItem",
-    "BusinessLedgerEntry",
     "DeliveryAddress",
     "CdekDoorAddress",
     "CdekPickupAddress",
@@ -77,10 +64,7 @@ __all__ = [
     "Product",
     "ProductCategory",
     "ProductByCategory",
-    "ReferralCommissionEntry",
     "ReferralProfile",
-    "ReferralPromoCode",
-    "ReferralRelationship",
     "Review",
     "ReviewAttachment",
     "UserCategoryRecommendationSignal",
@@ -90,12 +74,6 @@ __all__ = [
     "UserPushToken",
     "UserSession",
     "Variant",
-    "WebsiteBonusAccount",
-    "WebsiteCoupon",
-    "WebsiteDiscountEntitlement",
-    "WebsiteIdentity",
-    "WebsiteReferralProfile",
-    "WebsiteSyncEvent",
     "WebhookDelivery",
     "YandexPickupAddress",
 ]

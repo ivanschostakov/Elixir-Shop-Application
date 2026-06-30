@@ -5,6 +5,7 @@ import { Appearance, Platform } from "react-native"
 import { ThemeContext } from "@/providers/theme-provider.context"
 import type { ThemeProviderProps } from "@/providers/theme-provider.types"
 import {
+    applyWebThemeColors,
     darkBlackWhiteAccentPalette,
     themeAccentPalettes,
     type ThemeAccentName,
@@ -107,16 +108,32 @@ async function persistAccent(accentName: ThemeAccentName) {
 }
 
 function applyTheme(themeName: ThemeName) {
-    Appearance.setColorScheme(themeName)
+    Appearance.setColorScheme?.(themeName)
+    applyWebThemeColors(themeName)
 }
 
 function getSystemThemeName(): ThemeName {
     return Appearance.getColorScheme() === "dark" ? "dark" : "light"
 }
 
+function getInitialThemeName(): ThemeName {
+    if (Platform.OS !== "web") {
+        return getSystemThemeName()
+    }
+
+    const storedThemeName = getWebStorage()?.getItem(THEME_STORAGE_KEY) ?? null
+    const initialThemeName = isThemeName(storedThemeName) ? storedThemeName : getSystemThemeName()
+    applyWebThemeColors(initialThemeName)
+    return initialThemeName
+}
+
 export function ThemeProvider({ children }: ThemeProviderProps) {
-    const [themeName, setThemeName] = useState<ThemeName>(getSystemThemeName)
+    const [themeName, setThemeName] = useState<ThemeName>(getInitialThemeName)
     const [accentName, setAccentNameState] = useState<ThemeAccentName>("vividBlue")
+
+    useEffect(() => {
+        applyTheme(themeName)
+    }, [themeName])
 
     useEffect(() => {
         let isMounted = true
@@ -131,7 +148,6 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
             }
 
             setThemeName(storedThemeName)
-            applyTheme(storedThemeName)
         })
 
         return () => {
@@ -156,13 +172,11 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     }, [])
 
     const toggleTheme = useCallback(() => {
-        setThemeName((currentThemeName) => {
-            const nextThemeName = currentThemeName === "dark" ? "light" : "dark"
-            applyTheme(nextThemeName)
-            void persistTheme(nextThemeName)
-            return nextThemeName
-        })
-    }, [])
+        const nextThemeName = themeName === "dark" ? "light" : "dark"
+        applyTheme(nextThemeName)
+        setThemeName(nextThemeName)
+        void persistTheme(nextThemeName)
+    }, [themeName])
 
     const setAccentName = useCallback((nextAccentName: ThemeAccentName) => {
         setAccentNameState(nextAccentName)

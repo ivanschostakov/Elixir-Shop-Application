@@ -16,7 +16,6 @@ export const ROUTES = {
     personalData: "/personal-data",
     profileDrafts: "/profile-drafts",
     profileHistory: "/profile-history",
-    websiteAccount: "/website-account",
     contacts: "/contacts",
     requisites: "/requisites",
     publicOffer: "/public-offer",
@@ -37,7 +36,6 @@ const headerTitleKeys: Record<string, TranslationKey> = {
     [ROUTES.personalData]: "route.personalData",
     [ROUTES.profileDrafts]: "route.profileDrafts",
     [ROUTES.profileHistory]: "route.profileHistory",
-    [ROUTES.websiteAccount]: "route.websiteAccount",
     [ROUTES.contacts]: "route.contacts",
     [ROUTES.requisites]: "route.requisites",
     [ROUTES.publicOffer]: "route.publicOffer",
@@ -58,7 +56,6 @@ const ACCOUNT_REQUIRED_ROUTES = [
     ROUTES.personalData,
     ROUTES.profileDrafts,
     ROUTES.profileHistory,
-    ROUTES.websiteAccount,
 ] as const
 
 const FULLSCREEN_ROUTES = [

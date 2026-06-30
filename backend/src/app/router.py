@@ -1,23 +1,20 @@
 from fastapi import APIRouter
 
-from .modules import (
-    auth_router,
-    banners_router,
-    admin_referrals_router,
-    app_integrity_router,
-    app_version_router,
-    delivery_router,
-    favourites_query_router,
-    favourites_router,
-    guest_router,
-    health_router,
-    payments_router,
-    product_categories_router,
-    products_router,
-    requisites_router,
-    users_router,
-    webhooks_router,
-)
+from .modules.admin import admin_referrals_router
+from .modules.app_integrity import app_integrity_router
+from .modules.app_version import app_version_router
+from .modules.auth.router import auth_router
+from .modules.banners import banners_router
+from .modules.delivery import delivery_router
+from .modules.favorites import favourites_query_router, favourites_router
+from .modules.guest import guest_router
+from .modules.health import health_router
+from .modules.payments import payments_router
+from .modules.product_categories import product_categories_router
+from .modules.products import products_router
+from .modules.requisites import requisites_router
+from .modules.users import users_router
+from .modules.webhooks import webhooks_router
 
 api_router = APIRouter(prefix="/api")
 v1_router = APIRouter(prefix="/v1")

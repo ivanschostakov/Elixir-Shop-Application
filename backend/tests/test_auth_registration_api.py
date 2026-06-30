@@ -264,8 +264,64 @@ async def test_link_telegram_contact_to_user_creates_verified_phone_user(monkeyp
     assert user_create.phone_number == "+79990001122"
     assert user_create.password_hash == "hashed-random-password"
     assert user_create.is_verified is True
+    assert user_create.moysklad_counterparty_id is None
     assert user_create.telegram_user_id == 901
     assert user_create.telegram_username == "buyer"
     assert user_create.telegram_phone_confirmed_at is not None
+    assert db.committed is True
+    assert db.refreshed_user is created_user
+
+
+@pytest.mark.anyio
+async def test_link_telegram_contact_to_user_saves_moysklad_counterparty_id(monkeypatch: pytest.MonkeyPatch):
+    db = _DummyDbSession()
+    counterparty_id = uuid4()
+    captured: dict[str, object] = {}
+    created_user = SimpleNamespace(id=45, moysklad_counterparty_id=counterparty_id)
+
+    class FakeMoySkladClient:
+        def is_configured(self) -> bool:
+            return True
+
+        async def get_counterparty_by_phone(self, phone_number: str):
+            captured["counterparty_phone"] = phone_number
+            return {"id": str(counterparty_id)}
+
+    async def fake_get_user_by_telegram_user_id(*_args, **_kwargs):
+        return None
+
+    async def fake_get_user_by_phone_number(*_args, **_kwargs):
+        return None
+
+    async def fake_create_user(db_arg, user_create, commit: bool = False):
+        captured["db"] = db_arg
+        captured["user_create"] = user_create
+        captured["commit"] = commit
+        return created_user
+
+    monkeypatch.setattr("src.app.services.auth.service.get_user_by_telegram_user_id", fake_get_user_by_telegram_user_id)
+    monkeypatch.setattr("src.app.services.auth.service.get_user_by_phone_number", fake_get_user_by_phone_number)
+    monkeypatch.setattr("src.app.services.auth.service.create_user", fake_create_user)
+    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "hashed-random-password")
+
+    user, reason = await link_telegram_contact_to_user(
+        db,
+        telegram_user_id=902,
+        phone_number="79990001123",
+        first_name="Telegram",
+        last_name="Buyer",
+        username="buyer2",
+        moysklad_client=FakeMoySkladClient(),
+    )
+
+    user_create = captured["user_create"]
+    assert user is created_user
+    assert reason is None
+    assert captured["counterparty_phone"] == "+79990001123"
+    assert captured["db"] is db
+    assert captured["commit"] is False
+    assert user_create.phone_number == "+79990001123"
+    assert user_create.moysklad_counterparty_id == counterparty_id
+    assert user_create.telegram_user_id == 902
     assert db.committed is True
     assert db.refreshed_user is created_user

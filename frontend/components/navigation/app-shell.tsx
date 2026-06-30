@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Stack, usePathname, useRouter } from "expo-router"
 import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from "@react-navigation/native"
 import { Image, Platform, Text, View } from "react-native"
@@ -7,7 +7,7 @@ import {
     State,
     type PanGestureHandlerStateChangeEvent,
 } from "react-native-gesture-handler"
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
+import { SafeAreaView } from "react-native-safe-area-context"
 
 import StickyFooter from "@/components/footer/sticky-footer"
 import AppHeader from "@/components/header/app-header"
@@ -21,14 +21,16 @@ import { ScreenChromeTemplateProvider, useScreenChromeTemplate } from "@/provide
 import { useTheme } from "@/providers/theme-provider"
 import { useAuth } from "@/providers/auth-provider"
 import { ScreenTemplateProvider } from "@/providers/screen-template-provider"
+import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
+import { setTelegramChromeColors } from "@/services/telegram/telegram-web-app"
 import { darkColors, lightColors } from "@/theme/colors"
 import { motion } from "@/theme/motion"
 
 function AppShellContent() {
     const pathname = usePathname()
     const router = useRouter()
-    const { top: topInset } = useSafeAreaInsets()
-    const { isDark } = useTheme()
+    const { top: topInset } = useAppSafeAreaInsets()
+    const { accentPalette, isDark } = useTheme()
     const { isAuthenticated, isReady } = useAuth()
     const { screenChromeTemplate } = useScreenChromeTemplate()
     const [routeAnimation, setRouteAnimation] = useState<"slide_from_left" | "slide_from_right">("slide_from_right")
@@ -60,12 +62,29 @@ function AppShellContent() {
             : pathname === ROUTES.home
               ? []
               : ["top"]
-    const shouldShowBrandOverlay = true
+    const safeAreaEdges = Platform.OS === "web" ? [] : shellEdges
+    const webSafeAreaStyle =
+        Platform.OS === "web" && shellEdges.includes("top")
+            ? { paddingTop: topInset }
+            : null
+    const shouldShowBrandOverlay = Platform.OS !== "web"
     const brandLabelTop = Platform.OS === "ios"
         ? Math.max(2, topInset - 44)
         : Math.max(4, topInset - 14)
     const currentPrimaryRouteIndex = PRIMARY_APP_ROUTES.findIndex((route) => route === pathname)
     const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
+
+    useEffect(() => {
+        if (Platform.OS !== "web") {
+            return
+        }
+
+        setTelegramChromeColors({
+            backgroundColor: palette.pageBackground,
+            bottomBarColor: palette.background,
+            headerColor: pathname === ROUTES.home ? accentPalette.primary : palette.background,
+        })
+    }, [accentPalette.primary, palette.background, palette.pageBackground, pathname])
 
     const handlePrimaryRouteSwipe = (event: PanGestureHandlerStateChangeEvent) => {
         if (!canSwipePrimaryRoutes || event.nativeEvent.state !== State.END) {
@@ -114,7 +133,7 @@ function AppShellContent() {
                 </View>
             ) : null}
 
-            <SafeAreaView style={appShellStyles.safeArea} edges={shellEdges}>
+            <SafeAreaView style={[appShellStyles.safeArea, webSafeAreaStyle]} edges={safeAreaEdges}>
                 {chromeTemplate.header !== "none" ? <AppHeader template={chromeTemplate} /> : null}
 
                 <PanGestureHandler

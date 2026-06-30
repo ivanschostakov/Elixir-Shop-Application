@@ -1,3 +1,3 @@
-from .router import auth_router
+"""Authentication route package."""
 
-__all__ = ["auth_router"]
+__all__: list[str] = []

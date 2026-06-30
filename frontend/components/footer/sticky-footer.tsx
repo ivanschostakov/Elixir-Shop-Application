@@ -10,7 +10,6 @@ import {
     type LayoutChangeEvent,
 } from "react-native"
 import { usePathname } from "expo-router"
-import { SafeAreaView } from "react-native-safe-area-context"
 
 import { BottomActionTemplate } from "@/components/footer/bottom-action-template"
 import { BottomNavTemplate } from "@/components/footer/bottom-nav-template"
@@ -20,13 +19,23 @@ import type {
     StickyFooterSurfaceProps,
 } from "@/components/footer/sticky-footer.types"
 import { useEntranceAnimation } from "@/hooks/animation/use-entrance-animation"
+import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
 import { useBasket } from "@/hooks/basket/use-basket"
+import { spacing } from "@/theme/spacing"
 
 const DEFAULT_KEYBOARD_ANIMATION_DURATION = 220
 
 type ActionLayout = {
     height: number
     y: number
+}
+
+function useFooterSafeAreaStyle() {
+    const { bottom } = useAppSafeAreaInsets()
+
+    return {
+        paddingBottom: Math.max(spacing.md, bottom),
+    }
 }
 
 function getKeyboardHeight(event: KeyboardEvent) {
@@ -125,14 +134,15 @@ export function StickyFooterSurface({
     variant = "default",
 }: StickyFooterSurfaceProps) {
     const entranceStyle = useEntranceAnimation({ translateY: 10 })
+    const footerSafeAreaStyle = useFooterSafeAreaStyle()
 
     return (
         <Animated.View style={entranceStyle}>
-            <SafeAreaView
-                edges={["bottom"]}
+            <View
                 style={[
                     stickyFooterStyles.footerBase,
                     stickyFooterStyles.elevatedSurface,
+                    footerSafeAreaStyle,
                     style,
                 ]}
             >
@@ -146,7 +156,7 @@ export function StickyFooterSurface({
                 >
                     {children}
                 </View>
-            </SafeAreaView>
+            </View>
         </Animated.View>
     )
 }
@@ -155,6 +165,7 @@ export default function StickyFooter({ template }: StickyFooterProps) {
     const pathname = usePathname()
     const { basket } = useBasket()
     const entranceStyle = useEntranceAnimation({ translateY: 10 })
+    const footerSafeAreaStyle = useFooterSafeAreaStyle()
     const hasBasketItems = (basket?.total_quantity ?? 0) > 0
     const showProductAction = template.footer === "nav+productAction"
     const showBasketAction = template.footer === "nav+basketAction" && hasBasketItems
@@ -177,6 +188,7 @@ export default function StickyFooter({ template }: StickyFooterProps) {
                     style={[
                         stickyFooterStyles.footerBase,
                         stickyFooterStyles.elevatedSurface,
+                        footerSafeAreaStyle,
                         footerKeyboardStyle,
                     ]}
                 >
@@ -199,7 +211,7 @@ export default function StickyFooter({ template }: StickyFooterProps) {
     }
 
     return (
-        <Animated.View style={[stickyFooterStyles.footerBase, entranceStyle]}>
+        <Animated.View style={[stickyFooterStyles.footerBase, footerSafeAreaStyle, entranceStyle]}>
             <BottomNavTemplate pathname={pathname} />
         </Animated.View>
     )

@@ -67,6 +67,7 @@ function mapUser(user: BackendAuthUser): AuthUser {
         phoneNumber: user.phone_number,
         isActive: user.is_active,
         isVerified: user.is_verified,
+        promoCode: user.promo_code,
         displayName: displayName || user.phone_number || user.email || `User #${user.id}`,
     }
 }

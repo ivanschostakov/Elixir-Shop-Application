@@ -59,3 +59,6 @@ def setup_logging():
     root.handlers.clear()
     root.addHandler(sh)
     root.addHandler(ph)
+
+    for noisy_logger in ("httpx", "httpcore"):
+        logging.getLogger(noisy_logger).setLevel(logging.WARNING)

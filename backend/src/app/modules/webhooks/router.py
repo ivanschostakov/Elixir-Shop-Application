@@ -9,8 +9,8 @@ from starlette.responses import JSONResponse, PlainTextResponse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.services.orders import apply_amocrm_status_update, reconcile_sbp_payment
-from src.app.services.auth import link_telegram_contact_to_user
 from src.app.services.rate_limit import enforce_rate_limit
+from src.app.services.telegram_updates import process_telegram_update
 from src.database import get_db
 from src.database.crud import get_order_by_amocrm_lead_id, get_order_by_code, get_order_by_id, get_order_by_invoice_id, update_order
 from src.database.crud.webhooks import payload_digest, register_webhook_delivery
@@ -128,37 +128,4 @@ async def telegram_webhook(request: Request, db: AsyncSession = Depends(get_db))
     if not isinstance(payload, dict):
         return JSONResponse({"ok": False, "error": "invalid payload"}, status_code=400)
 
-    delivery_id = str(payload.get("update_id") or "").strip() or None
-    accepted = await register_webhook_delivery(db, provider="telegram", delivery_id=delivery_id, payload_hash=payload_digest(body))
-    if not accepted:
-        return JSONResponse({"ok": True, "ignored": "duplicate"})
-
-    message = payload.get("message")
-    if not isinstance(message, dict):
-        return JSONResponse({"ok": True, "ignored": "no message"})
-
-    contact = message.get("contact")
-    sender = message.get("from")
-    if not isinstance(contact, dict) or not isinstance(sender, dict):
-        return JSONResponse({"ok": True, "ignored": "no contact"})
-
-    try:
-        contact_user_id = int(contact.get("user_id") or 0)
-        sender_user_id = int(sender.get("id") or 0)
-    except (TypeError, ValueError):
-        return JSONResponse({"ok": True, "ignored": "invalid contact user"})
-    if contact_user_id <= 0 or contact_user_id != sender_user_id:
-        return JSONResponse({"ok": True, "ignored": "contact does not belong to sender"})
-
-    user, reason = await link_telegram_contact_to_user(
-        db,
-        telegram_user_id=contact_user_id,
-        phone_number=str(contact.get("phone_number") or ""),
-        first_name=contact.get("first_name") or sender.get("first_name"),
-        last_name=contact.get("last_name") or sender.get("last_name"),
-        username=sender.get("username"),
-    )
-    if user is None:
-        return JSONResponse({"ok": True, "ignored": reason or "contact not linked"})
-
-    return JSONResponse({"ok": True, "user_id": user.id})
+    return JSONResponse(await process_telegram_update(db, payload))

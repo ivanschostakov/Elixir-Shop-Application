@@ -5,7 +5,6 @@ import {
     Image,
     Pressable,
     RefreshControl,
-    useColorScheme,
     ScrollView,
     Text,
     TextInput,
@@ -16,7 +15,6 @@ import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from 
 import { useRouter } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
 import { Path, Svg } from "react-native-svg"
-import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { ContentRail } from "@/components/content/content-rail"
 import { HeaderMenu, HeaderMenuPopup } from "@/components/header/header-menu"
@@ -28,6 +26,7 @@ import { useProductCategories } from "@/hooks/products/use-product-categories"
 import { useInfiniteProductCatalog } from "@/hooks/products/use-infinite-product-catalog"
 import { useProductSearch } from "@/hooks/products/use-product-search"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
+import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
@@ -205,8 +204,7 @@ function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab
 
 export default function HomeScreen() {
     const router = useRouter()
-    const colorScheme = useColorScheme()
-    const topInset = useSafeAreaInsets().top
+    const topInset = useAppSafeAreaInsets().top
     const { height: windowHeight } = useWindowDimensions()
     const homeHeaderMenuStyles = getHeaderStyles(topInset, windowHeight)
     const { language, setLanguage, t } = useLanguage()
@@ -245,7 +243,7 @@ export default function HomeScreen() {
     const bannerScrollRef = useRef<ScrollView>(null)
 
     const hasSearchQuery = query.trim().length > 0
-    const isDarkMode = colorScheme === "dark"
+    const isDarkMode = themeName === "dark"
     const topGradientColors = useMemo(
         () => getHomeGradientColors(accentName, isDarkMode),
         [accentName, isDarkMode],

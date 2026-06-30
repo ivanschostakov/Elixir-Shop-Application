@@ -2,7 +2,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.database.models import Basket, BasketItem
+from src.database.models import Basket, BasketItem, Product, ProductByCategory
 from src.database.schemas import BasketCreate, BasketUpdate
 
 
@@ -11,6 +11,7 @@ def _basket_load_options():
         selectinload(Basket.delivery_address),
         selectinload(Basket.recipient),
         selectinload(Basket.items).selectinload(BasketItem.product),
+        selectinload(Basket.items).selectinload(BasketItem.product).selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
         selectinload(Basket.items).selectinload(BasketItem.variant),
     )
 

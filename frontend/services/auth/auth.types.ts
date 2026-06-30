@@ -55,6 +55,7 @@ export type BackendAuthUser = {
     phone_number: string
     is_active: boolean
     is_verified: boolean
+    promo_code: string | null
 }
 
 export type BackendAuthTokens = {
@@ -98,6 +99,7 @@ export type AuthUser = {
     phoneNumber: string
     isActive: boolean
     isVerified: boolean
+    promoCode: string | null
     displayName: string
 }
 

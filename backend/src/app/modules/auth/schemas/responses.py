@@ -1,8 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
-from src.database.schemas.website.website_identity import WebsiteIdentityRead
+from src.database.limits import PROMO_CODE_MAX_LENGTH
 
 
 class AuthUserRead(BaseModel):
@@ -15,6 +15,7 @@ class AuthUserRead(BaseModel):
     phone_number: str
     is_active: bool
     is_verified: bool
+    promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
 
 
 class AuthTokensBase(BaseModel):
@@ -26,11 +27,6 @@ class AuthTokensBase(BaseModel):
 
 class AuthTokensWithUserResponse(AuthTokensBase):
     user: AuthUserRead
-
-
-class AuthTokensWithWebsiteIdentityResponse(AuthTokensBase):
-    user: AuthUserRead
-    website_identity: WebsiteIdentityRead
 
 
 class AuthVerificationRequiredResponse(BaseModel):

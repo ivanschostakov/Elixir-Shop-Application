@@ -26,7 +26,7 @@ my_orders_router = APIRouter(prefix="/orders", tags=["my_orders"])
 
 @my_orders_router.post("", response_model=OrderRead)
 async def create_my_order(payload: CreateOrderPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("orders:create"))) -> OrderRead:
-    order = await create_order_from_draft_for_user(db, request=request, user=current_user, draft_id=payload.draft_id, payment_method=payload.payment_method, entered_code=payload.code, requested_deposit_amount=payload.requested_deposit_amount) if payload.draft_id is not None else await create_order_from_basket_for_user(db, request=request, user=current_user, payment_method=payload.payment_method, entered_code=payload.code, requested_deposit_amount=payload.requested_deposit_amount)
+    order = await create_order_from_draft_for_user(db, request=request, user=current_user, draft_id=payload.draft_id, payment_method=payload.payment_method, entered_code=payload.code) if payload.draft_id is not None else await create_order_from_basket_for_user(db, request=request, user=current_user, payment_method=payload.payment_method, entered_code=payload.code)
     return await serialize_order(request, db, order)
 
 

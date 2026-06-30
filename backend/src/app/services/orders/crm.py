@@ -7,7 +7,6 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from src.app.services.referrals import finalize_paid_order_referral_effects
 from src.app.services.push_notifications import send_order_status_change_notification_if_needed
 from src.database.crud import get_order_by_id, update_order
 from src.database.models import Order, User
@@ -223,9 +222,6 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
         if delivery_patch:
             delivery_patch["delivery_created_at"] = datetime.now(timezone.utc)
             order = await update_order(session, order, OrderUpdate(**delivery_patch), commit=False)
-
-    if status_id in amocrm_client.PAID_STATUS_IDS:
-        await finalize_paid_order_referral_effects(session, order)
 
     await session.commit()
     refreshed_order = await get_order_by_id(session, order.id)

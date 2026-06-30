@@ -104,37 +104,26 @@ services:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
 
-  job-website-identity-sync:
+  worker-telegram-polling:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: shop-job-website-identity-sync
+    container_name: shop-worker-telegram-polling
     restart: unless-stopped
     env_file:
       - ./backend/.env
     environment:
-      REDIS_URL: redis://redis:6379/0
-      POSTGRES_HOST: 172.18.0.1
-      WEBSITE_IDENTITY_SYNC_INTERVAL_MINUTES: "60"
-      WEBSITE_IDENTITY_SYNC_STALE_MINUTES: "50"
-      WEBSITE_IDENTITY_SYNC_BATCH_SIZE: "50"
-      WEBSITE_IDENTITY_SYNC_LIMIT: "0"
-      WEBSITE_IDENTITY_SYNC_DRY_RUN: "false"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      redis:
-        condition: service_healthy
+      POSTGRES_HOST: 127.0.0.1
+    network_mode: host
     user: "0:0"
     command:
       - /bin/sh
       - -lc
       - |
-        mkdir -p /app/backend/media /app/backend/logs \
-        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
-        && exec su -s /bin/sh app -c "python -m src.workers.website_identity_sync"
+        mkdir -p /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/logs \
+        && exec su -s /bin/sh app -c "python -m src.workers.telegram_polling"
     volumes:
-      - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
 
 volumes:

@@ -3,15 +3,16 @@ import "expo-dev-client"
 import { useEffect } from "react"
 import { Asset } from "expo-asset"
 import { router } from "expo-router"
-import { AppState, Platform, useColorScheme, type AppStateStatus } from "react-native"
+import { AppState, Platform, type AppStateStatus } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
+import { SafeAreaProvider } from "react-native-safe-area-context"
 
 import AppShell from "@/components/navigation/app-shell"
 import { VersionGate } from "@/components/navigation/version-gate"
 import { TelegramWebAppGate } from "@/components/telegram/telegram-web-app-gate"
 import { AuthProvider } from "@/providers/auth-provider"
 import { LanguageProvider } from "@/providers/language-provider"
-import { ThemeProvider } from "@/providers/theme-provider"
+import { ThemeProvider, useTheme } from "@/providers/theme-provider"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
 import { attachPushOpenListener } from "@/services/notifications/order-status-notifications"
 import { rootLayoutStyles } from "@/components/navigation/root-layout.styles"
@@ -31,9 +32,9 @@ const CHAT_BACKGROUND_ASSETS = [
 const getRootLogErrorMessage = (error: unknown) =>
     error instanceof Error ? error.message : String(error)
 
-export default function RootLayout() {
-    const colorScheme = useColorScheme()
-    const rootThemeStyle = colorScheme === "dark" ? rootLayoutStyles.rootDark : rootLayoutStyles.rootLight
+function RootLayoutContent() {
+    const { themeName } = useTheme()
+    const rootThemeStyle = themeName === "dark" ? rootLayoutStyles.rootDark : rootLayoutStyles.rootLight
 
     useEffect(() => {
         const errorUtils = (globalThis as typeof globalThis & { ErrorUtils?: ErrorUtilsLike }).ErrorUtils
@@ -96,7 +97,7 @@ export default function RootLayout() {
 
     return (
         <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
-            <ThemeProvider>
+            <SafeAreaProvider>
                 <LanguageProvider>
                     <VersionGate>
                         <AuthProvider>
@@ -106,7 +107,15 @@ export default function RootLayout() {
                         </AuthProvider>
                     </VersionGate>
                 </LanguageProvider>
-            </ThemeProvider>
+            </SafeAreaProvider>
         </GestureHandlerRootView>
+    )
+}
+
+export default function RootLayout() {
+    return (
+        <ThemeProvider>
+            <RootLayoutContent />
+        </ThemeProvider>
     )
 }
