@@ -40,7 +40,7 @@
         "monochromeImage": "./assets/images/adaptive-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.ivanschostakov.elixirpeptide",
+      "package": "com.elixirpeptide.elixirpeptide",
       "versionCode": 2,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW"
