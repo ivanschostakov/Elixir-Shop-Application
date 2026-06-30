@@ -1,8 +1,9 @@
 const fs = require("fs")
 const path = require("path")
-const { AndroidConfig, createRunOncePlugin, withAndroidManifest, withAppDelegate } = require("expo/config-plugins")
+const { AndroidConfig, createRunOncePlugin, withAndroidManifest, withAppDelegate, withProjectBuildGradle } = require("expo/config-plugins")
 
 const PLUGIN_NAME = "with-yandex-mapkit"
+const GOOGLE_PLAY_SERVICES_LOCATION_VERSION = "21.0.1"
 
 function getMapKitApiKey() {
     return process.env.YANDEX_MAPKIT_API_KEY || process.env.EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY
@@ -69,6 +70,48 @@ function ensureLocalEnvLoaded() {
 
 function escapeSwiftString(value) {
     return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
+}
+
+function withPinnedGoogleLocationDependency(config) {
+    return withProjectBuildGradle(config, (config) => {
+        if (config.modResults.language !== "groovy") {
+            throw new Error(`${PLUGIN_NAME} currently supports only Groovy Android project build files.`)
+        }
+
+        const forceLine = `    resolutionStrategy.force 'com.google.android.gms:play-services-location:${GOOGLE_PLAY_SERVICES_LOCATION_VERSION}'`
+        if (config.modResults.contents.includes(forceLine)) {
+            return config
+        }
+
+        const allProjectsBlock = [
+            "allprojects {",
+            "  repositories {",
+            "    google()",
+            "    mavenCentral()",
+            "    maven { url 'https://www.jitpack.io' }",
+            "  }",
+            "}",
+        ].join("\n")
+        const patchedAllProjectsBlock = [
+            "allprojects {",
+            "  repositories {",
+            "    google()",
+            "    mavenCentral()",
+            "    maven { url 'https://www.jitpack.io' }",
+            "  }",
+            "  configurations.configureEach {",
+            forceLine,
+            "  }",
+            "}",
+        ].join("\n")
+
+        if (!config.modResults.contents.includes(allProjectsBlock)) {
+            throw new Error(`${PLUGIN_NAME} could not find the Android allprojects block to pin play-services-location.`)
+        }
+
+        config.modResults.contents = config.modResults.contents.replace(allProjectsBlock, patchedAllProjectsBlock)
+        return config
+    })
 }
 
 function withYandexMapKit(config) {
@@ -150,7 +193,9 @@ function withYandexMapKit(config) {
         return config
     })
 
-    return withAndroidManifest(withIos, (config) => {
+    const withPinnedGoogleLocation = withPinnedGoogleLocationDependency(withIos)
+
+    return withAndroidManifest(withPinnedGoogleLocation, (config) => {
         const androidManifest = config.modResults
         const mainApplication = AndroidConfig.Manifest.getMainApplicationOrThrow(androidManifest)
         AndroidConfig.Manifest.addMetaDataItemToMainApplication(

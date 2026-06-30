@@ -67,7 +67,6 @@ function normalizeAvatarMimeType(mimeType: string | null | undefined) {
 export function useProfileAvatar({ userId, t }: UseProfileAvatarParams) {
     const [avatarUri, setAvatarUri] = useState<string | null>(null)
     const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false)
-    const [hasMediaPermission, setHasMediaPermission] = useState<boolean | null>(null)
 
     useEffect(() => {
         if (!userId) {
@@ -98,60 +97,8 @@ export function useProfileAvatar({ userId, t }: UseProfileAvatarParams) {
         }
     }, [userId])
 
-    useEffect(() => {
-        let isMounted = true
-
-        const preloadPermission = async () => {
-            try {
-                const permission = await ImagePicker.getMediaLibraryPermissionsAsync()
-
-                if (isMounted) {
-                    setHasMediaPermission(permission.granted)
-                }
-            } catch {
-                if (isMounted) {
-                    setHasMediaPermission(null)
-                }
-            }
-        }
-
-        void preloadPermission()
-
-        return () => {
-            isMounted = false
-        }
-    }, [])
-
-    const ensureMediaPermission = useCallback(async () => {
-        if (hasMediaPermission) {
-            return true
-        }
-
-        let permission = await ImagePicker.getMediaLibraryPermissionsAsync()
-
-        if (!permission.granted) {
-            permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-        }
-
-        const granted = permission.granted
-
-        setHasMediaPermission(granted)
-
-        if (!granted) {
-            Alert.alert(t("profile.photoPermissionTitle"), t("profile.photoPermissionMessage"))
-        }
-
-        return granted
-    }, [hasMediaPermission, t])
-
     const handleChangePhoto = useCallback(async () => {
         if (!userId || isUpdatingAvatar) {
-            return
-        }
-
-        const hasPermission = await ensureMediaPermission()
-
-        if (!hasPermission) {
             return
         }
 
@@ -193,7 +140,7 @@ export function useProfileAvatar({ userId, t }: UseProfileAvatarParams) {
         } finally {
             setIsUpdatingAvatar(false)
         }
-    }, [ensureMediaPermission, isUpdatingAvatar, t, userId])
+    }, [isUpdatingAvatar, t, userId])
 
     const handleRemovePhoto = useCallback(async () => {
         if (!userId || isUpdatingAvatar) {

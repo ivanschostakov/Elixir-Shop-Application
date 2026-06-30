@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import {
-    ActivityIndicator,
     Image,
     Modal,
     Pressable,
@@ -9,9 +8,7 @@ import {
     useWindowDimensions,
     View,
 } from "react-native"
-import { CameraView } from "expo-camera"
 import Svg, { Path } from "react-native-svg"
-import * as MediaLibrary from "expo-media-library"
 
 import { useLanguage } from "@/providers/language-provider"
 import { colors } from "@/theme/colors"
@@ -31,59 +28,29 @@ import CameraSvgIcon from "@/assets/icons/chat/camera-svgrepo-com.svg"
 
 type AttachmentSheetProps = {
     activeMode: AttachmentMode
-    albumSelectorVisible: boolean
-    albums: MediaLibrary.Album[]
     bottomInset: number
-    loadingPhotos: boolean
-    onAddSelectedPhotos: () => void
     onClose: () => void
     onOpenCamera: () => void
     onOpenNativeGallery: () => void
     onPickFiles: () => void
-    onSelectPhotoAlbum: (albumId: string | null) => void
     onSelectMode: (mode: AttachmentMode) => void
-    onTogglePhoto: (assetId: string) => void
-    onToggleAlbumSelector: () => void
-    photoAssets: MediaLibrary.Asset[]
-    photoPermissionDenied: boolean
-    cameraPreviewActive: boolean
-    selectedPhotoAlbumId: string | null
-    selectedPhotoAlbumTitle: string
-    selectedPhotoIds: string[]
     visible: boolean
 }
 
 export function AttachmentSheet({
     activeMode,
-    albumSelectorVisible,
-    albums,
     bottomInset,
-    loadingPhotos,
-    onAddSelectedPhotos,
     onClose,
     onOpenCamera,
     onOpenNativeGallery,
     onPickFiles,
-    onSelectPhotoAlbum,
     onSelectMode,
-    onTogglePhoto,
-    onToggleAlbumSelector,
-    photoAssets,
-    photoPermissionDenied,
-    cameraPreviewActive,
-    selectedPhotoAlbumId,
-    selectedPhotoAlbumTitle,
-    selectedPhotoIds,
     visible,
 }: AttachmentSheetProps) {
     const { t } = useLanguage()
-    const { height, width } = useWindowDimensions()
-    const selectedCount = selectedPhotoIds.length
-    const tileSize = width / 3
+    const { height } = useWindowDimensions()
     const sheetHeight = Math.min(height * 0.72, 620)
-    const selectedPhotoSet = useMemo(() => new Set(selectedPhotoIds), [selectedPhotoIds])
     const bottomControlOffset = Math.max(bottomInset, spacing.sm)
-    const bottomOverlayHeight = bottomControlOffset + 108
 
     return (
         <Modal
@@ -120,89 +87,37 @@ export function AttachmentSheet({
                             </Svg>
                         </Pressable>
 
-                        <Pressable
-                            disabled={activeMode !== "photo"}
-                            onPress={onToggleAlbumSelector}
-                            style={chatScreenStyles.attachmentTitleButton}
-                        >
+                        <View style={chatScreenStyles.attachmentTitleButton}>
                             <Text numberOfLines={1} style={chatScreenStyles.attachmentSheetTitle}>
-                                {activeMode === "photo" ? selectedPhotoAlbumTitle : t("chat.attachmentsFileTitle")}
+                                {activeMode === "photo" ? t("chat.attachmentsPhotoTitle") : t("chat.attachmentsFileTitle")}
                             </Text>
-                            {activeMode === "photo" ? (
-                                <Svg fill="none" height={18} viewBox="0 0 24 24" width={18}>
-                                    <Path
-                                        d="m7 10 5 5 5-5"
-                                        stroke="#111"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2.2}
-                                    />
-                                </Svg>
-                            ) : null}
-                        </Pressable>
+                        </View>
 
-                        {activeMode === "photo" && selectedCount > 0 ? (
-                            <Pressable onPress={onAddSelectedPhotos} style={chatScreenStyles.attachmentAddButton}>
-                                <Text style={chatScreenStyles.attachmentAddButtonText}>
-                                    {t("chat.attachmentsAddSelected").replace("{count}", String(selectedCount))}
-                                </Text>
-                            </Pressable>
-                        ) : (
-                            <View style={chatScreenStyles.attachmentHeaderSpacer} />
-                        )}
+                        <View style={chatScreenStyles.attachmentHeaderSpacer} />
                     </View>
                     <View style={chatScreenStyles.attachmentHandle} />
 
                     <View style={chatScreenStyles.attachmentSheetBody}>
                         {activeMode === "photo" ? (
-                            <View style={chatScreenStyles.photoSheetBody}>
-                                {loadingPhotos ? (
-                                    <View style={chatScreenStyles.attachmentLoadingWrap}>
-                                        <ActivityIndicator color={colors.primary} />
-                                    </View>
-                                ) : photoPermissionDenied ? (
-                                    <View style={chatScreenStyles.attachmentPermissionWrap}>
-                                        <Text style={chatScreenStyles.attachmentPermissionTitle}>
-                                            {t("chat.attachmentsPhotoPermissionTitle")}
+                            <View style={chatScreenStyles.fileSheetBody}>
+                                <View style={chatScreenStyles.attachmentActionCard}>
+                                    <Pressable
+                                        onPress={onOpenNativeGallery}
+                                        style={chatScreenStyles.attachmentActionRow}
+                                    >
+                                        <GalleryActionIcon />
+                                        <Text style={chatScreenStyles.attachmentActionText}>
+                                            {t("chat.attachmentsSelectGallery")}
                                         </Text>
-                                        <Text style={chatScreenStyles.attachmentPermissionText}>
-                                            {t("chat.attachmentsPhotoPermissionMessage")}
+                                    </Pressable>
+                                    <View style={chatScreenStyles.attachmentActionDivider} />
+                                    <Pressable onPress={onOpenCamera} style={chatScreenStyles.attachmentActionRow}>
+                                        <CameraActionIcon />
+                                        <Text style={chatScreenStyles.attachmentActionText}>
+                                            {t("chat.attachmentsCameraTitle")}
                                         </Text>
-                                        <Pressable
-                                            onPress={onOpenNativeGallery}
-                                            style={chatScreenStyles.attachmentPermissionButton}
-                                        >
-                                            <Text style={chatScreenStyles.attachmentPermissionButtonText}>
-                                                {t("chat.attachmentsSelectGallery")}
-                                            </Text>
-                                        </Pressable>
-                                    </View>
-                                ) : photoAssets.length > 0 ? (
-                                    <PhotoGalleryGrid
-                                        bottomOverlayHeight={bottomOverlayHeight}
-                                        cameraPreviewActive={cameraPreviewActive}
-                                        onOpenCamera={onOpenCamera}
-                                        onTogglePhoto={onTogglePhoto}
-                                        photoAssets={photoAssets}
-                                        selectedPhotoIds={selectedPhotoIds}
-                                        selectedPhotoSet={selectedPhotoSet}
-                                        tileSize={tileSize}
-                                    />
-                                ) : (
-                                    <View style={chatScreenStyles.attachmentPermissionWrap}>
-                                        <Text style={chatScreenStyles.attachmentPermissionTitle}>
-                                            {t("chat.attachmentsNoPhotosTitle")}
-                                        </Text>
-                                        <Pressable
-                                            onPress={onOpenNativeGallery}
-                                            style={chatScreenStyles.attachmentPermissionButton}
-                                        >
-                                            <Text style={chatScreenStyles.attachmentPermissionButtonText}>
-                                                {t("chat.attachmentsSelectGallery")}
-                                            </Text>
-                                        </Pressable>
-                                    </View>
-                                )}
+                                    </Pressable>
+                                </View>
                             </View>
                         ) : (
                             <View style={chatScreenStyles.fileSheetBody}>
@@ -228,14 +143,6 @@ export function AttachmentSheet({
                         )}
                     </View>
 
-                    {activeMode === "photo" && albumSelectorVisible ? (
-                        <AlbumSelector
-                            albums={albums}
-                            onSelectAlbum={onSelectPhotoAlbum}
-                            selectedPhotoAlbumId={selectedPhotoAlbumId}
-                        />
-                    ) : null}
-
                     <View style={[chatScreenStyles.attachmentModeBar, { bottom: bottomControlOffset }]}>
                         <AttachmentModeButton
                             active={activeMode === "photo"}
@@ -253,185 +160,6 @@ export function AttachmentSheet({
                 </View>
             </View>
         </Modal>
-    )
-}
-
-function PhotoGalleryGrid({
-    bottomOverlayHeight,
-    cameraPreviewActive,
-    onOpenCamera,
-    onTogglePhoto,
-    photoAssets,
-    selectedPhotoIds,
-    selectedPhotoSet,
-    tileSize,
-}: {
-    bottomOverlayHeight: number
-    cameraPreviewActive: boolean
-    onOpenCamera: () => void
-    onTogglePhoto: (assetId: string) => void
-    photoAssets: MediaLibrary.Asset[]
-    selectedPhotoIds: string[]
-    selectedPhotoSet: Set<string>
-    tileSize: number
-}) {
-    const heroAssets = photoAssets.slice(0, 4)
-    const remainingAssets = photoAssets.slice(4)
-
-    return (
-        <ScrollView
-            contentContainerStyle={[
-                chatScreenStyles.photoGridContent,
-                { paddingBottom: bottomOverlayHeight },
-            ]}
-            scrollIndicatorInsets={{ bottom: bottomOverlayHeight }}
-            showsVerticalScrollIndicator={false}
-            style={chatScreenStyles.photoGrid}
-        >
-            <View style={chatScreenStyles.photoGridHeroRow}>
-                <Pressable
-                    accessibilityLabel="Open camera"
-                    onPress={onOpenCamera}
-                    style={[
-                        chatScreenStyles.cameraTile,
-                        { height: tileSize * 2, width: tileSize },
-                    ]}
-                >
-                    {cameraPreviewActive ? (
-                        <CameraView
-                            animateShutter={false}
-                            facing="back"
-                            style={chatScreenStyles.cameraTilePreview}
-                        />
-                    ) : null}
-                    <View style={chatScreenStyles.cameraTileScrim} />
-                    <View style={chatScreenStyles.cameraTileIcon}>
-                        <CameraSvgIcon height={44} width={44} />
-                    </View>
-                </Pressable>
-                <View style={[chatScreenStyles.photoGridHeroPhotos, { width: tileSize * 2 }]}>
-                    {heroAssets.map((item) => (
-                        <PhotoGridTile
-                            item={item}
-                            key={item.id}
-                            onTogglePhoto={onTogglePhoto}
-                            selectedIndex={selectedPhotoIds.indexOf(item.id)}
-                            selectedPhotoSet={selectedPhotoSet}
-                            tileSize={tileSize}
-                        />
-                    ))}
-                </View>
-            </View>
-            <View style={chatScreenStyles.photoGridWrap}>
-                {remainingAssets.map((item) => (
-                    <PhotoGridTile
-                        item={item}
-                        key={item.id}
-                        onTogglePhoto={onTogglePhoto}
-                        selectedIndex={selectedPhotoIds.indexOf(item.id)}
-                        selectedPhotoSet={selectedPhotoSet}
-                        tileSize={tileSize}
-                    />
-                ))}
-            </View>
-        </ScrollView>
-    )
-}
-
-function PhotoGridTile({
-    item,
-    onTogglePhoto,
-    selectedIndex,
-    selectedPhotoSet,
-    tileSize,
-}: {
-    item: MediaLibrary.Asset
-    onTogglePhoto: (assetId: string) => void
-    selectedIndex: number
-    selectedPhotoSet: Set<string>
-    tileSize: number
-}) {
-    const isSelected = selectedPhotoSet.has(item.id)
-
-    return (
-        <Pressable
-            onPress={() => onTogglePhoto(item.id)}
-            style={[
-                chatScreenStyles.photoTile,
-                { height: tileSize, width: tileSize },
-            ]}
-        >
-            <Image source={{ uri: item.uri }} style={chatScreenStyles.photoTileImage} />
-            <View
-                style={[
-                    chatScreenStyles.photoSelectionCircle,
-                    isSelected ? chatScreenStyles.photoSelectionCircleActive : null,
-                ]}
-            >
-                {isSelected ? (
-                    <Text style={chatScreenStyles.photoSelectionText}>
-                        {selectedIndex + 1}
-                    </Text>
-                ) : null}
-            </View>
-        </Pressable>
-    )
-}
-
-function AlbumSelector({
-    albums,
-    onSelectAlbum,
-    selectedPhotoAlbumId,
-}: {
-    albums: MediaLibrary.Album[]
-    onSelectAlbum: (albumId: string | null) => void
-    selectedPhotoAlbumId: string | null
-}) {
-    const { t } = useLanguage()
-
-    return (
-        <View style={chatScreenStyles.albumSelectorPopover}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-                <Pressable
-                    onPress={() => onSelectAlbum(null)}
-                    style={[
-                        chatScreenStyles.albumSelectorRow,
-                        selectedPhotoAlbumId === null ? chatScreenStyles.albumSelectorRowActive : null,
-                    ]}
-                >
-                    <Text
-                        numberOfLines={1}
-                        style={[
-                            chatScreenStyles.albumSelectorText,
-                            selectedPhotoAlbumId === null ? chatScreenStyles.albumSelectorTextActive : null,
-                        ]}
-                    >
-                        {t("chat.attachmentsPhotoTitle")}
-                    </Text>
-                </Pressable>
-                {albums.map((album) => (
-                    <Pressable
-                        key={album.id}
-                        onPress={() => onSelectAlbum(album.id)}
-                        style={[
-                            chatScreenStyles.albumSelectorRow,
-                            selectedPhotoAlbumId === album.id ? chatScreenStyles.albumSelectorRowActive : null,
-                        ]}
-                    >
-                        <Text
-                            numberOfLines={1}
-                            style={[
-                                chatScreenStyles.albumSelectorText,
-                                selectedPhotoAlbumId === album.id ? chatScreenStyles.albumSelectorTextActive : null,
-                            ]}
-                        >
-                            {album.title}
-                        </Text>
-                        <Text style={chatScreenStyles.albumSelectorCount}>{album.assetCount}</Text>
-                    </Pressable>
-                ))}
-            </ScrollView>
-        </View>
     )
 }
 
@@ -651,6 +379,13 @@ function GalleryActionIcon({ active = false, compact = false }: { active?: boole
             />
         </Svg>
     )
+}
+
+function CameraActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
+    const iconColor = active ? colors.primary : ATTACHMENT_ICON_COLOR
+    const size = compact ? 22 : 30
+
+    return <CameraSvgIcon color={iconColor} height={size} width={size} />
 }
 
 function FileActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {

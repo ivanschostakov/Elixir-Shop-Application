@@ -40,10 +40,16 @@
         "monochromeImage": "./assets/images/adaptive-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
+      "requestLegacyExternalStorage": false,
       "package": "com.elixirpeptide.elixirpeptide",
       "versionCode": 2,
       "blockedPermissions": [
-        "android.permission.SYSTEM_ALERT_WINDOW"
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
       ],
       "permissions": [
         "android.permission.CAMERA",
@@ -67,6 +73,7 @@
       ],
       "./plugins/with-yandex-mapkit",
       "./plugins/with-app-attest-environment",
+      "./plugins/with-android-play-policy-permissions",
       [
         "expo-splash-screen",
         {
@@ -85,16 +92,6 @@
         {
           "photosPermission": "Allow Elixir Peptide to access your photos so you can attach images to chat messages.",
           "cameraPermission": "Allow Elixir Peptide to access your camera so you can take profile pictures."
-        }
-      ],
-      [
-        "expo-media-library",
-        {
-          "granularPermissions": [
-            "photo"
-          ],
-          "photosPermission": "Allow Elixir Peptide to show recent photos so you can attach them to chat messages.",
-          "savePhotosPermission": "Allow Elixir Peptide to save photos."
         }
       ],
       [

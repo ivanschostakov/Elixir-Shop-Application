@@ -310,12 +310,6 @@ export function ProductInfoTabs({
                             disabled={reviewsSubmitting}
                             onPress={() => {
                                 void (async () => {
-                                    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-                                    if (!permission.granted) {
-                                        setSubmitError(t("product.reviewPhotoPermissionDenied"))
-                                        return
-                                    }
-
                                     const result = await ImagePicker.launchImageLibraryAsync({
                                         allowsMultipleSelection: true,
                                         mediaTypes: ["images"],

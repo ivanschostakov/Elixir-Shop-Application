@@ -72,6 +72,13 @@ if (yamapPackageJson.version !== "4.8.3") {
 
 const managerPath = "android/src/main/java/ru/vvdev/yamap";
 
+applyReplacements("android/build.gradle", [
+  [
+    `    implementation 'com.google.android.gms:play-services-location:+'\n`,
+    `    implementation 'com.google.android.gms:play-services-location:21.0.1'\n`,
+  ],
+]);
+
 applyReplacements(`${managerPath}/ClusteredYamapViewManager.kt`, [
   [
     `    override fun getExportedCustomDirectEventTypeConstants(): Map<String, Any>? {\n        return MapBuilder.builder<String, Any>()\n            .build()\n    }\n`,

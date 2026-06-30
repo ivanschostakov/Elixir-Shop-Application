@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
     ActivityIndicator,
     Alert,
@@ -29,7 +29,6 @@ import {
 import * as Application from "expo-application"
 import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
-import * as MediaLibrary from "expo-media-library"
 import { useRouter } from "expo-router"
 import Svg, { Path } from "react-native-svg"
 
@@ -68,7 +67,6 @@ import {
 } from "@/screens/chat/chat-screen.core-components"
 import {
     createAttachmentFromImagePickerAsset,
-    createAttachmentFromMediaAsset,
     formatVoiceDuration,
     getVoiceRecordingFilename,
     getVoiceRecordingMimeType,
@@ -84,7 +82,6 @@ import {
     IOS_MINIMUM_VOICE_RECORDING_BUILD,
     INTERNAL_PRODUCT_LINK_PATTERN,
     MESSAGE_IMAGE_MAX_WIDTH,
-    RECENT_PHOTO_LIMIT,
     SAFE_LINK_PROTOCOL_PATTERN,
 } from "@/screens/chat/chat-screen.constants"
 
@@ -109,13 +106,6 @@ export default function ChatScreen() {
     const [activeBasketVariantId, setActiveBasketVariantId] = useState<number | null>(null)
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
-    const [albumSelectorVisible, setAlbumSelectorVisible] = useState(false)
-    const [photoAlbums, setPhotoAlbums] = useState<MediaLibrary.Album[]>([])
-    const [photoAssets, setPhotoAssets] = useState<MediaLibrary.Asset[]>([])
-    const [photoAssetsLoading, setPhotoAssetsLoading] = useState(false)
-    const [photoPermissionDenied, setPhotoPermissionDenied] = useState(false)
-    const [selectedPhotoAlbumId, setSelectedPhotoAlbumId] = useState<string | null>(null)
-    const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([])
     const [keyboardVisible, setKeyboardVisible] = useState(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
@@ -133,14 +123,6 @@ export default function ChatScreen() {
     const messageTextWidth = Math.max(180, Math.min(screenWidth * 0.74, 330))
     const voiceRecordingSupported =
         __DEV__ || Platform.OS !== "ios" || nativeBuildNumber() >= IOS_MINIMUM_VOICE_RECORDING_BUILD
-    const cameraPreviewActive =
-        attachmentSheetVisible &&
-        attachmentMode === "photo" &&
-        cameraPermission?.granted === true
-    const selectedPhotoAlbumTitle = useMemo(
-        () => photoAlbums.find((album) => album.id === selectedPhotoAlbumId)?.title ?? t("chat.attachmentsPhotoTitle"),
-        [photoAlbums, selectedPhotoAlbumId, t],
-    )
     const { basket } = useBasket()
     const {
         addItem: addBasketItem,
@@ -226,43 +208,6 @@ export default function ChatScreen() {
         }
     }, [audioRecorder])
 
-    const loadRecentPhotos = useCallback(async () => {
-        setPhotoAssetsLoading(true)
-        try {
-            const permission = await MediaLibrary.requestPermissionsAsync(false, ["photo"])
-            if (!permission.granted) {
-                setPhotoPermissionDenied(true)
-                setPhotoAssets([])
-                return
-            }
-
-            setPhotoPermissionDenied(false)
-            const [result, albums] = await Promise.all([
-                MediaLibrary.getAssetsAsync({
-                    album: selectedPhotoAlbumId ?? undefined,
-                    first: RECENT_PHOTO_LIMIT,
-                    mediaType: MediaLibrary.MediaType.photo,
-                    sortBy: [[MediaLibrary.SortBy.creationTime, false]],
-                }),
-                MediaLibrary.getAlbumsAsync({ includeSmartAlbums: true }),
-            ])
-            setPhotoAlbums(albums.filter((album) => album.assetCount > 0))
-            setPhotoAssets(result.assets)
-        } catch {
-            Alert.alert(t("chat.attachmentsLoadFailedTitle"), t("chat.attachmentsLoadFailedMessage"))
-        } finally {
-            setPhotoAssetsLoading(false)
-        }
-    }, [selectedPhotoAlbumId, t])
-
-    useEffect(() => {
-        if (!attachmentSheetVisible || attachmentMode !== "photo" || photoPermissionDenied) {
-            return
-        }
-
-        void loadRecentPhotos()
-    }, [attachmentMode, attachmentSheetVisible, loadRecentPhotos, photoPermissionDenied])
-
     const appendAttachments = useCallback((nextAttachments: UploadableChatAttachment[]) => {
         if (!nextAttachments.length) {
             return
@@ -279,34 +224,14 @@ export default function ChatScreen() {
 
     const handleCloseAttachmentSheet = useCallback(() => {
         setAttachmentSheetVisible(false)
-        setSelectedPhotoIds([])
-        setAlbumSelectorVisible(false)
-    }, [])
-
-    const handleSelectPhotoAlbum = useCallback((albumId: string | null) => {
-        setSelectedPhotoAlbumId(albumId)
-        setSelectedPhotoIds([])
-        setAlbumSelectorVisible(false)
-        setPhotoAssets([])
     }, [])
 
     const handleSelectAttachmentMode = useCallback((mode: AttachmentMode) => {
         setAttachmentMode(mode)
-        setAlbumSelectorVisible(false)
-    }, [])
-
-    const handleToggleAlbumSelector = useCallback(() => {
-        setAlbumSelectorVisible((currentValue) => !currentValue)
     }, [])
 
     const handleOpenNativeGallery = useCallback(async () => {
         try {
-            const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-            if (!permission.granted) {
-                Alert.alert(t("chat.attachmentsPhotoPermissionTitle"), t("chat.attachmentsPhotoPermissionMessage"))
-                return
-            }
-
             const result = await ImagePicker.launchImageLibraryAsync({
                 allowsMultipleSelection: true,
                 mediaTypes: ["images"],
@@ -378,29 +303,6 @@ export default function ChatScreen() {
             Alert.alert(t("chat.attachmentsLoadFailedTitle"), t("chat.attachmentsLoadFailedMessage"))
         }
     }, [appendAttachments, handleCloseAttachmentSheet, t])
-
-    const handleTogglePhoto = useCallback((assetId: string) => {
-        setSelectedPhotoIds((currentSelectedIds) =>
-            currentSelectedIds.includes(assetId)
-                ? currentSelectedIds.filter((currentAssetId) => currentAssetId !== assetId)
-                : [...currentSelectedIds, assetId],
-        )
-    }, [])
-
-    const handleAddSelectedPhotos = useCallback(async () => {
-        const selectedPhotoAssets = photoAssets.filter((asset) => selectedPhotoIds.includes(asset.id))
-        if (!selectedPhotoAssets.length) {
-            return
-        }
-
-        try {
-            const nextAttachments = await Promise.all(selectedPhotoAssets.map(createAttachmentFromMediaAsset))
-            appendAttachments(nextAttachments)
-            handleCloseAttachmentSheet()
-        } catch {
-            Alert.alert(t("chat.attachmentsLoadFailedTitle"), t("chat.attachmentsLoadFailedMessage"))
-        }
-    }, [appendAttachments, handleCloseAttachmentSheet, photoAssets, selectedPhotoIds, t])
 
     const handleRemoveAttachment = useCallback((attachmentIndex: number) => {
         setAttachments((currentAttachments) => currentAttachments.filter((_, index) => index !== attachmentIndex))
@@ -1010,13 +912,7 @@ export default function ChatScreen() {
                 </KeyboardAvoidingView>
                 <AttachmentSheet
                     activeMode={attachmentMode}
-                    albumSelectorVisible={albumSelectorVisible}
-                    albums={photoAlbums}
                     bottomInset={bottomInset}
-                    loadingPhotos={photoAssetsLoading}
-                    onAddSelectedPhotos={() => {
-                        void handleAddSelectedPhotos()
-                    }}
                     onClose={handleCloseAttachmentSheet}
                     onOpenCamera={() => {
                         void handleOpenCamera()
@@ -1028,15 +924,6 @@ export default function ChatScreen() {
                         void handlePickFiles()
                     }}
                     onSelectMode={handleSelectAttachmentMode}
-                    onSelectPhotoAlbum={handleSelectPhotoAlbum}
-                    onToggleAlbumSelector={handleToggleAlbumSelector}
-                    onTogglePhoto={handleTogglePhoto}
-                    cameraPreviewActive={cameraPreviewActive}
-                    photoAssets={photoAssets}
-                    photoPermissionDenied={photoPermissionDenied}
-                    selectedPhotoAlbumId={selectedPhotoAlbumId}
-                    selectedPhotoAlbumTitle={selectedPhotoAlbumTitle}
-                    selectedPhotoIds={selectedPhotoIds}
                     visible={attachmentSheetVisible}
                 />
             </View>

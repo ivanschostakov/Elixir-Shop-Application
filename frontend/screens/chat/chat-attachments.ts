@@ -1,6 +1,5 @@
 import { Platform } from "react-native"
 import * as ImagePicker from "expo-image-picker"
-import * as MediaLibrary from "expo-media-library"
 
 import { API_BASE_URL } from "@/services/api/constants"
 import type { AIAttachmentRead, UploadableChatAttachment } from "@/services/api/ai-chat.types"
@@ -16,17 +15,6 @@ export function createAttachmentFromImagePickerAsset(asset: ImagePicker.ImagePic
         fileName: asset.fileName ?? getFileNameFromUri(asset.uri, "photo.jpg"),
         mimeType: asset.mimeType ?? guessMimeTypeFromFilename(asset.fileName ?? asset.uri, "image/jpeg"),
         uri: asset.uri,
-    }
-}
-
-export async function createAttachmentFromMediaAsset(asset: MediaLibrary.Asset): Promise<UploadableChatAttachment> {
-    const assetInfo = await MediaLibrary.getAssetInfoAsync(asset)
-    const uri = assetInfo.localUri ?? assetInfo.uri ?? asset.uri
-
-    return {
-        fileName: assetInfo.filename ?? asset.filename ?? getFileNameFromUri(uri, "photo.jpg"),
-        mimeType: guessMimeTypeFromFilename(assetInfo.filename ?? asset.filename, "image/jpeg"),
-        uri,
     }
 }
 
