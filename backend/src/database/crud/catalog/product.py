@@ -17,6 +17,13 @@ def _not_archived_product_clause():
     return Product.archived.is_(False)
 
 
+def _product_price_options():
+    return (
+        selectinload(Product.variants),
+        selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
+    )
+
+
 def _compact_sku_search_token(value: str) -> str:
     return "".join(char for char in value.casefold() if char.isalnum())
 
@@ -55,10 +62,7 @@ async def create_product(session: AsyncSession, data: ProductCreate) -> Product:
 async def get_product_by_id(session: AsyncSession, product_id: int, *, include_out_of_stock: bool = True, include_archived: bool = False) -> Product | None:
     stmt = (
         select(Product)
-        .options(
-            selectinload(Product.variants),
-            selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
-        )
+        .options(*_product_price_options())
         .where(Product.id == product_id)
     )
     if not include_out_of_stock:
@@ -77,10 +81,7 @@ async def get_product_by_sku(session: AsyncSession, sku: str) -> Product | None:
 
 
 async def get_products(session: AsyncSession, *, q: str | None = None, sku: str | None = None, min_priority: int | None = None, category_id: int | None = None, offset: int = 0, limit: int = 100, sort: str = None, include_archived: bool = False) -> list[Product]:
-    stmt = select(Product).options(
-        selectinload(Product.variants),
-        selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
-    )
+    stmt = select(Product).options(*_product_price_options())
     if not include_archived:
         stmt = stmt.where(_not_archived_product_clause())
     if category_id is not None:
@@ -147,7 +148,7 @@ async def get_similar_products(session: AsyncSession, *, product_id: int, offset
 
     stmt = (
         select(Product)
-        .options(selectinload(Product.variants))
+        .options(*_product_price_options())
         .join(shared_category_counts, shared_category_counts.c.product_id == Product.id)
         .where(_in_stock_product_clause(), _not_archived_product_clause())
         .order_by(
@@ -164,7 +165,7 @@ async def get_similar_products(session: AsyncSession, *, product_id: int, offset
 async def get_priority_products(session: AsyncSession, *, min_priority: int = 1, offset: int = 0, limit: int = 100, include_archived: bool = False) -> list[Product]:
     stmt = (
         select(Product)
-        .options(selectinload(Product.variants))
+        .options(*_product_price_options())
         .order_by(Product.priority.desc(), Product.id.desc())
         .offset(offset)
         .limit(limit)

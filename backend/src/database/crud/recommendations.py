@@ -19,6 +19,13 @@ from src.database.models import (
 )
 
 
+def _product_price_options():
+    return (
+        selectinload(Product.variants),
+        selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
+    )
+
+
 async def get_or_create_user_product_recommendation_signal(session: AsyncSession, *, user_id: int, product_id: int) -> UserProductRecommendationSignal:
     stmt = (
         select(UserProductRecommendationSignal)
@@ -120,7 +127,7 @@ async def get_candidate_products_for_categories(session: AsyncSession, *, catego
 
     stmt: Select[tuple[Product]] = (
         select(Product)
-        .options(selectinload(Product.variants))
+        .options(*_product_price_options())
         .join(ProductByCategory, ProductByCategory.product_id == Product.id)
         .where(
             ProductByCategory.category_id.in_(normalized_category_ids),
@@ -137,7 +144,7 @@ async def get_candidate_products_for_categories(session: AsyncSession, *, catego
 async def get_home_fallback_products(session: AsyncSession, *, offset: int, limit: int, excluded_product_ids: set[int]) -> list[Product]:
     stmt: Select[tuple[Product]] = (
         select(Product)
-        .options(selectinload(Product.variants))
+        .options(*_product_price_options())
         .where(Product.in_stock.is_(True), Product.archived.is_(False))
         .order_by(Product.created_at.desc(), Product.id.desc())
         .offset(offset)

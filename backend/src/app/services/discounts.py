@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Iterable
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.referrals.calculations import quantize_money
@@ -19,8 +19,12 @@ def is_non_discountable_category_name(name: str | None) -> bool:
 def product_is_discountable(product: Product | None) -> bool:
     if product is None:
         return True
+    if "products_by_category" in inspect(product).unloaded:
+        return True
 
     for link in getattr(product, "products_by_category", ()) or ():
+        if "category" in inspect(link).unloaded:
+            continue
         if is_non_discountable_category_name(getattr(getattr(link, "category", None), "name", None)):
             return False
     return True
