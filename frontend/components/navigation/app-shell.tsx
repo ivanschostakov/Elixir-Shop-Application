@@ -67,10 +67,8 @@ function AppShellContent() {
         Platform.OS === "web" && shellEdges.includes("top")
             ? { paddingTop: topInset }
             : null
-    const shouldShowBrandOverlay = Platform.OS !== "web"
-    const brandLabelTop = Platform.OS === "ios"
-        ? Math.max(2, topInset - 44)
-        : Math.max(4, topInset - 14)
+    const shouldShowBrandOverlay = Platform.OS === "ios"
+    const brandLabelTop = Math.max(2, topInset - 44)
     const currentPrimaryRouteIndex = PRIMARY_APP_ROUTES.findIndex((route) => route === pathname)
     const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
 
