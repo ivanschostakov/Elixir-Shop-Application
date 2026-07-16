@@ -1,9 +1,9 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-export const homeScreenStyles = StyleSheet.create({
+export const createHomeScreenStyles = (colors: ThemePalette) => StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: colors.pageBackground,

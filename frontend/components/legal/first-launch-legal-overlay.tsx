@@ -14,10 +14,12 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { LegalContent } from "@/components/legal/legal-content"
-import { legalContentStyles } from "@/components/legal/legal-content.styles"
+import { createLegalContentStyles } from "@/components/legal/legal-content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { LEGAL_CONTACTS_MARKDOWN, LEGAL_OFFER_MARKDOWN } from "@/constants/legal-content"
 import { useLanguage } from "@/providers/language-provider"
-import { colors } from "@/theme/colors"
+import { useTheme } from "@/providers/theme-provider"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
 const LEGAL_ACCEPTED_STORAGE_KEY = "elixirpeptide-legal-accepted-v1"
@@ -56,6 +58,9 @@ async function persistLegalAcceptedFlag() {
 }
 
 export function FirstLaunchLegalOverlay() {
+    const legalContentStyles = useThemeStyles(createLegalContentStyles)
+    const styles = useThemeStyles(createFirstLaunchLegalStyles)
+    const { palette } = useTheme()
     const { t } = useLanguage()
     const insets = useSafeAreaInsets()
     const scrollRef = useRef<ScrollView | null>(null)
@@ -104,7 +109,7 @@ export function FirstLaunchLegalOverlay() {
 
         return (
             <View style={styles.loaderBackdrop}>
-                <ActivityIndicator color={colors.primary} />
+                <ActivityIndicator color={palette.primary} />
             </View>
         )
     }
@@ -154,7 +159,7 @@ export function FirstLaunchLegalOverlay() {
     )
 }
 
-const styles = StyleSheet.create({
+const createFirstLaunchLegalStyles = (colors: ThemePalette) => StyleSheet.create({
     loaderBackdrop: {
         ...StyleSheet.absoluteFillObject,
         alignItems: "center",

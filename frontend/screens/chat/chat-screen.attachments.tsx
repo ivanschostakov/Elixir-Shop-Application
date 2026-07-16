@@ -11,7 +11,6 @@ import {
 import Svg, { Path } from "react-native-svg"
 
 import { useLanguage } from "@/providers/language-provider"
-import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 import type { AIAttachmentRead, UploadableChatAttachment } from "@/services/api/ai-chat.types"
 import {
@@ -23,7 +22,9 @@ import {
     normalizeImageAspectRatio,
 } from "@/screens/chat/chat-attachments"
 import { ATTACHMENT_ICON_COLOR, type AttachmentMode } from "@/screens/chat/chat-screen.constants"
-import { chatScreenStyles } from "@/screens/chat/chat-screen.styles"
+import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import CameraSvgIcon from "@/assets/icons/chat/camera-svgrepo-com.svg"
 
 type AttachmentSheetProps = {
@@ -47,6 +48,7 @@ export function AttachmentSheet({
     onSelectMode,
     visible,
 }: AttachmentSheetProps) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const { t } = useLanguage()
     const { height } = useWindowDimensions()
     const sheetHeight = Math.min(height * 0.72, 620)
@@ -174,6 +176,7 @@ function AttachmentModeButton({
     label: string
     onPress: () => void
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     return (
         <Pressable
             onPress={onPress}
@@ -202,6 +205,7 @@ export function QueuedAttachmentStrip({
     attachments: UploadableChatAttachment[]
     onRemove: (attachmentIndex: number) => void
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     if (!attachments.length) {
         return null
     }
@@ -261,6 +265,7 @@ export function MessageAttachmentList({
     isUserMessage: boolean
     mediaWidth: number
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const imageAttachments = attachments.filter(isImageAttachment)
     const documentAttachments = attachments.filter((attachment) => !isImageAttachment(attachment))
 
@@ -318,6 +323,7 @@ function MessageImageAttachment({
     attachment: AIAttachmentRead
     mediaWidth: number
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const uri = getReadAttachmentUri(attachment)
     const [aspectRatio, setAspectRatio] = useState(1)
 
@@ -359,7 +365,8 @@ function MessageImageAttachment({
 }
 
 function GalleryActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
-    const iconColor = active ? colors.primary : ATTACHMENT_ICON_COLOR
+    const { palette } = useTheme()
+    const iconColor = active ? palette.primary : ATTACHMENT_ICON_COLOR
     const size = compact ? 22 : 30
 
     return (
@@ -382,14 +389,16 @@ function GalleryActionIcon({ active = false, compact = false }: { active?: boole
 }
 
 function CameraActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
-    const iconColor = active ? colors.primary : ATTACHMENT_ICON_COLOR
+    const { palette } = useTheme()
+    const iconColor = active ? palette.primary : ATTACHMENT_ICON_COLOR
     const size = compact ? 22 : 30
 
     return <CameraSvgIcon color={iconColor} height={size} width={size} />
 }
 
 function FileActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
-    const iconColor = active ? colors.primary : ATTACHMENT_ICON_COLOR
+    const { palette } = useTheme()
+    const iconColor = active ? palette.primary : ATTACHMENT_ICON_COLOR
     const size = compact ? 22 : 30
 
     return (

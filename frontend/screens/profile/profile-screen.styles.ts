@@ -1,12 +1,12 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
 const PROFILE_PLACEHOLDER_BACKGROUND = "#EAF3FF"
 const PROFILE_PLACEHOLDER_TEXT = "#0A84FF"
 
-export const ProfileScreenStyles = StyleSheet.create({
+export const createProfileScreenStyles = (colors: ThemePalette) => StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: colors.surface,

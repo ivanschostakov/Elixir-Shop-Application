@@ -13,10 +13,11 @@ import { SavedIcon } from "@/components/footer/sticky-footer.icons"
 import { useLanguage } from "@/providers/language-provider"
 import { SwipeDeleteActionProps } from "@/screens/cart/cart-basket-item.types"
 import { FULL_SWIPE_REMOVE_TRIGGER } from "@/screens/cart/cart-screen.constants"
-import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
-import { favoritesScreenStyles } from "@/screens/favorites/favorites-screen.styles"
+import { createCartScreenStyles } from "@/screens/cart/cart-screen.styles"
+import { createFavoritesScreenStyles } from "@/screens/favorites/favorites-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import type { FavoriteProductItemProps } from "@/screens/favorites/favorite-product-item.types"
-import { colors } from "@/theme/colors"
 
 function FavoriteSwipeAction({
     disabled,
@@ -26,6 +27,8 @@ function FavoriteSwipeAction({
     onDragProgress,
     onPress,
 }: SwipeDeleteActionProps) {
+    const cartScreenStyles = useThemeStyles(createCartScreenStyles)
+    const favoritesScreenStyles = useThemeStyles(createFavoritesScreenStyles)
     useEffect(() => {
         const listenerId = dragX.addListener(({ value }) => {
             onDragProgress(value)
@@ -65,6 +68,8 @@ function FavoriteSwipeAction({
 }
 
 export function FavoriteProductItem({ isRemoving, onRemove, product }: FavoriteProductItemProps) {
+    const favoritesScreenStyles = useThemeStyles(createFavoritesScreenStyles)
+    const { palette } = useTheme()
     const { t } = useLanguage()
     const rowSwipeableRef = useRef<Swipeable | null>(null)
     const fullSwipeTriggeredRef = useRef(false)
@@ -101,7 +106,7 @@ export function FavoriteProductItem({ isRemoving, onRemove, product }: FavoriteP
                 isRemoving && favoritesScreenStyles.bookmarkButtonDisabled,
             ]}
         >
-            <SavedIcon color={colors.favorite} />
+            <SavedIcon color={palette.favorite} />
         </Pressable>
     )
 

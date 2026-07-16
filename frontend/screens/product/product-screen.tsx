@@ -22,15 +22,18 @@ import {
     useSelectedProductVariant,
 } from "@/screens/product/product-screen.hooks"
 import { ProductInfoTabs } from "@/screens/product/product-info-tabs"
-import { productScreenStyle } from "@/screens/product/product-screen.styles"
+import { createProductScreenStyle } from "@/screens/product/product-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import { ProductScreenProps } from "@/screens/product/product-screen.types"
 import { getVariantStockLabel } from "@/screens/product/product-screen.utils"
 import { createProductReview } from "@/services/api/products"
 import { trackRecommendationView } from "@/services/api/recommendations"
-import { colors } from "@/theme/colors"
 import type { UploadableReviewAttachment } from "@/types/product"
 
 export default function ProductScreen({ productId, preferredVariantId }: ProductScreenProps) {
+    const productScreenStyle = useThemeStyles(createProductScreenStyle)
+    const { palette } = useTheme()
     const { product, loading, error } = useProduct(productId)
     const { reviews, loading: reviewsLoading, error: reviewsError, setReviews } = useProductReviews(productId)
     const { canReview, loading: reviewEligibilityLoading } = useProductReviewEligibility(productId)
@@ -205,7 +208,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                               >
                                   <View style={productScreenStyle.shareIcon}>
                                       <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                                          <Path d={SHARE_ICON_PATH} fill={colors.mutedText} />
+                                          <Path d={SHARE_ICON_PATH} fill={palette.mutedText} />
                                       </Svg>
                                   </View>
                               </Pressable>
@@ -223,7 +226,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                                       pressed && productScreenStyle.bookmarkButtonPressed,
                                   ]}
                               >
-                                  <SavedIcon color={isFavourite ? colors.favorite : colors.mutedText} />
+                                  <SavedIcon color={isFavourite ? palette.favorite : palette.mutedText} />
                               </Pressable>
                           </View>
                       ),
@@ -231,7 +234,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                 : undefined,
             title: product?.name ?? t("route.product"),
         }),
-        [favouriteLoading, handleBookmarkPress, handleSharePress, isFavourite, product, t, updating],
+        [favouriteLoading, handleBookmarkPress, handleSharePress, isFavourite, palette, product, productScreenStyle, t, updating],
     )
 
     if (loading) {

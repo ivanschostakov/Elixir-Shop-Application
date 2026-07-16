@@ -8,13 +8,15 @@ import type {
     DeliveryCountriesSelectorProps,
     DeliveryCountryButtonProps,
 } from "@/components/delivery/delivery-country-selector.types"
-import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { createDeliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 function DeliveryCountryButton({
     countryCode,
     isActive,
     onPress,
 }: DeliveryCountryButtonProps) {
+    const deliveryScreenStyles = useThemeStyles(createDeliveryScreenStyles)
     const opacity = useRef(new Animated.Value(isActive ? 1 : INACTIVE_FLAG_OPACITY)).current
 
     useEffect(() => {
@@ -44,6 +46,7 @@ function DeliveryCountryButton({
 }
 
 export default function DeliveryCountriesSelector(props: DeliveryCountriesSelectorProps) {
+    const deliveryScreenStyles = useThemeStyles(createDeliveryScreenStyles)
     return (
         <SafeAreaView edges={["top", "left"]} style={deliveryScreenStyles.countryBox}>
             <ScrollView

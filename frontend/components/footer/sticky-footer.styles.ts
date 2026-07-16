@@ -1,9 +1,9 @@
 import { Platform, StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-export const stickyFooterStyles = StyleSheet.create({
+export const createStickyFooterStyles = (colors: ThemePalette) => StyleSheet.create({
     footerBase: {
         backgroundColor: colors.background,
         borderTopLeftRadius: spacing.xl,

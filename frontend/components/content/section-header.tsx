@@ -1,6 +1,7 @@
 import { Pressable, Text, View } from "react-native"
 
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import type { SectionHeaderProps } from "@/components/content/section-header.types"
 
 export function SectionHeader({
@@ -10,6 +11,7 @@ export function SectionHeader({
     actionLabel,
     onPressAction,
 }: SectionHeaderProps) {
+    const contentStyles = useThemeStyles(createContentStyles)
     return (
         <View style={contentStyles.sectionHeader}>
             <View style={contentStyles.sectionHeaderCopy}>

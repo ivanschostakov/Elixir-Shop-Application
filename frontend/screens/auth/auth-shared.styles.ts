@@ -1,9 +1,9 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-export const authSharedStyles = StyleSheet.create({
+export const createAuthSharedStyles = (colors: ThemePalette) => StyleSheet.create({
     keyboard: {
         flex: 1,
     },

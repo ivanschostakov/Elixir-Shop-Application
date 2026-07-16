@@ -14,7 +14,7 @@ import { getProductContentSubtitle } from "@/components/content/product-content"
 import type { HeaderSearchPanelProps } from "@/components/header/header-search-panel.types"
 import { getProductRoute, ROUTES } from "@/constants/routes"
 import { useProductSearch } from "@/hooks/products/use-product-search"
-import { colors } from "@/theme/colors"
+import { useTheme } from "@/providers/theme-provider"
 
 export function HeaderSearchPanel({
     initialQuery,
@@ -24,6 +24,7 @@ export function HeaderSearchPanel({
     t,
     visible,
 }: HeaderSearchPanelProps) {
+    const { palette } = useTheme()
     const router = useRouter()
     const { clearSearch, error, loading, products, query, setQuery } = useProductSearch(visible)
     const hasSearchQuery = query.trim().length > 0
@@ -64,12 +65,12 @@ export function HeaderSearchPanel({
                             ? t("discover.searchPlaceholder")
                             : t("home.searchInputPlaceholder")
                     }
-                    placeholderTextColor={colors.mutedText}
+                    placeholderTextColor={palette.mutedText}
                     returnKeyType="search"
                     style={styles.searchInput}
                     value={query}
                 />
-                {loading ? <ActivityIndicator color={colors.primary} size="small" /> : null}
+                {loading ? <ActivityIndicator color={palette.primary} size="small" /> : null}
             </View>
 
             <View style={[styles.searchResultsCard, styles.searchResultsCardConnected]}>

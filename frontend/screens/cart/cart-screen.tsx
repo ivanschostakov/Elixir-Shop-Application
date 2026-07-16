@@ -17,7 +17,7 @@ import { Path, Svg } from "react-native-svg"
 import { ContentRail } from "@/components/content/content-rail"
 import { formatProductPrice } from "@/components/content/product-content"
 import { EmptyState } from "@/components/content/empty-state"
-import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { getProductRoute, ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
@@ -46,7 +46,9 @@ import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { CartBasketItem } from "@/screens/cart/cart-basket-item"
-import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
+import { createCartScreenStyles } from "@/screens/cart/cart-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import {
     buildOrderDraftCalculationPayload,
     buildPickupPointAddress,
@@ -61,10 +63,12 @@ import { createOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
 import type { CreateOrderDraftPayload } from "@/services/api/order-drafts.types"
 import { attachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
 import type { ReferralProfileResponse } from "@/services/api/users.types"
-import { colors } from "@/theme/colors"
 import type { BasketItemRead } from "@/types/basket"
 
 export default function CartScreen() {
+    const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
+    const cartScreenStyles = useThemeStyles(createCartScreenStyles)
+    const { palette } = useTheme()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()
     const { isAuthenticated } = useAuth()
@@ -543,21 +547,21 @@ export default function CartScreen() {
                         <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
                             <Path
                                 d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"
-                                stroke={colors.primary}
+                                stroke={palette.primary}
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                                 strokeWidth={2}
                             />
                             <Path
                                 d="M17 21 17 13 7 13 7 21"
-                                stroke={colors.primary}
+                                stroke={palette.primary}
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                                 strokeWidth={2}
                             />
                             <Path
                                 d="M7 3 7 8 15 8"
-                                stroke={colors.primary}
+                                stroke={palette.primary}
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                                 strokeWidth={2}
@@ -569,11 +573,14 @@ export default function CartScreen() {
         }
     }, [
         basket?.items.length,
+        cartScreenStyles,
         deliveryLabel,
         footerCtaLabel,
         grandTotalLabel,
         hasAppliedDiscount,
         handleApplyPromoCode,
+        palette.primary,
+        stickyFooterStyles,
         handleOpenCheckout,
         handleSaveDraft,
         hasUnappliedPromoCode,

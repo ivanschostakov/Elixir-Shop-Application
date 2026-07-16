@@ -1,9 +1,9 @@
 import { StyleSheet } from "react-native"
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 import { IMAGE_CAROUSEL_CARD_GAP } from "./image-carousel.constants"
 
-export const ImageCarouselStyles = StyleSheet.create({
+export const createImageCarouselStyles = (colors: ThemePalette) => StyleSheet.create({
     scrollView: {
         alignSelf: "center",
         backgroundColor: colors.background,

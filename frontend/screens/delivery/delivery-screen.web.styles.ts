@@ -1,8 +1,8 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 
-export const deliveryScreenWebStyles = StyleSheet.create({
+export const createDeliveryScreenWebStyles = (colors: ThemePalette) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.pageBackground,

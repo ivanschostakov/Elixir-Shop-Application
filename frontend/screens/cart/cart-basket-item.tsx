@@ -14,12 +14,13 @@ import { formatProductPrice } from "@/components/content/product-content"
 import { AUTH_REQUIRED_PROMPTED_ERROR, useProductFavourite } from "@/hooks/products/use-product-favourite"
 import { useLanguage } from "@/providers/language-provider"
 import { FULL_SWIPE_REMOVE_TRIGGER } from "@/screens/cart/cart-screen.constants"
-import { cartScreenStyles } from "@/screens/cart/cart-screen.styles"
+import { createCartScreenStyles } from "@/screens/cart/cart-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import type {
     CartBasketItemProps,
     SwipeDeleteActionProps,
 } from "@/screens/cart/cart-basket-item.types"
-import { colors } from "@/theme/colors"
 import { showRemoveFavouriteConfirmation } from "@/utils/favorites/show-remove-favourite-confirmation"
 
 function SwipeDeleteAction({
@@ -30,6 +31,7 @@ function SwipeDeleteAction({
     onDragProgress,
     onPress,
 }: SwipeDeleteActionProps) {
+    const cartScreenStyles = useThemeStyles(createCartScreenStyles)
     useEffect(() => {
         const listenerId = dragX.addListener(({ value }) => {
             onDragProgress(value)
@@ -74,6 +76,8 @@ export function CartBasketItem({
     swipeableRef,
     updating,
 }: CartBasketItemProps) {
+    const cartScreenStyles = useThemeStyles(createCartScreenStyles)
+    const { palette } = useTheme()
     const { t } = useLanguage()
     const rowSwipeableRef = useRef<Swipeable | null>(null)
     const fullSwipeTriggeredRef = useRef(false)
@@ -215,7 +219,7 @@ export function CartBasketItem({
                             pressed && cartScreenStyles.pressed,
                         ]}
                     >
-                        <SavedIcon color={isFavourite ? colors.favorite : colors.mutedText} />
+                        <SavedIcon color={isFavourite ? palette.favorite : palette.mutedText} />
                     </Pressable>
 
                     <View style={cartScreenStyles.quantityControl}>

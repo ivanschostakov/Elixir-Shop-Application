@@ -7,9 +7,11 @@ import {
     getDeliverySuggestIconName,
 } from "@/components/delivery/delivery-suggest-icon.constants"
 import type { DeliverySuggestIconProps } from "@/components/delivery/delivery-suggest-icon.types"
-import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { createDeliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 export function DeliverySuggestIcon({ result }: DeliverySuggestIconProps) {
+    const deliveryScreenStyles = useThemeStyles(createDeliveryScreenStyles)
     const iconName = getDeliverySuggestIconName(result)
     const iconDefinition = DELIVERY_SUGGEST_ICON_DEFINITIONS[iconName]
 

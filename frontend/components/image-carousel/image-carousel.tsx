@@ -2,11 +2,13 @@ import { Image, Pressable, ScrollView, Text } from "react-native"
 import { useRouter } from "expo-router"
 
 import { getProductRoute } from "@/constants/routes"
-import { ImageCarouselStyles } from "./image-carousel.styles"
+import { createImageCarouselStyles } from "./image-carousel.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useLoopedCarousel } from "./image-carousel.hooks"
 import type { ImageCarouselProps } from "./image-carousel.types"
 
 export default function ImageCarousel({ products, edgeInset }: ImageCarouselProps) {
+    const ImageCarouselStyles = useThemeStyles(createImageCarouselStyles)
     const router = useRouter()
 
     const {

@@ -1,13 +1,16 @@
 import { createElement } from "react"
-import { Image } from "react-native"
+import { Image, type ImageStyle, type StyleProp } from "react-native"
 import { LottieView as WebLottieView } from "lottie-react-native/lib/module/LottieView/index.web"
 
-import { contentStyles } from "@/components/content/content.styles"
 import { emptyStateWebStyles } from "@/components/content/empty-state.web.styles"
 import { isLottieSticker } from "@/components/content/empty-state.web.const"
 import type { EmptyStateProps } from "@/components/content/empty-state.types"
 
-export function renderSticker(sticker: NonNullable<EmptyStateProps["sticker"]>, illustrationSize: number) {
+export function renderSticker(
+    sticker: NonNullable<EmptyStateProps["sticker"]>,
+    illustrationSize: number,
+    illustrationStyle: StyleProp<ImageStyle>,
+) {
     if (isLottieSticker(sticker)) {
         return createElement(WebLottieView, {
             autoPlay: true,
@@ -21,7 +24,7 @@ export function renderSticker(sticker: NonNullable<EmptyStateProps["sticker"]>, 
     return createElement(Image, {
         source: sticker.source,
         style: [
-            contentStyles.emptyStateIllustration,
+            illustrationStyle,
             emptyStateWebStyles.webIllustration,
             { maxWidth: illustrationSize, maxHeight: illustrationSize },
         ],

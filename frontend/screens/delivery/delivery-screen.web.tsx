@@ -71,7 +71,7 @@ import {
     getDeliveryActionLabel,
     getPickupPointActionLabel,
 } from "@/screens/delivery/delivery-calculation"
-import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { createDeliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
 import { useDeliveryFlowController } from "@/screens/delivery/use-delivery-flow-controller"
 import {
     arePointsClose,
@@ -89,10 +89,13 @@ import {
     parseBooleanSearchParam,
     parseDraftId,
 } from "@/screens/delivery/delivery-screen.utils"
-import { deliveryScreenWebStyles } from "@/screens/delivery/delivery-screen.web.styles"
+import { createDeliveryScreenWebStyles } from "@/screens/delivery/delivery-screen.web.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { showBackendErrorAlert } from "@/utils/errors"
 
 export default function DeliveryScreen() {
+    const deliveryScreenStyles = useThemeStyles(createDeliveryScreenStyles)
+    const deliveryScreenWebStyles = useThemeStyles(createDeliveryScreenWebStyles)
     const router = useRouter()
     const params = useLocalSearchParams<{ draftId?: string | string[]; syncBasket?: string | string[] }>()
     const checkoutDraftId = parseDraftId(params.draftId)

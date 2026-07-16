@@ -11,7 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 import StickyFooter from "@/components/footer/sticky-footer"
 import AppHeader from "@/components/header/app-header"
-import { appShellStyles } from "@/components/navigation/app-shell.styles"
+import { createAppShellStyles } from "@/components/navigation/app-shell.styles"
 import {
     getDefaultScreenChromeTemplate,
     mergeScreenChromeTemplate,
@@ -22,11 +22,13 @@ import { useTheme } from "@/providers/theme-provider"
 import { useAuth } from "@/providers/auth-provider"
 import { ScreenTemplateProvider } from "@/providers/screen-template-provider"
 import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { setTelegramChromeColors } from "@/services/telegram/telegram-web-app"
 import { darkColors, lightColors } from "@/theme/colors"
 import { motion } from "@/theme/motion"
 
 function AppShellContent() {
+    const appShellStyles = useThemeStyles(createAppShellStyles)
     const pathname = usePathname()
     const router = useRouter()
     const { top: topInset } = useAppSafeAreaInsets()

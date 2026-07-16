@@ -9,9 +9,10 @@ import {
 import { Path, Svg } from "react-native-svg"
 
 import type { PickupPointFooterExtensionProps } from "@/components/delivery/pickup-point-footer-extension.types"
-import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { translate } from "@/i18n/translations"
-import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { createDeliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 export function PickupPointFooterExtension({
     actionLabel = translate("delivery.pickupPointChoose"),
@@ -29,6 +30,8 @@ export function PickupPointFooterExtension({
     selectedProviderKey = null,
     title,
 }: PickupPointFooterExtensionProps) {
+    const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
+    const deliveryScreenStyles = useThemeStyles(createDeliveryScreenStyles)
     const shouldShowProviderOptions =
         providerOptions.length > 1 && selectedProviderKey !== null && onSelectProvider !== null
     const selectProvider = onSelectProvider ?? (() => {})

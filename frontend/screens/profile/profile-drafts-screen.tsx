@@ -21,7 +21,7 @@ import {
     formatMoney,
     getDraftUpdateErrorMessage,
 } from "@/components/content/recent-order-drafts-rail.utils"
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
@@ -31,9 +31,10 @@ import { usePaginatedData } from "@/hooks/shared/use-paginated-data"
 import { useLanguage } from "@/providers/language-provider"
 import { deleteOrderDraft, getOrderDrafts } from "@/services/api/order-drafts"
 import type { GetOrderDraftsQuery, OrderDraftRead } from "@/services/api/order-drafts.types"
-import { colors } from "@/theme/colors"
 import { DateRangeSheetField } from "./profile-history-screen"
-import { profileHistoryScreenStyles } from "./profile-history-screen.styles"
+import { createProfileHistoryScreenStyles } from "./profile-history-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import {
     buildDateQueryValue,
     formatDateRangeTriggerValue,
@@ -61,6 +62,7 @@ function buildDraftsQuery(filters: ProfileDraftFilters, limit: number, offset: n
 }
 
 function DraftHistoryCard({ draft, onDraftDeleted }: { draft: OrderDraftRead, onDraftDeleted: (draftId: number) => void }) {
+    const profileHistoryScreenStyles = useThemeStyles(createProfileHistoryScreenStyles)
     const { t } = useLanguage()
     const title = getOrderDraftTitle(draft)
     const subtitle = draft.delivery_address?.full_address || getDraftDescription(draft)
@@ -212,6 +214,9 @@ function DraftHistoryCard({ draft, onDraftDeleted }: { draft: OrderDraftRead, on
 }
 
 export default function ProfileDraftsScreen() {
+    const contentStyles = useThemeStyles(createContentStyles)
+    const profileHistoryScreenStyles = useThemeStyles(createProfileHistoryScreenStyles)
+    const { palette } = useTheme()
     const { t } = useLanguage()
     const { width: windowWidth } = useWindowDimensions()
     const emptyDraftsSticker = STICKERS.orderHistoryEmpty || STICKERS.favoritesEmpty
@@ -266,7 +271,7 @@ export default function ProfileDraftsScreen() {
                 />
             </View>
         ),
-        [setDeletedDraftIds],
+        [profileHistoryScreenStyles.cardWrap, setDeletedDraftIds],
     )
 
     return (
@@ -283,7 +288,7 @@ export default function ProfileDraftsScreen() {
                 ListEmptyComponent={
                     loading ? (
                         <View style={profileHistoryScreenStyles.loaderWrap}>
-                            <ActivityIndicator color={colors.primary} />
+                            <ActivityIndicator color={palette.primary} />
                         </View>
                     ) : error ? (
                         <EmptyState
@@ -327,7 +332,7 @@ export default function ProfileDraftsScreen() {
                 ListFooterComponent={
                     !loadingMore ? null : (
                         <View style={profileHistoryScreenStyles.footerLoaderWrap}>
-                            <ActivityIndicator color={colors.primary} />
+                            <ActivityIndicator color={palette.primary} />
                         </View>
                     )
                 }

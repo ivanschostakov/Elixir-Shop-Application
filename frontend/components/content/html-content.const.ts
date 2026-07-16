@@ -1,4 +1,4 @@
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
 import type { HtmlContentVariant, VariantTextStyle } from "@/components/content/html-content.types"
@@ -24,7 +24,7 @@ export const HTML_IGNORED_TAGS = [
 export const SAFE_LINK_SCHEME = /^(https?:|mailto:|tel:)/i
 export const HTML_TAG_PATTERN = /<\/?[a-z][\s\S]*>/i
 
-export const variantStyles: Record<HtmlContentVariant, VariantTextStyle> = {
+const createVariantStyles = (colors: ThemePalette): Record<HtmlContentVariant, VariantTextStyle> => ({
     summary: {
         color: colors.mutedText,
         fontSize: 15,
@@ -40,9 +40,9 @@ export const variantStyles: Record<HtmlContentVariant, VariantTextStyle> = {
         fontSize: 16,
         lineHeight: 24,
     },
-}
+})
 
-const createTagStyles = ({ color, fontSize, lineHeight }: VariantTextStyle) => ({
+const createTagStyles = (colors: ThemePalette, { color, fontSize, lineHeight }: VariantTextStyle) => ({
     a: {
         color: colors.primary,
         textDecorationLine: "underline" as const,
@@ -128,8 +128,15 @@ const createTagStyles = ({ color, fontSize, lineHeight }: VariantTextStyle) => (
     },
 })
 
-export const variantTagStyles = {
-    summary: createTagStyles(variantStyles.summary),
-    body: createTagStyles(variantStyles.body),
-    detail: createTagStyles(variantStyles.detail),
+export const createHtmlContentStyles = (colors: ThemePalette) => {
+    const variantStyles = createVariantStyles(colors)
+
+    return {
+        variantStyles,
+        variantTagStyles: {
+            summary: createTagStyles(colors, variantStyles.summary),
+            body: createTagStyles(colors, variantStyles.body),
+            detail: createTagStyles(colors, variantStyles.detail),
+        },
+    }
 }

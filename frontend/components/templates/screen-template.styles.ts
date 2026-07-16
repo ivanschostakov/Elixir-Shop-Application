@@ -1,8 +1,8 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 
-export const screenTemplateStyles = StyleSheet.create({
+export const createScreenTemplateStyles = (colors: ThemePalette) => StyleSheet.create({
     chromeOverlay: {
         ...StyleSheet.absoluteFillObject,
     },

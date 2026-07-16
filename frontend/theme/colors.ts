@@ -1,4 +1,4 @@
-import { DynamicColorIOS, Platform } from "react-native"
+import { Platform } from "react-native"
 
 const darkPage = "#070A0F"
 const darkSurface = "#111827"
@@ -141,25 +141,6 @@ function colorVariableName(key: string) {
     return `--elixir-color-${key.replace(/[A-Z]/g, (match) => `-${match.toLowerCase()}`)}`
 }
 
-const dynamicColor = (key: keyof ThemePalette, light: string, dark: string) => {
-    if (Platform.OS === "web") {
-        return `var(${colorVariableName(key)}, ${light})`
-    }
-
-    if (Platform.OS !== "ios") {
-        return light
-    }
-
-    return DynamicColorIOS({ light, dark }) as unknown as string
-}
-
-export const colors = Object.fromEntries(
-    Object.keys(lightColors).map((key) => {
-        const paletteKey = key as keyof ThemePalette
-        return [paletteKey, dynamicColor(paletteKey, lightColors[paletteKey], darkColors[paletteKey])]
-    }),
-) as ThemePalette
-
 export function applyWebThemeColors(themeName: ThemeName) {
     if (Platform.OS !== "web" || typeof document === "undefined") {
         return
@@ -168,7 +149,7 @@ export function applyWebThemeColors(themeName: ThemeName) {
     const palette = themeName === "dark" ? darkColors : lightColors
     const rootStyle = document.documentElement.style
 
-    for (const key of Object.keys(lightColors) as Array<keyof ThemePalette>) {
+    for (const key of Object.keys(lightColors) as (keyof ThemePalette)[]) {
         rootStyle.setProperty(colorVariableName(key), palette[key])
     }
 

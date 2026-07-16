@@ -1,9 +1,9 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-export const profileHistoryScreenStyles = StyleSheet.create({
+export const createProfileHistoryScreenStyles = (colors: ThemePalette) => StyleSheet.create({
     screen: {
         flex: 1,
         backgroundColor: colors.surface,

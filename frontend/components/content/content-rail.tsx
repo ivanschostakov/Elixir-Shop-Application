@@ -1,12 +1,13 @@
 import { ActivityIndicator, View } from "react-native"
 
 import ImageCarousel from "@/components/image-carousel/image-carousel"
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import { ProductCard } from "@/components/content/product-card"
 import { SectionHeader } from "@/components/content/section-header"
 import type { ContentRailProps } from "@/components/content/content-rail.types"
 import type { ProductWithVariantsRead } from "@/types/product"
-import { colors } from "@/theme/colors"
 
 export function ContentRail({
     title,
@@ -21,6 +22,8 @@ export function ContentRail({
     carouselEdgeInset,
     loadingMore = false,
 }: ContentRailProps) {
+    const contentStyles = useThemeStyles(createContentStyles)
+    const { palette } = useTheme()
     if (!products.length) {
         return null
     }
@@ -117,7 +120,7 @@ export function ContentRail({
 
                     {loadingMore ? (
                         <View style={contentStyles.railLoaderWrap}>
-                            <ActivityIndicator color={colors.primary} />
+                            <ActivityIndicator color={palette.primary} />
                         </View>
                     ) : null}
                 </>

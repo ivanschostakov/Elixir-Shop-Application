@@ -3,7 +3,7 @@ import { Animated, Pressable, Text, View } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
 import type { HeaderMenuContentProps, HeaderMenuProps } from "@/components/header/header-menu.types"
-import { colors } from "@/theme/colors"
+import { useTheme } from "@/providers/theme-provider"
 
 const SUN_ICON_PATH =
     "M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10ZM12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
@@ -19,7 +19,8 @@ export function HeaderMenu({
     accentColor,
     ...menuContentProps
 }: HeaderMenuProps) {
-    const actionColor = accentColor ?? colors.primary
+    const { palette } = useTheme()
+    const actionColor = accentColor ?? palette.primary
 
     return (
         <>
@@ -66,11 +67,12 @@ export function HeaderMenuPopup({
     accentColor,
     themeName,
 }: HeaderMenuContentProps) {
-    const actionColor = accentColor ?? colors.primary
+    const { palette } = useTheme()
+    const actionColor = accentColor ?? palette.primary
     const canToggleTheme = Boolean(onToggleTheme && themeName)
     const canToggleLanguage = Boolean(onSetLanguage && language)
     const isDarkTheme = themeName === "dark"
-    const menuTextColor = isDarkTheme ? colors.onPrimary : actionColor
+    const menuTextColor = isDarkTheme ? palette.onPrimary : actionColor
     const themeToggleProgress = useRef(new Animated.Value(isDarkTheme ? 1 : 0)).current
     const thumbTranslateX = themeToggleProgress.interpolate({
         inputRange: [0, 1],
@@ -114,7 +116,7 @@ export function HeaderMenuPopup({
                                     <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
                                         <Path
                                             d={SUN_ICON_PATH}
-                                            stroke={isDarkTheme ? colors.mutedText : actionColor}
+                                            stroke={isDarkTheme ? palette.mutedText : actionColor}
                                             strokeLinecap="round"
                                             strokeLinejoin="round"
                                             strokeWidth={2}
@@ -125,7 +127,7 @@ export function HeaderMenuPopup({
                                     <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
                                         <Path
                                             d={MOON_ICON_PATH}
-                                            stroke={isDarkTheme ? actionColor : colors.mutedText}
+                                            stroke={isDarkTheme ? actionColor : palette.mutedText}
                                             strokeLinecap="round"
                                             strokeLinejoin="round"
                                             strokeWidth={2}

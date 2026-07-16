@@ -4,9 +4,11 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 import { ROUTES } from "@/constants/routes"
 import { useLanguage } from "@/providers/language-provider"
-import { authSharedStyles } from "@/screens/auth/auth-shared.styles"
+import { createAuthSharedStyles } from "@/screens/auth/auth-shared.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 export default function AuthEntryScreen() {
+    const authSharedStyles = useThemeStyles(createAuthSharedStyles)
     const { t } = useLanguage()
 
     return (

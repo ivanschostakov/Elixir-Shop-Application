@@ -6,7 +6,8 @@ import {
 import { renderSticker } from "@/components/content/empty-state.web.utils"
 import { emptyStateWebStyles, WEB_BREAKPOINTS } from "@/components/content/empty-state.web.styles"
 import type { EmptyStateProps } from "@/components/content/empty-state.types"
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 export function EmptyState({
     title,
@@ -19,6 +20,7 @@ export function EmptyState({
     variant = "card",
     actionVariant = "button",
 }: EmptyStateProps) {
+    const contentStyles = useThemeStyles(createContentStyles)
     const { width: windowWidth } = useWindowDimensions()
     const illustrationSize = variant === "plain"
         ? Math.max(getIllustrationSize(windowWidth), 180)
@@ -56,7 +58,7 @@ export function EmptyState({
                         { width: illustrationSize, height: illustrationSize },
                     ]}
                 >
-                    {renderSticker(sticker, illustrationSize)}
+                    {renderSticker(sticker, illustrationSize, contentStyles.emptyStateIllustration)}
                 </View>
             ) : null}
             {eyebrow ? <Text style={contentStyles.emptyStateEyebrow}>{eyebrow}</Text> : null}

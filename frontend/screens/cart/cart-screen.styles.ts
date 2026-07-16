@@ -1,10 +1,10 @@
 import { StyleSheet } from "react-native"
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
 const CART_SEPARATOR_COLOR = "rgba(148, 163, 184, 0.18)"
 
-export const cartScreenStyles = StyleSheet.create({
+export const createCartScreenStyles = (colors: ThemePalette) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.surface,

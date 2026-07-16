@@ -1,11 +1,11 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
 const DRAFTS_RAIL_MIN_HEIGHT = 548
 
-export const recentOrderDraftsRailStyles = StyleSheet.create({
+export const createRecentOrderDraftsRailStyles = (colors: ThemePalette) => StyleSheet.create({
     section: {
         backgroundColor: colors.surface,
         borderTopColor: colors.divider,

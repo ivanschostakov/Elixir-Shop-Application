@@ -4,7 +4,8 @@ import { useLocalSearchParams, usePathname, useRouter } from "expo-router"
 
 import type { BottomActionTemplateProps } from "@/components/footer/bottom-action-template.types"
 import { parseDraftId } from "@/components/footer/bottom-action-template.utils"
-import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { getAddToCartErrorMessage } from "@/components/footer/sticky-footer.utils"
 import { ROUTES, getProductIdFromRoute, isProductRoute } from "@/constants/routes"
 import { useBasket } from "@/hooks/basket/use-basket"
@@ -16,6 +17,7 @@ import { useTheme } from "@/providers/theme-provider"
 import { updateOrderDraft } from "@/services/api/order-drafts"
 
 export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
+    const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const pathname = usePathname()
     const router = useRouter()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()

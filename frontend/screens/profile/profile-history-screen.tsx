@@ -15,21 +15,24 @@ import { router } from "expo-router"
 import { Picker } from "@react-native-picker/picker"
 import LottieView from "lottie-react-native"
 import { CalendarList, LocaleConfig } from "react-native-calendars"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { ContentTabBar, type ContentTabBarItem } from "@/components/content/content-tab-bar"
 import { EmptyState } from "@/components/content/empty-state"
 import { getModeBadgeStyle } from "@/components/content/recent-order-drafts-rail.utils"
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
 import { usePaginatedData } from "@/hooks/shared/use-paginated-data"
 import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
 import { formatMoney } from "@/screens/checkout/checkout-screen.utils"
 import { getOrders } from "@/services/api/orders"
 import type { OrderHistoryBucket, OrderRead, OrderStatusCode } from "@/services/api/orders.types"
-import { colors } from "@/theme/colors"
-import { profileHistoryScreenStyles } from "./profile-history-screen.styles"
+import { spacing } from "@/theme/spacing"
+import { createProfileHistoryScreenStyles } from "./profile-history-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import {
     ORDER_STATUS_LABEL_KEYS,
     ORDER_STATUS_MESSAGE_KEYS,
@@ -51,13 +54,6 @@ const EMPTY_FILTERS: ProfileHistoryFilters = {
     createdFrom: null,
     createdTo: null,
 }
-const DATE_RANGE_MARKING_PALETTE = {
-    rangeColor: "#dbeafe",
-    rangeTextColor: colors.text,
-    selectedColor: colors.primary,
-    selectedTextColor: "#ffffff",
-} as const
-
 if (!LocaleConfig.locales[HISTORY_CALENDAR_LOCALE]) {
     LocaleConfig.locales[HISTORY_CALENDAR_LOCALE] = {
         dayNames: ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"],
@@ -124,7 +120,9 @@ function PickerSheetField<TValue extends string>({
     labelStyle,
     triggerStyle,
 }: PickerSheetFieldProps<TValue>) {
+    const contentStyles = useThemeStyles(createContentStyles)
     const { t } = useLanguage()
+    const { bottom: bottomInset } = useSafeAreaInsets()
     const [isOpen, setIsOpen] = useState(false)
     const [draftValue, setDraftValue] = useState(selectedValue)
 
@@ -176,7 +174,12 @@ function PickerSheetField<TValue extends string>({
                         style={contentStyles.browsePickerDismissArea}
                     />
 
-                    <View style={contentStyles.browsePickerSheet}>
+                    <View
+                        style={[
+                            contentStyles.browsePickerSheet,
+                            { paddingBottom: Math.max(spacing.lg, bottomInset + spacing.sm) },
+                        ]}
+                    >
                         <View style={contentStyles.browsePickerHeader}>
                             <Text style={contentStyles.browsePickerTitle}>{title}</Text>
 
@@ -241,14 +244,24 @@ export function DateRangeSheetField({
     labelStyle,
     triggerStyle,
 }: DateRangeSheetFieldProps) {
+    const contentStyles = useThemeStyles(createContentStyles)
+    const profileHistoryScreenStyles = useThemeStyles(createProfileHistoryScreenStyles)
+    const { palette } = useTheme()
     const { t } = useLanguage()
+    const { bottom: bottomInset } = useSafeAreaInsets()
     const { width } = useWindowDimensions()
     const [isOpen, setIsOpen] = useState(false)
     const [draftRange, setDraftRange] = useState(selectedRange)
     const [visibleMonth, setVisibleMonth] = useState(selectedRange.createdTo ?? selectedRange.createdFrom ?? getTodayCalendarDate())
+    const markingPalette = useMemo(() => ({
+        rangeColor: "#dbeafe",
+        rangeTextColor: palette.text,
+        selectedColor: palette.primary,
+        selectedTextColor: "#ffffff",
+    }), [palette])
     const markedDates = useMemo(
-        () => buildMarkedDateRange(draftRange.createdFrom, draftRange.createdTo, DATE_RANGE_MARKING_PALETTE),
-        [draftRange.createdFrom, draftRange.createdTo],
+        () => buildMarkedDateRange(draftRange.createdFrom, draftRange.createdTo, markingPalette),
+        [draftRange.createdFrom, draftRange.createdTo, markingPalette],
     )
     const previewValue = useMemo(
         () => formatDateRangeTriggerValue(draftRange.createdFrom, draftRange.createdTo, t("profile.history.dateRangeEmpty")),
@@ -311,7 +324,12 @@ export function DateRangeSheetField({
                         style={contentStyles.browsePickerDismissArea}
                     />
 
-                    <View style={profileHistoryScreenStyles.dateSheet}>
+                    <View
+                        style={[
+                            profileHistoryScreenStyles.dateSheet,
+                            { paddingBottom: Math.max(spacing.md, bottomInset + spacing.sm) },
+                        ]}
+                    >
                         <View
                             style={[
                                 contentStyles.browsePickerHeader,
@@ -365,7 +383,7 @@ export function DateRangeSheetField({
                                     renderArrow={(direction) => (
                                         <Text
                                             style={{
-                                                color: colors.text,
+                                                color: palette.text,
                                                 fontSize: 24,
                                                 fontWeight: "700",
                                                 lineHeight: 24,
@@ -378,16 +396,16 @@ export function DateRangeSheetField({
                                     staticHeader
                                     style={profileHistoryScreenStyles.calendar}
                                     theme={{
-                                        calendarBackground: colors.background,
-                                        dayTextColor: colors.text,
-                                        monthTextColor: colors.text,
+                                        calendarBackground: palette.background,
+                                        dayTextColor: palette.text,
+                                        monthTextColor: palette.text,
                                         textDayFontSize: 16,
                                         textDayFontWeight: "600",
                                         textDisabledColor: "#c8d0d9",
                                         textMonthFontSize: 17,
                                         textMonthFontWeight: "800",
-                                        textSectionTitleColor: colors.mutedText,
-                                        todayTextColor: colors.primary,
+                                        textSectionTitleColor: palette.mutedText,
+                                        todayTextColor: palette.primary,
                                         stylesheet: {
                                             day: {
                                                 period: {
@@ -399,7 +417,7 @@ export function DateRangeSheetField({
                                                         width: 34,
                                                     },
                                                     text: {
-                                                        color: colors.text,
+                                                        color: palette.text,
                                                         fontSize: 16,
                                                         fontWeight: "600",
                                                     },
@@ -448,6 +466,7 @@ export function DateRangeSheetField({
 }
 
 function OrderHistoryCard({ order }: { order: OrderRead }) {
+    const profileHistoryScreenStyles = useThemeStyles(createProfileHistoryScreenStyles)
     const { t } = useLanguage()
     const subtitle = order.delivery_string || order.delivery_address?.full_address || null
     const totalLabel = formatMoney(Number(order.grand_total), order.currency) ?? order.grand_total
@@ -551,6 +570,9 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
 }
 
 export default function ProfileHistoryScreen() {
+    const contentStyles = useThemeStyles(createContentStyles)
+    const profileHistoryScreenStyles = useThemeStyles(createProfileHistoryScreenStyles)
+    const { palette } = useTheme()
     const { t } = useLanguage()
     const { width: windowWidth } = useWindowDimensions()
     const emptyHistorySticker = STICKERS.orderHistoryEmpty || STICKERS.favoritesEmpty
@@ -604,7 +626,7 @@ export default function ProfileHistoryScreen() {
                 ),
             },
         }),
-        [tabs],
+        [profileHistoryScreenStyles.headerTabsSlot, tabs],
     )
     const selectedStatusValue = filters.statusCode ?? "all"
     const selectedStatusLabel = statusOptions.find((option) => option.value === selectedStatusValue)?.label ?? t("common.all")
@@ -659,7 +681,7 @@ export default function ProfileHistoryScreen() {
                 <OrderHistoryCard order={item} />
             </View>
         ),
-        [],
+        [profileHistoryScreenStyles.cardWrap],
     )
 
     return (
@@ -676,7 +698,7 @@ export default function ProfileHistoryScreen() {
                 ListEmptyComponent={
                     loading ? (
                         <View style={profileHistoryScreenStyles.loaderWrap}>
-                            <ActivityIndicator color={colors.primary} />
+                            <ActivityIndicator color={palette.primary} />
                         </View>
                     ) : error ? (
                         <EmptyState
@@ -722,7 +744,7 @@ export default function ProfileHistoryScreen() {
                 ListFooterComponent={
                     !loadingMore ? null : (
                         <View style={profileHistoryScreenStyles.footerLoaderWrap}>
-                            <ActivityIndicator color={colors.primary} />
+                            <ActivityIndicator color={palette.primary} />
                         </View>
                     )
                 }

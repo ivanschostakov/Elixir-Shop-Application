@@ -1,7 +1,8 @@
 import { Pressable, Text, View, Alert, Linking } from "react-native"
 import * as Clipboard from "expo-clipboard"
 
-import { legalContentStyles } from "@/components/legal/legal-content.styles"
+import { createLegalContentStyles } from "@/components/legal/legal-content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useLanguage } from "@/providers/language-provider"
 
 type LegalContentProps = {
@@ -64,6 +65,7 @@ function getLineValue(line: string, kind: ReturnType<typeof getLineKind>) {
 }
 
 export function LegalContent({ markdown, hideFirstHeading = false }: LegalContentProps) {
+    const legalContentStyles = useThemeStyles(createLegalContentStyles)
     const { t } = useLanguage()
     const lines = markdown.replace(/\r/g, "").split("\n")
 

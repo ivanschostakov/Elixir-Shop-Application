@@ -1,8 +1,8 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 
-export const getHeaderStyles = (topInset: number, windowHeight: number) =>
+export const getHeaderStyles = (topInset: number, windowHeight: number, colors: ThemePalette) =>
     StyleSheet.create({
         wrapper: {
             backgroundColor: colors.background,

@@ -1,9 +1,9 @@
 import { DELIVERY_SUGGEST_ICON_BADGE_SIZE } from "@/components/delivery/delivery-suggest-icon.constants"
 import { Platform, StyleSheet } from "react-native"
 import { spacing } from "@/theme/spacing"
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 
-export const deliveryScreenStyles = StyleSheet.create({
+export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.create({
     viewport: {
         flex: 1,
         alignItems: "center",

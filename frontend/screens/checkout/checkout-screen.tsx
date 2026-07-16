@@ -17,9 +17,10 @@ import {
     View,
 } from "react-native"
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { ContentRail } from "@/components/content/content-rail"
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
 import {
     setSelectedDeliveryAddress,
 } from "@/hooks/delivery/delivery-address-selection-store"
@@ -44,7 +45,9 @@ import {
     ADD_NEW_RECIPIENT_VALUE,
     SELF_RECIPIENT_VALUE,
 } from "@/screens/checkout/checkout-screen.constants"
-import { checkoutScreenStyles } from "@/screens/checkout/checkout-screen.styles"
+import { createCheckoutScreenStyles } from "@/screens/checkout/checkout-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import type {
     ExpandedSection,
     RecipientFormErrors,
@@ -87,7 +90,7 @@ import type {
 import { attachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { updateGuestBasketCheckout, updateGuestCartItemQuantity } from "@/services/guest-cart"
-import { colors } from "@/theme/colors"
+import { spacing } from "@/theme/spacing"
 
 function formatBenefitTitle(option: BenefitOptionResponse) {
     if (option.source_kind === "app_referral") {
@@ -98,8 +101,12 @@ function formatBenefitTitle(option: BenefitOptionResponse) {
 }
 
 export default function CheckoutScreen() {
+    const contentStyles = useThemeStyles(createContentStyles)
+    const checkoutScreenStyles = useThemeStyles(createCheckoutScreenStyles)
+    const { palette } = useTheme()
     const { isAuthenticated, user } = useAuth()
     const { t } = useLanguage()
+    const { bottom: bottomInset } = useSafeAreaInsets()
     const params = useLocalSearchParams<{ code?: string | string[], draftId?: string | string[] }>()
     const draftId = parseDraftId(params.draftId)
     const routePromoCode = normalizeTextInputValue((Array.isArray(params.code) ? params.code[0] : params.code) ?? "")
@@ -507,6 +514,7 @@ export default function CheckoutScreen() {
     }, [
         basketSubtotal,
         benefitCheck,
+        checkoutScreenStyles,
         checkoutFooterCtaLabel,
         deliveryCost,
         grandTotal,
@@ -1323,7 +1331,12 @@ export default function CheckoutScreen() {
                             style={contentStyles.browsePickerDismissArea}
                         />
 
-                        <View style={contentStyles.browsePickerSheet}>
+                        <View
+                            style={[
+                                contentStyles.browsePickerSheet,
+                                { paddingBottom: Math.max(spacing.lg, bottomInset + spacing.sm) },
+                            ]}
+                        >
                             <View style={contentStyles.browsePickerHeader}>
                                 <Text style={contentStyles.browsePickerTitle}>
                                     {openPickerSection === "recipient"
@@ -1466,7 +1479,13 @@ export default function CheckoutScreen() {
                             keyboardVerticalOffset={0}
                             style={checkoutScreenStyles.recipientEditorKeyboardAvoiding}
                         >
-                            <View style={[contentStyles.browsePickerSheet, checkoutScreenStyles.recipientEditorSheet]}>
+                            <View
+                                style={[
+                                    contentStyles.browsePickerSheet,
+                                    checkoutScreenStyles.recipientEditorSheet,
+                                    { paddingBottom: Math.max(spacing.lg, bottomInset + spacing.sm) },
+                                ]}
+                            >
                                 <View style={checkoutScreenStyles.recipientEditorHeader}>
                                     <Text numberOfLines={2} style={checkoutScreenStyles.recipientEditorTitle}>
                                         {t("checkout.recipientAddNew")}
@@ -1494,7 +1513,7 @@ export default function CheckoutScreen() {
                                                 setRecipientFormErrors((current) => ({ ...current, firstName: undefined }))
                                             }}
                                             placeholder={t("checkout.recipientNamePlaceholder")}
-                                            placeholderTextColor={colors.mutedText}
+                                            placeholderTextColor={palette.mutedText}
                                             style={[
                                                 checkoutScreenStyles.recipientEditorInput,
                                                 recipientFormErrors.firstName && checkoutScreenStyles.recipientEditorInputError,
@@ -1515,7 +1534,7 @@ export default function CheckoutScreen() {
                                                 setRecipientFormErrors((current) => ({ ...current, lastName: undefined }))
                                             }}
                                             placeholder={t("checkout.recipientSurnamePlaceholder")}
-                                            placeholderTextColor={colors.mutedText}
+                                            placeholderTextColor={palette.mutedText}
                                             style={[
                                                 checkoutScreenStyles.recipientEditorInput,
                                                 recipientFormErrors.lastName && checkoutScreenStyles.recipientEditorInputError,
@@ -1537,7 +1556,7 @@ export default function CheckoutScreen() {
                                                 setRecipientFormErrors((current) => ({ ...current, phone: undefined }))
                                             }}
                                             placeholder={t("checkout.recipientPhonePlaceholder")}
-                                            placeholderTextColor={colors.mutedText}
+                                            placeholderTextColor={palette.mutedText}
                                             style={[
                                                 checkoutScreenStyles.recipientEditorInput,
                                                 recipientFormErrors.phone && checkoutScreenStyles.recipientEditorInputError,
@@ -1561,7 +1580,7 @@ export default function CheckoutScreen() {
                                                 setRecipientFormErrors((current) => ({ ...current, email: undefined }))
                                             }}
                                             placeholder={t("checkout.recipientEmailPlaceholder")}
-                                            placeholderTextColor={colors.mutedText}
+                                            placeholderTextColor={palette.mutedText}
                                             style={[
                                                 checkoutScreenStyles.recipientEditorInput,
                                                 recipientFormErrors.email && checkoutScreenStyles.recipientEditorInputError,

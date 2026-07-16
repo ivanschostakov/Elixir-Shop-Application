@@ -29,9 +29,11 @@ import { getOrderDraftTitle } from "@/hooks/order-draft/order-draft.utils"
 import { useLanguage } from "@/providers/language-provider"
 import { getBasketErrorMessage } from "@/screens/cart/cart-screen.utils"
 import { deleteOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
-import { recentOrderDraftsRailStyles } from "./recent-order-drafts-rail.styles"
+import { createRecentOrderDraftsRailStyles } from "./recent-order-drafts-rail.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 function RecentOrderDraftCard({ draft, onDraftUpdated, onDraftDeleted }: RecentOrderDraftCardProps) {
+    const recentOrderDraftsRailStyles = useThemeStyles(createRecentOrderDraftsRailStyles)
     const router = useRouter()
     const { t } = useLanguage()
     const draftTitleInputRef = useRef<TextInput | null>(null)
@@ -281,6 +283,7 @@ function RecentOrderDraftCard({ draft, onDraftUpdated, onDraftDeleted }: RecentO
 }
 
 export function RecentOrderDraftsRail({ drafts }: RecentOrderDraftsRailProps) {
+    const recentOrderDraftsRailStyles = useThemeStyles(createRecentOrderDraftsRailStyles)
     const { t } = useLanguage()
     const [localDrafts, setLocalDrafts] = useState(drafts)
 

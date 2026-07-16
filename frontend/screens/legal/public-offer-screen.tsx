@@ -1,11 +1,13 @@
 import { View } from "react-native"
 
 import { LegalContent } from "@/components/legal/legal-content"
-import { legalContentStyles } from "@/components/legal/legal-content.styles"
+import { createLegalContentStyles } from "@/components/legal/legal-content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { FeedTemplate } from "@/components/templates/feed-template"
 import { LEGAL_OFFER_MARKDOWN } from "@/constants/legal-content"
 
 export default function PublicOfferScreen() {
+    const legalContentStyles = useThemeStyles(createLegalContentStyles)
     return (
         <FeedTemplate
             contentContainerStyle={legalContentStyles.content}

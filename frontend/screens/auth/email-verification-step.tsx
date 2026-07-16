@@ -4,9 +4,10 @@ import { Path, Svg } from "react-native-svg"
 
 import { BACK_ARROW_PATH } from "@/components/header/app-header.constants"
 import { useLanguage } from "@/providers/language-provider"
-import { authSharedStyles } from "@/screens/auth/auth-shared.styles"
+import { createAuthSharedStyles } from "@/screens/auth/auth-shared.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import type { EmailVerificationStepProps } from "@/screens/auth/email-verification-step.types"
-import { colors } from "@/theme/colors"
 
 export default function EmailVerificationStep({
     email,
@@ -17,6 +18,8 @@ export default function EmailVerificationStep({
     onVerify,
     statusMessage,
 }: EmailVerificationStepProps) {
+    const authSharedStyles = useThemeStyles(createAuthSharedStyles)
+    const { palette } = useTheme()
     const { t } = useLanguage()
     const [verificationCode, setVerificationCode] = useState("")
     const verificationInputRef = useRef<TextInput>(null)
@@ -62,7 +65,7 @@ export default function EmailVerificationStep({
                 ]}
             >
                 <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                    <Path d={BACK_ARROW_PATH} fill={colors.text} />
+                    <Path d={BACK_ARROW_PATH} fill={palette.text} />
                 </Svg>
             </Pressable>
 
@@ -120,7 +123,7 @@ export default function EmailVerificationStep({
 
                 {isChecking ? (
                     <View style={authSharedStyles.verificationCheckingRow}>
-                        <ActivityIndicator color={colors.primary} />
+                        <ActivityIndicator color={palette.primary} />
                         <Text style={authSharedStyles.verificationCheckingText}>{t("auth.verify.checking")}</Text>
                     </View>
                 ) : null}

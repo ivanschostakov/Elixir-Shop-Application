@@ -6,7 +6,8 @@ import { ROUTES } from "@/constants/routes"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import AuthFormLayout from "@/screens/auth/auth-form-layout"
-import { authSharedStyles } from "@/screens/auth/auth-shared.styles"
+import { createAuthSharedStyles } from "@/screens/auth/auth-shared.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import EmailVerificationStep from "@/screens/auth/email-verification-step"
 import PasswordField from "@/screens/auth/password-field"
 import { useAuthFormScroll } from "@/screens/auth/use-auth-form-scroll"
@@ -15,6 +16,7 @@ import type { PhoneAuthStartStep } from "@/services/auth/auth.types"
 type AuthStep = "phone" | "login" | "claim" | "register" | "verification"
 
 export default function LoginScreen() {
+    const authSharedStyles = useThemeStyles(createAuthSharedStyles)
     const {
         acceptSession,
         claimPhoneAccount,

@@ -1,9 +1,9 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-export const checkoutScreenStyles = StyleSheet.create({
+export const createCheckoutScreenStyles = (colors: ThemePalette) => StyleSheet.create({
     container: {
         backgroundColor: colors.surface,
         flex: 1,

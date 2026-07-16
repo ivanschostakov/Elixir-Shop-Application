@@ -32,8 +32,8 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const router = useRouter()
     const topInset = useAppSafeAreaInsets().top
     const { height: windowHeight } = useWindowDimensions()
-    const styles = getHeaderStyles(topInset, windowHeight)
-    const { accentPalette, isDark, themeName, toggleTheme } = useTheme()
+    const { accentPalette, isDark, palette, themeName, toggleTheme } = useTheme()
+    const styles = getHeaderStyles(topInset, windowHeight, palette)
     const { isAuthenticated, signOut } = useAuth()
     const { basket } = useBasket()
     const { clear, error: basketError, updating: basketUpdating } = useBasketMutations()

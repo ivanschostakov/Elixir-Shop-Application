@@ -8,7 +8,8 @@ import { HtmlContent, hasRenderableHtmlContent } from "@/components/content/html
 import {
     REVIEW_STAR_PATH,
 } from "@/screens/product/product-screen.constants"
-import { productScreenStyle } from "@/screens/product/product-screen.styles"
+import { createProductScreenStyle } from "@/screens/product/product-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import type { ProductInfoTabKey } from "@/screens/product/product-screen.types"
 import type { ProductInfoTabsProps } from "@/screens/product/product-info-tabs.types"
 import { useTheme } from "@/providers/theme-provider"
@@ -28,6 +29,7 @@ function StarRating({
     rating: number
     size?: number
 }) {
+    const productScreenStyle = useThemeStyles(createProductScreenStyle)
     const clampedRating = Math.max(0, Math.min(5, rating))
 
     return (
@@ -67,6 +69,7 @@ export function ProductInfoTabs({
     reviewsSubmitting,
     t,
 }: ProductInfoTabsProps) {
+    const productScreenStyle = useThemeStyles(createProductScreenStyle)
     const { accentPalette, themeName } = useTheme()
     const detailsFallback = t("product.detailsNotProvided")
     const overviewHtml = hasRenderableHtmlContent(product.description) ? product.description : null

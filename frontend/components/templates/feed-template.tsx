@@ -1,7 +1,8 @@
 import { Animated, ScrollView } from "react-native"
 
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
-import { screenTemplateStyles } from "@/components/templates/screen-template.styles"
+import { createScreenTemplateStyles } from "@/components/templates/screen-template.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import type { FeedTemplateProps } from "@/components/templates/screen-template.types"
 import { useEntranceAnimation } from "@/hooks/animation/use-entrance-animation"
 
@@ -13,6 +14,7 @@ export function FeedTemplate({
     showsVerticalScrollIndicator = false,
     style,
 }: FeedTemplateProps) {
+    const screenTemplateStyles = useThemeStyles(createScreenTemplateStyles)
     useApplyScreenTemplate("feed", chromeTemplate)
     const entranceStyle = useEntranceAnimation({ translateY: 6 })
 

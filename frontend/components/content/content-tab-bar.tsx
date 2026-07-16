@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Animated, Pressable, Text, View, type LayoutChangeEvent } from "react-native"
 
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import type { ContentTabBarProps } from "@/components/content/content-tab-bar.types"
 import { useTheme } from "@/providers/theme-provider"
 export type { ContentTabBarItem } from "@/components/content/content-tab-bar.types"
@@ -12,6 +13,7 @@ type TabLayout = {
 }
 
 export function ContentTabBar({ tabs, variant = "default" }: ContentTabBarProps) {
+    const contentStyles = useThemeStyles(createContentStyles)
     const { accentPalette } = useTheme()
     const activeTabKey = tabs.find((tab) => tab.isActive)?.key ?? tabs[0]?.key ?? null
     const tabSignature = useMemo(() => tabs.map((tab) => tab.key).join("|"), [tabs])

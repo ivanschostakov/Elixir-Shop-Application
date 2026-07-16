@@ -1,6 +1,6 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
 const glassShadow = {
@@ -23,7 +23,7 @@ const liquidGlassNeutral = {
     borderColor: "rgba(255,255,255,0.74)",
 } as const
 
-export const chatScreenStyles = StyleSheet.create({
+export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.surface,

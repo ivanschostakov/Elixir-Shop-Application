@@ -6,7 +6,9 @@ import { ThemeContext } from "@/providers/theme-provider.context"
 import type { ThemeProviderProps } from "@/providers/theme-provider.types"
 import {
     applyWebThemeColors,
+    darkColors,
     darkBlackWhiteAccentPalette,
+    lightColors,
     themeAccentPalettes,
     type ThemeAccentName,
     type ThemeName,
@@ -186,6 +188,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
     const value = useMemo(
         () => ({
             isDark: themeName === "dark",
+            palette: themeName === "dark" ? darkColors : lightColors,
             themeName,
             accentName,
             accentPalette: accentName === "blackWhite" && themeName === "dark"

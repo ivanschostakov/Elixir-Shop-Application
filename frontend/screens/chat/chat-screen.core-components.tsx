@@ -14,9 +14,10 @@ import {
 import RenderHtml from "react-native-render-html"
 import Svg, { Path } from "react-native-svg"
 
-import { colors } from "@/theme/colors"
 import { motion } from "@/theme/motion"
-import { chatScreenStyles } from "@/screens/chat/chat-screen.styles"
+import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import { SAFE_LINK_PROTOCOL_PATTERN } from "@/screens/chat/chat-screen.constants"
 import { markdownToHtml } from "@/screens/chat/chat-markdown"
 import type {
@@ -59,6 +60,7 @@ export function AnimatedMessageBlock({ children }: { children: ReactNode }) {
 }
 
 export function AiTypingBubble() {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const dotProgressValues = useRef([
         new Animated.Value(0),
         new Animated.Value(0),
@@ -137,6 +139,8 @@ export function MessageMarkdown({
     onOpenLink?: (href: string) => void
     width: number
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
+    const { palette } = useTheme()
     const htmlSource = useMemo(() => ({ html: markdownToHtml(markdown) }), [markdown])
     const textColor = isUserMessage ? "#17311C" : "#15191E"
     const markdownWrapStyle = hasImageAttachments ? chatScreenStyles.messageMarkdownWithMedia : null
@@ -171,7 +175,7 @@ export function MessageMarkdown({
                 source={htmlSource}
                 tagsStyles={{
                     a: {
-                        color: colors.primary,
+                        color: palette.primary,
                         textDecorationLine: "underline",
                     },
                     blockquote: {
@@ -317,6 +321,7 @@ export function AIInteractiveContent({
     onOpenProduct: (productId: number) => void
     payload: AIInteractivePayload
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const hasContent = payload.cards.length > 0
     if (!hasContent) {
         return null
@@ -360,6 +365,7 @@ function AIProductCard({
     onBasketItemQuantityChange: (item: BasketItemRead, nextQuantity: number) => void
     onOpenProduct: (productId: number) => void
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const basketItemByVariantId = useMemo(
         () => new Map((basket?.items ?? []).map((item) => [item.variant_id, item])),
         [basket?.items],
@@ -539,6 +545,8 @@ function AISelectedVariantBasketControl({
     onQuantityChange: (item: BasketItemRead, nextQuantity: number) => void
     variant: AIInteractiveVariant | null
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
+    const { palette } = useTheme()
     const isUnavailable = !variant || !variant.in_stock || variant.stock <= 0
     const maxQuantity = basketItem
         ? Math.max(
@@ -571,7 +579,7 @@ function AISelectedVariantBasketControl({
 
                 <View style={chatScreenStyles.aiSelectedVariantQuantityValueWrap}>
                     {active ? (
-                        <ActivityIndicator color={colors.onPrimary} size="small" />
+                        <ActivityIndicator color={palette.onPrimary} size="small" />
                     ) : (
                         <Text numberOfLines={1} style={chatScreenStyles.aiSelectedVariantQuantityValue}>
                             {basketItem.quantity}
@@ -613,7 +621,7 @@ function AISelectedVariantBasketControl({
             ]}
         >
             {active ? (
-                <ActivityIndicator color={colors.onPrimary} size="small" />
+                <ActivityIndicator color={palette.onPrimary} size="small" />
             ) : (
                 <Text
                     numberOfLines={1}
@@ -640,6 +648,8 @@ function AIActionButton({
     containerStyle?: StyleProp<ViewStyle>
     onPress: () => void
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
+    const { palette } = useTheme()
     const busy = activeActionId === action.id
     const disabled = busy || (action.type === "add_to_basket" && !action.action_token && !action.created_basket_item_id)
     const isPrimary = action.style === "primary" && !action.completed
@@ -661,7 +671,7 @@ function AIActionButton({
             ]}
         >
             {busy ? (
-                <ActivityIndicator color={colors.onPrimary} size="small" />
+                <ActivityIndicator color={palette.onPrimary} size="small" />
             ) : (
                 <Text
                     numberOfLines={2}
@@ -694,6 +704,8 @@ export function SendActionButton({
     sending: boolean
     transcribing: boolean
 }) {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
+    const { palette } = useTheme()
     const activeProgress = useRef(new Animated.Value(isActive ? 1 : 0)).current
     const busyProgress = useRef(new Animated.Value(sending || transcribing ? 1 : 0)).current
     const recordingProgress = useRef(new Animated.Value(recording ? 1 : 0)).current
@@ -777,7 +789,7 @@ export function SendActionButton({
                                 fillRule="evenodd"
                                 clipRule="evenodd"
                                 d="M9.93935 12.6464L7.69211 11.8973L7.69211 11.8973L7.6921 11.8973C5.3389 11.1129 4.16229 10.7207 4.16229 9.99997C4.16229 9.27921 5.3389 8.88701 7.69212 8.10261L16.2053 5.26488C17.8611 4.71295 18.689 4.43699 19.126 4.87401C19.563 5.31102 19.287 6.13892 18.7351 7.79471L15.8974 16.3079L15.8974 16.3079L15.8974 16.3079C15.113 18.6611 14.7208 19.8377 14 19.8377C13.2793 19.8377 12.8871 18.6611 12.1026 16.3079L11.3536 14.0606L15.7071 9.70708C16.0976 9.31656 16.0976 8.68339 15.7071 8.29287C15.3166 7.90234 14.6834 7.90234 14.2929 8.29287L9.93935 12.6464Z"
-                                fill={colors.onPrimary}
+                                fill={palette.onPrimary}
                             />
                         </Svg>
                     ) : (
@@ -785,18 +797,18 @@ export function SendActionButton({
                             <Svg fill="none" height={20} viewBox="0 0 24 24" width={20}>
                                 <Path
                                     d="M8 2H16V11C16 13.2091 14.2091 15 12 15V15C9.79086 15 8 13.2091 8 11V2Z"
-                                    fill={recording ? colors.onPrimary : "#12161A"}
+                                    fill={recording ? palette.onPrimary : "#12161A"}
                                 />
                                 <Path
                                     d="M5 11C5 12.8565 5.7375 14.637 7.05025 15.9497C8.36301 17.2625 10.1435 18 12 18C13.8565 18 15.637 17.2625 16.9497 15.9497C18.2625 14.637 19 12.8565 19 11"
-                                    stroke={recording ? colors.onPrimary : "#12161A"}
+                                    stroke={recording ? palette.onPrimary : "#12161A"}
                                     strokeWidth={2}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                 />
                                 <Path
                                     d="M12 21V19"
-                                    stroke={recording ? colors.onPrimary : "#12161A"}
+                                    stroke={recording ? palette.onPrimary : "#12161A"}
                                     strokeWidth={2}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
@@ -809,7 +821,7 @@ export function SendActionButton({
                     pointerEvents="none"
                     style={[chatScreenStyles.sendButtonSpinnerLayer, { opacity: spinnerOpacity }]}
                 >
-                    <ActivityIndicator color={isActive ? colors.onPrimary : "#12161A"} />
+                    <ActivityIndicator color={isActive ? palette.onPrimary : "#12161A"} />
                 </Animated.View>
             </Animated.View>
         </Pressable>

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { Modal, Pressable, Text, View } from "react-native"
 import { Picker } from "@react-native-picker/picker"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
 import type {
     CategorySelectionValue,
     PickerOption,
@@ -10,7 +11,9 @@ import type {
     ProductBrowseControlsProps,
 } from "@/components/content/product-browse-controls.types"
 import type { ProductBrowseSort } from "@/hooks/products/product-browse"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useLanguage } from "@/providers/language-provider"
+import { spacing } from "@/theme/spacing"
 
 function PickerSheetField<TValue extends number | string>({
     disabled = false,
@@ -24,7 +27,9 @@ function PickerSheetField<TValue extends number | string>({
     labelStyle,
     triggerStyle,
 }: PickerSheetFieldProps<TValue>) {
+    const contentStyles = useThemeStyles(createContentStyles)
     const { t } = useLanguage()
+    const { bottom: bottomInset } = useSafeAreaInsets()
     const [isOpen, setIsOpen] = useState(false)
     const [draftValue, setDraftValue] = useState(selectedValue)
 
@@ -76,7 +81,12 @@ function PickerSheetField<TValue extends number | string>({
                         style={contentStyles.browsePickerDismissArea}
                     />
 
-                    <View style={contentStyles.browsePickerSheet}>
+                    <View
+                        style={[
+                            contentStyles.browsePickerSheet,
+                            { paddingBottom: Math.max(spacing.lg, bottomInset + spacing.sm) },
+                        ]}
+                    >
                         <View style={contentStyles.browsePickerHeader}>
                             <Text style={contentStyles.browsePickerTitle}>{title}</Text>
 
@@ -139,6 +149,7 @@ export function ProductBrowseControls({
     onChangeSort,
     sort,
 }: ProductBrowseControlsProps) {
+    const contentStyles = useThemeStyles(createContentStyles)
     const { t } = useLanguage()
     const categoryOptions = useMemo<readonly PickerOption<CategorySelectionValue>[]>(
         () => [

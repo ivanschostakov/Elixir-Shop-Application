@@ -14,8 +14,9 @@ import { useInfiniteProductCatalog } from "@/hooks/products/use-infinite-product
 import { useProductCategories } from "@/hooks/products/use-product-categories"
 import { useLanguage } from "@/providers/language-provider"
 import { trackRecommendationCategoryView } from "@/services/api/recommendations"
-import { discoverScreenStyles } from "@/screens/discover/discover-screen.styles"
-import { colors } from "@/theme/colors"
+import { createDiscoverScreenStyles } from "@/screens/discover/discover-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 
 const discoverBrowseMemory: {
     categoryId: number | null
@@ -83,6 +84,8 @@ function parseQuery(input: string | string[] | undefined): string {
 }
 
 export default function DiscoverScreen() {
+    const discoverScreenStyles = useThemeStyles(createDiscoverScreenStyles)
+    const { palette } = useTheme()
     const router = useRouter()
     const { t } = useLanguage()
     const { width: windowWidth } = useWindowDimensions()
@@ -267,7 +270,7 @@ export default function DiscoverScreen() {
                 ListEmptyComponent={
                     isLoading ? (
                         <View style={discoverScreenStyles.loaderWrap}>
-                            <ActivityIndicator color={colors.primary} />
+                            <ActivityIndicator color={palette.primary} />
                         </View>
                     ) : screenError ? (
                         <EmptyState
@@ -314,7 +317,7 @@ export default function DiscoverScreen() {
                 ListFooterComponent={
                     !isProductsTab || !loadingMore ? null : (
                         <View style={discoverScreenStyles.footerLoaderWrap}>
-                            <ActivityIndicator color={colors.primary} />
+                            <ActivityIndicator color={palette.primary} />
                         </View>
                     )
                 }

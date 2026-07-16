@@ -5,15 +5,16 @@ import RenderHtml from "react-native-render-html"
 import {
     HTML_IGNORED_TAGS,
     SAFE_LINK_SCHEME,
-    variantStyles,
-    variantTagStyles,
+    createHtmlContentStyles,
 } from "@/components/content/html-content.const"
 import type { HtmlContentProps } from "@/components/content/html-content.types"
 import { hasRenderableHtmlContent, normalizeHtml } from "@/components/content/html-content.utils"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 export { hasRenderableHtmlContent }
 
 export function HtmlContent({ html, variant = "body" }: HtmlContentProps) {
+    const { variantStyles, variantTagStyles } = useThemeStyles(createHtmlContentStyles)
     const { width } = useWindowDimensions()
     const source = useMemo(() => ({ html: normalizeHtml(html) }), [html])
 

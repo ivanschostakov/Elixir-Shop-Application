@@ -1,9 +1,9 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-export const productKeyboardStyles = StyleSheet.create({
+export const createProductKeyboardStyles = (colors: ThemePalette) => StyleSheet.create({
     container: {
         position: "absolute",
         left: 0,

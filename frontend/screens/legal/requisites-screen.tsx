@@ -1,14 +1,17 @@
 import { ActivityIndicator, Pressable, Text, View } from "react-native"
 
-import { legalContentStyles } from "@/components/legal/legal-content.styles"
+import { createLegalContentStyles } from "@/components/legal/legal-content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import { LegalContent } from "@/components/legal/legal-content"
 import { FeedTemplate } from "@/components/templates/feed-template"
 import { buildRequisitesMarkdown } from "@/constants/legal-content"
 import { useRequisites } from "@/hooks/legal/use-requisites"
 import { useLanguage } from "@/providers/language-provider"
-import { colors } from "@/theme/colors"
 
 export default function RequisitesScreen() {
+    const legalContentStyles = useThemeStyles(createLegalContentStyles)
+    const { palette } = useTheme()
     const { t } = useLanguage()
     const { requisites, error, loading, reload } = useRequisites()
     const markdown = buildRequisitesMarkdown(requisites)
@@ -25,7 +28,7 @@ export default function RequisitesScreen() {
 
             {loading ? (
                 <View style={legalContentStyles.statusRow}>
-                    <ActivityIndicator color={colors.primary} />
+                    <ActivityIndicator color={palette.primary} />
                 </View>
             ) : null}
 

@@ -1,12 +1,12 @@
 import { useState } from "react"
 import { Image, Modal, Pressable, Text, View } from "react-native"
 
-import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-value"
 import type { ProfileHeroCardProps } from "@/components/profile/profile-hero-card.types"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
-import { colors } from "@/theme/colors"
 
 export function ProfileHeroCard({
     avatarUri,
@@ -19,13 +19,14 @@ export function ProfileHeroCard({
     onChangePhoto,
     onRemovePhoto,
 }: ProfileHeroCardProps) {
+    const ProfileScreenStyles = useThemeStyles(createProfileScreenStyles)
     const [isAvatarViewerOpen, setIsAvatarViewerOpen] = useState(false)
     const { t } = useLanguage()
-    const { accentName, accentPalette, themeName } = useTheme()
+    const { accentName, accentPalette, palette, themeName } = useTheme()
     const { handleCopy } = useCopyableProfileValue({ t })
     const isMonochromeDark = accentName === "blackWhite" && themeName === "dark"
-    const heroBackgroundColor = isMonochromeDark ? colors.surface : accentPalette.primary
-    const avatarInitialColor = isMonochromeDark ? colors.text : accentPalette.primary
+    const heroBackgroundColor = isMonochromeDark ? palette.surface : accentPalette.primary
+    const avatarInitialColor = isMonochromeDark ? palette.text : accentPalette.primary
 
     return (
         <>

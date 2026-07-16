@@ -98,7 +98,9 @@ import {
     getPickupPointActionLabel,
 } from "@/screens/delivery/delivery-calculation"
 import { useDeliveryLocation, useDeliveryMapCamera } from "@/screens/delivery/delivery-screen.hooks"
-import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { createDeliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import { useDeliveryFlowController } from "@/screens/delivery/use-delivery-flow-controller"
 import type { DeliveryMapMarker } from "@/screens/delivery/delivery-screen.types"
 import {
@@ -118,7 +120,6 @@ import {
     parseBooleanSearchParam,
     parseDraftId,
 } from "@/screens/delivery/delivery-screen.utils"
-import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 import { showBackendErrorAlert } from "@/utils/errors"
 
@@ -130,6 +131,8 @@ const getDeliveryLogErrorMessage = (error: unknown) =>
     error instanceof Error ? error.message : "Unknown delivery flow error"
 
 export default function DeliveryScreen() {
+    const deliveryScreenStyles = useThemeStyles(createDeliveryScreenStyles)
+    const { palette } = useTheme()
     const router = useRouter()
     const params = useLocalSearchParams<{ draftId?: string | string[]; syncBasket?: string | string[] }>()
     const checkoutDraftId = parseDraftId(params.draftId)
@@ -1594,7 +1597,7 @@ export default function DeliveryScreen() {
                             deliveryScreenStyles.loadingCard,
                             deliveryScreenStyles.pickupMarkersLoadingCard,
                         ]}>
-                            <ActivityIndicator color={colors.primary} size="large" />
+                            <ActivityIndicator color={palette.primary} size="large" />
                             <Text style={deliveryScreenStyles.loadingText}>
                                 {translate("delivery.loadingPickupPoints")}
                             </Text>

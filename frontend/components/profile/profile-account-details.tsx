@@ -3,11 +3,13 @@ import { Pressable, Text, View } from "react-native"
 import type { ProfileAccountDetailsProps } from "@/components/profile/profile-account-details.types"
 import { useCopyableProfileValue } from "@/hooks/profile/use-copyable-profile-value"
 import { useLanguage } from "@/providers/language-provider"
-import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 export function ProfileAccountDetails({
     email,
 }: ProfileAccountDetailsProps) {
+    const ProfileScreenStyles = useThemeStyles(createProfileScreenStyles)
     const { t } = useLanguage()
     const { handleCopy } = useCopyableProfileValue({ t })
 

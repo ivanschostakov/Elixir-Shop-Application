@@ -1,9 +1,9 @@
 import { Platform, StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
-export const paymentScreenStyles = StyleSheet.create({
+export const createPaymentScreenStyles = (colors: ThemePalette) => StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.surface,

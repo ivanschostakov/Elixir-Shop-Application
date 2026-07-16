@@ -2,9 +2,11 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native"
 
 import type { ProfileQuickActionsProps } from "@/components/profile/profile-quick-actions.types"
 import { useLanguage } from "@/providers/language-provider"
-import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 export function ProfileQuickActions({ isDeletingAccount = false, onDeleteAccount, onSignOut }: ProfileQuickActionsProps) {
+    const ProfileScreenStyles = useThemeStyles(createProfileScreenStyles)
     const { t } = useLanguage()
 
     return (

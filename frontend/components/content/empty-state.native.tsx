@@ -1,7 +1,8 @@
 import { Image, Pressable, Text, View } from "react-native"
 import LottieView from "lottie-react-native"
 
-import { contentStyles } from "@/components/content/content.styles"
+import { createContentStyles } from "@/components/content/content.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import type { EmptyStateProps } from "@/components/content/empty-state.types"
 
 export function EmptyState({
@@ -15,6 +16,7 @@ export function EmptyState({
     variant = "card",
     actionVariant = "button",
 }: EmptyStateProps) {
+    const contentStyles = useThemeStyles(createContentStyles)
     return (
         <View
             style={[

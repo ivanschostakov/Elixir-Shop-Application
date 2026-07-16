@@ -5,14 +5,15 @@ import { router, useFocusEffect } from "expo-router"
 import { ProfileHeroCard } from "@/components/profile/profile-hero-card"
 import { ProfileQuickActions } from "@/components/profile/profile-quick-actions"
 import { FeedTemplate } from "@/components/templates/feed-template"
-import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { ROUTES } from "@/constants/routes"
 import { useProfileAvatar } from "@/hooks/profile/use-profile-avatar"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
-import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { checkMyBenefits } from "@/services/api/benefits"
 import type { BenefitCheckResponse, BenefitOptionResponse } from "@/services/api/benefits.types"
 import { attachMyReferrerCode, detachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
@@ -55,6 +56,8 @@ function getProfileBenefitKey(option: BenefitOptionResponse) {
 }
 
 export default function ProfileScreen() {
+    const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
+    const ProfileScreenStyles = useThemeStyles(createProfileScreenStyles)
     const { deleteAccount, signOut, user } = useAuth()
     const { language, setLanguage, t } = useLanguage()
     const { accentName, accentPalette, setAccentName, themeName, toggleTheme } = useTheme()
@@ -280,6 +283,7 @@ export default function ProfileScreen() {
         accentPalette.primary,
         accentPalette.primaryPressed,
         handleApplyProfilePromo,
+        stickyFooterStyles,
         isApplyingProfilePromo,
         normalizedProfilePromoCode,
         shouldShowReferralDetails,

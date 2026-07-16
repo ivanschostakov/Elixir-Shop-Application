@@ -13,13 +13,14 @@ import { usePathname } from "expo-router"
 
 import { BottomActionTemplate } from "@/components/footer/bottom-action-template"
 import { BottomNavTemplate } from "@/components/footer/bottom-nav-template"
-import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import type {
     StickyFooterProps,
     StickyFooterSurfaceProps,
 } from "@/components/footer/sticky-footer.types"
 import { useEntranceAnimation } from "@/hooks/animation/use-entrance-animation"
 import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { spacing } from "@/theme/spacing"
 
@@ -133,6 +134,7 @@ export function StickyFooterSurface({
     style,
     variant = "default",
 }: StickyFooterSurfaceProps) {
+    const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const entranceStyle = useEntranceAnimation({ translateY: 10 })
     const footerSafeAreaStyle = useFooterSafeAreaStyle()
 
@@ -162,6 +164,7 @@ export function StickyFooterSurface({
 }
 
 export default function StickyFooter({ template }: StickyFooterProps) {
+    const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const pathname = usePathname()
     const { basket } = useBasket()
     const entranceStyle = useEntranceAnimation({ translateY: 10 })

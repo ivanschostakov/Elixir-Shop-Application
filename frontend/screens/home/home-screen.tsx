@@ -38,8 +38,9 @@ import type { OrderRead, OrderStatusCode } from "@/services/api/orders.types"
 import { clearOrderDraftSnapshot, getOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { getDraftUpdateErrorMessage } from "@/components/content/recent-order-drafts-rail.utils"
 import { getDiscoverCategoryIcon } from "@/screens/discover/discover-category-icons"
-import { homeScreenStyles } from "@/screens/home/home-screen.styles"
-import { colors, lightColors, type ThemeAccentName } from "@/theme/colors"
+import { createHomeScreenStyles } from "@/screens/home/home-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { lightColors, type ThemeAccentName } from "@/theme/colors"
 import type { Banner } from "@/types/banner"
 import { formatMoney } from "@/utils/formatting"
 
@@ -203,12 +204,13 @@ function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab
 }
 
 export default function HomeScreen() {
+    const homeScreenStyles = useThemeStyles(createHomeScreenStyles)
     const router = useRouter()
     const topInset = useAppSafeAreaInsets().top
     const { height: windowHeight } = useWindowDimensions()
-    const homeHeaderMenuStyles = getHeaderStyles(topInset, windowHeight)
     const { language, setLanguage, t } = useLanguage()
-    const { accentName, accentPalette, themeName, toggleTheme } = useTheme()
+    const { accentName, accentPalette, palette, themeName, toggleTheme } = useTheme()
+    const homeHeaderMenuStyles = getHeaderStyles(topInset, windowHeight, palette)
     const { isAuthenticated, signOut } = useAuth()
     const { banners, reload: reloadBanners } = useBanners(true)
     const { categories, reload: reloadCategories } = useProductCategories(true)
@@ -274,27 +276,27 @@ export default function HomeScreen() {
     const activeOrderCardToneStyle = isDarkMode
         ? null
         : {
-            backgroundColor: colors.surface,
+            backgroundColor: palette.surface,
         }
     const activeOrderImagesToneStyle = isDarkMode
         ? null
         : {
-            backgroundColor: colors.surfaceMuted,
+            backgroundColor: palette.surfaceMuted,
         }
     const activeOrderImagePlaceholderToneStyle = isDarkMode
         ? null
         : {
-            backgroundColor: colors.borderSoft,
+            backgroundColor: palette.borderSoft,
         }
     const activeOrderSubtitleToneStyle = isDarkMode
         ? null
         : {
-            color: colors.text,
+            color: palette.text,
         }
     const activeOrderMetaToneStyle = isDarkMode
         ? null
         : {
-            color: colors.stateText,
+            color: palette.stateText,
         }
 
     const handleDeleteDraft = useCallback(async (draftId: number) => {

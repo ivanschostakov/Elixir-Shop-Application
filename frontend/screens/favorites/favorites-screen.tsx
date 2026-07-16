@@ -9,11 +9,14 @@ import { useFavouriteProducts } from "@/hooks/favorites/use-favourite-products"
 import { resolveContentTab } from "@/hooks/navigation/use-content-tabs"
 import { useLanguage } from "@/providers/language-provider"
 import { FavoriteProductItem } from "@/screens/favorites/favorite-product-item"
-import { favoritesScreenStyles } from "@/screens/favorites/favorites-screen.styles"
-import { colors } from "@/theme/colors"
+import { createFavoritesScreenStyles } from "@/screens/favorites/favorites-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 import { showRemoveFavouriteConfirmation } from "@/utils/favorites/show-remove-favourite-confirmation"
 
 export default function FavoritesScreen() {
+    const favoritesScreenStyles = useThemeStyles(createFavoritesScreenStyles)
+    const { palette } = useTheme()
     const router = useRouter()
     const { t } = useLanguage()
     const params = useLocalSearchParams<{ tab?: string | string[] }>()
@@ -69,7 +72,7 @@ export default function FavoritesScreen() {
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={favoritesScreenStyles.loaderWrap}>
-                        <ActivityIndicator color={colors.primary} />
+                        <ActivityIndicator color={palette.primary} />
                     </View>
                 </ScrollView>
             </CatalogTemplate>

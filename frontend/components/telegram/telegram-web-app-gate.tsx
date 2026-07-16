@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react"
 import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native"
 
 import { useAuth } from "@/providers/auth-provider"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { startTelegramSession } from "@/services/auth/auth"
 import type { AuthTokensWithUserResponse, TelegramAuthResponse } from "@/services/auth/auth.types"
 import {
@@ -10,7 +11,7 @@ import {
     isTelegramWebAppEnvironment,
     requestTelegramContact,
 } from "@/services/telegram/telegram-web-app"
-import { telegramWebAppGateStyles } from "@/components/telegram/telegram-web-app-gate.styles"
+import { createTelegramWebAppGateStyles } from "@/components/telegram/telegram-web-app-gate.styles"
 
 type TelegramGateStatus =
     | "checking"
@@ -51,6 +52,7 @@ function GatePanel({
     onPress?: () => void
     title: string
 }) {
+    const telegramWebAppGateStyles = useThemeStyles(createTelegramWebAppGateStyles)
     return (
         <View style={telegramWebAppGateStyles.screen}>
             <View style={telegramWebAppGateStyles.panel}>
@@ -78,6 +80,7 @@ function GatePanel({
 }
 
 function LoadingPanel({ label }: { label: string }) {
+    const telegramWebAppGateStyles = useThemeStyles(createTelegramWebAppGateStyles)
     return (
         <View style={telegramWebAppGateStyles.screen}>
             <View style={telegramWebAppGateStyles.panel}>

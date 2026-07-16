@@ -2,7 +2,8 @@ import { useState } from "react"
 import { Pressable, Text, TextInput, View } from "react-native"
 
 import { useLanguage } from "@/providers/language-provider"
-import { authSharedStyles } from "@/screens/auth/auth-shared.styles"
+import { createAuthSharedStyles } from "@/screens/auth/auth-shared.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import type { PasswordFieldProps } from "@/screens/auth/password-field.types"
 
 export default function PasswordField({
@@ -13,6 +14,7 @@ export default function PasswordField({
     returnKeyType,
     value,
 }: PasswordFieldProps) {
+    const authSharedStyles = useThemeStyles(createAuthSharedStyles)
     const [isVisible, setIsVisible] = useState(false)
     const { t } = useLanguage()
 

@@ -2,8 +2,9 @@ import { Pressable, Text } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
 import type { DeliveryCornerButtonProps } from "@/components/delivery/delivery-corner-button.types"
-import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
-import { colors } from "@/theme/colors"
+import { createDeliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 
 export function DeliveryCornerButton({
     accessibilityLabel,
@@ -12,6 +13,8 @@ export function DeliveryCornerButton({
     label,
     onPress,
 }: DeliveryCornerButtonProps) {
+    const deliveryScreenStyles = useThemeStyles(createDeliveryScreenStyles)
+    const { palette } = useTheme()
     return (
         <Pressable
             accessibilityLabel={accessibilityLabel}
@@ -36,7 +39,7 @@ export function DeliveryCornerButton({
                 </Text>
             ) : iconPath ? (
                 <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
-                    <Path d={iconPath} fill={isActive ? colors.onPrimary : colors.primary} />
+                    <Path d={iconPath} fill={isActive ? palette.onPrimary : palette.primary} />
                 </Svg>
             ) : null}
         </Pressable>

@@ -9,15 +9,17 @@ import {
 } from "@/components/delivery/delivery-search-panel.utils"
 import { CLOSE_ICON_PATH } from "@/components/header/app-header.constants"
 import { translate } from "@/i18n/translations"
-import { deliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
-import { colors } from "@/theme/colors"
+import { createDeliveryScreenStyles } from "@/screens/delivery/delivery-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { useTheme } from "@/providers/theme-provider"
 
 function DeliverySearchFieldIcon() {
+    const { palette } = useTheme()
     return (
         <Svg width={18} height={18} viewBox="0 0 18 18" fill="none">
             <Path
                 d="M8.1 13.2a5.1 5.1 0 1 0 0-10.2 5.1 5.1 0 0 0 0 10.2ZM11.8 11.8 15 15"
-                stroke={colors.mutedText}
+                stroke={palette.mutedText}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={1.8}
@@ -39,6 +41,8 @@ export function DeliverySearchPanel({
     value,
     variant = "floating",
 }: DeliverySearchPanelProps) {
+    const deliveryScreenStyles = useThemeStyles(createDeliveryScreenStyles)
+    const { palette } = useTheme()
     const shouldShowResults = isLoading || !!error || results.length > 0
     const isFooterVariant = variant === "footer"
 
@@ -54,7 +58,7 @@ export function DeliverySearchPanel({
                     {isLoading ? (
                         <View style={deliveryScreenStyles.statusRow}>
                             <ActivityIndicator
-                                color={colors.primary}
+                                color={palette.primary}
                                 size="small"
                                 style={deliveryScreenStyles.statusSpinner}
                             />
@@ -144,7 +148,7 @@ export function DeliverySearchPanel({
                         ]}
                     >
                         <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-                            <Path d={CLOSE_ICON_PATH} fill={colors.mutedText} />
+                            <Path d={CLOSE_ICON_PATH} fill={palette.mutedText} />
                         </Svg>
                     </Pressable>
                 ) : null}

@@ -1,6 +1,6 @@
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 
-export const checkoutMapCardWebStyles = {
+export const createCheckoutMapCardWebStyles = (colors: ThemePalette) => ({
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -24,4 +24,4 @@ export const checkoutMapCardWebStyles = {
         lineHeight: 21,
         textAlign: "center" as const,
     },
-}
+})

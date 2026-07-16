@@ -16,7 +16,7 @@ import * as Clipboard from "expo-clipboard"
 import { router, useLocalSearchParams } from "expo-router"
 import LottieView from "lottie-react-native"
 
-import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
@@ -34,7 +34,8 @@ import {
     getSelfRecipient,
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
-import { paymentScreenStyles } from "@/screens/payment/payment-screen.styles"
+import { createPaymentScreenStyles } from "@/screens/payment/payment-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createGuestOrder, isGuestPhoneExistsError } from "@/services/api/guest"
 import type { GuestOrderPayload } from "@/services/api/guest.types"
 import { createOrder, getOrder, repeatOrder } from "@/services/api/orders"
@@ -161,6 +162,8 @@ function buildGuestOrderPayload(orderDraft: OrderDraftRead, paymentMethod: Payme
 }
 
 export default function PaymentScreen() {
+    const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
+    const paymentScreenStyles = useThemeStyles(createPaymentScreenStyles)
     const { acceptSession, isAuthenticated, user } = useAuth()
     const { t } = useLanguage()
     const params = useLocalSearchParams<{
@@ -674,7 +677,7 @@ export default function PaymentScreen() {
                 <Text numberOfLines={1} style={paymentScreenStyles.headerTitleText}>{headerTitle}</Text>
             </Pressable>
         )
-    }, [handleCopyOrderCode, headerTitle, resolvedOrderNumber, t])
+    }, [handleCopyOrderCode, headerTitle, paymentScreenStyles, resolvedOrderNumber, t])
 
     const paymentChromeTemplate = useMemo(() => {
         const headerSlots = headerCenterSlot ? { headerCenter: headerCenterSlot } : undefined
@@ -721,7 +724,9 @@ export default function PaymentScreen() {
         footerCtaState.onPress,
         headerCenterSlot,
         headerTitle,
+        paymentScreenStyles,
         shouldShowFooter,
+        stickyFooterStyles,
     ])
 
     useApplyScreenTemplate("feed", paymentChromeTemplate)

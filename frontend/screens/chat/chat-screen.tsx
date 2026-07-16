@@ -50,9 +50,9 @@ import type {
 } from "@/services/api/ai-chat.types"
 import type { BasketItemRead } from "@/types/basket"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import { colors } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
-import { chatScreenStyles } from "./chat-screen.styles"
+import { createChatScreenStyles } from "./chat-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import {
     AttachmentSheet,
     MessageAttachmentList,
@@ -91,9 +91,10 @@ function nativeBuildNumber() {
 }
 
 export default function ChatScreen() {
+    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const router = useRouter()
     const { t } = useLanguage()
-    const { isDark, themeName } = useTheme()
+    const { isDark, palette, themeName } = useTheme()
     const { width: screenWidth } = useWindowDimensions()
     const { top: topInset, bottom: bottomInset } = useSafeAreaInsets()
     const [cameraPermission, requestCameraPermission] = useCameraPermissions()
@@ -593,7 +594,7 @@ export default function ChatScreen() {
     if (loading && !chat) {
         return (
             <View style={chatScreenStyles.loadingWrap}>
-                <ActivityIndicator color={colors.primary} />
+                <ActivityIndicator color={palette.primary} />
             </View>
         )
     }
@@ -706,7 +707,7 @@ export default function ChatScreen() {
                                         void refresh()
                                     }}
                                     refreshing={refreshing}
-                                    tintColor={colors.primary}
+                                    tintColor={palette.primary}
                                 />
                             )}
                             style={chatScreenStyles.messagesScroll}
@@ -842,7 +843,7 @@ export default function ChatScreen() {
                             {voiceStatusVisible ? (
                                 <View style={chatScreenStyles.voiceStatusPill}>
                                     {voiceTranscribing ? (
-                                        <ActivityIndicator color={colors.primary} size="small" />
+                                        <ActivityIndicator color={palette.primary} size="small" />
                                     ) : (
                                         <View style={chatScreenStyles.voiceStatusDot} />
                                     )}

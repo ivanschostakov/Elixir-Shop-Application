@@ -11,11 +11,12 @@ import {
     View,
 } from "react-native"
 
-import { stickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { FeedTemplate } from "@/components/templates/feed-template"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
-import { ProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
+import { useThemeStyles } from "@/hooks/use-theme-styles"
 import type { PersonalDataUpdatePayload } from "@/services/auth/auth.types"
 import { getErrorMessage } from "@/utils/errors"
 
@@ -31,6 +32,8 @@ function normalizeFormText(value: string) {
 }
 
 export default function PersonalDataScreen() {
+    const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
+    const ProfileScreenStyles = useThemeStyles(createProfileScreenStyles)
     const { t } = useLanguage()
     const { updatePersonalData, user } = useAuth()
     const [form, setForm] = useState<PersonalDataForm>({
@@ -171,7 +174,7 @@ export default function PersonalDataScreen() {
                 ),
             },
         }
-    }, [handleSave, hasPendingPersonalDataChanges, isSaving, t])
+    }, [handleSave, hasPendingPersonalDataChanges, isSaving, stickyFooterStyles, t])
 
     return (
         <KeyboardAvoidingView

@@ -1,8 +1,8 @@
 import { StyleSheet } from "react-native"
 
-import { colors } from "@/theme/colors"
+import type { ThemePalette } from "@/theme/colors"
 
-export const telegramWebAppGateStyles = StyleSheet.create({
+export const createTelegramWebAppGateStyles = (colors: ThemePalette) => StyleSheet.create({
     screen: {
         flex: 1,
         alignItems: "center",
