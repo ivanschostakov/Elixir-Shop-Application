@@ -216,3 +216,46 @@ async def test_moysklad_upsert_unarchives_existing_rows_when_they_return():
     assert variant.stock == 8
     assert stats.unarchived_products == 1
     assert stats.unarchived_variants == 1
+
+
+@pytest.mark.anyio
+async def test_moysklad_upsert_creates_variant_with_parent_archive_state():
+    product = Product(
+        id=1,
+        system_id=NEW_PRODUCT_ID,
+        sku="P-001",
+        name="Product",
+        description=None,
+        usage=None,
+        expiration=None,
+        archived=True,
+        in_stock=False,
+    )
+    session = _FakeSession(products=[product], variants=[])
+
+    stats = await upsert_catalog_rows(
+        session,
+        products=[
+            MoySkladProductRow(
+                system_id=NEW_PRODUCT_ID,
+                sku="P-001",
+                name="Product",
+                description=None,
+                archived=True,
+            )
+        ],
+        variants=[
+            MoySkladVariantRow(
+                system_id=VARIANT_5_ID,
+                product_system_id=NEW_PRODUCT_ID,
+                sku="V-001",
+                name="5 mg",
+                stock=0,
+                price=Decimal("10"),
+            )
+        ],
+    )
+
+    created_variant = next(item for item in session.added if isinstance(item, Variant))
+    assert created_variant.archived is True
+    assert stats.created_variants == 1

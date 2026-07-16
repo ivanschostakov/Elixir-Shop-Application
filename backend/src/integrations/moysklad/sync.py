@@ -115,7 +115,7 @@ async def upsert_variants(session, variants, stats, products_by_id, variants_by_
         variant = variants_by_id.get(row.system_id)
 
         if variant is None:
-            variant = Variant(system_id=row.system_id, archived=product.archived, **payload)
+            variant = Variant(system_id=row.system_id, **payload)
             session.add(variant)
             variants_by_id[row.system_id] = variant
             variants_by_product_id.setdefault(product.id, []).append(variant)
