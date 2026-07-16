@@ -12,7 +12,7 @@ class AuthUserRead(BaseModel):
     email: EmailStr | None = None
     name: str
     surname: str
-    phone_number: str
+    phone_number: str | None = None
     is_active: bool
     is_verified: bool
     promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)

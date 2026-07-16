@@ -76,7 +76,7 @@ export default function PersonalDataScreen() {
             nextPayload.email = email || null
         }
         if (phoneNumber !== (user.phoneNumber ?? "")) {
-            nextPayload.phone_number = phoneNumber
+            nextPayload.phone_number = phoneNumber || null
         }
 
         return Object.keys(nextPayload).length ? nextPayload : null
@@ -118,7 +118,7 @@ export default function PersonalDataScreen() {
 
         const phoneNumber = normalizeFormText(form.phoneNumber)
 
-        if (!name || !surname || !phoneNumber) {
+        if (!name || !surname || !email) {
             setErrorMessage(t("profile.personalData.required"))
             return
         }

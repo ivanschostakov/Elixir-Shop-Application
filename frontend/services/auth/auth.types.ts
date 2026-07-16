@@ -1,50 +1,59 @@
 import type { AuthTokens } from "@/services/auth/session.types"
 
 export type LoginCredentials = {
-    phone_number: string
+    login: string
     password: string
 }
 
-export type PhoneAuthStartPayload = {
-    phone_number: string
-}
-
-export type PhoneAuthStartStep = "login" | "claim" | "register"
-
-export type PhoneAuthStartResponse = {
-    phone_number: string
-    next_step: PhoneAuthStartStep
-    email_required: boolean
-    email_hint: string | null
-    message: string
-}
-
-export type PhoneAuthVerificationPayload = {
-    phone_number: string
+export type LoginVerifyPayload = {
+    email: string
     code: string
 }
 
-export type PhoneAuthVerificationRequiredResponse = {
-    phone_number: string
-    email: string | null
+export type LoginVerificationRequiredResponse = {
+    email: string
     verification_required: boolean
     message: string
 }
 
-export type PhoneAuthSetupResponse = PhoneAuthVerificationRequiredResponse | AuthTokensWithUserResponse
+export type LoginResult =
+    | {
+          verificationRequired: false
+          user: AuthUser
+      }
+    | {
+          verificationRequired: true
+          email: string
+          message: string
+      }
 
-export type PhoneClaimPayload = {
-    phone_number: string
-    password: string
-    email?: string | null
-}
-
-export type PhoneRegisterPayload = {
-    phone_number: string
-    email?: string | null
+export type RegistrationPayload = {
+    email: string
     password: string
     name: string
     surname: string
+}
+
+export type RegistrationStartedResponse = {
+    user_id: number
+    email: string
+    verification_required: boolean
+    message: string
+}
+
+export type RegistrationVerifyPayload = {
+    email: string
+    code: string
+}
+
+export type RegistrationCodeResendPayload = {
+    email: string
+}
+
+export type RegistrationCodeSentResponse = {
+    email: string
+    verification_required: boolean
+    message: string
 }
 
 export type BackendAuthUser = {
@@ -52,7 +61,7 @@ export type BackendAuthUser = {
     email: string | null
     name: string
     surname: string
-    phone_number: string
+    phone_number: string | null
     is_active: boolean
     is_verified: boolean
     promo_code: string | null
@@ -68,6 +77,8 @@ export type BackendAuthTokens = {
 export type AuthTokensWithUserResponse = BackendAuthTokens & {
     user: BackendAuthUser
 }
+
+export type BackendLoginResponse = AuthTokensWithUserResponse | LoginVerificationRequiredResponse
 
 export type TelegramAuthPayload = {
     init_data: string
@@ -96,7 +107,7 @@ export type AuthUser = {
     email: string | null
     name: string
     surname: string
-    phoneNumber: string
+    phoneNumber: string | null
     isActive: boolean
     isVerified: boolean
     promoCode: string | null
@@ -107,7 +118,7 @@ export type PersonalDataUpdatePayload = {
     email?: string | null
     name?: string
     surname?: string
-    phone_number?: string
+    phone_number?: string | null
     password?: string
 }
 

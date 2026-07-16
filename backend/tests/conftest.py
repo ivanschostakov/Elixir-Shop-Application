@@ -52,13 +52,13 @@ def disable_app_integrity_by_default(monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture()
 def register_verified_user(client: TestClient):
     def _register(payload: dict) -> dict:
-        payload = {"phone_number": "+79990000000", **payload}
-        response = client.post("/api/v1/auth/phone/register", json=payload)
-        assert response.status_code == 200, response.text
+        payload = {key: value for key, value in payload.items() if key in {"email", "password", "name", "surname"}}
+        response = client.post("/api/v1/auth/register", json=payload)
+        assert response.status_code == 201, response.text
 
         verify_response = client.post(
-            "/api/v1/auth/phone/verify",
-            json={"phone_number": payload["phone_number"], "code": TEST_EMAIL_VERIFICATION_CODE},
+            "/api/v1/auth/register/verify",
+            json={"email": payload["email"], "code": TEST_EMAIL_VERIFICATION_CODE},
         )
         assert verify_response.status_code == 200, verify_response.text
         return verify_response.json()

@@ -28,7 +28,9 @@ async def get_user_by_email(session: AsyncSession, email: str | None) -> User | 
     return (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
 
 
-async def get_user_by_phone_number(session: AsyncSession, phone_number: str) -> User | None:
+async def get_user_by_phone_number(session: AsyncSession, phone_number: str | None) -> User | None:
+    if not phone_number:
+        return None
     return (await session.execute(select(User).where(User.phone_number == phone_number))).scalar_one_or_none()
 
 

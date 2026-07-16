@@ -3,19 +3,19 @@ import { usePathname } from "expo-router"
 import { AppState, type AppStateStatus } from "react-native"
 
 import {
+    authenticate,
     applyAuthTokensWithUser,
-    claimPhoneAccount as claimPhoneAccountRequest,
     deleteAccount as deleteAccountRequest,
     getCurrentUser,
     getAuthErrorMessage,
-    loginWithPhone,
     logout,
     refreshSession,
-    registerPhoneAccount as registerPhoneAccountRequest,
-    resendPhoneAuthCode as resendPhoneAuthCodeRequest,
-    startPhoneAuth as startPhoneAuthRequest,
+    registerAccount,
+    resendLoginCode as resendLoginCodeRequest,
+    resendRegistrationCode as resendRegistrationCodeRequest,
     updateCurrentUserPersonalData,
-    verifyPhoneAuth as verifyPhoneAuthRequest,
+    verifyLogin as verifyLoginRequest,
+    verifyRegistration as verifyRegistrationRequest,
 } from "@/services/auth/auth"
 import { translate } from "@/i18n/translations"
 import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
@@ -30,13 +30,13 @@ import {
 import type {
     AuthUser,
     LoginCredentials,
+    LoginResult,
+    LoginVerifyPayload,
     PersonalDataUpdatePayload,
+    RegistrationCodeResendPayload,
+    RegistrationPayload,
+    RegistrationVerifyPayload,
     AuthTokensWithUserResponse,
-    PhoneAuthStartPayload,
-    PhoneAuthSetupResponse,
-    PhoneAuthVerificationPayload,
-    PhoneClaimPayload,
-    PhoneRegisterPayload,
 } from "@/services/auth/auth.types"
 import {
     clearAuthTokens,
@@ -190,46 +190,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     }, [])
 
-    const startPhoneAuth = async (payload: PhoneAuthStartPayload) => {
+    const signIn = async (credentials: LoginCredentials): Promise<LoginResult> => {
         try {
-            return await startPhoneAuthRequest(payload)
-        } catch (error) {
-            throw new Error(mapAuthErrorMessage(error, translate("auth.error.loginFallback")))
-        }
-    }
-
-    const signIn = async (credentials: LoginCredentials): Promise<AuthUser> => {
-        try {
-            const nextUser = await loginWithPhone(credentials)
-            setUser(nextUser)
-            return nextUser
+            const result = await authenticate(credentials)
+            if (!result.verificationRequired) {
+                setUser(result.user)
+            }
+            return result
         } catch (error) {
             clearAuthTokens()
             throw new Error(mapAuthErrorMessage(error, translate("auth.error.loginFallback")))
         }
     }
 
-    const claimPhoneAccount = async (payload: PhoneClaimPayload): Promise<PhoneAuthSetupResponse> => {
+    const register = async (payload: RegistrationPayload) => {
         try {
-            return await claimPhoneAccountRequest(payload)
+            return await registerAccount(payload)
         } catch (error) {
             clearAuthTokens()
             throw new Error(mapAuthErrorMessage(error, translate("auth.error.registerFallback")))
         }
     }
 
-    const registerPhoneAccount = async (payload: PhoneRegisterPayload): Promise<PhoneAuthSetupResponse> => {
+    const verifyLogin = async (payload: LoginVerifyPayload) => {
         try {
-            return await registerPhoneAccountRequest(payload)
-        } catch (error) {
-            clearAuthTokens()
-            throw new Error(mapAuthErrorMessage(error, translate("auth.error.registerFallback")))
-        }
-    }
-
-    const verifyPhoneAuth = async (payload: PhoneAuthVerificationPayload) => {
-        try {
-            const nextUser = await verifyPhoneAuthRequest(payload)
+            const nextUser = await verifyLoginRequest(payload)
             setUser(nextUser)
         } catch (error) {
             clearAuthTokens()
@@ -237,9 +222,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
     }
 
-    const resendPhoneAuthCode = async (payload: PhoneAuthStartPayload) => {
+    const resendLoginCode = async (payload: LoginCredentials) => {
         try {
-            return await resendPhoneAuthCodeRequest(payload)
+            return await resendLoginCodeRequest(payload)
+        } catch (error) {
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.resendCodeFallback")))
+        }
+    }
+
+    const verifyRegistration = async (payload: RegistrationVerifyPayload) => {
+        try {
+            const nextUser = await verifyRegistrationRequest(payload)
+            setUser(nextUser)
+        } catch (error) {
+            clearAuthTokens()
+            throw new Error(mapAuthErrorMessage(error, translate("auth.error.verifyFallback")))
+        }
+    }
+
+    const resendRegistrationCode = async (payload: RegistrationCodeResendPayload) => {
+        try {
+            return await resendRegistrationCodeRequest(payload)
         } catch (error) {
             throw new Error(mapAuthErrorMessage(error, translate("auth.error.resendCodeFallback")))
         }
@@ -293,12 +296,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 isReady,
                 isAuthenticated,
                 user,
-                startPhoneAuth,
                 signIn,
-                claimPhoneAccount,
-                registerPhoneAccount,
-                verifyPhoneAuth,
-                resendPhoneAuthCode,
+                verifyLogin,
+                resendLoginCode,
+                register,
+                verifyRegistration,
+                resendRegistrationCode,
                 acceptSession,
                 updatePersonalData,
                 signOut,

@@ -3,33 +3,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.services.auth import (
-    claim_user_by_phone,
     delete_user_account,
-    login_user_by_phone,
+    login_user,
     login_user_by_telegram,
     logout_user_session,
     refresh_user_tokens,
-    register_user_by_phone,
-    resend_phone_auth_verification_code,
-    start_phone_auth,
-    verify_phone_auth,
+    register_user,
+    resend_login_verification_code,
+    resend_registration_verification_code,
+    verify_login_user,
+    verify_registration_user,
 )
 from src.database import get_db
 from src.database.models.auth.user import User
-from src.integrations.moysklad import MoySkladClient, get_moysklad_client
 
 from .dependencies import get_current_user
+from .schemas.login import UserLoginPayload, UserLoginVerifyPayload
 from .schemas.logout import UserLogoutPayload
-from .schemas.phone import (
-    PhoneAuthClaimPayload,
-    PhoneAuthCodeResendPayload,
-    PhoneAuthCodeSentResponse,
-    PhoneAuthLoginPayload,
-    PhoneAuthRegisterPayload,
-    PhoneAuthStartPayload,
-    PhoneAuthStartResponse,
-    PhoneAuthVerificationRequiredResponse,
-    PhoneAuthVerifyPayload,
+from .schemas.register import (
+    UserRegisterPayload,
+    UserRegisterVerifyPayload,
+    UserRegistrationStartedResponse,
+    UserVerificationCodeResendPayload,
+    UserVerificationCodeSentResponse,
 )
 from .schemas.refresh import UserRefreshPayload
 from .schemas.responses import (
@@ -37,40 +33,41 @@ from .schemas.responses import (
     AuthRefreshResponse,
     AuthTokensWithUserResponse,
     AuthUserRead,
+    AuthVerificationRequiredResponse,
 )
 from .schemas.telegram import TelegramAuthContactRequiredResponse, TelegramAuthPayload
 
 auth_router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@auth_router.post("/phone/start", response_model=PhoneAuthStartResponse, status_code=status.HTTP_200_OK)
-async def phone_auth_start(request: Request, payload: PhoneAuthStartPayload, db: AsyncSession = Depends(get_db), moysklad_client: MoySkladClient = Depends(get_moysklad_client)) -> PhoneAuthStartResponse:
-    return await start_phone_auth(request, payload, db, moysklad_client)
+@auth_router.post("/register", response_model=UserRegistrationStartedResponse, status_code=status.HTTP_201_CREATED)
+async def register(request: Request, payload: UserRegisterPayload, db: AsyncSession = Depends(get_db)) -> UserRegistrationStartedResponse:
+    return await register_user(request, payload, db)
 
 
-@auth_router.post("/phone/login", response_model=AuthTokensWithUserResponse, status_code=status.HTTP_200_OK)
-async def phone_login(request: Request, payload: PhoneAuthLoginPayload, db: AsyncSession = Depends(get_db), moysklad_client: MoySkladClient = Depends(get_moysklad_client)) -> AuthTokensWithUserResponse:
-    return await login_user_by_phone(request, payload, db, moysklad_client)
+@auth_router.post("/register/verify", response_model=AuthTokensWithUserResponse, status_code=status.HTTP_200_OK)
+async def verify_registration(request: Request, payload: UserRegisterVerifyPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse:
+    return await verify_registration_user(request, payload, db)
 
 
-@auth_router.post("/phone/claim", response_model=AuthTokensWithUserResponse | PhoneAuthVerificationRequiredResponse, status_code=status.HTTP_200_OK)
-async def phone_claim(request: Request, payload: PhoneAuthClaimPayload, db: AsyncSession = Depends(get_db), moysklad_client: MoySkladClient = Depends(get_moysklad_client)) -> AuthTokensWithUserResponse | PhoneAuthVerificationRequiredResponse:
-    return await claim_user_by_phone(request, payload, db, moysklad_client)
+@auth_router.post("/register/resend-code", response_model=UserVerificationCodeSentResponse, status_code=status.HTTP_200_OK)
+async def resend_registration_code(request: Request, payload: UserVerificationCodeResendPayload, db: AsyncSession = Depends(get_db)) -> UserVerificationCodeSentResponse:
+    return await resend_registration_verification_code(request, payload, db)
 
 
-@auth_router.post("/phone/register", response_model=AuthTokensWithUserResponse | PhoneAuthVerificationRequiredResponse, status_code=status.HTTP_200_OK)
-async def phone_register(request: Request, payload: PhoneAuthRegisterPayload, db: AsyncSession = Depends(get_db), moysklad_client: MoySkladClient = Depends(get_moysklad_client)) -> AuthTokensWithUserResponse | PhoneAuthVerificationRequiredResponse:
-    return await register_user_by_phone(request, payload, db, moysklad_client)
+@auth_router.post("/login", response_model=AuthTokensWithUserResponse | AuthVerificationRequiredResponse, status_code=status.HTTP_200_OK)
+async def login(request: Request, payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
+    return await login_user(request, payload, db)
 
 
-@auth_router.post("/phone/verify", response_model=AuthTokensWithUserResponse, status_code=status.HTTP_200_OK)
-async def phone_verify(request: Request, payload: PhoneAuthVerifyPayload, db: AsyncSession = Depends(get_db), moysklad_client: MoySkladClient = Depends(get_moysklad_client)) -> AuthTokensWithUserResponse:
-    return await verify_phone_auth(request, payload, db, moysklad_client)
+@auth_router.post("/login/verify", response_model=AuthTokensWithUserResponse, status_code=status.HTTP_200_OK)
+async def verify_login(request: Request, payload: UserLoginVerifyPayload, db: AsyncSession = Depends(get_db)) -> AuthTokensWithUserResponse:
+    return await verify_login_user(request, payload, db)
 
 
-@auth_router.post("/phone/resend-code", response_model=PhoneAuthCodeSentResponse, status_code=status.HTTP_200_OK)
-async def resend_phone_verification_code(request: Request, payload: PhoneAuthCodeResendPayload, db: AsyncSession = Depends(get_db)) -> PhoneAuthCodeSentResponse:
-    return await resend_phone_auth_verification_code(request, payload, db)
+@auth_router.post("/login/resend-code", response_model=AuthVerificationRequiredResponse, status_code=status.HTTP_200_OK)
+async def resend_login_code(request: Request, payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -> AuthVerificationRequiredResponse:
+    return await resend_login_verification_code(request, payload, db)
 
 
 @auth_router.post("/telegram/session", response_model=AuthTokensWithUserResponse | TelegramAuthContactRequiredResponse, status_code=status.HTTP_200_OK)

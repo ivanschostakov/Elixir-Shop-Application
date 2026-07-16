@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from config import (
+    AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA,
     AUTH_RATE_LIMIT_MAX_REQUESTS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
     AUTH_VERIFY_RATE_LIMIT_MAX_REQUESTS,
@@ -24,6 +25,7 @@ from config import (
     TELEGRAM_BOT_TOKEN,
     ufa_now,
 )
+from src.app.modules.auth.schemas.login import UserLoginPayload, UserLoginVerifyPayload
 from src.app.modules.auth.schemas.phone import (
     PhoneAuthClaimPayload,
     PhoneAuthCodeResendPayload,
@@ -35,6 +37,13 @@ from src.app.modules.auth.schemas.phone import (
     PhoneAuthVerificationRequiredResponse,
     PhoneAuthVerifyPayload,
 )
+from src.app.modules.auth.schemas.register import (
+    UserRegisterPayload,
+    UserRegisterVerifyPayload,
+    UserRegistrationStartedResponse,
+    UserVerificationCodeResendPayload,
+    UserVerificationCodeSentResponse,
+)
 from src.app.modules.auth.schemas.logout import UserLogoutPayload
 from src.app.modules.auth.schemas.refresh import UserRefreshPayload
 from src.app.modules.auth.schemas.responses import (
@@ -42,6 +51,7 @@ from src.app.modules.auth.schemas.responses import (
     AuthRefreshResponse,
     AuthTokensWithUserResponse,
     AuthUserRead,
+    AuthVerificationRequiredResponse,
 )
 from src.app.modules.auth.schemas.telegram import (
     TelegramAuthContactRequiredResponse,
@@ -58,6 +68,7 @@ from src.app.services.email_verification import (
 from src.app.services.rate_limit import client_ip_from_request, enforce_rate_limit
 from src.app.services.security import create_access_token, hash_password, verify_password
 from src.app.services.security.refresh import create_refresh_token, hash_refresh_token, verify_refresh_token
+from src.database.crud.auth.admin import is_admin_user
 from src.database.crud.auth.email_verification_code import (
     create_email_verification_code,
     get_latest_pending_email_verification_code,
@@ -304,6 +315,133 @@ async def _verify_latest_email_code(user: User, code: str, db: AsyncSession) -> 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
 
     verification_code.used_at = ufa_now()
+
+
+async def _get_email_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
+    user = await get_user_by_email(db, payload.login)
+    if user is None or not user.is_active or not user.email or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    return user
+
+
+async def register_user(request: Request, payload: UserRegisterPayload, db: AsyncSession) -> UserRegistrationStartedResponse:
+    await _apply_auth_rate_limit(request, scope="auth:register", principal=payload.email)
+    password_hash = hash_password(payload.password)
+    existing_user = await get_user_by_email(db, payload.email)
+
+    if existing_user is not None and existing_user.is_active and existing_user.is_verified:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this email already exists")
+
+    try:
+        if existing_user is not None:
+            existing_user.password_hash = password_hash
+            existing_user.name = payload.name
+            existing_user.surname = payload.surname
+            existing_user.is_active = True
+            existing_user.is_verified = False
+            user = existing_user
+        else:
+            user = await create_user(
+                db,
+                UserCreate(
+                    email=payload.email,
+                    password_hash=password_hash,
+                    name=payload.name,
+                    surname=payload.surname,
+                    phone_number=None,
+                    is_verified=False,
+                ),
+                commit=False,
+            )
+        await _create_and_send_verification_code(user, db)
+        await db.commit()
+        await db.refresh(user)
+    except IntegrityError as error:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this email already exists") from error
+    except (EmailVerificationConfigError, EmailVerificationDeliveryError) as error:
+        await db.rollback()
+        logger.exception("Failed to send email verification code during registration")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from error
+
+    return UserRegistrationStartedResponse(user_id=user.id, email=user.email, message="Verification code sent")
+
+
+async def verify_registration_user(request: Request, payload: UserRegisterVerifyPayload, db: AsyncSession) -> AuthTokensWithUserResponse:
+    await _apply_auth_rate_limit(request, scope="auth:register_verify", principal=payload.email, verify=True)
+    user = await get_user_by_email(db, payload.email)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code")
+    if user.is_verified:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already verified")
+
+    await _verify_latest_email_code(user, payload.code, db)
+    user.is_verified = True
+    await db.commit()
+    await db.refresh(user)
+    return await _build_auth_tokens_response(user, db)
+
+
+async def resend_registration_verification_code(request: Request, payload: UserVerificationCodeResendPayload, db: AsyncSession) -> UserVerificationCodeSentResponse:
+    await _apply_auth_rate_limit(request, scope="auth:register_resend", principal=payload.email)
+    user = await get_user_by_email(db, payload.email)
+    if user is None or not user.is_active or user.is_verified:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found or already verified")
+
+    try:
+        await _create_and_send_verification_code(user, db)
+        await db.commit()
+    except (EmailVerificationConfigError, EmailVerificationDeliveryError) as error:
+        await db.rollback()
+        logger.exception("Failed to resend email verification code")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from error
+
+    return UserVerificationCodeSentResponse(email=user.email, message="Verification code sent")
+
+
+async def login_user(request: Request, payload: UserLoginPayload, db: AsyncSession) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
+    await _apply_auth_rate_limit(request, scope="auth:login", principal=payload.login)
+    user = await _get_email_login_user(payload, db)
+
+    if AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA and await is_admin_user(db, user.id):
+        return await _build_auth_tokens_response(user, db)
+
+    try:
+        await _create_and_send_verification_code(user, db)
+        await db.commit()
+    except (EmailVerificationConfigError, EmailVerificationDeliveryError) as error:
+        await db.rollback()
+        logger.exception("Failed to send email verification code during login")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from error
+    return AuthVerificationRequiredResponse(email=user.email, message="Verification code sent")
+
+
+async def verify_login_user(request: Request, payload: UserLoginVerifyPayload, db: AsyncSession) -> AuthTokensWithUserResponse:
+    await _apply_auth_rate_limit(request, scope="auth:login_verify", principal=payload.email, verify=True)
+    user = await get_user_by_email(db, payload.email)
+    if user is None or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code")
+
+    await _verify_latest_email_code(user, payload.code, db)
+    if not user.is_verified:
+        user.is_verified = True
+    await db.commit()
+    await db.refresh(user)
+    return await _build_auth_tokens_response(user, db)
+
+
+async def resend_login_verification_code(request: Request, payload: UserLoginPayload, db: AsyncSession) -> AuthVerificationRequiredResponse:
+    await _apply_auth_rate_limit(request, scope="auth:login_resend", principal=payload.login)
+    user = await _get_email_login_user(payload, db)
+    try:
+        await _create_and_send_verification_code(user, db)
+        await db.commit()
+    except (EmailVerificationConfigError, EmailVerificationDeliveryError) as error:
+        await db.rollback()
+        logger.exception("Failed to resend email verification code during login")
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from error
+
+    return AuthVerificationRequiredResponse(email=user.email, message="Verification code sent")
 
 
 async def _finalize_phone_auth_setup(user: User, db: AsyncSession) -> AuthTokensWithUserResponse | PhoneAuthVerificationRequiredResponse:

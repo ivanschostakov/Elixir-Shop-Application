@@ -19,7 +19,7 @@ class UserBase(BaseModel):
     email: EmailStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
     name: str = Field(min_length=1, max_length=PERSON_NAME_MAX_LENGTH)
     surname: str = Field(min_length=1, max_length=PERSON_NAME_MAX_LENGTH)
-    phone_number: str = Field(min_length=1, max_length=PHONE_NUMBER_MAX_LENGTH)
+    phone_number: str | None = Field(default=None, min_length=1, max_length=PHONE_NUMBER_MAX_LENGTH)
 
 
 class UserCreate(UserBase):

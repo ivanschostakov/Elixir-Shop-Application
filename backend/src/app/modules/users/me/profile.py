@@ -25,8 +25,6 @@ async def update_my_personal_data(payload: PersonalDataUpdatePayload, db: AsyncS
     if payload.name is not None: current_user.name = payload.name
     if payload.surname is not None: current_user.surname = payload.surname
     if "phone_number" in payload.model_fields_set:
-        if payload.phone_number is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone number is required")
         current_user.phone_number = payload.phone_number
     if payload.password is not None: current_user.password_hash = hash_password(payload.password)
 
