@@ -18,6 +18,7 @@ const APP_INTEGRITY_HEADERS = {
 } as const
 
 let preparedAndroidProjectNumber: string | null = null
+let androidProjectNumberRequest: Promise<string> | null = null
 let iosRegistrationRequest: Promise<string> | null = null
 let iosKeyStateMigrationRequest: Promise<void> | null = null
 
@@ -56,8 +57,34 @@ type IosRegisterResponse = {
     environment: string
 }
 
-function getAndroidCloudProjectNumber() {
-    return ANDROID_CLOUD_PROJECT_NUMBER
+type AppIntegrityConfigResponse = {
+    android_cloud_project_number?: unknown
+}
+
+async function getAndroidCloudProjectNumber() {
+    if (!androidProjectNumberRequest) {
+        androidProjectNumberRequest = appIntegrityFetch<AppIntegrityConfigResponse>("/v1/app-integrity/config", {
+            method: "GET",
+        })
+            .then(({ android_cloud_project_number: projectNumber }) => {
+                if (typeof projectNumber !== "string" || !projectNumber.trim()) {
+                    if (ANDROID_CLOUD_PROJECT_NUMBER) {
+                        return ANDROID_CLOUD_PROJECT_NUMBER
+                    }
+                    throw new Error("missing_android_cloud_project_number")
+                }
+                return projectNumber.trim()
+            })
+            .catch((error) => {
+                androidProjectNumberRequest = null
+                if (ANDROID_CLOUD_PROJECT_NUMBER) {
+                    return ANDROID_CLOUD_PROJECT_NUMBER
+                }
+                throw error
+            })
+    }
+
+    return androidProjectNumberRequest
 }
 
 function randomHex(bytesLength: number) {
@@ -178,10 +205,7 @@ async function ensureAndroidProvider(cloudProjectNumber: string) {
 }
 
 async function getAndroidIntegrityHeaders(action: string, requestHash: string): Promise<AppIntegrityHeaders> {
-    const cloudProjectNumber = getAndroidCloudProjectNumber()
-    if (!cloudProjectNumber) {
-        throw new Error("missing_android_cloud_project_number")
-    }
+    const cloudProjectNumber = await getAndroidCloudProjectNumber()
 
     await ensureAndroidProvider(cloudProjectNumber)
     try {

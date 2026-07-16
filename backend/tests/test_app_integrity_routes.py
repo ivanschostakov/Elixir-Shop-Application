@@ -87,6 +87,20 @@ def test_orders_route_rejects_missing_app_integrity(guarded_app_overrides):
     assert response.json()["detail"] == "App integrity check failed"
 
 
+def test_app_integrity_config_is_public(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        app_integrity_router_module,
+        "APP_INTEGRITY_ANDROID_CLOUD_PROJECT_NUMBER",
+        "740198387474",
+    )
+
+    with TestClient(app) as test_client:
+        response = test_client.get("/api/v1/app-integrity/config")
+
+    assert response.status_code == 200
+    assert response.json() == {"android_cloud_project_number": "740198387474"}
+
+
 def test_payments_route_rejects_missing_app_integrity(guarded_app_overrides):
     with TestClient(app) as test_client:
         response = test_client.post("/api/v1/payments/create", json={"order_id": 1})

@@ -10,6 +10,10 @@ class AppIntegrityChallengeRead(BaseModel):
     challenge: str
 
 
+class AppIntegrityConfigRead(BaseModel):
+    android_cloud_project_number: str | None
+
+
 class IosAppAttestRegisterPayload(BaseModel):
     key_id: str = Field(min_length=1, max_length=128)
     challenge: str = Field(min_length=1, max_length=128)

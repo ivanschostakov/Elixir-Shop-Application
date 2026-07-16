@@ -2,13 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
+from config import APP_INTEGRITY_ANDROID_CLOUD_PROJECT_NUMBER
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.app_integrity import create_app_integrity_challenge, register_ios_app_attest_key as register_ios_app_attest_key_service
 from src.database import get_db
 from src.database.models import User
-from .schemas import AppIntegrityChallengeRead, AppIntegrityChallengeCreate, IosAppAttestRegisterRead, IosAppAttestRegisterPayload
+from .schemas import AppIntegrityChallengeRead, AppIntegrityChallengeCreate, AppIntegrityConfigRead, IosAppAttestRegisterRead, IosAppAttestRegisterPayload
 
 app_integrity_router = APIRouter(prefix="/app-integrity", tags=["app-integrity"])
+
+
+@app_integrity_router.get("/config", response_model=AppIntegrityConfigRead, status_code=status.HTTP_200_OK)
+async def get_app_integrity_config() -> AppIntegrityConfigRead:
+    return AppIntegrityConfigRead(
+        android_cloud_project_number=APP_INTEGRITY_ANDROID_CLOUD_PROJECT_NUMBER,
+    )
 
 
 @app_integrity_router.post("/ios/challenge", response_model=AppIntegrityChallengeRead, status_code=status.HTTP_200_OK)
