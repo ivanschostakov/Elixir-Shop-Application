@@ -90,7 +90,7 @@ from src.database.limits import PERSON_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH,
 from src.database.models.auth.user import User
 from src.database.schemas.auth.user import UserCreate
 from src.database.schemas.auth.user_session import UserSessionCreate, UserSessionUpdate
-from src.integrations.moysklad import MoySkladClient
+from src.integrations.moysklad import MoySkladClient, get_moysklad_client
 from src.normalize import coerce_uuid, normalize_email, normalize_phone, optional_str
 
 logger = getLogger(__name__)
@@ -267,6 +267,44 @@ async def _resolve_user_for_phone(
     return None, counterparty
 
 
+async def _link_moysklad_counterparty_by_email(user: User, db: AsyncSession) -> None:
+    if user.moysklad_counterparty_id is not None:
+        return
+
+    email = normalize_email(user.email)
+    if not email:
+        return
+
+    moysklad_client = get_moysklad_client()
+    if not moysklad_client.is_configured():
+        return
+
+    try:
+        counterparty = await moysklad_client.get_counterparty_by_email(email)
+    except Exception:
+        logger.exception(
+            "Failed to find MoySklad counterparty by email during authentication user_id=%s",
+            user.id,
+        )
+        return
+
+    counterparty_id = coerce_uuid(counterparty.get("id")) if isinstance(counterparty, dict) else None
+    if counterparty_id is None:
+        return
+
+    try:
+        user.moysklad_counterparty_id = counterparty_id
+        await db.commit()
+        await db.refresh(user)
+    except Exception:
+        await db.rollback()
+        await db.refresh(user)
+        logger.exception(
+            "Failed to save MoySklad counterparty email link during authentication user_id=%s",
+            user.id,
+        )
+
+
 def _sync_phone_identity_from_counterparty(user: User, *, phone_number: str, counterparty: dict[str, object] | None) -> bool:
     changed = False
     if normalize_phone(user.phone_number) != phone_number:
@@ -282,6 +320,7 @@ def _sync_phone_identity_from_counterparty(user: User, *, phone_number: str, cou
 
 
 async def _build_auth_tokens_response(user: User, db: AsyncSession) -> AuthTokensWithUserResponse:
+    await _link_moysklad_counterparty_by_email(user, db)
     refresh_token = create_refresh_token()
     refresh_token_hash = hash_refresh_token(refresh_token)
     session = await create_user_session(db, UserSessionCreate(user_id=user.id, refresh_token_hash=refresh_token_hash))

@@ -86,3 +86,69 @@ async def test_get_counterparty_by_phone_returns_none_for_blank_phone(monkeypatc
     result = await client.get_counterparty_by_phone("  ")
 
     assert result is None
+
+
+@pytest.mark.anyio
+async def test_get_counterparty_by_email_normalizes_and_matches_exact_email(monkeypatch):
+    client = MoySkladClient(token="token", base_url="https://example.test/api/remap/1.2")
+    recorded_call: dict[str, object] = {}
+
+    async def fake_get_page(path: str, *, limit: int = 100, offset: int = 0, **params):
+        recorded_call.update({"path": path, "limit": limit, "offset": offset, "params": params})
+        return {
+            "rows": [
+                {"id": "counterparty-1", "email": "other@example.com"},
+                {"id": "counterparty-2", "email": "Customer@Example.com"},
+            ]
+        }
+
+    monkeypatch.setattr(client, "get_page", fake_get_page)
+
+    result = await client.get_counterparty_by_email(" Customer@Example.com ")
+
+    assert result == {"id": "counterparty-2", "email": "Customer@Example.com"}
+    assert recorded_call == {
+        "path": "/entity/counterparty",
+        "limit": 100,
+        "offset": 0,
+        "params": {
+            "search": "customer@example.com",
+            "expand": "contactpersons",
+        },
+    }
+
+
+@pytest.mark.anyio
+async def test_get_counterparty_by_email_matches_contactperson_email(monkeypatch):
+    client = MoySkladClient(token="token", base_url="https://example.test/api/remap/1.2")
+
+    async def fake_get_page(*_args, **_kwargs):
+        return {
+            "rows": [
+                {
+                    "id": "counterparty-1",
+                    "contactpersons": {"rows": [{"email": "customer@example.com"}]},
+                }
+            ]
+        }
+
+    monkeypatch.setattr(client, "get_page", fake_get_page)
+
+    result = await client.get_counterparty_by_email("customer@example.com")
+
+    assert result == {
+        "id": "counterparty-1",
+        "contactpersons": {"rows": [{"email": "customer@example.com"}]},
+    }
+
+
+@pytest.mark.anyio
+async def test_get_counterparty_by_email_does_not_accept_inexact_search_result(monkeypatch):
+    client = MoySkladClient(token="token", base_url="https://example.test/api/remap/1.2")
+
+    async def fake_get_page(*_args, **_kwargs):
+        return {"rows": [{"id": "counterparty-1", "email": "other@example.com"}]}
+
+    monkeypatch.setattr(client, "get_page", fake_get_page)
+
+    assert await client.get_counterparty_by_email("customer@example.com") is None

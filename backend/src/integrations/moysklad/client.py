@@ -197,6 +197,42 @@ class MoySkladClient:
 
         return next((row for row in rows if isinstance(row, dict)), None)
 
+    @staticmethod
+    def _counterparty_email_matches(row: dict[str, Any], normalized_email: str) -> bool:
+        if normalize_email(row.get("email")) == normalized_email: return True
+
+        contactpersons = row.get("contactpersons")
+        if isinstance(contactpersons, dict): contactpersons = contactpersons.get("rows")
+        if not isinstance(contactpersons, list): return False
+
+        return any(
+            isinstance(contactperson, dict)
+            and normalize_email(contactperson.get("email")) == normalized_email
+            for contactperson in contactpersons
+        )
+
+    async def get_counterparty_by_email(self, email: str) -> dict[str, Any] | None:
+        normalized_email = normalize_email(email)
+        if not normalized_email: return None
+
+        data = await self.get_page(
+            "/entity/counterparty",
+            limit=100,
+            search=normalized_email,
+            expand="contactpersons",
+        )
+        rows = data.get("rows")
+        if not isinstance(rows, list): return None
+
+        return next(
+            (
+                row
+                for row in rows
+                if isinstance(row, dict) and self._counterparty_email_matches(row, normalized_email)
+            ),
+            None,
+        )
+
     async def get_counterparty(self, counterparty_id: UUID) -> dict[str, Any] | None:
         return await self._get_entity_by_id("counterparty", counterparty_id)
 

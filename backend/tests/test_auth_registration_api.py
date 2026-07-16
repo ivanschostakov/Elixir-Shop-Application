@@ -11,6 +11,7 @@ import pytest
 from src.app.modules.auth.schemas.phone import PhoneAuthRegisterPayload, PhoneAuthStartPayload
 from src.app.modules.auth.schemas.telegram import TelegramAuthPayload
 from src.app.services.auth.service import (
+    _link_moysklad_counterparty_by_email,
     link_telegram_contact_to_user,
     login_user_by_phone,
     login_user_by_telegram,
@@ -33,6 +34,65 @@ class _DummyDbSession:
 
     async def rollback(self):
         self.rolled_back = True
+
+
+@pytest.mark.anyio
+async def test_auth_links_moysklad_counterparty_by_email(monkeypatch: pytest.MonkeyPatch):
+    db = _DummyDbSession()
+    counterparty_id = uuid4()
+    user = SimpleNamespace(
+        id=17,
+        email=" Customer@Example.com ",
+        moysklad_counterparty_id=None,
+    )
+    captured: dict[str, object] = {}
+
+    class FakeMoySkladClient:
+        def is_configured(self) -> bool:
+            return True
+
+        async def get_counterparty_by_email(self, email: str):
+            captured["email"] = email
+            return {"id": str(counterparty_id)}
+
+    monkeypatch.setattr(
+        "src.app.services.auth.service.get_moysklad_client",
+        lambda: FakeMoySkladClient(),
+    )
+
+    await _link_moysklad_counterparty_by_email(user, db)
+
+    assert captured["email"] == "customer@example.com"
+    assert user.moysklad_counterparty_id == counterparty_id
+    assert db.committed is True
+    assert db.refreshed_user is user
+
+
+@pytest.mark.anyio
+async def test_auth_email_link_failure_does_not_block_authentication(monkeypatch: pytest.MonkeyPatch):
+    db = _DummyDbSession()
+    user = SimpleNamespace(
+        id=17,
+        email="customer@example.com",
+        moysklad_counterparty_id=None,
+    )
+
+    class FailingMoySkladClient:
+        def is_configured(self) -> bool:
+            return True
+
+        async def get_counterparty_by_email(self, _email: str):
+            raise RuntimeError("MoySklad unavailable")
+
+    monkeypatch.setattr(
+        "src.app.services.auth.service.get_moysklad_client",
+        lambda: FailingMoySkladClient(),
+    )
+
+    await _link_moysklad_counterparty_by_email(user, db)
+
+    assert user.moysklad_counterparty_id is None
+    assert db.rolled_back is False
 
 
 def test_phone_auth_start_payload_normalizes_phone():
