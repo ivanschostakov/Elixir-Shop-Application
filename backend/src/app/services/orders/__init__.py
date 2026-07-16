@@ -73,9 +73,20 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
     return await _order_payments.reconcile_sbp_payment(session, order, payment_step=payment_step, payment_status_code=payment_status_code, payment_data=payment_data, invoice_id=invoice_id)
 
 
-async def create_payment_for_order(session: AsyncSession, *, request: Request, order: Order) -> dict:
+async def create_payment_for_order(
+    session: AsyncSession,
+    *,
+    request: Request,
+    order: Order,
+    payment_method: str | None = None,
+) -> dict:
     _sync_runtime_dependencies()
-    return await _order_payments.create_payment_for_order(session, request=request, order=order)
+    return await _order_payments.create_payment_for_order(
+        session,
+        request=request,
+        order=order,
+        payment_method=payment_method,
+    )
 
 
 async def get_payment_status_for_order(session: AsyncSession, *, request: Request, order: Order) -> dict:

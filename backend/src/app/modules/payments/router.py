@@ -16,7 +16,14 @@ payments_router = APIRouter(prefix="/payments", tags=["payments"])
 async def create_payment(payload: CreatePaymentPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:create"))) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=payload.order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    return PaymentStatusRead.model_validate(await create_payment_for_order(db, request=request, order=order))
+    return PaymentStatusRead.model_validate(
+        await create_payment_for_order(
+            db,
+            request=request,
+            order=order,
+            payment_method=payload.payment_method,
+        )
+    )
 
 
 @payments_router.get("/status", response_model=PaymentStatusRead)

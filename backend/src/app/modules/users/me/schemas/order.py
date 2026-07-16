@@ -16,6 +16,7 @@ class CreateOrderPayload(BaseModel):
 
 class CreatePaymentPayload(BaseModel):
     order_id: int = Field(ge=1)
+    payment_method: PaymentMethod | None = None
 
 
 class PaymentStatusRead(BaseModel):

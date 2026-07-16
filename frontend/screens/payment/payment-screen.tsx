@@ -478,7 +478,10 @@ export default function PaymentScreen() {
                 void syncOrderStatusNotifications({ requestPermissions: true })
             }
 
-            const nextPayment = await createPayment({ order_id: nextOrder.id })
+            const nextPayment = await createPayment({
+                order_id: nextOrder.id,
+                payment_method: effectiveMethod,
+            })
             setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
             const resolvedNextMethod =
                 resolvePaymentMethod(nextPayment.payment_method)
@@ -538,6 +541,29 @@ export default function PaymentScreen() {
             setSubmitting(false)
         }
     }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, routePromoCode, selectedMethod, t])
+
+    const handleRetryPayment = useCallback(() => {
+        Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
+            {
+                text: t("checkout.paymentMethodCancel"),
+                style: "cancel",
+            },
+            {
+                text: t("payment.methodLaterTitle"),
+                onPress: () => {
+                    setSelectedMethod("later")
+                    void handleStartPayment("later")
+                },
+            },
+            {
+                text: t("payment.methodSbpTitle"),
+                onPress: () => {
+                    setSelectedMethod("sbp")
+                    void handleStartPayment("sbp")
+                },
+            },
+        ])
+    }, [handleStartPayment, t])
 
     const footerCtaState = useMemo(() => {
         if (loading || loadingOrder) {
@@ -616,9 +642,7 @@ export default function PaymentScreen() {
                 busy: false,
                 disabled: false,
                 label: t("payment.retry"),
-                onPress: () => {
-                    void handleStartPayment(selectedMethod)
-                },
+                onPress: handleRetryPayment,
             }
         }
 
@@ -639,8 +663,8 @@ export default function PaymentScreen() {
         }
     }, [
         canRetry,
-        handleStartPayment,
         handleRepeatOrder,
+        handleRetryPayment,
         isRepeatableOrder,
         isRepeating,
         isQrVisualReady,
@@ -651,7 +675,6 @@ export default function PaymentScreen() {
         phase,
         isSuccessVisualReady,
         resolvedPaymentMethod,
-        selectedMethod,
         submitting,
         t,
     ])

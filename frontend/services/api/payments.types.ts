@@ -1,5 +1,6 @@
 export type CreatePaymentPayload = {
     order_id: number
+    payment_method?: "later" | "sbp"
 }
 
 export type PaymentStatusRead = {

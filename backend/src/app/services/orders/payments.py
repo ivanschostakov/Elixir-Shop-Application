@@ -26,6 +26,7 @@ intellectmoney = get_intellectmoney_client()
 PAYMENT_STATUS_BY_CODE = {3: "created", 4: "canceled", 5: "paid", 6: "hold", 7: "partial", 8: "refunded"}
 PENDING_PAYMENT_STEPS = {"", "Created", "InProcess", "SendTo3DS"}
 FINAL_PAYMENT_STATUSES = {"paid", "canceled", "error", "refunded"}
+DEAD_PAYMENT_STATUSES = {"canceled", "error", "refunded"}
 
 
 def _payment_status_from_step(payment_step: str | None) -> str:
@@ -162,22 +163,132 @@ async def _ensure_persisted_paid_state(session: AsyncSession, order: Order) -> O
     return updated_order
 
 
-async def create_payment_for_order(session: AsyncSession, *, request: Request, order: Order) -> dict[str, Any]:
-    payment_method = (order.payment_method or "later").strip().lower()
+async def _checked_sbp_payment_payload(
+    session: AsyncSession,
+    *,
+    request: Request,
+    order: Order,
+) -> tuple[dict[str, Any], bool]:
+    payment_step = None
+    payment_status_code = None
+    qr_url = None
+    qr_image = None
+    provider_checked = False
+
+    try:
+        state_result = await intellectmoney.get_bank_card_payment_state(invoice_id=str(order.payment_invoice_id))
+        parsed_state = intellectmoney.parse_payment_state(state_result)
+        provider_checked = True
+        payment_step = parsed_state["payment_step"]
+        result_payload = state_result.get("Result") or {}
+        payment_status_raw = result_payload.get("PaymentStatus") if isinstance(result_payload, dict) else None
+        try:
+            payment_status_code = int(payment_status_raw) if payment_status_raw not in (None, "") else None
+        except (TypeError, ValueError):
+            payment_status_code = None
+        qr_url = parsed_state["qr_url"]
+        qr_image = parsed_state["qr_image"]
+        log.info(
+            "IntellectMoney status parsed order_number=%s invoice_id=%s payment_step=%s qr_url=%s qr_image=%s",
+            order.order_number,
+            order.payment_invoice_id,
+            payment_step,
+            qr_url,
+            _qr_debug(qr_image),
+        )
+        if payment_step or payment_status_code is not None:
+            order = await reconcile_sbp_payment(
+                session,
+                order,
+                payment_step=payment_step,
+                payment_status_code=payment_status_code,
+                invoice_id=str(order.payment_invoice_id),
+            )
+    except IntellectMoneyError:
+        log.warning("IntellectMoney status check failed for order %s", order.order_number)
+
+    order = await _ensure_persisted_paid_state(session, order)
+    saved_qr_image = await _resolve_payment_qr_image(request, order, qr_image=qr_image, qr_url=qr_url)
+    if payment_step in PENDING_PAYMENT_STEPS and (saved_qr_image or qr_image or qr_url):
+        order = await _move_lead_to_pending_payment(session, order)
+        await sync_moysklad_customerorder_state(order, state_name=MOY_SKLAD_STATE_INVOICE_SENT)
+
+    provider_confirmed_dead = provider_checked and (
+        payment_step == "Error"
+        or _payment_status_from_code(payment_status_code) in DEAD_PAYMENT_STATUSES
+    )
+    return (
+        _payment_status_payload(
+            order,
+            payment_step=payment_step,
+            qr_url=qr_url,
+            qr_image=saved_qr_image or qr_image,
+        ),
+        provider_confirmed_dead,
+    )
+
+
+async def create_payment_for_order(
+    session: AsyncSession,
+    *,
+    request: Request,
+    order: Order,
+    payment_method: str | None = None,
+) -> dict[str, Any]:
+    requested_payment_method = (payment_method or order.payment_method or "later").strip().lower()
     if order.is_paid or order.payment_status == "paid":
         order = await _ensure_persisted_paid_state(session, order)
         return _payment_status_payload(order)
 
-    if payment_method == "later":
-        order = await update_order(session, order, OrderUpdate(payment_method="later", payment_provider="manager", payment_status="pending", payment_error=""), commit=True)
-        return _payment_status_payload(order)
+    if requested_payment_method not in {"later", "sbp"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment method")
 
-    if payment_method != "sbp": raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported payment method")
+    has_existing_intellectmoney_payment = bool(
+        order.payment_invoice_id
+        and (
+            (order.payment_provider or "").strip().lower() == "intellectmoney"
+            or (order.payment_method or "").strip().lower() == "sbp"
+        )
+    )
+    if has_existing_intellectmoney_payment:
+        existing_payload, provider_confirmed_dead = await _checked_sbp_payment_payload(
+            session,
+            request=request,
+            order=order,
+        )
+        if not provider_confirmed_dead:
+            return existing_payload
+
+    if requested_payment_method == "later":
+        order = await update_order(
+            session,
+            order,
+            OrderUpdate(
+                payment_method="later",
+                payment_provider="manager",
+                payment_status="pending",
+                payment_invoice_id=None,
+                payment_error="",
+            ),
+            commit=True,
+        )
+        return _payment_status_payload(order)
 
     urls = _intellectmoney_urls(request, order.id)
     ip_address = _detect_request_ip(request)
     user_name = " ".join(part for part in [order.recipient.name, order.recipient.surname] if part).strip() or f"Заказ {order.order_number}"
-    order = await update_order(session, order, OrderUpdate(payment_method="sbp", payment_provider="intellectmoney", payment_status="created", payment_error=""), commit=True)
+    order = await update_order(
+        session,
+        order,
+        OrderUpdate(
+            payment_method="sbp",
+            payment_provider="intellectmoney",
+            payment_status="created",
+            payment_invoice_id=None,
+            payment_error="",
+        ),
+        commit=True,
+    )
 
     try:
         expires_at = datetime.now() + timedelta(minutes=30)
@@ -229,26 +340,10 @@ async def create_payment_for_order(session: AsyncSession, *, request: Request, o
 
 
 async def get_payment_status_for_order(session: AsyncSession, *, request: Request, order: Order) -> dict[str, Any]:
-    payment_step = None
-    qr_url = None
-    qr_image = None
-
     if (order.payment_method or "").lower() == "sbp"  and order.payment_invoice_id and (order.payment_status or "") not in FINAL_PAYMENT_STATUSES:
-        try:
-            state_result = await intellectmoney.get_bank_card_payment_state(invoice_id=str(order.payment_invoice_id))
-            parsed_state = intellectmoney.parse_payment_state(state_result)
-            payment_step = parsed_state["payment_step"]
-            qr_url = parsed_state["qr_url"]
-            qr_image = parsed_state["qr_image"]
-            log.info("IntellectMoney status parsed order_number=%s invoice_id=%s payment_step=%s qr_url=%s qr_image=%s", order.order_number, order.payment_invoice_id, payment_step, qr_url, _qr_debug(qr_image))
-            if payment_step:
-                order = await reconcile_sbp_payment(session, order, payment_step=payment_step, invoice_id=str(order.payment_invoice_id))
-                if payment_step in PENDING_PAYMENT_STEPS: order = await update_order(session, order, OrderUpdate(payment_status=_payment_status_from_step(payment_step)), commit=True)
-        except IntellectMoneyError as exc: log.warning("IntellectMoney status check failed for order %s", order.order_number)
+        payload, _ = await _checked_sbp_payment_payload(session, request=request, order=order)
+        return payload
 
     order = await _ensure_persisted_paid_state(session, order)
-    saved_qr_image = await _resolve_payment_qr_image(request, order, qr_image=qr_image, qr_url=qr_url)
-    if payment_step in PENDING_PAYMENT_STEPS and (saved_qr_image or qr_image or qr_url):
-        order = await _move_lead_to_pending_payment(session, order)
-        await sync_moysklad_customerorder_state(order, state_name=MOY_SKLAD_STATE_INVOICE_SENT)
-    return _payment_status_payload(order, payment_step=payment_step, qr_url=qr_url, qr_image=saved_qr_image or qr_image)
+    saved_qr_image = await _resolve_payment_qr_image(request, order, qr_image=None, qr_url=None)
+    return _payment_status_payload(order, qr_image=saved_qr_image)

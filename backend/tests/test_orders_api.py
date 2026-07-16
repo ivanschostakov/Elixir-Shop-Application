@@ -656,6 +656,168 @@ def test_create_payment_sbp_returns_qr_payload(client: TestClient, registered_us
     assert stored_order.payment_invoice_id == "invoice-1"
 
 
+def test_create_payment_reuses_active_intellectmoney_invoice(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
+    catalog = variant_factory(stock=5, price=Decimal("25.00"))
+    draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
+    order_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=registered_user["headers"],
+        json={"draft_id": draft["id"], "payment_method": "sbp"},
+    )
+    order_id = order_response.json()["id"]
+    calls = {"create_invoice": 0, "sbp_payment": 0, "status": 0}
+
+    async def fake_create_invoice(**kwargs):
+        calls["create_invoice"] += 1
+        return {"Result": {"InvoiceId": "active-invoice-1"}}
+
+    async def fake_sbp_payment(**kwargs):
+        calls["sbp_payment"] += 1
+        return {"Result": {"PaymentStep": "Created"}}
+
+    async def fake_get_bank_card_payment_state(**kwargs):
+        calls["status"] += 1
+        return {
+            "Result": {
+                "PaymentStep": "Created",
+                "Form3DS": '{"SbpQrCodeUrl":"https://example.com/active-qr"}',
+            }
+        }
+
+    async def fake_resolve_payment_qr_image(*args, **kwargs):
+        return "https://api.example.test/media/orders/1/active-qr.png"
+
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.create_invoice", fake_create_invoice)
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.sbp_payment", fake_sbp_payment)
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.get_bank_card_payment_state", fake_get_bank_card_payment_state)
+    monkeypatch.setattr("src.app.services.orders._resolve_payment_qr_image", fake_resolve_payment_qr_image)
+
+    first_response = client.post(
+        "/api/v1/payments/create",
+        headers=registered_user["headers"],
+        json={"order_id": order_id, "payment_method": "sbp"},
+    )
+    retry_response = client.post(
+        "/api/v1/payments/create",
+        headers=registered_user["headers"],
+        json={"order_id": order_id, "payment_method": "later"},
+    )
+
+    assert first_response.status_code == 200, first_response.text
+    assert retry_response.status_code == 200, retry_response.text
+    retry_payload = retry_response.json()
+    assert retry_payload["payment_method"] == "sbp"
+    assert retry_payload["payment_status"] == "pending"
+    assert retry_payload["invoice_id"] == "active-invoice-1"
+    assert retry_payload["qr_url"] == "https://example.com/active-qr"
+    assert calls == {"create_invoice": 1, "sbp_payment": 1, "status": 2}
+
+
+def test_create_payment_replaces_only_provider_confirmed_dead_invoice(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
+    catalog = variant_factory(stock=5, price=Decimal("25.00"))
+    draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
+    order_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=registered_user["headers"],
+        json={"draft_id": draft["id"], "payment_method": "sbp"},
+    )
+    order_id = order_response.json()["id"]
+    calls = {"create_invoice": 0, "sbp_payment": 0, "status": 0}
+
+    async def fake_create_invoice(**kwargs):
+        calls["create_invoice"] += 1
+        return {"Result": {"InvoiceId": f"invoice-{calls['create_invoice']}"}}
+
+    async def fake_sbp_payment(**kwargs):
+        calls["sbp_payment"] += 1
+        return {"Result": {"PaymentStep": "Created"}}
+
+    async def fake_get_bank_card_payment_state(**kwargs):
+        calls["status"] += 1
+        payment_step = "Error" if calls["status"] == 2 else "Created"
+        return {"Result": {"PaymentStep": payment_step}}
+
+    async def fake_resolve_payment_qr_image(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.create_invoice", fake_create_invoice)
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.sbp_payment", fake_sbp_payment)
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.get_bank_card_payment_state", fake_get_bank_card_payment_state)
+    monkeypatch.setattr("src.app.services.orders._resolve_payment_qr_image", fake_resolve_payment_qr_image)
+
+    first_response = client.post(
+        "/api/v1/payments/create",
+        headers=registered_user["headers"],
+        json={"order_id": order_id, "payment_method": "sbp"},
+    )
+    retry_response = client.post(
+        "/api/v1/payments/create",
+        headers=registered_user["headers"],
+        json={"order_id": order_id, "payment_method": "sbp"},
+    )
+
+    assert first_response.status_code == 200, first_response.text
+    assert retry_response.status_code == 200, retry_response.text
+    retry_payload = retry_response.json()
+    assert retry_payload["payment_status"] == "pending"
+    assert retry_payload["invoice_id"] == "invoice-2"
+    assert calls == {"create_invoice": 2, "sbp_payment": 2, "status": 3}
+
+
+def test_retry_payment_can_switch_method_after_intellectmoney_payment_dies(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
+    catalog = variant_factory(stock=5, price=Decimal("25.00"))
+    draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
+    order_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=registered_user["headers"],
+        json={"draft_id": draft["id"], "payment_method": "sbp"},
+    )
+    order_id = order_response.json()["id"]
+    status_calls = 0
+
+    async def fake_create_invoice(**kwargs):
+        return {"Result": {"InvoiceId": "dead-invoice-1"}}
+
+    async def fake_sbp_payment(**kwargs):
+        return {"Result": {"PaymentStep": "Created"}}
+
+    async def fake_get_bank_card_payment_state(**kwargs):
+        nonlocal status_calls
+        status_calls += 1
+        return {"Result": {"PaymentStep": "Created" if status_calls == 1 else "Error"}}
+
+    async def fake_resolve_payment_qr_image(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.create_invoice", fake_create_invoice)
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.sbp_payment", fake_sbp_payment)
+    monkeypatch.setattr("src.app.services.orders.intellectmoney.get_bank_card_payment_state", fake_get_bank_card_payment_state)
+    monkeypatch.setattr("src.app.services.orders._resolve_payment_qr_image", fake_resolve_payment_qr_image)
+
+    first_response = client.post(
+        "/api/v1/payments/create",
+        headers=registered_user["headers"],
+        json={"order_id": order_id, "payment_method": "sbp"},
+    )
+    retry_response = client.post(
+        "/api/v1/payments/create",
+        headers=registered_user["headers"],
+        json={"order_id": order_id, "payment_method": "later"},
+    )
+
+    assert first_response.status_code == 200, first_response.text
+    assert retry_response.status_code == 200, retry_response.text
+    retry_payload = retry_response.json()
+    assert retry_payload["payment_method"] == "later"
+    assert retry_payload["payment_status"] == "pending"
+    assert retry_payload["invoice_id"] is None
+
+    stored_order = _get_order(order_id)
+    assert stored_order.payment_method == "later"
+    assert stored_order.payment_provider == "manager"
+    assert stored_order.payment_invoice_id is None
+
+
 def test_create_payment_sbp_error_keeps_order_retryable(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
     catalog = variant_factory(stock=5, price=Decimal("25.00"))
     draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
