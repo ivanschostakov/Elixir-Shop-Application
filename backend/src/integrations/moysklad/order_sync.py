@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import AMOCRM_BASE_DOMAIN, MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID, MOY_SKLAD_SALES_CHANNEL_HREF
+from config import AMOCRM_BASE_URL, MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID, MOY_SKLAD_SALES_CHANNEL_HREF
 from src.database.models import Order, Product, User, Variant
 from src.integrations.delivery.schemas import COUNTRY_NAMES
 from src.normalize import coerce_uuid, extract_dict, lower_optional_str, optional_str
@@ -339,9 +339,9 @@ def _moysklad_attr_values(order: Order) -> dict[str, Any]:
 
 def _amocrm_lead_link(order: Order) -> str | None:
     lead_id = optional_str(order.__dict__.get("amocrm_lead_id"))
-    domain = optional_str(AMOCRM_BASE_DOMAIN)
-    if not lead_id or not domain: return None
-    normalized_domain = domain.replace("https://", "").replace("http://", "").strip("/")
+    base_url = optional_str(AMOCRM_BASE_URL)
+    if not lead_id or not base_url: return None
+    normalized_domain = base_url.replace("https://", "").replace("http://", "").strip("/")
     if not normalized_domain: return None
     return f"https://{normalized_domain}/leads/detail/{lead_id}"
 

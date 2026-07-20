@@ -10,7 +10,7 @@ from .payloads import build_contact_create_payload, build_contact_update_payload
 from .schemas.lead import LeadStatusUpdatePayload
 from .transport import AmoCRMTransport
 from .utils import extract_email_from_contact_obj, extract_phone_from_contact_obj, normalize_phone
-from config import AMOCRM_ACCESS_TOKEN, AMOCRM_BASE_DOMAIN, AMOCRM_CLIENT_ID, AMOCRM_CLIENT_SECRET, AMOCRM_PROXY_URL, AMOCRM_REDIRECT_URI, AMOCRM_REFRESH_TOKEN, WORKING_DIR
+from config import AMOCRM_ACCESS_TOKEN, AMOCRM_BASE_URL
 
 
 class AsyncAmoCRM:
@@ -28,39 +28,14 @@ class AsyncAmoCRM:
         pattern = re.compile(rf"Заказ\s*№\s*{re.escape(code)}(?=\s|$)", re.IGNORECASE)
         return needle, pattern
 
-    def __init__(self, *, base_domain: str | None = AMOCRM_BASE_DOMAIN, client_id: str | None = AMOCRM_CLIENT_ID, client_secret: str | None = AMOCRM_CLIENT_SECRET, redirect_uri: str | None = AMOCRM_REDIRECT_URI, access_token: str | None = AMOCRM_ACCESS_TOKEN, refresh_token: str | None = AMOCRM_REFRESH_TOKEN, proxy_url: str | None = AMOCRM_PROXY_URL) -> None:
+    def __init__(self, *, base_url: str | None = AMOCRM_BASE_URL, access_token: str | None = AMOCRM_ACCESS_TOKEN) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.proxy_url = (proxy_url or "").strip() or None
-        self.transport = AmoCRMTransport(base_domain=(base_domain or "").strip(), client_id=client_id or "", client_secret=client_secret or "", redirect_uri=redirect_uri or "", access_token=access_token, refresh_token=refresh_token, proxy_url=self.proxy_url, save_tokens_callback=self._save_env_values)
+        self.transport = AmoCRMTransport(base_url=(base_url or "").strip(), access_token=access_token)
         self.PIPELINE_ID = PIPELINE_ID
         self.STATUS_IDS = STATUS_IDS
         self.STATUS_WORDS = STATUS_WORDS
         self.CF = CF
         self.PAID_STATUS_IDS = PAID_STATUS_IDS
-
-    def _save_env_values(self, values: dict[str, str]) -> None:
-        if not values: return
-        path = WORKING_DIR / ".env"
-        lines = path.read_text().splitlines(keepends=True) if path.exists() else []
-        pending = dict(values)
-        new_lines: list[str] = []
-        for line in lines:
-            stripped = line.strip()
-            if "=" not in line or stripped.startswith("#"): new_lines.append(line); continue
-            key = line.split("=", 1)[0].strip()
-            if key not in pending: new_lines.append(line); continue
-            new_lines.append(f'{key}="{pending.pop(key)}"\n')
-        for key, value in pending.items(): new_lines.append(f'{key}="{value}"\n')
-        path.write_text("".join(new_lines))
-
-    async def _refresh(self) -> None:
-        if not self.transport.refresh_token:
-            raise HTTPException(status_code=503, detail="Missing amoCRM refresh token")
-        try:
-            await self.transport.refresh()
-        except HTTPException as exc:
-            self.logger.warning("amoCRM refresh token exchange failed | detail=%s", exc.detail)
-            raise
 
     async def _request_with_auth_recovery(self, method: str, endpoint: str, **kwargs: Any) -> dict[str, Any]:
         transport_call = getattr(self.transport, method.lower())
