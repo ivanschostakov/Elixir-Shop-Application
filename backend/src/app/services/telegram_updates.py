@@ -5,8 +5,10 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.auth import link_telegram_contact_to_user
+from src.app.services.community import invalidate_community_membership, process_community_telegram_message
 from src.database.crud.webhooks import payload_digest, register_webhook_delivery
 from src.integrations.moysklad import MoySkladClient, get_moysklad_client
+from config import TELEGRAM_COMMUNITY_CHAT_ID, TELEGRAM_COMMUNITY_ENABLED
 
 log = logging.getLogger(__name__)
 
@@ -21,16 +23,54 @@ async def process_telegram_update(
     moysklad_client: MoySkladClient | None = None,
 ) -> dict[str, Any]:
     delivery_id = str(payload.get("update_id") or "").strip() or None
+    digest = payload_digest(_payload_bytes(payload))
+    chat_member = payload.get("chat_member")
+    if isinstance(chat_member, dict):
+        chat = chat_member.get("chat") if isinstance(chat_member.get("chat"), dict) else {}
+        new_member = chat_member.get("new_chat_member") if isinstance(chat_member.get("new_chat_member"), dict) else {}
+        member_user = new_member.get("user") if isinstance(new_member.get("user"), dict) else {}
+        telegram_user_id = int(member_user.get("id") or 0)
+        if TELEGRAM_COMMUNITY_ENABLED and int(chat.get("id") or 0) == TELEGRAM_COMMUNITY_CHAT_ID and telegram_user_id:
+            accepted = await register_webhook_delivery(
+                db,
+                provider="telegram",
+                delivery_id=delivery_id,
+                payload_hash=digest,
+                commit=False,
+            )
+            if not accepted:
+                return {"ok": True, "ignored": "duplicate"}
+            await invalidate_community_membership(telegram_user_id)
+            await db.commit()
+            return {"ok": True, "membership_invalidated": telegram_user_id}
+
+    message = payload.get("message")
+    if isinstance(message, dict):
+        chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+        if TELEGRAM_COMMUNITY_ENABLED and int(chat.get("id") or 0) == TELEGRAM_COMMUNITY_CHAT_ID:
+            accepted = await register_webhook_delivery(
+                db,
+                provider="telegram",
+                delivery_id=delivery_id,
+                payload_hash=digest,
+                commit=False,
+            )
+            if not accepted:
+                return {"ok": True, "ignored": "duplicate"}
+            result = await process_community_telegram_message(db, payload)
+            # The delivery marker and mirrored community write commit together.
+            await db.commit()
+            return result
+
     accepted = await register_webhook_delivery(
         db,
         provider="telegram",
         delivery_id=delivery_id,
-        payload_hash=payload_digest(_payload_bytes(payload)),
+        payload_hash=digest,
     )
     if not accepted:
         return {"ok": True, "ignored": "duplicate"}
 
-    message = payload.get("message")
     if not isinstance(message, dict):
         return {"ok": True, "ignored": "no message"}
 

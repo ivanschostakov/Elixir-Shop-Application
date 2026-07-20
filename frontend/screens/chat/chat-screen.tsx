@@ -29,6 +29,7 @@ import {
 import * as Application from "expo-application"
 import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
+import * as SecureStore from "expo-secure-store"
 import { useRouter } from "expo-router"
 import Svg, { Path } from "react-native-svg"
 
@@ -52,6 +53,8 @@ import type { BasketItemRead } from "@/types/basket"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { spacing } from "@/theme/spacing"
 import { createChatScreenStyles } from "./chat-screen.styles"
+import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switcher"
+import { CommunityChatScreen } from "@/screens/chat/community-chat-screen"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import {
     AttachmentSheet,
@@ -90,6 +93,31 @@ function nativeBuildNumber() {
     return Number.isFinite(parsedBuild) ? parsedBuild : 0
 }
 
+const CHAT_MODE_STORAGE_KEY = "elixirpeptide-chat-mode"
+
+async function readStoredChatMode(): Promise<ChatMode | null> {
+    try {
+        const value = Platform.OS === "web"
+            ? (typeof window !== "undefined" ? window.localStorage?.getItem(CHAT_MODE_STORAGE_KEY) : null)
+            : await SecureStore.getItemAsync(CHAT_MODE_STORAGE_KEY)
+        return value === "ai" || value === "community" ? value : null
+    } catch {
+        return null
+    }
+}
+
+async function persistChatMode(mode: ChatMode) {
+    try {
+        if (Platform.OS === "web") {
+            if (typeof window !== "undefined") window.localStorage?.setItem(CHAT_MODE_STORAGE_KEY, mode)
+            return
+        }
+        await SecureStore.setItemAsync(CHAT_MODE_STORAGE_KEY, mode)
+    } catch {
+        // The visible mode can still change when local persistence is unavailable.
+    }
+}
+
 export default function ChatScreen() {
     const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const router = useRouter()
@@ -110,6 +138,9 @@ export default function ChatScreen() {
     const [keyboardVisible, setKeyboardVisible] = useState(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
+    const [chatMode, setChatMode] = useState<ChatMode>("ai")
+    const [communityEnabled, setCommunityEnabled] = useState(false)
+    const [communityUnread, setCommunityUnread] = useState(0)
     const scrollRef = useRef<ScrollView | null>(null)
     const shouldAutoScrollRef = useRef(true)
     const cameraPermissionPromptedRef = useRef(false)
@@ -130,6 +161,31 @@ export default function ChatScreen() {
         removeItem: removeBasketItem,
         updateItemQuantity: updateBasketItemQuantity,
     } = useBasketMutations()
+
+    useEffect(() => {
+        let mounted = true
+        void readStoredChatMode().then((storedMode) => {
+            if (mounted && storedMode) setChatMode(storedMode)
+        })
+        return () => { mounted = false }
+    }, [])
+
+    const handleChatModeChange = useCallback((nextMode: ChatMode) => {
+        Keyboard.dismiss()
+        setChatMode(nextMode)
+        void persistChatMode(nextMode)
+    }, [])
+
+    const handleCommunityUnreadChange = useCallback((count: number) => {
+        setCommunityUnread(count)
+    }, [])
+
+    const handleCommunityEnabledChange = useCallback((enabled: boolean) => {
+        setCommunityEnabled(enabled)
+        if (!enabled) {
+            setChatMode((current) => current === "community" ? "ai" : current)
+        }
+    }, [])
 
     useApplyScreenTemplate("feed", {
         header: "none",
@@ -591,29 +647,6 @@ export default function ChatScreen() {
 
     const hasDraft = Boolean(draft.trim())
     const hasComposerContent = hasDraft || attachments.length > 0
-    if (loading && !chat) {
-        return (
-            <View style={chatScreenStyles.loadingWrap}>
-                <ActivityIndicator color={palette.primary} />
-            </View>
-        )
-    }
-
-    if (error && !chat) {
-        return (
-            <View style={chatScreenStyles.stateWrap}>
-                <EmptyState
-                    title={t("chat.loadFailedTitle")}
-                    description={error || t("chat.loadFailedMessage")}
-                    actionLabel={t("chat.retry")}
-                    onPressAction={() => {
-                        void refresh()
-                    }}
-                    variant="plain"
-                />
-            </View>
-        )
-    }
 
     return (
         <View style={chatScreenStyles.container}>
@@ -679,7 +712,27 @@ export default function ChatScreen() {
                             />
                         </Svg>
                     </Pressable>
+                    {communityEnabled ? <ChatModeSwitcher mode={chatMode} onChange={handleChatModeChange} unreadCount={communityUnread} /> : null}
                 </View>
+
+                {loading && !chat && chatMode === "ai" ? (
+                    <View style={chatScreenStyles.initialStateOverlay}>
+                        <ActivityIndicator color={palette.primary} />
+                    </View>
+                ) : null}
+                {error && !chat && chatMode === "ai" ? (
+                    <View style={chatScreenStyles.initialStateOverlay}>
+                        <EmptyState
+                            title={t("chat.loadFailedTitle")}
+                            description={error || t("chat.loadFailedMessage")}
+                            actionLabel={t("chat.retry")}
+                            onPressAction={() => {
+                                void refresh()
+                            }}
+                            variant="plain"
+                        />
+                    </View>
+                ) : null}
 
                 <KeyboardAvoidingView
                     behavior={Platform.OS === "ios" ? "position" : "height"}
@@ -818,7 +871,7 @@ export default function ChatScreen() {
                                 </View>
                             ) : null}
                         </ScrollView>
-                        {!messages.length ? (
+                        {!messages.length && !(loading && !chat) && !(error && !chat) ? (
                             <View pointerEvents="none" style={chatScreenStyles.emptyCenterOverlay}>
                                 <View style={chatScreenStyles.emptyBubble}>
                                     <Text style={chatScreenStyles.emptyText}>{t("chat.emptyDescription")}</Text>
@@ -826,7 +879,7 @@ export default function ChatScreen() {
                             </View>
                         ) : null}
 
-                        {error ? (
+                        {error && chat ? (
                             <View style={[chatScreenStyles.inlineErrorWrap, { bottom: composerOffset + spacing.sm }]}>
                                 <Text style={chatScreenStyles.inlineError}>{error}</Text>
                             </View>
@@ -928,6 +981,14 @@ export default function ChatScreen() {
                     visible={attachmentSheetVisible}
                 />
             </View>
+            <CommunityChatScreen
+                active={chatMode === "community"}
+                mode={chatMode}
+                onEnabledChange={handleCommunityEnabledChange}
+                onModeChange={handleChatModeChange}
+                onUnreadChange={handleCommunityUnreadChange}
+                unreadCount={communityUnread}
+            />
         </View>
     )
 }

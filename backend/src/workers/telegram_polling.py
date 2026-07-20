@@ -15,6 +15,7 @@ from config import (
 )
 from logger import setup_logging
 from src.app.services.telegram_updates import process_telegram_update
+from src.app.services.community import recover_stale_community_deliveries, relay_next_community_message
 from src.database import get_session
 
 log = logging.getLogger("worker.telegram_polling")
@@ -46,7 +47,7 @@ class TelegramPollingClient:
     async def get_updates(self, offset: int | None) -> list[dict[str, Any]]:
         data: dict[str, str] = {
             "timeout": str(max(int(TELEGRAM_POLLING_TIMEOUT_SECONDS), 1)),
-            "allowed_updates": '["message"]',
+            "allowed_updates": '["message","chat_member","my_chat_member"]',
         }
         if offset is not None:
             data["offset"] = str(offset)
@@ -68,6 +69,29 @@ async def run_forever() -> None:
     offset: int | None = None
     client = TelegramPollingClient()
     is_webhook_deleted = False
+
+    async def _run_outbound_loop() -> None:
+        try:
+            async with get_session() as session:
+                recovered = await recover_stale_community_deliveries(session)
+                if recovered:
+                    log.warning("marked stale telegram community deliveries unknown count=%s", recovered)
+        except Exception:
+            log.exception("telegram community delivery recovery failed")
+        while not stop_event.is_set():
+            processed = False
+            try:
+                async with get_session() as session:
+                    processed = await relay_next_community_message(session)
+            except Exception:
+                log.exception("telegram community outbound tick failed")
+            delay = 3.0 if processed else 1.0
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=delay)
+            except TimeoutError:
+                continue
+
+    outbound_task = asyncio.create_task(_run_outbound_loop())
 
     async def _shutdown() -> None:
         stop_event.set()
@@ -108,6 +132,9 @@ async def run_forever() -> None:
             except TimeoutError:
                 continue
     finally:
+        outbound_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await outbound_task
         await client.aclose()
 
 

@@ -11,6 +11,14 @@ from .auth.user_push_token import UserPushToken
 from .auth.user_session import UserSession
 from .basket.basket import Basket
 from .basket.basket_item import BasketItem
+from .community import (
+    CommunityAttachment,
+    CommunityAuthor,
+    CommunityMessage,
+    CommunityTelegramPart,
+    CommunityTopic,
+    CommunityTopicRead,
+)
 from .benefits.order_benefit_application import OrderBenefitApplication
 from .catalog.product import Product
 from .catalog.banner import Banner
@@ -48,6 +56,12 @@ __all__ = [
     "Banner",
     "Basket",
     "BasketItem",
+    "CommunityAttachment",
+    "CommunityAuthor",
+    "CommunityMessage",
+    "CommunityTelegramPart",
+    "CommunityTopic",
+    "CommunityTopicRead",
     "DeliveryAddress",
     "CdekDoorAddress",
     "CdekPickupAddress",

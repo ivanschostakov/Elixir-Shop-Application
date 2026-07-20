@@ -1058,55 +1058,6 @@ export default function CheckoutScreen() {
         }
     }
 
-    const handlePickerDone = async () => {
-        if (openPickerSection === "recipient") {
-            closeCheckoutPicker()
-
-            if (draftRecipientKey === ADD_NEW_RECIPIENT_VALUE) {
-                handleOpenRecipientEditor()
-                return
-            }
-
-            if (draftRecipientKey === SELF_RECIPIENT_VALUE) {
-                setSelectedRecipientKey(SELF_RECIPIENT_VALUE)
-                await handleSelectRecipient(null)
-                return
-            }
-
-            if (!draftRecipientKey) {
-                return
-            }
-
-            const selectedRecipient = availableRecipients.find((option) => option.id === draftRecipientKey)
-            if (!selectedRecipient) {
-                return
-            }
-
-            setSelectedRecipientKey(draftRecipientKey)
-            await handleSelectRecipient(selectedRecipient)
-            return
-        }
-
-        if (openPickerSection === "address") {
-            if (draftAddressValue === ADD_NEW_ADDRESS_VALUE) {
-                setSelectedDeliveryCountry(orderDraft.delivery_address?.country_code ?? null)
-                setSelectedDeliveryAddress(null)
-                setSelectedDeliveryPoint(null)
-                openDeliveryFromCheckout()
-                return
-            }
-
-            closeCheckoutPicker()
-
-            if (draftAddressValue === null) {
-                return
-            }
-
-            setSelectedAddressValue(draftAddressValue)
-            await handleSelectAddress(draftAddressValue)
-        }
-    }
-
     return (
         <View style={checkoutScreenStyles.container}>
                 <ScrollView
@@ -1359,21 +1310,6 @@ export default function CheckoutScreen() {
                                         </Text>
                                     </Pressable>
 
-                                    <Pressable
-                                        accessibilityLabel={t("common.done")}
-                                        accessibilityRole="button"
-                                        onPress={() => {
-                                            void handlePickerDone()
-                                        }}
-                                        style={({ pressed }) => [
-                                            contentStyles.browsePickerPrimaryAction,
-                                            pressed && contentStyles.browsePickerActionPressed,
-                                        ]}
-                                    >
-                                        <Text style={contentStyles.browsePickerPrimaryActionText}>
-                                            {t("common.done")}
-                                        </Text>
-                                    </Pressable>
                                 </View>
                             </View>
 
@@ -1407,7 +1343,21 @@ export default function CheckoutScreen() {
                                             setTimeout(() => {
                                                 void handleSelectRecipient(null)
                                             }, 0)
+                                            return
                                         }
+
+                                        const selectedRecipient = availableRecipients.find(
+                                            (option) => option.id === nextValue,
+                                        )
+                                        if (!selectedRecipient) {
+                                            return
+                                        }
+
+                                        setSelectedRecipientKey(nextValue)
+                                        closeCheckoutPicker()
+                                        setTimeout(() => {
+                                            void handleSelectRecipient(selectedRecipient)
+                                        }, 0)
                                     }}
                                     style={contentStyles.browsePicker}
                                 >
@@ -1436,11 +1386,27 @@ export default function CheckoutScreen() {
                                 <Picker
                                     selectedValue={draftAddressValue}
                                     onValueChange={(value) => {
-                                        setDraftAddressValue(
+                                        const nextValue =
                                             value === ADD_NEW_ADDRESS_VALUE
                                                 ? ADD_NEW_ADDRESS_VALUE
-                                                : Number(value),
-                                        )
+                                                : Number(value)
+                                        setDraftAddressValue(nextValue)
+                                        closeCheckoutPicker()
+
+                                        if (nextValue === ADD_NEW_ADDRESS_VALUE) {
+                                            setSelectedDeliveryCountry(
+                                                orderDraft.delivery_address?.country_code ?? null,
+                                            )
+                                            setSelectedDeliveryAddress(null)
+                                            setSelectedDeliveryPoint(null)
+                                            setTimeout(openDeliveryFromCheckout, 0)
+                                            return
+                                        }
+
+                                        setSelectedAddressValue(nextValue)
+                                        setTimeout(() => {
+                                            void handleSelectAddress(nextValue)
+                                        }, 0)
                                     }}
                                     style={contentStyles.browsePicker}
                                 >

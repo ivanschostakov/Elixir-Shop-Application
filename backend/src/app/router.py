@@ -5,6 +5,7 @@ from .modules.app_integrity import app_integrity_router
 from .modules.app_version import app_version_router
 from .modules.auth.router import auth_router
 from .modules.banners import banners_router
+from .modules.community_media import community_media_router
 from .modules.delivery import delivery_router
 from .modules.favorites import favourites_query_router, favourites_router
 from .modules.guest import guest_router
@@ -25,6 +26,7 @@ v1_router.include_router(admin_referrals_router)
 v1_router.include_router(app_integrity_router)
 v1_router.include_router(app_version_router)
 v1_router.include_router(banners_router)
+v1_router.include_router(community_media_router)
 v1_router.include_router(product_categories_router)
 v1_router.include_router(products_router)
 v1_router.include_router(requisites_router)
@@ -42,6 +44,7 @@ __all__ = [
     "v1_router",
     "auth_router",
     "banners_router",
+    "community_media_router",
     "app_integrity_router",
     "app_version_router",
     "admin_referrals_router",

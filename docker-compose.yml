@@ -39,11 +39,12 @@ services:
       - /bin/sh
       - -lc
       - |
-        mkdir -p /app/backend/media /app/backend/logs \
-        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
+        mkdir -p /app/backend/media /app/backend/private_media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/private_media /app/backend/logs \
         && exec su -s /bin/sh app -c "python run.py"
     volumes:
       - ./backend/media:/app/backend/media
+      - ./backend/private_media:/app/backend/private_media
       - ./backend/logs:/app/backend/logs
       - ./backend/.env:/app/backend/.env
       - ./backend/.secrets/application_default_credentials.json:/app/backend/.secrets/application_default_credentials.json:ro
@@ -120,10 +121,12 @@ services:
       - /bin/sh
       - -lc
       - |
-        mkdir -p /app/backend/logs \
-        && chown -R 10001:10001 /app/backend/logs \
+        mkdir -p /app/backend/media /app/backend/private_media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/private_media /app/backend/logs \
         && exec su -s /bin/sh app -c "python -m src.workers.telegram_polling"
     volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/private_media:/app/backend/private_media
       - ./backend/logs:/app/backend/logs
 
 volumes:
