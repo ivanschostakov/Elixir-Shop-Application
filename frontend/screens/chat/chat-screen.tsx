@@ -30,7 +30,7 @@ import * as Application from "expo-application"
 import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
 import * as SecureStore from "expo-secure-store"
-import { useRouter } from "expo-router"
+import { useLocalSearchParams, useRouter } from "expo-router"
 import Svg, { Path } from "react-native-svg"
 
 import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
@@ -122,6 +122,7 @@ async function persistChatMode(mode: ChatMode) {
 export default function ChatScreen() {
     const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const router = useRouter()
+    const routeParams = useLocalSearchParams<{ mode?: string | string[]; topicId?: string | string[] }>()
     const { t } = useLanguage()
     const { isDark, palette, themeName } = useTheme()
     const { width: screenWidth } = useWindowDimensions()
@@ -143,6 +144,13 @@ export default function ChatScreen() {
     const [chatMode, setChatMode] = useState<ChatMode>("ai")
     const [communityEnabled, setCommunityEnabled] = useState(false)
     const [communityUnread, setCommunityUnread] = useState(0)
+    const requestedMode = Array.isArray(routeParams.mode) ? routeParams.mode[0] : routeParams.mode
+    const requestedTopicValue = Array.isArray(routeParams.topicId) ? routeParams.topicId[0] : routeParams.topicId
+    const parsedRequestedTopicId = Number(requestedTopicValue)
+    const requestedTopicId = Number.isInteger(parsedRequestedTopicId) && parsedRequestedTopicId > 0
+        ? parsedRequestedTopicId
+        : null
+    const communityRequestedByRoute = requestedMode === "community" || requestedTopicId !== null
     const scrollRef = useRef<ScrollView | null>(null)
     const shouldAutoScrollRef = useRef(true)
     const cameraPermissionPromptedRef = useRef(false)
@@ -167,10 +175,16 @@ export default function ChatScreen() {
     useEffect(() => {
         let mounted = true
         void readStoredChatMode().then((storedMode) => {
-            if (mounted && storedMode) setChatMode(storedMode)
+            if (mounted && storedMode && !communityRequestedByRoute) setChatMode(storedMode)
         })
         return () => { mounted = false }
-    }, [])
+    }, [communityRequestedByRoute])
+
+    useEffect(() => {
+        if (!communityRequestedByRoute) return
+        setChatMode("community")
+        void persistChatMode("community")
+    }, [communityRequestedByRoute, requestedTopicId])
 
     const handleChatModeChange = useCallback((nextMode: ChatMode) => {
         Keyboard.dismiss()
@@ -993,6 +1007,7 @@ export default function ChatScreen() {
                 onEnabledChange={handleCommunityEnabledChange}
                 onModeChange={handleChatModeChange}
                 onUnreadChange={handleCommunityUnreadChange}
+                requestedTopicId={requestedTopicId}
                 unreadCount={communityUnread}
             />
         </View>

@@ -67,3 +67,46 @@ def test_send_push_to_user_sends_when_user_is_on_different_path(monkeypatch):
     assert sent is True
     assert len(send_calls) == 1
     assert send_calls[0][0]["to"] == "ExponentPushToken[other-path]"
+
+
+def test_community_push_skips_only_the_open_topic(monkeypatch):
+    async def fake_get_user_push_tokens(_session, *, user_id: int):
+        assert user_id == 42
+        return [
+            SimpleNamespace(
+                expo_push_token="ExponentPushToken[community]",
+                current_path="/chat/community/8",
+            ),
+        ]
+
+    send_calls: list[list[dict]] = []
+
+    async def fake_send_expo_push_messages(messages):
+        send_calls.append(messages)
+        return set()
+
+    async def fake_delete_invalid_push_tokens(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(push_notifications, "get_user_push_tokens", fake_get_user_push_tokens)
+    monkeypatch.setattr(push_notifications, "_send_expo_push_messages", fake_send_expo_push_messages)
+    monkeypatch.setattr(push_notifications, "_delete_invalid_push_tokens", fake_delete_invalid_push_tokens)
+
+    same_topic_sent = asyncio.run(push_notifications.send_push_to_user(
+        session=SimpleNamespace(),
+        user_id=42,
+        title="Topic 8",
+        body="New message",
+        data={"type": "community_message", "topic_id": 8},
+    ))
+    other_topic_sent = asyncio.run(push_notifications.send_push_to_user(
+        session=SimpleNamespace(),
+        user_id=42,
+        title="Topic 9",
+        body="New message",
+        data={"type": "community_message", "topic_id": 9},
+    ))
+
+    assert same_topic_sent is False
+    assert other_topic_sent is True
+    assert len(send_calls) == 1

@@ -50,6 +50,7 @@ from src.database.models import (
     CommunityAttachment,
     CommunityAuthor,
     CommunityMessage,
+    CommunityNotificationEvent,
     CommunityReaction,
     CommunityTelegramPart,
     CommunityTopic,
@@ -221,19 +222,41 @@ async def list_community_topics(db: AsyncSession, *, user: User, request: Reques
     await require_community_access(user)
     topics = list((await db.execute(select(CommunityTopic).where(CommunityTopic.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID, CommunityTopic.is_hidden.is_(False), CommunityTopic.is_deleted.is_(False)).order_by(CommunityTopic.last_message_at.desc().nullslast(), CommunityTopic.name.asc()))).scalars().all())
     await _initialize_read_baseline(db, user_id=user.id, topics=topics)
-    read_states = list((await db.execute(select(CommunityTopicReadModel).where(CommunityTopicReadModel.user_id == user.id, CommunityTopicReadModel.topic_id.in_([topic.id for topic in topics]) if topics else False))).scalars().all())
-    read_by_topic = {item.topic_id: item for item in read_states}
+    topic_ids = [topic.id for topic in topics]
+    topic_by_id = {topic.id: topic for topic in topics}
+    last_message_ids = [topic.last_message_id for topic in topics if topic.last_message_id]
+    last_messages = list((await db.execute(
+        select(CommunityMessage)
+        .where(CommunityMessage.id.in_(last_message_ids) if last_message_ids else False)
+        .options(*_message_options())
+    )).scalars().all())
+    last_message_by_id = {message.id: message for message in last_messages}
+    for message in last_messages:
+        message.topic = topic_by_id.get(message.topic_id)
+
+    unread_rows = (await db.execute(
+        select(CommunityMessage.topic_id, func.count(CommunityMessage.id))
+        .outerjoin(
+            CommunityTopicReadModel,
+            and_(
+                CommunityTopicReadModel.topic_id == CommunityMessage.topic_id,
+                CommunityTopicReadModel.user_id == user.id,
+            ),
+        )
+        .where(
+            CommunityMessage.topic_id.in_(topic_ids) if topic_ids else False,
+            CommunityMessage.id > func.coalesce(CommunityTopicReadModel.last_read_message_id, 0),
+            CommunityMessage.deleted_at.is_(None),
+            or_(CommunityMessage.app_user_id.is_(None), CommunityMessage.app_user_id != user.id),
+        )
+        .group_by(CommunityMessage.topic_id)
+    )).all()
+    unread_by_topic = {int(topic_id): int(count) for topic_id, count in unread_rows}
     topic_reads: list[CommunityTopicRead] = []
     total_unread = 0
     for topic in topics:
-        last_message = None
-        if topic.last_message_id:
-            stmt = select(CommunityMessage).where(CommunityMessage.id == topic.last_message_id).options(*_message_options())
-            last_message = (await db.execute(stmt)).scalar_one_or_none()
-            if last_message: last_message.topic = topic
-        last_read_id = read_by_topic.get(topic.id).last_read_message_id if read_by_topic.get(topic.id) else None
-        unread_stmt = select(func.count(CommunityMessage.id)).where(CommunityMessage.topic_id == topic.id, CommunityMessage.id > int(last_read_id or 0), CommunityMessage.deleted_at.is_(None), or_(CommunityMessage.app_user_id.is_(None), CommunityMessage.app_user_id != user.id))
-        unread = int((await db.execute(unread_stmt)).scalar_one())
+        last_message = last_message_by_id.get(topic.last_message_id) if topic.last_message_id else None
+        unread = unread_by_topic.get(topic.id, 0)
         total_unread += unread
         topic_reads.append(CommunityTopicRead(id=topic.id, name=topic.name, icon_color=topic.icon_color, icon_custom_emoji_id=topic.icon_custom_emoji_id, is_closed=topic.is_closed, last_message=serialize_community_message(last_message, request=request, user_id=user.id) if last_message else None, unread_count=unread))
     return CommunityTopicListRead(topics=topic_reads, total_unread=total_unread)
@@ -395,6 +418,7 @@ async def create_community_message(db: AsyncSession, *, user: User, request: Req
     author = await _upsert_author(db, kind="app", telegram_peer_id=user.id, full_name=" ".join(part for part in (user.name, user.surname) if part).strip() or "Elixir member", app_user_id=user.id, refresh_avatar=False)
     message = CommunityMessage(topic_id=topic.id, author_id=author.id, app_user_id=user.id, reply_to_message_id=reply_to.id if reply_to else None, source="app", client_id=normalized_client_id, text=normalized_text, delivery_status="queued", sent_at=ufa_now())
     db.add(message); await db.flush()
+    db.add(CommunityNotificationEvent(message_id=message.id))
     written_paths: list[Path] = []
     for original, mime_type, content in prepared_uploads:
         local_filename = f"{message.id}-{uuid4().hex}"
@@ -827,6 +851,7 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
     author = await _upsert_author(db, kind=kind, telegram_peer_id=peer_id or -telegram_message_id, full_name=full_name, app_user_id=linked_user.id if linked_user else None, telegram_client=client, refresh_avatar=False)
     media_group_id = str(message.get("media_group_id") or "") or None
     logical = None
+    created_logical = False
     if media_group_id:
         logical = (await db.execute(select(CommunityMessage).where(CommunityMessage.topic_id == topic.id, CommunityMessage.telegram_media_group_id == media_group_id).order_by(CommunityMessage.id.asc()).limit(1))).scalar_one_or_none()
     if logical is None:
@@ -838,6 +863,8 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
         sent_at = datetime.fromtimestamp(int(message.get("date") or time.time()), tz=ufa_now().tzinfo)
         logical = CommunityMessage(topic_id=topic.id, author_id=author.id, app_user_id=linked_user.id if linked_user else None, reply_to_message_id=reply_to, source="telegram", telegram_media_group_id=media_group_id, text=raw_text, delivery_status="sent", sent_at=sent_at)
         db.add(logical); await db.flush()
+        db.add(CommunityNotificationEvent(message_id=logical.id))
+        created_logical = True
     elif raw_text and not logical.text: logical.text = raw_text
     photo_sizes = message.get("photo") if isinstance(message.get("photo"), list) else []
     document = message.get("document") if isinstance(message.get("document"), dict) else None
@@ -857,6 +884,9 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
         mime_type = str(file_payload.get("mime_type") or fallback_mime_type)
         attachment = CommunityAttachment(message_id=logical.id, kind="image" if photo_sizes else "document", original_filename=original, filename=f"telegram-{telegram_message_id}", mime_type=mime_type, size_bytes=int(file_payload.get("file_size") or 0), telegram_file_id=file_id, telegram_file_unique_id=str(file_payload.get("file_unique_id") or "") or None, telegram_message_id=telegram_message_id, status="telegram_only")
         db.add(attachment); await db.flush()
+        # Media-group parts can arrive after the logical bubble was already
+        # shown. Advance its cursor even when Telegram keeps the file remote.
+        logical.updated_at = ufa_now()
     unsupported_keys = ("video", "video_note", "sticker", "animation", "poll", "location", "contact")
     for key in unsupported_keys:
         if message.get(key) is not None: logical.unsupported_type = key; break
@@ -866,13 +896,17 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
     # Make the mirrored message visible before slower Telegram media/profile downloads.
     await db.commit()
     await _upsert_author(db, kind=kind, telegram_peer_id=peer_id or -telegram_message_id, full_name=full_name, app_user_id=linked_user.id if linked_user else None, telegram_client=client)
+    # The avatar refresh mutates the author row, which is outside the message
+    # cursor. Re-emit this bubble so clients replace its avatar URL promptly.
+    logical.updated_at = ufa_now()
     await db.commit()
     if attachment and file_id and attachment.size_bytes <= TELEGRAM_COMMUNITY_MAX_DOWNLOAD_BYTES:
         local_filename = f"{logical.id}-{uuid4().hex}"
         try:
             attachment.size_bytes = await client.download_file(file_id, COMMUNITY_ATTACHMENTS_DIR / local_filename, max_bytes=TELEGRAM_COMMUNITY_MAX_DOWNLOAD_BYTES)
             attachment.local_filename = local_filename; attachment.status = "ready"
+            logical.updated_at = ufa_now()
             await db.commit()
         except (TelegramBotAPIError, TimeoutError, OSError):
             pass
-    return {"ok": True, "community_message_id": logical.id}
+    return {"ok": True, "community_message_id": logical.id, "created": created_logical}

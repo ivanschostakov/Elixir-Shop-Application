@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import src.app.services.notifications as notifications_service
+import src.app.services.notifications.core as notifications_service
 
 
 @dataclass
@@ -230,3 +230,86 @@ def test_review_reminder_processor_sends_once_per_product(monkeypatch: pytest.Mo
     assert skipped == 0
     assert len(send_session.added) == 1
     assert send_session.added[0].type == notifications_service.DISPATCH_TYPE_REVIEW_REMINDER
+
+
+def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyPatch):
+    now = notifications_service.ufa_now()
+    message = SimpleNamespace(
+        id=501,
+        app_user_id=11,
+        topic_id=23,
+        deleted_at=None,
+        text="  New   community message  ",
+        attachments=[],
+        author=SimpleNamespace(full_name="Татьяна"),
+        topic=SimpleNamespace(name="Приложение"),
+    )
+    event = SimpleNamespace(
+        message=message,
+        attempts=0,
+        next_attempt_at=None,
+        sent_at=None,
+        last_error=None,
+    )
+    session = _FakeSession([
+        _FakeScalarResult(rows=[event]),
+        _FakeScalarResult(rows=[11, 12, 13]),
+    ])
+    captured: dict[str, object] = {}
+
+    async def fake_send_push_to_users(*args, **kwargs):
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(notifications_service, "send_push_to_users", fake_send_push_to_users)
+
+    processed = asyncio.run(notifications_service.process_community_message_notifications(session, now=now))
+
+    assert processed == 1
+    assert captured["user_ids"] == [12, 13]
+    assert captured["title"] == "Приложение"
+    assert captured["body"] == "Татьяна: New community message"
+    assert captured["data"] == {"type": "community_message", "topic_id": 23, "message_id": 501}
+    assert captured["channel_id"] == "community_messages"
+    assert event.sent_at == now
+    assert event.last_error is None
+    assert session.commits == 1
+
+
+def test_community_message_processor_retries_failed_delivery(monkeypatch: pytest.MonkeyPatch):
+    now = notifications_service.ufa_now()
+    message = SimpleNamespace(
+        id=502,
+        app_user_id=None,
+        topic_id=24,
+        deleted_at=None,
+        text="",
+        attachments=[SimpleNamespace(id=1)],
+        author=SimpleNamespace(full_name="Участник"),
+        topic=SimpleNamespace(name="Новости"),
+    )
+    event = SimpleNamespace(
+        message=message,
+        attempts=0,
+        next_attempt_at=None,
+        sent_at=None,
+        last_error=None,
+    )
+    session = _FakeSession([
+        _FakeScalarResult(rows=[event]),
+        _FakeScalarResult(rows=[12]),
+    ])
+
+    async def fake_send_push_to_users(*args, **kwargs):
+        raise RuntimeError("temporary push outage")
+
+    monkeypatch.setattr(notifications_service, "send_push_to_users", fake_send_push_to_users)
+
+    processed = asyncio.run(notifications_service.process_community_message_notifications(session, now=now))
+
+    assert processed == 0
+    assert event.sent_at is None
+    assert event.attempts == 1
+    assert event.last_error == "temporary push outage"
+    assert event.next_attempt_at == now + timedelta(seconds=5)
+    assert session.commits == 1

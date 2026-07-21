@@ -3,11 +3,12 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import EXPO_PUSH_API_URL, EXPO_PUSH_TIMEOUT_SECONDS
 from src.database.crud import delete_user_push_token, get_user_push_tokens
-from src.database.models import Order
+from src.database.models import Order, UserPushToken
 from src.database.models.orders.history import get_order_history_bucket, get_order_status_code, normalize_order_status
 
 log = logging.getLogger(__name__)
@@ -86,6 +87,9 @@ def _resolve_notification_redirect_path(data: dict[str, Any]) -> str | None:
     if notification_type == "inactive_customer": return "/discover"
     if notification_type == "abandoned_cart": return "/basket"
     if notification_type == "ai_reply": return "/chat"
+    if notification_type == "community_message":
+        topic_id = _as_positive_int(data.get("topic_id"))
+        return f"/chat/community/{topic_id}" if topic_id else "/chat"
     return None
 
 
@@ -135,7 +139,7 @@ async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> set[str]:
     return invalid_tokens
 
 
-async def _delete_invalid_push_tokens(session: AsyncSession, *, push_tokens, invalid_tokens: set[str]) -> None:
+async def _delete_invalid_push_tokens(session: AsyncSession, *, push_tokens, invalid_tokens: set[str], commit: bool = True) -> None:
     if not invalid_tokens: return
     removed_any = False
     for push_token in push_tokens:
@@ -143,7 +147,7 @@ async def _delete_invalid_push_tokens(session: AsyncSession, *, push_tokens, inv
         await delete_user_push_token(session, push_token, commit=False)
         removed_any = True
 
-    if removed_any: await session.commit()
+    if removed_any and commit: await session.commit()
 
 
 async def send_push_to_user(session: AsyncSession, *, user_id: int, title: str, body: str, data: dict[str, Any], channel_id: str = "default") -> bool:
@@ -156,6 +160,30 @@ async def send_push_to_user(session: AsyncSession, *, user_id: int, title: str, 
     messages = _build_push_messages(target_push_tokens, title=title, body=body, data=data, channel_id=channel_id)
     invalid_tokens = await _send_expo_push_messages(messages)
     await _delete_invalid_push_tokens(session, push_tokens=target_push_tokens, invalid_tokens=invalid_tokens)
+    return True
+
+
+async def send_push_to_users(session: AsyncSession, *, user_ids: list[int], title: str, body: str, data: dict[str, Any], channel_id: str = "default") -> bool:
+    normalized_user_ids = sorted({int(user_id) for user_id in user_ids if int(user_id) > 0})
+    if not normalized_user_ids:
+        return False
+    push_tokens = list((await session.execute(
+        select(UserPushToken)
+        .where(UserPushToken.user_id.in_(normalized_user_ids))
+        .order_by(UserPushToken.updated_at.desc(), UserPushToken.id.desc())
+    )).scalars().all())
+    target_push_tokens = [push_token for push_token in push_tokens if not _should_skip_push_for_current_path(current_path=push_token.current_path, data=data)]
+    if not target_push_tokens:
+        return False
+    messages = _build_push_messages(target_push_tokens, title=title, body=body, data=data, channel_id=channel_id)
+    invalid_tokens: set[str] = set()
+    # Expo accepts at most 100 notification messages per request. Keep one
+    # logical community event durable while safely fanning it out in chunks.
+    for offset in range(0, len(messages), 100):
+        invalid_tokens.update(await _send_expo_push_messages(messages[offset:offset + 100]))
+    # The outbox processor owns this transaction and its row locks. Do not
+    # commit here or another worker could claim the same event mid-delivery.
+    await _delete_invalid_push_tokens(session, push_tokens=target_push_tokens, invalid_tokens=invalid_tokens, commit=False)
     return True
 
 

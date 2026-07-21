@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
     ActivityIndicator,
     Alert,
+    AppState,
     type AlertButton,
     Image,
     ImageBackground,
@@ -68,6 +69,10 @@ import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
 import { resolveApiMediaUri } from "@/services/api/media"
 import type { CommunityAttachment, CommunityMessage, CommunityTopic } from "@/services/api/community.types"
+import {
+    setPushNotificationCurrentPath,
+    syncPushNotifications,
+} from "@/services/notifications/order-status-notifications"
 import { spacing } from "@/theme/spacing"
 
 type CommunityChatScreenProps = {
@@ -76,6 +81,7 @@ type CommunityChatScreenProps = {
     onEnabledChange: (enabled: boolean) => void
     onModeChange: (mode: ChatMode) => void
     onUnreadChange: (count: number) => void
+    requestedTopicId?: number | null
     unreadCount: number
 }
 
@@ -107,7 +113,7 @@ function nativeBuildNumber() {
     return Number.isFinite(parsedBuild) ? parsedBuild : 0
 }
 
-export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChange, onUnreadChange, unreadCount }: CommunityChatScreenProps) {
+export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChange, onUnreadChange, requestedTopicId, unreadCount }: CommunityChatScreenProps) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const chatStyles = useThemeStyles(createChatScreenStyles)
     const { isDark, palette, themeName } = useTheme()
@@ -119,6 +125,7 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
     const scrollRef = useRef<ScrollView | null>(null)
     const shouldAutoScrollRef = useRef(true)
+    const pushPermissionRequestedRef = useRef(false)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
@@ -132,7 +139,7 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const [editingMessage, setEditingMessage] = useState<CommunityMessage | null>(null)
     const [reactionPickerMessageId, setReactionPickerMessageId] = useState<number | null>(null)
     const [activeMedia, setActiveMedia] = useState<CommunityMediaSource | null>(null)
-    const chat = useCommunityChat(active, onUnreadChange)
+    const chat = useCommunityChat(active, onUnreadChange, requestedTopicId)
     const markRead = chat.markRead
     const headerTop = top + 8
     const contentTop = headerTop + 58
@@ -143,11 +150,37 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const newestMessageId = chat.messages.at(-1)?.id ?? null
 
     useEffect(() => {
-        if (!newestMessageId || !shouldAutoScrollRef.current) return
+        if (!active || !newestMessageId || !shouldAutoScrollRef.current) return
         const frame = requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
         markRead(newestMessageId)
         return () => cancelAnimationFrame(frame)
-    }, [composerHeight, markRead, newestMessageId])
+    }, [active, composerHeight, markRead, newestMessageId])
+
+    useEffect(() => {
+        if (!active || chat.status?.access !== "granted" || pushPermissionRequestedRef.current) return
+        pushPermissionRequestedRef.current = true
+        void syncPushNotifications({ requestPermissions: true })
+    }, [active, chat.status?.access])
+
+    useEffect(() => {
+        if (!active) return
+        const topicPath = chat.selectedTopicId
+            ? `${ROUTES.chat}/community/${chat.selectedTopicId}`
+            : ROUTES.chat
+        const updatePresence = (isAppActive: boolean) => {
+            setPushNotificationCurrentPath(isAppActive ? topicPath : null)
+            void syncPushNotifications()
+        }
+        updatePresence(AppState.currentState === "active")
+        const subscription = AppState.addEventListener("change", (nextState) => {
+            updatePresence(nextState === "active")
+        })
+        return () => {
+            subscription.remove()
+            setPushNotificationCurrentPath(ROUTES.chat)
+            void syncPushNotifications()
+        }
+    }, [active, chat.selectedTopicId])
 
     useEffect(() => {
         if (chat.status) onEnabledChange(chat.status.enabled)
@@ -197,8 +230,8 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
         const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height)
         const isNearBottom = distanceFromBottom <= 56
         shouldAutoScrollRef.current = isNearBottom
-        if (isNearBottom && newestMessageId) markRead(newestMessageId)
-    }, [markRead, newestMessageId])
+        if (active && isNearBottom && newestMessageId) markRead(newestMessageId)
+    }, [active, markRead, newestMessageId])
 
     const appendAttachments = useCallback((items: UploadableChatAttachment[]) => {
         setAttachments((current) => [...current, ...items].slice(0, 6))
@@ -434,16 +467,24 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
                     <>
                         <View style={[styles.topicHeader, styles.topicHeaderOverlay, { top: contentTop }]}>
                             <Text numberOfLines={1} style={styles.topicHeaderTitle}>{chat.selectedTopic.name}</Text>
-                            <Text style={styles.topicHeaderStatus}>{chat.selectedTopic.is_closed ? t("chat.communityClosed") : t("chat.communityMemberChat")}</Text>
+                            <Text style={styles.topicHeaderStatus}>{chat.selectedTopic.is_closed
+                                ? t("chat.communityClosed")
+                                : chat.connectionState === "live"
+                                    ? t("chat.communityMemberChat")
+                                    : chat.connectionState === "offline"
+                                        ? t("chat.communityConnectionOffline")
+                                        : chat.connectionState === "reconnecting"
+                                            ? t("chat.communityConnectionReconnecting")
+                                            : t("chat.communityConnectionConnecting")}</Text>
                         </View>
-                        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "position" : "height"} contentContainerStyle={chatStyles.keyboardContent} keyboardVerticalOffset={0} style={chatStyles.keyboardLayer}>
+                        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.topicKeyboardLayer}>
                             <View style={chatStyles.keyboardContent}>
                                 <ScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + 52 + spacing.sm, paddingBottom: composerHeight + spacing.sm }]} keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} style={styles.messageScroll}>
                                     {chat.hasMore ? <Pressable disabled={chat.loadingOlder} onPress={() => { void chat.loadOlder() }} style={styles.loadOlder}>{chat.loadingOlder ? <ActivityIndicator color={palette.primary} size="small" /> : <Text style={styles.loadOlderText}>{t("chat.communityLoadOlder")}</Text>}</Pressable> : null}
                                     {!chat.messages.length && !chat.loading ? <View style={styles.stateCenter}><View style={styles.stateIcon}><Text style={styles.stateIconText}>✦</Text></View><Text style={styles.stateTitle}>{t("chat.communityNoMessagesTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoMessagesMessage")}</Text></View> : null}
                                     {chat.messages.map((message) => <CommunityMessageBubble key={message.id} message={message} onLongPress={handleMessageLongPress} onOpenAttachment={(attachment) => handleOpenAttachment(attachment, message.telegram_url)} onReact={(emoji) => { void handleReaction(message.id, emoji) }} reacting={chat.reactingMessageId === message.id} reactionPickerOpen={reactionPickerMessageId === message.id} toggleReactionPicker={() => setReactionPickerMessageId((current) => current === message.id ? null : message.id)} />)}
                                 </ScrollView>
-                                {chat.error ? <View style={styles.inlineError}><Text style={styles.inlineErrorText}>{chat.error}</Text></View> : null}
+                                {chat.error ? <Pressable onPress={() => { void chat.refresh() }} style={styles.inlineError}><Text style={styles.inlineErrorText}>{chat.error} · {t("chat.retry")}</Text></Pressable> : null}
                                 <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} style={[chatStyles.composerDock, { paddingBottom: composerBottomInset }]}>
                                     {emojiPickerVisible ? <ChatEmojiPicker onSelect={(emoji) => setDraft((current) => `${current}${emoji}`)} /> : null}
                                     {editingMessage ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityEditingMessage")}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{editingMessage.text}</Text></View><Pressable onPress={() => { setEditingMessage(null); setDraft("") }}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}

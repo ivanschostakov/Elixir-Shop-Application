@@ -385,6 +385,7 @@ async def _store_telethon_attachment(
         )
         db.add(attachment)
         await db.flush()
+        logical.updated_at = ufa_now()
     if attachment.local_filename and attachment.status == "ready":
         return
     from config import TELEGRAM_COMMUNITY_MAX_DOWNLOAD_BYTES
@@ -401,6 +402,10 @@ async def _store_telethon_attachment(
             attachment.local_filename = downloaded_path.name
             attachment.size_bytes = downloaded_path.stat().st_size
             attachment.status = "ready"
+            # Attachment rows are not part of the message change cursor. Bump
+            # the logical parent so incremental app clients receive the newly
+            # available media without waiting for a full refresh.
+            logical.updated_at = ufa_now()
     except (OSError, TimeoutError):
         target.unlink(missing_ok=True)
         log.info("telethon history media download skipped message_id=%s", telegram_message_id)

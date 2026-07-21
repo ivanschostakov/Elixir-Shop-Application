@@ -4,10 +4,11 @@ from datetime import datetime, timedelta
 from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from config import NOTIFICATION_ABANDONED_CART_AFTER_HOURS, NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS, NOTIFICATION_BATCH_SIZE, NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS, NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS, NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS, ufa_now
-from src.app.services.push_notifications import send_push_to_user
-from src.database.models import Basket, BasketItem, FavouredProduct, NotificationDispatch, Order, OrderItem, Review, StockNotificationSubscription, Variant
+from src.app.services.push_notifications import send_push_to_user, send_push_to_users
+from src.database.models import Basket, BasketItem, CommunityMessage, CommunityNotificationEvent, FavouredProduct, NotificationDispatch, Order, OrderItem, Review, StockNotificationSubscription, UserPushToken, Variant
 
 log = logging.getLogger(__name__)
 
@@ -16,6 +17,7 @@ DISPATCH_TYPE_INACTIVE_CUSTOMER = "inactive_customer"
 DISPATCH_TYPE_ABANDONED_CART = "abandoned_cart"
 DISPATCH_TYPE_REVIEW_REMINDER = "review_reminder"
 DISPATCH_TYPE_AI_REPLY = "ai_reply"
+DISPATCH_TYPE_COMMUNITY_MESSAGE = "community_message"
 
 
 def _normalize_stock(stock: int | None) -> int: return max(0, int(stock or 0))
@@ -193,6 +195,70 @@ async def process_review_reminders(session: AsyncSession, *, now: datetime | Non
 
     await session.commit()
     return sent_count
+
+
+async def process_community_message_notifications(session: AsyncSession, *, now: datetime | None = None) -> int:
+    current_time = now or ufa_now()
+    events = list((await session.execute(
+        select(CommunityNotificationEvent)
+        .where(
+            CommunityNotificationEvent.sent_at.is_(None),
+            (CommunityNotificationEvent.next_attempt_at.is_(None)) | (CommunityNotificationEvent.next_attempt_at <= current_time),
+        )
+        .order_by(CommunityNotificationEvent.id.asc())
+        .limit(NOTIFICATION_BATCH_SIZE)
+        .with_for_update(skip_locked=True)
+        .options(
+            selectinload(CommunityNotificationEvent.message).selectinload(CommunityMessage.author),
+            selectinload(CommunityNotificationEvent.message).selectinload(CommunityMessage.topic),
+            selectinload(CommunityNotificationEvent.message).selectinload(CommunityMessage.attachments),
+        )
+    )).scalars().all())
+    if not events:
+        return 0
+
+    registered_user_ids = [int(user_id) for user_id in (await session.execute(
+        select(UserPushToken.user_id).distinct().order_by(UserPushToken.user_id.asc())
+    )).scalars().all()]
+    processed_count = 0
+    for event in events:
+        message = event.message
+        if message.deleted_at is not None:
+            event.sent_at = current_time
+            event.last_error = None
+            processed_count += 1
+            continue
+        recipient_ids = [user_id for user_id in registered_user_ids if user_id != message.app_user_id]
+        author_name = message.author.full_name if message.author else "Участник сообщества"
+        preview = " ".join((message.text or "").split())
+        if not preview:
+            preview = "Отправил(а) вложение" if message.attachments else "Новое сообщение"
+        data = {
+            "type": DISPATCH_TYPE_COMMUNITY_MESSAGE,
+            "topic_id": message.topic_id,
+            "message_id": message.id,
+        }
+        try:
+            await send_push_to_users(
+                session,
+                user_ids=recipient_ids,
+                title=message.topic.name,
+                body=f"{author_name}: {preview[:180]}",
+                data=data,
+                channel_id="community_messages",
+            )
+            event.sent_at = current_time
+            event.last_error = None
+            processed_count += 1
+        except Exception as exc:
+            event.attempts += 1
+            event.last_error = str(exc)[:1000]
+            retry_seconds = min(5 * (2 ** min(event.attempts - 1, 6)), 300)
+            event.next_attempt_at = current_time + timedelta(seconds=retry_seconds)
+            log.exception("Community push delivery failed message_id=%s attempt=%s", message.id, event.attempts)
+
+    await session.commit()
+    return processed_count
 
 
 async def run_notification_processors_once(session: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:

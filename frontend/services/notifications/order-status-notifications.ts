@@ -7,6 +7,7 @@ import { getProductRoute, ROUTES } from "@/constants/routes"
 import { deleteMyPushToken, registerMyPushToken } from "@/services/api/users"
 
 const DEFAULT_ANDROID_CHANNEL_ID = "default"
+const COMMUNITY_ANDROID_CHANNEL_ID = "community_messages"
 
 let notificationsConfigured = false
 let registeredExpoPushToken: string | null = null
@@ -70,10 +71,17 @@ async function ensureAndroidChannel() {
     }
 
     await Notifications.setNotificationChannelAsync(DEFAULT_ANDROID_CHANNEL_ID, {
-        name: "Order updates",
+        name: "App updates",
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#2383E2",
+    })
+    await Notifications.setNotificationChannelAsync(COMMUNITY_ANDROID_CHANNEL_ID, {
+        name: "Community messages",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#2383E2",
+        sound: "default",
     })
 }
 
@@ -245,6 +253,14 @@ function resolvePushTarget(data: PushNotificationData): Href | null {
             return ROUTES.basket
         case "ai_reply":
             return ROUTES.chat
+        case "community_message": {
+            const topicId = asPositiveInt(data.topic_id)
+            if (!topicId) return ROUTES.chat
+            return {
+                pathname: ROUTES.chat,
+                params: { mode: "community", topicId: String(topicId) },
+            }
+        }
         default:
             return null
     }
@@ -308,3 +324,10 @@ export function attachPushOpenListener(navigate: PushNotificationNavigate) {
         responseSubscription.remove()
     }
 }
+
+// Generic names for call sites that subscribe to more than order updates.
+// Keep the original exports for OTA compatibility with existing screens.
+export const setPushNotificationCurrentPath = setOrderStatusNotificationCurrentPath
+export const syncPushNotifications = syncOrderStatusNotifications
+export const unregisterPushNotifications = unregisterOrderStatusNotifications
+export const resetPushNotifications = resetOrderStatusNotifications
