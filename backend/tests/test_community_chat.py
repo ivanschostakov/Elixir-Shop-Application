@@ -159,6 +159,21 @@ def test_long_telegram_text_is_split_without_losing_content():
     assert " ".join(" ".join(chunks).split()) == " ".join(text.split())
 
 
+def test_app_message_telegram_header_distinguishes_messages_and_replies():
+    author = SimpleNamespace(full_name="Татьяна 🧪")
+    message = SimpleNamespace(author=author, reply_to=None)
+    reply = SimpleNamespace(author=author, reply_to=SimpleNamespace(id=12))
+
+    author_name, message_header = community_service._telegram_app_header(message)
+    _, reply_header = community_service._telegram_app_header(reply)
+
+    assert message_header == "Татьяна 🧪 · 💬 Приложение"
+    assert reply_header == "Татьяна 🧪 · ↩️ Приложение"
+    assert community_service._telegram_author_entities(message_header, author_name) == [
+        {"type": "bold", "offset": 0, "length": 10},
+    ]
+
+
 def test_authoritative_topic_snapshot_discovers_updates_restores_and_deletes():
     existing = [
         CommunityTopic(
@@ -289,10 +304,13 @@ def test_telethon_proxy_uses_existing_http_gateway(monkeypatch):
 
 def test_telethon_app_message_header_is_not_mirrored_back_into_app_text():
     telegram_message = SimpleNamespace(message="Ada Lovelace · Elixir app\n\nUpdated text")
+    current_message = SimpleNamespace(message="Татьяна · ↩️ Приложение\n\nПоняла, спасибо")
     logical = SimpleNamespace(source="app")
 
     assert telegram_userbot._telethon_message_text(telegram_message, logical) == "Updated text"
     assert telegram_userbot._archived_app_author_name(telegram_message) == "Ada Lovelace"
+    assert telegram_userbot._telethon_message_text(current_message) == "Поняла, спасибо"
+    assert telegram_userbot._archived_app_author_name(current_message) == "Татьяна"
 
 
 def test_telethon_admin_log_message_classifies_edits_and_deletes():

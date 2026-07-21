@@ -271,12 +271,26 @@ def _telethon_author_snapshot(sender: Any, telegram_message_id: int) -> tuple[st
     return "user", peer_id, full_name
 
 
+_APP_HEADER_SUFFIXES = (
+    " · 💬 Приложение",
+    " · ↩️ Приложение",
+    " · Elixir app",
+)
+
+
+def _app_header_author_name(header: str) -> str | None:
+    for suffix in _APP_HEADER_SUFFIXES:
+        if header.endswith(suffix):
+            return header[: -len(suffix)].strip() or None
+    return None
+
+
 def _telethon_message_text(message: Any, logical: CommunityMessage | None = None) -> str:
     value = str(getattr(message, "message", "") or "")
     header, separator, body = value.partition("\n\n")
     if separator and (
         (logical is not None and logical.source == "app")
-        or header.endswith(" · Elixir app")
+        or _app_header_author_name(header) is not None
     ):
         return body
     return value
@@ -284,10 +298,7 @@ def _telethon_message_text(message: Any, logical: CommunityMessage | None = None
 
 def _archived_app_author_name(message: Any) -> str | None:
     header = str(getattr(message, "message", "") or "").partition("\n\n")[0]
-    suffix = " · Elixir app"
-    if not header.endswith(suffix):
-        return None
-    return header[: -len(suffix)].strip() or None
+    return _app_header_author_name(header)
 
 
 async def _refresh_telethon_author_avatar(client: Any, sender: Any, author: Any) -> None:

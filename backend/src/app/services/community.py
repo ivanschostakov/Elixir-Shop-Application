@@ -421,7 +421,7 @@ async def edit_community_message(
         message.edited_at = edited_at
         await db.commit()
     else:
-        header = f"{message.author.full_name if message.author else 'Elixir member'} · Elixir app"
+        author_name, header = _telegram_app_header(message)
         rendered = f"{header}\n\n{normalized_text}"
         active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
         attachment_part_ids = {
@@ -441,6 +441,7 @@ async def edit_community_message(
                         "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
                         "message_id": text_parts[0].telegram_message_id,
                         "text": rendered,
+                        "entities": _telegram_author_entities(rendered, author_name),
                     },
                 )
                 extra_ids = [part.telegram_message_id for part in text_parts[1:]]
@@ -464,6 +465,7 @@ async def edit_community_message(
                         "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
                         "message_id": target.telegram_message_id,
                         "caption": rendered,
+                        "caption_entities": _telegram_author_entities(rendered, author_name),
                     },
                 )
             else:
@@ -590,6 +592,20 @@ def _telegram_text_chunks(value: str, limit: int = 4096) -> list[str]:
     return chunks
 
 
+def _telegram_app_header(message: CommunityMessage) -> tuple[str, str]:
+    author_name = message.author.full_name if message.author else "Elixir member"
+    message_kind = "↩️" if message.reply_to else "💬"
+    return author_name, f"{author_name} · {message_kind} Приложение"
+
+
+def _telegram_author_entities(value: str, author_name: str) -> list[dict[str, Any]]:
+    if not author_name or not value.startswith(author_name):
+        return []
+    # Telegram entity offsets and lengths use UTF-16 code units.
+    author_length = len(author_name.encode("utf-16-le")) // 2
+    return [{"type": "bold", "offset": 0, "length": author_length}]
+
+
 async def recover_stale_community_deliveries(db: AsyncSession, *, older_than_seconds: int = 300) -> int:
     if not TELEGRAM_COMMUNITY_ENABLED or not TELEGRAM_COMMUNITY_CHAT_ID:
         return 0
@@ -625,7 +641,7 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
     message.delivery_status = "sending"; message.delivery_attempts += 1; message.delivery_error = None
     await db.commit()
     client = telegram_client or get_telegram_bot_client()
-    header = f"{message.author.full_name if message.author else 'Elixir member'} · Elixir app"
+    author_name, header = _telegram_app_header(message)
     text = f"{header}\n\n{message.text}" if message.text else header
     common: dict[str, Any] = {"chat_id": TELEGRAM_COMMUNITY_CHAT_ID, "message_thread_id": message.topic.telegram_thread_id or None, "reply_parameters": await _reply_parameters(message)}
     sent_results: list[dict[str, Any]] = []
@@ -643,7 +659,7 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
         for chunk in _telegram_text_chunks(value):
             if sent_results:
                 await asyncio.sleep(3)
-            result = await client.call("sendMessage", data={**common, "text": chunk})
+            result = await client.call("sendMessage", data={**common, "text": chunk, "entities": _telegram_author_entities(chunk, author_name)})
             await store_result(result)
             common["reply_parameters"] = None
 
@@ -661,7 +677,8 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
                 path = COMMUNITY_ATTACHMENTS_DIR / str(attachment.local_filename)
                 method = "sendPhoto" if attachment.kind == "image" else "sendDocument"
                 field = "photo" if attachment.kind == "image" else "document"
-                result = await client.call(method, data={**common, "caption": "" if prefix_sent or index else caption}, files={field: (attachment.original_filename or attachment.filename, path.read_bytes(), attachment.mime_type or "application/octet-stream")}, timeout=60.0)
+                rendered_caption = "" if prefix_sent or index else caption
+                result = await client.call(method, data={**common, "caption": rendered_caption, "caption_entities": _telegram_author_entities(rendered_caption, author_name)}, files={field: (attachment.original_filename or attachment.filename, path.read_bytes(), attachment.mime_type or "application/octet-stream")}, timeout=60.0)
                 if isinstance(result, dict):
                     attachment.telegram_message_id = int(result.get("message_id") or 0) or None
                 await store_result(result)

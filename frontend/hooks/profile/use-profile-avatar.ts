@@ -3,53 +3,10 @@ import { Alert } from "react-native"
 import * as ImagePicker from "expo-image-picker"
 
 import type { UseProfileAvatarParams } from "@/hooks/profile/use-profile-avatar.types"
-import { API_BASE_URL } from "@/services/api/constants"
+import { resolveApiMediaUri } from "@/services/api/media"
 import { deleteMyAvatar, getMyAvatar, uploadMyAvatar } from "@/services/api/users"
 
 const SUPPORTED_AVATAR_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"])
-
-function getApiOrigin() {
-    try {
-        return new URL(API_BASE_URL).origin
-    } catch {
-        return ""
-    }
-}
-
-function resolveAvatarUri(uri: string | null | undefined) {
-    if (!uri) {
-        return null
-    }
-
-    const trimmedUri = uri.trim()
-    if (!trimmedUri) {
-        return null
-    }
-
-    const apiOrigin = getApiOrigin()
-    if (!apiOrigin) {
-        return trimmedUri
-    }
-
-    if (trimmedUri.startsWith("/")) {
-        return `${apiOrigin}${trimmedUri}`
-    }
-
-    try {
-        const avatarUrl = new URL(trimmedUri)
-        const apiBaseUrl = new URL(apiOrigin)
-
-        if (avatarUrl.pathname.startsWith("/media/avatars/")) {
-            avatarUrl.protocol = apiBaseUrl.protocol
-            avatarUrl.host = apiBaseUrl.host
-            return avatarUrl.toString()
-        }
-
-        return trimmedUri
-    } catch {
-        return trimmedUri
-    }
-}
 
 function normalizeAvatarMimeType(mimeType: string | null | undefined) {
     if (!mimeType) {
@@ -81,7 +38,7 @@ export function useProfileAvatar({ userId, t }: UseProfileAvatarParams) {
                 const avatar = await getMyAvatar()
 
                 if (isMounted) {
-                    setAvatarUri(resolveAvatarUri(avatar.image_url))
+                    setAvatarUri(resolveApiMediaUri(avatar.image_url))
                 }
             } catch {
                 if (isMounted) {
@@ -129,7 +86,7 @@ export function useProfileAvatar({ userId, t }: UseProfileAvatarParams) {
                 mimeType: normalizeAvatarMimeType(asset?.mimeType),
             })
 
-            setAvatarUri(resolveAvatarUri(uploadedImage.image_url))
+            setAvatarUri(resolveApiMediaUri(uploadedImage.image_url))
         } catch (uploadError) {
             Alert.alert(
                 t("profile.photoErrorTitle"),

@@ -37,7 +37,7 @@ docker compose run --rm worker-telegram-polling python -m src.scripts.telegram_u
 
 4. Set `TELEGRAM_USERBOT_ENABLED=true` and recreate the Telegram worker. Bot API polling starts immediately while the persistent Telethon client fetches topics, backfills existing topic history, and listens for edits/deletes. It incrementally fetches missed messages every minute and performs a full history reconciliation daily so deletions are repaired even if an event was missed.
 
-The app community requires only an authenticated app account. App users do not link Telegram and do not need Telegram group membership. App-originated messages are relayed by the bot with `Full Name · Elixir app`; Telegram usernames and Telegram identifiers stay internal.
+The app community requires only an authenticated app account. App users do not link Telegram and do not need Telegram group membership. App-originated messages are relayed by the bot as **Full Name** `· 💬 Приложение`; replies use **Full Name** `· ↩️ Приложение` and Telegram's native reply target. Telegram usernames and Telegram identifiers stay internal.
 
 For a manual history reconciliation:
 

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react"
-import { Animated, Pressable, Text, View } from "react-native"
+import { useEffect, useRef, useState } from "react"
+import { Animated, type LayoutChangeEvent, Pressable, Text, View } from "react-native"
 
 import { useLanguage } from "@/providers/language-provider"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
@@ -11,14 +11,21 @@ export function ChatModeSwitcher({ mode, onChange, unreadCount }: { mode: ChatMo
     const styles = useThemeStyles(createCommunityChatStyles)
     const { t } = useLanguage()
     const progress = useRef(new Animated.Value(mode === "community" ? 1 : 0)).current
+    const [switcherWidth, setSwitcherWidth] = useState(0)
+    const indicatorWidth = Math.max(0, (switcherWidth - 6) / 2)
+
+    const handleLayout = (event: LayoutChangeEvent) => {
+        const nextWidth = event.nativeEvent.layout.width
+        setSwitcherWidth((currentWidth) => currentWidth === nextWidth ? currentWidth : nextWidth)
+    }
 
     useEffect(() => {
         Animated.spring(progress, { toValue: mode === "community" ? 1 : 0, damping: 20, stiffness: 220, mass: 0.7, useNativeDriver: true }).start()
     }, [mode, progress])
 
     return (
-        <View accessibilityRole="tablist" style={styles.modeSwitcher}>
-            <Animated.View style={[styles.modeIndicator, { transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, 104] }) }] }]} />
+        <View accessibilityRole="tablist" onLayout={handleLayout} style={styles.modeSwitcher}>
+            {indicatorWidth > 0 ? <Animated.View style={[styles.modeIndicator, { width: indicatorWidth, transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, indicatorWidth] }) }] }]} /> : null}
             <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "ai" }} onPress={() => onChange("ai")} style={styles.modeButton}>
                 <Text style={[styles.modeText, mode === "ai" ? styles.modeTextActive : null]}>{t("chat.modeAi")}</Text>
             </Pressable>
