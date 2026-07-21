@@ -60,6 +60,7 @@ The bridge records that message's thread ID and deletes the command. Bot API lif
 3. Verify an authenticated app user with no linked Telegram account can see the selector, topics, full author names and photos.
 4. Post text, a photo, a document, and a reply from Telegram and confirm they appear in the app.
 5. Post the same formats from the app and confirm each arrives once in the exact Telegram topic.
-6. Edit and delete messages from both surfaces and confirm the open app chat updates on its next poll.
+6. Add and remove reactions in the app from two accounts and confirm the counts update on the next poll.
+7. Edit and delete messages from both surfaces and confirm the open app chat updates on its next poll.
 
 Turning the flag off hides the selector and stops new community ingestion and outbound delivery without deleting mirrored data.

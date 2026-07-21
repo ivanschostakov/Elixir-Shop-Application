@@ -33,6 +33,12 @@ export type CommunityReplyPreview = {
     text: string
 }
 
+export type CommunityReaction = {
+    emoji: string
+    count: number
+    reacted_by_me: boolean
+}
+
 export type CommunityMessage = {
     id: number
     topic_id: number
@@ -40,6 +46,7 @@ export type CommunityMessage = {
     text: string
     attachments: CommunityAttachment[]
     reply_to: CommunityReplyPreview | null
+    reactions: CommunityReaction[]
     unsupported_type: string | null
     telegram_url: string | null
     delivery_status: CommunityDeliveryStatus

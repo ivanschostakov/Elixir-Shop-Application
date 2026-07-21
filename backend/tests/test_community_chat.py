@@ -27,6 +27,7 @@ def test_community_response_does_not_expose_telegram_username():
 
     assert payload["author"]["full_name"] == "Ada Lovelace"
     assert payload["author"]["avatar_url"]
+    assert payload["reactions"] == []
     assert "username" not in payload["author"]
     assert "telegram_user_id" not in payload["author"]
 
@@ -79,6 +80,21 @@ def test_media_signatures_are_user_scoped(monkeypatch):
 
     assert community_service.verify_community_media_signature(media_type="attachment", media_id=8, user_id=12, expires=expires, signature=signature)
     assert not community_service.verify_community_media_signature(media_type="attachment", media_id=8, user_id=13, expires=expires, signature=signature)
+
+
+def test_community_reactions_are_aggregated_and_mark_the_current_user():
+    message = SimpleNamespace(reactions=[
+        SimpleNamespace(emoji="👍", user_id=12),
+        SimpleNamespace(emoji="👍", user_id=13),
+        SimpleNamespace(emoji="❤️", user_id=13),
+    ])
+
+    reactions = [item.model_dump() for item in community_service._serialize_reactions(message, user_id=12)]
+
+    assert reactions == [
+        {"emoji": "👍", "count": 2, "reacted_by_me": True},
+        {"emoji": "❤️", "count": 1, "reacted_by_me": False},
+    ]
 
 
 def test_community_update_delivery_marker_joins_message_transaction(monkeypatch):

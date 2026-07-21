@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { AppState } from "react-native"
 import { useIsFocused } from "@react-navigation/native"
 
-import { deleteCommunityMessage, editCommunityMessage, getCommunityMessages, getCommunityStatus, getCommunityTopics, markCommunityTopicRead, sendCommunityMessage } from "@/services/api/community"
+import { deleteCommunityMessage, editCommunityMessage, getCommunityMessages, getCommunityStatus, getCommunityTopics, markCommunityTopicRead, sendCommunityMessage, toggleCommunityMessageReaction } from "@/services/api/community"
 import type { CommunityMessage, CommunityStatus, CommunityTopic, SendCommunityMessagePayload } from "@/services/api/community.types"
 
 const MESSAGE_POLL_INTERVAL_MS = 2500
@@ -28,6 +28,7 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
     const [hasMore, setHasMore] = useState(false)
     const [sending, setSending] = useState(false)
     const [mutatingMessageId, setMutatingMessageId] = useState<number | null>(null)
+    const [reactingMessageId, setReactingMessageId] = useState<number | null>(null)
     const [error, setError] = useState<string | null>(null)
     const appActiveRef = useRef(AppState.currentState === "active")
     const hasLoadedStatusRef = useRef(false)
@@ -235,5 +236,17 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
         }
     }, [loadTopics, mutatingMessageId, selectedTopicId])
 
-    return { error, hasMore, loading, loadingOlder, messages, mutatingMessageId, refreshing, selectedTopic, selectedTopicId, sending, status, topics, edit, loadOlder, markRead, refresh, remove, selectTopic: setSelectedTopicId, send }
+    const react = useCallback(async (messageId: number, emoji: string) => {
+        if (!selectedTopicId || reactingMessageId) return null
+        setReactingMessageId(messageId)
+        try {
+            const reactions = await toggleCommunityMessageReaction(selectedTopicId, messageId, emoji)
+            setMessages((current) => current.map((message) => message.id === messageId ? { ...message, reactions } : message))
+            return reactions
+        } finally {
+            setReactingMessageId(null)
+        }
+    }, [reactingMessageId, selectedTopicId])
+
+    return { error, hasMore, loading, loadingOlder, messages, mutatingMessageId, reactingMessageId, refreshing, selectedTopic, selectedTopicId, sending, status, topics, edit, loadOlder, markRead, react, refresh, remove, selectTopic: setSelectedTopicId, send }
 }

@@ -786,6 +786,42 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         alignItems: "center",
         justifyContent: "center",
     },
+    emojiPicker: {
+        borderRadius: 20,
+        ...liquidGlassNeutral,
+        paddingHorizontal: spacing.sm,
+        paddingTop: spacing.sm,
+        paddingBottom: 6,
+        marginBottom: spacing.xs,
+        ...glassShadow,
+    },
+    emojiPickerTitle: {
+        color: "rgba(36,43,47,0.66)",
+        fontSize: 11,
+        lineHeight: 14,
+        fontWeight: "800",
+        marginBottom: 4,
+        marginLeft: 5,
+    },
+    emojiPickerGrid: {
+        flexDirection: "row",
+        flexWrap: "wrap",
+        justifyContent: "space-between",
+    },
+    emojiPickerButton: {
+        width: "12.5%",
+        minHeight: 34,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 10,
+    },
+    emojiPickerButtonPressed: {
+        backgroundColor: "rgba(21,151,223,0.12)",
+    },
+    emojiPickerEmoji: {
+        fontSize: 23,
+        lineHeight: 29,
+    },
     sendButtonDisabled: {
         opacity: 0.6,
     },

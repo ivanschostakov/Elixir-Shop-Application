@@ -42,6 +42,16 @@ class CommunityReplyPreviewRead(BaseModel):
     text: str
 
 
+class CommunityReactionRead(BaseModel):
+    emoji: str
+    count: int = Field(ge=1)
+    reacted_by_me: bool = False
+
+
+class CommunityReactionTogglePayload(BaseModel):
+    emoji: str = Field(min_length=1, max_length=16)
+
+
 class CommunityMessageRead(BaseModel):
     id: int
     topic_id: int
@@ -49,6 +59,7 @@ class CommunityMessageRead(BaseModel):
     text: str
     attachments: list[CommunityAttachmentRead] = Field(default_factory=list)
     reply_to: CommunityReplyPreviewRead | None = None
+    reactions: list[CommunityReactionRead] = Field(default_factory=list)
     unsupported_type: str | None = None
     telegram_url: str | None = None
     delivery_status: CommunityDeliveryStatus

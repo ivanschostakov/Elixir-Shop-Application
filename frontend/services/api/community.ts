@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart } from "@/services/api/client"
-import type { CommunityMessage, CommunityMessagePage, CommunityStatus, CommunityTopicList, SendCommunityMessagePayload } from "@/services/api/community.types"
+import type { CommunityMessage, CommunityMessagePage, CommunityReaction, CommunityStatus, CommunityTopicList, SendCommunityMessagePayload } from "@/services/api/community.types"
 
 const communityEndpoint = "/v1/users/me/community"
 const readOptions = { appIntegrityAction: "community:read" }
@@ -42,6 +42,14 @@ export function editCommunityMessage(topicId: number, messageId: number, text: s
 export function deleteCommunityMessage(topicId: number, messageId: number) {
     return apiDelete<void>(
         `${communityEndpoint}/topics/${topicId}/messages/${messageId}`,
+        { appIntegrityAction: "community:send" },
+    )
+}
+
+export function toggleCommunityMessageReaction(topicId: number, messageId: number, emoji: string) {
+    return apiPost<CommunityReaction[], { emoji: string }>(
+        `${communityEndpoint}/topics/${topicId}/messages/${messageId}/reactions`,
+        { emoji },
         { appIntegrityAction: "community:send" },
     )
 }

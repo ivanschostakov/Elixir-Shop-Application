@@ -11,6 +11,8 @@ from src.database.schemas.community import (
     CommunityMessageEditPayload,
     CommunityMessagePageRead,
     CommunityMessageRead,
+    CommunityReactionRead,
+    CommunityReactionTogglePayload,
     CommunityStatusRead,
     CommunityTopicListRead,
 )
@@ -23,6 +25,7 @@ from src.app.services.community import (
     list_community_messages,
     list_community_topics,
     mark_community_topic_read,
+    toggle_community_message_reaction,
 )
 from src.database import get_db
 from src.database.models import User
@@ -124,3 +127,15 @@ async def mark_my_community_topic_read(
 ) -> CommunityMarkReadResponse:
     await mark_community_topic_read(db, user=current_user, topic_id=topic_id, last_message_id=payload.last_message_id)
     return CommunityMarkReadResponse()
+
+
+@community_router.post("/topics/{topic_id}/messages/{message_id}/reactions", response_model=list[CommunityReactionRead], status_code=status.HTTP_200_OK)
+async def toggle_my_community_message_reaction(
+    topic_id: int,
+    message_id: int,
+    payload: CommunityReactionTogglePayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _app_integrity: None = Depends(require_app_integrity("community:send")),
+) -> list[CommunityReactionRead]:
+    return await toggle_community_message_reaction(db, user=current_user, topic_id=topic_id, message_id=message_id, emoji=payload.emoji)

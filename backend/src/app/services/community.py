@@ -37,6 +37,7 @@ from src.database.schemas.community import (
     CommunityGroupRead,
     CommunityMessagePageRead,
     CommunityMessageRead,
+    CommunityReactionRead,
     CommunityReplyPreviewRead,
     CommunityStatusRead,
     CommunityTopicListRead,
@@ -49,6 +50,7 @@ from src.database.models import (
     CommunityAttachment,
     CommunityAuthor,
     CommunityMessage,
+    CommunityReaction,
     CommunityTelegramPart,
     CommunityTopic,
     CommunityTopicRead as CommunityTopicReadModel,
@@ -57,6 +59,7 @@ from src.database.models import (
 from src.integrations.telegram import TelegramBotAPIError, TelegramBotClient, get_telegram_bot_client
 
 log = logging.getLogger(__name__)
+COMMUNITY_REACTION_EMOJIS = ("👍", "❤️", "🔥", "😂", "👏", "😮", "😢", "🙏")
 COMMUNITY_AVATARS_DIR = COMMUNITY_MEDIA_DIR / "avatars"
 COMMUNITY_ATTACHMENTS_DIR = COMMUNITY_MEDIA_DIR / "attachments"
 COMMUNITY_GROUP_DIR = COMMUNITY_MEDIA_DIR / "group"
@@ -166,6 +169,7 @@ def _message_options():
         selectinload(CommunityMessage.attachments),
         selectinload(CommunityMessage.telegram_parts),
         selectinload(CommunityMessage.reply_to).selectinload(CommunityMessage.author),
+        selectinload(CommunityMessage.reactions),
     )
 
 
@@ -180,6 +184,20 @@ def _telegram_message_url(message: CommunityMessage) -> str | None:
     return f"https://t.me/c/{internal_chat_id}/{telegram_message_id}{suffix}"
 
 
+def _serialize_reactions(message: CommunityMessage, *, user_id: int) -> list[CommunityReactionRead]:
+    reaction_counts: dict[str, int] = {}
+    my_reactions: set[str] = set()
+    for reaction in message.reactions:
+        reaction_counts[reaction.emoji] = reaction_counts.get(reaction.emoji, 0) + 1
+        if reaction.user_id == user_id:
+            my_reactions.add(reaction.emoji)
+    return [
+        CommunityReactionRead(emoji=emoji, count=reaction_counts[emoji], reacted_by_me=emoji in my_reactions)
+        for emoji in COMMUNITY_REACTION_EMOJIS
+        if reaction_counts.get(emoji)
+    ]
+
+
 def serialize_community_message(message: CommunityMessage, *, request: Request, user_id: int) -> CommunityMessageRead:
     author = message.author
     author_read = CommunityAuthorRead(id=author.id if author else 0, full_name=author.full_name if author else "Telegram member", avatar_url=build_community_media_url(request, media_type="author", media_id=author.id, user_id=user_id) if author and author.avatar_local_filename else None, is_current_user=message.app_user_id == user_id)
@@ -188,7 +206,7 @@ def serialize_community_message(message: CommunityMessage, *, request: Request, 
     if message.reply_to:
         reply = CommunityReplyPreviewRead(id=message.reply_to.id, author_name=message.reply_to.author.full_name if message.reply_to.author else "Telegram member", text=(message.reply_to.text or "Attachment")[:160])
     can_mutate = message.source == "app" and message.app_user_id == user_id and not message.deleted_at
-    return CommunityMessageRead(id=message.id, topic_id=message.topic_id, author=author_read, text="" if message.deleted_at else message.text, attachments=attachments, reply_to=reply, unsupported_type=None if message.deleted_at else message.unsupported_type, telegram_url=_telegram_message_url(message), delivery_status=message.delivery_status, is_edited=bool(message.edited_at), is_deleted=bool(message.deleted_at), can_edit=can_mutate, can_delete=can_mutate, edited_at=message.edited_at, created_at=message.sent_at)
+    return CommunityMessageRead(id=message.id, topic_id=message.topic_id, author=author_read, text="" if message.deleted_at else message.text, attachments=attachments, reply_to=reply, reactions=_serialize_reactions(message, user_id=user_id), unsupported_type=None if message.deleted_at else message.unsupported_type, telegram_url=_telegram_message_url(message), delivery_status=message.delivery_status, is_edited=bool(message.edited_at), is_deleted=bool(message.deleted_at), can_edit=can_mutate, can_delete=can_mutate, edited_at=message.edited_at, created_at=message.sent_at)
 
 
 async def _initialize_read_baseline(db: AsyncSession, *, user_id: int, topics: list[CommunityTopic]) -> None:
@@ -287,6 +305,34 @@ async def mark_community_topic_read(db: AsyncSession, *, user: User, topic_id: i
     if read_state is None: db.add(CommunityTopicReadModel(user_id=user.id, topic_id=topic_id, last_read_message_id=last_message_id))
     elif not read_state.last_read_message_id or last_message_id > read_state.last_read_message_id: read_state.last_read_message_id = last_message_id
     await db.commit()
+
+
+async def toggle_community_message_reaction(db: AsyncSession, *, user: User, topic_id: int, message_id: int, emoji: str) -> list[CommunityReactionRead]:
+    await require_community_access(user)
+    normalized_emoji = emoji.strip()
+    if normalized_emoji not in COMMUNITY_REACTION_EMOJIS:
+        raise HTTPException(status_code=422, detail="Unsupported reaction")
+    message = (await db.execute(
+        select(CommunityMessage)
+        .where(CommunityMessage.id == message_id, CommunityMessage.topic_id == topic_id, CommunityMessage.deleted_at.is_(None))
+        .options(selectinload(CommunityMessage.reactions))
+    )).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(status_code=404, detail="Community message not found")
+    existing = next((reaction for reaction in message.reactions if reaction.user_id == user.id and reaction.emoji == normalized_emoji), None)
+    if existing:
+        await db.delete(existing)
+    else:
+        db.add(CommunityReaction(message_id=message.id, user_id=user.id, emoji=normalized_emoji))
+    # Message polling uses the parent timestamp as its reconciliation cursor.
+    message.updated_at = ufa_now()
+    await db.commit()
+    message = (await db.execute(
+        select(CommunityMessage)
+        .where(CommunityMessage.id == message_id)
+        .options(selectinload(CommunityMessage.reactions))
+    )).scalar_one()
+    return _serialize_reactions(message, user_id=user.id)
 
 
 async def _upsert_author(db: AsyncSession, *, kind: str, telegram_peer_id: int, full_name: str, app_user_id: int | None = None, telegram_client: TelegramBotClient | None = None, refresh_avatar: bool = True) -> CommunityAuthor:
