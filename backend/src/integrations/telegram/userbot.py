@@ -348,16 +348,20 @@ async def _store_telethon_attachment(
         None,
     )
     file_info = getattr(telegram_message, "file", None)
-    is_document = getattr(telegram_message, "document", None) is not None and unsupported_type is None
+    is_audio = unsupported_type in {"voice", "audio"}
+    is_document = getattr(telegram_message, "document", None) is not None and (unsupported_type is None or is_audio)
+    if is_audio:
+        logical.unsupported_type = None
     if not is_photo and not is_document:
         if unsupported_type:
             logical.unsupported_type = "location" if unsupported_type == "geo" else unsupported_type
         return
 
     size_bytes = int(getattr(file_info, "size", 0) or 0)
-    fallback = f"photo-{telegram_message_id}.jpg" if is_photo else f"file-{telegram_message_id}"
+    fallback = f"photo-{telegram_message_id}.jpg" if is_photo else f"voice-{telegram_message_id}.ogg" if unsupported_type == "voice" else f"audio-{telegram_message_id}"
     original = _safe_filename(getattr(file_info, "name", None), fallback)
-    mime_type = str(getattr(file_info, "mime_type", "") or ("image/jpeg" if is_photo else "application/octet-stream"))
+    fallback_mime_type = "image/jpeg" if is_photo else "audio/ogg" if unsupported_type == "voice" else "audio/mpeg" if unsupported_type == "audio" else "application/octet-stream"
+    mime_type = str(getattr(file_info, "mime_type", "") or fallback_mime_type)
     # Never touch ``logical.attachments`` here. Newly-created logical messages
     # do not have that async relationship loaded, and attribute access would
     # attempt a synchronous lazy load (SQLAlchemy MissingGreenlet). An explicit

@@ -841,16 +841,23 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
     elif raw_text and not logical.text: logical.text = raw_text
     photo_sizes = message.get("photo") if isinstance(message.get("photo"), list) else []
     document = message.get("document") if isinstance(message.get("document"), dict) else None
-    file_payload = max([item for item in photo_sizes if isinstance(item, dict)], key=lambda item: int(item.get("file_size") or 0), default=None) if photo_sizes else document
+    voice = message.get("voice") if isinstance(message.get("voice"), dict) else None
+    audio = message.get("audio") if isinstance(message.get("audio"), dict) else None
+    audio_payload = voice or audio
+    if audio_payload:
+        logical.unsupported_type = None
+    file_payload = max([item for item in photo_sizes if isinstance(item, dict)], key=lambda item: int(item.get("file_size") or 0), default=None) if photo_sizes else document or audio_payload
     attachment: CommunityAttachment | None = None
     file_id = ""
     if file_payload:
         file_id = str(file_payload.get("file_id") or "")
-        original = _safe_filename(document.get("file_name") if document else None, f"photo-{telegram_message_id}.jpg" if photo_sizes else f"file-{telegram_message_id}")
-        mime_type = str((document or {}).get("mime_type") or ("image/jpeg" if photo_sizes else "application/octet-stream"))
+        fallback_name = f"photo-{telegram_message_id}.jpg" if photo_sizes else f"voice-{telegram_message_id}.ogg" if voice else f"audio-{telegram_message_id}" if audio else f"file-{telegram_message_id}"
+        original = _safe_filename(file_payload.get("file_name"), fallback_name)
+        fallback_mime_type = "image/jpeg" if photo_sizes else "audio/ogg" if voice else "audio/mpeg" if audio else "application/octet-stream"
+        mime_type = str(file_payload.get("mime_type") or fallback_mime_type)
         attachment = CommunityAttachment(message_id=logical.id, kind="image" if photo_sizes else "document", original_filename=original, filename=f"telegram-{telegram_message_id}", mime_type=mime_type, size_bytes=int(file_payload.get("file_size") or 0), telegram_file_id=file_id, telegram_file_unique_id=str(file_payload.get("file_unique_id") or "") or None, telegram_message_id=telegram_message_id, status="telegram_only")
         db.add(attachment); await db.flush()
-    unsupported_keys = ("voice", "video", "video_note", "sticker", "animation", "audio", "poll", "location", "contact")
+    unsupported_keys = ("video", "video_note", "sticker", "animation", "poll", "location", "contact")
     for key in unsupported_keys:
         if message.get(key) is not None: logical.unsupported_type = key; break
     db.add(CommunityTelegramPart(message_id=logical.id, telegram_chat_id=TELEGRAM_COMMUNITY_CHAT_ID, telegram_message_id=telegram_message_id))
