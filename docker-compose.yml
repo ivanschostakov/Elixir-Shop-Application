@@ -121,13 +121,15 @@ services:
       - /bin/sh
       - -lc
       - |
-        mkdir -p /app/backend/media /app/backend/private_media /app/backend/logs \
-        && chown -R 10001:10001 /app/backend/media /app/backend/private_media /app/backend/logs \
+        mkdir -p /app/backend/media /app/backend/private_media /app/backend/logs /app/backend/.secrets/telegram-userbot \
+        && chown -R 10001:10001 /app/backend/media /app/backend/private_media /app/backend/logs /app/backend/.secrets/telegram-userbot \
+        && chmod 700 /app/backend/.secrets/telegram-userbot \
         && exec su -s /bin/sh app -c "python -m src.workers.telegram_polling"
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/private_media:/app/backend/private_media
       - ./backend/logs:/app/backend/logs
+      - ./backend/.secrets/telegram-userbot:/app/backend/.secrets/telegram-userbot
 
 volumes:
   redis_data:

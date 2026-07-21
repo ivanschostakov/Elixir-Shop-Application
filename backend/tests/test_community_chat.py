@@ -3,7 +3,11 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import src.app.services.community as community_service
+import src.app.services.community_topics as community_topics_service
 import src.app.services.telegram_updates as telegram_updates_service
+import src.integrations.telegram.userbot as telegram_userbot
+from src.app.services.community_topics import TelegramForumTopicSnapshot
+from src.database.models import CommunityTopic
 from src.database.schemas.community import CommunityAuthorRead, CommunityMessageRead
 
 
@@ -154,3 +158,131 @@ def test_long_telegram_text_is_split_without_losing_content():
     assert len(chunks) > 1
     assert all(len(chunk) <= 4096 for chunk in chunks)
     assert " ".join(" ".join(chunks).split()) == " ".join(text.split())
+
+
+def test_authoritative_topic_snapshot_discovers_updates_restores_and_deletes():
+    existing = [
+        CommunityTopic(
+            telegram_chat_id=-10099,
+            telegram_thread_id=10,
+            name="Old name",
+            is_closed=False,
+            is_hidden=False,
+            is_pinned=False,
+            is_deleted=False,
+        ),
+        CommunityTopic(
+            telegram_chat_id=-10099,
+            telegram_thread_id=20,
+            name="Deleted topic",
+            is_closed=False,
+            is_hidden=False,
+            is_pinned=False,
+            is_deleted=False,
+        ),
+        CommunityTopic(
+            telegram_chat_id=-10099,
+            telegram_thread_id=30,
+            name="Restored topic",
+            is_closed=True,
+            is_hidden=False,
+            is_pinned=False,
+            is_deleted=True,
+        ),
+    ]
+    snapshots = [
+        TelegramForumTopicSnapshot(
+            thread_id=10,
+            name="Renamed topic",
+            icon_color=0x6FB9F0,
+            is_closed=True,
+            is_pinned=True,
+            top_message_id=101,
+        ),
+        TelegramForumTopicSnapshot(thread_id=30, name="Restored topic"),
+        TelegramForumTopicSnapshot(thread_id=40, name="New topic"),
+    ]
+
+    new_topics, result = community_topics_service.apply_telegram_topic_snapshots(
+        existing,
+        snapshots,
+        chat_id=-10099,
+        synced_at=datetime.now(timezone.utc),
+    )
+
+    by_thread = {topic.telegram_thread_id: topic for topic in [*existing, *new_topics]}
+    assert result.discovered == 1
+    assert result.restored == 1
+    assert result.deleted == 1
+    assert result.total == 3
+    assert by_thread[10].name == "Renamed topic"
+    assert by_thread[10].is_closed is True
+    assert by_thread[10].is_pinned is True
+    assert by_thread[10].telegram_top_message_id == 101
+    assert by_thread[20].is_deleted is True
+    assert by_thread[30].is_deleted is False
+    assert by_thread[40].name == "New topic"
+
+
+def test_empty_topic_snapshot_cannot_delete_existing_topics():
+    existing = CommunityTopic(
+        telegram_chat_id=-10099,
+        telegram_thread_id=10,
+        name="Keep me",
+        is_deleted=False,
+    )
+
+    try:
+        community_topics_service.apply_telegram_topic_snapshots(
+            [existing],
+            [],
+            chat_id=-10099,
+        )
+    except ValueError as exc:
+        assert "empty" in str(exc)
+    else:
+        raise AssertionError("an empty authoritative snapshot must be rejected")
+
+    assert existing.is_deleted is False
+
+
+def test_telethon_topic_snapshot_parses_structural_metadata():
+    raw = SimpleNamespace(
+        id=77,
+        title="Product questions",
+        icon_color=0xFFD67E,
+        icon_emoji_id=987654321,
+        closed=True,
+        hidden=False,
+        pinned=True,
+        top_message=900,
+        from_id=SimpleNamespace(user_id=123),
+        date=datetime.now(timezone.utc),
+    )
+
+    snapshot = telegram_userbot._topic_snapshot(raw, get_peer_id=lambda peer: peer.user_id)
+
+    assert snapshot is not None
+    assert snapshot.thread_id == 77
+    assert snapshot.name == "Product questions"
+    assert snapshot.icon_custom_emoji_id == "987654321"
+    assert snapshot.is_closed is True
+    assert snapshot.is_pinned is True
+    assert snapshot.creator_peer_id == 123
+
+
+def test_telethon_proxy_uses_existing_http_gateway(monkeypatch):
+    monkeypatch.setattr(
+        telegram_userbot,
+        "TELEGRAM_USERBOT_PROXY_URL",
+        "http://proxy-user:proxy-pass@172.18.0.1:3129",
+    )
+
+    assert telegram_userbot._telethon_proxy() == (
+        "http",
+        "172.18.0.1",
+        3129,
+        True,
+        "proxy-user",
+        "proxy-pass",
+    )

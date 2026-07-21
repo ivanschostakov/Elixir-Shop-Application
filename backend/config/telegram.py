@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from .env import _bool_env, _env, _float_env, _int_env
+from .paths import WORKING_DIR
 
 
 TELEGRAM_BOT_TOKEN = _env("TELEGRAM_BOT_TOKEN")
@@ -36,3 +39,24 @@ TELEGRAM_COMMUNITY_MAX_DOWNLOAD_BYTES = _int_env(
 TELEGRAM_COMMUNITY_MEDIA_SIGNING_SECRET = (
     _env("TELEGRAM_COMMUNITY_MEDIA_SIGNING_SECRET") or ""
 ).strip() or None
+
+# This user-authorized MTProto client is used only for authoritative forum
+# topic metadata. Bot API polling remains the real-time message transport.
+TELEGRAM_USERBOT_ENABLED = _bool_env("TELEGRAM_USERBOT_ENABLED", False)
+TELEGRAM_USERBOT_API_ID = _int_env("TELEGRAM_USERBOT_API_ID", 0)
+TELEGRAM_USERBOT_API_HASH = (_env("TELEGRAM_USERBOT_API_HASH") or "").strip() or None
+TELEGRAM_USERBOT_PHONE = (_env("TELEGRAM_USERBOT_PHONE") or "").strip() or None
+TELEGRAM_USERBOT_SESSION_PATH = Path(
+    _env(
+        "TELEGRAM_USERBOT_SESSION_PATH",
+        str(WORKING_DIR / ".secrets" / "telegram-userbot" / "community"),
+    )
+    or str(WORKING_DIR / ".secrets" / "telegram-userbot" / "community")
+)
+TELEGRAM_USERBOT_PROXY_URL = (
+    _env("TELEGRAM_USERBOT_PROXY_URL", TELEGRAM_PROXY_URL or "") or ""
+).strip() or None
+TELEGRAM_USERBOT_TOPIC_SYNC_INTERVAL_SECONDS = _int_env(
+    "TELEGRAM_USERBOT_TOPIC_SYNC_INTERVAL_SECONDS",
+    60,
+)

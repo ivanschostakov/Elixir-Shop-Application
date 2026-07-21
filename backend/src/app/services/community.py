@@ -208,7 +208,7 @@ async def _initialize_read_baseline(db: AsyncSession, *, user_id: int, topics: l
 
 async def list_community_topics(db: AsyncSession, *, user: User, request: Request) -> CommunityTopicListRead:
     await require_community_access(user)
-    topics = list((await db.execute(select(CommunityTopic).where(CommunityTopic.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID, CommunityTopic.is_hidden.is_(False)).order_by(CommunityTopic.last_message_at.desc().nullslast(), CommunityTopic.name.asc()))).scalars().all())
+    topics = list((await db.execute(select(CommunityTopic).where(CommunityTopic.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID, CommunityTopic.is_hidden.is_(False), CommunityTopic.is_deleted.is_(False)).order_by(CommunityTopic.last_message_at.desc().nullslast(), CommunityTopic.name.asc()))).scalars().all())
     await _initialize_read_baseline(db, user_id=user.id, topics=topics)
     read_states = list((await db.execute(select(CommunityTopicReadModel).where(CommunityTopicReadModel.user_id == user.id, CommunityTopicReadModel.topic_id.in_([topic.id for topic in topics]) if topics else False))).scalars().all())
     read_by_topic = {item.topic_id: item for item in read_states}
@@ -232,7 +232,7 @@ async def list_community_messages(db: AsyncSession, *, user: User, request: Requ
     await require_community_access(user)
     if before_id and after_id: raise HTTPException(status_code=422, detail="before_id and after_id cannot be combined")
     topic = await db.get(CommunityTopic, topic_id)
-    if topic is None or topic.telegram_chat_id != TELEGRAM_COMMUNITY_CHAT_ID: raise HTTPException(status_code=404, detail="Community topic not found")
+    if topic is None or topic.telegram_chat_id != TELEGRAM_COMMUNITY_CHAT_ID or topic.is_deleted: raise HTTPException(status_code=404, detail="Community topic not found")
     stmt = select(CommunityMessage).where(CommunityMessage.topic_id == topic_id).options(*_message_options())
     if after_id:
         new_rows = list((await db.execute(stmt.where(CommunityMessage.id > after_id).order_by(CommunityMessage.id.asc()).limit(limit + 1))).scalars().all())
@@ -305,7 +305,7 @@ def _safe_filename(value: str | None, fallback: str) -> str:
 async def create_community_message(db: AsyncSession, *, user: User, request: Request, topic_id: int, client_id: str, text: str, reply_to_message_id: int | None, uploads: list[UploadFile]) -> CommunityMessageRead:
     await require_community_access(user)
     topic = await db.get(CommunityTopic, topic_id)
-    if topic is None or topic.telegram_chat_id != TELEGRAM_COMMUNITY_CHAT_ID: raise HTTPException(status_code=404, detail="Community topic not found")
+    if topic is None or topic.telegram_chat_id != TELEGRAM_COMMUNITY_CHAT_ID or topic.is_deleted: raise HTTPException(status_code=404, detail="Community topic not found")
     if topic.is_closed: raise HTTPException(status_code=409, detail="This Telegram topic is closed")
     normalized_text = text.strip()
     if not normalized_text and not uploads: raise HTTPException(status_code=422, detail="Message text or an attachment is required")
@@ -395,6 +395,11 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
     stmt = select(CommunityMessage).where(CommunityMessage.source == "app", CommunityMessage.delivery_status == "queued", or_(CommunityMessage.next_delivery_attempt_at.is_(None), CommunityMessage.next_delivery_attempt_at <= now)).order_by(CommunityMessage.id.asc()).limit(1).options(selectinload(CommunityMessage.topic), selectinload(CommunityMessage.author), selectinload(CommunityMessage.attachments), selectinload(CommunityMessage.telegram_parts), selectinload(CommunityMessage.reply_to).selectinload(CommunityMessage.telegram_parts)).with_for_update(skip_locked=True)
     message = (await db.execute(stmt)).scalar_one_or_none()
     if message is None: return False
+    if message.topic is None or message.topic.is_deleted:
+        message.delivery_status = "failed"
+        message.delivery_error = "The Telegram topic no longer exists."
+        await db.commit()
+        return True
     message.delivery_status = "sending"; message.delivery_attempts += 1; message.delivery_error = None
     await db.commit()
     client = telegram_client or get_telegram_bot_client()
@@ -464,6 +469,7 @@ async def _get_or_create_topic(db: AsyncSession, *, thread_id: int, name: str | 
         topic = CommunityTopic(telegram_chat_id=TELEGRAM_COMMUNITY_CHAT_ID, telegram_thread_id=thread_id, name=(name or ("General" if thread_id == 0 else f"Topic {thread_id}"))[:128])
         db.add(topic); await db.flush()
     elif name: topic.name = name[:128]
+    topic.is_deleted = False
     return topic
 
 

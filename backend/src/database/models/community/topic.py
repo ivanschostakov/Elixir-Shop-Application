@@ -20,6 +20,12 @@ class CommunityTopic(Base, IdPkMixin, TimestampMixin):
     icon_custom_emoji_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    telegram_top_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telegram_creator_peer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telegram_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    telegram_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 

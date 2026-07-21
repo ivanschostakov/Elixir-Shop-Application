@@ -18,13 +18,30 @@ The community bridge is disabled by default. Deploy the API, Telegram polling wo
 
 ## Register existing topics
 
-In every existing forum topic, including General, a group administrator sends:
+The preferred bootstrap uses a dedicated Telegram user session through MTProto. The account only needs to be a member of the forum; making the dedicated account an administrator is recommended for operational continuity.
+
+1. Create Telegram API credentials at `my.telegram.org` and configure:
+   - `TELEGRAM_USERBOT_API_ID`
+   - `TELEGRAM_USERBOT_API_HASH`
+   - optional `TELEGRAM_USERBOT_PHONE`
+   - `TELEGRAM_USERBOT_SESSION_PATH=/app/backend/.secrets/telegram-userbot/community`
+   - `TELEGRAM_USERBOT_TOPIC_SYNC_INTERVAL_SECONDS=60`
+2. Keep `TELEGRAM_USERBOT_ENABLED=false` until the session is authorized.
+3. Authorize the persistent session interactively:
+
+```bash
+docker compose run --rm worker-telegram-polling python -m src.scripts.telegram_userbot_login
+```
+
+4. Set `TELEGRAM_USERBOT_ENABLED=true` and recreate the Telegram worker. It fetches the complete forum topic list before Bot API polling begins and reconciles it periodically. The periodic reconciliation is also the authoritative deletion check because Bot API does not emit topic-deletion updates.
+
+`/register` remains an administrator-only fallback. In an existing topic, send:
 
 ```text
 /register Exact topic name
 ```
 
-The bridge records that message's thread ID and deletes the command. Topics created after launch are discovered from Telegram's forum lifecycle messages and do not need manual registration.
+The bridge records that message's thread ID and deletes the command. Bot API lifecycle messages still update newly created, renamed, closed, and reopened topics immediately; MTProto fills the complete initial list and detects deletions.
 
 ## Enable and verify
 
