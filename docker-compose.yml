@@ -1,4 +1,4 @@
-# Backend-only Linux deployment stack (frontend is intentionally excluded)
+# Linux deployment stack for API, admin SPA and background workers
 services:
   redis:
     image: redis:7
@@ -48,6 +48,17 @@ services:
       - ./backend/logs:/app/backend/logs
       - ./backend/.env:/app/backend/.env
       - ./backend/.secrets/application_default_credentials.json:/app/backend/.secrets/application_default_credentials.json:ro
+
+  admin-web:
+    build:
+      context: ./admin-web
+      dockerfile: Dockerfile
+    container_name: shop-admin-web
+    restart: unless-stopped
+    depends_on:
+      - backend-api
+    ports:
+      - "127.0.0.1:8080:80"
 
   worker-notifications:
     build:
@@ -101,6 +112,34 @@ services:
         mkdir -p /app/backend/media /app/backend/logs \
         && chown -R 10001:10001 /app/backend/media /app/backend/logs \
         && exec su -s /bin/sh app -c "python -m src.workers.moysklad_sync"
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/logs:/app/backend/logs
+
+  worker-admin-jobs:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shop-worker-admin-jobs
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      POSTGRES_HOST: 172.18.0.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        mkdir -p /app/backend/media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
+        && exec su -s /bin/sh app -c "python -m src.workers.admin_jobs"
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs

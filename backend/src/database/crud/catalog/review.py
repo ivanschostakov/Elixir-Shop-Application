@@ -9,7 +9,7 @@ from src.database.models.catalog.review_attachment import ReviewAttachment
 from src.database.schemas import ReviewCreate
 
 
-async def get_product_reviews(session: AsyncSession, *, product_id: int, offset: int = 0, limit: int = 20) -> list[Review]:
+async def get_product_reviews(session: AsyncSession, *, product_id: int, offset: int = 0, limit: int = 20, moderated_only: bool = True) -> list[Review]:
     stmt = (
         select(Review)
         .options(
@@ -21,6 +21,8 @@ async def get_product_reviews(session: AsyncSession, *, product_id: int, offset:
         .offset(offset)
         .limit(limit)
     )
+    if moderated_only:
+        stmt = stmt.where(Review.moderated.is_(True), Review.rejected_at.is_(None))
     return list((await session.execute(stmt)).scalars().all())
 
 
@@ -36,12 +38,14 @@ async def get_review_by_id(session: AsyncSession, *, review_id: int) -> Review |
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def create_product_review(session: AsyncSession, *, user_id: int, product_id: int, data: ReviewCreate, commit: bool = True) -> Review:
+async def create_product_review(session: AsyncSession, *, user_id: int | None, product_id: int, data: ReviewCreate, commit: bool = True) -> Review:
     review = Review(
         user_id=user_id,
         product_id=product_id,
         value=data.value,
         text=data.text,
+        guest_name=data.guest_name,
+        guest_email=str(data.guest_email) if data.guest_email else None,
     )
     session.add(review)
     await session.flush()
@@ -90,7 +94,7 @@ async def get_product_review_stats(session: AsyncSession, *, product_ids: list[i
             func.avg(Review.value).label("rating_avg"),
             func.count(Review.id).label("rating_count"),
         )
-        .where(Review.product_id.in_(product_ids))
+        .where(Review.product_id.in_(product_ids), Review.moderated.is_(True), Review.rejected_at.is_(None))
         .group_by(Review.product_id)
     )
     rows = (await session.execute(stmt)).all()

@@ -820,7 +820,7 @@ async def link_telegram_contact_to_user(
 async def refresh_user_tokens(request: Request, payload: UserRefreshPayload, db: AsyncSession) -> AuthRefreshResponse:
     await _apply_auth_rate_limit(request, scope="auth:refresh", principal=str(payload.session_id), verify=True)
     session = await get_user_session_by_id(db, payload.session_id)
-    if not session:
+    if not session or session.purpose != "app":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
     if session.revoked_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session has been revoked")
@@ -850,7 +850,7 @@ async def refresh_user_tokens(request: Request, payload: UserRefreshPayload, db:
 async def logout_user_session(request: Request, payload: UserLogoutPayload, db: AsyncSession) -> AuthLogoutResponse:
     await _apply_auth_rate_limit(request, scope="auth:logout", principal=str(payload.session_id), verify=True)
     session = await get_user_session_by_id(db, payload.session_id)
-    if not session:
+    if not session or session.purpose != "app":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
     if not verify_refresh_token(payload.refresh_token, session.refresh_token_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")

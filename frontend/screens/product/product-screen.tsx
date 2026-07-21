@@ -35,7 +35,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
     const productScreenStyle = useThemeStyles(createProductScreenStyle)
     const { palette } = useTheme()
     const { product, loading, error } = useProduct(productId)
-    const { reviews, loading: reviewsLoading, error: reviewsError, setReviews } = useProductReviews(productId)
+    const { reviews, loading: reviewsLoading, error: reviewsError } = useProductReviews(productId)
     const { canReview, loading: reviewEligibilityLoading } = useProductReviewEligibility(productId)
     const {
         error: favouriteError,
@@ -182,12 +182,11 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
     const handleSubmitReview = useCallback(async (value: number, text: string | null, attachments: UploadableReviewAttachment[]) => {
         setReviewsSubmitting(true)
         try {
-            const createdReview = await createProductReview(productId, { text, value, attachments })
-            setReviews((currentReviews) => [createdReview, ...currentReviews])
+            await createProductReview(productId, { text, value, attachments })
         } finally {
             setReviewsSubmitting(false)
         }
-    }, [productId, setReviews])
+    }, [productId])
 
     const chromeTemplate = useMemo(
         () => ({

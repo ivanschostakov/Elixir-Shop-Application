@@ -2,7 +2,8 @@ from .ai.attachment import Attachment
 from .ai.chat import AIChat
 from .ai.message import AIMessage
 from .ai.usage import AIMessageUsage
-from .auth.admin import Admin
+from .auth.admin import Admin, AdminRoleAssignment
+from .admin import AdminAuditLog, AdminNote, AdminRole, AdminSavedView, IntegrationRun
 from .auth.app_attest_key import AppAttestKey
 from .auth.app_integrity_challenge import AppIntegrityChallenge
 from .auth.email_verification_code import EmailVerificationCode
@@ -51,6 +52,11 @@ from .webhooks.webhook_delivery import WebhookDelivery
 
 __all__ = [
     "Admin",
+    "AdminAuditLog",
+    "AdminNote",
+    "AdminRole",
+    "AdminRoleAssignment",
+    "AdminSavedView",
     "AIChat",
     "AIMessage",
     "AIMessageUsage",
@@ -76,6 +82,7 @@ __all__ = [
     "DeliveryRecipient",
     "EmailVerificationCode",
     "FavouredProduct",
+    "IntegrationRun",
     "OrderDraft",
     "OrderDraftItem",
     "Order",

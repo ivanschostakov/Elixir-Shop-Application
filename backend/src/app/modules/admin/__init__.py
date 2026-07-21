@@ -1,3 +1,3 @@
-from .referrals import admin_referrals_router
+from .router import admin_router
 
-__all__ = ["admin_referrals_router"]
+__all__ = ["admin_router"]

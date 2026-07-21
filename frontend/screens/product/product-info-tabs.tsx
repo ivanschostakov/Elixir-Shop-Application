@@ -86,6 +86,7 @@ export function ProductInfoTabs({
     const [draftReviewText, setDraftReviewText] = useState("")
     const [draftReviewAttachments, setDraftReviewAttachments] = useState<UploadableReviewAttachment[]>([])
     const [submitError, setSubmitError] = useState<string | null>(null)
+    const [submitSuccess, setSubmitSuccess] = useState(false)
     const [infoTabLayouts, setInfoTabLayouts] = useState<Partial<Record<ProductInfoTabKey, InfoTabLayout>>>({})
     const infoTabIndicatorX = useRef(new Animated.Value(0)).current
     const infoTabIndicatorWidth = useRef(new Animated.Value(0)).current
@@ -283,6 +284,7 @@ export function ProductInfoTabs({
                             disabled={reviewsSubmitting}
                             onPress={() => {
                                 setSubmitError(null)
+                                setSubmitSuccess(false)
                                 void onSubmitReview(
                                     draftReviewValue,
                                     draftReviewText.trim() || null,
@@ -292,6 +294,7 @@ export function ProductInfoTabs({
                                         setDraftReviewText("")
                                         setDraftReviewValue(5)
                                         setDraftReviewAttachments([])
+                                        setSubmitSuccess(true)
                                     })
                                     .catch((error: unknown) => {
                                         setSubmitError(error instanceof Error ? error.message : t("product.reviewSubmitFailed"))
@@ -370,6 +373,7 @@ export function ProductInfoTabs({
                             </View>
                         ) : null}
                         {submitError ? <Text style={productScreenStyle.reviewSubmitError}>{submitError}</Text> : null}
+                        {submitSuccess ? <Text style={productScreenStyle.detailRichText}>{t("product.reviewModerationNotice")}</Text> : null}
                     </View>
                 ) : null}
                 {reviewsLoading ? <Text style={productScreenStyle.detailRichText}>{t("product.reviewsLoading")}</Text> : null}

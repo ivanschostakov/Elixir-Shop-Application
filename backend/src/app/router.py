@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from .modules.admin import admin_referrals_router
+from .modules.admin import admin_router
 from .modules.app_integrity import app_integrity_router
 from .modules.app_version import app_version_router
 from .modules.auth.router import auth_router
@@ -22,7 +22,7 @@ v1_router = APIRouter(prefix="/v1")
 
 v1_router.include_router(health_router)
 v1_router.include_router(auth_router)
-v1_router.include_router(admin_referrals_router)
+v1_router.include_router(admin_router)
 v1_router.include_router(app_integrity_router)
 v1_router.include_router(app_version_router)
 v1_router.include_router(banners_router)
@@ -47,7 +47,7 @@ __all__ = [
     "community_media_router",
     "app_integrity_router",
     "app_version_router",
-    "admin_referrals_router",
+    "admin_router",
     "health_router",
     "product_categories_router",
     "products_router",

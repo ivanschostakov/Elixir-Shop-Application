@@ -6,8 +6,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from src.app.modules.auth.dependencies import get_current_admin_user, get_current_user, get_optional_current_user
+from src.app.modules.auth.dependencies import get_current_admin_user, get_optional_current_user
 from src.app.services.cache import build_cache_key, get_cache_service
+from src.app.services.rate_limit import enforce_rate_limit
 from src.app.services.review_attachments import (
     build_review_attachment_filename,
     remove_review_attachment_file,
@@ -28,7 +29,6 @@ from src.database.crud import (
     get_products,
     get_review_by_id,
     get_similar_products,
-    has_user_purchased_product,
     update_product,
 )
 from src.database.models import User
@@ -123,20 +123,24 @@ async def products_get_reviews(request: Request, product_id: int, limit: int = Q
 
 
 @products_router.get("/{product_id}/reviews/eligibility", response_model=ReviewEligibilityRead)
-async def products_get_review_eligibility(product_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def products_get_review_eligibility(product_id: int, db: AsyncSession = Depends(get_db)):
     product = await get_product_by_id(db, product_id)
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    can_review = await has_user_purchased_product(db, user_id=current_user.id, product_id=product_id)
-    return ReviewEligibilityRead(can_review=can_review)
+    return ReviewEligibilityRead(can_review=True)
 
 
 @products_router.post("/{product_id}/reviews", response_model=ReviewRead, status_code=status.HTTP_201_CREATED)
-async def products_create_review(request: Request, product_id: int, value: int = Form(..., ge=0, le=5), text: str | None = Form(default=None), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def products_create_review(request: Request, product_id: int, value: int = Form(..., ge=0, le=5), text: str | None = Form(default=None), guest_name: str | None = Form(default=None, max_length=120), guest_email: str | None = Form(default=None, max_length=320), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
+    await enforce_rate_limit(request, scope="reviews:create", limit=5, window_seconds=3600)
     product = await get_product_by_id(db, product_id)
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    if not await has_user_purchased_product(db, user_id=current_user.id, product_id=product_id): raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only customers who bought this product can leave a review")
 
-    data = ReviewCreate(value=value, text=text.strip() if text else None)
+    data = ReviewCreate(
+        value=value,
+        text=text.strip() if text else None,
+        guest_name=guest_name.strip() if guest_name else ("Гость" if current_user is None else None),
+        guest_email=guest_email.strip().lower() if guest_email else None,
+    )
     uploaded_attachments = attachments or []
     validate_review_attachments_count(len(uploaded_attachments))
 
@@ -144,7 +148,7 @@ async def products_create_review(request: Request, product_id: int, value: int =
     total_size_bytes = 0
 
     try:
-        review = await create_product_review(db, user_id=current_user.id, product_id=product_id, data=data, commit=False)
+        review = await create_product_review(db, user_id=current_user.id if current_user else None, product_id=product_id, data=data, commit=False)
         for attachment in uploaded_attachments:
             content = await attachment.read()
             mime_type = validate_review_attachment(content, mime_type=attachment.content_type)

@@ -1,4 +1,5 @@
 from .ai import *  # noqa: F403
+from .admin import *  # noqa: F403
 from .app import *  # noqa: F403
 from .app_integrity import *  # noqa: F403
 from .database import *  # noqa: F403

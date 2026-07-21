@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from src.database.limits import REVIEW_MAXIMUM_LENGTH
 
@@ -32,6 +32,8 @@ class ReviewRead(BaseModel):
 class ReviewCreate(BaseModel):
     value: int = Field(ge=0, le=5)
     text: str | None = Field(default=None, max_length=REVIEW_MAXIMUM_LENGTH)
+    guest_name: str | None = Field(default=None, min_length=1, max_length=120)
+    guest_email: EmailStr | None = None
 
 
 class ReviewEligibilityRead(BaseModel):

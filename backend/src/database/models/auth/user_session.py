@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from config import REFRESH_TOKEN_LIFETIME_DAYS, ufa_now
@@ -25,5 +25,7 @@ class UserSession(Base, IdPkMixin, TimestampMixin):
 
     user_agent: Mapped[str | None] = mapped_column(String(length=USER_AGENT_MAX_LENGTH), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(length=IP_ADDRESS_MAX_LENGTH), nullable=True)
+    purpose: Mapped[str] = mapped_column(String(24), nullable=False, default="app", server_default=text("'app'"), index=True)
+    mfa_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="sessions")
