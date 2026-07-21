@@ -8,12 +8,14 @@ from datetime import timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from config import (
     TELEGRAM_COMMUNITY_CHAT_ID,
+    TELEGRAM_COMMUNITY_PROFILE_CACHE_SECONDS,
     TELEGRAM_USERBOT_API_HASH,
     TELEGRAM_USERBOT_API_ID,
     TELEGRAM_USERBOT_ENABLED,
@@ -27,6 +29,7 @@ from config import (
 )
 from src.app.services.community import (
     COMMUNITY_ATTACHMENTS_DIR,
+    COMMUNITY_AVATARS_DIR,
     _get_or_create_topic,
     _refresh_topic_last_message,
     _safe_filename,
@@ -286,6 +289,35 @@ def _archived_app_author_name(message: Any) -> str | None:
     return header[: -len(suffix)].strip() or None
 
 
+async def _refresh_telethon_author_avatar(client: Any, sender: Any, author: Any) -> None:
+    if sender is None:
+        return
+    now = ufa_now()
+    stale = author.avatar_file_id is None or (
+        author.avatar_refreshed_at is None
+        or author.avatar_refreshed_at < now - timedelta(seconds=TELEGRAM_COMMUNITY_PROFILE_CACHE_SECONDS)
+    )
+    if not stale:
+        return
+    author.avatar_refreshed_at = now
+    filename = f"telethon-{author.kind}-{author.telegram_peer_id}-{uuid4().hex}.jpg"
+    target = COMMUNITY_AVATARS_DIR / filename
+    try:
+        downloaded = await client.download_profile_photo(sender, file=str(target), download_big=True)
+        if downloaded and target.exists():
+            if author.avatar_local_filename:
+                (COMMUNITY_AVATARS_DIR / author.avatar_local_filename).unlink(missing_ok=True)
+            author.avatar_file_id = f"telethon:{author.telegram_peer_id}"
+            author.avatar_local_filename = filename
+        else:
+            target.unlink(missing_ok=True)
+            author.avatar_file_id = "telethon:none"
+    except Exception:
+        target.unlink(missing_ok=True)
+        author.avatar_file_id = "telethon:error"
+        log.info("telethon author avatar refresh skipped peer_id=%s", author.telegram_peer_id)
+
+
 async def _store_telethon_attachment(
     db: Any,
     *,
@@ -403,8 +435,10 @@ async def _upsert_telethon_message(
         telegram_peer_id=peer_id,
         full_name=full_name,
         app_user_id=linked_user.id if linked_user else None,
-        refresh_avatar=not bool(archived_app_name),
+        refresh_avatar=False,
     )
+    if not archived_app_name:
+        await _refresh_telethon_author_avatar(client, sender, author)
     media_group_id = str(getattr(telegram_message, "grouped_id", "") or "") or None
     logical = None
     if media_group_id:
