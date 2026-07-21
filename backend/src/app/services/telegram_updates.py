@@ -5,7 +5,11 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.auth import link_telegram_contact_to_user
-from src.app.services.community import invalidate_community_membership, process_community_telegram_message
+from src.app.services.community import (
+    invalidate_community_membership,
+    process_community_telegram_message,
+    process_community_telegram_reaction,
+)
 from src.database.crud.webhooks import payload_digest, register_webhook_delivery
 from src.integrations.moysklad import MoySkladClient, get_moysklad_client
 from config import TELEGRAM_COMMUNITY_CHAT_ID, TELEGRAM_COMMUNITY_ENABLED
@@ -24,6 +28,27 @@ async def process_telegram_update(
 ) -> dict[str, Any]:
     delivery_id = str(payload.get("update_id") or "").strip() or None
     digest = payload_digest(_payload_bytes(payload))
+    message_reaction = payload.get("message_reaction")
+    message_reaction_count = payload.get("message_reaction_count")
+    community_reaction = (
+        message_reaction if isinstance(message_reaction, dict) else message_reaction_count
+    )
+    if isinstance(community_reaction, dict):
+        chat = community_reaction.get("chat") if isinstance(community_reaction.get("chat"), dict) else {}
+        if TELEGRAM_COMMUNITY_ENABLED and int(chat.get("id") or 0) == TELEGRAM_COMMUNITY_CHAT_ID:
+            accepted = await register_webhook_delivery(
+                db,
+                provider="telegram",
+                delivery_id=delivery_id,
+                payload_hash=digest,
+                commit=False,
+            )
+            if not accepted:
+                return {"ok": True, "ignored": "duplicate"}
+            result = await process_community_telegram_reaction(db, payload)
+            await db.commit()
+            return result
+
     chat_member = payload.get("chat_member")
     if isinstance(chat_member, dict):
         chat = chat_member.get("chat") if isinstance(chat_member.get("chat"), dict) else {}

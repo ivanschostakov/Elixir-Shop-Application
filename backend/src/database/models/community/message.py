@@ -71,3 +71,15 @@ class CommunityMessage(Base, IdPkMixin, TimestampMixin):
         passive_deletes=True,
         order_by="CommunityReaction.id",
     )
+    telegram_reactions: Mapped[list["CommunityTelegramReaction"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="CommunityTelegramReaction.id",
+    )
+    telegram_reaction_counts: Mapped[list["CommunityTelegramReactionCount"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="CommunityTelegramReactionCount.id",
+    )

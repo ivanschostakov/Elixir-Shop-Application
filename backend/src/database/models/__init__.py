@@ -18,6 +18,8 @@ from .community import (
     CommunityNotificationEvent,
     CommunityReaction,
     CommunityTelegramPart,
+    CommunityTelegramReaction,
+    CommunityTelegramReactionCount,
     CommunityTopic,
     CommunityTopicRead,
 )
@@ -64,6 +66,8 @@ __all__ = [
     "CommunityNotificationEvent",
     "CommunityReaction",
     "CommunityTelegramPart",
+    "CommunityTelegramReaction",
+    "CommunityTelegramReactionCount",
     "CommunityTopic",
     "CommunityTopicRead",
     "DeliveryAddress",

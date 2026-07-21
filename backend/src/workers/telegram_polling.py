@@ -49,7 +49,7 @@ class TelegramPollingClient:
     async def get_updates(self, offset: int | None) -> list[dict[str, Any]]:
         data: dict[str, str] = {
             "timeout": str(max(int(TELEGRAM_POLLING_TIMEOUT_SECONDS), 1)),
-            "allowed_updates": '["message","edited_message","chat_member","my_chat_member"]',
+            "allowed_updates": '["message","edited_message","message_reaction","message_reaction_count","chat_member","my_chat_member"]',
         }
         if offset is not None:
             data["offset"] = str(offset)

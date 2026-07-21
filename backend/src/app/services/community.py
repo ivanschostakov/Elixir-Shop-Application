@@ -53,6 +53,8 @@ from src.database.models import (
     CommunityNotificationEvent,
     CommunityReaction,
     CommunityTelegramPart,
+    CommunityTelegramReaction,
+    CommunityTelegramReactionCount,
     CommunityTopic,
     CommunityTopicRead as CommunityTopicReadModel,
     User,
@@ -66,6 +68,39 @@ COMMUNITY_ATTACHMENTS_DIR = COMMUNITY_MEDIA_DIR / "attachments"
 COMMUNITY_GROUP_DIR = COMMUNITY_MEDIA_DIR / "group"
 for _directory in (COMMUNITY_AVATARS_DIR, COMMUNITY_ATTACHMENTS_DIR, COMMUNITY_GROUP_DIR):
     _directory.mkdir(parents=True, exist_ok=True)
+
+
+def _normalize_reaction_emoji(emoji: str) -> str:
+    normalized = emoji.strip()
+    # Telegram sends the heart without a variation selector, while the app's
+    # picker uses the emoji presentation form. Treat them as one reaction.
+    if normalized in {"❤", "❤️"}:
+        return "❤️"
+    return normalized
+
+
+def _telegram_reaction_emoji(reaction_type: object) -> str | None:
+    if not isinstance(reaction_type, dict):
+        return None
+    kind = str(reaction_type.get("type") or "")
+    if kind == "emoji":
+        emoji = _normalize_reaction_emoji(str(reaction_type.get("emoji") or ""))
+        return emoji or None
+    if kind == "paid":
+        return "⭐"
+    # Telegram custom emoji need their sticker document to render correctly;
+    # they are deliberately not mislabeled as a different Unicode reaction.
+    return None
+
+
+def _telegram_reaction_actor_key(update: dict[str, Any]) -> str | None:
+    user = update.get("user") if isinstance(update.get("user"), dict) else None
+    actor_chat = update.get("actor_chat") if isinstance(update.get("actor_chat"), dict) else None
+    if user and int(user.get("id") or 0):
+        return f"user:{int(user['id'])}"
+    if actor_chat and int(actor_chat.get("id") or 0):
+        return f"chat:{int(actor_chat['id'])}"
+    return None
 
 
 def _media_secret() -> bytes:
@@ -171,6 +206,8 @@ def _message_options():
         selectinload(CommunityMessage.telegram_parts),
         selectinload(CommunityMessage.reply_to).selectinload(CommunityMessage.author),
         selectinload(CommunityMessage.reactions),
+        selectinload(CommunityMessage.telegram_reactions),
+        selectinload(CommunityMessage.telegram_reaction_counts),
     )
 
 
@@ -189,13 +226,36 @@ def _serialize_reactions(message: CommunityMessage, *, user_id: int) -> list[Com
     reaction_counts: dict[str, int] = {}
     my_reactions: set[str] = set()
     for reaction in message.reactions:
-        reaction_counts[reaction.emoji] = reaction_counts.get(reaction.emoji, 0) + 1
+        emoji = _normalize_reaction_emoji(reaction.emoji)
+        reaction_counts[emoji] = reaction_counts.get(emoji, 0) + 1
         if reaction.user_id == user_id:
-            my_reactions.add(reaction.emoji)
+            my_reactions.add(emoji)
+
+    # Anonymous Telegram chats publish authoritative counts, while ordinary
+    # chats publish one actor delta at a time. Never add both representations
+    # for the same Telegram message part or those reactions would be doubled.
+    telegram_count_rows = getattr(message, "telegram_reaction_counts", [])
+    authoritative_parts = {
+        (reaction.telegram_chat_id, reaction.telegram_message_id)
+        for reaction in telegram_count_rows
+    }
+    for reaction in telegram_count_rows:
+        if reaction.total_count <= 0:
+            continue
+        emoji = _normalize_reaction_emoji(reaction.emoji)
+        reaction_counts[emoji] = reaction_counts.get(emoji, 0) + reaction.total_count
+    for reaction in getattr(message, "telegram_reactions", []):
+        part_key = (reaction.telegram_chat_id, reaction.telegram_message_id)
+        if part_key in authoritative_parts:
+            continue
+        emoji = _normalize_reaction_emoji(reaction.emoji)
+        reaction_counts[emoji] = reaction_counts.get(emoji, 0) + 1
+
+    ordered_emojis = [emoji for emoji in COMMUNITY_REACTION_EMOJIS if reaction_counts.get(emoji)]
+    ordered_emojis.extend(sorted(set(reaction_counts) - set(COMMUNITY_REACTION_EMOJIS)))
     return [
         CommunityReactionRead(emoji=emoji, count=reaction_counts[emoji], reacted_by_me=emoji in my_reactions)
-        for emoji in COMMUNITY_REACTION_EMOJIS
-        if reaction_counts.get(emoji)
+        for emoji in ordered_emojis
     ]
 
 
@@ -332,7 +392,7 @@ async def mark_community_topic_read(db: AsyncSession, *, user: User, topic_id: i
 
 async def toggle_community_message_reaction(db: AsyncSession, *, user: User, topic_id: int, message_id: int, emoji: str) -> list[CommunityReactionRead]:
     await require_community_access(user)
-    normalized_emoji = emoji.strip()
+    normalized_emoji = _normalize_reaction_emoji(emoji)
     if normalized_emoji not in COMMUNITY_REACTION_EMOJIS:
         raise HTTPException(status_code=422, detail="Unsupported reaction")
     message = (await db.execute(
@@ -353,7 +413,11 @@ async def toggle_community_message_reaction(db: AsyncSession, *, user: User, top
     message = (await db.execute(
         select(CommunityMessage)
         .where(CommunityMessage.id == message_id)
-        .options(selectinload(CommunityMessage.reactions))
+        .options(
+            selectinload(CommunityMessage.reactions),
+            selectinload(CommunityMessage.telegram_reactions),
+            selectinload(CommunityMessage.telegram_reaction_counts),
+        )
     )).scalar_one()
     return _serialize_reactions(message, user_id=user.id)
 
@@ -785,6 +849,147 @@ async def _get_or_create_topic(db: AsyncSession, *, thread_id: int, name: str | 
 async def _is_group_admin(telegram_client: TelegramBotClient, user_id: int) -> bool:
     try: return str((await telegram_client.get_chat_member(TELEGRAM_COMMUNITY_CHAT_ID, user_id)).get("status") or "") in {"creator", "administrator"}
     except (TelegramBotAPIError, TimeoutError): return False
+
+
+async def process_community_telegram_reaction(db: AsyncSession, payload: dict[str, Any]) -> dict[str, Any]:
+    detailed_update = payload.get("message_reaction")
+    count_update = payload.get("message_reaction_count")
+    update_payload = detailed_update if isinstance(detailed_update, dict) else count_update
+    if not isinstance(update_payload, dict):
+        return {"ok": True, "ignored": "no community reaction"}
+    chat = update_payload.get("chat") if isinstance(update_payload.get("chat"), dict) else {}
+    telegram_chat_id = int(chat.get("id") or 0)
+    telegram_message_id = int(update_payload.get("message_id") or 0)
+    if (
+        not TELEGRAM_COMMUNITY_ENABLED
+        or telegram_chat_id != TELEGRAM_COMMUNITY_CHAT_ID
+        or telegram_message_id <= 0
+    ):
+        return {"ok": True, "ignored": "wrong community reaction"}
+
+    part = (await db.execute(
+        select(CommunityTelegramPart).where(
+            CommunityTelegramPart.telegram_chat_id == telegram_chat_id,
+            CommunityTelegramPart.telegram_message_id == telegram_message_id,
+            CommunityTelegramPart.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if part is None:
+        return {"ok": True, "ignored": "untracked community message"}
+    message = await db.get(CommunityMessage, part.message_id)
+    if message is None or message.deleted_at is not None:
+        return {"ok": True, "ignored": "deleted community message"}
+
+    changed = False
+    if isinstance(detailed_update, dict):
+        actor_key = _telegram_reaction_actor_key(detailed_update)
+        if actor_key is None:
+            return {"ok": True, "ignored": "reaction actor missing"}
+        new_reaction_types = detailed_update.get("new_reaction")
+        if not isinstance(new_reaction_types, list):
+            new_reaction_types = []
+        new_emojis = {
+            emoji
+            for emoji in (
+                _telegram_reaction_emoji(reaction_type)
+                for reaction_type in new_reaction_types
+            )
+            if emoji
+        }
+        existing_actor_rows = list((await db.execute(
+            select(CommunityTelegramReaction).where(
+                CommunityTelegramReaction.telegram_chat_id == telegram_chat_id,
+                CommunityTelegramReaction.telegram_message_id == telegram_message_id,
+                CommunityTelegramReaction.actor_key == actor_key,
+            )
+        )).scalars().all())
+        existing_emojis = {_normalize_reaction_emoji(row.emoji) for row in existing_actor_rows}
+        for row in existing_actor_rows:
+            if _normalize_reaction_emoji(row.emoji) not in new_emojis:
+                await db.delete(row)
+                changed = True
+        for emoji in new_emojis - existing_emojis:
+            db.add(CommunityTelegramReaction(
+                message_id=message.id,
+                telegram_chat_id=telegram_chat_id,
+                telegram_message_id=telegram_message_id,
+                actor_key=actor_key,
+                emoji=emoji,
+            ))
+            changed = True
+
+        # A detailed actor update means this part is not using Telegram's
+        # anonymous aggregate representation. Remove a stale snapshot if the
+        # group's anonymity setting changed.
+        stale_counts = list((await db.execute(
+            select(CommunityTelegramReactionCount).where(
+                CommunityTelegramReactionCount.telegram_chat_id == telegram_chat_id,
+                CommunityTelegramReactionCount.telegram_message_id == telegram_message_id,
+            )
+        )).scalars().all())
+        for row in stale_counts:
+            await db.delete(row)
+            changed = True
+
+    elif isinstance(count_update, dict):
+        reaction_counts = count_update.get("reactions")
+        incoming_counts: dict[str, int] = {}
+        if isinstance(reaction_counts, list):
+            for reaction_count in reaction_counts:
+                if not isinstance(reaction_count, dict):
+                    continue
+                emoji = _telegram_reaction_emoji(reaction_count.get("type"))
+                total_count = max(int(reaction_count.get("total_count") or 0), 0)
+                if emoji and total_count:
+                    incoming_counts[emoji] = total_count
+        existing_count_rows = list((await db.execute(
+            select(CommunityTelegramReactionCount).where(
+                CommunityTelegramReactionCount.telegram_chat_id == telegram_chat_id,
+                CommunityTelegramReactionCount.telegram_message_id == telegram_message_id,
+            )
+        )).scalars().all())
+        existing_count_by_emoji = {
+            _normalize_reaction_emoji(row.emoji): row for row in existing_count_rows
+        }
+        for emoji, row in existing_count_by_emoji.items():
+            if emoji not in incoming_counts:
+                await db.delete(row)
+                changed = True
+            elif row.total_count != incoming_counts[emoji]:
+                row.total_count = incoming_counts[emoji]
+                changed = True
+        for emoji, total_count in incoming_counts.items():
+            if emoji not in existing_count_by_emoji:
+                db.add(CommunityTelegramReactionCount(
+                    message_id=message.id,
+                    telegram_chat_id=telegram_chat_id,
+                    telegram_message_id=telegram_message_id,
+                    emoji=emoji,
+                    total_count=total_count,
+                ))
+                changed = True
+
+        # Anonymous count updates are authoritative for this Telegram part.
+        # Remove prior per-actor state if the group's anonymity setting changed.
+        stale_actor_rows = list((await db.execute(
+            select(CommunityTelegramReaction).where(
+                CommunityTelegramReaction.telegram_chat_id == telegram_chat_id,
+                CommunityTelegramReaction.telegram_message_id == telegram_message_id,
+            )
+        )).scalars().all())
+        for row in stale_actor_rows:
+            await db.delete(row)
+            changed = True
+
+    if changed:
+        # The open-chat poll reconciles rows using the logical message cursor,
+        # so advancing the parent makes the reaction appear immediately.
+        message.updated_at = ufa_now()
+    return {
+        "ok": True,
+        "community_message_id": message.id,
+        "reaction_updated": changed,
+    }
 
 
 async def process_community_telegram_message(db: AsyncSession, payload: dict[str, Any], *, telegram_client: TelegramBotClient | None = None) -> dict[str, Any]:

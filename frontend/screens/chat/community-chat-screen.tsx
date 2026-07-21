@@ -34,6 +34,7 @@ import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
 import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import Svg, { Path } from "react-native-svg"
 
 import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
 import { ROUTES } from "@/constants/routes"
@@ -641,11 +642,12 @@ function CommunityMessageActionMenu({ message, onClose, onCopy, onDelete, onEdit
                             })}
                         </ScrollView>
                     </BlurView>
+                    <CommunityMessageMenuPreview message={message} />
                     <BlurView intensity={90} style={styles.messageMenuCard} tint={isDark ? "dark" : "light"} {...androidBlurProps}>
-                        <CommunityMessageMenuAction icon="↩" label={t("chat.communityReplyAction")} onPress={onReply} />
-                        {message.text.trim() ? <CommunityMessageMenuAction icon="⧉" label={t("chat.communityCopyAction")} onPress={onCopy} /> : null}
-                        {message.can_edit ? <CommunityMessageMenuAction icon="✎" label={t("chat.communityEditAction")} onPress={onEdit} /> : null}
-                        {message.can_delete ? <CommunityMessageMenuAction danger icon="⌫" label={t("chat.communityDeleteAction")} onPress={onDelete} /> : null}
+                        <CommunityMessageMenuAction icon="reply" label={t("chat.communityReplyAction")} onPress={onReply} />
+                        {message.text.trim() ? <CommunityMessageMenuAction icon="copy" label={t("chat.communityCopyAction")} onPress={onCopy} /> : null}
+                        {message.can_edit ? <CommunityMessageMenuAction icon="edit" label={t("chat.communityEditAction")} onPress={onEdit} /> : null}
+                        {message.can_delete ? <CommunityMessageMenuAction danger icon="delete" label={t("chat.communityDeleteAction")} onPress={onDelete} /> : null}
                     </BlurView>
                 </View>
             </View>
@@ -653,13 +655,71 @@ function CommunityMessageActionMenu({ message, onClose, onCopy, onDelete, onEdit
     )
 }
 
-function CommunityMessageMenuAction({ danger = false, icon, label, onPress }: { danger?: boolean; icon: string; label: string; onPress: () => void }) {
+function CommunityMessageMenuPreview({ message }: { message: CommunityMessage }) {
+    const styles = useThemeStyles(createCommunityChatStyles)
+    const { t } = useLanguage()
+    const mine = message.author.is_current_user
+    const previewImage = message.attachments.find((attachment) => attachment.kind === "image" && attachment.media_url)
+    const previewImageUri = resolveApiMediaUri(previewImage?.media_url)
+    const otherAttachments = message.attachments.filter((attachment) => attachment.id !== previewImage?.id).slice(0, 2)
+    const delivery = message.delivery_status === "queued" || message.delivery_status === "sending" ? t("chat.communityPending") : message.delivery_status === "failed" ? t("chat.communityFailed") : message.delivery_status === "delivery_unknown" ? t("chat.communityUnknown") : ""
+    const meta = [formatTime(message.created_at), message.is_edited ? t("chat.communityEdited") : "", delivery].filter(Boolean).join(" · ")
+
+    return (
+        <View style={[styles.messageMenuPreviewRow, mine ? styles.messageMenuPreviewRowMine : null]}>
+            {!mine ? <CommunityAuthorAvatar name={message.author.full_name} uri={message.author.avatar_url} /> : null}
+            <View style={styles.messageMenuPreviewLift}>
+                <View style={[styles.messageBubble, styles.messageMenuPreviewBubble, mine ? styles.messageBubbleMine : null]}>
+                    <Text style={styles.authorName}>{message.author.full_name}</Text>
+                    {message.reply_to ? (
+                        <View style={styles.replyPreview}>
+                            <Text style={styles.replyAuthor}>{message.reply_to.author_name}</Text>
+                            <Text numberOfLines={2} style={styles.replyText}>{message.reply_to.text}</Text>
+                        </View>
+                    ) : null}
+                    {previewImageUri ? <Image resizeMode="cover" source={{ uri: previewImageUri }} style={styles.messageMenuPreviewImage} /> : null}
+                    {otherAttachments.map((attachment) => (
+                        <View key={attachment.id} style={styles.documentCard}>
+                            <Text style={styles.documentIcon}>{attachment.mime_type?.startsWith("audio/") ? "♫" : "▧"}</Text>
+                            <Text numberOfLines={1} style={styles.documentName}>{attachment.filename}</Text>
+                        </View>
+                    ))}
+                    {message.text ? <Text numberOfLines={6} style={styles.messageText}>{message.text}</Text> : null}
+                    <Text style={styles.messageMeta}>{meta}</Text>
+                </View>
+            </View>
+        </View>
+    )
+}
+
+type CommunityMessageMenuIcon = "copy" | "delete" | "edit" | "reply"
+
+function CommunityMessageMenuAction({ danger = false, icon, label, onPress }: { danger?: boolean; icon: CommunityMessageMenuIcon; label: string; onPress: () => void }) {
     const styles = useThemeStyles(createCommunityChatStyles)
     return (
         <Pressable onPress={onPress} style={({ pressed }) => [styles.messageMenuAction, pressed ? styles.messageMenuActionPressed : null]}>
-            <Text style={[styles.messageMenuActionIcon, danger ? styles.messageMenuActionDanger : null]}>{icon}</Text>
+            <View style={styles.messageMenuActionIconWrap}>
+                <CommunityMessageMenuActionIcon danger={danger} icon={icon} />
+            </View>
             <Text style={[styles.messageMenuActionLabel, danger ? styles.messageMenuActionDanger : null]}>{label}</Text>
         </Pressable>
+    )
+}
+
+function CommunityMessageMenuActionIcon({ danger, icon }: { danger: boolean; icon: CommunityMessageMenuIcon }) {
+    const { palette } = useTheme()
+    const color = danger ? palette.danger : palette.text
+    const path = icon === "reply"
+        ? "M9 7 4 12l5 5M5 12h7a7 7 0 0 1 7 7"
+        : icon === "copy"
+            ? "M9 8V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M6 8h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"
+            : icon === "edit"
+                ? "M13.5 5.5 18.5 10.5M5 19l3.2-.7L19 7.5a1.8 1.8 0 0 0-2.5-2.5L5.7 15.8 5 19Z"
+                : "M4.5 7h15M9 7V4.5h6V7m-8 0 .8 13h8.4L17 7M10 10.5v6M14 10.5v6"
+    return (
+        <Svg fill="none" height={27} viewBox="0 0 24 24" width={27}>
+            <Path d={path} stroke={color} strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} />
+        </Svg>
     )
 }
 
