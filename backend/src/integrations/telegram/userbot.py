@@ -540,10 +540,18 @@ async def _sync_telegram_forum_history_with_client(client: Any) -> dict[str, int
         for topic in topics:
             if int(topic.telegram_thread_id) <= 0:
                 continue
+            initial_backfill = not topic.telegram_history_complete
+            # An unfinished first pass can safely resume from its last committed
+            # message. There is no older authoritative snapshot to reconcile for
+            # deletions yet; the first scheduled full pass handles that after the
+            # archive is complete. This keeps deploys/reconnects from repeatedly
+            # rescanning a large topic from message zero.
             full_reconcile = (
-                not topic.telegram_history_complete
-                or topic.telegram_history_synced_at is None
-                or topic.telegram_history_synced_at < full_cutoff
+                not initial_backfill
+                and (
+                    topic.telegram_history_synced_at is None
+                    or topic.telegram_history_synced_at < full_cutoff
+                )
             )
             min_id = 0 if full_reconcile else int(topic.telegram_history_max_message_id or 0)
             seen_ids: set[int] = set()
@@ -600,7 +608,7 @@ async def _sync_telegram_forum_history_with_client(client: Any) -> dict[str, int
                 missing_ids = sorted(stored_ids - seen_ids)
                 if missing_ids:
                     deleted += await mark_community_telegram_messages_deleted(db, missing_ids, deleted_at=now)
-                topic.telegram_history_complete = True
+            topic.telegram_history_complete = True
             topic.telegram_history_synced_at = now
             await _refresh_topic_last_message(db, topic)
             await db.commit()
