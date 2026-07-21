@@ -346,29 +346,43 @@ async def _store_telethon_attachment(
     fallback = f"photo-{telegram_message_id}.jpg" if is_photo else f"file-{telegram_message_id}"
     original = _safe_filename(getattr(file_info, "name", None), fallback)
     mime_type = str(getattr(file_info, "mime_type", "") or ("image/jpeg" if is_photo else "application/octet-stream"))
-    attachment = CommunityAttachment(
-        message_id=logical.id,
-        kind="image" if is_photo else "document",
-        original_filename=original,
-        filename=f"telegram-{telegram_message_id}",
-        mime_type=mime_type,
-        size_bytes=size_bytes,
-        telegram_message_id=telegram_message_id,
-        status="telegram_only",
+    attachment = next(
+        (
+            item
+            for item in logical.attachments
+            if item.telegram_message_id == telegram_message_id
+        ),
+        None,
     )
-    db.add(attachment)
-    await db.flush()
+    if attachment is None:
+        attachment = CommunityAttachment(
+            message_id=logical.id,
+            kind="image" if is_photo else "document",
+            original_filename=original,
+            filename=f"telegram-{telegram_message_id}",
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            telegram_message_id=telegram_message_id,
+            status="telegram_only",
+        )
+        db.add(attachment)
+        logical.attachments.append(attachment)
+        await db.flush()
+    if attachment.local_filename and attachment.status == "ready":
+        return
     from config import TELEGRAM_COMMUNITY_MAX_DOWNLOAD_BYTES
 
     if not size_bytes or size_bytes > TELEGRAM_COMMUNITY_MAX_DOWNLOAD_BYTES:
         return
-    local_filename = f"{logical.id}-{telegram_message_id}"
+    suffix = Path(original).suffix[:16] or (".jpg" if is_photo else ".bin")
+    local_filename = f"{logical.id}-{telegram_message_id}{suffix}"
     target = COMMUNITY_ATTACHMENTS_DIR / local_filename
     try:
         downloaded = await client.download_media(telegram_message, file=str(target))
-        if downloaded and target.exists():
-            attachment.local_filename = local_filename
-            attachment.size_bytes = target.stat().st_size
+        downloaded_path = Path(str(downloaded)) if downloaded else target
+        if downloaded_path.exists() and downloaded_path.parent.resolve() == COMMUNITY_ATTACHMENTS_DIR.resolve():
+            attachment.local_filename = downloaded_path.name
+            attachment.size_bytes = downloaded_path.stat().st_size
             attachment.status = "ready"
     except (OSError, TimeoutError):
         target.unlink(missing_ok=True)
@@ -412,6 +426,12 @@ async def _upsert_telethon_message(
         elif edit_date and (logical.edited_at is None or edit_date > logical.edited_at):
             logical.edited_at = edit_date
             changed = True
+        await _store_telethon_attachment(
+            db,
+            client=client,
+            telegram_message=telegram_message,
+            logical=logical,
+        )
         return logical, changed
 
     # Topic lifecycle/service records are represented by the topic model, not
