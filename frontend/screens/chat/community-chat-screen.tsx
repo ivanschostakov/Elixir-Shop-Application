@@ -32,7 +32,6 @@ import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
 import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
-import Svg, { Path } from "react-native-svg"
 
 import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
 import { ROUTES } from "@/constants/routes"
@@ -46,7 +45,7 @@ import {
     getVoiceRecordingFilename,
     getVoiceRecordingMimeType,
 } from "@/screens/chat/chat-attachments"
-import { ChatEmojiPicker, COMMUNITY_REACTION_EMOJIS } from "@/screens/chat/chat-emoji-picker"
+import { COMMUNITY_REACTION_EMOJIS } from "@/screens/chat/chat-emoji-picker"
 import {
     canPreviewCommunityMedia,
     CommunityMediaViewer,
@@ -131,7 +130,6 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(110)
-    const [emojiPickerVisible, setEmojiPickerVisible] = useState(false)
     const [keyboardVisible, setKeyboardVisible] = useState(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
@@ -192,7 +190,6 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
         setReplyTo(null)
         setEditingMessage(null)
         setAttachments([])
-        setEmojiPickerVisible(false)
         setReactionPickerMessageId(null)
         setActiveMedia(null)
     }, [chat.selectedTopicId])
@@ -241,7 +238,6 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
 
     const openAttachmentSheet = useCallback(() => {
         Keyboard.dismiss()
-        setEmojiPickerVisible(false)
         setAttachmentMode("photo")
         setAttachmentSheetVisible(true)
     }, [])
@@ -289,7 +285,6 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
             return
         }
         Keyboard.dismiss()
-        setEmojiPickerVisible(false)
         try {
             const permission = await requestRecordingPermissionsAsync()
             if (!permission.granted) {
@@ -344,7 +339,6 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const handleSend = useCallback(async () => {
         const text = draft.trim()
         if ((!text && !attachments.length) || chat.sending || chat.mutatingMessageId || voiceRecording || voiceTranscribing) return
-        setEmojiPickerVisible(false)
         if (editingMessage) {
             if (!text) return
             try {
@@ -448,7 +442,13 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
                     <Pressable accessibilityLabel={t("nav.back")} onPress={handleBack} style={styles.backButton}>
                         <Text style={styles.backText}>‹</Text>
                     </Pressable>
-                    <ChatModeSwitcher mode={mode} onChange={onModeChange} unreadCount={unreadCount} />
+                    {chat.selectedTopic ? (
+                        <View style={styles.selectedTopicPill}>
+                            <Text numberOfLines={1} style={styles.selectedTopicTitle}>{chat.selectedTopic.name}</Text>
+                        </View>
+                    ) : (
+                        <ChatModeSwitcher mode={mode} onChange={onModeChange} unreadCount={unreadCount} />
+                    )}
                 </View>
 
                 {chat.status?.access !== "granted" || !chat.selectedTopic ? (
@@ -465,33 +465,20 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
 
                 {chat.status?.access === "granted" && chat.selectedTopic ? (
                     <>
-                        <View style={[styles.topicHeader, styles.topicHeaderOverlay, { top: contentTop }]}>
-                            <Text numberOfLines={1} style={styles.topicHeaderTitle}>{chat.selectedTopic.name}</Text>
-                            <Text style={styles.topicHeaderStatus}>{chat.selectedTopic.is_closed
-                                ? t("chat.communityClosed")
-                                : chat.connectionState === "live"
-                                    ? t("chat.communityMemberChat")
-                                    : chat.connectionState === "offline"
-                                        ? t("chat.communityConnectionOffline")
-                                        : chat.connectionState === "reconnecting"
-                                            ? t("chat.communityConnectionReconnecting")
-                                            : t("chat.communityConnectionConnecting")}</Text>
-                        </View>
                         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.topicKeyboardLayer}>
                             <View style={chatStyles.keyboardContent}>
-                                <ScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + 52 + spacing.sm, paddingBottom: composerHeight + spacing.sm }]} keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} style={styles.messageScroll}>
+                                <ScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + spacing.sm, paddingBottom: composerHeight + spacing.sm }]} keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} style={styles.messageScroll}>
                                     {chat.hasMore ? <Pressable disabled={chat.loadingOlder} onPress={() => { void chat.loadOlder() }} style={styles.loadOlder}>{chat.loadingOlder ? <ActivityIndicator color={palette.primary} size="small" /> : <Text style={styles.loadOlderText}>{t("chat.communityLoadOlder")}</Text>}</Pressable> : null}
                                     {!chat.messages.length && !chat.loading ? <View style={styles.stateCenter}><View style={styles.stateIcon}><Text style={styles.stateIconText}>✦</Text></View><Text style={styles.stateTitle}>{t("chat.communityNoMessagesTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoMessagesMessage")}</Text></View> : null}
                                     {chat.messages.map((message) => <CommunityMessageBubble key={message.id} message={message} onLongPress={handleMessageLongPress} onOpenAttachment={(attachment) => handleOpenAttachment(attachment, message.telegram_url)} onReact={(emoji) => { void handleReaction(message.id, emoji) }} reacting={chat.reactingMessageId === message.id} reactionPickerOpen={reactionPickerMessageId === message.id} toggleReactionPicker={() => setReactionPickerMessageId((current) => current === message.id ? null : message.id)} />)}
                                 </ScrollView>
                                 {chat.error ? <Pressable onPress={() => { void chat.refresh() }} style={styles.inlineError}><Text style={styles.inlineErrorText}>{chat.error} · {t("chat.retry")}</Text></Pressable> : null}
                                 <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} style={[chatStyles.composerDock, { paddingBottom: composerBottomInset }]}>
-                                    {emojiPickerVisible ? <ChatEmojiPicker onSelect={(emoji) => setDraft((current) => `${current}${emoji}`)} /> : null}
                                     {editingMessage ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityEditingMessage")}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{editingMessage.text}</Text></View><Pressable onPress={() => { setEditingMessage(null); setDraft("") }}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {replyTo ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityReplyingTo")} {replyTo.author.full_name}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{replyTo.text || t("chat.attachmentFallbackMessage")}</Text></View><Pressable onPress={() => setReplyTo(null)}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {voiceStatusVisible ? <View style={chatStyles.voiceStatusPill}>{voiceTranscribing ? <ActivityIndicator color={palette.primary} size="small" /> : <View style={chatStyles.voiceStatusDot} />}<Text style={chatStyles.voiceStatusText}>{voiceTranscribing ? t("chat.voiceTranscribing") : `${t("chat.voiceRecording")} ${formatVoiceDuration(audioRecorderState.durationMillis)}`}</Text></View> : null}
                                     <QueuedAttachmentStrip attachments={attachments} onRemove={(index) => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
-                                    {chat.selectedTopic.is_closed ? <View style={styles.replyComposer}><Text style={styles.replyComposerText}>{t("chat.communityClosedMessage")}</Text></View> : <View style={chatStyles.composerRow}><Pressable accessibilityLabel={t("chat.communityAddAttachment")} disabled={Boolean(editingMessage) || voiceStatusVisible} onPress={openAttachmentSheet} style={[chatStyles.circleButton, editingMessage || voiceStatusVisible ? chatStyles.sendButtonDisabled : null]}><AttachmentSvgIcon color="#12161A" height={28} width={28} /></Pressable><View style={chatStyles.composerInputWrap}><TextInput editable={!voiceStatusVisible} multiline onChangeText={setDraft} onFocus={() => setEmojiPickerVisible(false)} placeholder={voiceRecording ? t("chat.voiceRecording") : editingMessage ? t("chat.communityEditingMessage") : t("chat.communityInputPlaceholder")} placeholderTextColor={isDark ? "#9BB0BF" : "#8B9092"} style={chatStyles.composerInput} textAlignVertical="top" value={draft} /><Pressable accessibilityLabel={t("chat.emojiPickerLabel")} onPress={() => { Keyboard.dismiss(); setEmojiPickerVisible((visible) => !visible) }} style={chatStyles.stickerButton}><Svg fill="none" height={24} viewBox="0 0 24 24" width={24}><Path d="M12 3.8a8.2 8.2 0 1 0 8.2 8.2v0A8.2 8.2 0 0 0 12 3.8ZM8.8 11.6h.1m6.2 0h.1M8.5 15.2c.8 1 2 1.6 3.5 1.6s2.7-.6 3.5-1.6" stroke="#778085" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} /></Svg></Pressable></View><SendActionButton disabled={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} isDark={isDark} isActive={hasComposerContent && !voiceRecording} onPress={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }} recording={voiceRecording} sending={chat.sending || Boolean(chat.mutatingMessageId)} transcribing={voiceTranscribing} /></View>}
+                                    {chat.selectedTopic.is_closed ? <View style={styles.replyComposer}><Text style={styles.replyComposerText}>{t("chat.communityClosedMessage")}</Text></View> : <View style={chatStyles.composerRow}><Pressable accessibilityLabel={t("chat.communityAddAttachment")} disabled={Boolean(editingMessage) || voiceStatusVisible} onPress={openAttachmentSheet} style={[chatStyles.circleButton, editingMessage || voiceStatusVisible ? chatStyles.sendButtonDisabled : null]}><AttachmentSvgIcon color="#12161A" height={28} width={28} /></Pressable><View style={chatStyles.composerInputWrap}><TextInput editable={!voiceStatusVisible} multiline onChangeText={setDraft} placeholder={voiceRecording ? t("chat.voiceRecording") : editingMessage ? t("chat.communityEditingMessage") : t("chat.communityInputPlaceholder")} placeholderTextColor={isDark ? "#9BB0BF" : "#8B9092"} style={chatStyles.composerInput} textAlignVertical="top" value={draft} /></View><SendActionButton disabled={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} isDark={isDark} isActive={hasComposerContent && !voiceRecording} onPress={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }} recording={voiceRecording} sending={chat.sending || Boolean(chat.mutatingMessageId)} transcribing={voiceTranscribing} /></View>}
                                 </View>
                             </View>
                         </KeyboardAvoidingView>

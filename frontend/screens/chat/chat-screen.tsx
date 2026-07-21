@@ -53,7 +53,6 @@ import type { BasketItemRead } from "@/types/basket"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { spacing } from "@/theme/spacing"
 import { createChatScreenStyles } from "./chat-screen.styles"
-import { ChatEmojiPicker } from "@/screens/chat/chat-emoji-picker"
 import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switcher"
 import { CommunityChatScreen } from "@/screens/chat/community-chat-screen"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
@@ -137,7 +136,6 @@ export default function ChatScreen() {
     const [activeBasketVariantId, setActiveBasketVariantId] = useState<number | null>(null)
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
-    const [emojiPickerVisible, setEmojiPickerVisible] = useState(false)
     const [keyboardVisible, setKeyboardVisible] = useState(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
@@ -160,7 +158,7 @@ export default function ChatScreen() {
     const bottomEdgeFadeHeight = composerBottomInset + (keyboardVisible ? 72 : 96)
     const edgeFadeColor = isDark ? "#07121C" : "#E8F7DF"
     const voiceStatusVisible = voiceRecording || voiceTranscribing
-    const composerOffset = composerBottomInset + 72 + (attachments.length > 0 ? 50 : 0) + (voiceStatusVisible ? 40 : 0) + (emojiPickerVisible ? 174 : 0)
+    const composerOffset = composerBottomInset + 72 + (attachments.length > 0 ? 50 : 0) + (voiceStatusVisible ? 40 : 0)
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
     const messageTextWidth = Math.max(180, Math.min(screenWidth * 0.74, 330))
     const voiceRecordingSupported =
@@ -291,7 +289,6 @@ export default function ChatScreen() {
 
     const handleOpenAttachmentSheet = useCallback(() => {
         Keyboard.dismiss()
-        setEmojiPickerVisible(false)
         setAttachmentMode("photo")
         setAttachmentSheetVisible(true)
     }, [])
@@ -479,7 +476,6 @@ export default function ChatScreen() {
         }
 
         const text = draftText || t("chat.attachmentFallbackMessage")
-        setEmojiPickerVisible(false)
         setDraft("")
         setAttachments([])
 
@@ -911,7 +907,6 @@ export default function ChatScreen() {
                                 },
                             ]}
                         >
-                            {emojiPickerVisible ? <ChatEmojiPicker onSelect={(emoji) => setDraft((current) => `${current}${emoji}`)} /> : null}
                             {voiceStatusVisible ? (
                                 <View style={chatScreenStyles.voiceStatusPill}>
                                     {voiceTranscribing ? (
@@ -944,24 +939,12 @@ export default function ChatScreen() {
                                         editable={!voiceRecording && !voiceTranscribing}
                                         multiline
                                         onChangeText={setDraft}
-                                        onFocus={() => setEmojiPickerVisible(false)}
                                         placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.inputPlaceholder")}
                                         placeholderTextColor={isDark ? "#9BB0BF" : "#8B9092"}
                                         style={chatScreenStyles.composerInput}
                                         textAlignVertical="top"
                                         value={draft}
                                     />
-                                    <Pressable accessibilityLabel={t("chat.emojiPickerLabel")} onPress={() => { Keyboard.dismiss(); setEmojiPickerVisible((visible) => !visible) }} style={chatScreenStyles.stickerButton}>
-                                        <Svg fill="none" height={24} viewBox="0 0 24 24" width={24}>
-                                            <Path
-                                                d="M12 3.8a8.2 8.2 0 1 0 8.2 8.2v0A8.2 8.2 0 0 0 12 3.8ZM8.8 11.6h.1m6.2 0h.1M8.5 15.2c.8 1 2 1.6 3.5 1.6s2.7-.6 3.5-1.6"
-                                                stroke="#778085"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                strokeWidth={1.8}
-                                            />
-                                        </Svg>
-                                    </Pressable>
                                 </View>
 
                                 <SendActionButton

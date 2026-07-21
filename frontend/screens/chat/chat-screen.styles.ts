@@ -780,12 +780,6 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         paddingVertical: spacing.sm,
         paddingRight: spacing.xs,
     },
-    stickerButton: {
-        width: 30,
-        height: 38,
-        alignItems: "center",
-        justifyContent: "center",
-    },
     emojiPicker: {
         borderRadius: 20,
         ...liquidGlassNeutral,
