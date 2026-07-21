@@ -411,6 +411,7 @@ async def _upsert_telethon_message(
         .options(
             selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.attachments),
             selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.telegram_parts),
+            selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.author),
         )
     )).scalar_one_or_none()
     if existing_part:
@@ -432,6 +433,9 @@ async def _upsert_telethon_message(
             telegram_message=telegram_message,
             logical=logical,
         )
+        if logical.author and logical.author.kind in {"user", "chat"}:
+            sender = await telegram_message.get_sender()
+            await _refresh_telethon_author_avatar(client, sender, logical.author)
         return logical, changed
 
     # Topic lifecycle/service records are represented by the topic model, not
