@@ -15,15 +15,24 @@ from .constants import APPLE_APP_ATTEST_NONCE_OID
 from .types import IosAttestationVerification
 
 
-_APPLE_APP_ATTEST_ROOT_CA_PATH = WORKING_DIR / ".secrets" / "apple_app_attest_root_ca.pem"
+# Public trust anchor published by Apple at:
+# https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem
+_APPLE_APP_ATTEST_ROOT_CA_PATH = WORKING_DIR / "certificates" / "Apple_App_Attestation_Root_CA.pem"
+_APPLE_APP_ATTEST_ROOT_CA_SHA256 = bytes.fromhex(
+    "1cb9823ba28ba6ad2d33a006941de2ae4f513ef1d4e831b9f7e0fa7b6242c932"
+)
 _APPLE_APP_ATTEST_ROOT_CA_PEM: bytes | None = None
 
 
 def _load_apple_app_attest_root_ca_pem() -> bytes:
     global _APPLE_APP_ATTEST_ROOT_CA_PEM
     if _APPLE_APP_ATTEST_ROOT_CA_PEM is not None: return _APPLE_APP_ATTEST_ROOT_CA_PEM
-    if not _APPLE_APP_ATTEST_ROOT_CA_PATH.exists(): raise ValueError(f"Apple App Attest root CA file is missing: {_APPLE_APP_ATTEST_ROOT_CA_PATH}")
-    _APPLE_APP_ATTEST_ROOT_CA_PEM = _APPLE_APP_ATTEST_ROOT_CA_PATH.read_bytes()
+    if not _APPLE_APP_ATTEST_ROOT_CA_PATH.exists(): raise ValueError(f"Bundled Apple App Attest root CA file is missing: {_APPLE_APP_ATTEST_ROOT_CA_PATH}")
+    pem = _APPLE_APP_ATTEST_ROOT_CA_PATH.read_bytes()
+    certificate = x509.load_pem_x509_certificate(pem)
+    if not hmac.compare_digest(certificate.fingerprint(hashes.SHA256()), _APPLE_APP_ATTEST_ROOT_CA_SHA256):
+        raise ValueError("Bundled Apple App Attest root CA fingerprint mismatch")
+    _APPLE_APP_ATTEST_ROOT_CA_PEM = pem
     return _APPLE_APP_ATTEST_ROOT_CA_PEM
 
 

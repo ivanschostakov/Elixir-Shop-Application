@@ -1,13 +1,23 @@
 import time
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 from fastapi import HTTPException
 from types import SimpleNamespace
 from starlette.requests import Request
 
 import src.app.services.app_integrity.common as app_integrity_common
+import src.app.services.app_integrity.ios_verifier as ios_verifier
 import src.app.services.app_integrity.service as app_integrity
 from src.app.services.app_integrity.types import IosAttestationVerification
+
+
+def test_bundled_apple_app_attest_root_ca_matches_pinned_fingerprint():
+    certificate = x509.load_pem_x509_certificate(ios_verifier._load_apple_app_attest_root_ca_pem())
+
+    assert certificate.subject == certificate.issuer
+    assert certificate.fingerprint(hashes.SHA256()) == ios_verifier._APPLE_APP_ATTEST_ROOT_CA_SHA256
 
 
 class _ScalarResult:
