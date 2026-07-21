@@ -11,7 +11,9 @@ const TOPIC_POLL_INTERVAL_MS = 2500
 function mergeMessages(current: CommunityMessage[], incoming: CommunityMessage[]) {
     const byId = new Map(current.map((message) => [message.id, message]))
     for (const message of incoming) byId.set(message.id, message)
-    return [...byId.values()].sort((left, right) => left.id - right.id)
+    return [...byId.values()]
+        .filter((message) => !message.is_deleted)
+        .sort((left, right) => left.id - right.id)
 }
 
 export function useCommunityChat(active: boolean, onUnreadChange?: (count: number) => void) {
@@ -66,7 +68,7 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
         try {
             const response = await getCommunityMessages(topicId)
             if (selectedTopicIdRef.current !== topicId) return
-            setMessages(response.messages)
+            setMessages(response.messages.filter((message) => !message.is_deleted))
             setHasMore(response.has_more)
             newestIdRef.current = response.newest_id
             syncCursorRef.current = response.sync_cursor
@@ -225,9 +227,7 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
         setMutatingMessageId(messageId)
         try {
             await deleteCommunityMessage(selectedTopicId, messageId)
-            setMessages((current) => current.map((message) => message.id === messageId
-                ? { ...message, attachments: [], can_delete: false, can_edit: false, is_deleted: true, text: "", unsupported_type: null }
-                : message))
+            setMessages((current) => current.filter((message) => message.id !== messageId))
             await loadTopics()
             return true
         } finally {
