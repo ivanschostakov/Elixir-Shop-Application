@@ -293,3 +293,21 @@ def test_telethon_app_message_header_is_not_mirrored_back_into_app_text():
 
     assert telegram_userbot._telethon_message_text(telegram_message, logical) == "Updated text"
     assert telegram_userbot._archived_app_author_name(telegram_message) == "Ada Lovelace"
+
+
+def test_telethon_admin_log_message_classifies_edits_and_deletes():
+    deleted = SimpleNamespace(
+        deleted_message=True,
+        changed_message=False,
+        old=SimpleNamespace(id=41),
+        new=None,
+    )
+    edited = SimpleNamespace(
+        deleted_message=False,
+        changed_message=True,
+        old=SimpleNamespace(id=42),
+        new=SimpleNamespace(id=42, message="updated"),
+    )
+
+    assert telegram_userbot._admin_log_message(deleted) == ("delete", deleted.old)
+    assert telegram_userbot._admin_log_message(edited) == ("edit", edited.new)

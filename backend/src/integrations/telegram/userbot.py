@@ -18,6 +18,7 @@ from config import (
     TELEGRAM_COMMUNITY_PROFILE_CACHE_SECONDS,
     TELEGRAM_USERBOT_API_HASH,
     TELEGRAM_USERBOT_API_ID,
+    TELEGRAM_USERBOT_ADMIN_LOG_SYNC_INTERVAL_SECONDS,
     TELEGRAM_USERBOT_ENABLED,
     TELEGRAM_USERBOT_FULL_HISTORY_RECONCILE_SECONDS,
     TELEGRAM_USERBOT_HISTORY_SYNC_INTERVAL_SECONDS,
@@ -628,6 +629,107 @@ async def sync_telegram_forum_history() -> dict[str, int]:
         _lock_down_session_file()
 
 
+def _admin_log_message(event: Any) -> tuple[str | None, Any | None]:
+    if bool(getattr(event, "deleted_message", False)):
+        return "delete", getattr(event, "old", None)
+    if bool(getattr(event, "changed_message", False)):
+        return "edit", getattr(event, "new", None)
+    return None, None
+
+
+async def _reconcile_telegram_admin_log(
+    client: Any,
+    peer: Any,
+    *,
+    min_event_id: int,
+) -> dict[str, int]:
+    events = list(await client.get_admin_log(
+        peer,
+        limit=100,
+        min_id=max(int(min_event_id), 0),
+        edit=True,
+        delete=True,
+    ))
+    if not events:
+        return {"cursor": min_event_id, "edited": 0, "deleted": 0}
+
+    cursor = max(int(getattr(event, "id", 0) or 0) for event in events)
+    deleted_ids: list[int] = []
+    edited_messages: list[Any] = []
+    for event in sorted(events, key=lambda item: int(getattr(item, "id", 0) or 0)):
+        action, message = _admin_log_message(event)
+        telegram_message_id = int(getattr(message, "id", 0) or 0)
+        if telegram_message_id <= 0:
+            continue
+        if action == "delete":
+            deleted_ids.append(telegram_message_id)
+        elif action == "edit":
+            edited_messages.append(message)
+
+    edited = 0
+    deleted = 0
+    async with get_session() as db:
+        if deleted_ids:
+            deleted = await mark_community_telegram_messages_deleted(db, deleted_ids)
+        for telegram_message in edited_messages:
+            telegram_message_id = int(getattr(telegram_message, "id", 0) or 0)
+            part = (await db.execute(
+                select(CommunityTelegramPart)
+                .where(
+                    CommunityTelegramPart.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID,
+                    CommunityTelegramPart.telegram_message_id == telegram_message_id,
+                )
+                .options(
+                    selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.topic),
+                )
+            )).scalar_one_or_none()
+            if part is None:
+                continue
+            logical = part.message
+            new_text = _telethon_message_text(telegram_message, logical)
+            edit_date = getattr(telegram_message, "edit_date", None) or ufa_now()
+            changed = (
+                logical.text != new_text
+                or logical.deleted_at is not None
+                or part.deleted_at is not None
+                or logical.edited_at is None
+                or edit_date > logical.edited_at
+            )
+            if not changed:
+                continue
+            logical.text = new_text
+            logical.edited_at = edit_date
+            logical.deleted_at = None
+            part.deleted_at = None
+            edited += 1
+        await db.commit()
+    return {"cursor": cursor, "edited": edited, "deleted": deleted}
+
+
+async def _run_telegram_admin_log_reconciler(client: Any, peer: Any, stop_event: asyncio.Event) -> None:
+    cursor = 0
+    interval = max(float(TELEGRAM_USERBOT_ADMIN_LOG_SYNC_INTERVAL_SECONDS), 2.0)
+    while not stop_event.is_set() and client.is_connected():
+        try:
+            result = await _reconcile_telegram_admin_log(client, peer, min_event_id=cursor)
+            cursor = max(cursor, result["cursor"])
+            if result["edited"] or result["deleted"]:
+                log.info(
+                    "telethon admin log reconciled edited=%s deleted=%s cursor=%s",
+                    result["edited"],
+                    result["deleted"],
+                    cursor,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("telethon admin log reconciliation failed")
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=interval)
+        except TimeoutError:
+            pass
+
+
 async def run_telegram_userbot_mirror(stop_event: asyncio.Event) -> None:
     """Continuously reconcile topics/history and receive Telegram edit/delete events."""
     from telethon import events
@@ -635,6 +737,7 @@ async def run_telegram_userbot_mirror(stop_event: asyncio.Event) -> None:
     retry_seconds = 10
     while not stop_event.is_set():
         client = _build_client(receive_updates=True)
+        admin_log_task: asyncio.Task[None] | None = None
         try:
             await client.connect()
             await _require_authorized_user(client)
@@ -671,14 +774,21 @@ async def run_telegram_userbot_mirror(stop_event: asyncio.Event) -> None:
                     async with get_session() as db:
                         count = await mark_community_telegram_messages_deleted(db, list(event.deleted_ids))
                         await db.commit()
-                    if count:
-                        log.info("telethon message deletions mirrored count=%s", count)
+                    log.info(
+                        "telethon deletion event received ids=%s matched=%s",
+                        len(event.deleted_ids),
+                        count,
+                    )
                 except Exception:
                     log.exception("telethon message deletion mirror failed")
 
             client.add_event_handler(handle_edit, events.MessageEdited())
             client.add_event_handler(handle_delete, events.MessageDeleted())
             await client.catch_up()
+            peer = await _resolve_forum_peer(client)
+            admin_log_task = asyncio.create_task(
+                _run_telegram_admin_log_reconciler(client, peer, stop_event)
+            )
 
             topic_result = await _sync_telegram_forum_topics_with_client(client)
             log.info(
@@ -724,6 +834,10 @@ async def run_telegram_userbot_mirror(stop_event: asyncio.Event) -> None:
             except TimeoutError:
                 pass
         finally:
+            if admin_log_task is not None:
+                admin_log_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await admin_log_task
             if client.is_connected():
                 await client.disconnect()
             _lock_down_session_file()
