@@ -43,7 +43,7 @@ propcache==0.4.1
 pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycparser==3.0
-PySocks==1.7.1
+python-socks[asyncio]==2.7.2
 pydantic==2.12.5
 pydantic_core==2.41.5
 python-dateutil==2.9.0.post0
