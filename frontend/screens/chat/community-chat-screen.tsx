@@ -343,8 +343,10 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
         if (message.is_deleted) return
         const actions: AlertButton[] = [
             { text: t("chat.communityReplyAction"), onPress: () => { setEditingMessage(null); setReplyTo(message) } },
-            { text: t("chat.communityAddReaction"), onPress: () => setReactionPickerMessageId(message.id) },
         ]
+        if (Array.isArray(message.reactions)) {
+            actions.push({ text: t("chat.communityAddReaction"), onPress: () => setReactionPickerMessageId(message.id) })
+        }
         if (message.can_edit) {
             actions.push({
                 text: t("chat.communityEditAction"),
@@ -468,6 +470,9 @@ function CommunityMessageBubble({ message, onLongPress, onReact, reacting, react
     const delivery = message.delivery_status === "queued" || message.delivery_status === "sending" ? t("chat.communityPending") : message.delivery_status === "failed" ? t("chat.communityFailed") : message.delivery_status === "delivery_unknown" ? t("chat.communityUnknown") : ""
     const meta = [formatTime(message.created_at), message.is_edited && !message.is_deleted ? t("chat.communityEdited") : "", delivery].filter(Boolean).join(" · ")
     const mine = message.author.is_current_user
+    // Keep OTA clients compatible while the backend reaction field rolls out.
+    const reactionsSupported = Array.isArray(message.reactions)
+    const reactions = Array.isArray(message.reactions) ? message.reactions : []
     return (
         <View style={[styles.messageBlock, mine ? styles.messageBlockMine : null]}>
             <View style={[styles.messageRow, mine ? styles.messageRowMine : null]}>
@@ -478,8 +483,8 @@ function CommunityMessageBubble({ message, onLongPress, onReact, reacting, react
                     <Text style={styles.messageMeta}>{meta}</Text>
                 </Pressable>
             </View>
-            {!message.is_deleted ? <View style={[styles.reactionRow, mine ? styles.reactionRowMine : null]}>{message.reactions.map((reaction) => <Pressable disabled={reacting} key={reaction.emoji} onPress={() => onReact(reaction.emoji)} style={[styles.reactionChip, reaction.reacted_by_me ? styles.reactionChipMine : null]}><Text style={styles.reactionEmoji}>{reaction.emoji}</Text><Text style={[styles.reactionCount, reaction.reacted_by_me ? styles.reactionCountMine : null]}>{reaction.count}</Text></Pressable>)}<Pressable accessibilityLabel={t("chat.communityAddReaction")} disabled={reacting} onPress={toggleReactionPicker} style={styles.addReactionButton}>{reacting ? <ActivityIndicator size="small" /> : <Text style={styles.addReactionText}>＋</Text>}</Pressable></View> : null}
-            {reactionPickerOpen ? <View style={[styles.reactionPicker, mine ? styles.reactionPickerMine : null]}>{COMMUNITY_REACTION_EMOJIS.map((emoji) => <Pressable key={emoji} onPress={() => onReact(emoji)} style={({ pressed }) => [styles.reactionPickerButton, pressed ? styles.reactionPickerButtonPressed : null]}><Text style={styles.reactionPickerEmoji}>{emoji}</Text></Pressable>)}</View> : null}
+            {!message.is_deleted && reactionsSupported ? <View style={[styles.reactionRow, mine ? styles.reactionRowMine : null]}>{reactions.map((reaction) => <Pressable disabled={reacting} key={reaction.emoji} onPress={() => onReact(reaction.emoji)} style={[styles.reactionChip, reaction.reacted_by_me ? styles.reactionChipMine : null]}><Text style={styles.reactionEmoji}>{reaction.emoji}</Text><Text style={[styles.reactionCount, reaction.reacted_by_me ? styles.reactionCountMine : null]}>{reaction.count}</Text></Pressable>)}<Pressable accessibilityLabel={t("chat.communityAddReaction")} disabled={reacting} onPress={toggleReactionPicker} style={styles.addReactionButton}>{reacting ? <ActivityIndicator size="small" /> : <Text style={styles.addReactionText}>＋</Text>}</Pressable></View> : null}
+            {reactionPickerOpen && reactionsSupported ? <View style={[styles.reactionPicker, mine ? styles.reactionPickerMine : null]}>{COMMUNITY_REACTION_EMOJIS.map((emoji) => <Pressable key={emoji} onPress={() => onReact(emoji)} style={({ pressed }) => [styles.reactionPickerButton, pressed ? styles.reactionPickerButtonPressed : null]}><Text style={styles.reactionPickerEmoji}>{emoji}</Text></Pressable>)}</View> : null}
         </View>
     )
 }

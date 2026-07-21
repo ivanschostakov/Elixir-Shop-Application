@@ -46,7 +46,7 @@ export type CommunityMessage = {
     text: string
     attachments: CommunityAttachment[]
     reply_to: CommunityReplyPreview | null
-    reactions: CommunityReaction[]
+    reactions?: CommunityReaction[]
     unsupported_type: string | null
     telegram_url: string | null
     delivery_status: CommunityDeliveryStatus
