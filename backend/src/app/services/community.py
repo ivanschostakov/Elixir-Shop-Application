@@ -415,10 +415,25 @@ async def toggle_community_message_reaction(
     if message is None:
         raise HTTPException(status_code=404, detail="Community message not found")
     existing = next((reaction for reaction in message.reactions if reaction.user_id == user.id and reaction.emoji == normalized_emoji), None)
+    client = telegram_client or get_telegram_bot_client()
     if existing:
+        if existing.telegram_message_id:
+            try:
+                await _delete_telegram_message_ids(
+                    client,
+                    chat_id=existing.telegram_chat_id or TELEGRAM_COMMUNITY_CHAT_ID,
+                    message_ids=[existing.telegram_message_id],
+                )
+            except (TelegramBotAPIError, TimeoutError, OSError) as exc:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Telegram could not remove the reaction reply",
+                ) from exc
         await db.delete(existing)
+        reaction = None
     else:
-        db.add(CommunityReaction(message_id=message.id, user_id=user.id, emoji=normalized_emoji))
+        reaction = CommunityReaction(message_id=message.id, user_id=user.id, emoji=normalized_emoji)
+        db.add(reaction)
     reaction_added = existing is None
     active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
     reply_to_telegram_message_id = active_parts[0].telegram_message_id if active_parts else None
@@ -429,7 +444,7 @@ async def toggle_community_message_reaction(
     if reaction_added and reply_to_telegram_message_id:
         author_name, notification_text = _telegram_app_reaction_notification(user, normalized_emoji)
         try:
-            await (telegram_client or get_telegram_bot_client()).call(
+            result = await client.call(
                 "sendMessage",
                 data={
                     "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
@@ -442,6 +457,12 @@ async def toggle_community_message_reaction(
                     "entities": _telegram_author_entities(notification_text, author_name),
                 },
             )
+            if reaction is not None and isinstance(result, dict):
+                telegram_message_id = int(result.get("message_id") or 0)
+                if telegram_message_id:
+                    reaction.telegram_chat_id = TELEGRAM_COMMUNITY_CHAT_ID
+                    reaction.telegram_message_id = telegram_message_id
+                    await db.commit()
         except (TelegramBotAPIError, TimeoutError, OSError):
             # The local reaction is already durable and should remain usable
             # during a temporary Telegram outage.
@@ -673,6 +694,7 @@ async def delete_community_message(
         .options(
             selectinload(CommunityMessage.attachments),
             selectinload(CommunityMessage.telegram_parts),
+            selectinload(CommunityMessage.reactions),
             selectinload(CommunityMessage.topic),
         )
     )).scalar_one_or_none()
@@ -683,20 +705,27 @@ async def delete_community_message(
     if message.deleted_at:
         return
     active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
-    if active_parts:
+    telegram_message_ids = [part.telegram_message_id for part in active_parts]
+    telegram_message_ids.extend(
+        reaction.telegram_message_id
+        for reaction in message.reactions
+        if reaction.telegram_message_id
+    )
+    if telegram_message_ids:
         try:
-            await (telegram_client or get_telegram_bot_client()).call(
-                "deleteMessages",
-                data={
-                    "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
-                    "message_ids": [part.telegram_message_id for part in active_parts],
-                },
+            await _delete_telegram_message_ids(
+                telegram_client or get_telegram_bot_client(),
+                chat_id=TELEGRAM_COMMUNITY_CHAT_ID,
+                message_ids=telegram_message_ids,
             )
         except (TelegramBotAPIError, TimeoutError, OSError) as exc:
             raise HTTPException(status_code=502, detail="Telegram could not delete this message") from exc
     deleted_at = ufa_now()
     for part in active_parts:
         part.deleted_at = deleted_at
+    for reaction in message.reactions:
+        reaction.telegram_chat_id = None
+        reaction.telegram_message_id = None
     _soft_delete_message(message, deleted_at=deleted_at)
     await _refresh_topic_last_message(db, message.topic)
     await db.commit()
@@ -794,6 +823,39 @@ def _telegram_author_entities(value: str, author_name: str) -> list[dict[str, An
     # Telegram entity offsets and lengths use UTF-16 code units.
     author_length = len(author_name.encode("utf-16-le")) // 2
     return [{"type": "bold", "offset": 0, "length": author_length}]
+
+
+def _telegram_message_is_already_absent(exc: TelegramBotAPIError) -> bool:
+    message = str(exc).casefold()
+    return exc.error_code == 400 and "message to delete not found" in message
+
+
+async def _delete_telegram_message_ids(
+    telegram_client: TelegramBotClient,
+    *,
+    chat_id: int,
+    message_ids: list[int],
+) -> None:
+    normalized_ids = sorted({int(message_id) for message_id in message_ids if int(message_id) > 0})
+    for offset in range(0, len(normalized_ids), 100):
+        chunk = normalized_ids[offset:offset + 100]
+        try:
+            await telegram_client.call(
+                "deleteMessages",
+                data={"chat_id": chat_id, "message_ids": chunk},
+            )
+        except TelegramBotAPIError:
+            # A stale ID can make the bulk request fail. Retry individually so
+            # valid tracked replies are still cleaned up.
+            for telegram_message_id in chunk:
+                try:
+                    await telegram_client.call(
+                        "deleteMessage",
+                        data={"chat_id": chat_id, "message_id": telegram_message_id},
+                    )
+                except TelegramBotAPIError as exc:
+                    if not _telegram_message_is_already_absent(exc):
+                        raise
 
 
 async def recover_stale_community_deliveries(db: AsyncSession, *, older_than_seconds: int = 300) -> int:

@@ -24,5 +24,7 @@ class CommunityReaction(Base, IdPkMixin, TimestampMixin):
         index=True,
     )
     emoji: Mapped[str] = mapped_column(String(16), nullable=False)
+    telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telegram_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
 
     message: Mapped["CommunityMessage"] = relationship(back_populates="reactions")
