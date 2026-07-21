@@ -43,6 +43,11 @@ export type CommunityMessage = {
     unsupported_type: string | null
     telegram_url: string | null
     delivery_status: CommunityDeliveryStatus
+    is_edited: boolean
+    is_deleted: boolean
+    can_edit: boolean
+    can_delete: boolean
+    edited_at: string | null
     created_at: string
 }
 
@@ -57,7 +62,7 @@ export type CommunityTopic = {
 }
 
 export type CommunityTopicList = { topics: CommunityTopic[]; total_unread: number }
-export type CommunityMessagePage = { messages: CommunityMessage[]; has_more: boolean; oldest_id: number | null; newest_id: number | null }
+export type CommunityMessagePage = { messages: CommunityMessage[]; has_more: boolean; oldest_id: number | null; newest_id: number | null; sync_cursor: string; sync_cursor_id: number }
 
 export type SendCommunityMessagePayload = {
     clientId: string

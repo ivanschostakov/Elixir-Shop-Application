@@ -52,6 +52,11 @@ class CommunityMessageRead(BaseModel):
     unsupported_type: str | None = None
     telegram_url: str | None = None
     delivery_status: CommunityDeliveryStatus
+    is_edited: bool = False
+    is_deleted: bool = False
+    can_edit: bool = False
+    can_delete: bool = False
+    edited_at: datetime | None = None
     created_at: datetime
 
 
@@ -60,6 +65,8 @@ class CommunityMessagePageRead(BaseModel):
     has_more: bool = False
     oldest_id: int | None = None
     newest_id: int | None = None
+    sync_cursor: datetime
+    sync_cursor_id: int = 0
 
 
 class CommunityTopicRead(BaseModel):
@@ -83,3 +90,7 @@ class CommunityMarkReadPayload(BaseModel):
 
 class CommunityMarkReadResponse(BaseModel):
     ok: bool = True
+
+
+class CommunityMessageEditPayload(BaseModel):
+    text: str = Field(min_length=1, max_length=4096)

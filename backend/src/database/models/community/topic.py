@@ -26,6 +26,15 @@ class CommunityTopic(Base, IdPkMixin, TimestampMixin):
     telegram_creator_peer_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     telegram_created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     telegram_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    telegram_history_min_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telegram_history_max_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    telegram_history_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    telegram_history_complete: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     last_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 

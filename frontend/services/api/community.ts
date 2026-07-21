@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPostMultipart } from "@/services/api/client"
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart } from "@/services/api/client"
 import type { CommunityMessage, CommunityMessagePage, CommunityStatus, CommunityTopicList, SendCommunityMessagePayload } from "@/services/api/community.types"
 
 const communityEndpoint = "/v1/users/me/community"
@@ -12,8 +12,8 @@ export function getCommunityTopics() {
     return apiGet<CommunityTopicList>(`${communityEndpoint}/topics`, undefined, readOptions)
 }
 
-export function getCommunityMessages(topicId: number, options: { beforeId?: number; afterId?: number; limit?: number } = {}) {
-    return apiGet<CommunityMessagePage>(`${communityEndpoint}/topics/${topicId}/messages`, { before_id: options.beforeId, after_id: options.afterId, limit: options.limit ?? 50 }, readOptions)
+export function getCommunityMessages(topicId: number, options: { beforeId?: number; afterId?: number; changedAfter?: string; changedAfterId?: number; limit?: number } = {}) {
+    return apiGet<CommunityMessagePage>(`${communityEndpoint}/topics/${topicId}/messages`, { before_id: options.beforeId, after_id: options.afterId, changed_after: options.changedAfter, changed_after_id: options.changedAfterId, limit: options.limit ?? 50 }, readOptions)
 }
 
 export function sendCommunityMessage(topicId: number, payload: SendCommunityMessagePayload) {
@@ -29,4 +29,19 @@ export function sendCommunityMessage(topicId: number, payload: SendCommunityMess
 
 export function markCommunityTopicRead(topicId: number, lastMessageId: number) {
     return apiPost<{ ok: boolean }, { last_message_id: number }>(`${communityEndpoint}/topics/${topicId}/read`, { last_message_id: lastMessageId }, readOptions)
+}
+
+export function editCommunityMessage(topicId: number, messageId: number, text: string) {
+    return apiPatch<CommunityMessage, { text: string }>(
+        `${communityEndpoint}/topics/${topicId}/messages/${messageId}`,
+        { text },
+        { appIntegrityAction: "community:send" },
+    )
+}
+
+export function deleteCommunityMessage(topicId: number, messageId: number) {
+    return apiDelete<void>(
+        `${communityEndpoint}/topics/${topicId}/messages/${messageId}`,
+        { appIntegrityAction: "community:send" },
+    )
 }

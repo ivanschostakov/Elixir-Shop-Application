@@ -1,4 +1,6 @@
-from sqlalchemy import BigInteger, ForeignKey, UniqueConstraint
+from datetime import datetime
+
+from sqlalchemy import BigInteger, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -19,5 +21,6 @@ class CommunityTelegramPart(Base, IdPkMixin, TimestampMixin):
     )
     telegram_chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     message: Mapped["CommunityMessage"] = relationship(back_populates="telegram_parts")

@@ -13,13 +13,12 @@ from config import (
     TELEGRAM_POLLING_TIMEOUT_SECONDS,
     TELEGRAM_PROXY_URL,
     TELEGRAM_USERBOT_ENABLED,
-    TELEGRAM_USERBOT_TOPIC_SYNC_INTERVAL_SECONDS,
 )
 from logger import setup_logging
 from src.app.services.telegram_updates import process_telegram_update
 from src.app.services.community import recover_stale_community_deliveries, relay_next_community_message
 from src.database import get_session
-from src.integrations.telegram.userbot import sync_telegram_forum_topics
+from src.integrations.telegram.userbot import run_telegram_userbot_mirror
 
 log = logging.getLogger("worker.telegram_polling")
 
@@ -50,7 +49,7 @@ class TelegramPollingClient:
     async def get_updates(self, offset: int | None) -> list[dict[str, Any]]:
         data: dict[str, str] = {
             "timeout": str(max(int(TELEGRAM_POLLING_TIMEOUT_SECONDS), 1)),
-            "allowed_updates": '["message","chat_member","my_chat_member"]',
+            "allowed_updates": '["message","edited_message","chat_member","my_chat_member"]',
         }
         if offset is not None:
             data["offset"] = str(offset)
@@ -72,34 +71,6 @@ async def run_forever() -> None:
     offset: int | None = None
     client = TelegramPollingClient()
     is_webhook_deleted = False
-
-    async def _sync_topics(reason: str) -> None:
-        try:
-            result = await sync_telegram_forum_topics()
-            log.info(
-                "telegram forum topics synchronized reason=%s total=%s discovered=%s updated=%s restored=%s deleted=%s",
-                reason,
-                result.total,
-                result.discovered,
-                result.updated,
-                result.restored,
-                result.deleted,
-            )
-        except Exception:
-            # Topic metadata sync is fail-soft; Bot API messaging must continue.
-            log.exception("telegram forum topic synchronization failed reason=%s", reason)
-
-    async def _run_topic_sync_loop() -> None:
-        interval = max(int(TELEGRAM_USERBOT_TOPIC_SYNC_INTERVAL_SECONDS), 60)
-        while not stop_event.is_set():
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval)
-                continue
-            except TimeoutError:
-                await _sync_topics("periodic")
-
-    if TELEGRAM_USERBOT_ENABLED:
-        await _sync_topics("startup")
 
     async def _run_outbound_loop() -> None:
         try:
@@ -123,7 +94,7 @@ async def run_forever() -> None:
                 continue
 
     outbound_task = asyncio.create_task(_run_outbound_loop())
-    topic_sync_task = asyncio.create_task(_run_topic_sync_loop()) if TELEGRAM_USERBOT_ENABLED else None
+    userbot_task = asyncio.create_task(run_telegram_userbot_mirror(stop_event)) if TELEGRAM_USERBOT_ENABLED else None
 
     async def _shutdown() -> None:
         stop_event.set()
@@ -165,13 +136,13 @@ async def run_forever() -> None:
                 continue
     finally:
         outbound_task.cancel()
-        if topic_sync_task is not None:
-            topic_sync_task.cancel()
+        if userbot_task is not None:
+            userbot_task.cancel()
         with suppress(asyncio.CancelledError):
             await outbound_task
-        if topic_sync_task is not None:
+        if userbot_task is not None:
             with suppress(asyncio.CancelledError):
-                await topic_sync_task
+                await userbot_task
         await client.aclose()
 
 

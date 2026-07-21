@@ -26,6 +26,8 @@ The preferred bootstrap uses a dedicated Telegram user session through MTProto. 
    - optional `TELEGRAM_USERBOT_PHONE`
    - `TELEGRAM_USERBOT_SESSION_PATH=/app/backend/.secrets/telegram-userbot/community`
    - `TELEGRAM_USERBOT_TOPIC_SYNC_INTERVAL_SECONDS=60`
+   - `TELEGRAM_USERBOT_HISTORY_SYNC_INTERVAL_SECONDS=60`
+   - `TELEGRAM_USERBOT_FULL_HISTORY_RECONCILE_SECONDS=86400`
 2. Keep `TELEGRAM_USERBOT_ENABLED=false` until the session is authorized.
 3. Authorize the persistent session interactively:
 
@@ -33,7 +35,15 @@ The preferred bootstrap uses a dedicated Telegram user session through MTProto. 
 docker compose run --rm worker-telegram-polling python -m src.scripts.telegram_userbot_login
 ```
 
-4. Set `TELEGRAM_USERBOT_ENABLED=true` and recreate the Telegram worker. It fetches the complete forum topic list before Bot API polling begins and reconciles it periodically. The periodic reconciliation is also the authoritative deletion check because Bot API does not emit topic-deletion updates.
+4. Set `TELEGRAM_USERBOT_ENABLED=true` and recreate the Telegram worker. Bot API polling starts immediately while the persistent Telethon client fetches topics, backfills existing topic history, and listens for edits/deletes. It incrementally fetches missed messages every minute and performs a full history reconciliation daily so deletions are repaired even if an event was missed.
+
+The app community requires only an authenticated app account. App users do not link Telegram and do not need Telegram group membership. App-originated messages are relayed by the bot with `Full Name · Elixir app`; Telegram usernames and Telegram identifiers stay internal.
+
+For a manual history reconciliation:
+
+```bash
+docker compose run --rm worker-telegram-polling python -m src.scripts.telegram_history_sync
+```
 
 `/register` remains an administrator-only fallback. In an existing topic, send:
 
@@ -47,9 +57,9 @@ The bridge records that message's thread ID and deletes the command. Bot API lif
 
 1. Keep `TELEGRAM_COMMUNITY_ENABLED=false` while checking the migration and worker logs.
 2. Set `TELEGRAM_COMMUNITY_ENABLED=true` on both the API and polling worker, then restart them.
-3. Verify a linked group member can see the selector, topics, full author names and photos.
+3. Verify an authenticated app user with no linked Telegram account can see the selector, topics, full author names and photos.
 4. Post text, a photo, a document, and a reply from Telegram and confirm they appear in the app.
 5. Post the same formats from the app and confirm each arrives once in the exact Telegram topic.
-6. Verify an unlinked user sees the bot action and a linked non-member sees the invite action.
+6. Edit and delete messages from both surfaces and confirm the open app chat updates on its next poll.
 
 Turning the flag off hides the selector and stops new community ingestion and outbound delivery without deleting mirrored data.

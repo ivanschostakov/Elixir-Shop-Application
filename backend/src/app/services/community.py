@@ -10,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException, Request, UploadFile
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
@@ -119,21 +119,12 @@ def _is_active_member(member: dict[str, Any]) -> bool:
 
 
 async def _membership_access(user: User, *, refresh: bool = False, telegram_client: TelegramBotClient | None = None) -> str:
-    if not TELEGRAM_COMMUNITY_ENABLED or not TELEGRAM_COMMUNITY_CHAT_ID or not (TELEGRAM_BOT_TOKEN or "").strip(): return "temporarily_unavailable"
-    if not user.telegram_user_id: return "telegram_link_required"
-    cache = get_cache_service()
-    key = _membership_cache_key(user.telegram_user_id)
-    if not refresh and cache.client is not None:
-        cached = await cache.get_json(key, key_prefix="telegram_community_membership")
-        if isinstance(cached, dict) and isinstance(cached.get("active"), bool):
-            return "granted" if cached["active"] else "membership_required"
-    try:
-        member = await (telegram_client or get_telegram_bot_client()).get_chat_member(TELEGRAM_COMMUNITY_CHAT_ID, user.telegram_user_id)
-    except (TelegramBotAPIError, TimeoutError):
+    del user, refresh, telegram_client
+    if not TELEGRAM_COMMUNITY_ENABLED or not TELEGRAM_COMMUNITY_CHAT_ID or not (TELEGRAM_BOT_TOKEN or "").strip():
         return "temporarily_unavailable"
-    active = _is_active_member(member)
-    await cache.set_json(key, {"active": active}, ttl_seconds=TELEGRAM_COMMUNITY_MEMBERSHIP_CACHE_SECONDS, key_prefix="telegram_community_membership")
-    return "granted" if active else "membership_required"
+    # The app community is app-native. Telegram is a transport/mirror and never
+    # an identity or membership prerequisite for an authenticated app user.
+    return "granted"
 
 
 def _action_url(access: str) -> str | None:
@@ -166,7 +157,7 @@ async def require_community_access(user: User, *, telegram_client: TelegramBotCl
     access = await _membership_access(user, telegram_client=telegram_client)
     if access != "granted":
         http_status = status.HTTP_503_SERVICE_UNAVAILABLE if access == "temporarily_unavailable" else status.HTTP_403_FORBIDDEN
-        raise HTTPException(status_code=http_status, detail={"code": access, "message": "Telegram community access is required"})
+        raise HTTPException(status_code=http_status, detail={"code": access, "message": "The community is temporarily unavailable"})
 
 
 def _message_options():
@@ -179,8 +170,9 @@ def _message_options():
 
 
 def _telegram_message_url(message: CommunityMessage) -> str | None:
-    if not message.telegram_parts: return TELEGRAM_COMMUNITY_JOIN_URL
-    telegram_message_id = message.telegram_parts[0].telegram_message_id
+    active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
+    if not active_parts: return TELEGRAM_COMMUNITY_JOIN_URL
+    telegram_message_id = active_parts[0].telegram_message_id
     internal_chat_id = str(abs(TELEGRAM_COMMUNITY_CHAT_ID))
     if internal_chat_id.startswith("100"): internal_chat_id = internal_chat_id[3:]
     thread = message.topic.telegram_thread_id if message.topic else 0
@@ -191,11 +183,12 @@ def _telegram_message_url(message: CommunityMessage) -> str | None:
 def serialize_community_message(message: CommunityMessage, *, request: Request, user_id: int) -> CommunityMessageRead:
     author = message.author
     author_read = CommunityAuthorRead(id=author.id if author else 0, full_name=author.full_name if author else "Telegram member", avatar_url=build_community_media_url(request, media_type="author", media_id=author.id, user_id=user_id) if author and author.avatar_local_filename else None, is_current_user=message.app_user_id == user_id)
-    attachments = [CommunityAttachmentRead(id=item.id, kind=item.kind, filename=item.original_filename or item.filename, mime_type=item.mime_type, size_bytes=item.size_bytes, media_url=build_community_media_url(request, media_type="attachment", media_id=item.id, user_id=user_id) if item.local_filename and item.status == "ready" else None, available_in_telegram=not bool(item.local_filename)) for item in message.attachments]
+    attachments = [] if message.deleted_at else [CommunityAttachmentRead(id=item.id, kind=item.kind, filename=item.original_filename or item.filename, mime_type=item.mime_type, size_bytes=item.size_bytes, media_url=build_community_media_url(request, media_type="attachment", media_id=item.id, user_id=user_id) if item.local_filename and item.status == "ready" else None, available_in_telegram=not bool(item.local_filename)) for item in message.attachments]
     reply = None
     if message.reply_to:
         reply = CommunityReplyPreviewRead(id=message.reply_to.id, author_name=message.reply_to.author.full_name if message.reply_to.author else "Telegram member", text=(message.reply_to.text or "Attachment")[:160])
-    return CommunityMessageRead(id=message.id, topic_id=message.topic_id, author=author_read, text=message.text, attachments=attachments, reply_to=reply, unsupported_type=message.unsupported_type, telegram_url=_telegram_message_url(message), delivery_status=message.delivery_status, created_at=message.sent_at)
+    can_mutate = message.source == "app" and message.app_user_id == user_id and not message.deleted_at
+    return CommunityMessageRead(id=message.id, topic_id=message.topic_id, author=author_read, text="" if message.deleted_at else message.text, attachments=attachments, reply_to=reply, unsupported_type=None if message.deleted_at else message.unsupported_type, telegram_url=_telegram_message_url(message), delivery_status=message.delivery_status, is_edited=bool(message.edited_at), is_deleted=bool(message.deleted_at), can_edit=can_mutate, can_delete=can_mutate, edited_at=message.edited_at, created_at=message.sent_at)
 
 
 async def _initialize_read_baseline(db: AsyncSession, *, user_id: int, topics: list[CommunityTopic]) -> None:
@@ -221,15 +214,17 @@ async def list_community_topics(db: AsyncSession, *, user: User, request: Reques
             last_message = (await db.execute(stmt)).scalar_one_or_none()
             if last_message: last_message.topic = topic
         last_read_id = read_by_topic.get(topic.id).last_read_message_id if read_by_topic.get(topic.id) else None
-        unread_stmt = select(func.count(CommunityMessage.id)).where(CommunityMessage.topic_id == topic.id, CommunityMessage.id > int(last_read_id or 0), or_(CommunityMessage.app_user_id.is_(None), CommunityMessage.app_user_id != user.id))
+        unread_stmt = select(func.count(CommunityMessage.id)).where(CommunityMessage.topic_id == topic.id, CommunityMessage.id > int(last_read_id or 0), CommunityMessage.deleted_at.is_(None), or_(CommunityMessage.app_user_id.is_(None), CommunityMessage.app_user_id != user.id))
         unread = int((await db.execute(unread_stmt)).scalar_one())
         total_unread += unread
         topic_reads.append(CommunityTopicRead(id=topic.id, name=topic.name, icon_color=topic.icon_color, icon_custom_emoji_id=topic.icon_custom_emoji_id, is_closed=topic.is_closed, last_message=serialize_community_message(last_message, request=request, user_id=user.id) if last_message else None, unread_count=unread))
     return CommunityTopicListRead(topics=topic_reads, total_unread=total_unread)
 
 
-async def list_community_messages(db: AsyncSession, *, user: User, request: Request, topic_id: int, before_id: int | None, after_id: int | None, limit: int) -> CommunityMessagePageRead:
+async def list_community_messages(db: AsyncSession, *, user: User, request: Request, topic_id: int, before_id: int | None, after_id: int | None, changed_after: datetime | None, changed_after_id: int, limit: int) -> CommunityMessagePageRead:
     await require_community_access(user)
+    sync_cursor = ufa_now()
+    sync_cursor_id = 0
     if before_id and after_id: raise HTTPException(status_code=422, detail="before_id and after_id cannot be combined")
     topic = await db.get(CommunityTopic, topic_id)
     if topic is None or topic.telegram_chat_id != TELEGRAM_COMMUNITY_CHAT_ID or topic.is_deleted: raise HTTPException(status_code=404, detail="Community topic not found")
@@ -238,18 +233,41 @@ async def list_community_messages(db: AsyncSession, *, user: User, request: Requ
         new_rows = list((await db.execute(stmt.where(CommunityMessage.id > after_id).order_by(CommunityMessage.id.asc()).limit(limit + 1))).scalars().all())
         has_more = len(new_rows) > limit
         new_rows = new_rows[:limit]
-        # Re-send a small recent window so avatar/media and delivery-state changes reconcile.
-        recent_rows = list((await db.execute(
-            select(CommunityMessage)
-            .where(
-                CommunityMessage.topic_id == topic_id,
-                CommunityMessage.id <= after_id,
-            )
-            .order_by(CommunityMessage.id.desc())
-            .limit(20)
-            .options(*_message_options())
-        )).scalars().all())
-        rows = sorted({row.id: row for row in [*recent_rows, *new_rows]}.values(), key=lambda row: row.id)
+        if changed_after:
+            changed_rows = list((await db.execute(
+                select(CommunityMessage)
+                .where(
+                    CommunityMessage.topic_id == topic_id,
+                    CommunityMessage.id <= after_id,
+                    or_(
+                        CommunityMessage.updated_at > changed_after,
+                        and_(
+                            CommunityMessage.updated_at == changed_after,
+                            CommunityMessage.id > changed_after_id,
+                        ),
+                    ),
+                    CommunityMessage.updated_at <= sync_cursor,
+                )
+                .order_by(CommunityMessage.updated_at.asc(), CommunityMessage.id.asc())
+                .limit(limit + 1)
+                .options(*_message_options())
+            )).scalars().all())
+            changed_has_more = len(changed_rows) > limit
+            has_more = has_more or changed_has_more
+            changed_rows = changed_rows[:limit]
+            if changed_has_more and changed_rows:
+                sync_cursor = changed_rows[-1].updated_at
+                sync_cursor_id = changed_rows[-1].id
+        else:
+            # Backward-compatible reconciliation for clients without a change cursor.
+            changed_rows = list((await db.execute(
+                select(CommunityMessage)
+                .where(CommunityMessage.topic_id == topic_id, CommunityMessage.id <= after_id)
+                .order_by(CommunityMessage.id.desc())
+                .limit(20)
+                .options(*_message_options())
+            )).scalars().all())
+        rows = sorted({row.id: row for row in [*changed_rows, *new_rows]}.values(), key=lambda row: row.id)
     else:
         if before_id: stmt = stmt.where(CommunityMessage.id < before_id)
         stmt = stmt.order_by(CommunityMessage.id.desc())
@@ -258,7 +276,7 @@ async def list_community_messages(db: AsyncSession, *, user: User, request: Requ
         rows = rows[:limit]
         rows.reverse()
     for row in rows: row.topic = topic
-    return CommunityMessagePageRead(messages=[serialize_community_message(row, request=request, user_id=user.id) for row in rows], has_more=has_more, oldest_id=rows[0].id if rows else None, newest_id=rows[-1].id if rows else None)
+    return CommunityMessagePageRead(messages=[serialize_community_message(row, request=request, user_id=user.id) for row in rows], has_more=has_more, oldest_id=rows[0].id if rows else None, newest_id=rows[-1].id if rows else None, sync_cursor=sync_cursor, sync_cursor_id=sync_cursor_id)
 
 
 async def mark_community_topic_read(db: AsyncSession, *, user: User, topic_id: int, last_message_id: int) -> None:
@@ -328,7 +346,7 @@ async def create_community_message(db: AsyncSession, *, user: User, request: Req
         original = _safe_filename(upload.filename, f"attachment-{index + 1}")
         mime_type = upload.content_type or mimetypes.guess_type(original)[0] or "application/octet-stream"
         prepared_uploads.append((original, mime_type, content))
-    author = await _upsert_author(db, kind="user", telegram_peer_id=int(user.telegram_user_id), full_name=" ".join(part for part in (user.name, user.surname) if part).strip(), app_user_id=user.id, refresh_avatar=False)
+    author = await _upsert_author(db, kind="app", telegram_peer_id=user.id, full_name=" ".join(part for part in (user.name, user.surname) if part).strip() or "Elixir member", app_user_id=user.id, refresh_avatar=False)
     message = CommunityMessage(topic_id=topic.id, author_id=author.id, app_user_id=user.id, reply_to_message_id=reply_to.id if reply_to else None, source="app", client_id=normalized_client_id, text=normalized_text, delivery_status="queued", sent_at=ufa_now())
     db.add(message); await db.flush()
     written_paths: list[Path] = []
@@ -348,9 +366,213 @@ async def create_community_message(db: AsyncSession, *, user: User, request: Req
     return serialize_community_message(message, request=request, user_id=user.id)
 
 
+async def _refresh_topic_last_message(db: AsyncSession, topic: CommunityTopic) -> None:
+    latest = (await db.execute(
+        select(CommunityMessage)
+        .where(CommunityMessage.topic_id == topic.id, CommunityMessage.deleted_at.is_(None))
+        .order_by(CommunityMessage.sent_at.desc(), CommunityMessage.id.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+    topic.last_message_id = latest.id if latest else None
+    topic.last_message_at = latest.sent_at if latest else None
+
+
+def _soft_delete_message(message: CommunityMessage, *, deleted_at: datetime | None = None) -> None:
+    when = deleted_at or ufa_now()
+    message.deleted_at = when
+    message.text = ""
+    message.unsupported_type = None
+    for attachment in message.attachments:
+        if attachment.local_filename:
+            (COMMUNITY_ATTACHMENTS_DIR / attachment.local_filename).unlink(missing_ok=True)
+        attachment.local_filename = None
+        attachment.status = "deleted"
+
+
+async def edit_community_message(
+    db: AsyncSession,
+    *,
+    user: User,
+    request: Request,
+    topic_id: int,
+    message_id: int,
+    text: str,
+    telegram_client: TelegramBotClient | None = None,
+) -> CommunityMessageRead:
+    await require_community_access(user)
+    normalized_text = text.strip()
+    if not normalized_text:
+        raise HTTPException(status_code=422, detail="Message text must not be empty")
+    message = (await db.execute(
+        select(CommunityMessage)
+        .where(CommunityMessage.id == message_id, CommunityMessage.topic_id == topic_id)
+        .options(*_message_options(), selectinload(CommunityMessage.topic))
+    )).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(status_code=404, detail="Community message not found")
+    if message.app_user_id != user.id or message.source != "app":
+        raise HTTPException(status_code=403, detail="You can edit only your own app messages")
+    if message.deleted_at:
+        raise HTTPException(status_code=409, detail="Deleted messages cannot be edited")
+
+    edited_at = ufa_now()
+    if message.delivery_status in {"queued", "failed"} and not message.telegram_parts:
+        message.text = normalized_text
+        message.edited_at = edited_at
+        await db.commit()
+    else:
+        header = f"{message.author.full_name if message.author else 'Elixir member'} · Elixir app"
+        rendered = f"{header}\n\n{normalized_text}"
+        active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
+        attachment_part_ids = {
+            int(attachment.telegram_message_id)
+            for attachment in message.attachments
+            if attachment.telegram_message_id
+        }
+        text_parts = [part for part in active_parts if part.telegram_message_id not in attachment_part_ids]
+        client = telegram_client or get_telegram_bot_client()
+        try:
+            if text_parts:
+                if len(rendered) > 4096:
+                    raise HTTPException(status_code=422, detail="Edited message is too long for Telegram")
+                await client.call(
+                    "editMessageText",
+                    data={
+                        "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
+                        "message_id": text_parts[0].telegram_message_id,
+                        "text": rendered,
+                    },
+                )
+                extra_ids = [part.telegram_message_id for part in text_parts[1:]]
+                if extra_ids:
+                    await client.call(
+                        "deleteMessages",
+                        data={"chat_id": TELEGRAM_COMMUNITY_CHAT_ID, "message_ids": extra_ids},
+                    )
+                    for part in text_parts[1:]:
+                        part.deleted_at = edited_at
+            elif active_parts and attachment_part_ids:
+                if len(rendered) > 1024:
+                    raise HTTPException(status_code=422, detail="Edited attachment caption is too long for Telegram")
+                target = next(
+                    (part for part in active_parts if part.telegram_message_id in attachment_part_ids),
+                    active_parts[0],
+                )
+                await client.call(
+                    "editMessageCaption",
+                    data={
+                        "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
+                        "message_id": target.telegram_message_id,
+                        "caption": rendered,
+                    },
+                )
+            else:
+                raise HTTPException(status_code=409, detail="This message has not been delivered to Telegram yet")
+        except (TelegramBotAPIError, TimeoutError, OSError) as exc:
+            raise HTTPException(status_code=502, detail="Telegram could not edit this message") from exc
+        message.text = normalized_text
+        message.edited_at = edited_at
+        await db.commit()
+
+    message = (await db.execute(
+        select(CommunityMessage)
+        .where(CommunityMessage.id == message_id)
+        .options(*_message_options(), selectinload(CommunityMessage.topic))
+    )).scalar_one()
+    return serialize_community_message(message, request=request, user_id=user.id)
+
+
+async def delete_community_message(
+    db: AsyncSession,
+    *,
+    user: User,
+    topic_id: int,
+    message_id: int,
+    telegram_client: TelegramBotClient | None = None,
+) -> None:
+    await require_community_access(user)
+    message = (await db.execute(
+        select(CommunityMessage)
+        .where(CommunityMessage.id == message_id, CommunityMessage.topic_id == topic_id)
+        .options(
+            selectinload(CommunityMessage.attachments),
+            selectinload(CommunityMessage.telegram_parts),
+            selectinload(CommunityMessage.topic),
+        )
+    )).scalar_one_or_none()
+    if message is None:
+        raise HTTPException(status_code=404, detail="Community message not found")
+    if message.app_user_id != user.id or message.source != "app":
+        raise HTTPException(status_code=403, detail="You can delete only your own app messages")
+    if message.deleted_at:
+        return
+    active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
+    if active_parts:
+        try:
+            await (telegram_client or get_telegram_bot_client()).call(
+                "deleteMessages",
+                data={
+                    "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
+                    "message_ids": [part.telegram_message_id for part in active_parts],
+                },
+            )
+        except (TelegramBotAPIError, TimeoutError, OSError) as exc:
+            raise HTTPException(status_code=502, detail="Telegram could not delete this message") from exc
+    deleted_at = ufa_now()
+    for part in active_parts:
+        part.deleted_at = deleted_at
+    _soft_delete_message(message, deleted_at=deleted_at)
+    await _refresh_topic_last_message(db, message.topic)
+    await db.commit()
+
+
+async def mark_community_telegram_messages_deleted(
+    db: AsyncSession,
+    telegram_message_ids: list[int],
+    *,
+    deleted_at: datetime | None = None,
+) -> int:
+    normalized_ids = sorted({int(message_id) for message_id in telegram_message_ids if int(message_id) > 0})
+    if not normalized_ids:
+        return 0
+    parts = list((await db.execute(
+        select(CommunityTelegramPart)
+        .where(
+            CommunityTelegramPart.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID,
+            CommunityTelegramPart.telegram_message_id.in_(normalized_ids),
+        )
+        .options(
+            selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.telegram_parts),
+            selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.attachments),
+            selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.topic),
+        )
+    )).scalars().all())
+    when = deleted_at or ufa_now()
+    affected_messages: dict[int, CommunityMessage] = {}
+    for part in parts:
+        part.deleted_at = when
+        affected_messages[part.message_id] = part.message
+        for attachment in part.message.attachments:
+            if attachment.telegram_message_id == part.telegram_message_id:
+                if attachment.local_filename:
+                    (COMMUNITY_ATTACHMENTS_DIR / attachment.local_filename).unlink(missing_ok=True)
+                attachment.local_filename = None
+                attachment.status = "deleted"
+    affected_topics: dict[int, CommunityTopic] = {}
+    for message in affected_messages.values():
+        if all(part.deleted_at is not None for part in message.telegram_parts):
+            _soft_delete_message(message, deleted_at=when)
+            affected_topics[message.topic.id] = message.topic
+    for topic in affected_topics.values():
+        await _refresh_topic_last_message(db, topic)
+    return len(parts)
+
+
 async def _reply_parameters(message: CommunityMessage) -> dict[str, Any] | None:
-    if not message.reply_to or not message.reply_to.telegram_parts: return None
-    return {"message_id": message.reply_to.telegram_parts[0].telegram_message_id, "allow_sending_without_reply": True}
+    if not message.reply_to: return None
+    active_parts = [part for part in message.reply_to.telegram_parts if part.deleted_at is None]
+    if not active_parts: return None
+    return {"message_id": active_parts[0].telegram_message_id, "allow_sending_without_reply": True}
 
 
 def _telegram_text_chunks(value: str, limit: int = 4096) -> list[str]:
@@ -392,7 +614,7 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
     if not TELEGRAM_COMMUNITY_ENABLED or not TELEGRAM_COMMUNITY_CHAT_ID:
         return False
     now = ufa_now()
-    stmt = select(CommunityMessage).where(CommunityMessage.source == "app", CommunityMessage.delivery_status == "queued", or_(CommunityMessage.next_delivery_attempt_at.is_(None), CommunityMessage.next_delivery_attempt_at <= now)).order_by(CommunityMessage.id.asc()).limit(1).options(selectinload(CommunityMessage.topic), selectinload(CommunityMessage.author), selectinload(CommunityMessage.attachments), selectinload(CommunityMessage.telegram_parts), selectinload(CommunityMessage.reply_to).selectinload(CommunityMessage.telegram_parts)).with_for_update(skip_locked=True)
+    stmt = select(CommunityMessage).where(CommunityMessage.source == "app", CommunityMessage.deleted_at.is_(None), CommunityMessage.delivery_status == "queued", or_(CommunityMessage.next_delivery_attempt_at.is_(None), CommunityMessage.next_delivery_attempt_at <= now)).order_by(CommunityMessage.id.asc()).limit(1).options(selectinload(CommunityMessage.topic), selectinload(CommunityMessage.author), selectinload(CommunityMessage.attachments), selectinload(CommunityMessage.telegram_parts), selectinload(CommunityMessage.reply_to).selectinload(CommunityMessage.telegram_parts)).with_for_update(skip_locked=True)
     message = (await db.execute(stmt)).scalar_one_or_none()
     if message is None: return False
     if message.topic is None or message.topic.is_deleted:
@@ -479,13 +701,35 @@ async def _is_group_admin(telegram_client: TelegramBotClient, user_id: int) -> b
 
 
 async def process_community_telegram_message(db: AsyncSession, payload: dict[str, Any], *, telegram_client: TelegramBotClient | None = None) -> dict[str, Any]:
-    message = payload.get("message")
+    is_edit = isinstance(payload.get("edited_message"), dict)
+    message = payload.get("edited_message") if is_edit else payload.get("message")
     if not isinstance(message, dict): return {"ok": True, "ignored": "no community message"}
     chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
     if not TELEGRAM_COMMUNITY_ENABLED or int(chat.get("id") or 0) != TELEGRAM_COMMUNITY_CHAT_ID: return {"ok": True, "ignored": "wrong community chat"}
     telegram_message_id = int(message.get("message_id") or 0)
-    existing = (await db.execute(select(CommunityTelegramPart.id).where(CommunityTelegramPart.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID, CommunityTelegramPart.telegram_message_id == telegram_message_id))).scalar_one_or_none()
-    if existing: return {"ok": True, "ignored": "duplicate"}
+    existing_part = (await db.execute(
+        select(CommunityTelegramPart)
+        .where(
+            CommunityTelegramPart.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID,
+            CommunityTelegramPart.telegram_message_id == telegram_message_id,
+        )
+        .options(selectinload(CommunityTelegramPart.message))
+    )).scalar_one_or_none()
+    if existing_part:
+        if not is_edit:
+            return {"ok": True, "ignored": "duplicate"}
+        logical = existing_part.message
+        raw_text = str(message.get("text") or message.get("caption") or "")
+        if logical.source == "app" and "\n\n" in raw_text:
+            raw_text = raw_text.split("\n\n", 1)[1]
+        logical.text = raw_text
+        logical.edited_at = datetime.fromtimestamp(
+            int(message.get("edit_date") or time.time()),
+            tz=ufa_now().tzinfo,
+        )
+        logical.deleted_at = None
+        existing_part.deleted_at = None
+        return {"ok": True, "community_message_id": logical.id, "edited": True}
     client = telegram_client or get_telegram_bot_client()
     thread_id = int(message.get("message_thread_id") or 0)
     sender = message.get("from") if isinstance(message.get("from"), dict) else {}

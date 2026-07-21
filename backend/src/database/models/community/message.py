@@ -47,6 +47,8 @@ class CommunityMessage(Base, IdPkMixin, TimestampMixin):
     delivery_attempts: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
     next_delivery_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     topic: Mapped["CommunityTopic"] = relationship(back_populates="messages")
     author: Mapped["CommunityAuthor | None"] = relationship(back_populates="messages")

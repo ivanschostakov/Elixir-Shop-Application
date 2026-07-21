@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
     ActivityIndicator,
     Alert,
+    type AlertButton,
     Image,
     KeyboardAvoidingView,
     Linking,
@@ -76,6 +77,7 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [composerHeight, setComposerHeight] = useState(110)
     const [replyTo, setReplyTo] = useState<CommunityMessage | null>(null)
+    const [editingMessage, setEditingMessage] = useState<CommunityMessage | null>(null)
     const chat = useCommunityChat(active, onUnreadChange)
     const markRead = chat.markRead
     const headerTop = top + 8
@@ -98,6 +100,7 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
         shouldAutoScrollRef.current = true
         setDraft("")
         setReplyTo(null)
+        setEditingMessage(null)
         setAttachments([])
     }, [chat.selectedTopicId])
 
@@ -137,7 +140,18 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
 
     const handleSend = useCallback(async () => {
         const text = draft.trim()
-        if ((!text && !attachments.length) || chat.sending) return
+        if ((!text && !attachments.length) || chat.sending || chat.mutatingMessageId) return
+        if (editingMessage) {
+            if (!text) return
+            try {
+                await chat.edit(editingMessage.id, text)
+                setEditingMessage(null)
+                setDraft("")
+            } catch (error) {
+                Alert.alert(t("chat.communityEditFailedTitle"), error instanceof Error ? error.message : t("chat.communityEditFailedMessage"))
+            }
+            return
+        }
         shouldAutoScrollRef.current = true
         setDraft("")
         const pendingAttachments = attachments
@@ -150,7 +164,44 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
             setAttachments(pendingAttachments)
             Alert.alert(t("chat.communitySendFailedTitle"), error instanceof Error ? error.message : t("chat.communitySendFailedMessage"))
         }
-    }, [attachments, chat, draft, replyTo?.id, t])
+    }, [attachments, chat, draft, editingMessage, replyTo?.id, t])
+
+    const handleMessageLongPress = useCallback((message: CommunityMessage) => {
+        if (message.is_deleted) return
+        const actions: AlertButton[] = [
+            { text: t("chat.communityReplyAction"), onPress: () => { setEditingMessage(null); setReplyTo(message) } },
+        ]
+        if (message.can_edit) {
+            actions.push({
+                text: t("chat.communityEditAction"),
+                onPress: () => {
+                    setReplyTo(null)
+                    setAttachments([])
+                    setEditingMessage(message)
+                    setDraft(message.text)
+                },
+            })
+            actions.push({
+                text: t("chat.communityDeleteAction"),
+                onPress: () => {
+                    Alert.alert(t("chat.communityDeleteConfirmTitle"), t("chat.communityDeleteConfirmMessage"), [
+                        { text: t("common.cancel"), style: "cancel" },
+                        {
+                            text: t("chat.communityDeleteAction"),
+                            style: "destructive",
+                            onPress: () => {
+                                void chat.remove(message.id).catch((error) => {
+                                    Alert.alert(t("chat.communityDeleteFailedTitle"), error instanceof Error ? error.message : t("chat.communityDeleteFailedMessage"))
+                                })
+                            },
+                        },
+                    ])
+                },
+            })
+        }
+        actions.push({ text: t("common.cancel"), style: "cancel" })
+        Alert.alert(t("chat.communityMessageActions"), undefined, actions)
+    }, [chat, t])
 
     const handleBack = () => {
         if (chat.selectedTopicId) {
@@ -188,13 +239,14 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
                             <ScrollView contentContainerStyle={[styles.messageContent, { paddingBottom: composerHeight + spacing.sm }]} keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} style={styles.messageScroll}>
                                 {chat.hasMore ? <Pressable disabled={chat.loadingOlder} onPress={() => { void chat.loadOlder() }} style={styles.loadOlder}>{chat.loadingOlder ? <ActivityIndicator color={palette.primary} size="small" /> : <Text style={styles.loadOlderText}>{t("chat.communityLoadOlder")}</Text>}</Pressable> : null}
                                 {!chat.messages.length && !chat.loading ? <View style={styles.stateCenter}><View style={styles.stateIcon}><Text style={styles.stateIconText}>✦</Text></View><Text style={styles.stateTitle}>{t("chat.communityNoMessagesTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoMessagesMessage")}</Text></View> : null}
-                                {chat.messages.map((message) => <CommunityMessageBubble key={message.id} message={message} onReply={setReplyTo} />)}
+                                {chat.messages.map((message) => <CommunityMessageBubble key={message.id} message={message} onLongPress={handleMessageLongPress} />)}
                             </ScrollView>
                             {chat.error ? <View style={styles.inlineError}><Text style={styles.inlineErrorText}>{chat.error}</Text></View> : null}
                             <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} style={[styles.composer, { paddingBottom: Math.max(bottom, spacing.sm) }]}>
+                                {editingMessage ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityEditingMessage")}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{editingMessage.text}</Text></View><Pressable onPress={() => { setEditingMessage(null); setDraft("") }}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                 {replyTo ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityReplyingTo")} {replyTo.author.full_name}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{replyTo.text || t("chat.attachmentFallbackMessage")}</Text></View><Pressable onPress={() => setReplyTo(null)}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                 {attachments.length ? <ScrollView horizontal contentContainerStyle={styles.attachmentStrip} showsHorizontalScrollIndicator={false}>{attachments.map((attachment, index) => <View key={`${attachment.uri}-${index}`} style={styles.queuedAttachment}><Text numberOfLines={1} style={styles.queuedAttachmentName}>{attachment.fileName ?? t("chat.attachmentFallbackMessage")}</Text><Pressable onPress={() => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))}><Text style={styles.queuedAttachmentRemove}>×</Text></Pressable></View>)}</ScrollView> : null}
-                                {chat.selectedTopic.is_closed ? <View style={styles.replyComposer}><Text style={styles.replyComposerText}>{t("chat.communityClosedMessage")}</Text></View> : <View style={styles.composerRow}><Pressable accessibilityLabel={t("chat.communityAddAttachment")} onPress={openAttachmentMenu} style={styles.composerButton}><Text style={styles.composerButtonText}>＋</Text></Pressable><TextInput multiline onChangeText={setDraft} placeholder={t("chat.communityInputPlaceholder")} placeholderTextColor={palette.mutedText} style={styles.composerInput} value={draft} /><Pressable disabled={chat.sending || (!draft.trim() && !attachments.length)} onPress={() => { void handleSend() }} style={[styles.sendButton, chat.sending || (!draft.trim() && !attachments.length) ? styles.sendButtonDisabled : null]}>{chat.sending ? <ActivityIndicator color={palette.onPrimary} size="small" /> : <Text style={styles.sendButtonText}>↑</Text>}</Pressable></View>}
+                                {chat.selectedTopic.is_closed ? <View style={styles.replyComposer}><Text style={styles.replyComposerText}>{t("chat.communityClosedMessage")}</Text></View> : <View style={styles.composerRow}><Pressable accessibilityLabel={t("chat.communityAddAttachment")} disabled={Boolean(editingMessage)} onPress={openAttachmentMenu} style={[styles.composerButton, editingMessage ? styles.sendButtonDisabled : null]}><Text style={styles.composerButtonText}>＋</Text></Pressable><TextInput multiline onChangeText={setDraft} placeholder={editingMessage ? t("chat.communityEditingMessage") : t("chat.communityInputPlaceholder")} placeholderTextColor={palette.mutedText} style={styles.composerInput} value={draft} /><Pressable disabled={chat.sending || Boolean(chat.mutatingMessageId) || (!draft.trim() && !attachments.length)} onPress={() => { void handleSend() }} style={[styles.sendButton, chat.sending || chat.mutatingMessageId || (!draft.trim() && !attachments.length) ? styles.sendButtonDisabled : null]}>{chat.sending || chat.mutatingMessageId === editingMessage?.id ? <ActivityIndicator color={palette.onPrimary} size="small" /> : <Text style={styles.sendButtonText}>{editingMessage ? "✓" : "↑"}</Text>}</Pressable></View>}
                             </View>
                         </KeyboardAvoidingView>
                         </View>
@@ -217,12 +269,13 @@ function TopicList({ onOpen, onRefresh, refreshing, status, topics }: { onOpen: 
     const { palette } = useTheme()
     const { t } = useLanguage()
     const title = status.group?.title ?? t("chat.modeGroup")
-    return <ScrollView contentContainerStyle={styles.topicsContent} refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={palette.primary} />}><View style={styles.groupHero}>{status.group?.image_url ? <Image source={{ uri: status.group.image_url }} style={styles.groupAvatar} /> : <View style={[styles.groupAvatar, styles.groupAvatarFallback]}><Text style={styles.groupAvatarText}>{initials(title)}</Text></View>}<View style={styles.groupCopy}><Text style={styles.groupTitle}>{title}</Text><Text style={styles.groupSubtitle}>{t("chat.communityTopicsSubtitle")}</Text></View></View><Text style={styles.sectionLabel}>{t("chat.communityTopicsTitle")}</Text>{!topics.length ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.communityNoTopicsTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoTopicsMessage")}</Text></View> : topics.map((topic) => <Pressable key={topic.id} onPress={() => onOpen(topic.id)} style={({ pressed }) => [styles.topicCard, pressed ? styles.topicCardPressed : null]}><View style={[styles.topicIcon, { backgroundColor: topicColor(topic) }]}><Text style={styles.topicIconText}>#</Text></View><View style={styles.topicCopy}><View style={styles.topicTitleRow}><Text numberOfLines={1} style={styles.topicTitle}>{topic.name}</Text>{topic.is_closed ? <View style={styles.closedPill}><Text style={styles.closedText}>{t("chat.communityClosed")}</Text></View> : null}</View><Text numberOfLines={1} style={styles.topicPreview}>{topic.last_message ? `${topic.last_message.author.full_name}: ${topic.last_message.text || t("chat.attachmentFallbackMessage")}` : t("chat.communityNoActivity")}</Text></View><View style={styles.topicMeta}><Text style={styles.topicTime}>{formatTopicTime(topic.last_message?.created_at)}</Text>{topic.unread_count ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{topic.unread_count > 99 ? "99+" : topic.unread_count}</Text></View> : null}</View></Pressable>)}</ScrollView>
+    return <ScrollView contentContainerStyle={styles.topicsContent} refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={palette.primary} />}><View style={styles.groupHero}>{status.group?.image_url ? <Image source={{ uri: status.group.image_url }} style={styles.groupAvatar} /> : <View style={[styles.groupAvatar, styles.groupAvatarFallback]}><Text style={styles.groupAvatarText}>{initials(title)}</Text></View>}<View style={styles.groupCopy}><Text style={styles.groupTitle}>{title}</Text><Text style={styles.groupSubtitle}>{t("chat.communityTopicsSubtitle")}</Text></View></View><Text style={styles.sectionLabel}>{t("chat.communityTopicsTitle")}</Text>{!topics.length ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.communityNoTopicsTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoTopicsMessage")}</Text></View> : topics.map((topic) => <Pressable key={topic.id} onPress={() => onOpen(topic.id)} style={({ pressed }) => [styles.topicCard, pressed ? styles.topicCardPressed : null]}><View style={[styles.topicIcon, { backgroundColor: topicColor(topic) }]}><Text style={styles.topicIconText}>#</Text></View><View style={styles.topicCopy}><View style={styles.topicTitleRow}><Text numberOfLines={1} style={styles.topicTitle}>{topic.name}</Text>{topic.is_closed ? <View style={styles.closedPill}><Text style={styles.closedText}>{t("chat.communityClosed")}</Text></View> : null}</View><Text numberOfLines={1} style={styles.topicPreview}>{topic.last_message ? `${topic.last_message.author.full_name}: ${topic.last_message.is_deleted ? t("chat.communityDeletedMessage") : topic.last_message.text || t("chat.attachmentFallbackMessage")}` : t("chat.communityNoActivity")}</Text></View><View style={styles.topicMeta}><Text style={styles.topicTime}>{formatTopicTime(topic.last_message?.created_at)}</Text>{topic.unread_count ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{topic.unread_count > 99 ? "99+" : topic.unread_count}</Text></View> : null}</View></Pressable>)}</ScrollView>
 }
 
-function CommunityMessageBubble({ message, onReply }: { message: CommunityMessage; onReply: (message: CommunityMessage) => void }) {
+function CommunityMessageBubble({ message, onLongPress }: { message: CommunityMessage; onLongPress: (message: CommunityMessage) => void }) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const { t } = useLanguage()
     const delivery = message.delivery_status === "queued" || message.delivery_status === "sending" ? t("chat.communityPending") : message.delivery_status === "failed" ? t("chat.communityFailed") : message.delivery_status === "delivery_unknown" ? t("chat.communityUnknown") : ""
-    return <View style={[styles.messageRow, message.author.is_current_user ? styles.messageRowMine : null]}>{message.author.avatar_url ? <Image source={{ uri: message.author.avatar_url }} style={styles.authorAvatar} /> : <View style={[styles.authorAvatar, styles.avatarFallback]}><Text style={styles.avatarInitials}>{initials(message.author.full_name)}</Text></View>}<Pressable onLongPress={() => onReply(message)} style={[styles.messageBubble, message.author.is_current_user ? styles.messageBubbleMine : null]}><Text style={styles.authorName}>{message.author.full_name}</Text>{message.reply_to ? <View style={styles.replyPreview}><Text style={styles.replyAuthor}>{message.reply_to.author_name}</Text><Text numberOfLines={2} style={styles.replyText}>{message.reply_to.text}</Text></View> : null}{message.attachments.map((attachment) => attachment.kind === "image" && attachment.media_url ? <Pressable key={attachment.id} onPress={() => { if (attachment.media_url) void Linking.openURL(attachment.media_url) }}><Image resizeMode="cover" source={{ uri: attachment.media_url }} style={styles.messageImage} /></Pressable> : <Pressable key={attachment.id} onPress={() => { const url = attachment.media_url ?? message.telegram_url; if (url) void Linking.openURL(url) }} style={styles.documentCard}><Text style={styles.documentIcon}>▧</Text><Text numberOfLines={2} style={styles.documentName}>{attachment.filename}</Text></Pressable>)}{message.text ? <Text style={styles.messageText}>{message.text}</Text> : null}{message.unsupported_type ? <View style={styles.unsupportedCard}><Text style={styles.unsupportedText}>{t("chat.communityUnsupported")}</Text>{message.telegram_url ? <Pressable onPress={() => { void Linking.openURL(message.telegram_url as string) }}><Text style={styles.telegramLink}>{t("chat.communityOpenTelegram")}</Text></Pressable> : null}</View> : null}<Text style={styles.messageMeta}>{[formatTime(message.created_at), delivery].filter(Boolean).join(" · ")}</Text></Pressable></View>
+    const meta = [formatTime(message.created_at), message.is_edited && !message.is_deleted ? t("chat.communityEdited") : "", delivery].filter(Boolean).join(" · ")
+    return <View style={[styles.messageRow, message.author.is_current_user ? styles.messageRowMine : null]}>{message.author.avatar_url ? <Image source={{ uri: message.author.avatar_url }} style={styles.authorAvatar} /> : <View style={[styles.authorAvatar, styles.avatarFallback]}><Text style={styles.avatarInitials}>{initials(message.author.full_name)}</Text></View>}<Pressable onLongPress={() => onLongPress(message)} style={[styles.messageBubble, message.author.is_current_user ? styles.messageBubbleMine : null, message.is_deleted ? styles.messageBubbleDeleted : null]}><Text style={styles.authorName}>{message.author.full_name}</Text>{message.is_deleted ? <Text style={styles.deletedMessageText}>{t("chat.communityDeletedMessage")}</Text> : <>{message.reply_to ? <View style={styles.replyPreview}><Text style={styles.replyAuthor}>{message.reply_to.author_name}</Text><Text numberOfLines={2} style={styles.replyText}>{message.reply_to.text}</Text></View> : null}{message.attachments.map((attachment) => attachment.kind === "image" && attachment.media_url ? <Pressable key={attachment.id} onPress={() => { if (attachment.media_url) void Linking.openURL(attachment.media_url) }}><Image resizeMode="cover" source={{ uri: attachment.media_url }} style={styles.messageImage} /></Pressable> : <Pressable key={attachment.id} onPress={() => { const url = attachment.media_url ?? message.telegram_url; if (url) void Linking.openURL(url) }} style={styles.documentCard}><Text style={styles.documentIcon}>▧</Text><Text numberOfLines={2} style={styles.documentName}>{attachment.filename}</Text></Pressable>)}{message.text ? <Text style={styles.messageText}>{message.text}</Text> : null}{message.unsupported_type ? <View style={styles.unsupportedCard}><Text style={styles.unsupportedText}>{t("chat.communityUnsupported")}</Text>{message.telegram_url ? <Pressable onPress={() => { void Linking.openURL(message.telegram_url as string) }}><Text style={styles.telegramLink}>{t("chat.communityOpenTelegram")}</Text></Pressable> : null}</View> : null}</>}<Text style={styles.messageMeta}>{meta}</Text></Pressable></View>
 }

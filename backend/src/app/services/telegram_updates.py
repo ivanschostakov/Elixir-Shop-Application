@@ -45,8 +45,10 @@ async def process_telegram_update(
             return {"ok": True, "membership_invalidated": telegram_user_id}
 
     message = payload.get("message")
-    if isinstance(message, dict):
-        chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
+    edited_message = payload.get("edited_message")
+    community_message = edited_message if isinstance(edited_message, dict) else message
+    if isinstance(community_message, dict):
+        chat = community_message.get("chat") if isinstance(community_message.get("chat"), dict) else {}
         if TELEGRAM_COMMUNITY_ENABLED and int(chat.get("id") or 0) == TELEGRAM_COMMUNITY_CHAT_ID:
             accepted = await register_webhook_delivery(
                 db,

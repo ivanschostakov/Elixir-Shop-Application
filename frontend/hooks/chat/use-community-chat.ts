@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { AppState } from "react-native"
 import { useIsFocused } from "@react-navigation/native"
 
-import { getCommunityMessages, getCommunityStatus, getCommunityTopics, markCommunityTopicRead, sendCommunityMessage } from "@/services/api/community"
+import { deleteCommunityMessage, editCommunityMessage, getCommunityMessages, getCommunityStatus, getCommunityTopics, markCommunityTopicRead, sendCommunityMessage } from "@/services/api/community"
 import type { CommunityMessage, CommunityStatus, CommunityTopic, SendCommunityMessagePayload } from "@/services/api/community.types"
 
 const MESSAGE_POLL_INTERVAL_MS = 2500
@@ -25,11 +25,14 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
     const [loadingOlder, setLoadingOlder] = useState(false)
     const [hasMore, setHasMore] = useState(false)
     const [sending, setSending] = useState(false)
+    const [mutatingMessageId, setMutatingMessageId] = useState<number | null>(null)
     const [error, setError] = useState<string | null>(null)
     const appActiveRef = useRef(AppState.currentState === "active")
     const hasLoadedStatusRef = useRef(false)
     const newestIdRef = useRef<number | null>(null)
     const lastReadIdRef = useRef<number | null>(null)
+    const syncCursorRef = useRef<string | null>(null)
+    const syncCursorIdRef = useRef(0)
     const selectedTopicIdRef = useRef<number | null>(null)
 
     const selectedTopic = topics.find((topic) => topic.id === selectedTopicId) ?? null
@@ -66,6 +69,8 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
             setMessages(response.messages)
             setHasMore(response.has_more)
             newestIdRef.current = response.newest_id
+            syncCursorRef.current = response.sync_cursor
+            syncCursorIdRef.current = response.sync_cursor_id
         } catch (loadError) {
             setError(loadError instanceof Error ? loadError.message : "Could not load messages")
         } finally {
@@ -105,6 +110,8 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
             setMessages([])
             setHasMore(false)
             newestIdRef.current = null
+            syncCursorRef.current = null
+            syncCursorIdRef.current = 0
             lastReadIdRef.current = null
             return
         }
@@ -134,13 +141,15 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
         const interval = setInterval(() => {
             if (!appActiveRef.current || requestActive) return
             requestActive = true
-            void getCommunityMessages(selectedTopicId, { afterId: newestIdRef.current ?? undefined })
+            void getCommunityMessages(selectedTopicId, { afterId: newestIdRef.current ?? undefined, changedAfter: syncCursorRef.current ?? undefined, changedAfterId: syncCursorIdRef.current })
                 .then((response) => {
                     if (selectedTopicIdRef.current !== selectedTopicId) return
                     if (response.messages.length) setMessages((current) => mergeMessages(current, response.messages))
                     if (response.newest_id) {
                         newestIdRef.current = Math.max(newestIdRef.current ?? 0, response.newest_id)
                     }
+                    syncCursorRef.current = response.sync_cursor
+                    syncCursorIdRef.current = response.sync_cursor_id
                 })
                 .catch(() => loadStatus(true).catch(() => undefined))
                 .finally(() => { requestActive = false })
@@ -199,5 +208,32 @@ export function useCommunityChat(active: boolean, onUnreadChange?: (count: numbe
             })
     }, [loadTopics])
 
-    return { error, hasMore, loading, loadingOlder, messages, refreshing, selectedTopic, selectedTopicId, sending, status, topics, loadOlder, markRead, refresh, selectTopic: setSelectedTopicId, send }
+    const edit = useCallback(async (messageId: number, text: string) => {
+        if (!selectedTopicId || mutatingMessageId) return null
+        setMutatingMessageId(messageId)
+        try {
+            const updated = await editCommunityMessage(selectedTopicId, messageId, text)
+            setMessages((current) => mergeMessages(current, [updated]))
+            return updated
+        } finally {
+            setMutatingMessageId(null)
+        }
+    }, [mutatingMessageId, selectedTopicId])
+
+    const remove = useCallback(async (messageId: number) => {
+        if (!selectedTopicId || mutatingMessageId) return false
+        setMutatingMessageId(messageId)
+        try {
+            await deleteCommunityMessage(selectedTopicId, messageId)
+            setMessages((current) => current.map((message) => message.id === messageId
+                ? { ...message, attachments: [], can_delete: false, can_edit: false, is_deleted: true, text: "", unsupported_type: null }
+                : message))
+            await loadTopics()
+            return true
+        } finally {
+            setMutatingMessageId(null)
+        }
+    }, [loadTopics, mutatingMessageId, selectedTopicId])
+
+    return { error, hasMore, loading, loadingOlder, messages, mutatingMessageId, refreshing, selectedTopic, selectedTopicId, sending, status, topics, edit, loadOlder, markRead, refresh, remove, selectTopic: setSelectedTopicId, send }
 }
