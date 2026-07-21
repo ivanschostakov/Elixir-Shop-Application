@@ -346,14 +346,16 @@ async def _store_telethon_attachment(
     fallback = f"photo-{telegram_message_id}.jpg" if is_photo else f"file-{telegram_message_id}"
     original = _safe_filename(getattr(file_info, "name", None), fallback)
     mime_type = str(getattr(file_info, "mime_type", "") or ("image/jpeg" if is_photo else "application/octet-stream"))
-    attachment = next(
-        (
-            item
-            for item in logical.attachments
-            if item.telegram_message_id == telegram_message_id
-        ),
-        None,
-    )
+    # Never touch ``logical.attachments`` here. Newly-created logical messages
+    # do not have that async relationship loaded, and attribute access would
+    # attempt a synchronous lazy load (SQLAlchemy MissingGreenlet). An explicit
+    # query is safe for both newly imported messages and repair passes.
+    attachment = (await db.execute(
+        select(CommunityAttachment).where(
+            CommunityAttachment.message_id == logical.id,
+            CommunityAttachment.telegram_message_id == telegram_message_id,
+        )
+    )).scalar_one_or_none()
     if attachment is None:
         attachment = CommunityAttachment(
             message_id=logical.id,
@@ -366,7 +368,6 @@ async def _store_telethon_attachment(
             status="telegram_only",
         )
         db.add(attachment)
-        logical.attachments.append(attachment)
         await db.flush()
     if attachment.local_filename and attachment.status == "ready":
         return
