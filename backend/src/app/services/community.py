@@ -390,7 +390,15 @@ async def mark_community_topic_read(db: AsyncSession, *, user: User, topic_id: i
     await db.commit()
 
 
-async def toggle_community_message_reaction(db: AsyncSession, *, user: User, topic_id: int, message_id: int, emoji: str) -> list[CommunityReactionRead]:
+async def toggle_community_message_reaction(
+    db: AsyncSession,
+    *,
+    user: User,
+    topic_id: int,
+    message_id: int,
+    emoji: str,
+    telegram_client: TelegramBotClient | None = None,
+) -> list[CommunityReactionRead]:
     await require_community_access(user)
     normalized_emoji = _normalize_reaction_emoji(emoji)
     if normalized_emoji not in COMMUNITY_REACTION_EMOJIS:
@@ -398,7 +406,11 @@ async def toggle_community_message_reaction(db: AsyncSession, *, user: User, top
     message = (await db.execute(
         select(CommunityMessage)
         .where(CommunityMessage.id == message_id, CommunityMessage.topic_id == topic_id, CommunityMessage.deleted_at.is_(None))
-        .options(selectinload(CommunityMessage.reactions))
+        .options(
+            selectinload(CommunityMessage.reactions),
+            selectinload(CommunityMessage.telegram_parts),
+            selectinload(CommunityMessage.topic),
+        )
     )).scalar_one_or_none()
     if message is None:
         raise HTTPException(status_code=404, detail="Community message not found")
@@ -407,9 +419,37 @@ async def toggle_community_message_reaction(db: AsyncSession, *, user: User, top
         await db.delete(existing)
     else:
         db.add(CommunityReaction(message_id=message.id, user_id=user.id, emoji=normalized_emoji))
+    reaction_added = existing is None
+    active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
+    reply_to_telegram_message_id = active_parts[0].telegram_message_id if active_parts else None
+    telegram_thread_id = message.topic.telegram_thread_id if message.topic else None
     # Message polling uses the parent timestamp as its reconciliation cursor.
     message.updated_at = ufa_now()
     await db.commit()
+    if reaction_added and reply_to_telegram_message_id:
+        author_name, notification_text = _telegram_app_reaction_notification(user, normalized_emoji)
+        try:
+            await (telegram_client or get_telegram_bot_client()).call(
+                "sendMessage",
+                data={
+                    "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
+                    "message_thread_id": telegram_thread_id or None,
+                    "reply_parameters": {
+                        "message_id": reply_to_telegram_message_id,
+                        "allow_sending_without_reply": True,
+                    },
+                    "text": notification_text,
+                    "entities": _telegram_author_entities(notification_text, author_name),
+                },
+            )
+        except (TelegramBotAPIError, TimeoutError, OSError):
+            # The local reaction is already durable and should remain usable
+            # during a temporary Telegram outage.
+            log.exception(
+                "community reaction Telegram reply failed message_id=%s user_id=%s",
+                message.id,
+                user.id,
+            )
     message = (await db.execute(
         select(CommunityMessage)
         .where(CommunityMessage.id == message_id)
@@ -732,6 +772,22 @@ def _telegram_app_header(message: CommunityMessage) -> tuple[str, str]:
     return author_name, f"{author_name} · {message_kind} Приложение"
 
 
+def _telegram_app_reaction_notification(user: User, emoji: str) -> tuple[str, str]:
+    author_name = " ".join(
+        part for part in (str(user.name or "").strip(), str(user.surname or "").strip()) if part
+    ) or "Elixir member"
+    return author_name, f"{author_name} · ↩️ Приложение\n\nотреагировала {emoji}"
+
+
+def _is_telegram_app_reaction_notification(value: str) -> bool:
+    header, separator, body = value.strip().partition("\n\n")
+    return bool(
+        separator
+        and header.endswith(" · ↩️ Приложение")
+        and body.strip().startswith("отреагировала ")
+    )
+
+
 def _telegram_author_entities(value: str, author_name: str) -> list[dict[str, Any]]:
     if not author_name or not value.startswith(author_name):
         return []
@@ -998,6 +1054,10 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
     if not isinstance(message, dict): return {"ok": True, "ignored": "no community message"}
     chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
     if not TELEGRAM_COMMUNITY_ENABLED or int(chat.get("id") or 0) != TELEGRAM_COMMUNITY_CHAT_ID: return {"ok": True, "ignored": "wrong community chat"}
+    sender = message.get("from") if isinstance(message.get("from"), dict) else {}
+    raw_text = str(message.get("text") or message.get("caption") or "")
+    if bool(sender.get("is_bot")) and _is_telegram_app_reaction_notification(raw_text):
+        return {"ok": True, "ignored": "app reaction notification"}
     telegram_message_id = int(message.get("message_id") or 0)
     existing_part = (await db.execute(
         select(CommunityTelegramPart)
@@ -1024,8 +1084,6 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
         return {"ok": True, "community_message_id": logical.id, "edited": True}
     client = telegram_client or get_telegram_bot_client()
     thread_id = int(message.get("message_thread_id") or 0)
-    sender = message.get("from") if isinstance(message.get("from"), dict) else {}
-    raw_text = str(message.get("text") or message.get("caption") or "")
     if raw_text.startswith("/register"):
         sender_id = int(sender.get("id") or 0)
         if not sender_id or not await _is_group_admin(client, sender_id): return {"ok": True, "ignored": "register requires admin"}

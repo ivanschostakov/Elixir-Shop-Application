@@ -32,6 +32,7 @@ from src.app.services.community import (
     COMMUNITY_ATTACHMENTS_DIR,
     COMMUNITY_AVATARS_DIR,
     _get_or_create_topic,
+    _is_telegram_app_reaction_notification,
     _refresh_topic_last_message,
     _safe_filename,
     _upsert_author,
@@ -466,6 +467,10 @@ async def _upsert_telethon_message(
         return None, False
 
     sender = await telegram_message.get_sender()
+    if bool(getattr(sender, "bot", False)) and _is_telegram_app_reaction_notification(
+        _telethon_message_text(telegram_message)
+    ):
+        return None, False
     archived_app_name = _archived_app_author_name(telegram_message)
     if archived_app_name:
         digest = hashlib.sha256(archived_app_name.casefold().encode("utf-8")).digest()
