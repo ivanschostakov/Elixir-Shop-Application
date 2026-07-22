@@ -805,7 +805,7 @@ def _telegram_app_reaction_notification(user: User, emoji: str) -> tuple[str, st
     author_name = " ".join(
         part for part in (str(user.name or "").strip(), str(user.surname or "").strip()) if part
     ) or "Elixir member"
-    return author_name, f"{author_name} · ↩️ Приложение\n\nотреагировала {emoji}"
+    return author_name, f"{author_name} · ↩️ Приложение\n\nОтреагировал(а) {emoji}"
 
 
 def _is_telegram_app_reaction_notification(value: str) -> bool:
@@ -813,7 +813,7 @@ def _is_telegram_app_reaction_notification(value: str) -> bool:
     return bool(
         separator
         and header.endswith(" · ↩️ Приложение")
-        and body.strip().startswith("отреагировала ")
+        and body.strip().startswith("Отреагировал(а) ")
     )
 
 
