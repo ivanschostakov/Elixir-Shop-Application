@@ -10,17 +10,11 @@ import type {
     CustomerEventName,
     CustomerIntelligenceSyncPayload,
 } from "@/services/api/users.types"
+import { createUuid } from "@/utils/uuid"
 
 const INSTALLATION_ID_KEY = "elixir_customer_intelligence_installation_id"
-const SESSION_ID = createId()
+const SESSION_ID = createUuid()
 let installationIdPromise: Promise<string> | null = null
-
-function createId() {
-    if (typeof globalThis.crypto?.randomUUID === "function") {
-        return globalThis.crypto.randomUUID()
-    }
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
-}
 
 async function getInstallationId() {
     if (!installationIdPromise) {
@@ -28,7 +22,7 @@ async function getInstallationId() {
             if (stored && stored.length >= 8) {
                 return stored
             }
-            const generated = createId()
+            const generated = createUuid()
             await SecureStore.setItemAsync(INSTALLATION_ID_KEY, generated)
             return generated
         })
@@ -121,7 +115,7 @@ function eventPayload(
     options: TrackEventOptions = {},
 ): NonNullable<CustomerIntelligenceSyncPayload["events"]>[number] {
     return {
-        event_id: createId(),
+        event_id: createUuid(),
         name,
         occurred_at: new Date().toISOString(),
         session_id: SESSION_ID,

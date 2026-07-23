@@ -31,6 +31,7 @@ import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switch
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { createSupportChatStyles } from "@/screens/chat/support-chat-screen.styles"
 import { spacing } from "@/theme/spacing"
+import { createUuid } from "@/utils/uuid"
 
 type SupportChatScreenProps = {
     active: boolean
@@ -40,11 +41,6 @@ type SupportChatScreenProps = {
     onUnreadChange: (count: number) => void
     requestedConversationId: number | null
     supportUnreadCount: number
-}
-
-function createId() {
-    if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID()
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`
 }
 
 function messageTime(value: string) {
@@ -149,13 +145,13 @@ export function SupportChatScreen({
                     return
                 }
                 await createConversation({
-                    client_message_id: createId(),
+                    client_message_id: createUuid(),
                     subject: text.slice(0, 120),
                     message: text,
                 })
             } else {
                 await sendMessage({
-                    clientMessageId: createId(),
+                    clientMessageId: createUuid(),
                     message: text,
                     attachments,
                 })
