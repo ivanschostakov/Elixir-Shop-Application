@@ -20,6 +20,7 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const from = (location.state as { from?: string } | null)?.from || "/"
+  const invitedEmail = new URLSearchParams(location.search).get("email") || ""
 
   if (principal) return <Navigate to={from} replace />
 
@@ -109,7 +110,7 @@ export function LoginPage() {
       <Card className="login-card" bordered={false}>
         {error ? <Alert type="error" message={error} showIcon closable onClose={() => setError(null)} /> : null}
         {!challenge ? (
-          <Form layout="vertical" requiredMark={false} onFinish={submitCredentials} size="large">
+          <Form layout="vertical" requiredMark={false} onFinish={submitCredentials} size="large" initialValues={{ email: invitedEmail }}>
             <Form.Item name="email" label={copy.email} rules={[{ required: true }, { type: "email" }]}>
               <Input prefix={<MailOutlined />} autoComplete="username" placeholder="name@company.ru" />
             </Form.Item>

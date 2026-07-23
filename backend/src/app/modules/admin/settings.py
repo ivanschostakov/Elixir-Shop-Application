@@ -17,8 +17,9 @@ from src.app.modules.admin.schemas import (
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
 from src.app.services.admin.permissions import get_admin_by_user_id
+from src.app.services.admin.role_catalog import ASSIGNABLE_ROLE_CODES, SYSTEM_ROLE_BY_CODE
 from src.database import get_db
-from src.database.models import Admin, AdminAuditLog, AdminRole, AdminRoleAssignment, AdminSavedView, User
+from src.database.models import Admin, AdminAuditLog, AdminRole, AdminRoleAssignment, AdminSavedView
 
 admin_settings_router = APIRouter(tags=["admin_settings"])
 
@@ -38,6 +39,11 @@ def _staff_read(admin: Admin) -> StaffRead:
 
 async def _resolve_roles(db: AsyncSession, role_codes: list[str]) -> list[AdminRole]:
     normalized = sorted(set(role_codes))
+    unknown = sorted(set(normalized) - ASSIGNABLE_ROLE_CODES)
+    if unknown:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Unknown roles: {', '.join(unknown)}")
+    if "superadmin" in normalized and len(normalized) > 1:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="The super administrator role must be assigned on its own")
     rows = list((await db.execute(select(AdminRole).where(AdminRole.code.in_(normalized)))).scalars().all())
     if len(rows) != len(normalized):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="One or more roles do not exist")
@@ -50,7 +56,18 @@ async def list_roles(
     _: AdminContext = Depends(require_permission("staff.manage")),
 ) -> list[AdminRoleRead]:
     rows = list((await db.execute(select(AdminRole).order_by(AdminRole.id))).scalars().all())
-    return [AdminRoleRead.model_validate(row) for row in rows]
+    return [
+        AdminRoleRead(
+            id=row.id,
+            code=row.code,
+            name_ru=row.name_ru,
+            name_en=row.name_en,
+            permissions=row.permissions,
+            description_ru=SYSTEM_ROLE_BY_CODE.get(row.code).description_ru if row.code in SYSTEM_ROLE_BY_CODE else "",
+            description_en=SYSTEM_ROLE_BY_CODE.get(row.code).description_en if row.code in SYSTEM_ROLE_BY_CODE else "",
+        )
+        for row in rows
+    ]
 
 
 @admin_settings_router.get("/staff", response_model=list[StaffRead])
@@ -72,23 +89,10 @@ async def create_staff(
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("staff.manage", write=True)),
 ) -> StaffRead:
-    user = (await db.execute(select(User).where(User.email == str(payload.email).lower()))).scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="A registered user with this email is required")
-    if await db.get(Admin, user.id) is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already an administrator")
-    roles = await _resolve_roles(db, payload.role_codes)
-    admin = Admin(user_id=user.id, is_active=True)
-    db.add(admin)
-    await db.flush()
-    for role in roles:
-        db.add(AdminRoleAssignment(admin_user_id=user.id, role_id=role.id, assigned_by_user_id=context.user.id))
-    await db.flush()
-    admin = await get_admin_by_user_id(db, user.id)
-    result = _staff_read(admin)
-    await add_admin_audit(db, request, context, action="staff.create", entity_type="admin", entity_id=user.id, after=result.model_dump(mode="json"))
-    await db.commit()
-    return result
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Direct staff creation is disabled. Use the email invitation flow.",
+    )
 
 
 @admin_settings_router.put("/staff/{user_id}/roles", response_model=StaffRead)
@@ -103,6 +107,12 @@ async def update_staff_roles(
     if admin is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Administrator not found")
     roles = await _resolve_roles(db, payload.role_codes)
+    current_role_codes = {assignment.role.code for assignment in admin.role_assignments}
+    if "superadmin" in {role.code for role in roles} and "superadmin" not in current_role_codes and not payload.confirm_superadmin:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Explicit confirmation is required to grant the super administrator role",
+        )
     if user_id == context.user.id and "superadmin" not in {role.code for role in roles} and "superadmin" in context.roles:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You cannot remove your own superadmin role")
     before = _staff_read(admin).model_dump(mode="json")

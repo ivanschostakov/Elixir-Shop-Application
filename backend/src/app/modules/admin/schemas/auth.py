@@ -12,6 +12,8 @@ class AdminRoleRead(BaseModel):
     name_ru: str
     name_en: str
     permissions: list[str]
+    description_ru: str = ""
+    description_en: str = ""
 
 
 class AdminUserRead(BaseModel):

@@ -26,6 +26,9 @@ from src.app.services.admin.automation import default_order_automation_presets, 
 from src.app.services.notifications.core import normalize_marketing_automation_settings
 from src.app.modules.admin.schemas import AdminExportCreatePayload
 from src.app.services.admin.permissions import ALL_PERMISSIONS
+from src.app.services.admin.invitations import admin_invitation_accept_url, generate_admin_invitation_token, hash_admin_invitation_token
+import src.app.services.admin.invitations as admin_invitation_service
+from src.app.services.admin.role_catalog import SYSTEM_ROLES
 from src.app.services.admin.security import (
     create_admin_access_token,
     decode_admin_token,
@@ -85,6 +88,68 @@ def test_admin_job_payload_and_recovery_permission_are_explicit():
     assert {"automation.read", "automation.manage", "sla.read", "sla.manage", "alerts.read", "alerts.manage"}.issubset(ALL_PERMISSIONS)
 
 
+def test_admin_role_catalog_is_complete_and_least_privilege():
+    assert [role.code for role in SYSTEM_ROLES] == [
+        "superadmin",
+        "sales",
+        "support",
+        "content",
+        "marketing",
+        "logistics",
+        "analyst",
+    ]
+    assert SYSTEM_ROLES[0].permissions == ("*",)
+    known_permissions = set(ALL_PERMISSIONS)
+    for role in SYSTEM_ROLES[1:]:
+        assert set(role.permissions).issubset(known_permissions)
+        assert "staff.manage" not in role.permissions
+    analyst = next(role for role in SYSTEM_ROLES if role.code == "analyst")
+    assert not any(
+        permission.endswith((".manage", ".send", ".reply", ".assign", ".retry", ".recover", ".transition", ".moderate", ".merchandise"))
+        for permission in analyst.permissions
+    )
+
+
+def test_admin_invitation_tokens_are_not_embedded_in_api_paths():
+    token = generate_admin_invitation_token()
+    token_hash = hash_admin_invitation_token(token)
+    assert len(token) >= 32
+    assert len(token_hash) == 64
+    assert token not in token_hash
+    url = admin_invitation_accept_url(token)
+    assert f"#token={token}" in url
+    assert "?token=" not in url
+
+
+@pytest.mark.anyio
+async def test_admin_invitation_email_uses_configured_smtp_and_role_names(monkeypatch: pytest.MonkeyPatch):
+    delivered: dict[str, object] = {}
+
+    async def fake_send(message, **kwargs):
+        delivered["message"] = message
+        delivered["kwargs"] = kwargs
+
+    monkeypatch.setattr(admin_invitation_service, "SMTP_USER", "admin@example.com")
+    monkeypatch.setattr(admin_invitation_service, "SMTP_PASSWORD", "secret")
+    monkeypatch.setattr(admin_invitation_service, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(admin_invitation_service, "SMTP_PORT", 587)
+    monkeypatch.setitem(sys.modules, "aiosmtplib", SimpleNamespace(send=fake_send))
+
+    await admin_invitation_service.send_admin_invitation_email(
+        to_email="employee@example.com",
+        token="secure-token",
+        inviter_name="Elixir Owner",
+        role_codes=["support"],
+        expires_at=datetime(2026, 7, 26, 12, tzinfo=timezone.utc),
+    )
+
+    message = delivered["message"]
+    assert message["To"] == "employee@example.com"
+    assert "Поддержка" in message.get_body(preferencelist=("plain",)).get_content()
+    assert delivered["kwargs"]["hostname"] == "smtp.example.com"
+    assert delivered["kwargs"]["start_tls"] is True
+
+
 def test_customer_segment_filters_are_strict_and_allow_explicit_activity_scope():
     normalized = normalize_segment_filters({"min_orders": 2, "has_push_token": True})
     assert normalized["version"] == 2
@@ -118,6 +183,11 @@ def test_crm_and_campaign_routes_are_registered():
     assert "/api/v1/admin/integrations/production-readiness" in paths
     assert "/api/v1/admin/analytics" in paths
     assert "/api/v1/admin/analytics/{section}.csv" in paths
+    assert "/api/v1/admin/staff/invitations" in paths
+    assert "/api/v1/admin/staff/invitations/{invitation_id}/resend" in paths
+    assert "/api/v1/admin/staff/invitations/{invitation_id}/revoke" in paths
+    assert "/api/v1/admin/auth/invitations/preview" in paths
+    assert "/api/v1/admin/auth/invitations/accept" in paths
     assert not (REQUIRED_ADMIN_ROUTES - paths)
     assert REQUIRED_ADMIN_PERMISSIONS.issubset(ALL_PERMISSIONS)
 

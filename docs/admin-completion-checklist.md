@@ -15,6 +15,10 @@ The admin panel is considered production-complete when the following checks are 
 - Admin login uses isolated admin tokens and HttpOnly refresh cookies.
 - MFA is confirmed for every active administrator.
 - Roles and permissions cover the production sections.
+- Only the initial owner is bootstrapped directly; later staff use expiring, one-time email invitations.
+- Invitation tokens are stored only as hashes, rotated on resend and never placed in API paths.
+- Superadministrator assignment requires explicit confirmation and is audited.
+- SMTP delivery is configured and a real invitation/acceptance/MFA flow has been verified.
 - Production CORS does not allow wildcard origins.
 - Dangerous writes are blocked when `ADMIN_READ_ONLY=true`.
 - All material admin changes write audit events.

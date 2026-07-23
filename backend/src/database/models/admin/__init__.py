@@ -3,6 +3,7 @@ from .audit_log import AdminAuditLog
 from .customer_segment import AdminCustomerSegment, AdminCustomerSegmentHistory, AdminCustomerSegmentSnapshotItem
 from .dashboard_preference import AdminDashboardPreference
 from .integration_run import IntegrationRun
+from .invitation import AdminInvitation
 from .marketing_automation import AdminMarketingAutomation
 from .note import AdminNote
 from .order_automation import AdminOrderAutomationExecution, AdminOrderAutomationRule
@@ -20,6 +21,7 @@ __all__ = [
     "AdminCustomerSegmentHistory",
     "AdminCustomerSegmentSnapshotItem",
     "AdminDashboardPreference",
+    "AdminInvitation",
     "AdminMarketingAutomation",
     "AdminNote",
     "AdminOrderAutomationExecution",

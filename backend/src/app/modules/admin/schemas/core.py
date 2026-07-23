@@ -570,6 +570,7 @@ class StaffRead(BaseModel):
 
 class StaffRolesPayload(BaseModel):
     role_codes: list[str] = Field(min_length=1)
+    confirm_superadmin: bool = False
 
 
 class StaffCreatePayload(StaffRolesPayload):

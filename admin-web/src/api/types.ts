@@ -533,6 +533,8 @@ export type Role = {
   name_ru: string
   name_en: string
   permissions: string[]
+  description_ru: string
+  description_en: string
 }
 
 export type Staff = {
@@ -544,6 +546,33 @@ export type Staff = {
   mfa_enabled: boolean
   last_login_at: string | null
   role_codes: string[]
+}
+
+export type AdminInvitation = {
+  id: number
+  email: string
+  role_codes: string[]
+  role_names_ru: string[]
+  role_names_en: string[]
+  invited_by_name: string
+  status: "pending" | "accepted" | "expired" | "revoked"
+  created_at: string
+  expires_at: string
+  accepted_at: string | null
+  revoked_at: string | null
+  last_sent_at: string
+  send_count: number
+}
+
+export type AdminInvitationPreview = {
+  email: string
+  role_codes: string[]
+  role_names_ru: string[]
+  role_names_en: string[]
+  invited_by_name: string
+  status: "pending" | "accepted" | "expired" | "revoked"
+  expires_at: string
+  existing_user: boolean
 }
 
 export type AuditLog = {

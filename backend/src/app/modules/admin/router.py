@@ -11,6 +11,7 @@ from .crm import admin_crm_router
 from .customers import admin_customers_router
 from .exports import admin_exports_router
 from .integrations import admin_integrations_router
+from .invitations import admin_invitations_router
 from .leads import admin_leads_router
 from .orders import admin_orders_router
 from .overview import admin_overview_router
@@ -34,6 +35,7 @@ admin_router.include_router(admin_ai_chats_router)
 admin_router.include_router(admin_support_router)
 admin_router.include_router(admin_leads_router)
 admin_router.include_router(admin_integrations_router)
+admin_router.include_router(admin_invitations_router)
 admin_router.include_router(admin_exports_router)
 admin_router.include_router(admin_settings_router)
 

@@ -6,12 +6,14 @@
 
 1. Start PostgreSQL, Redis and the backend.
 2. Apply the migration: `cd backend && alembic upgrade head`.
-3. If the database has no administrator, grant access to an existing registered application user:
+3. If the database has no administrator yet, bootstrap the first superadministrator from an existing registered application user:
 
    `cd backend && python -m src.scripts.bootstrap_admin admin@example.com`
 
 4. Start the SPA: `cd admin-web && npm install && npm run dev`.
 5. Open `http://localhost:4173`. The first sign-in requires TOTP setup.
+
+All later employees must be added from Settings → Staff through an email invitation. Direct staff creation is disabled after the initial bootstrap.
 
 The Vite server proxies `/api` to `http://127.0.0.1:8000`. Override this with `ADMIN_API_PROXY_TARGET` in `admin-web/.env` when needed.
 
@@ -29,9 +31,49 @@ Production backend settings:
 - `ADMIN_JOB_STALE_SECONDS=600`
 - `ADMIN_JOB_RECOVERY_INTERVAL_SECONDS=30`
 - `ADMIN_AUTOMATION_INTERVAL_SECONDS=60`
+- `ADMIN_PUBLIC_HOST=admin-elixirshop.devsivanschostakov.org`
+- `ADMIN_INVITATION_EXPIRE_HOURS=72`
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `SMTP_FROM_NAME` configured for outbound invitations
 - `CORS_ALLOWED_ORIGINS` limited to production origins (the admin itself uses same-origin requests)
 
 After validation, turn `ADMIN_READ_ONLY` off section by section operationally. Administrators can be disabled and their sessions revoked from Settings → Staff.
+
+## Staff roles and email invitations
+
+The admin uses seven fixed system roles. An employee can receive several roles and gets the union of their permissions. Fixed roles keep access review predictable; a one-off permission should not be added to a person directly.
+
+| Role | Operational scope |
+| --- | --- |
+| Super administrator | Full access, staff and role management, security settings and audit. Assign on its own. |
+| Sales and CRM | Orders, customer profiles, leads, tasks, Support Inbox, AI Chat visibility, analytics and exports. |
+| Support | Support conversations, customer/order context, internal notes, tasks, leads, AI Chat visibility and SLA monitoring. |
+| Content and storefront | Products, merchandising, categories, banners, business content and review moderation. |
+| Marketing | Segments, campaign setup and launch, trigger communication settings, referrals, marketing analytics and exports. |
+| Logistics and operations | Order fulfillment, recovery actions, integrations, operational tasks, order automation and incident resolution. |
+| Analyst / auditor | Cross-functional read-only access, analytics, exports and the audit log. |
+
+Only the superadministrator has `staff.manage`. Granting `superadmin` requires a separate confirmation and cannot be combined with other roles because it already includes every permission. Role changes take effect on the next API request because permissions are loaded from PostgreSQL for every authenticated admin context.
+
+### Invite a new employee
+
+1. Open Settings → Staff and select Invite staff member.
+2. Enter the employee's work email.
+3. Select the smallest role set that covers the employee's actual duties. Use several roles only for a genuinely cross-functional employee.
+4. If Super administrator is selected, read and confirm the full-access warning.
+5. Send the invitation. The email contains a one-time link valid for 72 hours by default.
+6. Track the invitation in Invitation history. A pending or expired invitation can be resent; resending rotates the token and extends the deadline. A pending invitation can be revoked.
+
+If the email is not registered in Elixir Shop, the recipient enters name, surname and a new password. If a customer account already uses the email, the recipient must enter that account's current password. In both cases the email link proves control of the address, creates the admin record and assigns the selected roles. The recipient is then sent to the normal admin login and must configure TOTP MFA on first sign-in.
+
+The invitation token is never stored in plaintext. PostgreSQL stores only its SHA-256 hash. The browser receives the token in the URL fragment, and the SPA sends it in a request body, keeping it out of API paths. Creation, resending, revocation, acceptance and subsequent role/status changes are retained in the admin audit log. Only one unaccepted, non-revoked invitation can exist per email.
+
+### Change or remove access
+
+- Use Edit roles on an active employee to replace their complete role set.
+- Disable Active to block the employee immediately; each protected request rechecks both the user and admin status.
+- An administrator cannot disable their own account or remove their own superadministrator role.
+- Revoke the employee's active sessions from the security/session control when account compromise is suspected.
+- Never share a superadministrator account. Invite a named person so every action has an attributable audit actor.
 
 ## Order recovery and job reliability
 
