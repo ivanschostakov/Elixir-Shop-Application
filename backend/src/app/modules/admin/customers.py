@@ -1,12 +1,14 @@
+import logging
+import shutil
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
 
-from config import ufa_now
+from config import SUPPORT_MEDIA_DIR, ufa_now
 from src.app.modules.admin.helpers import ensure_not_stale
 from src.app.modules.admin.schemas import (
     AdminNoteCreate,
@@ -14,6 +16,7 @@ from src.app.modules.admin.schemas import (
     AdminPage,
     CustomerAttributionRead,
     CustomerConsentRead,
+    CustomerDeletePayload,
     CustomerDetail,
     CustomerDeviceRead,
     CustomerEventRead,
@@ -22,18 +25,24 @@ from src.app.modules.admin.schemas import (
     CustomerStatusPayload,
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
+from src.app.services.avatar_storage import remove_existing_avatars
 from src.database import get_db
 from src.database.models import (
     Admin,
     AdminNote,
+    AdminRoleAssignment,
     Basket,
     BasketItem,
     CustomerAttribution,
     CustomerConsent,
     CustomerMarketingProfile,
+    CrmLead,
+    CrmConversation,
     FavouredProduct,
     Order,
+    OrderBenefitApplication,
     ReferralProfile,
+    Review,
     User,
     UserDevice,
     UserEvent,
@@ -43,6 +52,7 @@ from src.database.models import (
 )
 
 admin_customers_router = APIRouter(prefix="/customers", tags=["admin_customers"])
+logger = logging.getLogger(__name__)
 
 
 def _orders_aggregate():
@@ -259,6 +269,74 @@ async def update_customer_status(
     await add_admin_audit(db, request, context, action="customer.status", entity_type="customer", entity_id=user.id, before=before, after={"is_active": user.is_active})
     await db.commit()
     return await _customer_detail(db, customer_id)
+
+
+@admin_customers_router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_customer(
+    customer_id: int,
+    payload: CustomerDeletePayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("customers.delete", write=True)),
+) -> None:
+    user = await db.get(User, customer_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    ensure_not_stale(actual=user.updated_at, expected=payload.expected_updated_at)
+
+    admin = await db.get(Admin, customer_id)
+    if admin is not None:
+        role_assignment = (await db.execute(
+            select(AdminRoleAssignment.admin_user_id)
+            .where(AdminRoleAssignment.admin_user_id == customer_id)
+            .limit(1)
+        )).scalar_one_or_none()
+        if admin.is_active or role_assignment is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Remove this user's staff access before deleting the customer profile",
+            )
+
+    conversation_ids = list((await db.execute(
+        select(CrmConversation.id).where(CrmConversation.customer_user_id == customer_id)
+    )).scalars().all())
+    leads_count = int((await db.execute(
+        select(func.count(CrmLead.id)).where(CrmLead.customer_user_id == customer_id)
+    )).scalar_one())
+    audit_snapshot = {
+        "user_id": user.id,
+        "orders_count": int((await db.execute(
+            select(func.count(Order.id)).where(Order.user_id == customer_id)
+        )).scalar_one()),
+        "support_conversations_count": len(conversation_ids),
+        "crm_leads_count": leads_count,
+    }
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="customer.delete",
+        entity_type="customer",
+        entity_id=customer_id,
+        before=audit_snapshot,
+        after={"deleted": True},
+    )
+    await db.execute(delete(CrmLead).where(CrmLead.customer_user_id == customer_id))
+    await db.execute(delete(OrderBenefitApplication).where(OrderBenefitApplication.user_id == customer_id))
+    await db.execute(
+        update(Review)
+        .where(Review.user_id == customer_id)
+        .values(user_id=None, guest_name="Удалённый пользователь", guest_email=None, submitter_ip=None)
+    )
+    await db.delete(user)
+    await db.commit()
+
+    try:
+        remove_existing_avatars(customer_id)
+        for conversation_id in conversation_ids:
+            shutil.rmtree(SUPPORT_MEDIA_DIR / str(conversation_id), ignore_errors=True)
+    except OSError:
+        logger.warning("Failed to remove all customer media for user_id=%s", customer_id, exc_info=True)
 
 
 @admin_customers_router.post("/{customer_id}/notes", response_model=AdminNoteRead, status_code=status.HTTP_201_CREATED)

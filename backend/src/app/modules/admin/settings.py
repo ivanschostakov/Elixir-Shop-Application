@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 from starlette import status
 
+from config import ufa_now
 from src.app.modules.admin.schemas import (
     AdminPage,
     AdminRoleRead,
@@ -19,7 +20,15 @@ from src.app.services.admin import AdminContext, add_admin_audit, require_permis
 from src.app.services.admin.permissions import get_admin_by_user_id
 from src.app.services.admin.role_catalog import ASSIGNABLE_ROLE_CODES, SYSTEM_ROLE_BY_CODE
 from src.database import get_db
-from src.database.models import Admin, AdminAuditLog, AdminRole, AdminRoleAssignment, AdminSavedView
+from src.database.models import (
+    Admin,
+    AdminAuditLog,
+    AdminRole,
+    AdminRoleAssignment,
+    AdminSavedView,
+    User,
+    UserSession,
+)
 
 admin_settings_router = APIRouter(tags=["admin_settings"])
 
@@ -50,6 +59,39 @@ async def _resolve_roles(db: AsyncSession, role_codes: list[str]) -> list[AdminR
     return rows
 
 
+def _role_codes(admin: Admin) -> set[str]:
+    return {assignment.role.code for assignment in admin.role_assignments}
+
+
+def _ensure_staff_exists(admin: Admin | None) -> Admin:
+    if admin is None or not admin.role_assignments:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Administrator not found")
+    return admin
+
+
+async def _ensure_not_last_active_superadmin(db: AsyncSession, admin: Admin) -> None:
+    if not admin.is_active or not admin.user.is_active or "superadmin" not in _role_codes(admin):
+        return
+    active_superadmin_ids = list((await db.execute(
+        select(Admin.user_id)
+        .join(User, User.id == Admin.user_id)
+        .join(AdminRoleAssignment, AdminRoleAssignment.admin_user_id == Admin.user_id)
+        .join(AdminRole, AdminRole.id == AdminRoleAssignment.role_id)
+        .where(
+            Admin.is_active.is_(True),
+            User.is_active.is_(True),
+            AdminRole.code == "superadmin",
+        )
+        .order_by(Admin.user_id)
+        .with_for_update(of=Admin)
+    )).scalars().all())
+    if len(active_superadmin_ids) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The last active super administrator cannot be removed or disabled",
+        )
+
+
 @admin_settings_router.get("/roles", response_model=list[AdminRoleRead])
 async def list_roles(
     db: AsyncSession = Depends(get_db),
@@ -78,7 +120,7 @@ async def list_staff(
     rows = list((await db.execute(select(Admin).options(
         joinedload(Admin.user),
         selectinload(Admin.role_assignments).selectinload(AdminRoleAssignment.role),
-    ).order_by(Admin.user_id))).scalars().unique().all())
+    ).where(Admin.role_assignments.any()).order_by(Admin.user_id))).scalars().unique().all())
     return [_staff_read(row) for row in rows]
 
 
@@ -103,11 +145,9 @@ async def update_staff_roles(
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("staff.manage", write=True)),
 ) -> StaffRead:
-    admin = await get_admin_by_user_id(db, user_id)
-    if admin is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Administrator not found")
+    admin = _ensure_staff_exists(await get_admin_by_user_id(db, user_id))
     roles = await _resolve_roles(db, payload.role_codes)
-    current_role_codes = {assignment.role.code for assignment in admin.role_assignments}
+    current_role_codes = _role_codes(admin)
     if "superadmin" in {role.code for role in roles} and "superadmin" not in current_role_codes and not payload.confirm_superadmin:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -115,6 +155,8 @@ async def update_staff_roles(
         )
     if user_id == context.user.id and "superadmin" not in {role.code for role in roles} and "superadmin" in context.roles:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You cannot remove your own superadmin role")
+    if "superadmin" in current_role_codes and "superadmin" not in {role.code for role in roles}:
+        await _ensure_not_last_active_superadmin(db, admin)
     before = _staff_read(admin).model_dump(mode="json")
     for assignment in list(admin.role_assignments):
         await db.delete(assignment)
@@ -137,11 +179,11 @@ async def update_staff_status(
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("staff.manage", write=True)),
 ) -> StaffRead:
-    admin = await get_admin_by_user_id(db, user_id)
-    if admin is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Administrator not found")
+    admin = _ensure_staff_exists(await get_admin_by_user_id(db, user_id))
     if user_id == context.user.id and not payload.is_active:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You cannot disable your own account")
+    if not payload.is_active:
+        await _ensure_not_last_active_superadmin(db, admin)
     before = _staff_read(admin).model_dump(mode="json")
     admin.is_active = payload.is_active
     await db.flush()
@@ -149,6 +191,47 @@ async def update_staff_status(
     await add_admin_audit(db, request, context, action="staff.status.update", entity_type="admin", entity_id=user_id, before=before, after=result.model_dump(mode="json"))
     await db.commit()
     return result
+
+
+@admin_settings_router.delete("/staff/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_staff(
+    user_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("staff.manage", write=True)),
+) -> None:
+    admin = _ensure_staff_exists(await get_admin_by_user_id(db, user_id))
+    if user_id == context.user.id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="You cannot remove your own staff access")
+    await _ensure_not_last_active_superadmin(db, admin)
+
+    before = _staff_read(admin).model_dump(mode="json")
+    now = ufa_now()
+    sessions = list((await db.execute(
+        select(UserSession).where(
+            UserSession.user_id == user_id,
+            UserSession.purpose == "admin",
+            UserSession.revoked_at.is_(None),
+        )
+    )).scalars().all())
+    for session in sessions:
+        session.revoked_at = now
+    for assignment in list(admin.role_assignments):
+        await db.delete(assignment)
+    admin.is_active = False
+    admin.totp_secret_encrypted = None
+    admin.mfa_confirmed_at = None
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="staff.remove",
+        entity_type="admin",
+        entity_id=user_id,
+        before=before,
+        after={"removed": True, "revoked_sessions": len(sessions)},
+    )
+    await db.commit()
 
 
 @admin_settings_router.get("/audit", response_model=AdminPage[AuditLogRead])

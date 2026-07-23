@@ -1,6 +1,6 @@
-import { ArrowLeftOutlined, CheckSquareOutlined, LockOutlined, MessageOutlined, UnlockOutlined } from "@ant-design/icons"
+import { ArrowLeftOutlined, CheckSquareOutlined, DeleteOutlined, LockOutlined, MessageOutlined, UnlockOutlined } from "@ant-design/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Avatar, Button, Card, Col, Descriptions, Form, Input, List, Modal, Row, Space, Statistic, Tag, Timeline, Typography, message } from "antd"
+import { Alert, Avatar, Button, Card, Col, Descriptions, Form, Input, List, Modal, Row, Space, Statistic, Tag, Timeline, Typography, message } from "antd"
 import { useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { apiRequest } from "../../api/client"
@@ -18,7 +18,9 @@ export function CustomerDetailPage() {
   const { hasPermission } = useAuth()
   const client = useQueryClient()
   const [noteOpen, setNoteOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [form] = Form.useForm<{ body: string }>()
+  const [deleteForm] = Form.useForm<{ confirmation: string }>()
   const query = useQuery({ queryKey: ["customer", customerId], queryFn: () => apiRequest<CustomerDetail>(`/customers/${customerId}`), enabled: Boolean(customerId) })
   const statusMutation = useMutation({
     mutationFn: (customer: CustomerDetail) => apiRequest<CustomerDetail>(`/customers/${customer.id}/status`, { method: "PATCH", body: JSON.stringify({ is_active: !customer.is_active, expected_updated_at: customer.updated_at }) }),
@@ -30,17 +32,29 @@ export function CustomerDetailPage() {
     onSuccess: () => { form.resetFields(); setNoteOpen(false); void query.refetch(); void message.success(locale === "ru" ? "Заметка добавлена" : "Note added") },
     onError: (error: Error) => void message.error(error.message),
   })
+  const deleteMutation = useMutation({
+    mutationFn: (customer: CustomerDetail) => apiRequest<void>(`/customers/${customer.id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ confirmation: "DELETE", expected_updated_at: customer.updated_at }),
+    }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["customers"] })
+      void message.success(locale === "ru" ? "Профиль клиента полностью удалён" : "Customer profile permanently deleted")
+      navigate("/customers")
+    },
+    onError: (error: Error) => void message.error(error.message),
+  })
   const customer = query.data
   const copy = locale === "ru"
-    ? { description: "Карточка клиента 360°", back: "К списку", block: "Заблокировать", unblock: "Разблокировать", note: "Добавить заметку", task: "Поставить задачу", revenue: "Выручка", orders: "Заказы", basket: "Корзина", views: "Просмотры", profile: "Профиль", activity: "Активность и интересы", intelligence: "Customer Intelligence", timeline: "Лента событий", devices: "Устройства", attribution: "Атрибуция и согласия", referrals: "Реферальная программа", notes: "Внутренние заметки", noNotes: "Заметок пока нет", noEvents: "Событий пока нет", noteTitle: "Новая заметка", notePlaceholder: "Контекст для коллег…", save: "Сохранить" }
-    : { description: "360° customer profile", back: "Back", block: "Block", unblock: "Unblock", note: "Add note", task: "Create task", revenue: "Revenue", orders: "Orders", basket: "Basket", views: "Views", profile: "Profile", activity: "Activity & interests", intelligence: "Customer Intelligence", timeline: "Event timeline", devices: "Devices", attribution: "Attribution & consent", referrals: "Referral program", notes: "Internal notes", noNotes: "No notes yet", noEvents: "No events yet", noteTitle: "New note", notePlaceholder: "Context for your team…", save: "Save" }
+    ? { description: "Карточка клиента 360°", back: "К списку", block: "Заблокировать", unblock: "Разблокировать", delete: "Удалить профиль", deleteTitle: "Полностью удалить профиль?", deleteWarning: "Это необратимо: будут удалены аккаунт, заказы, корзина, лиды, переписки поддержки, AI-история, события, устройства, бонусы, аватар и файлы поддержки. Отзывы и публичные сообщения останутся без связи с профилем. Если пользователь является сотрудником, сначала удалите его доступ к админке.", deletePrompt: "Для подтверждения введите DELETE", note: "Добавить заметку", task: "Поставить задачу", revenue: "Выручка", orders: "Заказы", basket: "Корзина", views: "Просмотры", profile: "Профиль", activity: "Активность и интересы", intelligence: "Customer Intelligence", timeline: "Лента событий", devices: "Устройства", attribution: "Атрибуция и согласия", referrals: "Реферальная программа", notes: "Внутренние заметки", noNotes: "Заметок пока нет", noEvents: "Событий пока нет", noteTitle: "Новая заметка", notePlaceholder: "Контекст для коллег…", save: "Сохранить", cancel: "Отмена" }
+    : { description: "360° customer profile", back: "Back", block: "Block", unblock: "Unblock", delete: "Delete profile", deleteTitle: "Permanently delete this profile?", deleteWarning: "This cannot be undone. The account, orders, cart, leads, support conversations, AI history, events, devices, benefits, avatar, and support files will be deleted. Reviews and public messages will remain without a profile link. If the user is a staff member, remove their admin access first.", deletePrompt: "Type DELETE to confirm", note: "Add note", task: "Create task", revenue: "Revenue", orders: "Orders", basket: "Basket", views: "Views", profile: "Profile", activity: "Activity & interests", intelligence: "Customer Intelligence", timeline: "Event timeline", devices: "Devices", attribution: "Attribution & consent", referrals: "Referral program", notes: "Internal notes", noNotes: "No notes yet", noEvents: "No events yet", noteTitle: "New note", notePlaceholder: "Context for your team…", save: "Save", cancel: "Cancel" }
 
   return (
     <div className="page-stack">
       <PageHeader
         title={customer ? `${customer.name} ${customer.surname}` : locale === "ru" ? "Клиент" : "Customer"}
         description={copy.description}
-        actions={<Space><Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/customers")}>{copy.back}</Button>{customer && hasPermission("tasks.manage") ? <Button icon={<CheckSquareOutlined />} onClick={() => navigate(`/tasks?customer_id=${customer.id}&new=1`)}>{copy.task}</Button> : null}{customer && hasPermission("customers.manage") ? <Button danger={customer.is_active} icon={customer.is_active ? <LockOutlined /> : <UnlockOutlined />} loading={statusMutation.isPending} onClick={() => statusMutation.mutate(customer)}>{customer.is_active ? copy.block : copy.unblock}</Button> : null}</Space>}
+        actions={<Space wrap><Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/customers")}>{copy.back}</Button>{customer && hasPermission("tasks.manage") ? <Button icon={<CheckSquareOutlined />} onClick={() => navigate(`/tasks?customer_id=${customer.id}&new=1`)}>{copy.task}</Button> : null}{customer && hasPermission("customers.manage") ? <Button danger={customer.is_active} icon={customer.is_active ? <LockOutlined /> : <UnlockOutlined />} loading={statusMutation.isPending} onClick={() => statusMutation.mutate(customer)}>{customer.is_active ? copy.block : copy.unblock}</Button> : null}{customer && hasPermission("customers.delete") ? <Button danger icon={<DeleteOutlined />} onClick={() => setDeleteOpen(true)}>{copy.delete}</Button> : null}</Space>}
       />
       <QueryState loading={query.isLoading} error={query.isError} onRetry={() => void query.refetch()} />
       {customer ? (
@@ -125,6 +139,31 @@ export function CustomerDetailPage() {
       ) : null}
       <Modal open={noteOpen} title={copy.noteTitle} okText={copy.save} confirmLoading={noteMutation.isPending} onCancel={() => setNoteOpen(false)} onOk={() => void form.validateFields().then(({ body }) => noteMutation.mutate(body))}>
         <Form form={form} layout="vertical"><Form.Item name="body" rules={[{ required: true, min: 1, max: 4000 }]}><Input.TextArea rows={5} placeholder={copy.notePlaceholder} /></Form.Item></Form>
+      </Modal>
+      <Modal
+        open={deleteOpen}
+        title={copy.deleteTitle}
+        okText={copy.delete}
+        cancelText={copy.cancel}
+        okButtonProps={{ danger: true }}
+        confirmLoading={deleteMutation.isPending}
+        onCancel={() => { setDeleteOpen(false); deleteForm.resetFields() }}
+        onOk={() => void deleteForm.validateFields().then(() => customer && deleteMutation.mutate(customer))}
+      >
+        <Alert type="error" showIcon message={copy.deleteWarning} style={{ marginBottom: 16 }} />
+        <Form form={deleteForm} layout="vertical">
+          <Form.Item
+            name="confirmation"
+            label={copy.deletePrompt}
+            rules={[{
+              validator: (_, value) => value === "DELETE"
+                ? Promise.resolve()
+                : Promise.reject(new Error(copy.deletePrompt)),
+            }]}
+          >
+            <Input autoComplete="off" placeholder="DELETE" />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   )

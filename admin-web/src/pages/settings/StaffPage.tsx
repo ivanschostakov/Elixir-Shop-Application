@@ -1,4 +1,5 @@
 import {
+  DeleteOutlined,
   EditOutlined,
   MailOutlined,
   PlusOutlined,
@@ -29,6 +30,7 @@ import {
 import { useEffect, useMemo, useState } from "react"
 import { apiRequest } from "../../api/client"
 import type { AdminInvitation, Role, Staff } from "../../api/types"
+import { useAuth } from "../../auth/AuthProvider"
 import { PageHeader } from "../../components/PageHeader"
 import { useLanguage } from "../../i18n/LanguageProvider"
 import { dateTime } from "../../utils/format"
@@ -45,6 +47,7 @@ const statusColors: Record<AdminInvitation["status"], string> = {
 
 export function StaffPage() {
   const { locale } = useLanguage()
+  const { principal } = useAuth()
   const client = useQueryClient()
   const [inviteOpen, setInviteOpen] = useState(false)
   const [editing, setEditing] = useState<Staff | null>(null)
@@ -115,6 +118,14 @@ export function StaffPage() {
     onSuccess: refreshAll,
     onError: (error: Error) => void message.error(error.message),
   })
+  const remove = useMutation({
+    mutationFn: (row: Staff) => apiRequest<void>(`/staff/${row.user_id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      refreshAll()
+      void message.success(locale === "ru" ? "Доступ сотрудника удалён" : "Staff access removed")
+    },
+    onError: (error: Error) => void message.error(error.message),
+  })
   const resend = useMutation({
     mutationFn: (row: AdminInvitation) => apiRequest<AdminInvitation>(`/staff/invitations/${row.id}/resend`, { method: "POST" }),
     onSuccess: () => {
@@ -157,6 +168,9 @@ export function StaffPage() {
         resend: "Отправить новую ссылку",
         revoke: "Отозвать",
         revokeConfirm: "Отозвать это приглашение?",
+        remove: "Удалить",
+        removeConfirm: "Удалить доступ сотрудника к админке?",
+        removeDescription: "Все админ-сессии завершатся, роли и MFA будут удалены. Клиентский профиль и история действий сохранятся.",
         superConfirm: "Я понимаю, что эта роль дает полный доступ, включая управление сотрудниками и аудитом.",
         pending: "Ожидает",
         accepted: "Принято",
@@ -187,6 +201,9 @@ export function StaffPage() {
         resend: "Send a new link",
         revoke: "Revoke",
         revokeConfirm: "Revoke this invitation?",
+        remove: "Remove",
+        removeConfirm: "Remove this staff member's admin access?",
+        removeDescription: "All admin sessions will end and roles and MFA will be removed. The customer profile and activity history will remain.",
         superConfirm: "I understand that this role grants full access, including staff and audit management.",
         pending: "Pending",
         accepted: "Accepted",
@@ -267,7 +284,22 @@ export function StaffPage() {
             {
               title: "",
               align: "right",
-              render: (_: unknown, row) => <Button icon={<EditOutlined />} onClick={() => setEditing(row)}>{copy.edit}</Button>,
+              render: (_: unknown, row) => (
+                <Space>
+                  <Button icon={<EditOutlined />} onClick={() => setEditing(row)}>{copy.edit}</Button>
+                  {row.user_id !== principal?.user.id ? (
+                    <Popconfirm
+                      title={copy.removeConfirm}
+                      description={copy.removeDescription}
+                      okText={copy.remove}
+                      okButtonProps={{ danger: true, loading: remove.isPending }}
+                      onConfirm={() => remove.mutateAsync(row)}
+                    >
+                      <Button danger icon={<DeleteOutlined />}>{copy.remove}</Button>
+                    </Popconfirm>
+                  ) : null}
+                </Space>
+              ),
             },
           ]}
         />

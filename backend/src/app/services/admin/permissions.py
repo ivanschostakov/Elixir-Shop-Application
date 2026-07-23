@@ -21,6 +21,7 @@ ALL_PERMISSIONS: tuple[str, ...] = (
     "orders.recover",
     "customers.read",
     "customers.manage",
+    "customers.delete",
     "customers.notes",
     "tasks.read",
     "tasks.manage",

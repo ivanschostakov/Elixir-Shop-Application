@@ -24,7 +24,7 @@ from src.app.services.admin.exports import _write_csv, _write_xlsx, normalize_ex
 from src.app.services.admin.audiences import normalize_segment_filters
 from src.app.services.admin.automation import default_order_automation_presets, normalize_order_rule_action, normalize_order_rule_conditions, preset_rule_name
 from src.app.services.notifications.core import normalize_marketing_automation_settings
-from src.app.modules.admin.schemas import AdminExportCreatePayload
+from src.app.modules.admin.schemas import AdminExportCreatePayload, CustomerDeletePayload
 from src.app.services.admin.permissions import ALL_PERMISSIONS
 from src.app.services.admin.invitations import admin_invitation_accept_url, generate_admin_invitation_token, hash_admin_invitation_token
 import src.app.services.admin.invitations as admin_invitation_service
@@ -83,6 +83,7 @@ def test_admin_job_payload_and_recovery_permission_are_explicit():
     assert parse_job('{"run_id":0}') is None
     assert parse_job("invalid") is None
     assert "orders.recover" in ALL_PERMISSIONS
+    assert "customers.delete" in ALL_PERMISSIONS
     assert "exports.read" in ALL_PERMISSIONS
     assert {"tasks.read", "tasks.manage", "segments.read", "segments.manage", "campaigns.read", "campaigns.manage", "campaigns.send"}.issubset(ALL_PERMISSIONS)
     assert {"automation.read", "automation.manage", "sla.read", "sla.manage", "alerts.read", "alerts.manage"}.issubset(ALL_PERMISSIONS)
@@ -103,6 +104,7 @@ def test_admin_role_catalog_is_complete_and_least_privilege():
     for role in SYSTEM_ROLES[1:]:
         assert set(role.permissions).issubset(known_permissions)
         assert "staff.manage" not in role.permissions
+        assert "customers.delete" not in role.permissions
     analyst = next(role for role in SYSTEM_ROLES if role.code == "analyst")
     assert not any(
         permission.endswith((".manage", ".send", ".reply", ".assign", ".retry", ".recover", ".transition", ".moderate", ".merchandise"))
@@ -188,8 +190,24 @@ def test_crm_and_campaign_routes_are_registered():
     assert "/api/v1/admin/staff/invitations/{invitation_id}/revoke" in paths
     assert "/api/v1/admin/auth/invitations/preview" in paths
     assert "/api/v1/admin/auth/invitations/accept" in paths
+    assert any(
+        route.path == "/api/v1/admin/customers/{customer_id}" and "DELETE" in (route.methods or set())
+        for route in app.routes
+    )
+    assert any(
+        route.path == "/api/v1/admin/staff/{user_id}" and "DELETE" in (route.methods or set())
+        for route in app.routes
+    )
     assert not (REQUIRED_ADMIN_ROUTES - paths)
     assert REQUIRED_ADMIN_PERMISSIONS.issubset(ALL_PERMISSIONS)
+
+
+def test_customer_hard_delete_requires_explicit_confirmation():
+    now = datetime.now(timezone.utc)
+    payload = CustomerDeletePayload(confirmation="DELETE", expected_updated_at=now)
+    assert payload.confirmation == "DELETE"
+    with pytest.raises(ValidationError):
+        CustomerDeletePayload(confirmation="delete", expected_updated_at=now)
 
 
 def test_order_automation_rule_payloads_are_strict_and_safe():

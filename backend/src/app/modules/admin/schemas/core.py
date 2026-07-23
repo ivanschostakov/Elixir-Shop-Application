@@ -261,6 +261,11 @@ class CustomerDetail(CustomerListItem):
     notes: list[AdminNoteRead]
 
 
+class CustomerDeletePayload(BaseModel):
+    confirmation: Literal["DELETE"]
+    expected_updated_at: datetime
+
+
 class CustomerStatusPayload(BaseModel):
     is_active: bool
     expected_updated_at: datetime

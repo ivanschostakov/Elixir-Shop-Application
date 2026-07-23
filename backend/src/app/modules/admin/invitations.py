@@ -92,6 +92,19 @@ async def _resolve_roles(db: AsyncSession, role_codes: list[str]) -> list[AdminR
     return rows
 
 
+async def _admin_is_provisioned(db: AsyncSession, admin: Admin | None) -> bool:
+    if admin is None:
+        return False
+    if admin.is_active:
+        return True
+    assignment = (await db.execute(
+        select(AdminRoleAssignment.admin_user_id)
+        .where(AdminRoleAssignment.admin_user_id == admin.user_id)
+        .limit(1)
+    )).scalar_one_or_none()
+    return assignment is not None
+
+
 async def _load_invitation_by_token(
     db: AsyncSession,
     token: str,
@@ -155,7 +168,8 @@ async def create_admin_invitation(
     await _resolve_roles(db, payload.role_codes)
     email = str(payload.email).strip().lower()
     existing_user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
-    if existing_user is not None and await db.get(Admin, existing_user.id) is not None:
+    existing_admin = await db.get(Admin, existing_user.id) if existing_user is not None else None
+    if await _admin_is_provisioned(db, existing_admin):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This user is already an administrator")
 
     now = ufa_now()
@@ -389,12 +403,17 @@ async def accept_admin_invitation(
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is disabled")
         if not verify_password(payload.password, user.password_hash):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
-        if await db.get(Admin, user.id) is not None:
+        existing_admin = await db.get(Admin, user.id)
+        if await _admin_is_provisioned(db, existing_admin):
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User is already an administrator")
         user.is_verified = True
 
-    admin = Admin(user_id=user.id, is_active=True)
-    db.add(admin)
+    admin = await db.get(Admin, user.id)
+    if admin is None:
+        admin = Admin(user_id=user.id, is_active=True)
+        db.add(admin)
+    else:
+        admin.is_active = True
     await db.flush()
     for role in roles:
         db.add(
