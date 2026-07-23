@@ -7,23 +7,24 @@ import {
   CommentOutlined,
   DashboardOutlined,
   GiftOutlined,
-  GlobalOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ProductOutlined,
   SearchOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
   ShoppingCartOutlined,
   TeamOutlined,
+  ThunderboltOutlined,
   UserOutlined,
 } from "@ant-design/icons"
 import { useQuery } from "@tanstack/react-query"
-import { AutoComplete, Avatar, Badge, Button, Drawer, Dropdown, Empty, Input, Layout, List, Menu, Segmented, Space, Tag, Typography } from "antd"
+import { AutoComplete, Avatar, Badge, Button, Divider, Drawer, Dropdown, Empty, Input, Layout, List, Menu, Segmented, Space, Tag, Typography } from "antd"
 import { useMemo, useState } from "react"
 import { Outlet, useLocation, useNavigate } from "react-router-dom"
 import { apiRequest, queryString } from "../api/client"
-import type { Dashboard, SearchResult } from "../api/types"
+import type { AlertPage, Dashboard, SearchResult } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
 import { useLanguage } from "../i18n/LanguageProvider"
 
@@ -49,6 +50,12 @@ export function AdminLayout() {
     enabled: hasPermission("dashboard.read"),
     refetchInterval: 60_000,
   })
+  const alerts = useQuery({
+    queryKey: ["admin-alerts", "header"],
+    queryFn: () => apiRequest<AlertPage>("/alerts?limit=20"),
+    enabled: hasPermission("alerts.read"),
+    refetchInterval: 30_000,
+  })
 
   const items = useMemo(() => {
     const allowed = (permission: string) => hasPermission(permission)
@@ -60,7 +67,17 @@ export function AdminLayout() {
         label: t("sales"),
         children: [{ key: "/sales/orders", label: t("orders") }],
       } : null,
-      allowed("customers.read") ? { key: "/customers", icon: <TeamOutlined />, label: t("customers") } : null,
+      allowed("customers.read") || allowed("tasks.read") || allowed("leads.read") || allowed("support.read") || allowed("ai_chats.read") ? {
+        key: "crm",
+        icon: <TeamOutlined />,
+        label: "CRM",
+        children: [
+          allowed("customers.read") ? { key: "/customers", label: t("customers") } : null,
+          allowed("tasks.read") ? { key: "/tasks", label: t("tasks") } : null,
+          allowed("leads.read") ? { key: "/leads", label: locale === "ru" ? "Лиды" : "Leads" } : null,
+          allowed("support.read") || allowed("ai_chats.read") ? { key: "/communications", label: t("communications") } : null,
+        ].filter(Boolean),
+      } : null,
       allowed("catalog.read") ? {
         key: "catalog",
         icon: <ProductOutlined />,
@@ -77,12 +94,14 @@ export function AdminLayout() {
         children: [
           allowed("reviews.read") ? { key: "/content/reviews", label: t("reviews") } : null,
           allowed("banners.manage") ? { key: "/content/banners", label: t("banners") } : null,
+          allowed("banners.manage") ? { key: "/content/business", label: t("businessContent") } : null,
         ].filter(Boolean),
       } : null,
-      allowed("notifications.manage") || allowed("referrals.read") ? { key: "/marketing", icon: <GiftOutlined />, label: t("marketing") } : null,
-      allowed("community.read") || allowed("ai_chats.read") ? { key: "/communications", icon: <GlobalOutlined />, label: t("communications") } : null,
+      allowed("notifications.manage") || allowed("referrals.read") || allowed("segments.read") || allowed("campaigns.read") ? { key: "/marketing", icon: <GiftOutlined />, label: t("marketing") } : null,
+      allowed("automation.read") || allowed("sla.read") || allowed("alerts.read") ? { key: "/automation", icon: <ThunderboltOutlined />, label: t("automation") } : null,
       allowed("analytics.read") ? { key: "/analytics", icon: <BarChartOutlined />, label: t("analytics") } : null,
       allowed("integrations.read") ? { key: "/integrations", icon: <ApiOutlined />, label: t("integrations") } : null,
+      allowed("integrations.read") ? { key: "/readiness", icon: <SafetyCertificateOutlined />, label: t("readiness") } : null,
       allowed("staff.manage") || allowed("audit.read") ? {
         key: "settings",
         icon: <SettingOutlined />,
@@ -95,7 +114,10 @@ export function AdminLayout() {
     ].filter(Boolean)
   }, [hasPermission, t])
 
-  const selectedKey = location.pathname === "/" ? "/" : `/${location.pathname.split("/").filter(Boolean).slice(0, 2).join("/")}`
+  const selectedKey = location.pathname === "/" ? "/"
+    : location.pathname.startsWith("/customers/") ? "/customers"
+    : location.pathname.startsWith("/sales/orders/") ? "/sales/orders"
+    : `/${location.pathname.split("/").filter(Boolean).slice(0, 2).join("/")}`
   const initials = `${principal?.user.name?.[0] || ""}${principal?.user.surname?.[0] || ""}`.toUpperCase() || "A"
   const environment = import.meta.env.VITE_ENVIRONMENT || import.meta.env.MODE
   const notificationItems = dashboard ? [
@@ -103,8 +125,9 @@ export function AdminLayout() {
     { key: "reviews", count: dashboard.metrics.pending_reviews, label: locale === "ru" ? "Отзывы на модерации" : "Reviews awaiting moderation", path: "/content/reviews" },
     { key: "integrations", count: dashboard.metrics.integration_errors, label: locale === "ru" ? "Ошибки интеграций" : "Integration errors", path: "/integrations" },
     { key: "stock", count: dashboard.metrics.low_stock_variants, label: locale === "ru" ? "Низкие остатки" : "Low stock", path: "/catalog/products" },
+    ...(hasPermission("tasks.read") ? [{ key: "tasks", count: dashboard.metrics.overdue_tasks, label: locale === "ru" ? "Просроченные задачи" : "Overdue tasks", path: "/tasks?overdue=true" }] : []),
   ].filter((item) => item.count > 0) : []
-  const notificationCount = notificationItems.reduce((total, item) => total + item.count, 0)
+  const notificationCount = notificationItems.reduce((total, item) => total + item.count, 0) + (alerts.data?.unread_count || 0)
   const searchOptions = (searchResults?.items || []).map((item) => ({
     value: item.path,
     label: (
@@ -126,7 +149,7 @@ export function AdminLayout() {
           mode="inline"
           items={items}
           selectedKeys={[selectedKey]}
-          defaultOpenKeys={["sales", "catalog", "content", "settings"]}
+          defaultOpenKeys={["sales", "crm", "catalog", "content", "settings"]}
           onClick={({ key }) => key.startsWith("/") && navigate(key)}
         />
         <div className="sidebar-footer">
@@ -176,6 +199,25 @@ export function AdminLayout() {
         width={420}
         onClose={() => setNotificationCenterOpen(false)}
       >
+        {alerts.data?.items.length ? <>
+          <List
+            dataSource={alerts.data.items}
+            renderItem={(item) => (
+              <List.Item actions={[<Button key="open" type="link" onClick={() => {
+                if (!item.is_read) void apiRequest(`/alerts/${item.id}/read`, { method: "POST" }).then(() => alerts.refetch())
+                if (item.path) navigate(item.path)
+                setNotificationCenterOpen(false)
+              }}>{t("open")}</Button>]}>
+                <List.Item.Meta
+                  avatar={<span className={`alert-dot alert-dot-${item.severity}`} />}
+                  title={<Space>{locale === "ru" ? item.title_ru : item.title_en}{!item.is_read ? <Tag color="blue">New</Tag> : null}</Space>}
+                  description={item.message}
+                />
+              </List.Item>
+            )}
+          />
+          {notificationItems.length ? <Divider /> : null}
+        </> : null}
         {notificationItems.length ? (
           <List
             dataSource={notificationItems}
@@ -185,7 +227,7 @@ export function AdminLayout() {
               </List.Item>
             )}
           />
-        ) : <Empty description={locale === "ru" ? "Нет новых проблем" : "No new issues"} />}
+        ) : !alerts.data?.items.length ? <Empty description={locale === "ru" ? "Нет новых проблем" : "No new issues"} /> : null}
       </Drawer>
     </Layout>
   )

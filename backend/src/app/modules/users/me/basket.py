@@ -4,6 +4,7 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.recommendations import record_cart_add
+from src.app.services.customer_intelligence import record_customer_event_safe
 from src.app.modules.users.me.schemas import UpdateOrderDraftPayload
 from src.app.services.basket import (
     _ensure_basket,
@@ -42,6 +43,15 @@ async def create_my_basket_item(payload: BasketItemCreate, request: Request, db:
 
     await create_basket_item(db, basket_id=basket.id, user_id=current_user.id, product_id=variant.product_id, variant_id=variant.id, quantity=payload.quantity, price=variant.price)
     await record_cart_add( db, user_id=current_user.id, product_id=variant.product_id, quantity=payload.quantity)
+    await record_customer_event_safe(
+        db,
+        user_id=current_user.id,
+        event_name="cart_item_added",
+        entity_type="product",
+        entity_id=variant.product_id,
+        properties={"variant_id": variant.id, "quantity": payload.quantity},
+        commit=True,
+    )
     return await _get_serialized_basket(request, db, current_user.id)
 
 
@@ -57,7 +67,27 @@ async def update_my_basket_item(item_id: int, payload: BasketItemUpdate, request
 
     quantity_delta = payload.quantity - basket_item.quantity
     await update_basket_item(db, basket_item, basket_id=basket.id, user_id=current_user.id, product_id=variant.product_id, quantity=payload.quantity, price=variant.price)
-    if quantity_delta > 0: await record_cart_add(db, user_id=current_user.id, product_id=variant.product_id, quantity=quantity_delta)
+    if quantity_delta > 0:
+        await record_cart_add(db, user_id=current_user.id, product_id=variant.product_id, quantity=quantity_delta)
+        await record_customer_event_safe(
+            db,
+            user_id=current_user.id,
+            event_name="cart_item_added",
+            entity_type="product",
+            entity_id=variant.product_id,
+            properties={"variant_id": variant.id, "quantity": quantity_delta},
+            commit=True,
+        )
+    elif quantity_delta < 0:
+        await record_customer_event_safe(
+            db,
+            user_id=current_user.id,
+            event_name="cart_item_removed",
+            entity_type="product",
+            entity_id=variant.product_id,
+            properties={"variant_id": variant.id, "quantity": abs(quantity_delta)},
+            commit=True,
+        )
     return await _get_serialized_basket(request, db, current_user.id)
 
 
@@ -66,14 +96,35 @@ async def delete_my_basket_item(item_id: int, request: Request, db: AsyncSession
     basket = await _ensure_basket(db, current_user.id)
     basket_item = await get_basket_item_by_id(db, item_id, basket_id=basket.id, user_id=current_user.id)
     if basket_item is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Basket item not found")
+    product_id = basket_item.product_id
+    variant_id = basket_item.variant_id
+    quantity = basket_item.quantity
     await delete_basket_item(db, basket_item)
+    await record_customer_event_safe(
+        db,
+        user_id=current_user.id,
+        event_name="cart_item_removed",
+        entity_type="product",
+        entity_id=product_id,
+        properties={"variant_id": variant_id, "quantity": quantity},
+        commit=True,
+    )
     return await _get_serialized_basket(request, db, current_user.id)
 
 
 @my_basket_router.delete("/items", response_model=BasketRead)
 async def clear_my_basket(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead:
     basket = await _ensure_basket(db, current_user.id)
+    removed_quantity = sum(item.quantity for item in basket.items)
     await clear_basket(db, basket.id)
+    if removed_quantity:
+        await record_customer_event_safe(
+            db,
+            user_id=current_user.id,
+            event_name="cart_item_removed",
+            properties={"quantity": removed_quantity, "scope": "basket"},
+            commit=True,
+        )
     return await _get_serialized_basket(request, db, current_user.id)
 
 

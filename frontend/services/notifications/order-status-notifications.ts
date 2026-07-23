@@ -8,6 +8,7 @@ import { deleteMyPushToken, registerMyPushToken } from "@/services/api/users"
 
 const DEFAULT_ANDROID_CHANNEL_ID = "default"
 const COMMUNITY_ANDROID_CHANNEL_ID = "community_messages"
+const SUPPORT_ANDROID_CHANNEL_ID = "support_messages"
 
 let notificationsConfigured = false
 let registeredExpoPushToken: string | null = null
@@ -17,7 +18,7 @@ let syncRequest: Promise<string | null> | null = null
 let syncRequestAllowsPermissionPrompt = false
 
 type PushNotificationData = Record<string, unknown>
-type PushNotificationNavigate = (target: Href) => void
+type PushNotificationNavigate = (target: Href, data: PushNotificationData) => void
 type OrderStatusNotificationSyncOptions = {
     requestPermissions?: boolean
 }
@@ -78,6 +79,13 @@ async function ensureAndroidChannel() {
     })
     await Notifications.setNotificationChannelAsync(COMMUNITY_ANDROID_CHANNEL_ID, {
         name: "Community messages",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#2383E2",
+        sound: "default",
+    })
+    await Notifications.setNotificationChannelAsync(SUPPORT_ANDROID_CHANNEL_ID, {
+        name: "Support messages",
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#2383E2",
@@ -251,8 +259,25 @@ function resolvePushTarget(data: PushNotificationData): Href | null {
             return ROUTES.discover
         case "abandoned_cart":
             return ROUTES.basket
+        case "admin_campaign": {
+            const deepLink = asString(data.deep_link)?.trim()
+            if (!deepLink || !deepLink.startsWith("/") || deepLink.startsWith("//")) {
+                return ROUTES.discover
+            }
+            return deepLink as Href
+        }
         case "ai_reply":
             return ROUTES.chat
+        case "support_reply": {
+            const conversationId = asPositiveInt(data.conversation_id)
+            return {
+                pathname: ROUTES.chat,
+                params: {
+                    mode: "support",
+                    ...(conversationId ? { conversationId: String(conversationId) } : {}),
+                },
+            }
+        }
         case "community_message": {
             const topicId = asPositiveInt(data.topic_id)
             if (!topicId) return ROUTES.chat
@@ -304,7 +329,7 @@ export function attachPushOpenListener(navigate: PushNotificationNavigate) {
             return
         }
 
-        navigate(target)
+        navigate(target, data)
     }
 
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(handleResponse)

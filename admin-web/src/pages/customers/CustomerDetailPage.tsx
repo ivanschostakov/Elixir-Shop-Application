@@ -1,6 +1,6 @@
-import { ArrowLeftOutlined, LockOutlined, MessageOutlined, UnlockOutlined } from "@ant-design/icons"
+import { ArrowLeftOutlined, CheckSquareOutlined, LockOutlined, MessageOutlined, UnlockOutlined } from "@ant-design/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Avatar, Button, Card, Col, Descriptions, Form, Input, List, Modal, Row, Space, Statistic, Tag, Typography, message } from "antd"
+import { Avatar, Button, Card, Col, Descriptions, Form, Input, List, Modal, Row, Space, Statistic, Tag, Timeline, Typography, message } from "antd"
 import { useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { apiRequest } from "../../api/client"
@@ -32,15 +32,15 @@ export function CustomerDetailPage() {
   })
   const customer = query.data
   const copy = locale === "ru"
-    ? { description: "Карточка клиента 360°", back: "К списку", block: "Заблокировать", unblock: "Разблокировать", note: "Добавить заметку", revenue: "Выручка", orders: "Заказы", basket: "Корзина", views: "Просмотры", profile: "Профиль", activity: "Активность и интересы", referrals: "Реферальная программа", notes: "Внутренние заметки", noNotes: "Заметок пока нет", noteTitle: "Новая заметка", notePlaceholder: "Контекст для коллег…", save: "Сохранить" }
-    : { description: "360° customer profile", back: "Back", block: "Block", unblock: "Unblock", note: "Add note", revenue: "Revenue", orders: "Orders", basket: "Basket", views: "Views", profile: "Profile", activity: "Activity & interests", referrals: "Referral program", notes: "Internal notes", noNotes: "No notes yet", noteTitle: "New note", notePlaceholder: "Context for your team…", save: "Save" }
+    ? { description: "Карточка клиента 360°", back: "К списку", block: "Заблокировать", unblock: "Разблокировать", note: "Добавить заметку", task: "Поставить задачу", revenue: "Выручка", orders: "Заказы", basket: "Корзина", views: "Просмотры", profile: "Профиль", activity: "Активность и интересы", intelligence: "Customer Intelligence", timeline: "Лента событий", devices: "Устройства", attribution: "Атрибуция и согласия", referrals: "Реферальная программа", notes: "Внутренние заметки", noNotes: "Заметок пока нет", noEvents: "Событий пока нет", noteTitle: "Новая заметка", notePlaceholder: "Контекст для коллег…", save: "Сохранить" }
+    : { description: "360° customer profile", back: "Back", block: "Block", unblock: "Unblock", note: "Add note", task: "Create task", revenue: "Revenue", orders: "Orders", basket: "Basket", views: "Views", profile: "Profile", activity: "Activity & interests", intelligence: "Customer Intelligence", timeline: "Event timeline", devices: "Devices", attribution: "Attribution & consent", referrals: "Referral program", notes: "Internal notes", noNotes: "No notes yet", noEvents: "No events yet", noteTitle: "New note", notePlaceholder: "Context for your team…", save: "Save" }
 
   return (
     <div className="page-stack">
       <PageHeader
         title={customer ? `${customer.name} ${customer.surname}` : locale === "ru" ? "Клиент" : "Customer"}
         description={copy.description}
-        actions={<Space><Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/customers")}>{copy.back}</Button>{customer && hasPermission("customers.manage") ? <Button danger={customer.is_active} icon={customer.is_active ? <LockOutlined /> : <UnlockOutlined />} loading={statusMutation.isPending} onClick={() => statusMutation.mutate(customer)}>{customer.is_active ? copy.block : copy.unblock}</Button> : null}</Space>}
+        actions={<Space><Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/customers")}>{copy.back}</Button>{customer && hasPermission("tasks.manage") ? <Button icon={<CheckSquareOutlined />} onClick={() => navigate(`/tasks?customer_id=${customer.id}&new=1`)}>{copy.task}</Button> : null}{customer && hasPermission("customers.manage") ? <Button danger={customer.is_active} icon={customer.is_active ? <LockOutlined /> : <UnlockOutlined />} loading={statusMutation.isPending} onClick={() => statusMutation.mutate(customer)}>{customer.is_active ? copy.block : copy.unblock}</Button> : null}</Space>}
       />
       <QueryState loading={query.isLoading} error={query.isError} onRetry={() => void query.refetch()} />
       {customer ? (
@@ -67,9 +67,55 @@ export function CustomerDetailPage() {
               <Card title={copy.activity}>
                 <Row gutter={[16, 16]}><Col span={8}><Statistic title={locale === "ru" ? "Избранное" : "Favorites"} value={customer.favourites_count} /></Col><Col span={8}><Statistic title={locale === "ru" ? "В корзинах" : "Cart quantity"} value={customer.total_cart_quantity} /></Col><Col span={8}><Statistic title="Push tokens" value={customer.push_tokens_count} /></Col></Row>
               </Card>
+              <Card title={copy.intelligence}>
+                {customer.marketing_profile ? <>
+                  <Space wrap style={{ marginBottom: 16 }}>
+                    <Tag color="blue">{customer.marketing_profile.lifecycle_stage}</Tag>
+                    <Tag>{customer.marketing_profile.last_platform || "—"} · {customer.marketing_profile.last_app_version || "—"}</Tag>
+                    <Tag color={customer.marketing_profile.push_permission === "granted" ? "green" : "default"}>push: {customer.marketing_profile.push_permission}</Tag>
+                  </Space>
+                  <Row gutter={[16, 16]}>
+                    <Col xs={12} md={6}><Statistic title={locale === "ru" ? "Сессии" : "Sessions"} value={customer.marketing_profile.sessions_count} /></Col>
+                    <Col xs={12} md={6}><Statistic title={locale === "ru" ? "События" : "Events"} value={customer.marketing_profile.total_events} /></Col>
+                    <Col xs={12} md={6}><Statistic title="Lead score" value={customer.marketing_profile.lead_score} suffix="/100" /></Col>
+                    <Col xs={12} md={6}><Statistic title={locale === "ru" ? "Поиски" : "Searches"} value={customer.marketing_profile.searches_count} /></Col>
+                  </Row>
+                </> : <Typography.Text type="secondary">{copy.noEvents}</Typography.Text>}
+              </Card>
+              <Card title={copy.devices}>
+                <List
+                  locale={{ emptyText: copy.noEvents }}
+                  dataSource={customer.devices}
+                  renderItem={(device) => <List.Item>
+                    <List.Item.Meta
+                      title={<Space><strong>{device.device_model || device.platform}</strong><Tag>{device.platform}</Tag><Tag color={device.push_permission === "granted" ? "green" : "default"}>{device.push_permission}</Tag></Space>}
+                      description={`${device.app_version || "—"} (${device.app_build || "—"}) · ${device.os_version || "—"} · ${dateTime(device.last_seen_at, locale)}`}
+                    />
+                    <Typography.Text type="secondary">{device.sessions_count} sessions</Typography.Text>
+                  </List.Item>}
+                />
+              </Card>
               <Card title={copy.referrals}><Descriptions><Descriptions.Item label="Promo">{customer.promo_code || "—"}</Descriptions.Item><Descriptions.Item label={locale === "ru" ? "База скидки" : "Discount base"}>{money(customer.referral_discount_base_total, "RUB", locale)}</Descriptions.Item><Descriptions.Item label={locale === "ru" ? "Текущая скидка" : "Current discount"}>{customer.referral_discount_percent}%</Descriptions.Item></Descriptions></Card>
             </Col>
             <Col xs={24} xl={10}>
+              <Card title={copy.timeline}>
+                {customer.recent_events.length ? <Timeline items={customer.recent_events.slice(0, 20).map((event) => ({
+                  color: ["order_created", "order_paid"].includes(event.event_name) ? "green" : event.event_name === "checkout_failed" ? "red" : "blue",
+                  children: <div>
+                    <Space wrap><strong>{event.event_name}</strong><Tag>{event.source}</Tag>{event.entity_type ? <Typography.Text type="secondary">{event.entity_type} #{event.entity_id}</Typography.Text> : null}</Space>
+                    <div><Typography.Text type="secondary">{dateTime(event.occurred_at, locale)}</Typography.Text></div>
+                    {Object.keys(event.properties).length ? <Typography.Text code>{JSON.stringify(event.properties)}</Typography.Text> : null}
+                  </div>,
+                }))} /> : <Typography.Text type="secondary">{copy.noEvents}</Typography.Text>}
+              </Card>
+              <Card title={copy.attribution}>
+                <Descriptions column={1} size="small">
+                  <Descriptions.Item label="First touch">{customer.attribution ? [customer.attribution.first_source, customer.attribution.first_medium, customer.attribution.first_campaign].filter(Boolean).join(" / ") || "—" : "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Last touch">{customer.attribution ? [customer.attribution.last_source, customer.attribution.last_medium, customer.attribution.last_campaign].filter(Boolean).join(" / ") || "—" : "—"}</Descriptions.Item>
+                  <Descriptions.Item label="Install source">{customer.attribution?.install_source || "—"}</Descriptions.Item>
+                </Descriptions>
+                <Space wrap>{customer.consents.map((consent) => <Tag key={consent.id} color={consent.is_granted ? "green" : "red"}>{consent.purpose}:{consent.channel}</Tag>)}</Space>
+              </Card>
               <Card title={copy.notes} extra={hasPermission("customers.notes") ? <Button size="small" icon={<MessageOutlined />} onClick={() => setNoteOpen(true)}>{copy.note}</Button> : null}>
                 <List locale={{ emptyText: copy.noNotes }} dataSource={customer.notes} renderItem={(note) => <List.Item><List.Item.Meta title={<Space><strong>{note.author_name}</strong><Typography.Text type="secondary">{dateTime(note.created_at, locale)}</Typography.Text></Space>} description={<Typography.Paragraph>{note.body}</Typography.Paragraph>} /></List.Item>} />
               </Card>

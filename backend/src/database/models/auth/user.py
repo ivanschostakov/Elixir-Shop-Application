@@ -75,3 +75,24 @@ class User(Base, IdPkMixin, TimestampMixin):
         uselist=False,
     )
     ai_messages: Mapped[list["AIMessage"]] = relationship(back_populates="user", passive_deletes=True)
+    devices: Mapped[list["UserDevice"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    events: Mapped[list["UserEvent"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    marketing_profile: Mapped["CustomerMarketingProfile | None"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    consents: Mapped[list["CustomerConsent"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
+    attribution: Mapped["CustomerAttribution | None"] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        uselist=False,
+    )
+    support_conversations: Mapped[list["CrmConversation"]] = relationship(
+        back_populates="customer",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+    crm_leads: Mapped[list["CrmLead"]] = relationship(back_populates="customer")

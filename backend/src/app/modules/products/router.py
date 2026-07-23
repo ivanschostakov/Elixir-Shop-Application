@@ -8,6 +8,7 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_admin_user, get_optional_current_user
 from src.app.services.cache import build_cache_key, get_cache_service
+from src.app.services.content_moderation import analyze_review_submission
 from src.app.services.rate_limit import enforce_rate_limit
 from src.app.services.review_attachments import (
     build_review_attachment_filename,
@@ -148,7 +149,17 @@ async def products_create_review(request: Request, product_id: int, value: int =
     total_size_bytes = 0
 
     try:
+        moderation_analysis = await analyze_review_submission(
+            db,
+            request=request,
+            product_id=product_id,
+            user_id=current_user.id if current_user else None,
+            guest_email=str(data.guest_email) if data.guest_email else None,
+            text=data.text,
+        )
         review = await create_product_review(db, user_id=current_user.id if current_user else None, product_id=product_id, data=data, commit=False)
+        for field, value in moderation_analysis.items():
+            setattr(review, field, value)
         for attachment in uploaded_attachments:
             content = await attachment.read()
             mime_type = validate_review_attachment(content, mime_type=attachment.content_type)

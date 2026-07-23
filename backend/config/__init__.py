@@ -3,6 +3,8 @@ from .admin import *  # noqa: F403
 from .app import *  # noqa: F403
 from .app_integrity import *  # noqa: F403
 from .database import *  # noqa: F403
+from .customer_intelligence import *  # noqa: F403
+from .support import *  # noqa: F403
 from .email import *  # noqa: F403
 from .env import _bool_env, _csv_env, _env, _float_env, _int_env, _required_env
 from .integrations import *  # noqa: F403

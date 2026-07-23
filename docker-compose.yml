@@ -137,9 +137,38 @@ services:
       - /bin/sh
       - -lc
       - |
+        mkdir -p /app/backend/media /app/backend/private_media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/private_media /app/backend/logs \
+        && exec su -s /bin/sh app -c "python -m src.workers.admin_jobs"
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/private_media:/app/backend/private_media
+      - ./backend/logs:/app/backend/logs
+
+  worker-admin-automation:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shop-worker-admin-automation
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      POSTGRES_HOST: 172.18.0.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      redis:
+        condition: service_healthy
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -lc
+      - |
         mkdir -p /app/backend/media /app/backend/logs \
         && chown -R 10001:10001 /app/backend/media /app/backend/logs \
-        && exec su -s /bin/sh app -c "python -m src.workers.admin_jobs"
+        && exec su -s /bin/sh app -c "python -m src.workers.admin_automation"
     volumes:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs

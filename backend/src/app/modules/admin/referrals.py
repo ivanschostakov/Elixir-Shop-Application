@@ -5,9 +5,11 @@ from starlette import status
 from src.app.services.admin import AdminContext, require_permission
 from src.app.modules.admin.schemas.referrals import (
     AdminReferralProfileRead,
+    AdminReferralSummaryRead,
 )
 from src.app.services.admin.referrals import (
     list_profiles,
+    referral_summary,
 )
 from src.database import get_db
 
@@ -18,3 +20,8 @@ admin_referrals_router = APIRouter(prefix="/referrals", tags=["admin_referrals"]
 async def list_referral_profiles(limit: int = Query(default=100, ge=1, le=1000), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db), _: AdminContext = Depends(require_permission("referrals.read"))) -> list[AdminReferralProfileRead]:
     rows = await list_profiles(db, limit=limit, offset=offset)
     return [AdminReferralProfileRead.model_validate(row) for row in rows]
+
+
+@admin_referrals_router.get("/summary", response_model=AdminReferralSummaryRead, status_code=status.HTTP_200_OK)
+async def get_referral_summary(db: AsyncSession = Depends(get_db), _: AdminContext = Depends(require_permission("referrals.read"))) -> AdminReferralSummaryRead:
+    return AdminReferralSummaryRead.model_validate(await referral_summary(db))

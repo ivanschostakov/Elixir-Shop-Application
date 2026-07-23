@@ -24,7 +24,6 @@ if "PIL" not in sys.modules:
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
 from src.database.models import User
-from src.integrations.bitrix_promo import BitrixPromo
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
@@ -116,14 +115,7 @@ def test_benefit_check_applies_referral_discount_to_discountable_subtotal_only(c
     assert _decimal(payload["total_after_discounts"]) == Decimal("197.00")
 
 
-def test_benefit_check_resolves_entered_code_through_bitrix_php(client: TestClient, registered_user, monkeypatch: pytest.MonkeyPatch):
-    async def fake_get_promo(code: str):
-        assert code == "Огонь26"
-        return BitrixPromo(code="Огонь26", discount_percent=Decimal("7"))
-
-    monkeypatch.setattr("src.app.services.benefits.service.bitrix_promo_client.is_configured", lambda: True)
-    monkeypatch.setattr("src.app.services.benefits.service.bitrix_promo_client.get_promo", fake_get_promo)
-
+def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(client: TestClient, registered_user):
     response = client.post(
         "/api/v1/users/me/benefits/check",
         headers=registered_user["headers"],
@@ -132,9 +124,8 @@ def test_benefit_check_resolves_entered_code_through_bitrix_php(client: TestClie
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["unresolved_code_reason"] is None
-    assert len(payload["entered_code_matches"]) == 1
-    assert payload["entered_code_matches"][0]["source_kind"] == "bitrix_promo"
-    assert _decimal(payload["entered_code_matches"][0]["discount_percent"]) == Decimal("7.00")
-    assert _decimal(payload["stacked_discount_amount"]) == Decimal("7.00")
-    assert _decimal(payload["total_after_discounts"]) == Decimal("193.00")
+    assert payload["entered_code"] == "Огонь26"
+    assert payload["entered_code_matches"] == []
+    assert payload["unresolved_code_reason"] == "Promo code was not found or is not active"
+    assert _decimal(payload["stacked_discount_amount"]) == Decimal("0.00")
+    assert _decimal(payload["total_after_discounts"]) == Decimal("200.00")

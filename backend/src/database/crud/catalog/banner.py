@@ -1,8 +1,9 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Banner
 from src.database.schemas import BannerCreate, BannerUpdate
+from config import ufa_now
 
 
 async def create_banner(session: AsyncSession, data: BannerCreate) -> Banner:
@@ -23,7 +24,13 @@ async def get_banner_by_id(session: AsyncSession, banner_id: int, *, include_arc
 async def get_banners(session: AsyncSession, *, offset: int = 0, limit: int = 100, sort: str | None = None, include_archived: bool = False) -> list[Banner]:
     stmt = select(Banner)
     if not include_archived:
-        stmt = stmt.where(Banner.archived.is_(False))
+        now = ufa_now()
+        stmt = stmt.where(
+            Banner.archived.is_(False),
+            Banner.status == "published",
+            or_(Banner.starts_at.is_(None), Banner.starts_at <= now),
+            or_(Banner.ends_at.is_(None), Banner.ends_at >= now),
+        )
 
     sort_map = {
         "newest": (Banner.created_at.desc(), Banner.id.desc()),

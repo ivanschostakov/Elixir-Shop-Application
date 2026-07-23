@@ -94,6 +94,11 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
     return await _order_payments.get_payment_status_for_order(session, request=request, order=order)
 
 
+async def recheck_payment_status_for_admin(session: AsyncSession, *, order: Order) -> dict:
+    _sync_runtime_dependencies()
+    return await _order_payments.recheck_payment_status_for_admin(session, order=order)
+
+
 async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, status_id: int) -> Order:
     _sync_runtime_dependencies()
     return await _order_crm.apply_amocrm_status_update(session, order=order, status_id=status_id)
@@ -105,6 +110,7 @@ __all__ = [
     "PENDING_PAYMENT_STEPS",
     "apply_amocrm_status_update",
     "create_delivery_for_order",
+    "recheck_payment_status_for_admin",
     "create_order_from_basket_for_user",
     "create_order_from_draft_for_user",
     "create_payment_for_order",

@@ -45,6 +45,7 @@ import {
     setRefreshHandler,
     subscribeAuthSession,
 } from "@/services/auth/session"
+import { syncCustomerIntelligenceSession } from "@/services/customer-intelligence"
 
 function normalizeAuthErrorMessage(rawMessage: string, fallbackMessage: string) {
     const normalizedMessage = rawMessage.trim()
@@ -110,6 +111,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         void syncOrderStatusNotifications()
+        void syncCustomerIntelligenceSession({ trigger: "authenticated" }).catch(() => undefined)
     }, [user])
 
     useEffect(() => {
@@ -136,6 +138,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
             if (nextAppState === "active") {
                 setOrderStatusNotificationCurrentPath(pathname)
+                void syncCustomerIntelligenceSession({ current_path: pathname }).catch(() => undefined)
             } else {
                 setOrderStatusNotificationCurrentPath(null)
             }

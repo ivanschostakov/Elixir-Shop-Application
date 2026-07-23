@@ -44,6 +44,7 @@ import { useAiChat, type ChatDisplayMessage } from "@/hooks/chat/use-ai-chat"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
+import { trackCustomerEvent } from "@/services/customer-intelligence"
 import type {
     AIInteractiveAction,
     AIInteractiveVariant,
@@ -55,6 +56,7 @@ import { spacing } from "@/theme/spacing"
 import { createChatScreenStyles } from "./chat-screen.styles"
 import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switcher"
 import { CommunityChatScreen } from "@/screens/chat/community-chat-screen"
+import { SupportChatScreen } from "@/screens/chat/support-chat-screen"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import {
     AttachmentSheet,
@@ -100,7 +102,7 @@ async function readStoredChatMode(): Promise<ChatMode | null> {
         const value = Platform.OS === "web"
             ? (typeof window !== "undefined" ? window.localStorage?.getItem(CHAT_MODE_STORAGE_KEY) : null)
             : await SecureStore.getItemAsync(CHAT_MODE_STORAGE_KEY)
-        return value === "ai" || value === "community" ? value : null
+        return value === "ai" || value === "community" || value === "support" ? value : null
     } catch {
         return null
     }
@@ -121,7 +123,7 @@ async function persistChatMode(mode: ChatMode) {
 export default function ChatScreen() {
     const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const router = useRouter()
-    const routeParams = useLocalSearchParams<{ mode?: string | string[]; topicId?: string | string[] }>()
+    const routeParams = useLocalSearchParams<{ mode?: string | string[]; topicId?: string | string[]; conversationId?: string | string[] }>()
     const { t } = useLanguage()
     const { isDark, palette, themeName } = useTheme()
     const { width: screenWidth } = useWindowDimensions()
@@ -140,15 +142,22 @@ export default function ChatScreen() {
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const [chatMode, setChatMode] = useState<ChatMode>("ai")
-    const [communityEnabled, setCommunityEnabled] = useState(false)
     const [communityUnread, setCommunityUnread] = useState(0)
+    const [supportUnread, setSupportUnread] = useState(0)
     const requestedMode = Array.isArray(routeParams.mode) ? routeParams.mode[0] : routeParams.mode
     const requestedTopicValue = Array.isArray(routeParams.topicId) ? routeParams.topicId[0] : routeParams.topicId
+    const requestedConversationValue = Array.isArray(routeParams.conversationId) ? routeParams.conversationId[0] : routeParams.conversationId
     const parsedRequestedTopicId = Number(requestedTopicValue)
     const requestedTopicId = Number.isInteger(parsedRequestedTopicId) && parsedRequestedTopicId > 0
         ? parsedRequestedTopicId
         : null
+    const parsedRequestedConversationId = Number(requestedConversationValue)
+    const requestedConversationId = Number.isInteger(parsedRequestedConversationId) && parsedRequestedConversationId > 0
+        ? parsedRequestedConversationId
+        : null
     const communityRequestedByRoute = requestedMode === "community" || requestedTopicId !== null
+    const supportRequestedByRoute = requestedMode === "support" || requestedConversationId !== null
+    const chatModeRequestedByRoute = communityRequestedByRoute || supportRequestedByRoute
     const scrollRef = useRef<ScrollView | null>(null)
     const shouldAutoScrollRef = useRef(true)
     const cameraPermissionPromptedRef = useRef(false)
@@ -173,16 +182,22 @@ export default function ChatScreen() {
     useEffect(() => {
         let mounted = true
         void readStoredChatMode().then((storedMode) => {
-            if (mounted && storedMode && !communityRequestedByRoute) setChatMode(storedMode)
+            if (mounted && storedMode && !chatModeRequestedByRoute) setChatMode(storedMode)
         })
         return () => { mounted = false }
-    }, [communityRequestedByRoute])
+    }, [chatModeRequestedByRoute])
 
     useEffect(() => {
         if (!communityRequestedByRoute) return
         setChatMode("community")
         void persistChatMode("community")
     }, [communityRequestedByRoute, requestedTopicId])
+
+    useEffect(() => {
+        if (!supportRequestedByRoute) return
+        setChatMode("support")
+        void persistChatMode("support")
+    }, [requestedConversationId, supportRequestedByRoute])
 
     const handleChatModeChange = useCallback((nextMode: ChatMode) => {
         Keyboard.dismiss()
@@ -195,7 +210,6 @@ export default function ChatScreen() {
     }, [])
 
     const handleCommunityEnabledChange = useCallback((enabled: boolean) => {
-        setCommunityEnabled(enabled)
         if (!enabled) {
             setChatMode((current) => current === "community" ? "ai" : current)
         }
@@ -562,11 +576,21 @@ export default function ChatScreen() {
         }
 
         if (action.type === "open_product" && action.product_id) {
+            void trackCustomerEvent("ai_action_clicked", {
+                entityType: "ai_message",
+                entityId: message.id,
+                properties: { action_id: action.id, action_type: action.type, product_id: action.product_id },
+            }).catch(() => undefined)
             router.push(getProductRoute(action.product_id))
             return
         }
 
         if (action.type === "open_checkout") {
+            void trackCustomerEvent("ai_action_clicked", {
+                entityType: "ai_message",
+                entityId: message.id,
+                properties: { action_id: action.id, action_type: action.type },
+            }).catch(() => undefined)
             router.push(ROUTES.checkout)
             return
         }
@@ -578,7 +602,17 @@ export default function ChatScreen() {
             }
 
             try {
+                void trackCustomerEvent("ai_action_clicked", {
+                    entityType: "ai_message",
+                    entityId: message.id,
+                    properties: { action_id: action.id, action_type: action.type },
+                }).catch(() => undefined)
                 await sendMessage(prompt)
+                void trackCustomerEvent("ai_action_completed", {
+                    entityType: "ai_message",
+                    entityId: message.id,
+                    properties: { action_id: action.id, action_type: action.type },
+                }).catch(() => undefined)
             } catch (sendError) {
                 Alert.alert(
                     t("chat.sendFailedTitle"),
@@ -726,7 +760,7 @@ export default function ChatScreen() {
                             />
                         </Svg>
                     </Pressable>
-                    {communityEnabled ? <ChatModeSwitcher mode={chatMode} onChange={handleChatModeChange} unreadCount={communityUnread} /> : null}
+                    <ChatModeSwitcher mode={chatMode} onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />
                 </View>
 
                 {loading && !chat && chatMode === "ai" ? (
@@ -866,6 +900,11 @@ export default function ChatScreen() {
                                                             }}
                                                             onBasketItemQuantityChange={handleBasketItemQuantityChange}
                                                             onOpenProduct={(productId) => {
+                                                                void trackCustomerEvent("ai_action_clicked", {
+                                                                    entityType: "ai_message",
+                                                                    entityId: message.id,
+                                                                    properties: { action_type: "open_product_card", product_id: productId },
+                                                                }).catch(() => undefined)
                                                                 router.push(getProductRoute(productId))
                                                             }}
                                                             payload={message.interactive}
@@ -991,7 +1030,17 @@ export default function ChatScreen() {
                 onModeChange={handleChatModeChange}
                 onUnreadChange={handleCommunityUnreadChange}
                 requestedTopicId={requestedTopicId}
+                supportUnreadCount={supportUnread}
                 unreadCount={communityUnread}
+            />
+            <SupportChatScreen
+                active={chatMode === "support"}
+                communityUnreadCount={communityUnread}
+                mode={chatMode}
+                onModeChange={handleChatModeChange}
+                onUnreadChange={setSupportUnread}
+                requestedConversationId={requestedConversationId}
+                supportUnreadCount={supportUnread}
             />
         </View>
     )

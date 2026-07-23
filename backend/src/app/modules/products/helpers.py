@@ -111,7 +111,7 @@ def serialize_review(request: Request, review: Review) -> ReviewRead:
         image_url=build_review_attachment_url(request, review_attachment_path(attachment.review_id, attachment.filename)),
         created_at=attachment.created_at,
         updated_at=attachment.updated_at,
-    ) for attachment in review.attachments]
+    ) for attachment in review.attachments if getattr(attachment, "moderation_status", "approved") == "approved"]
     author_label = PLACEHOLDER_SITE_REVIEW_AUTHOR
     if review.user is not None:
         author_label = (review.user.name or review.user.phone_number or review.user.email or PLACEHOLDER_SITE_REVIEW_AUTHOR).strip()

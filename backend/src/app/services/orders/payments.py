@@ -1,5 +1,6 @@
 import logging
 import socket
+import uuid
 
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
@@ -11,6 +12,7 @@ from starlette import status
 
 from config import APP_PAYMENT_RETURN_BASE_URL, INTELLECTMONEY_IP_ADDRESS
 from src.app.services.external_errors import external_service_http_exception
+from src.app.services.customer_intelligence import record_customer_event_safe
 from src.database.crud import update_order
 from src.database.models import Order
 from src.database.schemas import OrderUpdate
@@ -151,6 +153,24 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
         if error_text: patch["payment_error"] = error_text
 
     updated_order = await update_order(session, order, OrderUpdate(**patch), commit=True)
+    if updated_order.payment_status == "paid" or updated_order.is_paid:
+        await record_customer_event_safe(
+            session,
+            user_id=updated_order.user_id,
+            event_name="order_paid",
+            event_id=uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"elixir-shop:user:{updated_order.user_id}:order:{updated_order.id}:paid",
+            ),
+            entity_type="order",
+            entity_id=updated_order.id,
+            properties={
+                "order_code": updated_order.order_code,
+                "payment_method": updated_order.payment_method,
+            },
+            source="webhook",
+            commit=True,
+        )
     if updated_order.payment_status == "paid" or updated_order.is_paid:
         await sync_moysklad_customerorder_state(updated_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
         await sync_moysklad_invoiceout_state(updated_order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID)
@@ -347,3 +367,48 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
     order = await _ensure_persisted_paid_state(session, order)
     saved_qr_image = await _resolve_payment_qr_image(request, order, qr_image=None, qr_url=None)
     return _payment_status_payload(order, qr_image=saved_qr_image)
+
+
+async def recheck_payment_status_for_admin(session: AsyncSession, *, order: Order) -> dict[str, Any]:
+    """Reconcile an order from the payment provider without allowing a manual result override."""
+    if order.is_paid or order.payment_status == "paid":
+        return {
+            "order_id": order.id,
+            "invoice_id": order.payment_invoice_id,
+            "payment_status": "paid",
+            "already_final": True,
+        }
+    if (order.payment_method or "").strip().lower() != "sbp":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Only SBP payments can be checked automatically")
+    if not order.payment_invoice_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order has no payment invoice")
+
+    state_result = await intellectmoney.get_bank_card_payment_state(invoice_id=str(order.payment_invoice_id))
+    parsed_state = intellectmoney.parse_payment_state(state_result)
+    payment_step = parsed_state["payment_step"]
+    result_payload = state_result.get("Result") or {}
+    payment_status_raw = result_payload.get("PaymentStatus") if isinstance(result_payload, dict) else None
+    try:
+        payment_status_code = int(payment_status_raw) if payment_status_raw not in (None, "") else None
+    except (TypeError, ValueError):
+        payment_status_code = None
+    if not payment_step and payment_status_code is None:
+        raise RuntimeError("Payment provider response did not contain a status")
+
+    previous_status = order.payment_status
+    updated_order = await reconcile_sbp_payment(
+        session,
+        order,
+        payment_step=payment_step,
+        payment_status_code=payment_status_code,
+        invoice_id=str(order.payment_invoice_id),
+    )
+    return {
+        "order_id": order.id,
+        "invoice_id": order.payment_invoice_id,
+        "provider_status_code": payment_status_code,
+        "provider_step": payment_step,
+        "previous_payment_status": previous_status,
+        "payment_status": updated_order.payment_status,
+        "is_paid": bool(updated_order.is_paid),
+    }

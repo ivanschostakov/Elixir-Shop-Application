@@ -12,8 +12,13 @@ from src.app.modules.admin.schemas import (
     AdminNoteCreate,
     AdminNoteRead,
     AdminPage,
+    CustomerAttributionRead,
+    CustomerConsentRead,
     CustomerDetail,
+    CustomerDeviceRead,
+    CustomerEventRead,
     CustomerListItem,
+    CustomerMarketingProfileRead,
     CustomerStatusPayload,
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
@@ -23,10 +28,15 @@ from src.database.models import (
     AdminNote,
     Basket,
     BasketItem,
+    CustomerAttribution,
+    CustomerConsent,
+    CustomerMarketingProfile,
     FavouredProduct,
     Order,
     ReferralProfile,
     User,
+    UserDevice,
+    UserEvent,
     UserProductRecommendationSignal,
     UserPushToken,
     UserSession,
@@ -60,6 +70,23 @@ def _customer_item(user: User, orders_count, paid_total, last_order_at) -> Custo
         last_active_at=user.last_active_at,
         created_at=user.created_at,
         updated_at=user.updated_at,
+    )
+
+
+def _event_read(event: UserEvent) -> CustomerEventRead:
+    return CustomerEventRead(
+        id=event.id,
+        event_id=str(event.event_id),
+        event_name=event.event_name,
+        source=event.source,
+        session_id=event.session_id,
+        device_id=event.device_id,
+        entity_type=event.entity_type,
+        entity_id=event.entity_id,
+        occurred_at=event.occurred_at,
+        received_at=event.received_at,
+        properties=event.properties_json or {},
+        attribution=event.attribution_json or {},
     )
 
 
@@ -128,6 +155,24 @@ async def _customer_detail(db: AsyncSession, customer_id: int) -> CustomerDetail
     notes = list((await db.execute(select(AdminNote).options(
         selectinload(AdminNote.author).joinedload(Admin.user),
     ).where(AdminNote.customer_user_id == customer_id).order_by(AdminNote.created_at.desc()))).scalars().all())
+    profile = await db.get(CustomerMarketingProfile, customer_id)
+    devices = list((await db.execute(
+        select(UserDevice)
+        .where(UserDevice.user_id == customer_id)
+        .order_by(UserDevice.last_seen_at.desc(), UserDevice.id.desc())
+    )).scalars().all())
+    events = list((await db.execute(
+        select(UserEvent)
+        .where(UserEvent.user_id == customer_id)
+        .order_by(UserEvent.occurred_at.desc(), UserEvent.id.desc())
+        .limit(50)
+    )).scalars().all())
+    consents = list((await db.execute(
+        select(CustomerConsent)
+        .where(CustomerConsent.user_id == customer_id)
+        .order_by(CustomerConsent.last_changed_at.desc(), CustomerConsent.id.desc())
+    )).scalars().all())
+    attribution = await db.get(CustomerAttribution, customer_id)
 
     return CustomerDetail(
         **base,
@@ -142,6 +187,11 @@ async def _customer_detail(db: AsyncSession, customer_id: int) -> CustomerDetail
         referral_discount_percent=referral.current_discount_percent if referral else Decimal("0.00"),
         total_product_views=int(signal_row[0] or 0),
         total_cart_quantity=int(signal_row[1] or 0),
+        marketing_profile=CustomerMarketingProfileRead.model_validate(profile, from_attributes=True) if profile else None,
+        devices=[CustomerDeviceRead.model_validate(device, from_attributes=True) for device in devices],
+        recent_events=[_event_read(event) for event in events],
+        consents=[CustomerConsentRead.model_validate(consent, from_attributes=True) for consent in consents],
+        attribution=CustomerAttributionRead.model_validate(attribution, from_attributes=True) if attribution else None,
         notes=[AdminNoteRead(
             id=note.id,
             body=note.body,
@@ -159,6 +209,31 @@ async def get_customer(
     _: AdminContext = Depends(require_permission("customers.read")),
 ) -> CustomerDetail:
     return await _customer_detail(db, customer_id)
+
+
+@admin_customers_router.get("/{customer_id}/events", response_model=AdminPage[CustomerEventRead])
+async def list_customer_events(
+    customer_id: int,
+    event_name: str | None = Query(default=None, max_length=64),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("customers.read")),
+) -> AdminPage[CustomerEventRead]:
+    if await db.get(User, customer_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    filters = [UserEvent.user_id == customer_id]
+    if event_name:
+        filters.append(UserEvent.event_name == event_name.strip())
+    total = int((await db.execute(select(func.count(UserEvent.id)).where(*filters))).scalar_one())
+    events = list((await db.execute(
+        select(UserEvent)
+        .where(*filters)
+        .order_by(UserEvent.occurred_at.desc(), UserEvent.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )).scalars().all())
+    return AdminPage(items=[_event_read(event) for event in events], total=total, limit=limit, offset=offset)
 
 
 @admin_customers_router.patch("/{customer_id}/status", response_model=CustomerDetail)

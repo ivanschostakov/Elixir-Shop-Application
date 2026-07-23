@@ -10,6 +10,7 @@ from src.app.services.recommendations import (
     record_category_view,
     record_product_view,
 )
+from src.app.services.customer_intelligence import record_customer_event_safe
 from src.database import get_db
 from src.database.models import User
 from src.database.schemas import ProductWithVariantsRead
@@ -20,12 +21,29 @@ recommendations_router = APIRouter(prefix="/recommendations", tags=["recommendat
 @recommendations_router.post("/views", status_code=status.HTTP_204_NO_CONTENT)
 async def create_my_recommendation_view(payload: RecommendationViewPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
     await record_product_view(db, user_id=current_user.id, product_id=payload.product_id, variant_id=payload.variant_id)
+    await record_customer_event_safe(
+        db,
+        user_id=current_user.id,
+        event_name="product_viewed",
+        entity_type="product",
+        entity_id=payload.product_id,
+        properties={"variant_id": payload.variant_id},
+        commit=True,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @recommendations_router.post("/categories/views", status_code=status.HTTP_204_NO_CONTENT)
 async def create_my_recommendation_category_view(payload: RecommendationCategoryViewPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
     await record_category_view(db, user_id=current_user.id, category_id=payload.category_id)
+    await record_customer_event_safe(
+        db,
+        user_id=current_user.id,
+        event_name="category_viewed",
+        entity_type="category",
+        entity_id=payload.category_id,
+        commit=True,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

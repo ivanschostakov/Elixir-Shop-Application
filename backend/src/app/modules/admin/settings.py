@@ -194,11 +194,71 @@ async def list_saved_views(
 @admin_settings_router.post("/saved-views", response_model=SavedViewRead, status_code=status.HTTP_201_CREATED)
 async def create_saved_view(
     payload: SavedViewPayload,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("dashboard.read", write=True)),
 ) -> SavedViewRead:
-    row = AdminSavedView(owner_user_id=context.user.id, **payload.model_dump())
+    name = payload.name.strip()
+    duplicate = (await db.execute(select(AdminSavedView.id).where(
+        AdminSavedView.owner_user_id == context.user.id,
+        AdminSavedView.resource == payload.resource,
+        func.lower(AdminSavedView.name) == name.lower(),
+    ))).scalar_one_or_none()
+    if duplicate is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Saved view name already exists")
+    row = AdminSavedView(owner_user_id=context.user.id, **payload.model_dump(exclude={"name"}), name=name)
     db.add(row)
+    await db.flush()
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="saved_view.create",
+        entity_type="saved_view",
+        entity_id=row.id,
+        after={"resource": row.resource, "name": row.name, "is_shared": row.is_shared},
+    )
+    await db.commit()
+    await db.refresh(row)
+    return SavedViewRead.model_validate(row)
+
+
+@admin_settings_router.put("/saved-views/{view_id}", response_model=SavedViewRead)
+async def update_saved_view(
+    view_id: int,
+    payload: SavedViewPayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("dashboard.read", write=True)),
+) -> SavedViewRead:
+    row = await db.get(AdminSavedView, view_id)
+    if row is None or row.owner_user_id != context.user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved view not found")
+    name = payload.name.strip()
+    duplicate = (await db.execute(select(AdminSavedView.id).where(
+        AdminSavedView.owner_user_id == context.user.id,
+        AdminSavedView.resource == payload.resource,
+        func.lower(AdminSavedView.name) == name.lower(),
+        AdminSavedView.id != view_id,
+    ))).scalar_one_or_none()
+    if duplicate is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Saved view name already exists")
+    before = {"resource": row.resource, "name": row.name, "state_json": row.state_json, "is_shared": row.is_shared}
+    row.resource = payload.resource
+    row.name = name
+    row.state_json = payload.state_json
+    row.is_shared = payload.is_shared
+    await db.flush()
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="saved_view.update",
+        entity_type="saved_view",
+        entity_id=row.id,
+        before=before,
+        after={"resource": row.resource, "name": row.name, "state_json": row.state_json, "is_shared": row.is_shared},
+    )
     await db.commit()
     await db.refresh(row)
     return SavedViewRead.model_validate(row)
@@ -207,11 +267,21 @@ async def create_saved_view(
 @admin_settings_router.delete("/saved-views/{view_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_saved_view(
     view_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("dashboard.read", write=True)),
 ) -> None:
     row = await db.get(AdminSavedView, view_id)
     if row is None or row.owner_user_id != context.user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Saved view not found")
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="saved_view.delete",
+        entity_type="saved_view",
+        entity_id=row.id,
+        before={"resource": row.resource, "name": row.name, "is_shared": row.is_shared},
+    )
     await db.delete(row)
     await db.commit()

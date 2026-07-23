@@ -16,6 +16,9 @@ class _FakeScalarResult:
     def all(self):
         return self.rows or []
 
+    def scalars(self):
+        return self
+
     def scalar_one(self):
         return self.scalar_value
 

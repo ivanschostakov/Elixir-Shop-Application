@@ -84,6 +84,7 @@ type CommunityChatScreenProps = {
     onModeChange: (mode: ChatMode) => void
     onUnreadChange: (count: number) => void
     requestedTopicId?: number | null
+    supportUnreadCount: number
     unreadCount: number
 }
 
@@ -115,7 +116,7 @@ function nativeBuildNumber() {
     return Number.isFinite(parsedBuild) ? parsedBuild : 0
 }
 
-export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChange, onUnreadChange, requestedTopicId, unreadCount }: CommunityChatScreenProps) {
+export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChange, onUnreadChange, requestedTopicId, supportUnreadCount, unreadCount }: CommunityChatScreenProps) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const chatStyles = useThemeStyles(createChatScreenStyles)
     const { isDark, palette, themeName } = useTheme()
@@ -453,7 +454,7 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
                             <Text numberOfLines={1} style={styles.selectedTopicTitle}>{chat.selectedTopic.name}</Text>
                         </View>
                     ) : (
-                        <ChatModeSwitcher mode={mode} onChange={onModeChange} unreadCount={unreadCount} />
+                        <ChatModeSwitcher mode={mode} onChange={onModeChange} supportUnreadCount={supportUnreadCount} unreadCount={unreadCount} />
                     )}
                 </View>
 

@@ -90,6 +90,29 @@ export async function apiRequest<T>(
   return (await response.json()) as T
 }
 
+export async function apiDownload(path: string, retryAuth = true): Promise<{ blob: Blob; fileName: string | null }> {
+  const headers = new Headers({ Accept: "application/octet-stream" })
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`)
+  const response = await fetch(`${API_BASE}${path}`, { headers, credentials: "include" })
+  if (response.status === 401 && retryAuth && !path.startsWith("/auth/")) {
+    try {
+      await refreshAdminSession()
+      return apiDownload(path, false)
+    } catch {
+      setAccessToken(null)
+      authListener?.(null)
+    }
+  }
+  if (!response.ok) throw await parseError(response)
+  const disposition = response.headers.get("content-disposition") || ""
+  const utf8Name = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
+  const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
+  return {
+    blob: await response.blob(),
+    fileName: utf8Name ? decodeURIComponent(utf8Name) : plainName || null,
+  }
+}
+
 export function queryString(values: Record<string, string | number | boolean | null | undefined>) {
   const params = new URLSearchParams()
   Object.entries(values).forEach(([key, value]) => {

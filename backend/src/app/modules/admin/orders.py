@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -7,43 +8,37 @@ from sqlalchemy.orm import selectinload
 from starlette import status
 
 from src.app.modules.admin.helpers import ensure_not_stale, serialize_admin_order, serialize_admin_order_detail
-from src.app.modules.admin.schemas import AdminOrderDetail, AdminOrderListItem, AdminOrderTransitionPayload, AdminPage
-from src.app.services.admin import AdminContext, add_admin_audit, require_permission
-from src.app.services.orders import apply_amocrm_status_update
+from config import (
+    CDEK_ACCOUNT,
+    CDEK_SECURE_PASSWORD,
+    INTELLECTMONEY_BEARER_TOKEN,
+    INTELLECTMONEY_SHOP_ID,
+    MOY_SKLAD_TOKEN,
+    YANDEX_DELIVERY_TOKEN,
+)
+from src.app.modules.admin.schemas import (
+    AdminOrderDetail,
+    AdminOrderListItem,
+    AdminOrderOperationPayload,
+    AdminOrderTransitionPayload,
+    AdminPage,
+    IntegrationRunRead,
+)
+from src.app.services.admin import (
+    AdminContext,
+    add_admin_audit,
+    default_max_attempts,
+    enqueue_integration_run,
+    require_permission,
+)
+from src.app.services.admin.order_transitions import ALLOWED_TRANSITIONS, transition_is_allowed, transition_status_id
 from src.database import get_db
-from src.database.models import Order, User
+from src.database.models import IntegrationRun, Order, User
 from src.database.models.orders.history import OrderStatusCode, build_status_code_clause, get_order_status_code
-from src.integrations.amocrm import get_amocrm_client
-from src.integrations.amocrm.constants import STATUS_IDS
 
 admin_orders_router = APIRouter(prefix="/orders", tags=["admin_orders"])
-amocrm_client = get_amocrm_client()
 
-STATUS_ID_BY_CODE: dict[OrderStatusCode, int] = {
-    "created": STATUS_IDS["main"],
-    "invoice_sent": STATUS_IDS["pending_payment"],
-    "paid": STATUS_IDS["check_paid"],
-    "waiting_response": STATUS_IDS["waiting_response"],
-    "packaged": STATUS_IDS["packaged"],
-    "sent": STATUS_IDS["package_sent"],
-    "delivered": STATUS_IDS["package_delivered"],
-    "canceled": STATUS_IDS["canceled"],
-    "completed": STATUS_IDS["won"],
-    "refund_declined": STATUS_IDS["refund_declined"],
-}
-
-ALLOWED_TRANSITIONS: dict[OrderStatusCode, frozenset[OrderStatusCode]] = {
-    "created": frozenset(("invoice_sent", "waiting_response", "canceled")),
-    "invoice_sent": frozenset(("paid", "waiting_response", "canceled")),
-    "paid": frozenset(("waiting_response", "packaged", "refund_declined")),
-    "waiting_response": frozenset(("paid", "packaged", "canceled")),
-    "packaged": frozenset(("sent", "canceled", "refund_declined")),
-    "sent": frozenset(("delivered", "refund_declined")),
-    "delivered": frozenset(("completed", "refund_declined")),
-    "canceled": frozenset(),
-    "completed": frozenset(("refund_declined",)),
-    "refund_declined": frozenset(),
-}
+AdminOrderOperation = Literal["payment_check", "moysklad_sync", "delivery_create"]
 
 
 def _order_options():
@@ -109,47 +104,180 @@ async def get_order_detail(
     return serialize_admin_order_detail(await _get_order(db, order_id))
 
 
-@admin_orders_router.post("/{order_id}/transition", response_model=AdminOrderDetail)
+@admin_orders_router.get("/{order_id}/integration-runs", response_model=list[IntegrationRunRead])
+async def get_order_integration_runs(
+    order_id: int,
+    limit: int = Query(default=20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("orders.read")),
+) -> list[IntegrationRunRead]:
+    await _get_order(db, order_id)
+    rows = list((await db.execute(
+        select(IntegrationRun)
+        .where(IntegrationRun.target_type == "order", IntegrationRun.target_id == str(order_id))
+        .order_by(IntegrationRun.started_at.desc(), IntegrationRun.id.desc())
+        .limit(limit)
+    )).scalars().all())
+    return [IntegrationRunRead.model_validate(row) for row in rows]
+
+
+def _operation_provider(order: Order, operation: AdminOrderOperation) -> tuple[str, str]:
+    if operation == "payment_check":
+        if not (INTELLECTMONEY_BEARER_TOKEN and INTELLECTMONEY_SHOP_ID):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="IntellectMoney is not configured")
+        return "intellectmoney", "payment_check"
+    if operation == "moysklad_sync":
+        if not MOY_SKLAD_TOKEN:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="MoySklad is not configured")
+        return "moysklad", "moysklad_order_sync"
+
+    delivery_service = (order.selected_delivery_service or "").strip().upper()
+    if delivery_service == "CDEK":
+        if not (CDEK_ACCOUNT and CDEK_SECURE_PASSWORD):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="CDEK is not configured")
+        return "cdek", "delivery_create"
+    if delivery_service == "YANDEX":
+        if not YANDEX_DELIVERY_TOKEN:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Yandex Delivery is not configured")
+        return "yandex_delivery", "delivery_create"
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order has no supported delivery service")
+
+
+@admin_orders_router.post("/{order_id}/operations/{operation}", response_model=IntegrationRunRead, status_code=status.HTTP_202_ACCEPTED)
+async def run_order_operation(
+    order_id: int,
+    operation: AdminOrderOperation,
+    payload: AdminOrderOperationPayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("orders.recover", write=True)),
+) -> IntegrationRunRead:
+    order = await _get_order(db, order_id)
+    provider, internal_operation = _operation_provider(order, operation)
+    existing = (await db.execute(
+        select(IntegrationRun).where(IntegrationRun.idempotency_key == payload.idempotency_key)
+    )).scalar_one_or_none()
+    if existing is not None:
+        if (
+            existing.target_type != "order"
+            or existing.target_id != str(order_id)
+            or existing.provider != provider
+            or existing.operation != internal_operation
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Idempotency key belongs to another operation")
+        return IntegrationRunRead.model_validate(existing)
+
+    ensure_not_stale(actual=order.updated_at, expected=payload.expected_updated_at)
+    run = IntegrationRun(
+        provider=provider,
+        operation=internal_operation,
+        status="queued",
+        requested_by_user_id=context.user.id,
+        target_type="order",
+        target_id=str(order.id),
+        attempts=0,
+        max_attempts=default_max_attempts(),
+        idempotency_key=payload.idempotency_key,
+    )
+    db.add(run)
+    await db.flush()
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="order.operation.queued",
+        entity_type="order",
+        entity_id=order.id,
+        after={"run_id": run.id, "provider": provider, "operation": internal_operation},
+    )
+    await db.commit()
+    await db.refresh(run)
+    try:
+        await enqueue_integration_run(run.id)
+    except Exception as error:
+        run.status = "error"
+        run.error = f"Failed to enqueue admin job: {error}"[:8000]
+        run.finished_at = datetime.now(timezone.utc)
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Admin job queue is unavailable") from error
+    return IntegrationRunRead.model_validate(run)
+
+
+@admin_orders_router.post("/{order_id}/transition", response_model=IntegrationRunRead, status_code=status.HTTP_202_ACCEPTED)
 async def transition_order(
     order_id: int,
     payload: AdminOrderTransitionPayload,
     request: Request,
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("orders.transition", write=True)),
-) -> AdminOrderDetail:
+) -> IntegrationRunRead:
     order = await _get_order(db, order_id)
     ensure_not_stale(actual=order.updated_at, expected=payload.expected_updated_at)
     current_code = get_order_status_code(order)
     if current_code == payload.status_code:
-        return serialize_admin_order_detail(order)
-    if payload.status_code not in ALLOWED_TRANSITIONS[current_code]:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order already has this status")
+    if not transition_is_allowed(current_code, payload.status_code):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"code": "invalid_transition", "from": current_code, "to": payload.status_code},
         )
+    if payload.status_code == "canceled" and not (payload.reason or "").strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cancellation reason is required")
     if not order.amocrm_lead_id:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order is not linked to amoCRM")
 
     before = serialize_admin_order_detail(order).model_dump(mode="json")
-    target_status_id = STATUS_ID_BY_CODE[payload.status_code]
-    try:
-        await amocrm_client.update_lead_status(int(order.amocrm_lead_id), target_status_id)
-    except Exception as error:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="amoCRM status update failed") from error
+    existing = (await db.execute(
+        select(IntegrationRun).where(IntegrationRun.idempotency_key == payload.idempotency_key)
+    )).scalar_one_or_none()
+    if existing is not None:
+        if (
+            existing.target_type != "order"
+            or existing.target_id != str(order_id)
+            or existing.provider != "amocrm"
+            or existing.operation != "status_transition"
+        ):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Idempotency key belongs to another operation")
+        return IntegrationRunRead.model_validate(existing)
 
-    order = await apply_amocrm_status_update(db, order=order, status_id=target_status_id)
-    order = await _get_order(db, order.id)
-    after = serialize_admin_order_detail(order)
+    run = IntegrationRun(
+        provider="amocrm",
+        operation="status_transition",
+        status="queued",
+        requested_by_user_id=context.user.id,
+        target_type="order",
+        target_id=str(order.id),
+        attempts=0,
+        max_attempts=default_max_attempts(),
+        idempotency_key=payload.idempotency_key,
+        input_json={
+            "from_status_code": current_code,
+            "to_status_code": payload.status_code,
+            "target_status_id": transition_status_id(payload.status_code),
+            "reason": (payload.reason or "").strip() or None,
+        },
+    )
+    db.add(run)
+    await db.flush()
     await add_admin_audit(
         db,
         request,
         context,
-        action="order.transition",
+        action="order.transition.queued",
         entity_type="order",
         entity_id=order.id,
         before=before,
-        after=after.model_dump(mode="json"),
-        details={"from_status_code": current_code, "to_status_code": payload.status_code},
+        after={"run_id": run.id, "provider": run.provider, "operation": run.operation, "target_status_code": payload.status_code},
+        details={"from_status_code": current_code, "to_status_code": payload.status_code, "reason": (payload.reason or "").strip() or None},
     )
     await db.commit()
-    return after
+    await db.refresh(run)
+    try:
+        await enqueue_integration_run(run.id)
+    except Exception as error:
+        run.status = "error"
+        run.error = f"Failed to enqueue admin job: {error}"[:8000]
+        run.finished_at = datetime.now(timezone.utc)
+        await db.commit()
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Admin job queue is unavailable") from error
+    return IntegrationRunRead.model_validate(run)

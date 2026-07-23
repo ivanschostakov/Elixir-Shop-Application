@@ -2,6 +2,8 @@ import { ENDPOINTS } from "@/services/api/constants"
 import { apiDelete, apiFetch, apiGet, apiPost, apiPostMultipart } from "@/services/api/client"
 import type {
     AvatarResponse,
+    CustomerIntelligenceSyncPayload,
+    CustomerIntelligenceSyncResponse,
     DeleteMyPushTokenPayload,
     DeleteMyPushTokenResponse,
     MyPushTokenResponse,
@@ -48,6 +50,14 @@ export function deleteMyPushToken(payload: DeleteMyPushTokenPayload) {
             method: "DELETE",
             body: JSON.stringify(payload),
         },
+    )
+}
+
+export function syncMyCustomerIntelligence(payload: CustomerIntelligenceSyncPayload) {
+    return apiPost<CustomerIntelligenceSyncResponse, CustomerIntelligenceSyncPayload>(
+        usersPath("/me/customer-intelligence/sync"),
+        payload,
+        { appIntegrityAction: "customer-intelligence:write" },
     )
 }
 

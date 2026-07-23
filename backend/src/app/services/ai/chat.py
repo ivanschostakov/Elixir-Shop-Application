@@ -43,6 +43,7 @@ from src.database.crud import (
     update_ai_message,
 )
 from src.database.models import AIMessage, Order, User
+from src.app.services.customer_intelligence import record_customer_event_safe
 from src.database.models.ai.chat import AIChat
 from src.database.schemas import (
     AIAttachmentCreate,
@@ -277,6 +278,17 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         for path in user_attachment_paths: _unlink_if_exists(path)
         raise
 
+    await record_customer_event_safe(
+        db,
+        user_id=user.id,
+        event_name="ai_chat_message_sent",
+        source="api",
+        entity_type="ai_chat",
+        entity_id=chat.id,
+        properties={"message_id": user_message.id, "attachments_count": len(loaded_uploads)},
+        commit=True,
+    )
+
     try:
         file_contents = [(item.ai_filename, item.ai_content) for item in loaded_uploads if item.kind == AttachmentType.DOCUMENT]
         image_contents = [(item.ai_filename, item.ai_content) for item in loaded_uploads if item.kind == AttachmentType.IMAGE]
@@ -365,6 +377,33 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         for path in ai_attachment_paths: _unlink_if_exists(path)
         raise
 
+    if interactive_payload is not None:
+        await record_customer_event_safe(
+            db,
+            user_id=user.id,
+            event_name="ai_recommendation_shown",
+            source="api",
+            entity_type="ai_message",
+            entity_id=ai_message_id,
+            properties={
+                "chat_id": chat.id,
+                "cards_count": len(interactive_payload.cards),
+                "product_ids": [card.product_id for card in interactive_payload.cards],
+            },
+            commit=True,
+        )
+    if basket_updated:
+        await record_customer_event_safe(
+            db,
+            user_id=user.id,
+            event_name="ai_action_completed",
+            source="api",
+            entity_type="ai_message",
+            entity_id=ai_message_id,
+            properties={"chat_id": chat.id, "action_type": "auto_add_to_basket"},
+            commit=True,
+        )
+
     refreshed_chat = await get_ai_chat_by_id(db, chat.id, user_id=user.id)
     if refreshed_chat is None: raise RuntimeError("Failed to reload chat after update")
     if ai_message_id is not None: await send_ai_reply_notification(db, user_id=user.id, chat_id=chat.id, message_id=ai_message_id)
@@ -435,6 +474,38 @@ async def perform_user_ai_chat_action(db: AsyncSession, *, user: User, message_i
     except Exception:
         await db.rollback()
         raise
+
+    await record_customer_event_safe(
+        db,
+        user_id=user.id,
+        event_name="ai_action_clicked",
+        source="api",
+        entity_type="ai_message",
+        entity_id=message_id,
+        properties={
+            "chat_id": chat_id,
+            "action_id": action_id,
+            "action_type": "add_to_basket",
+            "variant_id": action.variant_id,
+        },
+        commit=True,
+    )
+    await record_customer_event_safe(
+        db,
+        user_id=user.id,
+        event_name="ai_action_completed",
+        source="api",
+        entity_type="ai_message",
+        entity_id=message_id,
+        properties={
+            "chat_id": chat_id,
+            "action_id": action_id,
+            "action_type": "add_to_basket",
+            "variant_id": action.variant_id,
+            "basket_item_id": basket_item_id,
+        },
+        commit=True,
+    )
 
     refreshed_chat = await get_ai_chat_by_id(db, chat_id, user_id=user.id)
     if refreshed_chat is None: raise RuntimeError("Failed to reload chat after action")

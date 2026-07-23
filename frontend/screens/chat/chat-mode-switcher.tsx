@@ -5,14 +5,25 @@ import { useLanguage } from "@/providers/language-provider"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createCommunityChatStyles } from "@/screens/chat/community-chat-screen.styles"
 
-export type ChatMode = "ai" | "community"
+export type ChatMode = "ai" | "community" | "support"
 
-export function ChatModeSwitcher({ mode, onChange, unreadCount }: { mode: ChatMode; onChange: (mode: ChatMode) => void; unreadCount: number }) {
+export function ChatModeSwitcher({
+    mode,
+    onChange,
+    supportUnreadCount = 0,
+    unreadCount,
+}: {
+    mode: ChatMode
+    onChange: (mode: ChatMode) => void
+    supportUnreadCount?: number
+    unreadCount: number
+}) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const { t } = useLanguage()
-    const progress = useRef(new Animated.Value(mode === "community" ? 1 : 0)).current
+    const modeIndex = mode === "community" ? 1 : mode === "support" ? 2 : 0
+    const progress = useRef(new Animated.Value(modeIndex)).current
     const [switcherWidth, setSwitcherWidth] = useState(0)
-    const indicatorWidth = Math.max(0, (switcherWidth - 6) / 2)
+    const indicatorWidth = Math.max(0, (switcherWidth - 6) / 3)
 
     const handleLayout = (event: LayoutChangeEvent) => {
         const nextWidth = event.nativeEvent.layout.width
@@ -20,18 +31,22 @@ export function ChatModeSwitcher({ mode, onChange, unreadCount }: { mode: ChatMo
     }
 
     useEffect(() => {
-        Animated.spring(progress, { toValue: mode === "community" ? 1 : 0, damping: 20, stiffness: 220, mass: 0.7, useNativeDriver: true }).start()
-    }, [mode, progress])
+        Animated.spring(progress, { toValue: modeIndex, damping: 20, stiffness: 220, mass: 0.7, useNativeDriver: true }).start()
+    }, [modeIndex, progress])
 
     return (
         <View accessibilityRole="tablist" onLayout={handleLayout} style={styles.modeSwitcher}>
-            {indicatorWidth > 0 ? <Animated.View style={[styles.modeIndicator, { width: indicatorWidth, transform: [{ translateX: progress.interpolate({ inputRange: [0, 1], outputRange: [0, indicatorWidth] }) }] }]} /> : null}
+            {indicatorWidth > 0 ? <Animated.View style={[styles.modeIndicator, { width: indicatorWidth, transform: [{ translateX: progress.interpolate({ inputRange: [0, 1, 2], outputRange: [0, indicatorWidth, indicatorWidth * 2] }) }] }]} /> : null}
             <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "ai" }} onPress={() => onChange("ai")} style={styles.modeButton}>
                 <Text style={[styles.modeText, mode === "ai" ? styles.modeTextActive : null]}>{t("chat.modeAi")}</Text>
             </Pressable>
             <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "community" }} onPress={() => onChange("community")} style={styles.modeButton}>
                 <Text numberOfLines={1} style={[styles.modeText, mode === "community" ? styles.modeTextActive : null]}>{t("chat.modeGroup")}</Text>
                 {unreadCount > 0 ? <View style={styles.modeBadge}><Text style={styles.modeBadgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text></View> : null}
+            </Pressable>
+            <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "support" }} onPress={() => onChange("support")} style={styles.modeButton}>
+                <Text numberOfLines={1} style={[styles.modeText, mode === "support" ? styles.modeTextActive : null]}>{t("chat.modeSupport")}</Text>
+                {supportUnreadCount > 0 ? <View style={styles.modeBadge}><Text style={styles.modeBadgeText}>{supportUnreadCount > 99 ? "99+" : supportUnreadCount}</Text></View> : null}
             </Pressable>
         </View>
     )

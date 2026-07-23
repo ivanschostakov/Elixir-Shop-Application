@@ -19,6 +19,10 @@ COMMUNITY_MEDIA_DIR = Path(
     _env("TELEGRAM_COMMUNITY_MEDIA_DIR", str(PRIVATE_MEDIA_DIR / "community"))
     or str(PRIVATE_MEDIA_DIR / "community")
 )
+SUPPORT_MEDIA_DIR = Path(
+    _env("SUPPORT_MEDIA_DIR", str(PRIVATE_MEDIA_DIR / "support"))
+    or str(PRIVATE_MEDIA_DIR / "support")
+)
 TEMP_MEDIA_DIR = MEDIA_DIR / "temp"
 
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -29,6 +33,7 @@ AVATARS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 ORDERS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 REVIEWS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 COMMUNITY_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+SUPPORT_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 UFA_TZ = ZoneInfo("Asia/Yekaterinburg")

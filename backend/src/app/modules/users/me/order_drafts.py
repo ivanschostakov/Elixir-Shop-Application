@@ -16,6 +16,7 @@ from src.app.services.orders.drafts import (
     get_recent_order_drafts_for_user,
     update_order_draft_for_user,
 )
+from src.app.services.customer_intelligence import record_customer_event_safe
 from src.database import get_db
 from src.database.models import User
 from src.database.schemas import OrderDraftCheckoutOptionsRead, OrderDraftRead
@@ -26,6 +27,15 @@ my_order_drafts_router = APIRouter(prefix="/order-drafts", tags=["my_order_draft
 @my_order_drafts_router.post("", response_model=OrderDraftRead, status_code=status.HTTP_201_CREATED)
 async def create_my_order_draft(payload: CreateOrderDraftPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> OrderDraftRead:
     draft = await create_order_draft_for_user(db, user=current_user, payload=payload)
+    await record_customer_event_safe(
+        db,
+        user_id=current_user.id,
+        event_name="checkout_started",
+        entity_type="order_draft",
+        entity_id=draft.id,
+        properties={"items_count": draft.items_count, "total_quantity": draft.total_quantity},
+        commit=True,
+    )
     return await serialize_order_draft(request, db, draft)
 
 

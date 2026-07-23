@@ -15,6 +15,7 @@ import { LanguageProvider } from "@/providers/language-provider"
 import { ThemeProvider, useTheme } from "@/providers/theme-provider"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
 import { attachPushOpenListener } from "@/services/notifications/order-status-notifications"
+import { trackPushEngagement } from "@/services/customer-intelligence"
 import { rootLayoutStyles } from "@/components/navigation/root-layout.styles"
 
 type GlobalErrorHandler = (error: unknown, isFatal?: boolean) => void
@@ -90,7 +91,8 @@ function RootLayoutContent() {
             return
         }
 
-        return attachPushOpenListener((target) => {
+        return attachPushOpenListener((target, data) => {
+            void trackPushEngagement(data).catch(() => undefined)
             router.push(target)
         })
     }, [])

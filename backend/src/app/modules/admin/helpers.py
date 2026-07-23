@@ -5,6 +5,8 @@ from starlette import status
 
 from src.app.modules.admin.schemas import (
     AdminBannerRead,
+    AdminBusinessContentRead,
+    AdminBusinessContentVersionRead,
     AdminCategoryRead,
     AdminOrderDetail,
     AdminOrderItemRead,
@@ -16,9 +18,17 @@ from src.app.modules.admin.schemas import (
 )
 from src.app.modules.products.helpers import review_attachment_path
 from src.app.services.review_attachments import build_review_attachment_url
-from src.database.models import Banner, Order, Product, ProductCategory, Review
+from src.database.models import Banner, BusinessContentPage, BusinessContentVersion, Order, Product, ProductCategory, Review, ReviewModerationEvent
 from src.database.models.orders.history import get_order_status_code
 from src.product_media import build_products_media_url
+
+
+def _admin_actor_name(admin) -> str | None:
+    actor = admin.user if admin is not None else None
+    if actor is None:
+        return None
+    full_name = " ".join(part for part in (getattr(actor, "name", None), getattr(actor, "surname", None)) if part).strip()
+    return full_name or getattr(actor, "email", None)
 
 
 def ensure_not_stale(*, actual, expected) -> None:
@@ -154,6 +164,13 @@ def serialize_admin_review(request: Request, review: Review, *, product_name: st
     else:
         author_name = review.guest_name or "Гость"
         author_email = review.guest_email
+    attachment_items = [{
+        "id": attachment.id,
+        "url": build_review_attachment_url(request, review_attachment_path(attachment.review_id, attachment.filename)),
+        "mime_type": attachment.mime_type,
+        "moderation_status": attachment.moderation_status,
+        "created_at": attachment.created_at,
+    } for attachment in review.attachments]
     return AdminReviewRead(
         id=review.id,
         product_id=review.product_id,
@@ -165,7 +182,19 @@ def serialize_admin_review(request: Request, review: Review, *, product_name: st
         text=review.text,
         answer=review.answer,
         status=review_status,
-        attachments=[build_review_attachment_url(request, review_attachment_path(attachment.review_id, attachment.filename)) for attachment in review.attachments],
+        attachments=[item["url"] for item in attachment_items if item["moderation_status"] != "rejected"],
+        attachment_items=attachment_items,
+        spam_score=review.spam_score,
+        profanity_flag=review.profanity_flag,
+        duplicate_flag=review.duplicate_flag,
+        suspicious_ip_flag=review.suspicious_ip_flag,
+        moderation_flags=review.moderation_flags or {},
+        internal_moderation_comment=review.internal_moderation_comment,
+        submitter_ip=review.submitter_ip,
+        appeal_status=review.appeal_status,
+        moderated_at=review.moderated_at,
+        restored_at=review.restored_at,
+        customer_notified_at=review.customer_notified_at,
         created_at=review.created_at,
         updated_at=review.updated_at,
     )
@@ -186,10 +215,60 @@ def serialize_banner(banner: Banner) -> AdminBannerRead:
     return AdminBannerRead(
         id=banner.id,
         image_path=banner.image_path,
+        desktop_image_path=banner.desktop_image_path,
+        mobile_image_path=banner.mobile_image_path,
+        title=banner.title,
         inner_link=banner.inner_link,
         outer_link=banner.outer_link,
         priority=banner.priority,
         archived=banner.archived,
+        status=banner.status,
+        starts_at=banner.starts_at,
+        ends_at=banner.ends_at,
+        audience_json=banner.audience_json or {},
+        click_count=banner.click_count,
+        impression_count=banner.impression_count,
         created_at=banner.created_at,
         updated_at=banner.updated_at,
+    )
+
+
+def serialize_review_moderation_event(event: ReviewModerationEvent) -> dict:
+    return {
+        "id": event.id,
+        "action": event.action,
+        "actor_name": _admin_actor_name(event.actor),
+        "comment": event.comment,
+        "before_json": event.before_json,
+        "after_json": event.after_json,
+        "metadata_json": event.metadata_json or {},
+        "created_at": event.created_at,
+    }
+
+
+def serialize_business_content(page: BusinessContentPage) -> AdminBusinessContentRead:
+    return AdminBusinessContentRead(
+        id=page.id,
+        code=page.code,
+        title_ru=page.title_ru,
+        title_en=page.title_en,
+        body_ru=page.body_ru,
+        body_en=page.body_en,
+        link_url=page.link_url,
+        status=page.status,
+        metadata_json=page.metadata_json or {},
+        version=page.version,
+        updated_by_name=_admin_actor_name(page.updated_by),
+        created_at=page.created_at,
+        updated_at=page.updated_at,
+    )
+
+
+def serialize_business_content_version(version: BusinessContentVersion) -> AdminBusinessContentVersionRead:
+    return AdminBusinessContentVersionRead(
+        id=version.id,
+        version=version.version,
+        actor_name=_admin_actor_name(version.actor),
+        snapshot_json=version.snapshot_json or {},
+        created_at=version.created_at,
     )
