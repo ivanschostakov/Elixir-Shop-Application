@@ -411,14 +411,15 @@ async def toggle_community_message_reaction(
             selectinload(CommunityMessage.telegram_parts),
             selectinload(CommunityMessage.topic),
         )
+        .with_for_update()
     )).scalar_one_or_none()
     if message is None:
         raise HTTPException(status_code=404, detail="Community message not found")
     existing = next((reaction for reaction in message.reactions if reaction.user_id == user.id and reaction.emoji == normalized_emoji), None)
-    client = telegram_client or get_telegram_bot_client()
     if existing:
         if existing.telegram_message_id:
             try:
+                client = telegram_client or get_telegram_bot_client()
                 await _delete_telegram_message_ids(
                     client,
                     chat_id=existing.telegram_chat_id or TELEGRAM_COMMUNITY_CHAT_ID,
@@ -432,45 +433,16 @@ async def toggle_community_message_reaction(
         await db.delete(existing)
         reaction = None
     else:
-        reaction = CommunityReaction(message_id=message.id, user_id=user.id, emoji=normalized_emoji)
+        reaction = CommunityReaction(
+            message_id=message.id,
+            user_id=user.id,
+            emoji=normalized_emoji,
+            delivery_status="queued",
+        )
         db.add(reaction)
-    reaction_added = existing is None
-    active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
-    reply_to_telegram_message_id = active_parts[0].telegram_message_id if active_parts else None
-    telegram_thread_id = message.topic.telegram_thread_id if message.topic else None
     # Message polling uses the parent timestamp as its reconciliation cursor.
     message.updated_at = ufa_now()
     await db.commit()
-    if reaction_added and reply_to_telegram_message_id:
-        author_name, notification_text = _telegram_app_reaction_notification(user, normalized_emoji)
-        try:
-            result = await client.call(
-                "sendMessage",
-                data={
-                    "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
-                    "message_thread_id": telegram_thread_id or None,
-                    "reply_parameters": {
-                        "message_id": reply_to_telegram_message_id,
-                        "allow_sending_without_reply": True,
-                    },
-                    "text": notification_text,
-                    "entities": _telegram_author_entities(notification_text, author_name),
-                },
-            )
-            if reaction is not None and isinstance(result, dict):
-                telegram_message_id = int(result.get("message_id") or 0)
-                if telegram_message_id:
-                    reaction.telegram_chat_id = TELEGRAM_COMMUNITY_CHAT_ID
-                    reaction.telegram_message_id = telegram_message_id
-                    await db.commit()
-        except (TelegramBotAPIError, TimeoutError, OSError):
-            # The local reaction is already durable and should remain usable
-            # during a temporary Telegram outage.
-            log.exception(
-                "community reaction Telegram reply failed message_id=%s user_id=%s",
-                message.id,
-                user.id,
-            )
     message = (await db.execute(
         select(CommunityMessage)
         .where(CommunityMessage.id == message_id)
@@ -808,6 +780,13 @@ def _telegram_app_reaction_notification(user: User, emoji: str) -> tuple[str, st
     return author_name, f"{author_name} · ↩️ Приложение\n\nОтреагировал(а) {emoji}"
 
 
+def _telegram_bot_thread_id(topic: CommunityTopic) -> int | None:
+    thread_id = int(topic.telegram_thread_id or 0)
+    # Telegram's non-deletable General topic has MTProto id=1, but Bot API
+    # messages reach it by omitting message_thread_id.
+    return thread_id if thread_id > 1 else None
+
+
 def _is_telegram_app_reaction_notification(value: str) -> bool:
     header, separator, body = value.strip().partition("\n\n")
     return bool(
@@ -828,6 +807,13 @@ def _telegram_author_entities(value: str, author_name: str) -> list[dict[str, An
 def _telegram_message_is_already_absent(exc: TelegramBotAPIError) -> bool:
     message = str(exc).casefold()
     return exc.error_code == 400 and "message to delete not found" in message
+
+
+def _telegram_retry_delay_seconds(delivery_attempts: int, *, retry_after: int | None = None) -> int:
+    if retry_after is not None:
+        return max(int(retry_after), 1)
+    exponent = min(max(int(delivery_attempts) - 1, 0), 6)
+    return min(300, 5 * (2 ** exponent))
 
 
 async def _delete_telegram_message_ids(
@@ -862,7 +848,7 @@ async def recover_stale_community_deliveries(db: AsyncSession, *, older_than_sec
     if not TELEGRAM_COMMUNITY_ENABLED or not TELEGRAM_COMMUNITY_CHAT_ID:
         return 0
     cutoff = ufa_now() - timedelta(seconds=max(older_than_seconds, 60))
-    result = await db.execute(
+    stale_result = await db.execute(
         update(CommunityMessage)
         .where(
             CommunityMessage.source == "app",
@@ -874,8 +860,21 @@ async def recover_stale_community_deliveries(db: AsyncSession, *, older_than_sec
             delivery_error="Delivery was interrupted; check Telegram before retrying.",
         )
     )
+    retryable_result = await db.execute(
+        update(CommunityMessage)
+        .where(
+            CommunityMessage.source == "app",
+            CommunityMessage.delivery_status == "failed",
+            CommunityMessage.delivery_error.like("Telegram % request failed"),
+        )
+        .values(
+            delivery_status="queued",
+            delivery_error=None,
+            next_delivery_attempt_at=None,
+        )
+    )
     await db.commit()
-    return int(result.rowcount or 0)
+    return int(stale_result.rowcount or 0) + int(retryable_result.rowcount or 0)
 
 
 async def relay_next_community_message(db: AsyncSession, *, telegram_client: TelegramBotClient | None = None) -> bool:
@@ -895,7 +894,11 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
     client = telegram_client or get_telegram_bot_client()
     author_name, header = _telegram_app_header(message)
     text = f"{header}\n\n{message.text}" if message.text else header
-    common: dict[str, Any] = {"chat_id": TELEGRAM_COMMUNITY_CHAT_ID, "message_thread_id": message.topic.telegram_thread_id or None, "reply_parameters": await _reply_parameters(message)}
+    common: dict[str, Any] = {
+        "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
+        "message_thread_id": _telegram_bot_thread_id(message.topic),
+        "reply_parameters": await _reply_parameters(message),
+    }
     sent_results: list[dict[str, Any]] = []
 
     async def store_result(result: Any) -> None:
@@ -938,8 +941,13 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
         message.delivery_status = "sent"; message.next_delivery_attempt_at = None
         await db.commit(); return True
     except TelegramBotAPIError as exc:
-        if exc.retry_after and not sent_results:
-            message.delivery_status = "queued"; message.next_delivery_attempt_at = ufa_now() + timedelta(seconds=max(exc.retry_after, 1))
+        if (exc.retryable or exc.retry_after) and not sent_results:
+            retry_delay = _telegram_retry_delay_seconds(
+                message.delivery_attempts,
+                retry_after=exc.retry_after,
+            )
+            message.delivery_status = "queued"
+            message.next_delivery_attempt_at = ufa_now() + timedelta(seconds=retry_delay)
         elif sent_results:
             message.delivery_status = "delivery_unknown"
         else:
@@ -948,6 +956,96 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
     except (TimeoutError, OSError) as exc:
         message.delivery_status = "delivery_unknown"; message.delivery_error = str(exc)[:1000]
         await db.commit(); return True
+
+
+async def relay_next_community_reaction(
+    db: AsyncSession,
+    *,
+    telegram_client: TelegramBotClient | None = None,
+) -> bool:
+    if not TELEGRAM_COMMUNITY_ENABLED or not TELEGRAM_COMMUNITY_CHAT_ID:
+        return False
+    now = ufa_now()
+    stmt = (
+        select(CommunityReaction)
+        .join(CommunityMessage, CommunityReaction.message_id == CommunityMessage.id)
+        .where(
+            CommunityReaction.delivery_status == "queued",
+            or_(
+                CommunityReaction.next_delivery_attempt_at.is_(None),
+                CommunityReaction.next_delivery_attempt_at <= now,
+            ),
+            CommunityMessage.deleted_at.is_(None),
+            CommunityMessage.telegram_parts.any(CommunityTelegramPart.deleted_at.is_(None)),
+        )
+        .order_by(CommunityReaction.id.asc())
+        .limit(1)
+        .options(
+            selectinload(CommunityReaction.message).selectinload(CommunityMessage.topic),
+            selectinload(CommunityReaction.message).selectinload(CommunityMessage.telegram_parts),
+        )
+        .with_for_update(skip_locked=True)
+    )
+    reaction = (await db.execute(stmt)).scalar_one_or_none()
+    if reaction is None:
+        return False
+    message = reaction.message
+    active_parts = [part for part in message.telegram_parts if part.deleted_at is None]
+    user = await db.get(User, reaction.user_id)
+    if user is None or message.topic is None or not active_parts:
+        reaction.delivery_status = "failed"
+        reaction.delivery_error = "The Telegram reaction target is unavailable."
+        await db.commit()
+        return True
+
+    reaction.delivery_attempts += 1
+    reaction.delivery_error = None
+    client = telegram_client or get_telegram_bot_client()
+    author_name, notification_text = _telegram_app_reaction_notification(user, reaction.emoji)
+    try:
+        result = await client.call(
+            "sendMessage",
+            data={
+                "chat_id": TELEGRAM_COMMUNITY_CHAT_ID,
+                "message_thread_id": _telegram_bot_thread_id(message.topic),
+                "reply_parameters": {
+                    "message_id": active_parts[0].telegram_message_id,
+                    "allow_sending_without_reply": True,
+                },
+                "text": notification_text,
+                "entities": _telegram_author_entities(notification_text, author_name),
+            },
+        )
+        telegram_message_id = int(result.get("message_id") or 0) if isinstance(result, dict) else 0
+        if telegram_message_id <= 0:
+            raise TelegramBotAPIError(
+                "Telegram sendMessage returned an invalid response",
+                retryable=True,
+            )
+        reaction.telegram_chat_id = TELEGRAM_COMMUNITY_CHAT_ID
+        reaction.telegram_message_id = telegram_message_id
+        reaction.delivery_status = "sent"
+        reaction.next_delivery_attempt_at = None
+        await db.commit()
+        return True
+    except TelegramBotAPIError as exc:
+        if exc.retryable or exc.retry_after:
+            retry_delay = _telegram_retry_delay_seconds(
+                reaction.delivery_attempts,
+                retry_after=exc.retry_after,
+            )
+            reaction.delivery_status = "queued"
+            reaction.next_delivery_attempt_at = ufa_now() + timedelta(seconds=retry_delay)
+        else:
+            reaction.delivery_status = "failed"
+        reaction.delivery_error = str(exc)[:1000]
+        await db.commit()
+        return True
+    except (TimeoutError, OSError) as exc:
+        reaction.delivery_status = "delivery_unknown"
+        reaction.delivery_error = str(exc)[:1000]
+        await db.commit()
+        return True
 
 
 def _message_full_name(sender: dict[str, Any]) -> str:

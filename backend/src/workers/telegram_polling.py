@@ -16,7 +16,11 @@ from config import (
 )
 from logger import setup_logging
 from src.app.services.telegram_updates import process_telegram_update
-from src.app.services.community import recover_stale_community_deliveries, relay_next_community_message
+from src.app.services.community import (
+    recover_stale_community_deliveries,
+    relay_next_community_message,
+    relay_next_community_reaction,
+)
 from src.database import get_session
 from src.integrations.telegram.userbot import run_telegram_userbot_mirror
 
@@ -77,14 +81,16 @@ async def run_forever() -> None:
             async with get_session() as session:
                 recovered = await recover_stale_community_deliveries(session)
                 if recovered:
-                    log.warning("marked stale telegram community deliveries unknown count=%s", recovered)
+                    log.warning("recovered telegram community deliveries count=%s", recovered)
         except Exception:
             log.exception("telegram community delivery recovery failed")
         while not stop_event.is_set():
             processed = False
             try:
                 async with get_session() as session:
-                    processed = await relay_next_community_message(session)
+                    message_processed = await relay_next_community_message(session)
+                    reaction_processed = await relay_next_community_reaction(session)
+                    processed = message_processed or reaction_processed
             except Exception:
                 log.exception("telegram community outbound tick failed")
             delay = 3.0 if processed else 1.0

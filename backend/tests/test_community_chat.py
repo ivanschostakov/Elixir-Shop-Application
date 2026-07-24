@@ -2,13 +2,18 @@ import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import httpx
+import pytest
+
 import src.app.services.community as community_service
 import src.app.services.community_topics as community_topics_service
 import src.app.services.telegram_updates as telegram_updates_service
+import src.integrations.telegram.client as telegram_client_module
 import src.integrations.telegram.userbot as telegram_userbot
 from src.app.services.community_topics import TelegramForumTopicSnapshot
 from src.database.models import CommunityTopic
 from src.database.schemas.community import CommunityAuthorRead, CommunityMessageRead
+from src.integrations.telegram.client import TelegramBotAPIError, TelegramBotClient
 
 
 def test_community_response_does_not_expose_telegram_username():
@@ -165,6 +170,44 @@ def test_outbound_worker_is_inert_when_feature_disabled(monkeypatch):
     assert asyncio.run(community_service.relay_next_community_message(SessionThatMustNotBeUsed())) is False
 
 
+def test_reaction_outbound_worker_is_inert_when_feature_disabled(monkeypatch):
+    class SessionThatMustNotBeUsed:
+        async def execute(self, *_args, **_kwargs):
+            raise AssertionError("disabled bridge queried the reaction queue")
+
+    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_ENABLED", False)
+
+    assert asyncio.run(community_service.relay_next_community_reaction(SessionThatMustNotBeUsed())) is False
+
+
+def test_telegram_retry_delay_uses_exponential_backoff_and_retry_after():
+    assert community_service._telegram_retry_delay_seconds(1) == 5
+    assert community_service._telegram_retry_delay_seconds(2) == 10
+    assert community_service._telegram_retry_delay_seconds(20) == 300
+    assert community_service._telegram_retry_delay_seconds(20, retry_after=17) == 17
+
+
+def test_telegram_transport_failure_is_retryable(monkeypatch):
+    class BrokenAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, *_args, **_kwargs):
+            raise httpx.RemoteProtocolError("proxy disconnected")
+
+    monkeypatch.setattr(telegram_client_module, "TELEGRAM_BOT_TOKEN", "test-token")
+    monkeypatch.setattr(telegram_client_module.httpx, "AsyncClient", lambda **_kwargs: BrokenAsyncClient())
+
+    with pytest.raises(TelegramBotAPIError) as exc_info:
+        asyncio.run(TelegramBotClient().call("sendMessage", data={"chat_id": -1001, "text": "test"}))
+
+    assert exc_info.value.retryable is True
+    assert exc_info.value.error_code is None
+
+
 def test_long_telegram_text_is_split_without_losing_content():
     text = "Header\n\n" + ("message " * 900)
 
@@ -188,6 +231,12 @@ def test_app_message_telegram_header_distinguishes_messages_and_replies():
     assert community_service._telegram_author_entities(message_header, author_name) == [
         {"type": "bold", "offset": 0, "length": 10},
     ]
+
+
+def test_general_topic_omits_bot_api_message_thread_id():
+    assert community_service._telegram_bot_thread_id(SimpleNamespace(telegram_thread_id=0)) is None
+    assert community_service._telegram_bot_thread_id(SimpleNamespace(telegram_thread_id=1)) is None
+    assert community_service._telegram_bot_thread_id(SimpleNamespace(telegram_thread_id=27775)) == 27775
 
 
 def test_authoritative_topic_snapshot_discovers_updates_restores_and_deletes():

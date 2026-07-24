@@ -8,10 +8,18 @@ from config import TELEGRAM_API_BASE_URL, TELEGRAM_BOT_TOKEN, TELEGRAM_PROXY_URL
 
 
 class TelegramBotAPIError(RuntimeError):
-    def __init__(self, message: str, *, error_code: int | None = None, retry_after: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: int | None = None,
+        retry_after: int | None = None,
+        retryable: bool = False,
+    ) -> None:
         super().__init__(message)
         self.error_code = error_code
         self.retry_after = retry_after
+        self.retryable = retryable
 
 
 class TelegramBotClient:
@@ -34,15 +42,33 @@ class TelegramBotClient:
             async with httpx.AsyncClient(timeout=httpx.Timeout(timeout, connect=10.0), proxy=TELEGRAM_PROXY_URL) as client:
                 response = await client.post(f"{self._base_url}/{method}", data=encoded_data, files=files)
         except httpx.TimeoutException as exc: raise TimeoutError(f"Telegram {method} request timed out") from exc
-        except httpx.HTTPError as exc: raise TelegramBotAPIError(f"Telegram {method} request failed") from exc
+        except httpx.HTTPError as exc:
+            raise TelegramBotAPIError(
+                f"Telegram {method} request failed",
+                retryable=True,
+            ) from exc
 
         try: payload = response.json()
-        except ValueError as exc: raise TelegramBotAPIError(f"Telegram {method} returned invalid JSON") from exc
-        if not isinstance(payload, dict): raise TelegramBotAPIError(f"Telegram {method} returned an invalid response")
+        except ValueError as exc:
+            raise TelegramBotAPIError(
+                f"Telegram {method} returned invalid JSON",
+                retryable=True,
+            ) from exc
+        if not isinstance(payload, dict):
+            raise TelegramBotAPIError(
+                f"Telegram {method} returned an invalid response",
+                retryable=True,
+            )
         if response.is_error or not payload.get("ok"):
             parameters = payload.get("parameters") if isinstance(payload.get("parameters"), dict) else {}
             retry_after = parameters.get("retry_after")
-            raise TelegramBotAPIError(str(payload.get("description") or f"Telegram {method} failed"), error_code=int(payload.get("error_code") or response.status_code or 0) or None, retry_after=int(retry_after) if retry_after is not None else None)
+            error_code = int(payload.get("error_code") or response.status_code or 0) or None
+            raise TelegramBotAPIError(
+                str(payload.get("description") or f"Telegram {method} failed"),
+                error_code=error_code,
+                retry_after=int(retry_after) if retry_after is not None else None,
+                retryable=bool(error_code == 429 or (error_code is not None and error_code >= 500)),
+            )
         return payload.get("result")
 
     async def get_chat(self, chat_id: int) -> dict[str, Any]:
