@@ -31,13 +31,20 @@ from src.database.models import (
 
 AnalyticsSection = Literal["sales", "customers", "products", "discounts", "marketing"]
 ANALYTICS_SECTIONS: tuple[AnalyticsSection, ...] = ("sales", "customers", "products", "discounts", "marketing")
+ANALYTICS_TIMEZONE = "Asia/Yekaterinburg"
 
 
 def analytics_period(days: int) -> tuple[datetime, datetime]:
     if days < 7 or days > 365:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Analytics period must be between 7 and 365 days")
     end = ufa_now()
-    return end - timedelta(days=days), end
+    start = (end - timedelta(days=days - 1)).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    return start, end
 
 
 def percent(numerator: int | Decimal, denominator: int | Decimal) -> Decimal:
@@ -66,7 +73,12 @@ def _csv_cell(value: Any) -> str:
 
 async def sales_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     start, _ = analytics_period(days)
-    paid_filter = (Order.is_paid.is_(True), Order.is_canceled.is_(False), Order.created_at >= start)
+    paid_filter = (
+        Order.is_paid.is_(True),
+        Order.is_canceled.is_(False),
+        Order.payment_paid_at.is_not(None),
+        Order.payment_paid_at >= start,
+    )
     revenue, orders, units = (await db.execute(select(
         func.coalesce(func.sum(Order.grand_total), 0),
         func.count(Order.id),
@@ -82,8 +94,9 @@ async def sales_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     ))).scalar_one())
     revenue_decimal = money(revenue)
     orders_count = int(orders or 0)
+    local_payment_time = func.timezone(ANALYTICS_TIMEZONE, Order.payment_paid_at)
     trend_rows = (await db.execute(select(
-        func.date(Order.payment_paid_at).label("day"),
+        func.date(local_payment_time).label("day"),
         func.coalesce(func.sum(Order.grand_total), 0).label("revenue"),
         func.count(Order.id).label("orders"),
     ).where(
@@ -91,7 +104,7 @@ async def sales_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
         Order.is_canceled.is_(False),
         Order.payment_paid_at.is_not(None),
         Order.payment_paid_at >= start,
-    ).group_by(func.date(Order.payment_paid_at)).order_by(func.date(Order.payment_paid_at)))).all()
+    ).group_by(func.date(local_payment_time)).order_by(func.date(local_payment_time)))).all()
     status_rows = (await db.execute(select(Order.payment_status, func.count(Order.id)).where(Order.created_at >= start).group_by(Order.payment_status))).all()
     return {
         "summary": {
@@ -163,6 +176,22 @@ async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     ).where(
         UserEvent.occurred_at >= start,
     ).group_by(UserEvent.event_name).order_by(func.count(UserEvent.id).desc()))).all()
+    app_open_filter = (UserEvent.event_name == "app_opened", UserEvent.occurred_at >= start)
+    app_opens_total, app_open_users = (await db.execute(select(
+        func.count(UserEvent.id),
+        func.count(func.distinct(UserEvent.user_id)),
+    ).where(*app_open_filter))).one()
+    local_event_time = func.timezone(ANALYTICS_TIMEZONE, UserEvent.occurred_at)
+    app_open_daily_rows = (await db.execute(select(
+        func.date(local_event_time).label("period"),
+        func.count(UserEvent.id).label("opens"),
+        func.count(func.distinct(UserEvent.user_id)).label("customers"),
+    ).where(*app_open_filter).group_by(func.date(local_event_time)).order_by(func.date(local_event_time)))).all()
+    app_open_monthly_rows = (await db.execute(select(
+        func.date_trunc("month", local_event_time).label("period"),
+        func.count(UserEvent.id).label("opens"),
+        func.count(func.distinct(UserEvent.user_id)).label("customers"),
+    ).where(*app_open_filter).group_by(func.date_trunc("month", local_event_time)).order_by(func.date_trunc("month", local_event_time)))).all()
     return {
         "summary": {
             "total_customers": total_customers,
@@ -198,6 +227,23 @@ async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
             {"event_name": str(event_name), "events": int(events), "customers": int(customers)}
             for event_name, events, customers in event_rows
         ],
+        "app_opens": {
+            "total": int(app_opens_total or 0),
+            "unique_customers": int(app_open_users or 0),
+            "average_per_customer": (
+                (Decimal(app_opens_total or 0) / Decimal(app_open_users)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                if app_open_users
+                else Decimal("0.00")
+            ),
+            "daily": [
+                {"period": row.period, "opens": int(row.opens), "customers": int(row.customers)}
+                for row in app_open_daily_rows
+            ],
+            "monthly": [
+                {"period": row.period, "opens": int(row.opens), "customers": int(row.customers)}
+                for row in app_open_monthly_rows
+            ],
+        },
     }
 
 
@@ -209,11 +255,34 @@ async def products_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
         OrderItem.product_sku,
         func.coalesce(func.sum(OrderItem.quantity), 0).label("quantity"),
         func.coalesce(func.sum(OrderItem.line_total), 0).label("revenue"),
+        func.count(func.distinct(OrderItem.order_id)).label("orders"),
+        func.count(func.distinct(Order.user_id)).label("customers"),
     ).join(Order, Order.id == OrderItem.order_id).where(
         Order.is_paid.is_(True),
         Order.is_canceled.is_(False),
-        Order.created_at >= start,
+        Order.payment_paid_at.is_not(None),
+        Order.payment_paid_at >= start,
     ).group_by(OrderItem.product_id, OrderItem.product_name, OrderItem.product_sku).order_by(func.coalesce(func.sum(OrderItem.line_total), 0).desc()).limit(15))).all()
+    top_product_ids = [int(row.product_id) for row in top_rows]
+    view_rows = (await db.execute(select(
+        UserEvent.entity_id,
+        func.count(UserEvent.id).label("views"),
+        func.count(func.distinct(UserEvent.user_id)).label("viewers"),
+    ).where(
+        UserEvent.event_name == "product_viewed",
+        UserEvent.entity_type == "product",
+        UserEvent.entity_id.in_(top_product_ids),
+        UserEvent.occurred_at >= start,
+    ).group_by(UserEvent.entity_id))).all() if top_product_ids else []
+    stock_rows = (await db.execute(select(
+        Variant.product_id,
+        func.coalesce(func.sum(Variant.stock), 0).label("stock"),
+    ).where(
+        Variant.product_id.in_(top_product_ids),
+        Variant.archived.is_(False),
+    ).group_by(Variant.product_id))).all() if top_product_ids else []
+    views_by_product = {int(row.entity_id): (int(row.views), int(row.viewers)) for row in view_rows}
+    stock_by_product = {int(row.product_id): int(row.stock) for row in stock_rows}
     low_stock_rows = (await db.execute(select(
         Product.id,
         Product.name,
@@ -233,8 +302,20 @@ async def products_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
             "low_stock_products": len(low_stock_rows),
         },
         "top_products": [
-            {"product_id": int(product_id), "name": name, "sku": sku, "quantity": int(quantity), "revenue": money(revenue)}
-            for product_id, name, sku, quantity, revenue in top_rows
+            {
+                "product_id": int(product_id),
+                "name": name,
+                "sku": sku,
+                "quantity": int(quantity),
+                "revenue": money(revenue),
+                "orders": int(orders),
+                "customers": int(customers),
+                "views": views_by_product.get(int(product_id), (0, 0))[0],
+                "viewers": views_by_product.get(int(product_id), (0, 0))[1],
+                "conversion_rate": percent(int(customers), views_by_product.get(int(product_id), (0, 0))[1]),
+                "stock": stock_by_product.get(int(product_id), 0),
+            }
+            for product_id, name, sku, quantity, revenue, orders, customers in top_rows
         ],
         "low_stock": [
             {"product_id": int(product_id), "name": name, "sku": sku, "stock": int(stock)}
@@ -338,9 +419,30 @@ def analytics_csv(section: AnalyticsSection, snapshot: dict[str, Any]) -> bytes:
     if section == "sales":
         return csv_bytes(["date", "revenue", "orders"], ((row["date"], row["revenue"], row["orders"]) for row in data["trend"]))
     if section == "customers":
-        return csv_bytes(["user_id", "name", "email", "orders", "ltv"], ((row["user_id"], row["name"], row["email"], row["orders"], row["ltv"]) for row in data["top_customers"]))
+        return csv_bytes(
+            ["period", "opens", "unique_customers"],
+            ((row["period"], row["opens"], row["customers"]) for row in data["app_opens"]["daily"]),
+        )
     if section == "products":
-        return csv_bytes(["product_id", "name", "sku", "quantity", "revenue"], ((row["product_id"], row["name"], row["sku"], row["quantity"], row["revenue"]) for row in data["top_products"]))
+        return csv_bytes(
+            ["product_id", "name", "sku", "quantity", "revenue", "orders", "customers", "views", "viewers", "conversion_rate", "stock"],
+            (
+                (
+                    row["product_id"],
+                    row["name"],
+                    row["sku"],
+                    row["quantity"],
+                    row["revenue"],
+                    row["orders"],
+                    row["customers"],
+                    row["views"],
+                    row["viewers"],
+                    row["conversion_rate"],
+                    row["stock"],
+                )
+                for row in data["top_products"]
+            ),
+        )
     if section == "discounts":
         return csv_bytes(["source", "applications", "discount_amount"], ((row["source"], row["applications"], row["discount_amount"]) for row in data["sources"]))
     return csv_bytes(["campaign_id", "name", "status", "goal", "audience", "sent", "failed", "clicked", "delivery_rate", "click_rate"], (

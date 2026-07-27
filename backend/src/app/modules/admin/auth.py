@@ -1,7 +1,9 @@
+import logging
+
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -22,11 +24,21 @@ from src.app.modules.admin.schemas import (
     AdminMfaSetupResponse,
     AdminMfaVerifyPayload,
     AdminOkResponse,
+    AdminPasswordResetConfirm,
+    AdminPasswordResetRequest,
     AdminPrincipal,
     AdminSessionRead,
     AdminUserRead,
 )
 from src.app.services.admin.permissions import AdminContext, build_admin_context, get_admin_by_user_id, get_current_admin_context
+from src.app.services.admin.password_reset import (
+    AdminPasswordResetConfigError,
+    AdminPasswordResetDeliveryError,
+    admin_password_reset_expiry,
+    generate_admin_password_reset_token,
+    hash_admin_password_reset_token,
+    send_admin_password_reset_email,
+)
 from src.app.services.admin.security import (
     build_totp_uri,
     create_admin_access_token,
@@ -38,12 +50,13 @@ from src.app.services.admin.security import (
     verify_totp,
 )
 from src.app.services.rate_limit import client_ip_from_request, enforce_rate_limit
-from src.app.services.security import verify_password
+from src.app.services.security import hash_password, verify_password
 from src.app.services.security.refresh import create_refresh_token, hash_refresh_token, verify_refresh_token
 from src.database import get_db
-from src.database.models import Admin, User, UserSession
+from src.database.models import Admin, AdminPasswordReset, User, UserSession
 
 admin_auth_router = APIRouter(prefix="/auth", tags=["admin_auth"])
+logger = logging.getLogger(__name__)
 
 
 def _principal(context: AdminContext) -> AdminPrincipal:
@@ -108,6 +121,106 @@ async def _load_active_admin(db: AsyncSession, user_id: int) -> Admin:
     if admin is None or not admin.is_active or not admin.user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin account is unavailable")
     return admin
+
+
+@admin_auth_router.post("/password-reset/request", response_model=AdminOkResponse)
+async def request_admin_password_reset(
+    payload: AdminPasswordResetRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AdminOkResponse:
+    email = str(payload.email).strip().lower()
+    await enforce_rate_limit(
+        request,
+        scope="admin:password-reset:request",
+        limit=5,
+        window_seconds=15 * 60,
+        key=f"{client_ip_from_request(request)}:{email}",
+    )
+    admin = (
+        await db.execute(
+            select(Admin)
+            .join(User, User.id == Admin.user_id)
+            .where(User.email == email, User.is_active.is_(True), Admin.is_active.is_(True))
+        )
+    ).scalar_one_or_none()
+    # The response is intentionally identical for known and unknown addresses.
+    if admin is None:
+        return AdminOkResponse()
+
+    now = ufa_now()
+    await db.execute(
+        update(AdminPasswordReset)
+        .where(
+            AdminPasswordReset.user_id == admin.user_id,
+            AdminPasswordReset.used_at.is_(None),
+        )
+        .values(used_at=now)
+    )
+    token = generate_admin_password_reset_token()
+    reset = AdminPasswordReset(
+        user_id=admin.user_id,
+        token_hash=hash_admin_password_reset_token(token),
+        expires_at=admin_password_reset_expiry(now),
+        requested_ip=client_ip_from_request(request)[:64],
+    )
+    db.add(reset)
+    await db.commit()
+    try:
+        await send_admin_password_reset_email(
+            to_email=email,
+            token=token,
+            expires_at=reset.expires_at,
+        )
+    except (AdminPasswordResetConfigError, AdminPasswordResetDeliveryError):
+        logger.exception("Failed to deliver admin password reset email for user_id=%s", admin.user_id)
+        reset.used_at = ufa_now()
+        await db.commit()
+    return AdminOkResponse()
+
+
+@admin_auth_router.post("/password-reset/confirm", response_model=AdminOkResponse)
+async def confirm_admin_password_reset(
+    payload: AdminPasswordResetConfirm,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> AdminOkResponse:
+    await enforce_rate_limit(
+        request,
+        scope="admin:password-reset:confirm",
+        limit=10,
+        window_seconds=15 * 60,
+    )
+    now = ufa_now()
+    reset = (
+        await db.execute(
+            select(AdminPasswordReset)
+            .where(
+                AdminPasswordReset.token_hash
+                == hash_admin_password_reset_token(payload.token),
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if reset is None or reset.used_at is not None or reset.expires_at <= now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password reset link is invalid or expired",
+        )
+    admin = await _load_active_admin(db, reset.user_id)
+    admin.user.password_hash = hash_password(payload.password)
+    reset.used_at = now
+    await db.execute(
+        update(UserSession)
+        .where(
+            UserSession.user_id == reset.user_id,
+            UserSession.purpose == "admin",
+            UserSession.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    await db.commit()
+    return AdminOkResponse()
 
 
 async def _issue_admin_session(

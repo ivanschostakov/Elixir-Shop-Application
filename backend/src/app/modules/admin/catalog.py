@@ -1,5 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import func, or_, select
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,8 +15,11 @@ from src.app.modules.admin.schemas import (
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
 from src.app.services.cache import get_cache_service
+from src.app.services.product_image_storage import prepare_product_image, save_product_image
+from config import ufa_now
 from src.database import get_db
-from src.database.models import Product, ProductByCategory, ProductCategory
+from src.database.models import Product, ProductByCategory, ProductCategory, Variant
+from src.product_media import product_image_path, variant_image_path
 
 admin_catalog_router = APIRouter(tags=["admin_catalog"])
 
@@ -48,6 +51,7 @@ async def list_products(
     q: str | None = Query(default=None, max_length=100),
     archived: bool | None = None,
     in_stock: bool | None = None,
+    low_stock: bool | None = None,
     category_id: int | None = Query(default=None, ge=1),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
@@ -62,6 +66,12 @@ async def list_products(
         filters.append(Product.archived.is_(archived))
     if in_stock is not None:
         filters.append(Product.in_stock.is_(in_stock))
+    if low_stock:
+        filters.append(exists(select(Variant.id).where(
+            Variant.product_id == Product.id,
+            Variant.archived.is_(False),
+            Variant.stock <= 3,
+        )))
     base = select(Product).where(*filters)
     if category_id:
         base = base.join(ProductByCategory).where(ProductByCategory.category_id == category_id)
@@ -115,6 +125,91 @@ async def update_product_merchandise(
     await db.commit()
     await _bump_catalog_cache()
     return after
+
+
+@admin_catalog_router.post("/products/{product_id}/image", response_model=AdminProductRead)
+async def upload_product_image(
+    product_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("catalog.merchandise", write=True)),
+) -> AdminProductRead:
+    product = await _get_product(db, product_id)
+    target_path = product_image_path(product.id, product.system_id)
+    if target_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Product does not have a source identifier",
+        )
+    before = serialize_admin_product(request, product).model_dump(mode="json")
+    await save_product_image(target_path, await prepare_product_image(file))
+    product.updated_at = ufa_now()
+    await db.flush()
+    result = serialize_admin_product(request, product)
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="product.image.upload",
+        entity_type="product",
+        entity_id=product.id,
+        before=before,
+        after=result.model_dump(mode="json"),
+    )
+    await db.commit()
+    await _bump_catalog_cache()
+    return result
+
+
+@admin_catalog_router.post(
+    "/products/{product_id}/variants/{variant_id}/image",
+    response_model=AdminProductRead,
+)
+async def upload_variant_image(
+    product_id: int,
+    variant_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("catalog.merchandise", write=True)),
+) -> AdminProductRead:
+    product = await _get_product(db, product_id)
+    variant = (
+        await db.execute(
+            select(Variant).where(
+                Variant.id == variant_id,
+                Variant.product_id == product_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if variant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    target_path = variant_image_path(product.id, variant.system_id)
+    if target_path is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Variant does not have a source identifier",
+        )
+    before = serialize_admin_product(request, product).model_dump(mode="json")
+    await save_product_image(target_path, await prepare_product_image(file))
+    product.updated_at = ufa_now()
+    await db.flush()
+    product = await _get_product(db, product.id)
+    result = serialize_admin_product(request, product)
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="product.variant_image.upload",
+        entity_type="variant",
+        entity_id=variant.id,
+        before=before,
+        after=result.model_dump(mode="json"),
+    )
+    await db.commit()
+    await _bump_catalog_cache()
+    return result
 
 
 @admin_catalog_router.get("/categories", response_model=AdminPage[AdminCategoryRead])

@@ -16,6 +16,7 @@ from .admin import (
     AdminNote,
     AdminOrderAutomationExecution,
     AdminOrderAutomationRule,
+    AdminPasswordReset,
     AdminPushCampaign,
     AdminPushCampaignRecipient,
     AdminPushCampaignTemplate,
@@ -51,6 +52,7 @@ from .benefits.order_benefit_application import OrderBenefitApplication
 from .catalog.product import Product
 from .catalog.banner import Banner
 from .catalog.banner_click import BannerClick
+from .catalog.banner_impression import BannerImpression
 from .catalog.product_category import ProductCategory
 from .catalog.products_by_category import ProductByCategory
 from .catalog.review import Review
@@ -90,6 +92,7 @@ __all__ = [
     "AdminNote",
     "AdminOrderAutomationExecution",
     "AdminOrderAutomationRule",
+    "AdminPasswordReset",
     "AdminPushCampaign",
     "AdminPushCampaignRecipient",
     "AdminPushCampaignTemplate",
@@ -106,6 +109,7 @@ __all__ = [
     "Attachment",
     "Banner",
     "BannerClick",
+    "BannerImpression",
     "Basket",
     "BasketItem",
     "CommunityAttachment",

@@ -29,6 +29,7 @@ PAYMENT_STATUS_BY_CODE = {3: "created", 4: "canceled", 5: "paid", 6: "hold", 7: 
 PENDING_PAYMENT_STEPS = {"", "Created", "InProcess", "SendTo3DS"}
 FINAL_PAYMENT_STATUSES = {"paid", "canceled", "error", "refunded"}
 DEAD_PAYMENT_STATUSES = {"canceled", "error", "refunded"}
+LEGACY_PAID_PAYMENT_STATUSES = {"ok", "success"}
 
 
 def _payment_status_from_step(payment_step: str | None) -> str:
@@ -178,8 +179,22 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
 
 
 async def _ensure_persisted_paid_state(session: AsyncSession, order: Order) -> Order:
-    if order.payment_status != "paid" or order.is_paid: return order
-    updated_order = await update_order(session, order, OrderUpdate(is_paid=True), commit=True)
+    normalized_status = (order.payment_status or "").strip().lower()
+    if normalized_status not in {"paid", *LEGACY_PAID_PAYMENT_STATUSES}:
+        return order
+    if order.is_paid and normalized_status == "paid" and order.payment_paid_at is not None:
+        return order
+    updated_order = await update_order(
+        session,
+        order,
+        OrderUpdate(
+            payment_status="paid",
+            is_paid=True,
+            payment_paid_at=order.payment_paid_at or order.updated_at or datetime.now(timezone.utc),
+            payment_error="",
+        ),
+        commit=True,
+    )
     return updated_order
 
 
@@ -360,7 +375,11 @@ async def create_payment_for_order(
 
 
 async def get_payment_status_for_order(session: AsyncSession, *, request: Request, order: Order) -> dict[str, Any]:
-    if (order.payment_method or "").lower() == "sbp"  and order.payment_invoice_id and (order.payment_status or "") not in FINAL_PAYMENT_STATUSES:
+    if (
+        (order.payment_method or "").lower() == "sbp"
+        and order.payment_invoice_id
+        and (order.payment_status or "").strip().lower() not in FINAL_PAYMENT_STATUSES | LEGACY_PAID_PAYMENT_STATUSES
+    ):
         payload, _ = await _checked_sbp_payment_payload(session, request=request, order=order)
         return payload
 

@@ -261,6 +261,12 @@ class MoySkladClient:
     async def get_organizations(self) -> list[dict[str, Any]]:
         return await self.get_all("/entity/organization")
 
+    async def get_organization(self, organization_id: UUID | str) -> dict[str, Any] | None:
+        normalized_id = coerce_uuid(organization_id)
+        if normalized_id is None:
+            return None
+        return await self._get_entity_by_id("organization", normalized_id)
+
     async def get_stores(self) -> list[dict[str, Any]]:
         return await self.get_all("/entity/store")
 
@@ -376,6 +382,9 @@ class MoySkladClient:
 
     async def find_store_by_name(self, *names: str) -> dict[str, Any] | None:
         return self._find_named_row(await self.get_stores(), *names)
+
+    async def find_organization_by_name(self, *names: str) -> dict[str, Any] | None:
+        return self._find_named_row(await self.get_organizations(), *names)
 
     async def find_saleschannel_by_name(self, *names: str) -> dict[str, Any] | None:
         return self._find_named_row(await self.get_saleschannels(), *names)

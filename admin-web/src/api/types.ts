@@ -83,6 +83,13 @@ export type AnalyticsSnapshot = {
       push_permissions: Array<{ permission: string; customers: number }>
     }
     events: Array<{ event_name: string; events: number; customers: number }>
+    app_opens: {
+      total: number
+      unique_customers: number
+      average_per_customer: string
+      daily: Array<{ period: string; opens: number; customers: number }>
+      monthly: Array<{ period: string; opens: number; customers: number }>
+    }
   }
   products: {
     summary: {
@@ -91,7 +98,19 @@ export type AnalyticsSnapshot = {
       stock_coverage_rate: string
       low_stock_products: number
     }
-    top_products: Array<{ product_id: number; name: string; sku: string; quantity: number; revenue: string }>
+    top_products: Array<{
+      product_id: number
+      name: string
+      sku: string
+      quantity: number
+      revenue: string
+      orders: number
+      customers: number
+      views: number
+      viewers: number
+      conversion_rate: string
+      stock: number
+    }>
     low_stock: Array<{ product_id: number; name: string; sku: string; stock: number }>
   }
   discounts: {
@@ -212,6 +231,10 @@ export type CustomerDetail = CustomerListItem & {
   basket_total: string
   favourites_count: number
   push_tokens_count: number
+  push_delivery_status: "ready" | "no_token" | "permission_denied" | "unknown"
+  push_reachable: boolean
+  last_push_token_at: string | null
+  last_push_dispatch_at: string | null
   referral_discount_base_total: string
   referral_discount_percent: string
   total_product_views: number
@@ -330,6 +353,7 @@ export type Product = {
     stock: number
     price: string
     archived: boolean
+    image_url: string
   }>
   updated_at: string
 }
@@ -411,6 +435,19 @@ export type Banner = {
 export type BannerUpload = {
   image_path: string
   url: string
+}
+
+export type BannerStats = {
+  banner_id: number
+  impressions: number
+  clicks: number
+  ctr_percent: string
+  daily: Array<{
+    day: string
+    impressions: number
+    clicks: number
+    ctr_percent: string
+  }>
 }
 
 export type BusinessContent = {

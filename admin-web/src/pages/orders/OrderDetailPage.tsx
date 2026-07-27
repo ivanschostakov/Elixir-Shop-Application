@@ -9,6 +9,7 @@ import { useAuth } from "../../auth/AuthProvider"
 import { PageHeader } from "../../components/PageHeader"
 import { QueryState } from "../../components/QueryState"
 import { useLanguage } from "../../i18n/LanguageProvider"
+import { domainLabel } from "../../i18n/domain"
 import { dateTime, money, statusColors, statusLabel } from "../../utils/format"
 
 const allStatuses: OrderStatusCode[] = ["created", "invoice_sent", "paid", "waiting_response", "packaged", "sent", "delivered", "completed", "canceled", "refund_declined"]
@@ -53,8 +54,8 @@ export function OrderDetailPage() {
     transition.mutate({ order: orderToTransition, reason: null })
   }
   const copy = locale === "ru"
-    ? { description: "Полная информация, оплата, доставка и связи с внешними системами", overview: "Обзор", customer: "Клиент и доставка", payment: "Оплата", integrations: "Интеграции", items: "Состав заказа", status: "Изменить статус", apply: "Применить", timeline: "История", subtotal: "Товары", delivery: "Доставка", total: "Итого", comment: "Комментарий", recovery: "Восстановление", recoveryHint: "Безопасные повторные команды с журналом и защитой от дублей", checkPayment: "Проверить оплату", syncOrder: "Синхронизировать МойСклад", createDelivery: "Создать доставку", noRuns: "Операций пока нет" }
-    : { description: "Order details, payment, fulfillment and external links", overview: "Overview", customer: "Customer & delivery", payment: "Payment", integrations: "Integrations", items: "Order items", status: "Change status", apply: "Apply", timeline: "Timeline", subtotal: "Items", delivery: "Delivery", total: "Total", comment: "Comment", recovery: "Recovery", recoveryHint: "Safe retry commands with an audit trail and duplicate protection", checkPayment: "Check payment", syncOrder: "Sync MoySklad", createDelivery: "Create delivery", noRuns: "No operations yet" }
+    ? { description: "Полная информация, оплата, доставка и связи с внешними системами", overview: "Обзор", customer: "Клиент и доставка", payment: "Оплата", integrations: "Интеграции", items: "Состав заказа", status: "Изменить статус", apply: "Применить", timeline: "История", subtotal: "Товары", delivery: "Доставка", total: "Итого", comment: "Комментарий", recovery: "Восстановление", recoveryHint: "Безопасные повторные команды с журналом и защитой от дублей", checkPayment: "Проверить оплату", syncOrder: "Синхронизировать МойСклад", createDelivery: "Создать доставку", noRuns: "Операций пока нет", phone: "Телефон", method: "Способ", provider: "Провайдер", invoice: "Счёт", paidAt: "Оплачено", deliveryRef: "Доставка" }
+    : { description: "Order details, payment, fulfillment and external links", overview: "Overview", customer: "Customer & delivery", payment: "Payment", integrations: "Integrations", items: "Order items", status: "Change status", apply: "Apply", timeline: "Timeline", subtotal: "Items", delivery: "Delivery", total: "Total", comment: "Comment", recovery: "Recovery", recoveryHint: "Safe retry commands with an audit trail and duplicate protection", checkPayment: "Check payment", syncOrder: "Sync MoySklad", createDelivery: "Create delivery", noRuns: "No operations yet", phone: "Phone", method: "Method", provider: "Provider", invoice: "Invoice", paidAt: "Paid at", deliveryRef: "Delivery" }
 
   return (
     <div className="page-stack">
@@ -85,7 +86,7 @@ export function OrderDetailPage() {
               <Card title={copy.overview}>
                 <Descriptions column={{ xs: 1, md: 2 }}>
                   <Descriptions.Item label={copy.customer}>{order.customer.name} {order.customer.surname}</Descriptions.Item>
-                  <Descriptions.Item label="Phone">{order.customer.phone_number || "—"}</Descriptions.Item>
+                  <Descriptions.Item label={copy.phone}>{order.customer.phone_number || "—"}</Descriptions.Item>
                   <Descriptions.Item label="Email">{order.customer.email || "—"}</Descriptions.Item>
                   <Descriptions.Item label={copy.comment}>{order.comment || "—"}</Descriptions.Item>
                   <Descriptions.Item label={locale === "ru" ? "Адрес" : "Address"} span={2}>{String(order.address.full_address || order.delivery_string || "—")}</Descriptions.Item>
@@ -109,25 +110,25 @@ export function OrderDetailPage() {
             <Col xs={24} xl={8}>
               <Card title={copy.payment}>
                 <Descriptions column={1} size="small">
-                  <Descriptions.Item label="Status"><Tag color={order.is_paid ? "green" : order.payment_error ? "red" : "orange"}>{order.payment_status}</Tag></Descriptions.Item>
-                  <Descriptions.Item label="Method">{order.payment_method || "—"}</Descriptions.Item>
-                  <Descriptions.Item label="Provider">{order.payment_provider || "—"}</Descriptions.Item>
-                  <Descriptions.Item label="Invoice">{order.payment_invoice_id || "—"}</Descriptions.Item>
-                  <Descriptions.Item label="Paid at">{dateTime(order.payment_paid_at, locale)}</Descriptions.Item>
+                  <Descriptions.Item label={locale === "ru" ? "Статус" : "Status"}><Tag color={order.is_paid ? "green" : order.payment_error ? "red" : "orange"}>{domainLabel(order.payment_status, locale)}</Tag></Descriptions.Item>
+                  <Descriptions.Item label={copy.method}>{order.payment_method?.toUpperCase() || "—"}</Descriptions.Item>
+                  <Descriptions.Item label={copy.provider}>{order.payment_provider || "—"}</Descriptions.Item>
+                  <Descriptions.Item label={copy.invoice}>{order.payment_invoice_id || "—"}</Descriptions.Item>
+                  <Descriptions.Item label={copy.paidAt}>{dateTime(order.payment_paid_at, locale)}</Descriptions.Item>
                 </Descriptions>
               </Card>
               <Card title={copy.integrations}>
                 <Space direction="vertical">
                   <Typography.Text><LinkOutlined /> amoCRM: {order.amocrm_lead_id || "—"}</Typography.Text>
                   <Typography.Text><LinkOutlined /> МойСклад: {order.moysklad_customerorder_id || "—"}</Typography.Text>
-                  <Typography.Text><LinkOutlined /> Delivery: {order.delivery_provider_ref || "—"}</Typography.Text>
+                  <Typography.Text><LinkOutlined /> {copy.deliveryRef}: {order.delivery_provider_ref || "—"}</Typography.Text>
                 </Space>
                 <Divider />
                 <List<IntegrationRun>
                   size="small"
                   locale={{ emptyText: copy.noRuns }}
                   dataSource={(runs.data || []).slice(0, 5)}
-                  renderItem={(run) => <List.Item extra={<Tag color={runColors[run.status] || "default"}>{run.status}</Tag>}><div className="table-primary"><span>{run.operation}</span><small>{dateTime(run.started_at, locale)} · {run.attempts}/{run.max_attempts}</small></div></List.Item>}
+                  renderItem={(run) => <List.Item extra={<Tag color={runColors[run.status] || "default"}>{domainLabel(run.status, locale)}</Tag>}><div className="table-primary"><span>{domainLabel(run.operation, locale)}</span><small>{dateTime(run.started_at, locale)} · {run.attempts}/{run.max_attempts}</small></div></List.Item>}
                 />
               </Card>
               <Card title={copy.timeline}>

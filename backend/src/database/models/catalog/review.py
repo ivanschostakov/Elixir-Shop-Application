@@ -47,6 +47,9 @@ class Review(Base, IdPkMixin, TimestampMixin):
     appeal_status: Mapped[str] = mapped_column(String(32), nullable=False, default="none", server_default=sqltext("'none'"), index=True)
     restored_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     customer_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    sync_origin: Mapped[str] = mapped_column(String(32), nullable=False, default="app", server_default=sqltext("'app'"), index=True)
+    website_review_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, unique=True, index=True)
+    website_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint("value >= 0 AND value <= 5", name="check_review_value_0_5"),

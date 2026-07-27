@@ -37,6 +37,7 @@ from .invitations import (
     AdminInvitationRead,
     AdminInvitationTokenPayload,
 )
+from .password_reset import AdminPasswordResetConfirm, AdminPasswordResetRequest
 from .support import (
     AdminSupportAttachmentRead,
     AdminSupportConversationDetail,
@@ -76,6 +77,8 @@ __all__ = [
     "AdminInvitationPreview",
     "AdminInvitationRead",
     "AdminInvitationTokenPayload",
+    "AdminPasswordResetConfirm",
+    "AdminPasswordResetRequest",
     "AdminSupportAttachmentRead",
     "AdminSupportConversationDetail",
     "AdminSupportConversationRead",

@@ -6,6 +6,7 @@ import type { ProductionReadiness, ReadinessCheck, WorkerHeartbeat } from "../ap
 import { PageHeader } from "../components/PageHeader"
 import { QueryState } from "../components/QueryState"
 import { useLanguage } from "../i18n/LanguageProvider"
+import { domainLabel } from "../i18n/domain"
 import { dateTime } from "../utils/format"
 
 const statusMeta = {
@@ -23,7 +24,7 @@ export function ReadinessPage() {
     refetchInterval: 20_000,
   })
   const copy = locale === "ru"
-    ? { title: "Готовность", description: "Продакшен-чеклист админки", status: "Статус", check: "Проверка", message: "Состояние", details: "Детали", workers: "Worker’ы", lastSeen: "Пульс", staleAfter: "Считать устаревшим", generated: "Обновлено", host: "Host", healthy: "OK", warning: "Внимание", error: "Ошибка", unknown: "Неизвестно", checklist: "Чеклист" }
+    ? { title: "Готовность", description: "Продакшен-чеклист админки", status: "Статус", check: "Проверка", message: "Состояние", details: "Детали", workers: "Фоновые обработчики", lastSeen: "Пульс", staleAfter: "Считать устаревшим", generated: "Обновлено", host: "Сервер", healthy: "Работает", warning: "Внимание", error: "Ошибка", unknown: "Неизвестно", checklist: "Чеклист" }
     : { title: "Readiness", description: "Admin production checklist", status: "Status", check: "Check", message: "State", details: "Details", workers: "Workers", lastSeen: "Heartbeat", staleAfter: "Stale after", generated: "Updated", host: "Host", healthy: "OK", warning: "Warning", error: "Error", unknown: "Unknown", checklist: "Checklist" }
   const label = (check: ReadinessCheck) => locale === "ru" ? check.label_ru : check.label_en
   const message = (check: ReadinessCheck) => locale === "ru" ? check.message_ru : check.message_en
@@ -64,10 +65,10 @@ export function ReadinessPage() {
           dataSource={readiness.data.workers}
           pagination={false}
           columns={[
-            { title: copy.check, dataIndex: "name" },
+            { title: copy.check, dataIndex: "name", render: (value: string) => domainLabel(value, locale) },
             { title: copy.status, render: (_: unknown, row) => <Tag color={statusMeta[row.status].color}>{statusText(row.status)}</Tag> },
             { title: copy.lastSeen, dataIndex: "last_seen_at", render: (value: string | null) => dateTime(value, locale) },
-            { title: copy.staleAfter, dataIndex: "stale_after_seconds", render: (value: number) => `${value}s` },
+            { title: copy.staleAfter, dataIndex: "stale_after_seconds", render: (value: number) => `${value} ${locale === "ru" ? "с" : "s"}` },
           ]}
         />
       </Card>

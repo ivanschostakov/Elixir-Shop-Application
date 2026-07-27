@@ -8,6 +8,7 @@ import type { AuditLog, Page } from "../../api/types"
 import { PageHeader } from "../../components/PageHeader"
 import { parseVisibleColumns, TableToolbar, type TableColumnOption } from "../../components/TableToolbar"
 import { useLanguage } from "../../i18n/LanguageProvider"
+import { domainLabel } from "../../i18n/domain"
 import { dateTime } from "../../utils/format"
 
 export function AuditPage() {
@@ -32,7 +33,7 @@ export function AuditPage() {
   const tableColumns = [
     { title: copy.time, dataIndex: "created_at", key: "time", render: (value: string) => dateTime(value, locale) },
     { title: copy.actor, dataIndex: "actor_name", key: "actor" },
-    { title: copy.action, dataIndex: "action", key: "action", render: (value: string) => <Tag>{value}</Tag> },
+    { title: copy.action, dataIndex: "action", key: "action", render: (value: string) => <Tag>{domainLabel(value, locale)}</Tag> },
     { title: copy.entity, key: "entity", render: (_: unknown, row: AuditLog) => `${row.entity_type}${row.entity_id ? ` #${row.entity_id}` : ""}` },
     { title: copy.ip, dataIndex: "ip_address", key: "ip", render: (value: string | null) => value || "—" },
   ]
@@ -65,7 +66,7 @@ export function AuditPage() {
       dataSource={query.data?.items}
       rowSelection={{ selectedRowKeys, preserveSelectedRowKeys: true, onChange: setSelectedRowKeys }}
       pagination={{ current: page, pageSize, total: query.data?.total, showSizeChanger: false, onChange: (nextPage) => updateFilters({ page: nextPage }) }}
-      expandable={{ expandedRowRender: (row) => <div className="audit-diff"><div><Typography.Text type="secondary">Before</Typography.Text><pre>{JSON.stringify(row.before_json, null, 2)}</pre></div><div><Typography.Text type="secondary">After</Typography.Text><pre>{JSON.stringify(row.after_json, null, 2)}</pre></div></div> }}
+      expandable={{ expandedRowRender: (row) => <div className="audit-diff"><div><Typography.Text type="secondary">{locale === "ru" ? "До" : "Before"}</Typography.Text><pre>{JSON.stringify(row.before_json, null, 2)}</pre></div><div><Typography.Text type="secondary">{locale === "ru" ? "После" : "After"}</Typography.Text><pre>{JSON.stringify(row.after_json, null, 2)}</pre></div></div> }}
       columns={tableColumns.filter((column) => visibleColumns.includes(String(column.key)))}
     />
   </div>

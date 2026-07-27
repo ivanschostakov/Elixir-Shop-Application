@@ -69,6 +69,42 @@ def test_send_push_to_user_sends_when_user_is_on_different_path(monkeypatch):
     assert send_calls[0][0]["to"] == "ExponentPushToken[other-path]"
 
 
+def test_send_push_to_user_reports_failure_when_every_token_is_invalid(monkeypatch):
+    token = SimpleNamespace(
+        expo_push_token="ExponentPushToken[invalid]",
+        current_path="/discover",
+    )
+
+    async def fake_get_user_push_tokens(_session, *, user_id: int):
+        assert user_id == 42
+        return [token]
+
+    async def fake_send_expo_push_messages(_messages):
+        return {"ExponentPushToken[invalid]"}
+
+    deleted: list[set[str]] = []
+
+    async def fake_delete_invalid_push_tokens(*_args, invalid_tokens, **_kwargs):
+        deleted.append(invalid_tokens)
+
+    monkeypatch.setattr(push_notifications, "get_user_push_tokens", fake_get_user_push_tokens)
+    monkeypatch.setattr(push_notifications, "_send_expo_push_messages", fake_send_expo_push_messages)
+    monkeypatch.setattr(push_notifications, "_delete_invalid_push_tokens", fake_delete_invalid_push_tokens)
+
+    sent = asyncio.run(
+        push_notifications.send_push_to_user(
+            session=SimpleNamespace(),
+            user_id=42,
+            title="Test",
+            body="Test",
+            data={"type": "admin_push_test"},
+        )
+    )
+
+    assert sent is False
+    assert deleted == [{"ExponentPushToken[invalid]"}]
+
+
 def test_community_push_skips_only_the_open_topic(monkeypatch):
     async def fake_get_user_push_tokens(_session, *, user_id: int):
         assert user_id == 42

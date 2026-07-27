@@ -83,7 +83,10 @@ async def list_orders(
     if status_code:
         filters.append(build_status_code_clause(Order, status_code))
     if payment_status:
-        filters.append(Order.payment_status == payment_status)
+        if payment_status == "failed":
+            filters.append(Order.payment_status.in_(("error", "canceled", "refunded")))
+        else:
+            filters.append(Order.payment_status == payment_status)
     if created_from:
         filters.append(Order.created_at >= created_from)
     if created_to:

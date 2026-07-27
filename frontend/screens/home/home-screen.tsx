@@ -3,6 +3,7 @@ import {
     ActivityIndicator,
     Alert,
     Image,
+    Linking,
     Pressable,
     RefreshControl,
     ScrollView,
@@ -13,6 +14,7 @@ import {
 } from "react-native"
 import type { LayoutChangeEvent, NativeScrollEvent, NativeSyntheticEvent } from "react-native"
 import { useRouter } from "expo-router"
+import type { Href } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
 import { Path, Svg } from "react-native-svg"
 
@@ -32,6 +34,7 @@ import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { deleteOrderDraft, getOrderDrafts } from "@/services/api/order-drafts"
 import { API_BASE_URL } from "@/services/api/constants"
+import { recordBannerClick, recordBannerImpression } from "@/services/api/banners"
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
 import { getOrders } from "@/services/api/orders"
 import type { OrderRead, OrderStatusCode } from "@/services/api/orders.types"
@@ -177,11 +180,28 @@ function isVisibleHomeBanner(banner: Banner): boolean {
     return !banner.image_path.includes(APPLE_DEVELOPER_BANNER_SEGMENT)
 }
 
-function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab: string } {
-    const fallback = { q: "ghk-cu", tab: "products" }
+const SUPPORTED_INTERNAL_BANNER_ROUTES = new Set<string>([
+    ROUTES.home,
+    ROUTES.discover,
+    ROUTES.chat,
+    ROUTES.basket,
+    ROUTES.checkout,
+    ROUTES.delivery,
+    ROUTES.favorites,
+    ROUTES.payment,
+    ROUTES.profile,
+    ROUTES.personalData,
+    ROUTES.profileDrafts,
+    ROUTES.profileHistory,
+    ROUTES.contacts,
+    ROUTES.requisites,
+    ROUTES.publicOffer,
+])
+
+function resolveInternalBannerHref(link: string | null | undefined): Href | null {
     const trimmedLink = (link ?? "").trim()
     if (!trimmedLink) {
-        return fallback
+        return null
     }
 
     let candidate: URL
@@ -190,24 +210,29 @@ function resolveDiscoverRoute(link: string | null | undefined): { q: string; tab
             ? new URL(trimmedLink)
             : new URL(trimmedLink, "https://elixir.local")
     } catch {
-        return fallback
+        return null
     }
 
-    const normalizedPath = candidate.pathname.replace(/\/+$/, "")
-    if (normalizedPath !== ROUTES.discover) {
-        return fallback
+    const normalizedPath = candidate.pathname.replace(/\/+$/, "") || "/"
+    if (normalizedPath.startsWith("/products/")) {
+        const productId = normalizedPath.slice("/products/".length)
+        return /^\d+$/.test(productId) ? getProductRoute(productId) : null
     }
-
-    const q = candidate.searchParams.get("q")?.trim() || fallback.q
-    const tab = candidate.searchParams.get("tab")?.trim() || fallback.tab
-    return { q, tab }
+    if (!SUPPORTED_INTERNAL_BANNER_ROUTES.has(normalizedPath)) return null
+    if (normalizedPath === ROUTES.discover) {
+        return {
+            pathname: ROUTES.discover,
+            params: Object.fromEntries(candidate.searchParams.entries()),
+        }
+    }
+    return `${normalizedPath}${candidate.search}` as Href
 }
 
 export default function HomeScreen() {
     const homeScreenStyles = useThemeStyles(createHomeScreenStyles)
     const router = useRouter()
     const topInset = useAppSafeAreaInsets().top
-    const { height: windowHeight } = useWindowDimensions()
+    const { height: windowHeight, width: windowWidth } = useWindowDimensions()
     const { language, setLanguage, t } = useLanguage()
     const { accentName, accentPalette, palette, themeName, toggleTheme } = useTheme()
     const homeHeaderMenuStyles = getHeaderStyles(topInset, windowHeight, palette)
@@ -243,6 +268,8 @@ export default function HomeScreen() {
     const [isHomeMenuOpen, setIsHomeMenuOpen] = useState(false)
     const [isRefreshing, setIsRefreshing] = useState(false)
     const bannerScrollRef = useRef<ScrollView>(null)
+    const bannerInteractionUntilRef = useRef(0)
+    const recordedBannerImpressionsRef = useRef(new Set<number>())
 
     const hasSearchQuery = query.trim().length > 0
     const isDarkMode = themeName === "dark"
@@ -483,6 +510,7 @@ export default function HomeScreen() {
         }
 
         const intervalId = setInterval(() => {
+            if (Date.now() < bannerInteractionUntilRef.current) return
             setActiveBannerIndex((currentIndex) => {
                 const nextIndex = (currentIndex + 1) % bannerCount
                 bannerScrollRef.current?.scrollTo({ animated: true, x: nextIndex * bannerWidth })
@@ -495,16 +523,26 @@ export default function HomeScreen() {
         }
     }, [bannerCount, bannerWidth])
 
-    const handleBannerPress = (banner: Banner) => {
-        const target = resolveDiscoverRoute(banner?.inner_link)
-        router.push({
-            pathname: ROUTES.discover,
-            params: {
-                resetCategory: "1",
-                q: target.q,
-                tab: target.tab,
-            },
+    useEffect(() => {
+        const banner = visibleBanners[activeBannerIndex]
+        if (!banner || recordedBannerImpressionsRef.current.has(banner.id)) return
+        recordedBannerImpressionsRef.current.add(banner.id)
+        void recordBannerImpression(banner.id).catch(() => {
+            recordedBannerImpressionsRef.current.delete(banner.id)
         })
+    }, [activeBannerIndex, visibleBanners])
+
+    const handleBannerPress = (banner: Banner) => {
+        const targetUrl = banner.inner_link || banner.outer_link
+        void recordBannerClick(banner.id, targetUrl).catch(() => undefined)
+        const internalHref = resolveInternalBannerHref(banner.inner_link)
+        if (internalHref) {
+            router.push(internalHref)
+            return
+        }
+        if (banner.outer_link && /^https?:\/\//i.test(banner.outer_link)) {
+            void Linking.openURL(banner.outer_link).catch(() => undefined)
+        }
     }
 
     return (
@@ -682,8 +720,15 @@ export default function HomeScreen() {
                                     bounces={false}
                                     decelerationRate="fast"
                                     horizontal
+                                    nestedScrollEnabled
+                                    directionalLockEnabled
+                                    disableIntervalMomentum
                                     onMomentumScrollEnd={handleBannerScrollEnd}
+                                    onScrollBeginDrag={() => {
+                                        bannerInteractionUntilRef.current = Date.now() + 10_000
+                                    }}
                                     pagingEnabled
+                                    snapToInterval={bannerWidth > 0 ? bannerWidth : undefined}
                                     scrollEnabled={bannerCount > 1}
                                     scrollEventThrottle={16}
                                     showsHorizontalScrollIndicator={false}
@@ -691,7 +736,9 @@ export default function HomeScreen() {
                                 >
                                     {visibleBanners.map((banner, index) => {
                                         const bannerImageSource = resolveBannerImageSource(
-                                            banner.image_path,
+                                            windowWidth <= 768
+                                                ? banner.mobile_image_path || banner.image_path || banner.desktop_image_path
+                                                : banner.desktop_image_path || banner.image_path || banner.mobile_image_path,
                                             banner.updated_at,
                                         )
                                         if (bannerImageSource === null) {
@@ -702,7 +749,7 @@ export default function HomeScreen() {
                                             <Pressable
                                                 key={banner.id ?? `banner-${index}`}
                                                 accessibilityRole="button"
-                                                accessibilityLabel={t("discover.latestTitle")}
+                                                accessibilityLabel={banner.title || t("discover.latestTitle")}
                                                 onPress={() => handleBannerPress(banner)}
                                                 style={({ pressed }) => [
                                                     homeScreenStyles.promoBannerTap,

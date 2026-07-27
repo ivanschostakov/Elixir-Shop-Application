@@ -29,3 +29,4 @@ class Banner(Base, IdPkMixin, TimestampMixin):
     impression_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
     clicks: Mapped[list["BannerClick"]] = relationship(back_populates="banner", cascade="all, delete-orphan", passive_deletes=True)
+    impressions: Mapped[list["BannerImpression"]] = relationship(back_populates="banner", cascade="all, delete-orphan", passive_deletes=True)

@@ -1,14 +1,22 @@
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 import logging
 import re
 from typing import Any
 from uuid import UUID
 
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import AMOCRM_BASE_URL, MOY_SKLAD_ORDER_SYNC_ENABLED, MOY_SKLAD_ORGANIZATION_ID, MOY_SKLAD_SALES_CHANNEL_HREF
-from src.database.models import Order, Product, User, Variant
+from config import (
+    AMOCRM_BASE_URL,
+    MOY_SKLAD_ORDER_SYNC_ENABLED,
+    MOY_SKLAD_ORGANIZATION_ID,
+    MOY_SKLAD_ORGANIZATION_NAME,
+    MOY_SKLAD_SALES_CHANNEL_HREF,
+)
+from src.database.models import IntegrationRun, Order, Product, User, Variant
 from src.integrations.delivery.schemas import COUNTRY_NAMES
 from src.normalize import coerce_uuid, extract_dict, lower_optional_str, optional_str
 
@@ -85,6 +93,46 @@ def _configured_organization_id() -> UUID | None:
     configured_id = coerce_uuid(MOY_SKLAD_ORGANIZATION_ID)
     if configured_id is None and optional_str(MOY_SKLAD_ORGANIZATION_ID): log.warning("MOY_SKLAD_ORGANIZATION_ID is not a valid UUID: %s", MOY_SKLAD_ORGANIZATION_ID)
     return configured_id
+
+
+async def _resolve_organization_id(moysklad_client: MoySkladClient) -> UUID | None:
+    configured_id = _configured_organization_id()
+    organization_name = optional_str(MOY_SKLAD_ORGANIZATION_NAME)
+    if configured_id is not None:
+        configured_row = await moysklad_client.get_organization(configured_id)
+        if configured_row is not None:
+            configured_name = optional_str(configured_row.get("name"))
+            if (
+                not organization_name
+                or (
+                    configured_name is not None
+                    and configured_name.casefold() == organization_name.casefold()
+                )
+            ):
+                return configured_id
+            log.error(
+                "Configured MoySklad organization id points to a different organization "
+                "organization_id=%s expected_name=%s actual_name=%s",
+                configured_id,
+                organization_name,
+                configured_name,
+            )
+        else:
+            log.error(
+                "Configured MoySklad organization does not exist organization_id=%s",
+                configured_id,
+            )
+
+    if not organization_name:
+        return None
+    organization_row = await moysklad_client.find_organization_by_name(organization_name)
+    organization_id = coerce_uuid((organization_row or {}).get("id"))
+    if organization_id is None:
+        log.error(
+            "Configured MoySklad organization was not found organization_name=%s",
+            organization_name,
+        )
+    return organization_id
 
 
 async def _load_assortment_refs(session: AsyncSession, *, variant_ids: list[int]) -> dict[int, tuple[str, UUID]]:
@@ -325,7 +373,13 @@ def _moysklad_attr_values(order: Order) -> dict[str, Any]:
     benefits = extract_dict(snapshot.get("benefits"))
     data = _moysklad_order_data(order)
     raw_values = extract_dict(data.get("attributes"))
-    values: dict[str, Any] = {"delivery_cost": optional_str(raw_values.get("delivery_cost")) or _delivery_cost_value(order), "created_by_widget": False}
+    # The MoySklad↔amoCRM widget treats false as a new unlinked order and creates
+    # a second amoCRM lead. The app has already created and linked its lead, so
+    # mark the order as widget-linked before it reaches MoySklad.
+    values: dict[str, Any] = {
+        "delivery_cost": optional_str(raw_values.get("delivery_cost")) or _delivery_cost_value(order),
+        "created_by_widget": True,
+    }
 
     promo_code = optional_str(raw_values.get("promo_code")) or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code"))
     if promo_code: values["promo_code"] = promo_code
@@ -429,8 +483,9 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     if not moysklad_client.is_configured(): return MoySkladOrderSyncResult(enabled=True, skipped_reason="client_not_configured")
     if not order.items: return MoySkladOrderSyncResult(enabled=True, skipped_reason="empty_order")
 
-    organization_id = _configured_organization_id()
-    if organization_id is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="organization_not_configured")
+    organization_id = await _resolve_organization_id(moysklad_client)
+    if organization_id is None:
+        return MoySkladOrderSyncResult(enabled=True, skipped_reason="organization_not_found")
 
     user_id = int(user.__dict__.get("id") or user.id)
     counterparty_external_code = build_counterparty_external_code(user_id=user_id)
@@ -535,8 +590,27 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
 
 
 async def sync_order_to_moysklad_safe(session: AsyncSession, *, order: Order, user: User) -> MoySkladOrderSyncResult:
-    try: return await sync_order_to_moysklad(session, order=order, user=user)
-    except Exception:
+    order_id = int(order.__dict__.get("id") or order.id)
+    try:
+        result = await sync_order_to_moysklad(session, order=order, user=user)
+        if result.skipped_reason:
+            if result.enabled:
+                await _record_automatic_order_sync(
+                    session,
+                    order_id=order_id,
+                    status="error",
+                    error=f"MoySklad order sync skipped: {result.skipped_reason}",
+                    counters=result.as_dict(),
+                )
+        else:
+            await _record_automatic_order_sync(
+                session,
+                order_id=order_id,
+                status="success",
+                counters=result.as_dict(),
+            )
+        return result
+    except Exception as error:
         order_id = order.__dict__.get("id")
         user_id = user.__dict__.get("id")
         requires_rollback = not session.is_active
@@ -544,4 +618,60 @@ async def sync_order_to_moysklad_safe(session: AsyncSession, *, order: Order, us
             try: await session.rollback()
             except Exception: log.exception("MoySklad rollback after sync failure also failed order_id=%s user_id=%s", order_id, user_id)
         log.exception("MoySklad order sync failed order_id=%s user_id=%s rollback=%s", order_id, user_id, requires_rollback)
+        try:
+            await _record_automatic_order_sync(
+                session,
+                order_id=int(order_id or order.id),
+                status="queued",
+                error=str(error)[:8000] or error.__class__.__name__,
+                enqueue=True,
+            )
+        except Exception:
+            log.exception("Failed to queue MoySklad order sync retry order_id=%s", order_id)
         return MoySkladOrderSyncResult(enabled=MOY_SKLAD_ORDER_SYNC_ENABLED, skipped_reason="sync_error")
+
+
+async def _record_automatic_order_sync(
+    session: AsyncSession,
+    *,
+    order_id: int,
+    status: str,
+    counters: dict[str, Any] | None = None,
+    error: str | None = None,
+    enqueue: bool = False,
+) -> IntegrationRun:
+    idempotency_key = f"order:auto:moysklad:{order_id}"
+    existing = (await session.execute(
+        select(IntegrationRun).where(IntegrationRun.idempotency_key == idempotency_key)
+    )).scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    run = IntegrationRun(
+        provider="moysklad",
+        operation="moysklad_order_sync",
+        status=status,
+        target_type="order",
+        target_id=str(order_id),
+        attempts=0,
+        max_attempts=3,
+        counters_json=jsonable_encoder(counters or {}),
+        error=error,
+        idempotency_key=idempotency_key,
+        finished_at=datetime.now(timezone.utc) if status in {"success", "error"} else None,
+    )
+    session.add(run)
+    await session.flush()
+    await session.commit()
+    if enqueue:
+        try:
+            from src.app.services.admin.jobs import enqueue_integration_run
+
+            await enqueue_integration_run(run.id)
+        except Exception as enqueue_error:
+            run.status = "error"
+            run.error = f"Failed to enqueue MoySklad retry: {enqueue_error}"[:8000]
+            run.finished_at = datetime.now(timezone.utc)
+            await session.commit()
+            raise
+    return run

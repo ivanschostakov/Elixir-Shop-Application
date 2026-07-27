@@ -1,5 +1,6 @@
 from .banner import Banner
 from .banner_click import BannerClick
+from .banner_impression import BannerImpression
 from .product import Product
 from .product_category import ProductCategory
 from .products_by_category import ProductByCategory

@@ -7,7 +7,9 @@ import { useAuth } from "../auth/AuthProvider"
 import { PageHeader } from "../components/PageHeader"
 import { QueryState } from "../components/QueryState"
 import { useLanguage } from "../i18n/LanguageProvider"
+import { domainLabel } from "../i18n/domain"
 import { dateTime } from "../utils/format"
+import { useSearchParams } from "react-router-dom"
 
 const stateMeta = {
   healthy: { color: "green", icon: <CheckCircleOutlined /> },
@@ -28,8 +30,10 @@ export function IntegrationsPage() {
   const { locale } = useLanguage()
   const { hasPermission } = useAuth()
   const client = useQueryClient()
+  const [searchParams] = useSearchParams()
+  const runStatus = searchParams.get("status") || undefined
   const integrations = useQuery({ queryKey: ["integrations"], queryFn: () => apiRequest<IntegrationStatus[]>("/integrations"), refetchInterval: 30_000 })
-  const runs = useQuery({ queryKey: ["integration-runs"], queryFn: () => apiRequest<Page<IntegrationRun>>("/integrations/runs?limit=50"), refetchInterval: 10_000 })
+  const runs = useQuery({ queryKey: ["integration-runs", runStatus], queryFn: () => apiRequest<Page<IntegrationRun>>(`/integrations/runs?limit=50${runStatus ? `&status=${encodeURIComponent(runStatus)}` : ""}`), refetchInterval: 10_000 })
   const health = useQuery({ queryKey: ["integration-queue-health"], queryFn: () => apiRequest<IntegrationQueueHealth>("/integrations/queue-health"), refetchInterval: 15_000 })
   const refresh = () => {
     void integrations.refetch()
@@ -47,7 +51,7 @@ export function IntegrationsPage() {
     onError: (error: Error) => void message.error(error.message),
   })
   const copy = locale === "ru"
-    ? { title: "Интеграции", description: "Состояние сервисов и восстановление фоновых операций", configured: "Настроена", disabled: "Не настроена", last: "Последний запуск", sync: "Синхронизировать каталог", history: "История операций", provider: "Сервис", operation: "Операция", target: "Объект", status: "Статус", attempts: "Попытки", started: "Запущено", finished: "Завершено", actions: "", retry: "Повторить", queue: "Очередь", active: "В работе", scheduled: "Ожидают повтора", failed: "Ошибки за 24 часа", stale: "Зависшие", available: "Worker доступен", unavailable: "Worker недоступен" }
+    ? { title: "Интеграции", description: "Состояние сервисов и восстановление фоновых операций", configured: "Настроена", disabled: "Не настроена", last: "Последний запуск", sync: "Синхронизировать каталог", history: "История операций", provider: "Сервис", operation: "Операция", target: "Объект", status: "Статус", attempts: "Попытки", started: "Запущено", finished: "Завершено", actions: "", retry: "Повторить", queue: "Очередь", active: "В работе", scheduled: "Ожидают повтора", failed: "Ошибки за 24 часа", stale: "Зависшие", available: "Фоновый обработчик доступен", unavailable: "Фоновый обработчик недоступен" }
     : { title: "Integrations", description: "Service health and background operation recovery", configured: "Configured", disabled: "Not configured", last: "Last run", sync: "Sync catalog", history: "Operation history", provider: "Provider", operation: "Operation", target: "Target", status: "Status", attempts: "Attempts", started: "Started", finished: "Finished", actions: "", retry: "Retry", queue: "Queued", active: "Running", scheduled: "Retrying", failed: "Errors in 24 hours", stale: "Stale", available: "Worker available", unavailable: "Worker unavailable" }
 
   return <div className="page-stack">
@@ -63,13 +67,13 @@ export function IntegrationsPage() {
         <Tag color={health.data.queue_available ? "success" : "error"}>{health.data.queue_available ? copy.available : copy.unavailable}</Tag>
       </div>
     </Card> : null}
-    <Row gutter={[16, 16]}>{(integrations.data || []).map((item) => <Col xs={24} md={12} xl={8} key={item.provider}><Card className="integration-card"><div className="integration-card-header"><span className={`integration-icon ${item.status}`}>{stateMeta[item.status].icon}</span><div><Typography.Title level={4}>{item.label}</Typography.Title><Tag color={stateMeta[item.status].color}>{item.status}</Tag></div></div><Descriptions column={1} size="small"><Descriptions.Item label={item.configured ? copy.configured : copy.disabled}>{item.configured ? "Yes" : "No"}</Descriptions.Item><Descriptions.Item label={copy.last}>{dateTime(item.last_run_at, locale)}</Descriptions.Item></Descriptions>{item.provider === "moysklad" && hasPermission("integrations.retry") ? <Button block icon={<CloudSyncOutlined />} loading={catalogSync.isPending} onClick={() => catalogSync.mutate()}>{copy.sync}</Button> : null}</Card></Col>)}</Row>
+    <Row gutter={[16, 16]}>{(integrations.data || []).map((item) => <Col xs={24} md={12} xl={8} key={item.provider}><Card className="integration-card"><div className="integration-card-header"><span className={`integration-icon ${item.status}`}>{stateMeta[item.status].icon}</span><div><Typography.Title level={4}>{domainLabel(item.provider, locale)}</Typography.Title><Tag color={stateMeta[item.status].color}>{domainLabel(item.status, locale)}</Tag></div></div><Descriptions column={1} size="small"><Descriptions.Item label={item.configured ? copy.configured : copy.disabled}>{item.configured ? (locale === "ru" ? "Да" : "Yes") : (locale === "ru" ? "Нет" : "No")}</Descriptions.Item><Descriptions.Item label={copy.last}>{dateTime(item.last_run_at, locale)}</Descriptions.Item></Descriptions>{item.provider === "moysklad" && hasPermission("integrations.retry") ? <Button block icon={<CloudSyncOutlined />} loading={catalogSync.isPending} onClick={() => catalogSync.mutate()}>{copy.sync}</Button> : null}</Card></Col>)}</Row>
     <Card title={copy.history}>
       <Table<IntegrationRun> rowKey="id" loading={runs.isLoading} dataSource={runs.data?.items} pagination={false} scroll={{ x: 980 }} expandable={{ expandedRowRender: (row) => row.error ? <Typography.Text type="danger">{row.error}</Typography.Text> : <pre className="json-preview">{JSON.stringify(row.counters_json, null, 2)}</pre> }} columns={[
-        { title: copy.provider, dataIndex: "provider" },
-        { title: copy.operation, dataIndex: "operation" },
-        { title: copy.target, key: "target", render: (_, row) => row.target_type ? `${row.target_type} #${row.target_id}` : "—" },
-        { title: copy.status, dataIndex: "status", render: (value: string) => <Tag color={runColor[value] || "default"}>{value}</Tag> },
+        { title: copy.provider, dataIndex: "provider", render: (value: string) => domainLabel(value, locale) },
+        { title: copy.operation, dataIndex: "operation", render: (value: string) => domainLabel(value, locale) },
+        { title: copy.target, key: "target", render: (_, row) => row.target_type ? `${domainLabel(row.target_type, locale)} #${row.target_id}` : "—" },
+        { title: copy.status, dataIndex: "status", render: (value: string) => <Tag color={runColor[value] || "default"}>{domainLabel(value, locale)}</Tag> },
         { title: copy.attempts, key: "attempts", render: (_, row) => `${row.attempts}/${row.max_attempts}` },
         { title: copy.started, dataIndex: "started_at", render: (value: string) => dateTime(value, locale) },
         { title: copy.finished, dataIndex: "finished_at", render: (value: string | null, row) => dateTime(value || row.next_attempt_at, locale) },

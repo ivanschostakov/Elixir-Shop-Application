@@ -249,6 +249,10 @@ class CustomerDetail(CustomerListItem):
     basket_total: Decimal
     favourites_count: int
     push_tokens_count: int
+    push_delivery_status: Literal["ready", "no_token", "permission_denied", "unknown"]
+    push_reachable: bool
+    last_push_token_at: datetime | None
+    last_push_dispatch_at: datetime | None
     referral_discount_base_total: Decimal
     referral_discount_percent: Decimal
     total_product_views: int
@@ -259,6 +263,12 @@ class CustomerDetail(CustomerListItem):
     consents: list[CustomerConsentRead]
     attribution: CustomerAttributionRead | None
     notes: list[AdminNoteRead]
+
+
+class CustomerPushTestRead(BaseModel):
+    accepted: bool
+    status: Literal["accepted", "no_token", "rejected"]
+    sent_at: datetime | None
 
 
 class CustomerDeletePayload(BaseModel):
@@ -279,6 +289,7 @@ class AdminVariantRead(BaseModel):
     stock: int
     price: Decimal
     archived: bool
+    image_url: str
 
 
 class AdminProductRead(BaseModel):
@@ -408,6 +419,21 @@ class AdminBannerUpdatePayload(AdminBannerPayload):
 class AdminBannerUploadRead(BaseModel):
     image_path: str
     url: str
+
+
+class AdminBannerDailyStatRead(BaseModel):
+    day: date
+    impressions: int
+    clicks: int
+    ctr_percent: Decimal
+
+
+class AdminBannerStatsRead(BaseModel):
+    banner_id: int
+    impressions: int
+    clicks: int
+    ctr_percent: Decimal
+    daily: list[AdminBannerDailyStatRead]
 
 
 class AdminBusinessContentPayload(BaseModel):

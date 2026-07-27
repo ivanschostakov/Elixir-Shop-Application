@@ -13,6 +13,8 @@ from fastapi.testclient import TestClient
 
 import src.app.modules.auth.dependencies as auth_dependencies
 import src.app.modules.products.router as products_router_module
+import src.app.services.admin.analytics as admin_analytics
+import src.app.services.admin.password_reset as admin_password_reset
 import src.app.services.orders.payments as order_payments
 from src.app.main import app
 from src.app.modules.admin.orders import ALLOWED_TRANSITIONS
@@ -118,6 +120,33 @@ def test_admin_invitation_tokens_are_not_embedded_in_api_paths():
     assert len(token) >= 32
     assert len(token_hash) == 64
     assert token not in token_hash
+
+
+def test_analytics_period_includes_complete_calendar_days(monkeypatch):
+    now = datetime(2026, 7, 27, 15, 45, tzinfo=timezone.utc)
+    monkeypatch.setattr(admin_analytics, "ufa_now", lambda: now)
+
+    start, end = admin_analytics.analytics_period(30)
+
+    assert start == datetime(2026, 6, 28, 0, 0, tzinfo=timezone.utc)
+    assert end == now
+
+
+def test_admin_password_reset_helpers_keep_token_out_of_storage(monkeypatch):
+    token = admin_password_reset.generate_admin_password_reset_token()
+    digest = admin_password_reset.hash_admin_password_reset_token(token)
+    monkeypatch.setattr(
+        admin_password_reset,
+        "ADMIN_PUBLIC_HOST",
+        "admin.example.test/",
+    )
+
+    assert len(token) >= 32
+    assert len(digest) == 64
+    assert token not in digest
+    assert admin_password_reset.admin_password_reset_url(token) == (
+        f"https://admin.example.test/reset-password#token={token}"
+    )
     url = admin_invitation_accept_url(token)
     assert f"#token={token}" in url
     assert "?token=" not in url
@@ -264,6 +293,38 @@ def test_admin_analytics_helpers_escape_csv_and_calculate_percent():
     snapshot = {"sales": {"trend": [{"date": "2026-07-23", "revenue": "=100", "orders": 2}]}}
     csv_payload = analytics_csv("sales", snapshot).decode("utf-8-sig")
     assert "'=100" in csv_payload
+
+    customer_snapshot = {
+        "customers": {
+            "app_opens": {
+                "daily": [{"period": "2026-07-27", "opens": 12, "customers": 5}],
+            },
+        },
+    }
+    customer_csv = analytics_csv("customers", customer_snapshot).decode("utf-8-sig")
+    assert "period,opens,unique_customers" in customer_csv
+    assert "2026-07-27,12,5" in customer_csv
+
+    product_snapshot = {
+        "products": {
+            "top_products": [{
+                "product_id": 7,
+                "name": "GHK-CU",
+                "sku": "GHK-CU",
+                "quantity": 9,
+                "revenue": "18000.00",
+                "orders": 6,
+                "customers": 5,
+                "views": 40,
+                "viewers": 20,
+                "conversion_rate": "25.00",
+                "stock": 14,
+            }],
+        },
+    }
+    product_csv = analytics_csv("products", product_snapshot).decode("utf-8-sig")
+    assert "conversion_rate" in product_csv
+    assert "GHK-CU" in product_csv
 
 
 def test_admin_export_payload_rejects_unknown_columns_and_filters():

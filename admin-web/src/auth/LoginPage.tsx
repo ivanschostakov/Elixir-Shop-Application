@@ -19,6 +19,8 @@ export function LoginPage() {
   const [setup, setSetup] = useState<SetupDetails | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [forgotMode, setForgotMode] = useState(false)
+  const [resetRequested, setResetRequested] = useState(false)
   const from = (location.state as { from?: string } | null)?.from || "/"
   const invitedEmail = new URLSearchParams(location.search).get("email") || ""
 
@@ -63,6 +65,22 @@ export function LoginPage() {
     }
   }
 
+  const requestPasswordReset = async (values: { email: string }) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await apiRequest("/auth/password-reset/request", {
+        method: "POST",
+        body: JSON.stringify({ email: values.email }),
+      })
+      setResetRequested(true)
+    } catch (requestError) {
+      setError(requestError instanceof ApiError ? requestError.message : locale === "ru" ? "Не удалось отправить письмо" : "Could not send email")
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const copy = locale === "ru"
     ? {
         eyebrow: "Внутренняя система",
@@ -78,6 +96,11 @@ export function LoginPage() {
         codeTitle: "Подтвердите вход",
         codeText: "Введите шестизначный код из приложения-аутентификатора.",
         back: "Вернуться",
+        forgot: "Забыли пароль?",
+        resetTitle: "Восстановление пароля",
+        resetText: "Укажите рабочий email. Если для него есть активный аккаунт администратора, мы отправим безопасную ссылку.",
+        resetSubmit: "Отправить ссылку",
+        resetDone: "Если такой активный аккаунт существует, письмо со ссылкой уже отправлено.",
       }
     : {
         eyebrow: "Internal workspace",
@@ -93,6 +116,11 @@ export function LoginPage() {
         codeTitle: "Verify your sign in",
         codeText: "Enter the six-digit code from your authenticator app.",
         back: "Go back",
+        forgot: "Forgot password?",
+        resetTitle: "Password reset",
+        resetText: "Enter your work email. If it belongs to an active admin account, we will send a secure link.",
+        resetSubmit: "Send reset link",
+        resetDone: "If an active account exists, an email with the reset link has been sent.",
       }
 
   return (
@@ -109,7 +137,23 @@ export function LoginPage() {
       </section>
       <Card className="login-card" bordered={false}>
         {error ? <Alert type="error" message={error} showIcon closable onClose={() => setError(null)} /> : null}
-        {!challenge ? (
+        {forgotMode ? (
+          <Space direction="vertical" size={20} style={{ width: "100%" }}>
+            <div>
+              <Typography.Title level={3}>{copy.resetTitle}</Typography.Title>
+              <Typography.Paragraph type="secondary">{copy.resetText}</Typography.Paragraph>
+            </div>
+            {resetRequested ? <Alert type="success" message={copy.resetDone} showIcon /> : (
+              <Form layout="vertical" requiredMark={false} onFinish={requestPasswordReset} size="large" initialValues={{ email: invitedEmail }}>
+                <Form.Item name="email" label={copy.email} rules={[{ required: true }, { type: "email" }]}>
+                  <Input prefix={<MailOutlined />} autoComplete="email" placeholder="name@company.ru" />
+                </Form.Item>
+                <Button type="primary" htmlType="submit" block loading={busy}>{copy.resetSubmit}</Button>
+              </Form>
+            )}
+            <Button type="text" onClick={() => { setForgotMode(false); setResetRequested(false); setError(null) }}>{copy.back}</Button>
+          </Space>
+        ) : !challenge ? (
           <Form layout="vertical" requiredMark={false} onFinish={submitCredentials} size="large" initialValues={{ email: invitedEmail }}>
             <Form.Item name="email" label={copy.email} rules={[{ required: true }, { type: "email" }]}>
               <Input prefix={<MailOutlined />} autoComplete="username" placeholder="name@company.ru" />
@@ -118,6 +162,7 @@ export function LoginPage() {
               <Input.Password prefix={<LockOutlined />} autoComplete="current-password" />
             </Form.Item>
             <Button type="primary" htmlType="submit" block loading={busy}>{copy.signIn}</Button>
+            <Button type="link" block onClick={() => setForgotMode(true)}>{copy.forgot}</Button>
           </Form>
         ) : (
           <Space direction="vertical" size={20} style={{ width: "100%" }}>

@@ -55,6 +55,7 @@ import type {
 import { useAuth } from "../auth/AuthProvider"
 import { PageHeader } from "../components/PageHeader"
 import { useLanguage } from "../i18n/LanguageProvider"
+import { domainLabel, humanizeApiError } from "../i18n/domain"
 import { dateTime } from "../utils/format"
 
 const statusCodes: OrderStatusCode[] = ["created", "invoice_sent", "paid", "waiting_response", "packaged", "sent", "delivered", "completed", "canceled", "refund_declined"]
@@ -216,8 +217,8 @@ export function AutomationPage() {
   const conditionText = (rule: OrderAutomationRule) => {
     const value = rule.conditions_json
     const chunks = [`≥ ${value.min_age_minutes || 60} min`]
-    if (value.status_codes?.length) chunks.push(value.status_codes.join(", "))
-    if (value.payment_statuses?.length) chunks.push(value.payment_statuses.join(", "))
+    if (value.status_codes?.length) chunks.push(value.status_codes.map((item) => domainLabel(item, locale)).join(", "))
+    if (value.payment_statuses?.length) chunks.push(value.payment_statuses.map((item) => domainLabel(item, locale)).join(", "))
     if (value.missing_delivery) chunks.push(copy.missingDelivery)
     if (value.missing_moysklad) chunks.push(copy.missingMoysklad)
     return chunks.join(" · ")
@@ -225,7 +226,7 @@ export function AutomationPage() {
   const actionText = (rule: OrderAutomationRule) => {
     const kind = rule.action_json.kind
     if (kind === "create_task") return copy.createTask
-    if (kind === "queue_operation") return `${copy.queueOperation}: ${String(rule.action_json.operation || "")}`
+    if (kind === "queue_operation") return `${copy.queueOperation}: ${domainLabel(String(rule.action_json.operation || ""), locale)}`
     return copy.pushCustomer
   }
   const overallCompliance = useMemo(() => {
@@ -250,7 +251,7 @@ export function AutomationPage() {
       { title: copy.conditions, render: (_: unknown, row) => <Typography.Text type="secondary">{conditionText(row)}</Typography.Text> },
       { title: copy.action, render: (_: unknown, row) => <Tag>{actionText(row)}</Tag> },
       { title: copy.lastRun, render: (_: unknown, row) => <div className="table-primary"><span>{dateTime(row.last_run_at, locale)}</span><small>{copy.matches}: {row.last_match_count}</small></div> },
-      { title: "", align: "right", render: (_: unknown, row) => <Space>{row.last_error ? <Tag color="red">Error</Tag> : null}<Button size="small" onClick={() => setPreviewRule(row)}>{copy.preview}</Button><Button size="small" icon={<HistoryOutlined />} onClick={() => setHistoryRule(row)}>{row.executions_count}</Button>{hasPermission("automation.manage") ? <><Popconfirm title={copy.runConfirm} onConfirm={() => runRule.mutate(row)}><Button size="small" icon={<PlayCircleOutlined />} loading={runRule.isPending}>{copy.run}</Button></Popconfirm><Button size="small" icon={<EditOutlined />} onClick={() => openRule(row)}>{copy.edit}</Button>{!row.is_enabled ? <Popconfirm title={copy.delete} onConfirm={() => deleteRule.mutate(row)}><Button size="small" danger type="text" icon={<DeleteOutlined />} /></Popconfirm> : null}</> : null}</Space> },
+      { title: "", align: "right", render: (_: unknown, row) => <Space>{row.last_error ? <Tag color="red">{domainLabel("error", locale)}</Tag> : null}<Button size="small" onClick={() => setPreviewRule(row)}>{copy.preview}</Button><Button size="small" icon={<HistoryOutlined />} onClick={() => setHistoryRule(row)}>{row.executions_count}</Button>{hasPermission("automation.manage") ? <><Popconfirm title={copy.runConfirm} onConfirm={() => runRule.mutate(row)}><Button size="small" icon={<PlayCircleOutlined />} loading={runRule.isPending}>{copy.run}</Button></Popconfirm><Button size="small" icon={<EditOutlined />} onClick={() => openRule(row)}>{copy.edit}</Button>{!row.is_enabled ? <Popconfirm title={copy.delete} onConfirm={() => deleteRule.mutate(row)}><Button size="small" danger type="text" icon={<DeleteOutlined />} /></Popconfirm> : null}</> : null}</Space> },
     ]} />
     </div> : null}
 
@@ -279,7 +280,7 @@ export function AutomationPage() {
 
     {tab === "alerts" ? <Card title={`${copy.incidents} · ${alerts.data?.total || 0}`}><Table<AdminAlert> rowKey="id" loading={alerts.isLoading} dataSource={alerts.data?.items} locale={{ emptyText: copy.noErrors }} pagination={false} rowClassName={(row) => row.is_read ? "" : "unread-row"} columns={[
       { title: "", width: 48, render: (_: unknown, row) => <span className={`alert-dot alert-dot-${row.severity}`} /> },
-      { title: copy.source, dataIndex: "source", render: (value: string) => <Tag>{value}</Tag> },
+      { title: copy.source, dataIndex: "source", render: (value: string) => <Tag>{domainLabel(value, locale)}</Tag> },
       { title: copy.name, render: (_: unknown, row) => <div className="table-primary"><strong>{locale === "ru" ? row.title_ru : row.title_en}</strong><small>{row.message}</small></div> },
       { title: copy.occurred, render: (_: unknown, row) => <div className="table-primary"><span>{dateTime(row.last_occurred_at, locale)}</span><small>× {row.occurrence_count}</small></div> },
       { title: "", align: "right", render: (_: unknown, row) => <Space>{!row.is_read ? <Button size="small" type="text" onClick={() => markRead.mutate(row)}>{copy.read}</Button> : null}{row.path ? <Link to={row.path}><Button size="small">{copy.open}</Button></Link> : null}{hasPermission("alerts.manage") ? <Button size="small" onClick={() => resolveAlert.mutate(row)}>{copy.resolve}</Button> : null}</Space> },
@@ -292,32 +293,32 @@ export function AutomationPage() {
         <Form.Item name="description" label={copy.descriptionField}><Input.TextArea rows={2} /></Form.Item>
         <Row gutter={12}><Col span={12}><Form.Item name="priority" label={copy.order} rules={[{ required: true }]}><InputNumber min={1} max={1000} style={{ width: "100%" }} /></Form.Item></Col>{editingRule ? <Col span={12}><Form.Item name="is_enabled" label={copy.enabled} valuePropName="checked"><Switch /></Form.Item></Col> : null}</Row>
         <Typography.Title level={5}>{copy.conditions}</Typography.Title>
-        <Form.Item name="status_codes" label={copy.statuses}><Select mode="multiple" options={statusCodes.map((value) => ({ value, label: value }))} /></Form.Item>
-        <Form.Item name="payment_statuses" label={copy.payments}><Select mode="tags" tokenSeparators={[","]} options={["draft", "created", "pending", "paid", "canceled", "error", "refunded"].map((value) => ({ value, label: value }))} /></Form.Item>
+        <Form.Item name="status_codes" label={copy.statuses}><Select mode="multiple" options={statusCodes.map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item>
+        <Form.Item name="payment_statuses" label={copy.payments}><Select mode="tags" tokenSeparators={[","]} options={["draft", "created", "pending", "paid", "canceled", "error", "refunded"].map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item>
         <Form.Item name="min_age_minutes" label={copy.minAge} rules={[{ required: true }]}><InputNumber min={5} max={43200} style={{ width: "100%" }} /></Form.Item>
         <Space direction="vertical" className="automation-checks"><Form.Item name="missing_delivery" valuePropName="checked" noStyle><Checkbox>{copy.missingDelivery}</Checkbox></Form.Item><Form.Item name="missing_moysklad" valuePropName="checked" noStyle><Checkbox>{copy.missingMoysklad}</Checkbox></Form.Item><Form.Item name="only_active" valuePropName="checked" noStyle><Checkbox>{copy.onlyActive}</Checkbox></Form.Item></Space>
         <Typography.Title level={5} className="automation-section-title">{copy.action}</Typography.Title>
         <Form.Item name="action_kind" rules={[{ required: true }]}><Select options={[{ value: "create_task", label: copy.createTask }, { value: "queue_operation", label: copy.queueOperation }, { value: "push_customer", label: copy.pushCustomer }]} /></Form.Item>
-        {actionKind === "create_task" ? <><Form.Item name="assignee_user_id" label={copy.assignee} rules={[{ required: true }]}><Select options={(assignees.data || []).map((row) => ({ value: row.user_id, label: row.name }))} /></Form.Item><Form.Item name="task_title" label={copy.taskTitle} rules={[{ required: true, max: 240 }]}><Input /></Form.Item><Form.Item name="task_description" label={copy.descriptionField}><Input.TextArea rows={3} /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="task_priority" label={copy.taskPriority}><Select options={["low", "normal", "high", "urgent"].map((value) => ({ value, label: value }))} /></Form.Item></Col><Col span={12}><Form.Item name="due_minutes" label={copy.dueMinutes}><InputNumber min={5} max={43200} style={{ width: "100%" }} /></Form.Item></Col></Row></> : null}
-        {actionKind === "queue_operation" ? <Form.Item name="operation" label={copy.operation} rules={[{ required: true }]}><Select options={[{ value: "payment_check", label: "IntellectMoney · payment check" }, { value: "moysklad_sync", label: "МойСклад · sync" }, { value: "delivery_create", label: "Delivery · create" }]} /></Form.Item> : null}
+        {actionKind === "create_task" ? <><Form.Item name="assignee_user_id" label={copy.assignee} rules={[{ required: true }]}><Select options={(assignees.data || []).map((row) => ({ value: row.user_id, label: row.name }))} /></Form.Item><Form.Item name="task_title" label={copy.taskTitle} rules={[{ required: true, max: 240 }]}><Input /></Form.Item><Form.Item name="task_description" label={copy.descriptionField}><Input.TextArea rows={3} /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="task_priority" label={copy.taskPriority}><Select options={["low", "normal", "high", "urgent"].map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item></Col><Col span={12}><Form.Item name="due_minutes" label={copy.dueMinutes}><InputNumber min={5} max={43200} style={{ width: "100%" }} /></Form.Item></Col></Row></> : null}
+        {actionKind === "queue_operation" ? <Form.Item name="operation" label={copy.operation} rules={[{ required: true }]}><Select options={["payment_check", "moysklad_sync", "delivery_create"].map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item> : null}
         {actionKind === "push_customer" ? <><Form.Item name="push_title" label={copy.pushTitle} rules={[{ required: true, max: 180 }]}><Input /></Form.Item><Form.Item name="push_body" label={copy.pushBody} rules={[{ required: true, max: 500 }]}><Input.TextArea rows={4} /></Form.Item><Form.Item name="deep_link" label={copy.deepLink} rules={[{ pattern: /^\/(?!\/)/ }]}><Input placeholder="/orders" /></Form.Item></> : null}
       </Form>
     </Drawer>
 
     <Drawer width={720} open={Boolean(historyRule)} title={`${copy.history}: ${historyRule?.name || ""}`} onClose={() => setHistoryRule(null)}><Table<OrderAutomationExecution> rowKey="id" loading={executions.isLoading} dataSource={executions.data?.items} pagination={false} columns={[
       { title: copy.occurred, dataIndex: "executed_at", render: (value: string) => dateTime(value, locale) },
-      { title: "Order", render: (_: unknown, row) => <Link to={`/sales/orders/${row.order_id}`}>{row.order_code}</Link> },
-      { title: copy.action, dataIndex: "action_kind" },
-      { title: "Status", dataIndex: "status", render: (value: string) => <Tag color={executionColors[value]}>{value}</Tag> },
-      { title: "Error", dataIndex: "error", render: (value: string | null) => value || "—" },
+      { title: locale === "ru" ? "Заказ" : "Order", render: (_: unknown, row) => <Link to={`/sales/orders/${row.order_id}`}>{row.order_code}</Link> },
+      { title: copy.action, dataIndex: "action_kind", render: (value: string) => domainLabel(value, locale) },
+      { title: locale === "ru" ? "Статус" : "Status", dataIndex: "status", render: (value: string) => <Tag color={executionColors[value]}>{domainLabel(value, locale)}</Tag> },
+      { title: locale === "ru" ? "Ошибка" : "Error", dataIndex: "error", render: (value: string | null) => value ? humanizeApiError(value, 500, locale) : "—" },
     ]} /></Drawer>
 
     <Drawer width={720} open={Boolean(previewRule)} title={`${copy.preview}: ${previewRule?.name || ""}`} onClose={() => setPreviewRule(null)}>
       <Statistic title={copy.matches} value={preview.data?.matched || 0} className="drawer-statistic" />
       <Table<OrderAutomationPreview["sample"][number]> rowKey="order_id" loading={preview.isLoading} dataSource={preview.data?.sample} pagination={false} columns={[
-        { title: "Order", render: (_: unknown, row) => <Link to={`/sales/orders/${row.order_id}`}>{row.order_code}</Link> },
-        { title: copy.statuses, dataIndex: "status_code", render: (value: string) => <Tag>{value}</Tag> },
-        { title: copy.payments, dataIndex: "payment_status" },
+        { title: locale === "ru" ? "Заказ" : "Order", render: (_: unknown, row) => <Link to={`/sales/orders/${row.order_id}`}>{row.order_code}</Link> },
+        { title: copy.statuses, dataIndex: "status_code", render: (value: string) => <Tag>{domainLabel(value, locale)}</Tag> },
+        { title: copy.payments, dataIndex: "payment_status", render: (value: string) => domainLabel(value, locale) },
         { title: copy.customer, dataIndex: "customer_name" },
         { title: copy.occurred, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) },
       ]} />

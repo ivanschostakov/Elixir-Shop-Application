@@ -1,3 +1,5 @@
+from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 from urllib.parse import urlsplit
@@ -21,6 +23,8 @@ from src.app.modules.admin.helpers import (
 from src.app.modules.admin.schemas import (
     AdminBannerPayload,
     AdminBannerRead,
+    AdminBannerDailyStatRead,
+    AdminBannerStatsRead,
     AdminBannerUploadRead,
     AdminBusinessContentRead,
     AdminBusinessContentUpdatePayload,
@@ -40,6 +44,8 @@ from src.database import get_db
 from src.database.models import (
     Admin,
     Banner,
+    BannerClick,
+    BannerImpression,
     BusinessContentPage,
     BusinessContentVersion,
     NotificationDispatch,
@@ -52,6 +58,24 @@ from src.database.models import (
 admin_content_router = APIRouter(tags=["admin_content"])
 BANNERS_MEDIA_DIR = MEDIA_DIR / "banners"
 BANNERS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+ANALYTICS_TIMEZONE = "Asia/Yekaterinburg"
+SUPPORTED_BANNER_ROUTES = {
+    "/",
+    "/discover",
+    "/chat",
+    "/basket",
+    "/checkout",
+    "/delivery",
+    "/favorites",
+    "/payment",
+    "/profile",
+    "/personal-data",
+    "/profile-drafts",
+    "/profile-history",
+    "/contacts",
+    "/requisites",
+    "/public-offer",
+}
 
 
 async def _bump_review_cache() -> None:
@@ -368,11 +392,96 @@ async def list_banners(
     return AdminPage(items=[serialize_banner(row) for row in rows], total=total, limit=limit, offset=offset)
 
 
+@admin_content_router.get(
+    "/banners/{banner_id}/stats",
+    response_model=AdminBannerStatsRead,
+)
+async def get_banner_stats(
+    banner_id: int,
+    days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("banners.manage")),
+) -> AdminBannerStatsRead:
+    banner = await db.get(Banner, banner_id)
+    if banner is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Banner not found")
+    now = ufa_now()
+    start = (now - timedelta(days=days - 1)).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    local_click_time = func.timezone(ANALYTICS_TIMEZONE, BannerClick.created_at)
+    local_impression_time = func.timezone(
+        ANALYTICS_TIMEZONE,
+        BannerImpression.created_at,
+    )
+    click_rows = (await db.execute(
+        select(
+            func.date(local_click_time).label("day"),
+            func.count(BannerClick.id).label("count"),
+        )
+        .where(BannerClick.banner_id == banner_id, BannerClick.created_at >= start)
+        .group_by(func.date(local_click_time))
+    )).all()
+    impression_rows = (await db.execute(
+        select(
+            func.date(local_impression_time).label("day"),
+            func.count(BannerImpression.id).label("count"),
+        )
+        .where(
+            BannerImpression.banner_id == banner_id,
+            BannerImpression.created_at >= start,
+        )
+        .group_by(func.date(local_impression_time))
+    )).all()
+    clicks_by_day = {row.day: int(row.count) for row in click_rows}
+    impressions_by_day = {row.day: int(row.count) for row in impression_rows}
+    daily: list[AdminBannerDailyStatRead] = []
+    for offset in range(days):
+        day = start.date() + timedelta(days=offset)
+        clicks = clicks_by_day.get(day, 0)
+        impressions = impressions_by_day.get(day, 0)
+        daily.append(AdminBannerDailyStatRead(
+            day=day,
+            impressions=impressions,
+            clicks=clicks,
+            ctr_percent=(
+                Decimal(clicks) / Decimal(impressions) * 100
+            ).quantize(Decimal("0.01")) if impressions else Decimal("0.00"),
+        ))
+    clicks = int(banner.click_count or 0)
+    impressions = int(banner.impression_count or 0)
+    return AdminBannerStatsRead(
+        banner_id=banner.id,
+        impressions=impressions,
+        clicks=clicks,
+        ctr_percent=(
+            Decimal(clicks) / Decimal(impressions) * 100
+        ).quantize(Decimal("0.01")) if impressions else Decimal("0.00"),
+        daily=daily,
+    )
+
+
 def _validate_banner_payload(payload: AdminBannerPayload) -> None:
     if not (payload.image_path or payload.desktop_image_path or payload.mobile_image_path):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Banner image is required")
+    if payload.inner_link and payload.outer_link:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Choose either an internal or external banner link, not both",
+        )
     if payload.inner_link and not payload.inner_link.startswith("/"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Internal banner link must start with /")
+    if payload.inner_link:
+        path = urlsplit(payload.inner_link).path.rstrip("/") or "/"
+        is_product = path.startswith("/products/") and path.removeprefix("/products/").isdigit()
+        if path not in SUPPORTED_BANNER_ROUTES and not is_product:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Internal banner link does not match a supported app route",
+            )
     if payload.outer_link:
         parsed = urlsplit(payload.outer_link)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:

@@ -10,7 +10,7 @@ from src.app.services.rate_limit import client_ip_from_request
 from src.app.services.customer_intelligence import record_customer_event_safe
 from src.database import get_db
 from src.database.crud import get_banner_by_id, get_banners
-from src.database.models import Banner, BannerClick, User
+from src.database.models import Banner, BannerClick, BannerImpression, User
 from src.database.schemas import BannerRead
 
 banners_router = APIRouter(prefix="/banners", tags=["banners"])
@@ -62,4 +62,29 @@ async def banner_click(
             entity_id=banner.id,
             properties={"target_url": target_url},
         )
+    await db.commit()
+
+
+@banners_router.post("/{banner_id}/impression", status_code=204)
+async def banner_impression(
+    banner_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> None:
+    banner = await get_banner_by_id(db, banner_id)
+    if banner is None:
+        raise HTTPException(status_code=404, detail="Banner not found")
+    db.add(BannerImpression(
+        banner_id=banner.id,
+        user_id=current_user.id if current_user else None,
+        ip_address=client_ip_from_request(request),
+        user_agent=(request.headers.get("user-agent") or "")[:512] or None,
+        metadata_json={},
+    ))
+    await db.execute(
+        update(Banner)
+        .where(Banner.id == banner.id)
+        .values(impression_count=Banner.impression_count + 1)
+    )
     await db.commit()

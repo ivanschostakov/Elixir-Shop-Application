@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -12,6 +13,13 @@ from src.database.models import Order, UserPushToken
 from src.database.models.orders.history import get_order_history_bucket, get_order_status_code, normalize_order_status
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ExpoPushBatchResult:
+    accepted_tokens: frozenset[str]
+    invalid_tokens: frozenset[str]
+    failed_tokens: frozenset[str]
 
 ORDER_STATUS_NOTIFICATION_BODIES = {
     "created": "Заказ создан. Мы уже взяли его в работу.",
@@ -110,8 +118,9 @@ def _build_push_messages(push_tokens, *, title: str, body: str, data: dict[str, 
     } for push_token in push_tokens]
 
 
-async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> set[str]:
-    if not messages: return set()
+async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> ExpoPushBatchResult:
+    if not messages:
+        return ExpoPushBatchResult(frozenset(), frozenset(), frozenset())
     async with httpx.AsyncClient(timeout=EXPO_PUSH_TIMEOUT_SECONDS) as client:
         response = await client.post(EXPO_PUSH_API_URL, json=messages, headers={
             "Accept": "application/json",
@@ -121,22 +130,70 @@ async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> set[str]:
         response.raise_for_status()
         payload = response.json()
 
+    message_tokens = {
+        str(message["to"])
+        for message in messages
+        if isinstance(message.get("to"), str)
+    }
+    accepted_tokens: set[str] = set()
     invalid_tokens: set[str] = set()
+    failed_tokens: set[str] = set()
     tickets = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(tickets, list): return invalid_tokens
+    if not isinstance(tickets, list):
+        log.warning("Expo push response is missing ticket data: %s", payload)
+        return ExpoPushBatchResult(
+            accepted_tokens=frozenset(),
+            invalid_tokens=frozenset(),
+            failed_tokens=frozenset(message_tokens),
+        )
 
     for message, ticket in zip(messages, tickets, strict=False):
-        if not isinstance(ticket, dict): continue
+        token = message.get("to")
+        if not isinstance(token, str):
+            continue
+        if not isinstance(ticket, dict):
+            failed_tokens.add(token)
+            continue
         details = ticket.get("details")
         error_code = details.get("error") if isinstance(details, dict) else None
         if error_code == "DeviceNotRegistered":
-            token = message.get("to")
-            if isinstance(token, str): invalid_tokens.add(token)
+            invalid_tokens.add(token)
+            failed_tokens.add(token)
             continue
+        if ticket.get("status") == "ok":
+            accepted_tokens.add(token)
+        else:
+            failed_tokens.add(token)
+            log.warning("Expo push notification error: %s", ticket)
 
-        if ticket.get("status") == "error": log.warning("Expo push notification error: %s", ticket)
+    accounted_tokens = accepted_tokens | failed_tokens
+    failed_tokens.update(message_tokens - accounted_tokens)
+    return ExpoPushBatchResult(
+        accepted_tokens=frozenset(accepted_tokens),
+        invalid_tokens=frozenset(invalid_tokens),
+        failed_tokens=frozenset(failed_tokens),
+    )
 
-    return invalid_tokens
+
+def _coerce_push_batch_result(
+    result: ExpoPushBatchResult | set[str],
+    messages: list[dict[str, Any]],
+) -> ExpoPushBatchResult:
+    if isinstance(result, ExpoPushBatchResult):
+        return result
+    # Backward-compatible with older tests/adapters where the result contained
+    # only invalid tokens: every other submitted token was accepted by Expo.
+    submitted = {
+        str(message["to"])
+        for message in messages
+        if isinstance(message.get("to"), str)
+    }
+    invalid = frozenset(result)
+    return ExpoPushBatchResult(
+        accepted_tokens=frozenset(submitted - invalid),
+        invalid_tokens=invalid,
+        failed_tokens=invalid,
+    )
 
 
 async def _delete_invalid_push_tokens(session: AsyncSession, *, push_tokens, invalid_tokens: set[str], commit: bool = True) -> None:
@@ -158,9 +215,13 @@ async def send_push_to_user(session: AsyncSession, *, user_id: int, title: str, 
     if not target_push_tokens: return False
 
     messages = _build_push_messages(target_push_tokens, title=title, body=body, data=data, channel_id=channel_id)
-    invalid_tokens = await _send_expo_push_messages(messages)
-    await _delete_invalid_push_tokens(session, push_tokens=target_push_tokens, invalid_tokens=invalid_tokens)
-    return True
+    result = _coerce_push_batch_result(await _send_expo_push_messages(messages), messages)
+    await _delete_invalid_push_tokens(
+        session,
+        push_tokens=target_push_tokens,
+        invalid_tokens=set(result.invalid_tokens),
+    )
+    return bool(result.accepted_tokens)
 
 
 async def send_push_to_users(session: AsyncSession, *, user_ids: list[int], title: str, body: str, data: dict[str, Any], channel_id: str = "default") -> bool:
@@ -176,15 +237,19 @@ async def send_push_to_users(session: AsyncSession, *, user_ids: list[int], titl
     if not target_push_tokens:
         return False
     messages = _build_push_messages(target_push_tokens, title=title, body=body, data=data, channel_id=channel_id)
+    accepted_tokens: set[str] = set()
     invalid_tokens: set[str] = set()
     # Expo accepts at most 100 notification messages per request. Keep one
     # logical community event durable while safely fanning it out in chunks.
     for offset in range(0, len(messages), 100):
-        invalid_tokens.update(await _send_expo_push_messages(messages[offset:offset + 100]))
+        chunk = messages[offset:offset + 100]
+        result = _coerce_push_batch_result(await _send_expo_push_messages(chunk), chunk)
+        accepted_tokens.update(result.accepted_tokens)
+        invalid_tokens.update(result.invalid_tokens)
     # The outbox processor owns this transaction and its row locks. Do not
     # commit here or another worker could claim the same event mid-delivery.
     await _delete_invalid_push_tokens(session, push_tokens=target_push_tokens, invalid_tokens=invalid_tokens, commit=False)
-    return True
+    return bool(accepted_tokens)
 
 
 async def send_order_status_change_notification(session: AsyncSession, order: Order) -> None:

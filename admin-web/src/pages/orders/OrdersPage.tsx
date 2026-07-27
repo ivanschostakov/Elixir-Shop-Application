@@ -9,6 +9,7 @@ import { PageHeader } from "../../components/PageHeader"
 import { parseVisibleColumns, TableToolbar, type TableColumnOption } from "../../components/TableToolbar"
 import { useAuth } from "../../auth/AuthProvider"
 import { useLanguage } from "../../i18n/LanguageProvider"
+import { domainLabel } from "../../i18n/domain"
 import { dateTime, money, statusColors, statusLabel } from "../../utils/format"
 
 const kanbanStatuses: OrderStatusCode[] = ["created", "invoice_sent", "paid", "waiting_response", "packaged", "sent", "delivered", "completed", "canceled"]
@@ -22,6 +23,7 @@ export function OrdersPage() {
   const search = searchParams.get("q") || ""
   const rawStatus = searchParams.get("status") as OrderStatusCode | null
   const status = rawStatus && kanbanStatuses.includes(rawStatus) ? rawStatus : undefined
+  const paymentStatus = searchParams.get("payment_status") || undefined
   const page = Math.max(Number(searchParams.get("page") || 1) || 1, 1)
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const updateFilters = (values: Record<string, string | number | undefined>) => {
@@ -36,8 +38,8 @@ export function OrdersPage() {
   }
   const pageSize = view === "kanban" ? 200 : 50
   const query = useQuery({
-    queryKey: ["orders", search, status, page, view],
-    queryFn: () => apiRequest<Page<OrderListItem>>(`/orders${queryString({ q: search, status_code: status, limit: pageSize, offset: (page - 1) * pageSize })}`),
+    queryKey: ["orders", search, status, paymentStatus, page, view],
+    queryFn: () => apiRequest<Page<OrderListItem>>(`/orders${queryString({ q: search, status_code: status, payment_status: paymentStatus, limit: pageSize, offset: (page - 1) * pageSize })}`),
     refetchInterval: 30_000,
   })
   const transition = useMutation({
@@ -49,14 +51,14 @@ export function OrdersPage() {
     onError: (error: Error) => void message.error(error.message),
   })
   const copy = locale === "ru"
-    ? { title: "Заказы", description: "Продажи, оплаты и доставка в одном рабочем пространстве", table: "Таблица", kanban: "Канбан", order: "Заказ", customer: "Клиент", status: "Статус", payment: "Оплата", delivery: "Доставка", total: "Сумма", created: "Создан", allStatuses: "Все статусы" }
-    : { title: "Orders", description: "Sales, payments and fulfillment in one workspace", table: "Table", kanban: "Kanban", order: "Order", customer: "Customer", status: "Status", payment: "Payment", delivery: "Delivery", total: "Total", created: "Created", allStatuses: "All statuses" }
+    ? { title: "Заказы", description: "Продажи, оплаты и доставка в одном рабочем пространстве", table: "Таблица", kanban: "Канбан", order: "Заказ", customer: "Клиент", status: "Статус", payment: "Оплата", delivery: "Доставка", total: "Сумма", created: "Создан", allStatuses: "Все статусы", allPayments: "Все оплаты", failedPayments: "Ошибки оплаты" }
+    : { title: "Orders", description: "Sales, payments and fulfillment in one workspace", table: "Table", kanban: "Kanban", order: "Order", customer: "Customer", status: "Status", payment: "Payment", delivery: "Delivery", total: "Total", created: "Created", allStatuses: "All statuses", allPayments: "All payments", failedPayments: "Payment errors" }
 
   const tableColumns = [
     { title: copy.order, dataIndex: "order_code", key: "order", render: (value: string, record: OrderListItem) => <Link to={`/sales/orders/${record.id}`}><strong>{value}</strong></Link> },
     { title: copy.customer, key: "customer", render: (_: unknown, record: OrderListItem) => <div className="table-primary"><span>{record.customer.name} {record.customer.surname}</span><small>{record.customer.phone_number || record.customer.email || "—"}</small></div> },
     { title: copy.status, dataIndex: "status_code", key: "status", render: (value: OrderStatusCode) => <Tag color={statusColors[value]}>{statusLabel(value, locale)}</Tag> },
-    { title: copy.payment, key: "payment", render: (_: unknown, record: OrderListItem) => <div className="table-primary"><span>{record.payment_status}</span><small>{record.payment_method || "—"}</small></div> },
+    { title: copy.payment, key: "payment", render: (_: unknown, record: OrderListItem) => <div className="table-primary"><span>{domainLabel(record.payment_status, locale)}</span><small>{record.payment_method?.toUpperCase() || "—"}</small></div> },
     { title: copy.delivery, dataIndex: "delivery_service", key: "delivery", render: (value: string) => value || "—" },
     { title: copy.total, key: "total", align: "right" as const, render: (_: unknown, record: OrderListItem) => <strong>{money(record.grand_total, record.currency, locale)}</strong> },
     { title: copy.created, dataIndex: "created_at", key: "created", render: (value: string) => dateTime(value, locale) },
@@ -80,6 +82,19 @@ export function OrdersPage() {
         <Space wrap>
           <Input allowClear prefix={<SearchOutlined />} placeholder={locale === "ru" ? "Номер, имя, телефон" : "Number, name, phone"} value={search} onChange={(event) => updateFilters({ q: event.target.value, page: 1 })} />
           <Select allowClear value={status} placeholder={copy.allStatuses} style={{ minWidth: 190 }} onChange={(value) => updateFilters({ status: value, page: 1 })} options={kanbanStatuses.map((value) => ({ value, label: statusLabel(value, locale) }))} />
+          <Select
+            allowClear
+            value={paymentStatus}
+            placeholder={copy.allPayments}
+            style={{ minWidth: 180 }}
+            onChange={(value) => updateFilters({ payment_status: value, page: 1 })}
+            options={[
+              { value: "failed", label: copy.failedPayments },
+              { value: "pending", label: locale === "ru" ? "Ожидает" : "Pending" },
+              { value: "paid", label: locale === "ru" ? "Оплачено" : "Paid" },
+              { value: "refunded", label: locale === "ru" ? "Возврат" : "Refunded" },
+            ]}
+          />
           <Segmented value={view} onChange={(value) => updateFilters({ view: value === "kanban" ? "kanban" : undefined, page: 1 })} options={[{ value: "table", label: copy.table, icon: <BarsOutlined /> }, { value: "kanban", label: copy.kanban, icon: <AppstoreOutlined /> }]} />
         </Space>
       </Card>
@@ -92,7 +107,7 @@ export function OrdersPage() {
             onVisibleColumnsChange={(keys) => updateFilters({ columns: keys.length === columnOptions.length ? undefined : keys.join(","), page: 1 })}
             viewState={viewState}
             onApplyViewState={(state) => { setSelectedRowKeys([]); setSearchParams(state) }}
-            exportFilters={{ q: search, status_code: status }}
+            exportFilters={{ q: search, status_code: status, payment_status: paymentStatus }}
             selectedIds={selectedRowKeys.map(Number)}
             onClearSelection={() => setSelectedRowKeys([])}
           />

@@ -1,4 +1,5 @@
 import type { AdminAuthResponse } from "./types"
+import { humanizeApiError } from "../i18n/domain"
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api/v1/admin"
 let accessToken: string | null = null
@@ -37,8 +38,11 @@ async function parseError(response: Response): Promise<ApiError> {
       ? detail
       : typeof detail === "object" && detail && "message" in detail
         ? String((detail as { message: unknown }).message)
-        : response.statusText || "Request failed"
-  return new ApiError(response.status, message, detail)
+        : detail !== null
+          ? JSON.stringify(detail)
+          : response.statusText || "Request failed"
+  const locale = window.localStorage.getItem("elixir-admin-locale") === "en" ? "en" : "ru"
+  return new ApiError(response.status, humanizeApiError(message, response.status, locale), detail)
 }
 
 export async function refreshAdminSession(): Promise<AdminAuthResponse> {

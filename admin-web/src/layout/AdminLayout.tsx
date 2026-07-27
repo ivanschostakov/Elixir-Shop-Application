@@ -26,6 +26,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom"
 import { apiRequest, queryString } from "../api/client"
 import type { AlertPage, Dashboard, SearchResult } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
+import { domainLabel } from "../i18n/domain"
 import { useLanguage } from "../i18n/LanguageProvider"
 
 const { Header, Sider, Content } = Layout
@@ -121,10 +122,10 @@ export function AdminLayout() {
   const initials = `${principal?.user.name?.[0] || ""}${principal?.user.surname?.[0] || ""}`.toUpperCase() || "A"
   const environment = import.meta.env.VITE_ENVIRONMENT || import.meta.env.MODE
   const notificationItems = dashboard ? [
-    { key: "payments", count: dashboard.metrics.failed_payments, label: locale === "ru" ? "Проблемные оплаты" : "Payment issues", path: "/sales/orders" },
-    { key: "reviews", count: dashboard.metrics.pending_reviews, label: locale === "ru" ? "Отзывы на модерации" : "Reviews awaiting moderation", path: "/content/reviews" },
-    { key: "integrations", count: dashboard.metrics.integration_errors, label: locale === "ru" ? "Ошибки интеграций" : "Integration errors", path: "/integrations" },
-    { key: "stock", count: dashboard.metrics.low_stock_variants, label: locale === "ru" ? "Низкие остатки" : "Low stock", path: "/catalog/products" },
+    { key: "payments", count: dashboard.metrics.failed_payments, label: locale === "ru" ? "Проблемные оплаты" : "Payment issues", path: "/sales/orders?payment_status=failed" },
+    { key: "reviews", count: dashboard.metrics.pending_reviews, label: locale === "ru" ? "Отзывы на модерации" : "Reviews awaiting moderation", path: "/content/reviews?status=pending" },
+    { key: "integrations", count: dashboard.metrics.integration_errors, label: locale === "ru" ? "Ошибки интеграций" : "Integration errors", path: "/integrations?status=error" },
+    { key: "stock", count: dashboard.metrics.low_stock_variants, label: locale === "ru" ? "Низкие остатки" : "Low stock", path: "/catalog/products?low_stock=true" },
     ...(hasPermission("tasks.read") ? [{ key: "tasks", count: dashboard.metrics.overdue_tasks, label: locale === "ru" ? "Просроченные задачи" : "Overdue tasks", path: "/tasks?overdue=true" }] : []),
   ].filter((item) => item.count > 0) : []
   const notificationCount = notificationItems.reduce((total, item) => total + item.count, 0) + (alerts.data?.unread_count || 0)
@@ -133,7 +134,7 @@ export function AdminLayout() {
     label: (
       <div className="search-option">
         <div><strong>{item.title}</strong><span>{item.subtitle}</span></div>
-        <Tag bordered={false}>{item.type}</Tag>
+        <Tag bordered={false}>{domainLabel(item.type, locale)}</Tag>
       </div>
     ),
   }))
@@ -143,7 +144,7 @@ export function AdminLayout() {
       <Sider width={248} collapsedWidth={76} collapsed={collapsed} trigger={null} className="admin-sider">
         <div className="sidebar-brand">
           <div className="brand-mark brand-mark-small">E</div>
-          {!collapsed ? <div><strong>Elixir Shop</strong><span>Admin</span></div> : null}
+          {!collapsed ? <div><strong>Elixir Shop</strong><span>{domainLabel("admin", locale)}</span></div> : null}
         </div>
         <Menu
           mode="inline"
@@ -153,7 +154,7 @@ export function AdminLayout() {
           onClick={({ key }) => key.startsWith("/") && navigate(key)}
         />
         <div className="sidebar-footer">
-          {!collapsed ? <><span className="status-dot" /> <span>{t("environment")}: {environment}</span></> : <span className="status-dot" />}
+          {!collapsed ? <><span className="status-dot" /> <span>{t("environment")}: {domainLabel(environment, locale)}</span></> : <span className="status-dot" />}
         </div>
       </Sider>
       <Layout>
@@ -179,14 +180,14 @@ export function AdminLayout() {
                 void apiRequest("/auth/me/locale", { method: "PATCH", body: JSON.stringify({ locale: nextLocale }) }).catch(() => undefined)
               }}
             />
-            <Badge count={notificationCount} overflowCount={99} size="small"><Button type="text" icon={<BellOutlined />} aria-label="Notifications" onClick={() => setNotificationCenterOpen(true)} /></Badge>
+            <Badge count={notificationCount} overflowCount={99} size="small"><Button type="text" icon={<BellOutlined />} aria-label={locale === "ru" ? "Уведомления" : "Notifications"} onClick={() => setNotificationCenterOpen(true)} /></Badge>
             <Dropdown
               trigger={["click"]}
               menu={{ items: [{ key: "logout", icon: <LogoutOutlined />, label: t("logout"), onClick: () => void logout() }] }}
             >
               <button className="profile-button">
                 <Avatar>{initials}</Avatar>
-                <span><Typography.Text strong>{principal?.user.name} {principal?.user.surname}</Typography.Text><Typography.Text type="secondary">{principal?.roles[0] || "admin"}</Typography.Text></span>
+                <span><Typography.Text strong>{principal?.user.name} {principal?.user.surname}</Typography.Text><Typography.Text type="secondary">{domainLabel(principal?.roles[0] || "admin", locale)}</Typography.Text></span>
               </button>
             </Dropdown>
           </Space>
@@ -210,7 +211,7 @@ export function AdminLayout() {
               }}>{t("open")}</Button>]}>
                 <List.Item.Meta
                   avatar={<span className={`alert-dot alert-dot-${item.severity}`} />}
-                  title={<Space>{locale === "ru" ? item.title_ru : item.title_en}{!item.is_read ? <Tag color="blue">New</Tag> : null}</Space>}
+                  title={<Space>{locale === "ru" ? item.title_ru : item.title_en}{!item.is_read ? <Tag color="blue">{locale === "ru" ? "Новое" : "New"}</Tag> : null}</Space>}
                   description={item.message}
                 />
               </List.Item>

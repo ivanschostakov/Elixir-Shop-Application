@@ -33,10 +33,13 @@ Production backend settings:
 - `ADMIN_AUTOMATION_INTERVAL_SECONDS=60`
 - `ADMIN_PUBLIC_HOST=admin-elixirshop.devsivanschostakov.org`
 - `ADMIN_INVITATION_EXPIRE_HOURS=72`
+- `ADMIN_PASSWORD_RESET_EXPIRE_MINUTES=30`
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `SMTP_FROM_NAME` configured for outbound invitations
 - `CORS_ALLOWED_ORIGINS` limited to production origins (the admin itself uses same-origin requests)
 
 After validation, turn `ADMIN_READ_ONLY` off section by section operationally. Administrators can be disabled and their sessions revoked from Settings → Staff.
+
+The same SMTP configuration delivers one-time password reset links from the login page. A successful reset revokes every active admin session for that user.
 
 ## Staff roles and email invitations
 
@@ -108,6 +111,28 @@ Marketing CRM is intentionally minimalistic but operational: administrators can 
 ## Analytics and reports
 
 Analytics is a read-only owner view available from `/analytics`. It covers sales, customers, products, discounts and marketing for 7, 30, 90 or 365 days. Each section has compact summary cards, operational tables and a CSV download. Reports are generated from live PostgreSQL data and use the same authenticated admin namespace, without changing mobile API contracts.
+
+Customer analytics includes total and unique app openings, openings per customer and daily/monthly graphs. Product analytics includes units, revenue, orders, buyers, views, unique viewers, conversion and current stock.
+
+## Product images and stock
+
+Main and variant images are uploaded from Catalog → Products → Merchandising. JPEG, PNG and WEBP files up to 10 MB are normalized to PNG, corrected for EXIF orientation and atomically written into the existing product media structure.
+
+MoySklad stock is imported without an artificial reserve when `MOY_SKLAD_STOCK_RESERVE=0`. Automatic order sync validates that `MOY_SKLAD_ORGANIZATION_ID` points to the configured Khakimov legal entity before creating the customer order.
+
+## Banners
+
+Banners accept main, desktop and mobile images, one internal or external link, status, schedule, priority and audience JSON. The mobile carousel supports swipe, five-second autoplay and a ten-second pause after manual interaction. Impressions and clicks are recorded separately and shown with a 30-day CTR graph.
+
+Internal paths are allowlisted. Common examples are `/discover?tab=products&q=ghk-cu`, `/products/123`, `/basket`, `/chat` and `/profile-history`.
+
+## Localization fallback
+
+Known statuses, operations, providers, roles, events and common API errors have human-readable RU/EN labels. If a value is not in the dictionary, the UI preserves the exact original string, including whitespace, case and `snake_case`.
+
+## Website review synchronization package
+
+The repository contains an installable but intentionally uninstalled Bitrix module under `integrations/bitrix/elixir.reviewsync`. It synchronizes rating, text, merchant answer, likes/dislikes and moderation status with `sotbit.reviews` over HMAC-signed HTTPS requests. Version 1.0 does not synchronize review media attachments. Follow the package README and obtain explicit production approval before installation or enabling `worker-website-review-sync`.
 
 ## Operational automation, SLA and alerts
 

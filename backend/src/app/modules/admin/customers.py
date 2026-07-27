@@ -22,6 +22,7 @@ from src.app.modules.admin.schemas import (
     CustomerEventRead,
     CustomerListItem,
     CustomerMarketingProfileRead,
+    CustomerPushTestRead,
     CustomerStatusPayload,
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
@@ -41,6 +42,7 @@ from src.database.models import (
     FavouredProduct,
     Order,
     OrderBenefitApplication,
+    NotificationDispatch,
     ReferralProfile,
     Review,
     User,
@@ -50,6 +52,7 @@ from src.database.models import (
     UserPushToken,
     UserSession,
 )
+from src.app.services.push_notifications import send_push_to_user
 
 admin_customers_router = APIRouter(prefix="/customers", tags=["admin_customers"])
 logger = logging.getLogger(__name__)
@@ -156,7 +159,12 @@ async def _customer_detail(db: AsyncSession, customer_id: int) -> CustomerDetail
         func.coalesce(func.sum(BasketItem.price * BasketItem.quantity), 0),
     ).select_from(Basket).outerjoin(BasketItem, BasketItem.basket_id == Basket.id).where(Basket.user_id == customer_id))).one()
     favourites = int((await db.execute(select(func.count(FavouredProduct.id)).where(FavouredProduct.user_id == customer_id))).scalar_one())
-    push_tokens = int((await db.execute(select(func.count(UserPushToken.id)).where(UserPushToken.user_id == customer_id))).scalar_one())
+    push_tokens, last_push_token_at = (await db.execute(
+        select(
+            func.count(UserPushToken.id),
+            func.max(UserPushToken.updated_at),
+        ).where(UserPushToken.user_id == customer_id)
+    )).one()
     referral = (await db.execute(select(ReferralProfile).where(ReferralProfile.user_id == customer_id))).scalar_one_or_none()
     signal_row = (await db.execute(select(
         func.coalesce(func.sum(UserProductRecommendationSignal.view_count), 0),
@@ -183,6 +191,21 @@ async def _customer_detail(db: AsyncSession, customer_id: int) -> CustomerDetail
         .order_by(CustomerConsent.last_changed_at.desc(), CustomerConsent.id.desc())
     )).scalars().all())
     attribution = await db.get(CustomerAttribution, customer_id)
+    last_push_dispatch_at = (await db.execute(
+        select(func.max(NotificationDispatch.sent_at)).where(
+            NotificationDispatch.user_id == customer_id,
+        )
+    )).scalar_one_or_none()
+    permissions = {str(device.push_permission or "unknown").lower() for device in devices}
+    push_tokens_count = int(push_tokens or 0)
+    if push_tokens_count == 0:
+        push_delivery_status = "no_token"
+    elif permissions and permissions <= {"denied", "unavailable"}:
+        push_delivery_status = "permission_denied"
+    elif "granted" in permissions or not permissions:
+        push_delivery_status = "ready"
+    else:
+        push_delivery_status = "unknown"
 
     return CustomerDetail(
         **base,
@@ -192,7 +215,11 @@ async def _customer_detail(db: AsyncSession, customer_id: int) -> CustomerDetail
         basket_items=int(basket_row[0] or 0),
         basket_total=Decimal(basket_row[1] or 0),
         favourites_count=favourites,
-        push_tokens_count=push_tokens,
+        push_tokens_count=push_tokens_count,
+        push_delivery_status=push_delivery_status,
+        push_reachable=push_delivery_status == "ready",
+        last_push_token_at=last_push_token_at,
+        last_push_dispatch_at=last_push_dispatch_at,
         referral_discount_base_total=referral.referral_discount_base_total if referral else Decimal("0.00"),
         referral_discount_percent=referral.current_discount_percent if referral else Decimal("0.00"),
         total_product_views=int(signal_row[0] or 0),
@@ -209,6 +236,57 @@ async def _customer_detail(db: AsyncSession, customer_id: int) -> CustomerDetail
             created_at=note.created_at,
             updated_at=note.updated_at,
         ) for note in notes],
+    )
+
+
+@admin_customers_router.post(
+    "/{customer_id}/push-test",
+    response_model=CustomerPushTestRead,
+)
+async def send_customer_push_test(
+    customer_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("customers.manage", write=True)),
+) -> CustomerPushTestRead:
+    user = await db.get(User, customer_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    sent_at = ufa_now()
+    accepted = await send_push_to_user(
+        db,
+        user_id=customer_id,
+        title="Elixir Shop · тест push",
+        body="Тестовое уведомление доставлено в сервис отправки.",
+        data={"type": "admin_push_test"},
+    )
+    if accepted:
+        db.add(NotificationDispatch(
+            user_id=customer_id,
+            type="admin_push_test",
+            dedupe_key=f"admin:{context.user.id}:{sent_at.isoformat()}",
+            payload_json={
+                "title": "Elixir Shop · тест push",
+                "body": "Тестовое уведомление доставлено в сервис отправки.",
+                "requested_by_user_id": context.user.id,
+            },
+            sent_at=sent_at,
+        ))
+        await add_admin_audit(
+            db,
+            request,
+            context,
+            action="customer.push_test",
+            entity_type="customer",
+            entity_id=customer_id,
+            after={"accepted": True, "sent_at": sent_at},
+        )
+        await db.commit()
+        return CustomerPushTestRead(accepted=True, status="accepted", sent_at=sent_at)
+    return CustomerPushTestRead(
+        accepted=False,
+        status="no_token",
+        sent_at=None,
     )
 
 

@@ -9,6 +9,7 @@ import { useAuth } from "../../auth/AuthProvider"
 import { PageHeader } from "../../components/PageHeader"
 import { parseVisibleColumns, TableToolbar, type TableColumnOption } from "../../components/TableToolbar"
 import { useLanguage } from "../../i18n/LanguageProvider"
+import { domainLabel } from "../../i18n/domain"
 import { dateTime } from "../../utils/format"
 
 type ReviewStatus = "pending" | "published" | "rejected"
@@ -252,7 +253,7 @@ export function ReviewsPage() {
             locale={{ emptyText: copy.noHistory }}
             renderItem={(event) => <List.Item>
               <List.Item.Meta
-                title={<Space><Tag>{event.action}</Tag><span>{event.actor_name || "—"}</span></Space>}
+                title={<Space><Tag>{domainLabel(event.action, locale)}</Tag><span>{event.actor_name || "—"}</span></Space>}
                 description={<Space direction="vertical" size={2}><span>{dateTime(event.created_at, locale)}</span>{event.comment ? <span>{event.comment}</span> : null}</Space>}
               />
             </List.Item>}

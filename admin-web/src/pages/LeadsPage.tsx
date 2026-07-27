@@ -25,6 +25,7 @@ import type { AssigneeOption, CrmLead, CrmLeadDetail, LeadStatus, Page } from ".
 import { useAuth } from "../auth/AuthProvider"
 import { PageHeader } from "../components/PageHeader"
 import { useLanguage } from "../i18n/LanguageProvider"
+import { domainLabel } from "../i18n/domain"
 import { dateTime } from "../utils/format"
 
 type LeadForm = {
@@ -81,7 +82,9 @@ export function LeadsPage() {
       source: "Источник",
       stage: "Этап",
       priority: "Приоритет",
-      score: "Score",
+      score: "Оценка лида",
+      customerId: "ID клиента",
+      phone: "Телефон",
       owner: "Ответственный",
       nextAction: "Следующее действие",
       context: "Контекст",
@@ -113,6 +116,8 @@ export function LeadsPage() {
       stage: "Stage",
       priority: "Priority",
       score: "Score",
+      customerId: "Customer ID",
+      phone: "Phone",
       owner: "Owner",
       nextAction: "Next action",
       context: "Context",
@@ -259,7 +264,7 @@ export function LeadsPage() {
       <Card className="filter-card"><Space wrap>
         <Input allowClear prefix={<SearchOutlined />} placeholder={copy.search} value={search} onChange={(event) => updateFilter({ q: event.target.value, page: 1 })} />
         <Select value={status} style={{ width: 170 }} onChange={(value) => updateFilter({ status: value, page: 1 })} options={[{ value: "active", label: copy.active }, { value: "all", label: copy.all }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]} />
-        <Select value={priority} style={{ width: 150 }} onChange={(value) => updateFilter({ priority: value, page: 1 })} options={[{ value: "all", label: copy.all }, ...(["low", "normal", "high", "urgent"] as const).map((value) => ({ value, label: value }))]} />
+        <Select value={priority} style={{ width: 150 }} onChange={(value) => updateFilter({ priority: value, page: 1 })} options={[{ value: "all", label: copy.all }, ...(["low", "normal", "high", "urgent"] as const).map((value) => ({ value, label: domainLabel(value, locale) }))]} />
         <Select value={owner} style={{ width: 150 }} onChange={(value) => updateFilter({ owner: value, page: 1 })} options={[{ value: "all", label: copy.all }, { value: "mine", label: copy.mine }]} />
       </Space></Card>
       <Table<CrmLead>
@@ -269,12 +274,12 @@ export function LeadsPage() {
         pagination={{ current: page, pageSize, total: list.data?.total, showSizeChanger: false, onChange: (next) => updateFilter({ page: next }) }}
         onRow={(lead) => ({ onClick: () => void openEdit(lead), style: { cursor: "pointer" } })}
         columns={[
-          { title: copy.titleField, key: "lead", render: (_: unknown, lead) => <div className="table-primary"><strong>{lead.title}</strong><small>#{lead.id} · {lead.source}</small></div> },
+          { title: copy.titleField, key: "lead", render: (_: unknown, lead) => <div className="table-primary"><strong>{lead.title}</strong><small>#{lead.id} · {domainLabel(lead.source, locale)}</small></div> },
           { title: copy.customer, key: "customer", render: (_: unknown, lead) => lead.customer_user_id ? <Link onClick={(event) => event.stopPropagation()} to={`/customers/${lead.customer_user_id}`}>{lead.customer_name || `#${lead.customer_user_id}`}</Link> : lead.contact_name || "—" },
           { title: copy.context, key: "context", render: (_: unknown, lead) => <Space direction="vertical" size={0}>{lead.conversation_id ? <Link onClick={(event) => event.stopPropagation()} to={`/communications?conversation_id=${lead.conversation_id}`}>{copy.conversation} #{lead.conversation_id}</Link> : null}{lead.converted_order_id ? <Link onClick={(event) => event.stopPropagation()} to={`/sales/orders/${lead.converted_order_id}`}>{lead.converted_order_code || `#${lead.converted_order_id}`}</Link> : null}{lead.product_name || lead.category_name || "—"}</Space> },
           { title: copy.owner, dataIndex: "owner_name", render: (value: string | null) => value || "—" },
           { title: copy.score, dataIndex: "score", render: (value: number) => <Tag color={value >= 70 ? "red" : value >= 40 ? "orange" : "blue"}>{value}</Tag> },
-          { title: copy.priority, dataIndex: "priority", render: (value: CrmLead["priority"]) => <Tag color={priorityColors[value]}>{value}</Tag> },
+          { title: copy.priority, dataIndex: "priority", render: (value: CrmLead["priority"]) => <Tag color={priorityColors[value]}>{domainLabel(value, locale)}</Tag> },
           { title: copy.nextAction, dataIndex: "next_action_at", render: (value: string | null) => dateTime(value, locale) },
           { title: copy.stage, dataIndex: "status", render: (value: LeadStatus) => <Tag color={statusColors[value]}>{statusLabels[value]}</Tag> },
         ]}
@@ -289,13 +294,13 @@ export function LeadsPage() {
         <Form form={form} layout="vertical" disabled={!hasPermission("leads.manage")}>
           <Form.Item name="title" label={copy.titleField} rules={[{ required: true, min: 1, max: 240 }]}><Input /></Form.Item>
           <Space align="start" wrap>
-            {!editing ? <Form.Item name="source" label={copy.source}><Select style={{ width: 170 }} options={["manual", "support", "ai_chat", "customer_intelligence"].map((value) => ({ value, label: value }))} /></Form.Item> : null}
+            {!editing ? <Form.Item name="source" label={copy.source}><Select style={{ width: 210 }} options={["manual", "support", "ai_chat", "customer_intelligence"].map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item> : null}
             {editing ? <Form.Item name="status" label={copy.stage}><Select style={{ width: 170 }} options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} /></Form.Item> : null}
-            <Form.Item name="priority" label={copy.priority}><Select style={{ width: 140 }} options={["low", "normal", "high", "urgent"].map((value) => ({ value, label: value }))} /></Form.Item>
+            <Form.Item name="priority" label={copy.priority}><Select style={{ width: 160 }} options={["low", "normal", "high", "urgent"].map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item>
             <Form.Item name="score" label={copy.score}><InputNumber min={0} max={100} /></Form.Item>
           </Space>
           <Space align="start" wrap>
-            <Form.Item name="customer_user_id" label="Customer ID"><InputNumber min={1} disabled={Boolean(editing)} /></Form.Item>
+            <Form.Item name="customer_user_id" label={copy.customerId}><InputNumber min={1} disabled={Boolean(editing)} /></Form.Item>
             <Form.Item name="conversation_id" label={copy.conversation}><InputNumber min={1} disabled={Boolean(editing)} /></Form.Item>
             <Form.Item name="owner_user_id" label={copy.owner}><Select allowClear style={{ width: 210 }} options={(assignees.data || []).map((item) => ({ value: item.user_id, label: item.name }))} /></Form.Item>
           </Space>
@@ -307,7 +312,7 @@ export function LeadsPage() {
           {!editing ? <Space align="start" wrap>
             <Form.Item name="contact_name" label={copy.contact}><Input /></Form.Item>
             <Form.Item name="contact_email" label="Email"><Input type="email" /></Form.Item>
-            <Form.Item name="contact_phone" label="Phone"><Input /></Form.Item>
+            <Form.Item name="contact_phone" label={copy.phone}><Input /></Form.Item>
           </Space> : null}
           {watchedStatus === "converted" ? <Form.Item name="converted_order_id" label={copy.convertedOrder} rules={[{ required: true }]}><InputNumber min={1} /></Form.Item> : null}
           {watchedStatus === "lost" ? <Form.Item name="lost_reason" label={copy.lostReason} rules={[{ required: true, min: 1 }]}><Input.TextArea rows={2} /></Form.Item> : null}
@@ -319,7 +324,7 @@ export function LeadsPage() {
             {
               key: "history",
               label: copy.history,
-              children: <Timeline items={editing.stage_history.map((item) => ({ color: statusColors[item.to_status as LeadStatus] || "blue", children: <div><strong>{item.from_status ? `${item.from_status} → ` : ""}{item.to_status}</strong><div>{item.changed_by_name || "—"} · {dateTime(item.created_at, locale)}</div>{item.reason ? <Typography.Text type="secondary">{item.reason}</Typography.Text> : null}</div> }))} />,
+              children: <Timeline items={editing.stage_history.map((item) => ({ color: statusColors[item.to_status as LeadStatus] || "blue", children: <div><strong>{item.from_status ? `${domainLabel(item.from_status, locale)} → ` : ""}{domainLabel(item.to_status, locale)}</strong><div>{item.changed_by_name || "—"} · {dateTime(item.created_at, locale)}</div>{item.reason ? <Typography.Text type="secondary">{item.reason}</Typography.Text> : null}</div> }))} />,
             },
             {
               key: "notes",

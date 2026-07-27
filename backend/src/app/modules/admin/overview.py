@@ -22,6 +22,7 @@ from src.database.models import AdminDashboardPreference, AdminTask, Basket, Bas
 from starlette import status
 
 admin_overview_router = APIRouter(tags=["admin_overview"])
+ANALYTICS_TIMEZONE = "Asia/Yekaterinburg"
 
 DEFAULT_DASHBOARD_WIDGETS = ["revenue", "paid_orders", "average_order", "new_customers", "revenue_trend", "attention", "sla"]
 DASHBOARD_WIDGETS = frozenset(DEFAULT_DASHBOARD_WIDGETS)
@@ -34,8 +35,18 @@ async def get_dashboard(
     _: AdminContext = Depends(require_permission("dashboard.read")),
 ) -> DashboardResponse:
     now = ufa_now()
-    start = now - timedelta(days=days)
-    paid_filter = (Order.is_paid.is_(True), Order.is_canceled.is_(False), Order.created_at >= start)
+    start = (now - timedelta(days=days - 1)).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    paid_filter = (
+        Order.is_paid.is_(True),
+        Order.is_canceled.is_(False),
+        Order.payment_paid_at.is_not(None),
+        Order.payment_paid_at >= start,
+    )
     revenue, paid_orders = (await db.execute(select(
         func.coalesce(func.sum(Order.grand_total), 0),
         func.count(Order.id),
@@ -82,8 +93,9 @@ async def get_dashboard(
     ))).scalar_one())
     sla_compliance = (Decimal(on_time_sla) / Decimal(completed_sla) * 100).quantize(Decimal("0.1")) if completed_sla else Decimal("100.0")
 
+    local_payment_time = func.timezone(ANALYTICS_TIMEZONE, Order.payment_paid_at)
     trend_rows = (await db.execute(select(
-        func.date(Order.payment_paid_at).label("day"),
+        func.date(local_payment_time).label("day"),
         func.coalesce(func.sum(Order.grand_total), 0).label("revenue"),
         func.count(Order.id).label("orders"),
     ).where(
@@ -91,7 +103,7 @@ async def get_dashboard(
         Order.is_canceled.is_(False),
         Order.payment_paid_at.is_not(None),
         Order.payment_paid_at >= start,
-    ).group_by(func.date(Order.payment_paid_at)).order_by(func.date(Order.payment_paid_at)))).all()
+    ).group_by(func.date(local_payment_time)).order_by(func.date(local_payment_time)))).all()
 
     return DashboardResponse(
         metrics=DashboardMetrics(

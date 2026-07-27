@@ -116,6 +116,30 @@ services:
       - ./backend/media:/app/backend/media
       - ./backend/logs:/app/backend/logs
 
+  worker-website-review-sync:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: shop-worker-website-review-sync
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      POSTGRES_HOST: 172.18.0.1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    user: "0:0"
+    command:
+      - /bin/sh
+      - -lc
+      - |
+        mkdir -p /app/backend/media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
+        && exec su -s /bin/sh app -c "python -m src.workers.website_review_sync"
+    volumes:
+      - ./backend/media:/app/backend/media
+      - ./backend/logs:/app/backend/logs
+
   worker-admin-jobs:
     build:
       context: ./backend

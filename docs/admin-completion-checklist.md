@@ -6,9 +6,13 @@ The admin panel is considered production-complete when the following checks are 
 
 - Dashboard, sales, customers, leads, support/AI communications, catalog, content, marketing, automation, analytics, integrations and settings are mounted in the SPA.
 - Public reviews always enter moderation before publication.
-- Bitrix integration is absent from code, tests and runtime routes.
+- The Bitrix review-sync module remains an isolated installable package and is not installed or enabled on production until the owner explicitly approves it.
 - Mobile API contracts are unchanged.
 - Telegram/community messages are not imported into the CRM support inbox.
+- Known system values have RU/EN labels; unknown values are displayed exactly as received.
+- Product and variant images can be uploaded from the merchandising drawer.
+- Banner mobile/desktop images, swipe, autoplay, impressions, clicks and internal routes are supported.
+- Analytics includes daily/monthly app opens and top-product sales/view/conversion metrics.
 
 ## Security
 
@@ -19,6 +23,7 @@ The admin panel is considered production-complete when the following checks are 
 - Invitation tokens are stored only as hashes, rotated on resend and never placed in API paths.
 - Superadministrator assignment requires explicit confirmation and is audited.
 - SMTP delivery is configured and a real invitation/acceptance/MFA flow has been verified.
+- SMTP password-reset delivery is configured and the one-time reset flow has been verified.
 - Production CORS does not allow wildcard origins.
 - Dangerous writes are blocked when `ADMIN_READ_ONLY=true`.
 - All material admin changes write audit events.
@@ -45,3 +50,6 @@ The admin panel is considered production-complete when the following checks are 
 - Protected admin API endpoints return 401 without credentials.
 - The support → admin reply → mobile read → lead stage flow passes against PostgreSQL.
 - `/analytics` and `/readiness` load through the public HTTPS admin domain.
+- Product stock matches MoySklad with `MOY_SKLAD_STOCK_RESERVE=0`.
+- MoySklad order sync validates that the configured organization is the Khakimov legal entity.
+- The packaged Bitrix module passes PHP lint and archive integrity checks before any installation.

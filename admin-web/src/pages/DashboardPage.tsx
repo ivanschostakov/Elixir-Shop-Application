@@ -13,6 +13,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button, Card, Checkbox, Col, Drawer, List, Progress, Row, Space, Statistic, Tag, Typography } from "antd"
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { apiRequest } from "../api/client"
 import type { Dashboard, DashboardPreference } from "../api/types"
 import { PageHeader } from "../components/PageHeader"
@@ -23,6 +24,7 @@ import { money } from "../utils/format"
 export function DashboardPage() {
   const { locale } = useLanguage()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [draftWidgets, setDraftWidgets] = useState<string[]>([])
   const query = useQuery({ queryKey: ["dashboard"], queryFn: () => apiRequest<Dashboard>("/dashboard"), refetchInterval: 60_000 })
@@ -42,22 +44,22 @@ export function DashboardPage() {
   })
   const maxTrend = Math.max(...(data?.revenue_trend.map((point) => Number(point.revenue)) || [1]), 1)
   const attention = data ? [
-    { label: copy.payment, value: data.metrics.failed_payments, icon: <WarningOutlined />, color: "#dc2626" },
-    { label: copy.reviews, value: data.metrics.pending_reviews, icon: <CommentOutlined />, color: "#d97706" },
-    { label: copy.stock, value: data.metrics.low_stock_variants, icon: <ClockCircleOutlined />, color: "#2563eb" },
-    { label: copy.baskets, value: data.metrics.abandoned_baskets, icon: <ShoppingCartOutlined />, color: "#7c3aed" },
-    { label: copy.integrations, value: data.metrics.integration_errors, icon: <WarningOutlined />, color: "#dc2626" },
-    { label: copy.tasks, value: data.metrics.overdue_tasks, icon: <CheckSquareOutlined />, color: "#b45309" },
+    { label: copy.payment, value: data.metrics.failed_payments, icon: <WarningOutlined />, color: "#dc2626", path: "/sales/orders?payment_status=failed" },
+    { label: copy.reviews, value: data.metrics.pending_reviews, icon: <CommentOutlined />, color: "#d97706", path: "/content/reviews?status=pending" },
+    { label: copy.stock, value: data.metrics.low_stock_variants, icon: <ClockCircleOutlined />, color: "#2563eb", path: "/catalog/products?low_stock=true" },
+    { label: copy.baskets, value: data.metrics.abandoned_baskets, icon: <ShoppingCartOutlined />, color: "#7c3aed", path: "/analytics?tab=customers" },
+    { label: copy.integrations, value: data.metrics.integration_errors, icon: <WarningOutlined />, color: "#dc2626", path: "/integrations?status=error" },
+    { label: copy.tasks, value: data.metrics.overdue_tasks, icon: <CheckSquareOutlined />, color: "#b45309", path: "/tasks?overdue=true" },
   ] : []
 
   return (
     <div className="page-stack">
-      <PageHeader title={copy.title} description={copy.description} actions={<Space><Tag color="green" icon={<CheckCircleOutlined />}>Live</Tag><Button icon={<SettingOutlined />} onClick={() => { setDraftWidgets(widgets); setCustomizeOpen(true) }}>{copy.customize}</Button></Space>} />
+      <PageHeader title={copy.title} description={copy.description} actions={<Space><Tag color="green" icon={<CheckCircleOutlined />}>{locale === "ru" ? "В реальном времени" : "Live"}</Tag><Button icon={<SettingOutlined />} onClick={() => { setDraftWidgets(widgets); setCustomizeOpen(true) }}>{copy.customize}</Button></Space>} />
       <QueryState loading={query.isLoading} error={query.isError} onRetry={() => void query.refetch()} />
       {data ? (
         <>
           {widgets.some((code) => ["revenue", "paid_orders", "average_order", "new_customers"].includes(code)) ? <Row gutter={[16, 16]}>
-            {visible("revenue") ? <Col xs={24} md={12} xl={6}><Card className="metric-card"><Statistic title={copy.revenue} value={money(data.metrics.revenue, "RUB", locale)} prefix={<DollarOutlined />} /><span className="metric-note positive"><ArrowUpOutlined /> 30 days</span></Card></Col> : null}
+            {visible("revenue") ? <Col xs={24} md={12} xl={6}><Card className="metric-card"><Statistic title={copy.revenue} value={money(data.metrics.revenue, "RUB", locale)} prefix={<DollarOutlined />} /><span className="metric-note positive"><ArrowUpOutlined /> {locale === "ru" ? "30 дней" : "30 days"}</span></Card></Col> : null}
             {visible("paid_orders") ? <Col xs={24} md={12} xl={6}><Card className="metric-card"><Statistic title={copy.paid} value={data.metrics.paid_orders} prefix={<ShoppingCartOutlined />} /></Card></Col> : null}
             {visible("average_order") ? <Col xs={24} md={12} xl={6}><Card className="metric-card"><Statistic title={copy.average} value={money(data.metrics.average_order_value, "RUB", locale)} prefix={<DollarOutlined />} /></Card></Col> : null}
             {visible("new_customers") ? <Col xs={24} md={12} xl={6}><Card className="metric-card"><Statistic title={copy.customers} value={data.metrics.new_customers} prefix={<TeamOutlined />} /></Card></Col> : null}
@@ -75,13 +77,13 @@ export function DashboardPage() {
                       </div>
                     ))}
                   </div>
-                ) : <Typography.Text type="secondary">No sales in this period</Typography.Text>}
+                ) : <Typography.Text type="secondary">{locale === "ru" ? "За этот период продаж нет" : "No sales in this period"}</Typography.Text>}
               </Card>
             </Col> : null}
             {visible("attention") ? <Col xs={24} xl={visible("revenue_trend") ? 8 : 24}>
               <Card title={copy.attention} className="attention-card">
                 <List dataSource={attention} renderItem={(item) => (
-                  <List.Item>
+                  <List.Item className="attention-link" role="link" tabIndex={0} onClick={() => navigate(item.path)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") navigate(item.path) }}>
                     <Space><span className="attention-icon" style={{ color: item.color }}>{item.icon}</span><Typography.Text>{item.label}</Typography.Text></Space>
                     <Tag color={item.value ? "error" : "success"}>{item.value}</Tag>
                   </List.Item>

@@ -53,14 +53,14 @@ function triggerDownload(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url)
 }
 
-async function waitForExport(run: AdminExport): Promise<AdminExport> {
+async function waitForExport(run: AdminExport, errors: { timedOut: string; failed: string }): Promise<AdminExport> {
   let current = run
   for (let attempt = 0; attempt < 120 && !TERMINAL_EXPORT_STATUSES.has(current.status); attempt += 1) {
     await new Promise((resolve) => window.setTimeout(resolve, 1000))
     current = await apiRequest<AdminExport>(`/exports/${run.id}`)
   }
-  if (!TERMINAL_EXPORT_STATUSES.has(current.status)) throw new Error("Export timed out")
-  if (current.status === "error") throw new Error(current.error || "Export failed")
+  if (!TERMINAL_EXPORT_STATUSES.has(current.status)) throw new Error(errors.timedOut)
+  if (current.status === "error") throw new Error(current.error || errors.failed)
   return current
 }
 
@@ -91,8 +91,8 @@ export function TableToolbar({
   const [viewName, setViewName] = useState("")
   const [isShared, setIsShared] = useState(false)
   const copy = locale === "ru"
-    ? { view: "Представление", saveView: "Сохранить вид", name: "Название представления", shared: "Доступно команде", columns: "Колонки", export: "Экспорт", selected: "Выбрано", clear: "Снять выбор", saved: "Представление сохранено", deleted: "Представление удалено", downloaded: "Выгрузка готова", csv: "CSV", xlsx: "Excel (.xlsx)", create: "Создать" }
-    : { view: "View", saveView: "Save view", name: "View name", shared: "Share with team", columns: "Columns", export: "Export", selected: "Selected", clear: "Clear", saved: "View saved", deleted: "View deleted", downloaded: "Export ready", csv: "CSV", xlsx: "Excel (.xlsx)", create: "Create" }
+    ? { view: "Представление", saveView: "Сохранить вид", name: "Название представления", shared: "Доступно команде", team: "команда", columns: "Колонки", export: "Экспорт", selected: "Выбрано", clear: "Снять выбор", saved: "Представление сохранено", deleted: "Представление удалено", downloaded: "Выгрузка готова", csv: "CSV", xlsx: "Excel (.xlsx)", create: "Создать", exportTimedOut: "Время ожидания выгрузки истекло", exportFailed: "Не удалось сформировать выгрузку" }
+    : { view: "View", saveView: "Save view", name: "View name", shared: "Share with team", team: "team", columns: "Columns", export: "Export", selected: "Selected", clear: "Clear", saved: "View saved", deleted: "View deleted", downloaded: "Export ready", csv: "CSV", xlsx: "Excel (.xlsx)", create: "Create", exportTimedOut: "Export timed out", exportFailed: "Export failed" }
 
   const views = useQuery({
     queryKey: ["saved-views", resource],
@@ -154,7 +154,7 @@ export function TableToolbar({
           idempotency_key: crypto.randomUUID(),
         }),
       })
-      const ready = await waitForExport(run)
+      const ready = await waitForExport(run, { timedOut: copy.exportTimedOut, failed: copy.exportFailed })
       const file = await apiDownload(`/exports/${ready.id}/download`)
       triggerDownload(file.blob, file.fileName || `${resource}.${format}`)
       return ready
@@ -194,7 +194,7 @@ export function TableToolbar({
           style={{ minWidth: 180 }}
           options={(views.data || []).map((view) => ({
             value: view.id,
-            label: view.is_shared ? `${view.name} · team` : view.name,
+            label: view.is_shared ? `${view.name} · ${copy.team}` : view.name,
           }))}
           onClear={() => setActiveViewId(undefined)}
           onChange={(viewId) => {

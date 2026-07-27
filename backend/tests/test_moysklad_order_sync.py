@@ -120,3 +120,22 @@ def test_shipment_address_full_keeps_add_info_as_fallback_when_no_structured_loc
 
     assert result is not None
     assert result["addInfo"] == "Пункт выдачи CDEK MSK-777, код 1035"
+
+
+def test_organization_id_is_rejected_when_it_points_to_another_legal_entity(monkeypatch):
+    wrong_id = UUID("11111111-1111-4111-8111-111111111111")
+    correct_id = UUID("22222222-2222-4222-8222-222222222222")
+
+    class Client:
+        async def get_organization(self, organization_id):
+            assert organization_id == wrong_id
+            return {"id": str(wrong_id), "name": "ИП Хоменко"}
+
+        async def find_organization_by_name(self, name):
+            assert name == "ИП Хакимов"
+            return {"id": str(correct_id), "name": name}
+
+    monkeypatch.setattr(order_sync, "MOY_SKLAD_ORGANIZATION_ID", str(wrong_id))
+    monkeypatch.setattr(order_sync, "MOY_SKLAD_ORGANIZATION_NAME", "ИП Хакимов")
+
+    assert asyncio.run(order_sync._resolve_organization_id(Client())) == correct_id

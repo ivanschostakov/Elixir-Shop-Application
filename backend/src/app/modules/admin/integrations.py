@@ -24,6 +24,8 @@ from config import (
     INTELLECTMONEY_SHOP_ID,
     MOY_SKLAD_TOKEN,
     TELEGRAM_BOT_TOKEN,
+    WEBSITE_REVIEW_SYNC_ENDPOINT,
+    WEBSITE_REVIEW_SYNC_SECRET,
     YANDEX_DELIVERY_TOKEN,
 )
 from src.app.modules.admin.schemas import (
@@ -60,6 +62,7 @@ PROVIDERS = (
     ("cdek", "CDEK", lambda: bool(CDEK_ACCOUNT and CDEK_SECURE_PASSWORD)),
     ("yandex_delivery", "Яндекс Доставка", lambda: bool(YANDEX_DELIVERY_TOKEN)),
     ("telegram", "Telegram", lambda: bool(TELEGRAM_BOT_TOKEN)),
+    ("website_reviews", "Отзывы сайта", lambda: bool(WEBSITE_REVIEW_SYNC_ENDPOINT and WEBSITE_REVIEW_SYNC_SECRET)),
 )
 
 REQUIRED_ADMIN_ROUTES = {

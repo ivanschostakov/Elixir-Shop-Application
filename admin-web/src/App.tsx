@@ -7,6 +7,7 @@ import { PermissionRoute } from "./auth/PermissionRoute"
 import { ProtectedRoute } from "./auth/ProtectedRoute"
 import { LoginPage } from "./auth/LoginPage"
 import { AcceptInvitePage } from "./auth/AcceptInvitePage"
+import { ResetPasswordPage } from "./auth/ResetPasswordPage"
 import { useLanguage } from "./i18n/LanguageProvider"
 import { AdminLayout } from "./layout/AdminLayout"
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((module) => ({ default: module.DashboardPage })))
@@ -59,6 +60,7 @@ export default function App() {
       <Suspense fallback={<div className="full-page-spin"><Spin size="large" /></div>}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/accept-invite" element={<AcceptInvitePage />} />
         <Route element={<ProtectedRoute><AdminLayout /></ProtectedRoute>}>
           <Route index element={guarded("dashboard.read", <DashboardPage />)} />

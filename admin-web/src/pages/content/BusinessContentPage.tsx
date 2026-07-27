@@ -18,10 +18,14 @@ type BusinessContentForm = {
   metadata_json_text: string
 }
 
-function parseJsonObject(value: string) {
-  const parsed = JSON.parse(value || "{}") as unknown
-  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error("Metadata must be a JSON object")
-  return parsed as Record<string, unknown>
+function parseJsonObject(value: string, invalidMessage: string) {
+  try {
+    const parsed = JSON.parse(value || "{}") as unknown
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(invalidMessage)
+    return parsed as Record<string, unknown>
+  } catch {
+    throw new Error(invalidMessage)
+  }
 }
 
 export function BusinessContentPage() {
@@ -32,16 +36,16 @@ export function BusinessContentPage() {
   const [form] = Form.useForm<BusinessContentForm>()
   const copy = locale === "ru"
     ? {
-      title: "Юр. и бизнес-контент", description: "Реквизиты, контакты, доставка, оплата, privacy/terms и служебные уведомления с версионностью.",
+      title: "Юр. и бизнес-контент", description: "Реквизиты, контакты, доставка, оплата, политика конфиденциальности, условия и служебные уведомления с историей версий.",
       code: "Код", ru: "RU", en: "EN", status: "Статус", version: "Версия", updated: "Обновлено", updatedBy: "Автор", edit: "Редактировать",
-      save: "Сохранить", link: "Ссылка", metadata: "Metadata JSON", history: "История версий", all: "Все статусы", draft: "Черновик",
-      published: "Опубликовано", archived: "Архив", saved: "Контент сохранён", bodyRu: "Текст RU", bodyEn: "Текст EN",
+      save: "Сохранить", link: "Ссылка", metadata: "Дополнительные данные (JSON)", history: "История версий", all: "Все статусы", draft: "Черновик",
+      published: "Опубликовано", archived: "Архив", saved: "Контент сохранён", bodyRu: "Текст на русском", bodyEn: "Текст на английском", invalidMetadata: "Дополнительные данные должны быть объектом JSON",
     }
     : {
       title: "Legal & business content", description: "Company details, contacts, delivery, payment, privacy/terms and notices with version history.",
       code: "Code", ru: "RU", en: "EN", status: "Status", version: "Version", updated: "Updated", updatedBy: "Author", edit: "Edit",
       save: "Save", link: "Link", metadata: "Metadata JSON", history: "Version history", all: "All statuses", draft: "Draft",
-      published: "Published", archived: "Archived", saved: "Content saved", bodyRu: "RU body", bodyEn: "EN body",
+      published: "Published", archived: "Archived", saved: "Content saved", bodyRu: "RU body", bodyEn: "EN body", invalidMetadata: "Metadata must be a JSON object",
     }
   const statusLabels = { draft: copy.draft, published: copy.published, archived: copy.archived }
   const statusColors = { draft: "default", published: "green", archived: "default" }
@@ -78,7 +82,7 @@ export function BusinessContentPage() {
         body_en: values.body_en || "",
         link_url: values.link_url || null,
         status: values.status,
-        metadata_json: parseJsonObject(values.metadata_json_text),
+        metadata_json: parseJsonObject(values.metadata_json_text, copy.invalidMetadata),
         expected_updated_at: editing?.updated_at,
       }),
     }),
@@ -121,7 +125,7 @@ export function BusinessContentPage() {
                 <Form.Item name="link_url" label={copy.link} style={{ flex: 2 }}><Input /></Form.Item>
                 <Form.Item name="status" label={copy.status} style={{ flex: 1 }}><Select options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
               </Space>
-              <Form.Item name="metadata_json_text" label={copy.metadata} rules={[{ validator: async (_, value) => { parseJsonObject(value || "{}") } }]}><Input.TextArea rows={5} /></Form.Item>
+              <Form.Item name="metadata_json_text" label={copy.metadata} rules={[{ validator: async (_, value) => { parseJsonObject(value || "{}", copy.invalidMetadata) } }]}><Input.TextArea rows={5} /></Form.Item>
             </Form>,
           },
           {

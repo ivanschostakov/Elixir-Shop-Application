@@ -176,6 +176,8 @@ export function StaffPage() {
         accepted: "Принято",
         expired: "Истекло",
         revoked: "Отозвано",
+        mfaOn: "Включена",
+        mfaSetup: "Требуется настройка",
       }
     : {
         title: "Staff & roles",
@@ -209,6 +211,8 @@ export function StaffPage() {
         accepted: "Accepted",
         expired: "Expired",
         revoked: "Revoked",
+        mfaOn: "Enabled",
+        mfaSetup: "Setup required",
       }
   const statusText = (value: AdminInvitation["status"]) => copy[value]
 
@@ -233,7 +237,7 @@ export function StaffPage() {
                   <Typography.Paragraph type="secondary">
                     {locale === "ru" ? role.description_ru : role.description_en}
                   </Typography.Paragraph>
-                  <Tag>{role.permissions.includes("*") ? (locale === "ru" ? "Все права" : "All permissions") : `${role.permissions.length} permissions`}</Tag>
+                  <Tag>{role.permissions.includes("*") ? (locale === "ru" ? "Все права" : "All permissions") : `${role.permissions.length} ${locale === "ru" ? "прав" : "permissions"}`}</Tag>
                 </Card>
               ))}
             </div>
@@ -271,7 +275,7 @@ export function StaffPage() {
               dataIndex: "mfa_enabled",
               render: (value: boolean) => (
                 <Tag icon={<SafetyCertificateOutlined />} color={value ? "green" : "orange"}>
-                  {value ? "On" : "Setup required"}
+                  {value ? copy.mfaOn : copy.mfaSetup}
                 </Tag>
               ),
             },

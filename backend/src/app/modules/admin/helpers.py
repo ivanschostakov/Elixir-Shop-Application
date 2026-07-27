@@ -146,6 +146,7 @@ def serialize_admin_product(request: Request, product: Product) -> AdminProductR
             stock=variant.stock,
             price=variant.price,
             archived=variant.archived,
+            image_url=build_products_media_url(str(request.base_url), variant.image_path),
         ) for variant in product.variants],
         updated_at=product.updated_at,
     )

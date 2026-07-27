@@ -45,6 +45,7 @@ import type {
 import { PageHeader } from "../components/PageHeader"
 import { useAuth } from "../auth/AuthProvider"
 import { useLanguage } from "../i18n/LanguageProvider"
+import { domainLabel } from "../i18n/domain"
 import { dateTime } from "../utils/format"
 
 const statusColors: Record<SupportConversationStatus, string> = {
@@ -259,7 +260,7 @@ function SupportInboxTab() {
         ) : (
           <Card
             className="communications-detail-card"
-            title={<Space><MessageOutlined /><Link to={`/customers/${selected.customer_user_id}`}>{selected.customer_name}</Link><Tag color={priorityColors[selected.priority]}>{selected.priority}</Tag>{selected.sla_breached_at ? <Tag color="red">SLA</Tag> : null}</Space>}
+            title={<Space><MessageOutlined /><Link to={`/customers/${selected.customer_user_id}`}>{selected.customer_name}</Link><Tag color={priorityColors[selected.priority]}>{domainLabel(selected.priority, locale)}</Tag>{selected.sla_breached_at ? <Tag color="red">SLA</Tag> : null}</Space>}
             extra={<Space>
               {hasPermission("leads.manage") ? <Button icon={<UserAddOutlined />} onClick={() => createLead.mutate()} loading={createLead.isPending}>{copy.createLead}</Button> : null}
               {hasPermission("tasks.manage") ? <Link to={`/tasks?new=1&customer_id=${selected.customer_user_id}`}><Button>{copy.createTask}</Button></Link> : null}
@@ -282,7 +283,7 @@ function SupportInboxTab() {
                   disabled={!hasPermission("support.assign")}
                   value={selected.priority}
                   onChange={(value) => updateMutation.mutate({ priority: value })}
-                  options={(["low", "normal", "high", "urgent"] as const).map((value) => ({ value, label: value }))}
+                  options={(["low", "normal", "high", "urgent"] as const).map((value) => ({ value, label: domainLabel(value, locale) }))}
                 />
               </Descriptions.Item>
               <Descriptions.Item label={copy.assignee}>
@@ -428,8 +429,8 @@ function AIChatsTab() {
                     children: (
                       <div>
                         <Space wrap>
-                          <Typography.Text strong>{eventLabels[action.event_name] || action.event_name}</Typography.Text>
-                          {action.action_type ? <Tag color="blue">{action.action_type}</Tag> : null}
+                          <Typography.Text strong>{eventLabels[action.event_name] || domainLabel(action.event_name, locale)}</Typography.Text>
+                          {action.action_type ? <Tag color="blue">{domainLabel(action.action_type, locale)}</Tag> : null}
                           {action.product_id ? <Tag>{copy.product} #{action.product_id}</Tag> : null}
                           {action.variant_id ? <Tag>{copy.variant} #{action.variant_id}</Tag> : null}
                           <Typography.Text type="secondary">{dateTime(action.occurred_at, locale)}</Typography.Text>
@@ -447,7 +448,7 @@ function AIChatsTab() {
                   color: item.sender === "user" ? "blue" : "green",
                   children: (
                     <div className={`ai-audit-message ${item.sender === "user" ? "ai-audit-user" : ""}`}>
-                      <Space><Tag color={item.sender === "user" ? "blue" : "green"}>{item.sender}</Tag><Typography.Text type="secondary">{dateTime(item.created_at, locale)}</Typography.Text>{item.usage ? <Tag>{copy.model}: {item.usage.openai_model}</Tag> : null}</Space>
+                      <Space><Tag color={item.sender === "user" ? "blue" : "green"}>{domainLabel(item.sender, locale)}</Tag><Typography.Text type="secondary">{dateTime(item.created_at, locale)}</Typography.Text>{item.usage ? <Tag>{copy.model}: {item.usage.openai_model}</Tag> : null}</Space>
                       <Typography.Paragraph style={{ whiteSpace: "pre-wrap", marginTop: 8 }}>{item.text}</Typography.Paragraph>
                       {item.attachments.length ? (
                         <Space wrap>
@@ -466,9 +467,9 @@ function AIChatsTab() {
                       {cards.map((card, cardIndex) => {
                         const actions = Array.isArray(card.actions) ? card.actions as Array<Record<string, unknown>> : []
                         return (
-                          <Card key={`${item.id}-${cardIndex}`} size="small" title={String(card.title || `Product ${card.product_id || ""}`)}>
+                          <Card key={`${item.id}-${cardIndex}`} size="small" title={String(card.title || `${copy.product} ${card.product_id || ""}`)}>
                             <Space wrap>
-                              {actions.map((action, actionIndex) => <Tag key={String(action.id || actionIndex)} color={action.completed ? "green" : "default"}>{String(action.type || "action")}{action.completed ? ` · ${copy.completed}` : ""}</Tag>)}
+                              {actions.map((action, actionIndex) => <Tag key={String(action.id || actionIndex)} color={action.completed ? "green" : "default"}>{domainLabel(String(action.type || "action"), locale)}{action.completed ? ` · ${copy.completed}` : ""}</Tag>)}
                             </Space>
                           </Card>
                         )

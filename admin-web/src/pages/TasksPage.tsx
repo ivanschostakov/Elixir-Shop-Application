@@ -9,6 +9,7 @@ import type { AdminTask, AssigneeOption, Page } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
 import { PageHeader } from "../components/PageHeader"
 import { useLanguage } from "../i18n/LanguageProvider"
+import { domainLabel } from "../i18n/domain"
 import { dateTime } from "../utils/format"
 
 type TaskForm = {
@@ -141,7 +142,7 @@ export function TasksPage() {
         { title: copy.task, key: "task", render: (_: unknown, task) => <div className="table-primary"><strong>{task.title}</strong><small>{task.description || `ID ${task.id}`}</small></div> },
         { title: copy.context, key: "context", render: (_: unknown, task) => <Space direction="vertical" size={0}>{task.customer_user_id ? <Link to={`/customers/${task.customer_user_id}`}>{task.customer_name || `#${task.customer_user_id}`}</Link> : "—"}{task.order_id ? <Link to={`/sales/orders/${task.order_id}`}>{task.order_code || `#${task.order_id}`}</Link> : null}</Space> },
         { title: copy.assignee, dataIndex: "assignee_name" },
-        { title: copy.priority, dataIndex: "priority", render: (value: AdminTask["priority"]) => <Tag color={priorityColors[value]}>{value}</Tag> },
+        { title: copy.priority, dataIndex: "priority", render: (value: AdminTask["priority"]) => <Tag color={priorityColors[value]}>{domainLabel(value, locale)}</Tag> },
         { title: copy.due, dataIndex: "due_at", render: (value: string | null) => value ? dateTime(value, locale) : <Typography.Text type="secondary">{copy.noDue}</Typography.Text> },
         { title: copy.sla, render: (_: unknown, task) => task.sla_breached_at ? <Tag color="red">{copy.slaBreached}</Tag> : <Typography.Text type="secondary">{dateTime(task.status === "open" ? task.response_due_at : task.resolution_due_at, locale)}</Typography.Text> },
         { title: copy.status, dataIndex: "status", render: (value: AdminTask["status"]) => <Tag color={statusColors[value]}>{statusLabels[value]}</Tag> },
@@ -153,7 +154,7 @@ export function TasksPage() {
         <Form.Item name="title" label={copy.task} rules={[{ required: true, min: 1, max: 240 }]}><Input /></Form.Item>
         <Form.Item name="description" label={copy.descriptionField}><Input.TextArea rows={5} maxLength={4000} /></Form.Item>
         {editing ? <Form.Item name="status" label={copy.status}><Select options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} /></Form.Item> : null}
-        <Form.Item name="priority" label={copy.priority} rules={[{ required: true }]}><Select options={(["low", "normal", "high", "urgent"] as const).map((value) => ({ value, label: value }))} /></Form.Item>
+        <Form.Item name="priority" label={copy.priority} rules={[{ required: true }]}><Select options={(["low", "normal", "high", "urgent"] as const).map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item>
         <Form.Item name="assignee_user_id" label={copy.assignee}><Select options={(assignees.data || []).map((item) => ({ value: item.user_id, label: item.name }))} /></Form.Item>
         <Form.Item name="due_at" label={copy.due}><DatePicker showTime style={{ width: "100%" }} /></Form.Item>
         <Space size={12} style={{ width: "100%" }} align="start">

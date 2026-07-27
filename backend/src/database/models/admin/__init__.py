@@ -7,6 +7,7 @@ from .invitation import AdminInvitation
 from .marketing_automation import AdminMarketingAutomation
 from .note import AdminNote
 from .order_automation import AdminOrderAutomationExecution, AdminOrderAutomationRule
+from .password_reset import AdminPasswordReset
 from .push_campaign import AdminPushCampaign, AdminPushCampaignRecipient, AdminPushCampaignTemplate
 from .role import AdminRole
 from .saved_view import AdminSavedView
@@ -26,6 +27,7 @@ __all__ = [
     "AdminNote",
     "AdminOrderAutomationExecution",
     "AdminOrderAutomationRule",
+    "AdminPasswordReset",
     "AdminPushCampaign",
     "AdminPushCampaignRecipient",
     "AdminPushCampaignTemplate",
