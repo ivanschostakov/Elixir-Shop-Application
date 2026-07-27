@@ -126,6 +126,8 @@ Banners accept main, desktop and mobile images, one internal or external link, s
 
 Internal paths are allowlisted. Common examples are `/discover?tab=products&q=ghk-cu`, `/products/123`, `/basket`, `/chat` and `/profile-history`.
 
+The complete RU guide with every supported screen, parameters, access requirements and ready-to-use examples is in [`docs/internal-app-links.md`](internal-app-links.md). The same guide is available beside every internal-link field in the admin UI.
+
 ## Localization fallback
 
 Known statuses, operations, providers, roles, events and common API errors have human-readable RU/EN labels. If a value is not in the dictionary, the UI preserves the exact original string, including whitespace, case and `snake_case`.

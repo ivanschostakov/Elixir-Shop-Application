@@ -53,10 +53,12 @@ import type {
   SlaSummary,
 } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
+import { InternalLinkGuide } from "../components/InternalLinkGuide"
 import { PageHeader } from "../components/PageHeader"
 import { useLanguage } from "../i18n/LanguageProvider"
 import { domainLabel, humanizeApiError } from "../i18n/domain"
 import { dateTime } from "../utils/format"
+import { internalAppLinkValidator } from "../utils/internalLinks"
 
 const statusCodes: OrderStatusCode[] = ["created", "invoice_sent", "paid", "waiting_response", "packaged", "sent", "delivered", "completed", "canceled", "refund_declined"]
 const priorityColors: Record<string, string> = { urgent: "red", high: "orange", normal: "blue", low: "default" }
@@ -301,7 +303,7 @@ export function AutomationPage() {
         <Form.Item name="action_kind" rules={[{ required: true }]}><Select options={[{ value: "create_task", label: copy.createTask }, { value: "queue_operation", label: copy.queueOperation }, { value: "push_customer", label: copy.pushCustomer }]} /></Form.Item>
         {actionKind === "create_task" ? <><Form.Item name="assignee_user_id" label={copy.assignee} rules={[{ required: true }]}><Select options={(assignees.data || []).map((row) => ({ value: row.user_id, label: row.name }))} /></Form.Item><Form.Item name="task_title" label={copy.taskTitle} rules={[{ required: true, max: 240 }]}><Input /></Form.Item><Form.Item name="task_description" label={copy.descriptionField}><Input.TextArea rows={3} /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="task_priority" label={copy.taskPriority}><Select options={["low", "normal", "high", "urgent"].map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item></Col><Col span={12}><Form.Item name="due_minutes" label={copy.dueMinutes}><InputNumber min={5} max={43200} style={{ width: "100%" }} /></Form.Item></Col></Row></> : null}
         {actionKind === "queue_operation" ? <Form.Item name="operation" label={copy.operation} rules={[{ required: true }]}><Select options={["payment_check", "moysklad_sync", "delivery_create"].map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item> : null}
-        {actionKind === "push_customer" ? <><Form.Item name="push_title" label={copy.pushTitle} rules={[{ required: true, max: 180 }]}><Input /></Form.Item><Form.Item name="push_body" label={copy.pushBody} rules={[{ required: true, max: 500 }]}><Input.TextArea rows={4} /></Form.Item><Form.Item name="deep_link" label={copy.deepLink} rules={[{ pattern: /^\/(?!\/)/ }]}><Input placeholder="/orders" /></Form.Item></> : null}
+        {actionKind === "push_customer" ? <><Form.Item name="push_title" label={copy.pushTitle} rules={[{ required: true, max: 180 }]}><Input /></Form.Item><Form.Item name="push_body" label={copy.pushBody} rules={[{ required: true, max: 500 }]}><Input.TextArea rows={4} /></Form.Item><Form.Item name="deep_link" label={copy.deepLink} rules={[{ validator: internalAppLinkValidator(locale) }]} extra={<InternalLinkGuide locale={locale} onSelect={(link) => ruleForm.setFieldValue("deep_link", link)} />}><Input placeholder="/profile-history" /></Form.Item></> : null}
       </Form>
     </Drawer>
 

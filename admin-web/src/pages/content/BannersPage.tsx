@@ -4,8 +4,10 @@ import { Alert, Button, Card, Col, Descriptions, Form, Image, Input, InputNumber
 import { useEffect, useState } from "react"
 import { apiRequest } from "../../api/client"
 import type { Banner, BannerStats, BannerUpload, Page } from "../../api/types"
+import { InternalLinkGuide } from "../../components/InternalLinkGuide"
 import { PageHeader } from "../../components/PageHeader"
 import { useLanguage } from "../../i18n/LanguageProvider"
+import { internalAppLinkValidator } from "../../utils/internalLinks"
 import { dateTime } from "../../utils/format"
 
 type BannerForm = {
@@ -83,7 +85,7 @@ export function BannersPage() {
       priority: "Приоритет", state: "Статус", updated: "Обновлено", edit: "Редактировать", save: "Сохранить", schedule: "Расписание", starts: "Старт", ends: "Финиш",
       audience: "Правила аудитории (JSON)", clicks: "Клики", impressions: "Показы", preview: "Предпросмотр", all: "Все статусы", saved: "Баннер сохранён", draft: "Черновик",
       scheduled: "Запланирован", published: "Опубликован", archived: "Архив",
-      guideTitle: "Как задавать внутренние ссылки", guide: "Используйте путь внутри приложения, начиная с /. Укажите только одну ссылку: внутреннюю или внешнюю.", examples: "Примеры: /discover?tab=products&q=ghk-cu · /products/123 · /basket · /chat · /profile-history", carouselHint: "Для свайпа и автопрокрутки нужно минимум 2 опубликованных баннера с действующим расписанием. В приложении используется изображение для телефона, а на широком экране — изображение для компьютера.", statistics: "Статистика", ctr: "CTR", noStats: "За выбранный период событий нет", invalidAudience: "Правила аудитории должны быть объектом JSON",
+      guideTitle: "Как задавать внутренние ссылки", guide: "Используйте путь внутри приложения, начиная с одного символа /. Укажите только одну ссылку: внутреннюю или внешнюю.", carouselHint: "Для свайпа и автопрокрутки нужно минимум 2 опубликованных баннера с действующим расписанием. В приложении используется изображение для телефона, а на широком экране — изображение для компьютера.", statistics: "Статистика", ctr: "CTR", noStats: "За выбранный период событий нет", invalidAudience: "Правила аудитории должны быть объектом JSON",
     }
     : {
       title: "Banners", description: "Minimal storefront promos: draft state, scheduling, preview and click tracking.", add: "Add", image: "Main image",
@@ -91,7 +93,7 @@ export function BannersPage() {
       priority: "Priority", state: "Status", updated: "Updated", edit: "Edit", save: "Save", schedule: "Schedule", starts: "Start", ends: "End",
       audience: "Audience JSON", clicks: "Clicks", impressions: "Impressions", preview: "Preview", all: "All statuses", saved: "Banner saved", draft: "Draft",
       scheduled: "Scheduled", published: "Published", archived: "Archived",
-      guideTitle: "Internal link guide", guide: "Use an in-app path beginning with /. Set either an internal or an external link, not both.", examples: "Examples: /discover?tab=products&q=ghk-cu · /products/123 · /basket · /chat · /profile-history", carouselHint: "Swipe and autoplay require at least 2 published banners within their active schedule. The app uses Mobile image; wide screens use Desktop.", statistics: "Statistics", ctr: "CTR", noStats: "No events in this period", invalidAudience: "Audience rules must be a JSON object",
+      guideTitle: "Internal link guide", guide: "Use an in-app path beginning with a single /. Set either an internal or an external link, not both.", carouselHint: "Swipe and autoplay require at least 2 published banners within their active schedule. The app uses Mobile image; wide screens use Desktop.", statistics: "Statistics", ctr: "CTR", noStats: "No events in this period", invalidAudience: "Audience rules must be a JSON object",
     }
 
   const query = useQuery({ queryKey: ["banners"], queryFn: () => apiRequest<Page<Banner>>("/banners?limit=100"), refetchInterval: 30_000 })
@@ -202,7 +204,18 @@ export function BannersPage() {
           type="info"
           showIcon
           message={copy.guideTitle}
-          description={<Space direction="vertical" size={2}><span>{copy.guide}</span><Typography.Text code>{copy.examples}</Typography.Text></Space>}
+          description={(
+            <Space direction="vertical" size={4}>
+              <span>{copy.guide}</span>
+              <InternalLinkGuide
+                locale={locale}
+                onSelect={(link) => {
+                  form.setFieldValue("inner_link", link)
+                  form.setFieldValue("outer_link", "")
+                }}
+              />
+            </Space>
+          )}
           style={{ marginBottom: 16 }}
         />
         <div className="banner-form-grid">
@@ -217,8 +230,8 @@ export function BannersPage() {
             <Form.Item name="mobile_image_path" label={copy.mobile}>
               <Input addonAfter={<Upload showUploadList={false} accept="image/*" customRequest={uploadImage("mobile_image_path")}><Button size="small" icon={<UploadOutlined />}>{copy.upload}</Button></Upload>} />
             </Form.Item>
-            <Form.Item name="inner_link" label={copy.inner}><Input placeholder="/products/1" /></Form.Item>
-            <Form.Item name="outer_link" label={copy.outer}><Input placeholder="https://…" /></Form.Item>
+            <Form.Item name="inner_link" label={copy.inner} rules={[{ validator: internalAppLinkValidator(locale) }]}><Input placeholder="/discover?tab=products" /></Form.Item>
+            <Form.Item name="outer_link" label={copy.outer} rules={[{ type: "url" }]}><Input placeholder="https://…" /></Form.Item>
           </div>
           <div>
             <Card size="small" title={copy.preview} className="banner-preview-card">

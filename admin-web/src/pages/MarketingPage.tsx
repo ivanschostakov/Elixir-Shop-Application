@@ -6,10 +6,12 @@ import { useMemo, useState } from "react"
 import { apiDownload, apiRequest } from "../api/client"
 import type { AudiencePreview, CustomerSegment, MarketingAutomation, Page, PushCampaign, PushCampaignMetrics, PushCampaignPreview, PushCampaignRecipient, PushCampaignTemplate, ReferralProfile, ReferralSummary, SegmentDefinition, SegmentHistory } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
+import { InternalLinkGuide } from "../components/InternalLinkGuide"
 import { PageHeader } from "../components/PageHeader"
 import { useLanguage } from "../i18n/LanguageProvider"
 import { domainLabel, humanizeApiError } from "../i18n/domain"
 import { dateTime, money } from "../utils/format"
+import { internalAppLinkValidator } from "../utils/internalLinks"
 
 type SegmentConditionForm = { field: string; operator: string; value?: string | number | boolean | string[] }
 type SegmentForm = {
@@ -370,7 +372,14 @@ export function MarketingPage() {
         <Form.Item name="goal" label={copy.goal}><Input placeholder={copy.goalPlaceholder} /></Form.Item>
         <Form.Item name="title" label={copy.pushTitle} rules={[{ required: true, min: 1, max: 180 }]}><Input showCount maxLength={180} /></Form.Item>
         <Form.Item name="body" label={copy.pushBody} rules={[{ required: true, min: 1, max: 500 }]}><Input.TextArea rows={5} showCount maxLength={500} /></Form.Item>
-        <Form.Item name="deep_link" label={copy.deepLink} rules={[{ pattern: /^\/(?!\/)/, message: "/catalog/products" }]}><Input placeholder="/catalog/products" /></Form.Item>
+        <Form.Item
+          name="deep_link"
+          label={copy.deepLink}
+          rules={[{ validator: internalAppLinkValidator(locale) }]}
+          extra={<InternalLinkGuide locale={locale} onSelect={(link) => campaignForm.setFieldValue("deep_link", link)} />}
+        >
+          <Input placeholder="/discover?tab=products" />
+        </Form.Item>
         <Typography.Text type="secondary">{copy.utm}</Typography.Text>
         <Row gutter={12} style={{ marginTop: 8 }}><Col span={8}><Form.Item name="utm_source"><Input placeholder={copy.sourcePlaceholder} /></Form.Item></Col><Col span={8}><Form.Item name="utm_campaign"><Input placeholder={copy.campaignPlaceholder} /></Form.Item></Col><Col span={8}><Form.Item name="utm_content"><Input placeholder={copy.contentPlaceholder} /></Form.Item></Col></Row>
         <Button block loading={previewCampaign.isPending} onClick={() => void campaignForm.validateFields().then((values) => previewCampaign.mutate(values))}>{copy.previewPush}</Button>
@@ -412,7 +421,14 @@ export function MarketingPage() {
       <Form form={automationForm} layout="vertical" requiredMark={false}>
         <Form.Item name="title" label={copy.pushTitle} rules={[{ required: true, max: 180 }]}><Input showCount maxLength={180} /></Form.Item>
         <Form.Item name="body" label={copy.pushBody} rules={[{ required: true, max: 500 }]}><Input.TextArea rows={5} showCount maxLength={500} /></Form.Item>
-        <Form.Item name="deep_link" label={copy.deepLink} rules={[{ pattern: /^\/(?!\/)/ }]}><Input placeholder="/catalog/products" /></Form.Item>
+        <Form.Item
+          name="deep_link"
+          label={copy.deepLink}
+          rules={[{ validator: internalAppLinkValidator(locale) }]}
+          extra={<InternalLinkGuide locale={locale} onSelect={(link) => automationForm.setFieldValue("deep_link", link)} />}
+        >
+          <Input placeholder="/discover?tab=products" />
+        </Form.Item>
         {editingAutomation?.code === "inactive_customer" ? <Row gutter={12}><Col span={12}><Form.Item name="after_days" label={copy.afterDays} rules={[{ required: true }]}><InputNumber min={7} max={365} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="cooldown_days" label={copy.cooldownDays} rules={[{ required: true }]}><InputNumber min={1} max={365} style={{ width: "100%" }} /></Form.Item></Col></Row> : null}
         {editingAutomation?.code === "abandoned_cart" ? <Row gutter={12}><Col span={12}><Form.Item name="after_hours" label={copy.afterHours} rules={[{ required: true }]}><InputNumber min={1} max={720} style={{ width: "100%" }} /></Form.Item></Col><Col span={12}><Form.Item name="cooldown_hours" label={copy.cooldownHours} rules={[{ required: true }]}><InputNumber min={1} max={720} style={{ width: "100%" }} /></Form.Item></Col></Row> : null}
         {editingAutomation?.code === "review_reminder" ? <Form.Item name="after_days" label={copy.afterDays} rules={[{ required: true }]}><InputNumber min={1} max={365} style={{ width: "100%" }} /></Form.Item> : null}
