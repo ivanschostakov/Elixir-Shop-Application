@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from fastapi.security import HTTPAuthorizationCredentials
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 import src.app.modules.auth.dependencies as auth_dependencies
 import src.app.modules.products.router as products_router_module
@@ -130,6 +131,20 @@ def test_analytics_period_includes_complete_calendar_days(monkeypatch):
 
     assert start == datetime(2026, 6, 28, 0, 0, tzinfo=timezone.utc)
     assert end == now
+
+
+def test_app_open_trend_query_has_stable_postgresql_grouping_expressions():
+    start = datetime(2026, 6, 28, tzinfo=timezone.utc)
+
+    for granularity in ("daily", "monthly"):
+        query = admin_analytics._app_open_trend_query(start=start, granularity=granularity)
+        compiled = query.compile(dialect=postgresql.dialect())
+        sql = str(compiled)
+
+        assert "'Asia/Yekaterinburg'" in sql
+        assert not any("timezone" in key or "date_trunc" in key for key in compiled.params)
+        if granularity == "monthly":
+            assert sql.count("date_trunc('month'") == 3
 
 
 def test_admin_password_reset_helpers_keep_token_out_of_storage(monkeypatch):

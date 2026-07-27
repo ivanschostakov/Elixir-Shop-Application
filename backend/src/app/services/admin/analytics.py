@@ -8,7 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Literal
 
 from fastapi import HTTPException
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -69,6 +69,30 @@ def csv_bytes(headers: list[str], rows: Iterable[Iterable[Any]]) -> bytes:
 def _csv_cell(value: Any) -> str:
     text = "" if value is None else str(value)
     return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
+
+
+def _app_open_trend_query(*, start: datetime, granularity: Literal["daily", "monthly"]):
+    # Keep timezone and date-trunc arguments as SQL literals. If SQLAlchemy emits
+    # separate bind parameters for identical SELECT/GROUP BY expressions,
+    # PostgreSQL no longer considers them the same expression and raises
+    # GroupingError.
+    timezone_name = literal_column(f"'{ANALYTICS_TIMEZONE}'")
+    local_event_time = func.timezone(timezone_name, UserEvent.occurred_at)
+    if granularity == "daily":
+        period_expression = func.date(local_event_time)
+    else:
+        period_expression = func.date_trunc(literal_column("'month'"), local_event_time)
+    period = period_expression.label("period")
+    return (
+        select(
+            period,
+            func.count(UserEvent.id).label("opens"),
+            func.count(func.distinct(UserEvent.user_id)).label("customers"),
+        )
+        .where(UserEvent.event_name == "app_opened", UserEvent.occurred_at >= start)
+        .group_by(period_expression)
+        .order_by(period_expression)
+    )
 
 
 async def sales_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
@@ -181,17 +205,8 @@ async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
         func.count(UserEvent.id),
         func.count(func.distinct(UserEvent.user_id)),
     ).where(*app_open_filter))).one()
-    local_event_time = func.timezone(ANALYTICS_TIMEZONE, UserEvent.occurred_at)
-    app_open_daily_rows = (await db.execute(select(
-        func.date(local_event_time).label("period"),
-        func.count(UserEvent.id).label("opens"),
-        func.count(func.distinct(UserEvent.user_id)).label("customers"),
-    ).where(*app_open_filter).group_by(func.date(local_event_time)).order_by(func.date(local_event_time)))).all()
-    app_open_monthly_rows = (await db.execute(select(
-        func.date_trunc("month", local_event_time).label("period"),
-        func.count(UserEvent.id).label("opens"),
-        func.count(func.distinct(UserEvent.user_id)).label("customers"),
-    ).where(*app_open_filter).group_by(func.date_trunc("month", local_event_time)).order_by(func.date_trunc("month", local_event_time)))).all()
+    app_open_daily_rows = (await db.execute(_app_open_trend_query(start=start, granularity="daily"))).all()
+    app_open_monthly_rows = (await db.execute(_app_open_trend_query(start=start, granularity="monthly"))).all()
     return {
         "summary": {
             "total_customers": total_customers,
