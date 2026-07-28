@@ -126,6 +126,6 @@ def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(clie
     payload = response.json()
     assert payload["entered_code"] == "Огонь26"
     assert payload["entered_code_matches"] == []
-    assert payload["unresolved_code_reason"] == "Promo code was not found or is not active"
+    assert payload["unresolved_code_reason"] == "Промокод не найден или неактивен / Promo code was not found or is not active"
     assert _decimal(payload["stacked_discount_amount"]) == Decimal("0.00")
     assert _decimal(payload["total_after_discounts"]) == Decimal("200.00")

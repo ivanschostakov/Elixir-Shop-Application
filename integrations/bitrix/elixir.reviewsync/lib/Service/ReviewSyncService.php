@@ -43,11 +43,15 @@ final class ReviewSyncService
             static fn(array $row): int => (int)$row['ID_USER'],
             $rows
         )))));
+        $productSystemIds = $this->loadProductSystemIds(array_values(array_unique(array_filter(array_map(
+            static fn(array $row): int => (int)$row['ID_ELEMENT'],
+            $rows
+        )))));
         $reviews = [];
         foreach ($rows as $row) {
-            $productSystemId = trim((string)$row['XML_ID_ELEMENT']);
+            $productSystemId = trim((string)($productSystemIds[(int)$row['ID_ELEMENT']] ?? ''));
             if ($productSystemId === '') {
-                $productSystemId = $this->productSystemId((int)$row['ID_ELEMENT']);
+                $productSystemId = trim((string)$row['XML_ID_ELEMENT']);
             }
             $author = $authors[(int)$row['ID_USER']] ?? ['name' => 'Покупатель с сайта', 'email' => null];
             $reviews[] = [
@@ -128,8 +132,8 @@ final class ReviewSyncService
             'XML_ID_ELEMENT' => $productSystemId,
             'ID_USER' => $userId,
             'RATING' => max(0, min(5, (int)($incoming['rating'] ?? 0))),
-            'TEXT' => $this->nullableText($incoming['text'] ?? null),
-            'ANSWER' => $this->nullableText($incoming['answer'] ?? null),
+            'TEXT' => $this->text($incoming['text'] ?? null),
+            'ANSWER' => $this->text($incoming['answer'] ?? null),
             'LIKES' => max(0, (int)($incoming['likes'] ?? 0)),
             'DISLIKES' => max(0, (int)($incoming['dislikes'] ?? 0)),
             'MODERATED' => $status === 'published' ? 'Y' : 'N',
@@ -145,7 +149,7 @@ final class ReviewSyncService
                 'RECOMMENDATED' => 'Y',
                 'SHOWS' => 0,
                 'FILES' => serialize([]),
-                'IP_USER' => '',
+                'IP_USER' => $this->sourceIp(),
             ];
             $addResult = ReviewsTable::add($fields);
             if (!$addResult->isSuccess()) {
@@ -263,10 +267,23 @@ final class ReviewSyncService
         return $row ? (int)$row['ID'] : 0;
     }
 
-    private function productSystemId(int $productId): string
+    private function loadProductSystemIds(array $productIds): array
     {
-        $row = \CIBlockElement::GetList([], ['ID' => $productId], false, ['nTopCount' => 1], ['ID', 'XML_ID'])->Fetch();
-        return $row ? trim((string)$row['XML_ID']) : '';
+        if (!$productIds) {
+            return [];
+        }
+        $result = [];
+        $iterator = \CIBlockElement::GetList(
+            ['ID' => 'ASC'],
+            ['ID' => $productIds],
+            false,
+            false,
+            ['ID', 'XML_ID']
+        );
+        while ($row = $iterator->Fetch()) {
+            $result[(int)$row['ID']] = trim((string)$row['XML_ID']);
+        }
+        return $result;
     }
 
     private function productIdBySystemId(string $systemId): int
@@ -294,8 +311,13 @@ final class ReviewSyncService
 
     private function nullableText($value): ?string
     {
-        $result = trim((string)$value);
+        $result = $this->text($value);
         return $result === '' ? null : $result;
+    }
+
+    private function text($value): string
+    {
+        return trim((string)$value);
     }
 
     private function bitrixDate($value): DateTime
@@ -325,5 +347,11 @@ final class ReviewSyncService
     private function effectiveUpdatedAt(array $row): ?string
     {
         return $this->dateIso($row['DATE_CHANGE'] ?? null) ?: $this->dateIso($row['DATE_CREATION'] ?? null);
+    }
+
+    private function sourceIp(): string
+    {
+        $remoteAddress = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+        return filter_var($remoteAddress, FILTER_VALIDATE_IP) ? $remoteAddress : '127.0.0.1';
     }
 }

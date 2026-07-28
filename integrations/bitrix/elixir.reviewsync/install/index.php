@@ -3,6 +3,7 @@
 use Bitrix\Main\Localization\Loc;
 use Bitrix\Main\ModuleManager;
 use Bitrix\Main\SystemException;
+use Bitrix\Main\Config\Option;
 
 Loc::loadMessages(__FILE__);
 
@@ -28,11 +29,20 @@ class elixir_reviewsync extends CModule
 
     public function DoInstall()
     {
+        if (version_compare(PHP_VERSION, '8.1.0', '<')) {
+            throw new SystemException('Для установки требуется PHP 8.1 или новее.');
+        }
         if (!ModuleManager::isModuleInstalled('sotbit.reviews')) {
             throw new SystemException('Для установки требуется модуль sotbit.reviews.');
         }
-        $this->InstallFiles();
         ModuleManager::registerModule($this->MODULE_ID);
+        try {
+            $this->InstallFiles();
+            $this->InstallOptions();
+        } catch (\Throwable $exception) {
+            ModuleManager::unRegisterModule($this->MODULE_ID);
+            throw $exception;
+        }
     }
 
     public function DoUninstall()
@@ -60,5 +70,20 @@ class elixir_reviewsync extends CModule
     {
         DeleteDirFilesEx('/bitrix/tools/elixir.reviewsync');
         return true;
+    }
+
+    private function InstallOptions(): void
+    {
+        $defaults = [
+            'allowed_ips' => '',
+            'rate_limit' => '120',
+            'rate_limit_window_seconds' => '60',
+            'private_dir' => dirname((string)$_SERVER['DOCUMENT_ROOT']) . '/private/elixir-reviewsync',
+        ];
+        foreach ($defaults as $name => $value) {
+            if (Option::get($this->MODULE_ID, $name, '__ELIXIR_OPTION_NOT_SET__') === '__ELIXIR_OPTION_NOT_SET__') {
+                Option::set($this->MODULE_ID, $name, $value);
+            }
+        }
     }
 }

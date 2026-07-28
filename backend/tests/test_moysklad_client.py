@@ -152,3 +152,39 @@ async def test_get_counterparty_by_email_does_not_accept_inexact_search_result(m
     monkeypatch.setattr(client, "get_page", fake_get_page)
 
     assert await client.get_counterparty_by_email("customer@example.com") is None
+
+
+@pytest.mark.anyio
+async def test_fetch_catalog_rows_excludes_raw_material_folder_but_keeps_cosmetic_products(monkeypatch):
+    client = MoySkladClient(token="token", base_url="https://example.test/api/remap/1.2")
+    cosmetic_product_id = "7c582468-13e1-11f1-0a80-176100294be8"
+    raw_product_id = "bde05938-52bf-11f1-0a80-032c003c7a1b"
+
+    async def fake_get_all(path: str, **_params):
+        if path == "/entity/product":
+            return [
+                {
+                    "id": cosmetic_product_id,
+                    "externalCode": "cosmetic-capixyl",
+                    "article": "00-00000123",
+                    "name": "Capixyl 50% (Косметическое сырье)",
+                    "pathName": "Косметические пептиды (кожа, волосы, загар)",
+                },
+                {
+                    "id": raw_product_id,
+                    "externalCode": "raw-capixyl",
+                    "code": "НФ-00000515",
+                    "name": "Сырье Capixyl 50%",
+                    "pathName": "Сырье и материалы",
+                },
+            ]
+        return []
+
+    monkeypatch.setattr(client, "get_all", fake_get_all)
+
+    products, variants, stats = await client.fetch_catalog_rows()
+
+    assert [row.name for row in products] == ["Capixyl 50% (Косметическое сырье)"]
+    assert len(variants) == 1
+    assert str(variants[0].product_system_id) == cosmetic_product_id
+    assert stats.fetched_products == 1

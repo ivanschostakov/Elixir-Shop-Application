@@ -9,6 +9,11 @@ from src.app.services.referrals import attach_referrer_code, get_or_create_refer
 from src.app.services.referrals.calculations import calculate_personal_discount_percent
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User
+from src.integrations.bitrix_promo import (
+    BitrixPromoClient,
+    BitrixPromoError,
+    bitrix_promo_configured,
+)
 from src.normalize import lower_optional_str, optional_str
 
 from .money import estimate_discount_amount, preferred_currency, quantize_money
@@ -84,6 +89,64 @@ def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal
     )
 
 
+def _basket_quote_items(basket) -> list[dict]:
+    if basket is None:
+        return []
+    return [
+        {
+            "variant_system_id": str(item.variant.system_id),
+            "product_system_id": str(item.product.system_id),
+            "sku": item.variant.sku or item.product.sku,
+            "quantity": item.quantity,
+        }
+        for item in basket.items
+        if item.variant is not None and item.product is not None
+    ]
+
+
+def _build_bitrix_promo_option(
+    *,
+    code: str,
+    lookup: dict,
+    quote: dict | None,
+) -> ResolvedDiscountOption:
+    discount_percent = quantize_money(
+        quote.get("effective_discount_percent")
+        if quote is not None and quote.get("effective_discount_percent") is not None
+        else lookup.get("discount_percent")
+    )
+    discount_amount = quantize_money(quote.get("discount_amount")) if quote is not None else None
+    is_applicable = bool(quote and quote.get("is_applicable") and discount_amount and discount_amount > 0)
+    status = "available" if is_applicable else ("requires_cart" if quote is None else "not_applicable")
+    reason = None
+    if quote is None:
+        reason = "Добавьте товары в корзину для расчёта / Add products to the cart for calculation"
+    elif not is_applicable:
+        reason = "Промокод не применяется к этой корзине / Promo code does not apply to this cart"
+
+    return ResolvedDiscountOption(
+        source_kind="bitrix_promo",
+        source_record_id=int(lookup["discount_id"]) if lookup.get("discount_id") else None,
+        code=str(lookup.get("promo") or code),
+        title=str(lookup.get("discount_name") or "Промокод Bitrix / Bitrix promo"),
+        status=status,
+        is_applicable=is_applicable,
+        is_personal=True,
+        is_stackable=False,
+        calculation_mode="fixed_amount",
+        discount_percent=discount_percent,
+        discount_amount=discount_amount,
+        currency=str(quote.get("currency")) if quote and quote.get("currency") else None,
+        estimated_discount_amount=discount_amount,
+        estimated_total_after=(
+            quantize_money(quote.get("final_total"))
+            if quote is not None
+            else None
+        ),
+        reason=reason,
+    )
+
+
 def _apply_discount_option(option: ResolvedDiscountOption, *, subtotal: Decimal, discountable_subtotal: Decimal, sequence: int) -> tuple[dict, Decimal]:
     applied_amount = estimate_discount_amount(
         subtotal=discountable_subtotal,
@@ -127,6 +190,7 @@ async def resolve_benefits_for_user(
     subtotal: Decimal | None = None,
     discountable_subtotal: Decimal | None = None,
     currency: str | None = None,
+    quote_items: list[dict] | None = None,
 ) -> dict:
     normalized_code = lower_optional_str(entered_code)
     trimmed_code = optional_str(entered_code)
@@ -138,30 +202,77 @@ async def resolve_benefits_for_user(
     )
     referral_profile = await get_or_create_referral_profile(db, user=user)
 
+    entered_code_accepted = True
     if trimmed_code:
         try:
             referral_profile = await attach_referrer_code(db, user=user, code=trimmed_code, confirmed=True)
-        except HTTPException:
-            pass
+        except HTTPException as error:
+            if error.status_code >= 500:
+                raise
+            entered_code_accepted = False
 
-    await refresh_profile_discount_from_moysklad(referral_profile, user=user)
-    app_referral_option = _build_app_referral_option(
-        referral_profile,
-        user=user,
-        subtotal=effective_subtotal,
-        discountable_subtotal=effective_discountable_subtotal,
+    effective_code = (
+        optional_str(user.promo_code)
+        if not trimmed_code or entered_code_accepted
+        else trimmed_code
     )
+    bitrix_option = None
+    app_referral_option = None
+    if bitrix_promo_configured() and effective_code:
+        client = BitrixPromoClient()
+        try:
+            lookup = await client.lookup(effective_code)
+            resolved_quote_items = quote_items
+            if resolved_quote_items is None:
+                resolved_quote_items = _basket_quote_items(await get_basket_by_user_id(db, user.id))
+            quote = (
+                await client.quote(
+                    promo=effective_code,
+                    items=resolved_quote_items,
+                    user_email=user.email,
+                )
+                if resolved_quote_items
+                else None
+            )
+            bitrix_option = _build_bitrix_promo_option(
+                code=effective_code,
+                lookup=lookup,
+                quote=quote,
+            )
+        except BitrixPromoError as error:
+            if error.status_code >= 500:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Расчёт промокода временно недоступен / Promo calculation is temporarily unavailable",
+                ) from error
+    elif not bitrix_promo_configured():
+        await refresh_profile_discount_from_moysklad(referral_profile, user=user)
+        app_referral_option = _build_app_referral_option(
+            referral_profile,
+            user=user,
+            subtotal=effective_subtotal,
+            discountable_subtotal=effective_discountable_subtotal,
+        )
 
     available_discount_options = [
-        option for option in (app_referral_option,) if option is not None and option.is_applicable
+        option for option in (bitrix_option, app_referral_option) if option is not None and option.is_applicable
     ]
-    personal_discount = app_referral_option if app_referral_option is not None and app_referral_option.is_applicable else None
+    personal_discount = next(
+        (
+            option
+            for option in (bitrix_option, app_referral_option)
+            if option is not None and option.is_applicable
+        ),
+        None,
+    )
     best_discount = max(available_discount_options, key=best_option_key) if available_discount_options else None
     code_matches = []
-    if app_referral_option is not None and normalized_code and lower_optional_str(app_referral_option.code) == normalized_code:
-        code_matches.append(app_referral_option)
+    for option in (bitrix_option, app_referral_option):
+        if option is not None and normalized_code and lower_optional_str(option.code) == normalized_code:
+            code_matches.append(option)
 
-    selected_option = max(code_matches, key=best_option_key) if code_matches else personal_discount
+    applicable_code_matches = [option for option in code_matches if option.is_applicable]
+    selected_option = max(applicable_code_matches, key=best_option_key) if applicable_code_matches else personal_discount
 
     stacked_discount_options, stacked_discount_amount, total_after_discounts = _stack_discount_options(
         selected_option=selected_option,
@@ -172,7 +283,9 @@ async def resolve_benefits_for_user(
 
     unresolved_code_reason = None
     if trimmed_code and not code_matches:
-        unresolved_code_reason = "Promo code was not found or is not active"
+        unresolved_code_reason = "Промокод не найден или неактивен / Promo code was not found or is not active"
+    elif trimmed_code and code_matches and not applicable_code_matches:
+        unresolved_code_reason = code_matches[0].reason
 
     return {
         "referral_profile_id": referral_profile.id,

@@ -660,6 +660,37 @@ export type ReferralSummary = {
   average_discount_percent: string
   max_discount_percent: string
   discount_bands: Array<{ band: string; count: number }>
+  accruals_count: number
+  pending_accrual_amount: string
+  approved_accrual_amount: string
+  rejected_accrual_amount: string
+}
+
+export type ReferralAccrual = {
+  id: number
+  purchase_id: number
+  order_id: number
+  external_order_id: string
+  buyer_user_id: number | null
+  beneficiary_user_id: number | null
+  beneficiary_bitrix_user_id: number
+  beneficiary_email: string | null
+  beneficiary_name: string | null
+  promo_code: string
+  period: string
+  level: 1 | 2
+  buyer_discount_percent: string
+  referrer_discount_percent: string
+  commission_percent: string
+  order_amount: string
+  commission_amount: string
+  currency: string
+  status: "pending" | "approved" | "rejected"
+  reason: string | null
+  bitrix_sync_status: "pending" | "synced" | "failed"
+  paid_at: string
+  created_at: string
+  updated_at: string
 }
 
 export type CustomerSegment = {

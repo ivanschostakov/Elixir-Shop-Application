@@ -17,6 +17,8 @@ from config import (
     ADMIN_READ_ONLY,
     AUTH_RATE_LIMIT_MAX_REQUESTS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    BITRIX_PROMO_ENDPOINT,
+    BITRIX_PROMO_TOKEN,
     CORS_ALLOWED_ORIGINS,
     CDEK_ACCOUNT,
     CDEK_SECURE_PASSWORD,
@@ -24,6 +26,8 @@ from config import (
     INTELLECTMONEY_SHOP_ID,
     MOY_SKLAD_TOKEN,
     TELEGRAM_BOT_TOKEN,
+    WEBSITE_IDENTITY_ENDPOINT,
+    WEBSITE_IDENTITY_TOKEN,
     WEBSITE_REVIEW_SYNC_ENDPOINT,
     WEBSITE_REVIEW_SYNC_SECRET,
     YANDEX_DELIVERY_TOKEN,
@@ -62,6 +66,8 @@ PROVIDERS = (
     ("cdek", "CDEK", lambda: bool(CDEK_ACCOUNT and CDEK_SECURE_PASSWORD)),
     ("yandex_delivery", "Яндекс Доставка", lambda: bool(YANDEX_DELIVERY_TOKEN)),
     ("telegram", "Telegram", lambda: bool(TELEGRAM_BOT_TOKEN)),
+    ("bitrix_promo", "Промокоды Bitrix", lambda: bool(BITRIX_PROMO_ENDPOINT and BITRIX_PROMO_TOKEN)),
+    ("website_identity", "Профили покупателей сайта", lambda: bool(WEBSITE_IDENTITY_ENDPOINT and WEBSITE_IDENTITY_TOKEN)),
     ("website_reviews", "Отзывы сайта", lambda: bool(WEBSITE_REVIEW_SYNC_ENDPOINT and WEBSITE_REVIEW_SYNC_SECRET)),
 )
 

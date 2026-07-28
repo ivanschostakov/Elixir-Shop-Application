@@ -11,7 +11,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import (
@@ -19,7 +19,7 @@ from config import (
     WEBSITE_REVIEW_SYNC_SECRET,
     WEBSITE_REVIEW_SYNC_TIMEOUT_SECONDS,
 )
-from src.database.models import Product, Review, User
+from src.database.models import Product, Review, User, Variant
 
 
 log = logging.getLogger("integrations.website_reviews")
@@ -156,6 +156,21 @@ async def _pull_website_reviews(
             ).scalars().all()
         ) if product_keys else []
         products_by_key = {str(product.system_id): product for product in products}
+        missing_keys = {
+            system_id
+            for system_id in product_keys.values()
+            if str(system_id) not in products_by_key
+        }
+        if missing_keys:
+            variants = (
+                await db.execute(
+                    select(Variant, Product)
+                    .join(Product, Product.id == Variant.product_id)
+                    .where(Variant.system_id.in_(list(missing_keys)))
+                )
+            ).all()
+            for variant, product in variants:
+                products_by_key.setdefault(str(variant.system_id), product)
 
         remote_ids = [int(row["remote_id"]) for row in rows if str(row.get("remote_id") or "").isdigit()]
         existing_reviews = list(
@@ -183,6 +198,7 @@ async def _pull_website_reviews(
                     website_review_id=remote_id,
                     website_updated_at=remote_updated_at,
                     created_at=_parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
+                    updated_at=remote_updated_at or _parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
                     **values,
                 )
                 db.add(review)
@@ -214,6 +230,8 @@ async def _pull_website_reviews(
                 review.product_id = product.id
                 stats.updated_from_website += 1
             review.website_updated_at = remote_updated_at
+            if remote_updated_at is not None:
+                review.updated_at = remote_updated_at
 
         await db.flush()
         offset += len(rows)
@@ -234,6 +252,13 @@ async def _push_app_reviews(
                 .join(Product, Product.id == Review.product_id)
                 .outerjoin(User, User.id == Review.user_id)
                 .where(Product.system_id.is_not(None))
+                .where(
+                    or_(
+                        Review.sync_origin != "website",
+                        Review.website_updated_at.is_(None),
+                        Review.updated_at > Review.website_updated_at,
+                    )
+                )
                 .order_by(Review.id)
                 .offset(offset)
                 .limit(PAGE_SIZE)

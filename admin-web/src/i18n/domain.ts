@@ -47,6 +47,8 @@ const labels: Record<string, { ru: string; en: string }> = {
   revoked: { ru: "Отозвано", en: "Revoked" },
   rejected: { ru: "Отклонено", en: "Rejected" },
   approved: { ru: "Одобрено", en: "Approved" },
+  lifetime_purchase_minimum_not_met: { ru: "Не достигнуто 100 000 ₽ личных покупок", en: "The 100,000 RUB lifetime purchase minimum was not met" },
+  monthly_purchase_minimum_not_met: { ru: "Нет 10 000 ₽ личных покупок за месяц", en: "The 10,000 RUB monthly purchase minimum was not met" },
   failed: { ru: "Ошибка", en: "Failed" },
   completed: { ru: "Завершено", en: "Completed" },
   skipped: { ru: "Пропущено", en: "Skipped" },

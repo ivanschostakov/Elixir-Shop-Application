@@ -5,7 +5,7 @@ import dayjs, { type Dayjs } from "dayjs"
 import { useEffect, useMemo, useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { apiDownload, apiRequest } from "../api/client"
-import type { AudiencePreview, CustomerSegment, MarketingAutomation, Page, PushCampaign, PushCampaignMetrics, PushCampaignPreview, PushCampaignRecipient, PushCampaignTemplate, ReferralProfile, ReferralSummary, SegmentDefinition, SegmentHistory } from "../api/types"
+import type { AudiencePreview, CustomerSegment, MarketingAutomation, Page, PushCampaign, PushCampaignMetrics, PushCampaignPreview, PushCampaignRecipient, PushCampaignTemplate, ReferralAccrual, ReferralProfile, ReferralSummary, SegmentDefinition, SegmentHistory } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
 import { InternalLinkGuide } from "../components/InternalLinkGuide"
 import { PageHeader } from "../components/PageHeader"
@@ -152,6 +152,7 @@ export function MarketingPage() {
 
   const referrals = useQuery({ queryKey: ["referrals"], queryFn: () => apiRequest<ReferralProfile[]>("/referrals/profiles?limit=100&offset=0"), enabled: hasPermission("referrals.read") })
   const referralSummary = useQuery({ queryKey: ["referrals-summary"], queryFn: () => apiRequest<ReferralSummary>("/referrals/summary"), enabled: hasPermission("referrals.read") })
+  const referralAccruals = useQuery({ queryKey: ["referral-accruals"], queryFn: () => apiRequest<ReferralAccrual[]>("/referrals/accruals?limit=200&offset=0"), enabled: hasPermission("referrals.read"), refetchInterval: 30_000 })
   const segments = useQuery({ queryKey: ["segments"], queryFn: () => apiRequest<CustomerSegment[]>("/segments"), enabled: hasPermission("segments.read") })
   const campaigns = useQuery({ queryKey: ["campaigns"], queryFn: () => apiRequest<Page<PushCampaign>>("/campaigns?limit=100&offset=0"), enabled: hasPermission("campaigns.read"), refetchInterval: 15_000 })
   const campaignTemplates = useQuery({ queryKey: ["campaign-templates"], queryFn: () => apiRequest<PushCampaignTemplate[]>("/campaign-templates"), enabled: hasPermission("campaigns.read") })
@@ -161,6 +162,7 @@ export function MarketingPage() {
   const campaignMetrics = useQuery({ queryKey: ["campaign-metrics", detailsCampaign?.id], queryFn: () => apiRequest<PushCampaignMetrics>(`/campaigns/${detailsCampaign?.id}/metrics`), enabled: Boolean(detailsCampaign) })
   const campaignRecipients = useQuery({ queryKey: ["campaign-recipients", detailsCampaign?.id], queryFn: () => apiRequest<Page<PushCampaignRecipient>>(`/campaigns/${detailsCampaign?.id}/recipients?limit=100&offset=0`), enabled: Boolean(detailsCampaign) })
   const referralRows = referrals.data || []
+  const referralAccrualRows = referralAccruals.data || []
 
   useEffect(() => {
     const campaignId = Number(searchParams.get("campaign_id") || 0)
@@ -175,6 +177,36 @@ export function MarketingPage() {
   const copy = locale === "ru"
     ? { title: "Маркетинг", description: "Сегменты, push‑кампании и автоматические сценарии", referrals: "Рефералы", segments: "Сегменты", campaigns: "Push‑кампании", automations: "Автоматизация", profiles: "Участники", base: "База скидки", discount: "Текущая скидка", purchases: "Покупки", created: "Создан", newSegment: "Новый сегмент", newCampaign: "Новая кампания", segmentName: "Название сегмента", team: "Доступен команде", dynamic: "Динамический", static: "Статический", makeSnapshot: "Зафиксировать состав", snapshot: "Снимок", preview: "Рассчитать", audience: "Клиентов", reachable: "Доступны по push", save: "Сохранить", filters: "Условия", campaignName: "Внутреннее название", pushTitle: "Заголовок push", pushBody: "Текст сообщения", deepLink: "Путь внутри приложения", segment: "Сегмент", status: "Статус", sent: "Доставлено", launch: "Запустить", launchTitle: "Подтверждение отправки", launchNow: "Отправить сейчас", schedule: "Запланировать", scheduleTime: "Время отправки", launchWarning: "Аудитория фиксируется перед запуском. После подтверждения состав получателей изменить нельзя.", cancel: "Отменить", lastRun: "Последний запуск", enabled: "Включён", disabled: "Выключен", processed: "Обработано", edit: "Изменить", afterDays: "Запуск через, дней", afterHours: "Запуск через, часов", cooldownDays: "Повтор не чаще, дней", cooldownHours: "Повтор не чаще, часов", triggerHint: "Изменения шаблона применяются к следующим автоматическим отправкам.", combinator: "Логика группы", addCondition: "Добавить условие", field: "Поле", operator: "Оператор", value: "Значение", exclusions: "Исключить сегменты", customers: "Клиенты", history: "История", export: "CSV", saved: "Сегмент сохранён", deleted: "Сегмент удалён", snapshotted: "Состав сегмента зафиксирован", template: "Шаблон", goal: "Цель", utm: "UTM", previewPush: "Предпросмотр push", applyTemplate: "Применить шаблон", delivery: "Доставка", clicks: "Клики", failures: "Ошибки", details: "Детали", recipients: "Получатели", pending: "Ожидают", opened: "Открыто", clicked: "Клик", activeReferrers: "Активные", avgDiscount: "Средняя скидка", maxDiscount: "Макс. скидка", before: "до даты", after: "после даты", contains: "содержит", and: "И", or: "ИЛИ", automationNotSelected: "Сценарий автоматизации не выбран", goalPlaceholder: "продажи / удержание / возврат", sourcePlaceholder: "источник", campaignPlaceholder: "кампания", contentPlaceholder: "содержание" }
     : { title: "Marketing", description: "Segments, push campaigns and automated journeys", referrals: "Referrals", segments: "Segments", campaigns: "Push campaigns", automations: "Automations", profiles: "Members", base: "Discount base", discount: "Current discount", purchases: "Purchases", created: "Created", newSegment: "New segment", newCampaign: "New campaign", segmentName: "Segment name", team: "Share with team", dynamic: "Dynamic", static: "Static", makeSnapshot: "Create snapshot", snapshot: "Snapshot", preview: "Preview", audience: "Customers", reachable: "Push reachable", save: "Save", filters: "Conditions", campaignName: "Internal name", pushTitle: "Push title", pushBody: "Message body", deepLink: "In-app path", segment: "Segment", status: "Status", sent: "Delivered", launch: "Launch", launchTitle: "Confirm delivery", launchNow: "Send now", schedule: "Schedule", scheduleTime: "Delivery time", launchWarning: "The audience is snapshotted before launch. Recipients cannot be changed after confirmation.", cancel: "Cancel", lastRun: "Last run", enabled: "Enabled", disabled: "Disabled", processed: "Processed", edit: "Edit", afterDays: "Trigger after, days", afterHours: "Trigger after, hours", cooldownDays: "Repeat no sooner than, days", cooldownHours: "Repeat no sooner than, hours", triggerHint: "Template changes apply to future automated sends.", combinator: "Group logic", addCondition: "Add condition", field: "Field", operator: "Operator", value: "Value", exclusions: "Exclude segments", customers: "Customers", history: "History", export: "CSV", saved: "Segment saved", deleted: "Segment deleted", snapshotted: "Snapshot saved", template: "Template", goal: "Goal", utm: "UTM", previewPush: "Push preview", applyTemplate: "Apply template", delivery: "Delivery", clicks: "Clicks", failures: "Failures", details: "Details", recipients: "Recipients", pending: "Pending", opened: "Opened", clicked: "Clicked", activeReferrers: "Active", avgDiscount: "Average discount", maxDiscount: "Max discount", before: "before", after: "after", contains: "contains", and: "AND", or: "OR", automationNotSelected: "Automation is not selected", goalPlaceholder: "sales / retention / recovery", sourcePlaceholder: "source", campaignPlaceholder: "campaign", contentPlaceholder: "content" }
+
+  const referralCopy = locale === "ru"
+    ? {
+      accruals: "Начисления приложения",
+      accrualsHint: "Bitrix рассчитывает правила и проценты, журнал и статусы хранятся только в приложении.",
+      pendingAmount: "Ожидает закрытия месяца",
+      approvedAmount: "Одобрено",
+      beneficiary: "Получатель",
+      order: "Заказ",
+      period: "Месяц",
+      level: "Уровень",
+      calculation: "Расчёт",
+      amount: "Начисление",
+      reason: "Причина",
+      participants: "Участники программы",
+    }
+    : {
+      accruals: "App accruals",
+      accrualsHint: "Bitrix calculates rules and percentages; the ledger and statuses are stored only in the app.",
+      pendingAmount: "Pending month close",
+      approvedAmount: "Approved",
+      beneficiary: "Beneficiary",
+      order: "Order",
+      period: "Period",
+      level: "Level",
+      calculation: "Calculation",
+      amount: "Accrual",
+      reason: "Reason",
+      participants: "Program members",
+    }
 
   const fieldOptions = useMemo(() => Object.keys(segmentFieldTypes).map((value) => ({ value, label: formatCondition({ field: value, operator: "", value: "" }, locale).trim() })), [locale])
   const operatorOptions = [{ value: "eq", label: "=" }, { value: "neq", label: "≠" }, { value: "gte", label: "≥" }, { value: "lte", label: "≤" }, { value: "before", label: copy.before }, { value: "after", label: copy.after }, { value: "contains", label: copy.contains }]
@@ -346,7 +378,53 @@ export function MarketingPage() {
         <Col xs={24} md={6}><Card><Statistic title={copy.activeReferrers} value={referralSummary.data?.active_referrers_count ?? 0} /></Card></Col>
         <Col xs={24} md={6}><Card><Statistic title={copy.base} value={money(referralSummary.data?.total_discount_base ?? 0, "RUB", locale)} /></Card></Col>
         <Col xs={24} md={6}><Card><Statistic title={copy.avgDiscount} value={`${referralSummary.data?.average_discount_percent ?? "0.00"}%`} suffix={<Typography.Text type="secondary">{locale === "ru" ? "макс." : "max"} {referralSummary.data?.max_discount_percent ?? "0.00"}%</Typography.Text>} /></Card></Col>
+        <Col xs={24} md={8}><Card><Statistic title={referralCopy.accruals} value={referralSummary.data?.accruals_count ?? referralAccrualRows.length} /></Card></Col>
+        <Col xs={24} md={8}><Card><Statistic title={referralCopy.pendingAmount} value={money(referralSummary.data?.pending_accrual_amount ?? 0, "RUB", locale)} /></Card></Col>
+        <Col xs={24} md={8}><Card><Statistic title={referralCopy.approvedAmount} value={money(referralSummary.data?.approved_accrual_amount ?? 0, "RUB", locale)} /></Card></Col>
       </Row>
+      <Alert type="info" showIcon message={referralCopy.accrualsHint} />
+      <Typography.Title level={4}>{referralCopy.accruals}</Typography.Title>
+      <Table<ReferralAccrual>
+        rowKey="id"
+        loading={referralAccruals.isLoading}
+        dataSource={referralAccrualRows}
+        pagination={{ pageSize: 25 }}
+        scroll={{ x: 1100 }}
+        columns={[
+          {
+            title: referralCopy.beneficiary,
+            key: "beneficiary",
+            render: (_: unknown, row) => <div className="table-primary">
+              <strong>{row.beneficiary_user_id && hasPermission("customers.read") ? <Link to={`/customers/${row.beneficiary_user_id}`}>{row.beneficiary_name || row.beneficiary_email || `Bitrix #${row.beneficiary_bitrix_user_id}`}</Link> : row.beneficiary_name || row.beneficiary_email || `Bitrix #${row.beneficiary_bitrix_user_id}`}</strong>
+              <small>{row.beneficiary_email || `Bitrix #${row.beneficiary_bitrix_user_id}`}</small>
+            </div>,
+          },
+          {
+            title: referralCopy.order,
+            key: "order",
+            render: (_: unknown, row) => <div className="table-primary">
+              <strong>{hasPermission("orders.read") ? <Link to={`/orders/${row.order_id}`}>{row.external_order_id}</Link> : row.external_order_id}</strong>
+              <small>{money(row.order_amount, row.currency, locale)} · {row.promo_code}</small>
+            </div>,
+          },
+          { title: referralCopy.period, dataIndex: "period" },
+          { title: referralCopy.level, dataIndex: "level", align: "center", render: (value: number) => <Tag color={value === 1 ? "blue" : "purple"}>{value}</Tag> },
+          {
+            title: referralCopy.calculation,
+            key: "calculation",
+            render: (_: unknown, row) => <Typography.Text>{row.referrer_discount_percent}% − {row.buyer_discount_percent}% → <strong>{row.commission_percent}%</strong></Typography.Text>,
+          },
+          { title: referralCopy.amount, dataIndex: "commission_amount", align: "right", render: (value: string, row) => <strong>{money(value, row.currency, locale)}</strong> },
+          {
+            title: copy.status,
+            dataIndex: "status",
+            render: (value: ReferralAccrual["status"]) => <Tag color={value === "approved" ? "green" : value === "rejected" ? "red" : "gold"}>{domainLabel(value, locale)}</Tag>,
+          },
+          { title: referralCopy.reason, dataIndex: "reason", render: (value: string | null) => value ? domainLabel(value, locale) : "—" },
+          { title: copy.created, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) },
+        ]}
+      />
+      <Typography.Title level={4}>{referralCopy.participants}</Typography.Title>
       <Table<ReferralProfile> rowKey="id" loading={referrals.isLoading} dataSource={referralRows} pagination={{ pageSize: 25 }} columns={[{ title: locale === "ru" ? "ID пользователя" : "User ID", dataIndex: "user_id", render: (value: number) => hasPermission("customers.read") ? <Link to={`/customers/${value}`}>#{value}</Link> : `#${value}` }, { title: copy.purchases, dataIndex: "total_purchases", render: (value: string) => money(value, "RUB", locale) }, { title: copy.base, dataIndex: "referral_discount_base_total", render: (value: string) => money(value, "RUB", locale) }, { title: copy.discount, dataIndex: "current_discount_percent", render: (value: string) => <Tag color="green">{value}%</Tag> }, { title: copy.created, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) }]} />
     </> : null}
 

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import REVIEWS_MEDIA_DIR
 from src.app.services.discounts import product_is_discountable
-from src.app.services.referrals.calculations import calculate_personal_discount_percent, quantize_money, quantize_percent
+from src.app.services.referrals.calculations import quantize_money, quantize_percent
 from src.app.services.referrals.profile import get_referral_profile_by_user_id, user_has_promo_code
 from src.app.services.review_attachments import build_review_attachment_url
 from src.app.services.stock_visibility import StockVisibilityPolicy
@@ -39,7 +39,7 @@ async def get_user_product_discount_percent(db: AsyncSession, user: User | None)
     if not user_has_promo_code(user): return Decimal("0.00")
     profile = await get_referral_profile_by_user_id(db, user.id)
     if profile is None: return Decimal("0.00")
-    return calculate_personal_discount_percent(profile.referral_discount_base_total, has_promo_code=True)
+    return quantize_percent(profile.current_discount_percent)
 
 
 async def get_user_product_price_discount_context(db: AsyncSession, user: User | None) -> ProductPriceDiscountContext:

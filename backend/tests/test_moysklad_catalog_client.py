@@ -144,6 +144,27 @@ def test_moysklad_product_rows_skip_package_product():
     assert stats.skipped_products_excluded_name == 1
 
 
+def test_moysklad_product_rows_include_cosmetic_raw_material_product():
+    stats = MoySkladCatalogSyncStats()
+    product_rows, products_by_external_code, products_by_id = build_product_rows(
+        [
+            {
+                "id": str(NEW_PRODUCT_ID),
+                "externalCode": str(OLD_PRODUCT_ID),
+                "article": "00-00000123",
+                "name": "Capixyl 50% (Косметическое сырье)",
+                "pathName": "Косметические пептиды (кожа, волосы, загар)",
+            }
+        ],
+        stats,
+    )
+
+    assert [row.name for row in product_rows] == ["Capixyl 50% (Косметическое сырье)"]
+    assert products_by_external_code[str(OLD_PRODUCT_ID)]["id"] == str(NEW_PRODUCT_ID)
+    assert products_by_id[NEW_PRODUCT_ID]["id"] == str(NEW_PRODUCT_ID)
+    assert stats.skipped_products_excluded_name == 0
+
+
 def test_moysklad_product_row_unarchives_fetched_products():
     stats = MoySkladCatalogSyncStats()
     product_rows, _, _ = build_product_rows(

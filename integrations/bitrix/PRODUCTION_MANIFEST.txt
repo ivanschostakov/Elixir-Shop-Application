@@ -1,0 +1,7 @@
+# Exact Bitrix production payload. AI chat and AI gateway are intentionally absent.
+local/modules/elixir.promo/
+local/modules/elixir.reviewsync/
+local/api/app_integration.php
+local/api/app_integration.config.php
+local/api/giveaways.php
+local/api/giveaways.config.php

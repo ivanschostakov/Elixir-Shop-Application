@@ -283,7 +283,16 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
         await session.flush()
 
 
-async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal, currency: str, entered_code: str | None) -> dict[str, Any]:
+async def _resolve_checkout_benefits(
+    session: AsyncSession,
+    *,
+    user: User,
+    subtotal: Decimal,
+    discountable_subtotal: Decimal,
+    currency: str,
+    entered_code: str | None,
+    quote_items: list[dict[str, Any]],
+) -> dict[str, Any]:
     return await resolve_benefits_for_user(
         session,
         user=user,
@@ -291,6 +300,7 @@ async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subto
         subtotal=subtotal,
         discountable_subtotal=discountable_subtotal,
         currency=currency,
+        quote_items=quote_items,
     )
 
 
@@ -417,6 +427,15 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
         discountable_subtotal=discountable_subtotal,
         currency=draft.currency,
         entered_code=entered_code,
+        quote_items=[
+            {
+                "variant_system_id": str(variants_by_id[item.variant_id].system_id),
+                "product_system_id": str(variants_by_id[item.variant_id].product.system_id),
+                "sku": variants_by_id[item.variant_id].sku or variants_by_id[item.variant_id].product.sku,
+                "quantity": item.quantity,
+            }
+            for item in draft.items
+        ],
     )
     grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total
     checkout_snapshot = _build_checkout_snapshot(
@@ -540,6 +559,15 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
         discountable_subtotal=discountable_subtotal,
         currency=basket.currency,
         entered_code=entered_code,
+        quote_items=[
+            {
+                "variant_system_id": str(item.variant.system_id),
+                "product_system_id": str(item.product.system_id),
+                "sku": item.variant.sku or item.product.sku,
+                "quantity": item.quantity,
+            }
+            for item, _, _ in order_item_rows
+        ],
     )
     grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total
     checkout_snapshot = _build_checkout_snapshot(

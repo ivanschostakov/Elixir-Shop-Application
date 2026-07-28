@@ -15,6 +15,7 @@ from starlette import status
 
 from config import (
     AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA,
+    AUTH_LOGIN_WEBSITE_FIRST_ENABLED,
     AUTH_RATE_LIMIT_MAX_REQUESTS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
     AUTH_VERIFY_RATE_LIMIT_MAX_REQUESTS,
@@ -91,6 +92,11 @@ from src.database.models.auth.user import User
 from src.database.schemas.auth.user import UserCreate
 from src.database.schemas.auth.user_session import UserSessionCreate, UserSessionUpdate
 from src.integrations.moysklad import MoySkladClient, get_moysklad_client
+from src.integrations.website_identity import (
+    WebsiteIdentityClient,
+    WebsiteIdentityError,
+    website_identity_configured,
+)
 from src.normalize import coerce_uuid, normalize_email, normalize_phone, optional_str
 
 logger = getLogger(__name__)
@@ -358,8 +364,80 @@ async def _verify_latest_email_code(user: User, code: str, db: AsyncSession) -> 
 
 async def _get_email_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
     user = await get_user_by_email(db, payload.login)
-    if user is None or not user.is_active or not user.email or not verify_password(payload.password, user.password_hash):
+    if user is not None and user.is_active and user.email and verify_password(payload.password, user.password_hash):
+        return user
+
+    if not AUTH_LOGIN_WEBSITE_FIRST_ENABLED or not website_identity_configured():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    try:
+        identity = await WebsiteIdentityClient().authenticate(login=str(payload.login), password=payload.password)
+    except WebsiteIdentityError as error:
+        if error.status_code in (401, 404):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") from error
+        logger.warning("Website identity authentication is temporarily unavailable: %s", error.code)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Website login is temporarily unavailable",
+        ) from error
+
+    website_user = identity.get("user")
+    if not isinstance(website_user, dict):
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website identity response is invalid")
+    website_email = normalize_email(website_user.get("email"))
+    requested_email = normalize_email(payload.login)
+    if not website_email or website_email != requested_email:
+        logger.warning("Website identity returned a mismatched email")
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website identity response is invalid")
+
+    website_name = optional_str(website_user.get("name")) or "Customer"
+    website_surname = optional_str(website_user.get("last_name")) or "Customer"
+    discounts = identity.get("discounts")
+    referral_program = discounts.get("referral_program") if isinstance(discounts, dict) else None
+    website_own_promo = (
+        optional_str(referral_program.get("promo_code"))
+        if isinstance(referral_program, dict)
+        else None
+    )
+    website_referrer_promo = (
+        optional_str(referral_program.get("referrer_promo_code"))
+        if isinstance(referral_program, dict)
+        else None
+    )
+    password_hash = hash_password(payload.password)
+
+    if user is None:
+        user = await create_user(
+            db,
+            UserCreate(
+                email=website_email,
+                password_hash=password_hash,
+                name=website_name[:PERSON_NAME_MAX_LENGTH],
+                surname=website_surname[:PERSON_NAME_MAX_LENGTH],
+                phone_number=None,
+                is_verified=True,
+                promo_code=website_referrer_promo,
+            ),
+            commit=False,
+        )
+    else:
+        user.password_hash = password_hash
+        user.is_active = True
+        user.is_verified = True
+        if not optional_str(user.name):
+            user.name = website_name[:PERSON_NAME_MAX_LENGTH]
+        if not optional_str(user.surname):
+            user.surname = website_surname[:PERSON_NAME_MAX_LENGTH]
+        if website_referrer_promo:
+            user.promo_code = website_referrer_promo
+        elif (
+            website_own_promo
+            and optional_str(user.promo_code)
+            and optional_str(user.promo_code).casefold() == website_own_promo.casefold()
+        ):
+            user.promo_code = None
+        await db.flush()
+
     return user
 
 

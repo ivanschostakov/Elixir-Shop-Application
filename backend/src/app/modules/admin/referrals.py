@@ -4,10 +4,12 @@ from starlette import status
 
 from src.app.services.admin import AdminContext, require_permission
 from src.app.modules.admin.schemas.referrals import (
+    AdminReferralAccrualRead,
     AdminReferralProfileRead,
     AdminReferralSummaryRead,
 )
 from src.app.services.admin.referrals import (
+    list_accruals,
     list_profiles,
     referral_summary,
 )
@@ -25,3 +27,30 @@ async def list_referral_profiles(limit: int = Query(default=100, ge=1, le=1000),
 @admin_referrals_router.get("/summary", response_model=AdminReferralSummaryRead, status_code=status.HTTP_200_OK)
 async def get_referral_summary(db: AsyncSession = Depends(get_db), _: AdminContext = Depends(require_permission("referrals.read"))) -> AdminReferralSummaryRead:
     return AdminReferralSummaryRead.model_validate(await referral_summary(db))
+
+
+@admin_referrals_router.get(
+    "/accruals",
+    response_model=list[AdminReferralAccrualRead],
+    status_code=status.HTTP_200_OK,
+)
+async def list_referral_accruals(
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    accrual_status: str | None = Query(
+        default=None,
+        alias="status",
+        pattern="^(pending|approved|rejected)$",
+    ),
+    period: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("referrals.read")),
+) -> list[AdminReferralAccrualRead]:
+    rows = await list_accruals(
+        db,
+        limit=limit,
+        offset=offset,
+        status=accrual_status,
+        period=period,
+    )
+    return [AdminReferralAccrualRead.model_validate(row) for row in rows]

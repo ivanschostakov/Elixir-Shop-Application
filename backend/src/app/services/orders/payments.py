@@ -20,6 +20,7 @@ from src.integrations.intellectmoney import IntellectMoneyError, get_intellectmo
 from src.integrations.moysklad.order_sync import MOY_SKLAD_INVOICEOUT_STATE_PAID, MOY_SKLAD_STATE_INVOICE_PAID, MOY_SKLAD_STATE_INVOICE_SENT, sync_moysklad_customerorder_state, sync_moysklad_invoiceout_state
 
 from .crm import _move_lead_to_payment_result_status, _move_lead_to_pending_payment
+from src.app.services.referrals.paid_orders import sync_paid_order_referral_to_app_safe
 from .payment_qr_storage import build_order_payment_qr_url, find_order_payment_qr_path, save_order_payment_qr
 
 log = logging.getLogger(__name__)
@@ -175,6 +176,7 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
     if updated_order.payment_status == "paid" or updated_order.is_paid:
         await sync_moysklad_customerorder_state(updated_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
         await sync_moysklad_invoiceout_state(updated_order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID)
+        await sync_paid_order_referral_to_app_safe(session, order=updated_order)
     return updated_order
 
 
@@ -384,6 +386,8 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
         return payload
 
     order = await _ensure_persisted_paid_state(session, order)
+    if order.is_paid:
+        await sync_paid_order_referral_to_app_safe(session, order=order)
     saved_qr_image = await _resolve_payment_qr_image(request, order, qr_image=None, qr_url=None)
     return _payment_status_payload(order, qr_image=saved_qr_image)
 
@@ -391,6 +395,7 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
 async def recheck_payment_status_for_admin(session: AsyncSession, *, order: Order) -> dict[str, Any]:
     """Reconcile an order from the payment provider without allowing a manual result override."""
     if order.is_paid or order.payment_status == "paid":
+        await sync_paid_order_referral_to_app_safe(session, order=order)
         return {
             "order_id": order.id,
             "invoice_id": order.payment_invoice_id,

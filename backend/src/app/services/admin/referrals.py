@@ -4,10 +4,11 @@ from typing import Any
 
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
 
 from src.app.services.referrals.calculations import quantize_money
 from src.database.crud.referrals import list_referral_profiles as list_referral_profile_rows
-from src.database.models import ReferralProfile
+from src.database.models import AppReferralAccrual, AppReferralPurchase, ReferralProfile
 
 
 def _profile_row(profile: ReferralProfile) -> dict[str, Any]:
@@ -28,6 +29,62 @@ async def list_profiles(db: AsyncSession, *, limit: int, offset: int) -> list[di
     return [_profile_row(profile) for profile in profiles]
 
 
+def _accrual_row(accrual: AppReferralAccrual) -> dict[str, Any]:
+    purchase = accrual.purchase
+    return {
+        "id": accrual.id,
+        "purchase_id": purchase.id,
+        "order_id": purchase.order_id,
+        "external_order_id": purchase.external_order_id,
+        "buyer_user_id": purchase.buyer_user_id,
+        "beneficiary_user_id": accrual.beneficiary_user_id,
+        "beneficiary_bitrix_user_id": accrual.beneficiary_bitrix_user_id,
+        "beneficiary_email": accrual.beneficiary_email,
+        "beneficiary_name": accrual.beneficiary_name,
+        "promo_code": purchase.promo_code,
+        "period": purchase.period_start.strftime("%Y-%m"),
+        "level": accrual.level,
+        "buyer_discount_percent": accrual.buyer_discount_percent,
+        "referrer_discount_percent": accrual.referrer_discount_percent,
+        "commission_percent": accrual.commission_percent,
+        "order_amount": purchase.amount,
+        "commission_amount": accrual.commission_amount,
+        "currency": accrual.currency,
+        "status": accrual.status,
+        "reason": accrual.reason,
+        "bitrix_sync_status": purchase.bitrix_sync_status,
+        "paid_at": purchase.paid_at,
+        "created_at": accrual.created_at,
+        "updated_at": accrual.updated_at,
+    }
+
+
+async def list_accruals(
+    db: AsyncSession,
+    *,
+    limit: int,
+    offset: int,
+    status: str | None,
+    period: str | None,
+) -> list[dict[str, Any]]:
+    stmt = (
+        select(AppReferralAccrual)
+        .join(AppReferralPurchase)
+        .options(joinedload(AppReferralAccrual.purchase))
+        .order_by(AppReferralAccrual.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if status:
+        stmt = stmt.where(AppReferralAccrual.status == status)
+    if period:
+        stmt = stmt.where(
+            func.to_char(AppReferralPurchase.period_start, "YYYY-MM") == period
+        )
+    rows = list((await db.execute(stmt)).scalars().unique().all())
+    return [_accrual_row(row) for row in rows]
+
+
 async def referral_summary(db: AsyncSession) -> dict[str, Any]:
     totals = (await db.execute(select(
         func.count(ReferralProfile.id),
@@ -45,6 +102,49 @@ async def referral_summary(db: AsyncSession) -> dict[str, Any]:
         ).label("band"),
         func.count(ReferralProfile.id),
     ).group_by("band"))).all()
+    accrual_totals = (
+        await db.execute(
+            select(
+                func.count(AppReferralAccrual.id),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                AppReferralAccrual.status == "pending",
+                                AppReferralAccrual.commission_amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                AppReferralAccrual.status == "approved",
+                                AppReferralAccrual.commission_amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+                func.coalesce(
+                    func.sum(
+                        case(
+                            (
+                                AppReferralAccrual.status == "rejected",
+                                AppReferralAccrual.commission_amount,
+                            ),
+                            else_=0,
+                        )
+                    ),
+                    0,
+                ),
+            )
+        )
+    ).one()
     return {
         "profiles_count": int(totals[0] or 0),
         "total_discount_base": quantize_money(totals[1] or 0),
@@ -52,4 +152,8 @@ async def referral_summary(db: AsyncSession) -> dict[str, Any]:
         "max_discount_percent": totals[3] or 0,
         "active_referrers_count": int(totals[4] or 0),
         "discount_bands": [{"band": str(band), "count": int(count)} for band, count in band_rows],
+        "accruals_count": int(accrual_totals[0] or 0),
+        "pending_accrual_amount": quantize_money(accrual_totals[1] or 0),
+        "approved_accrual_amount": quantize_money(accrual_totals[2] or 0),
+        "rejected_accrual_amount": quantize_money(accrual_totals[3] or 0),
     }
