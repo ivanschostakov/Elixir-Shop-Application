@@ -46,6 +46,9 @@ import {
     subscribeAuthSession,
 } from "@/services/auth/session"
 import { syncCustomerIntelligenceSession } from "@/services/customer-intelligence"
+import { heartbeatMyPresence } from "@/services/api/users"
+
+const PRESENCE_HEARTBEAT_INTERVAL_MS = 60_000
 
 function normalizeAuthErrorMessage(rawMessage: string, fallbackMessage: string) {
     const normalizedMessage = rawMessage.trim()
@@ -149,6 +152,46 @@ export function AuthProvider({ children }: AuthProviderProps) {
             appStateSubscription.remove()
         }
     }, [pathname, user])
+
+    useEffect(() => {
+        if (!user) {
+            return
+        }
+
+        let heartbeatInterval: ReturnType<typeof setInterval> | null = null
+        const sendHeartbeat = () => {
+            void heartbeatMyPresence().catch(() => undefined)
+        }
+        const stopHeartbeat = () => {
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval)
+                heartbeatInterval = null
+            }
+        }
+        const startHeartbeat = () => {
+            if (heartbeatInterval) {
+                return
+            }
+            sendHeartbeat()
+            heartbeatInterval = setInterval(sendHeartbeat, PRESENCE_HEARTBEAT_INTERVAL_MS)
+        }
+
+        if (AppState.currentState === "active") {
+            startHeartbeat()
+        }
+        const subscription = AppState.addEventListener("change", (nextAppState) => {
+            if (nextAppState === "active") {
+                startHeartbeat()
+            } else {
+                stopHeartbeat()
+            }
+        })
+
+        return () => {
+            subscription.remove()
+            stopHeartbeat()
+        }
+    }, [user])
 
     useEffect(() => {
         let isMounted = true

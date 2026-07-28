@@ -8,6 +8,7 @@ from .community import community_router
 from .customer_intelligence import customer_intelligence_router
 from .order_drafts import my_order_drafts_router
 from .orders import my_orders_router
+from .presence import presence_router
 from .push_tokens import push_tokens_router
 from .profile import my_profile_router
 from .recommendations import recommendations_router
@@ -24,6 +25,7 @@ me_router.include_router(community_router)
 me_router.include_router(customer_intelligence_router)
 me_router.include_router(my_order_drafts_router)
 me_router.include_router(my_orders_router)
+me_router.include_router(presence_router)
 me_router.include_router(push_tokens_router)
 me_router.include_router(my_profile_router)
 me_router.include_router(recommendations_router)

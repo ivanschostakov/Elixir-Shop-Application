@@ -38,6 +38,8 @@ export type Dashboard = {
     paid_orders: number
     average_order_value: string
     new_customers: number
+    online_customers: number
+    online_window_minutes: number
     failed_payments: number
     pending_reviews: number
     low_stock_variants: number

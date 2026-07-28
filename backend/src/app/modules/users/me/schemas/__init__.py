@@ -5,6 +5,7 @@ from .order_draft import CreateOrderDraftPayload, DeliveryCalculationPayload, Up
 from .order import CreateOrderPayload, CreatePaymentPayload, PaymentMethod, PaymentStatusRead
 from .recommendations import RecommendationCategoryViewPayload, RecommendationSurface, RecommendationViewPayload
 from .referrals import ReferrerCodeAttachPayload, ReferrerCodeCheckPayload, ReferrerCodeCheckRead, ReferralProfileRead
+from .presence import PresenceHeartbeatResponse
 from .search_queries import CreateRecentSearchQueryPayload
 from .support import (
     SupportAttachmentRead,
@@ -34,6 +35,7 @@ __all__ = [
     "PaymentMethod",
     "PaymentStatusRead",
     "PersonalDataUpdatePayload",
+    "PresenceHeartbeatResponse",
     "ReferrerCodeAttachPayload",
     "ReferrerCodeCheckPayload",
     "ReferrerCodeCheckRead",

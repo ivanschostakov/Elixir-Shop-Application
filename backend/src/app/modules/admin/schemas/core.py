@@ -21,6 +21,8 @@ class DashboardMetrics(BaseModel):
     paid_orders: int
     average_order_value: Decimal
     new_customers: int
+    online_customers: int
+    online_window_minutes: int
     failed_payments: int
     pending_reviews: int
     low_stock_variants: int

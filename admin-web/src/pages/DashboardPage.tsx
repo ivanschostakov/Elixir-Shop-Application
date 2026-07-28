@@ -29,12 +29,12 @@ export function DashboardPage() {
   const queryClient = useQueryClient()
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const [draftWidgets, setDraftWidgets] = useState<string[]>([])
-  const query = useQuery({ queryKey: ["dashboard"], queryFn: () => apiRequest<Dashboard>("/dashboard"), refetchInterval: 60_000 })
+  const query = useQuery({ queryKey: ["dashboard"], queryFn: () => apiRequest<Dashboard>("/dashboard"), refetchInterval: 30_000 })
   const preferences = useQuery({ queryKey: ["dashboard-preferences"], queryFn: () => apiRequest<DashboardPreference>("/dashboard/preferences") })
   const data = query.data
   const copy = locale === "ru"
-    ? { title: "Главная", description: "Состояние магазина за последние 30 дней", revenue: "Выручка", paid: "Оплаченные заказы", average: "Средний чек", customers: "Новые клиенты", attention: "Требует внимания", trend: "Динамика выручки", payment: "Ошибки оплаты", reviews: "Отзывы на модерации", stock: "Низкие остатки", baskets: "Брошенные корзины", integrations: "Ошибки интеграций", tasks: "Просроченные задачи", sla: "SLA команды", compliance: "Соблюдение SLA", breached: "Нарушенные задачи", customize: "Настроить", widgets: "Виджеты", save: "Сохранить" }
-    : { title: "Dashboard", description: "Store performance for the last 30 days", revenue: "Revenue", paid: "Paid orders", average: "Average order", customers: "New customers", attention: "Needs attention", trend: "Revenue trend", payment: "Payment errors", reviews: "Reviews to moderate", stock: "Low stock", baskets: "Abandoned baskets", integrations: "Integration errors", tasks: "Overdue tasks", sla: "Team SLA", compliance: "SLA compliance", breached: "Breached tasks", customize: "Customize", widgets: "Widgets", save: "Save" }
+    ? { title: "Главная", description: "Состояние магазина за последние 30 дней", revenue: "Выручка", paid: "Оплаченные заказы", average: "Средний чек", customers: "Новые клиенты", online: "Онлайн в приложении", attention: "Требует внимания", trend: "Динамика выручки", payment: "Ошибки оплаты", reviews: "Отзывы на модерации", stock: "Низкие остатки", baskets: "Брошенные корзины", integrations: "Ошибки интеграций", tasks: "Просроченные задачи", sla: "SLA команды", compliance: "Соблюдение SLA", breached: "Нарушенные задачи", customize: "Настроить", widgets: "Виджеты", save: "Сохранить" }
+    : { title: "Dashboard", description: "Store performance for the last 30 days", revenue: "Revenue", paid: "Paid orders", average: "Average order", customers: "New customers", online: "Online in app", attention: "Needs attention", trend: "Revenue trend", payment: "Payment errors", reviews: "Reviews to moderate", stock: "Low stock", baskets: "Abandoned baskets", integrations: "Integration errors", tasks: "Overdue tasks", sla: "Team SLA", compliance: "SLA compliance", breached: "Breached tasks", customize: "Customize", widgets: "Widgets", save: "Save" }
   const widgets = preferences.data?.widgets || ["revenue", "paid_orders", "average_order", "new_customers", "revenue_trend", "attention", "sla"]
   const visible = (code: string) => widgets.includes(code)
   const widgetOptions = [
@@ -59,7 +59,7 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <PageHeader title={copy.title} description={copy.description} actions={<Space><Tag color="green" icon={<CheckCircleOutlined />}>{locale === "ru" ? "В реальном времени" : "Live"}</Tag><Button icon={<SettingOutlined />} onClick={() => { setDraftWidgets(widgets); setCustomizeOpen(true) }}>{copy.customize}</Button></Space>} />
+      <PageHeader title={copy.title} description={copy.description} actions={<Space><Tag color="green" icon={<TeamOutlined />} title={locale === "ru" ? `Авторизованные пользователи с активностью за последние ${data?.metrics.online_window_minutes ?? 5} мин.` : `Signed-in users active in the last ${data?.metrics.online_window_minutes ?? 5} min.`}>{copy.online}: {data?.metrics.online_customers ?? "—"}</Tag><Button icon={<SettingOutlined />} onClick={() => { setDraftWidgets(widgets); setCustomizeOpen(true) }}>{copy.customize}</Button></Space>} />
       <QueryState loading={query.isLoading} error={query.isError} onRetry={() => void query.refetch()} />
       {data ? (
         <>

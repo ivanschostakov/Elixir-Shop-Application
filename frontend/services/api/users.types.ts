@@ -28,6 +28,11 @@ export type DeleteMyPushTokenResponse = {
     ok: boolean
 }
 
+export type PresenceHeartbeatResponse = {
+    ok: true
+    seen_at: string
+}
+
 export type CustomerEventName =
     | "app_opened"
     | "product_viewed"

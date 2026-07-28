@@ -25,6 +25,7 @@ from starlette import status
 
 admin_overview_router = APIRouter(tags=["admin_overview"])
 ANALYTICS_TIMEZONE = "Asia/Yekaterinburg"
+ONLINE_WINDOW_MINUTES = 5
 
 DEFAULT_DASHBOARD_WIDGETS = ["revenue", "paid_orders", "average_order", "new_customers", "revenue_trend", "attention", "sla"]
 DASHBOARD_WIDGETS = frozenset(DEFAULT_DASHBOARD_WIDGETS)
@@ -60,6 +61,10 @@ async def get_dashboard(
     revenue_decimal = Decimal(revenue or 0)
     paid_count = int(paid_orders or 0)
     new_customers = int((await db.execute(select(func.count(User.id)).where(User.created_at >= start))).scalar_one())
+    online_customers = int((await db.execute(select(func.count(User.id)).where(
+        User.is_active.is_(True),
+        User.last_active_at >= now - timedelta(minutes=ONLINE_WINDOW_MINUTES),
+    ))).scalar_one())
     failed_payments = int((await db.execute(select(func.count(Order.id)).where(
         Order.created_at >= start,
         Order.payment_status.in_(("error", "canceled", "refunded")),
@@ -115,6 +120,8 @@ async def get_dashboard(
             paid_orders=paid_count,
             average_order_value=(revenue_decimal / paid_count).quantize(Decimal("0.01")) if paid_count else Decimal("0.00"),
             new_customers=new_customers,
+            online_customers=online_customers,
+            online_window_minutes=ONLINE_WINDOW_MINUTES,
             failed_payments=failed_payments,
             pending_reviews=pending_reviews,
             low_stock_variants=low_stock,

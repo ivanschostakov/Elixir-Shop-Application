@@ -7,6 +7,7 @@ import type {
     DeleteMyPushTokenPayload,
     DeleteMyPushTokenResponse,
     MyPushTokenResponse,
+    PresenceHeartbeatResponse,
     ReferralProfileResponse,
     ReferrerCodeAttachPayload,
     ReferrerCodeCheckPayload,
@@ -50,6 +51,13 @@ export function deleteMyPushToken(payload: DeleteMyPushTokenPayload) {
             method: "DELETE",
             body: JSON.stringify(payload),
         },
+    )
+}
+
+export function heartbeatMyPresence() {
+    return apiPost<PresenceHeartbeatResponse, Record<string, never>>(
+        usersPath("/me/presence/heartbeat"),
+        {},
     )
 }
 
