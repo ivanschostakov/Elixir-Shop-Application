@@ -19,7 +19,10 @@ async def update_my_personal_data(payload: PersonalDataUpdatePayload, db: AsyncS
     if payload.email is not None and payload.email != current_user.email:
         email_user = await get_user_by_email(db, payload.email)
         if email_user is not None and email_user.id != current_user.id and email_user.is_active: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this email already exists")
+        previous_email = current_user.email
         current_user.email = payload.email
+        if not current_user.username or current_user.username == previous_email:
+            current_user.username = payload.email
         current_user.is_verified = False
 
     if payload.name is not None: current_user.name = payload.name

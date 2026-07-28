@@ -69,6 +69,7 @@ def _orders_aggregate():
 def _customer_item(user: User, orders_count, paid_total, last_order_at) -> CustomerListItem:
     return CustomerListItem(
         id=user.id,
+        username=user.username,
         name=user.name,
         surname=user.surname,
         email=user.email,
@@ -117,6 +118,7 @@ async def list_customers(
     if q:
         pattern = f"%{q.strip()}%"
         filters.append(or_(
+            User.username.ilike(pattern),
             User.email.ilike(pattern),
             User.phone_number.ilike(pattern),
             User.name.ilike(pattern),

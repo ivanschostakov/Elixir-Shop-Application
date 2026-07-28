@@ -198,6 +198,17 @@ export default function PersonalDataScreen() {
                     ) : null}
 
                     <View style={ProfileScreenStyles.formGroup}>
+                        <Text style={ProfileScreenStyles.formLabel}>{t("profile.personalData.loginLabel")}</Text>
+                        <TextInput
+                            autoCapitalize="none"
+                            editable={false}
+                            placeholderTextColor="#94A3B8"
+                            style={ProfileScreenStyles.formInput}
+                            value={user?.username ?? ""}
+                        />
+                    </View>
+
+                    <View style={ProfileScreenStyles.formGroup}>
                         <Text style={ProfileScreenStyles.formLabel}>{t("profile.personalData.nameLabel")}</Text>
                         <TextInput
                             autoCapitalize="words"

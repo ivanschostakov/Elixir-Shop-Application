@@ -56,6 +56,7 @@ EXPORT_COLUMNS: dict[str, dict[str, tuple[str, str]]] = {
     "customers": {
         "id": ("ID", "ID"),
         "customer": ("Клиент", "Customer"),
+        "username": ("Логин", "Username"),
         "email": ("Email", "Email"),
         "phone": ("Телефон", "Phone"),
         "telegram": ("Telegram", "Telegram"),
@@ -261,6 +262,7 @@ async def _customer_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if q := str(filters.get("q") or "").strip():
         pattern = f"%{q}%"
         clauses.append(or_(
+            User.username.ilike(pattern),
             User.email.ilike(pattern),
             User.phone_number.ilike(pattern),
             User.name.ilike(pattern),
@@ -286,6 +288,7 @@ async def _customer_rows(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [{
         "id": user.id,
         "customer": f"{user.name} {user.surname}".strip(),
+        "username": user.username,
         "email": user.email,
         "phone": user.phone_number,
         "telegram": user.telegram_username,

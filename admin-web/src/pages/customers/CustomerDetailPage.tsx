@@ -99,6 +99,7 @@ export function CustomerDetailPage() {
               <Card title={copy.profile}>
                 <Space size={16} align="start" className="customer-identity"><Avatar size={64}>{`${customer.name[0] || ""}${customer.surname[0] || ""}`}</Avatar><div><Typography.Title level={4}>{customer.name} {customer.surname}</Typography.Title><Space><Tag color={customer.is_active ? "green" : "red"}>{customer.is_active ? copy.active : copy.blocked}</Tag>{customer.is_verified ? <Tag color="blue">{copy.verified}</Tag> : null}</Space></div></Space>
                 <Descriptions column={{ xs: 1, md: 2 }}>
+                  <Descriptions.Item label={locale === "ru" ? "Логин" : "Username"}>{customer.username || "—"}</Descriptions.Item>
                   <Descriptions.Item label="Email">{customer.email || "—"}</Descriptions.Item>
                   <Descriptions.Item label={copy.phone}>{customer.phone_number || "—"}</Descriptions.Item>
                   <Descriptions.Item label="Telegram">{customer.telegram_username ? `@${customer.telegram_username}` : "—"}</Descriptions.Item>

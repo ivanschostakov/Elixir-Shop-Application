@@ -64,6 +64,7 @@ function mapUser(user: BackendAuthUser): AuthUser {
 
     return {
         id: user.id,
+        username: user.username,
         email: user.email,
         name: user.name,
         surname: user.surname,
@@ -71,7 +72,7 @@ function mapUser(user: BackendAuthUser): AuthUser {
         isActive: user.is_active,
         isVerified: user.is_verified,
         promoCode: user.promo_code,
-        displayName: displayName || user.email || user.phone_number || `User #${user.id}`,
+        displayName: displayName || user.username || user.email || user.phone_number || `User #${user.id}`,
     }
 }
 

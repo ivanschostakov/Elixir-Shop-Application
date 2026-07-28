@@ -80,6 +80,7 @@ from src.database.crud.auth.user import (
     get_user_by_id,
     get_user_by_phone_number,
     get_user_by_telegram_user_id,
+    get_user_by_username,
 )
 from src.database.crud.auth.user_session import (
     create_user_session,
@@ -87,7 +88,12 @@ from src.database.crud.auth.user_session import (
     revoke_active_user_sessions,
     update_user_session,
 )
-from src.database.limits import PERSON_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH, TELEGRAM_USERNAME_MAX_LENGTH
+from src.database.limits import (
+    PERSON_NAME_MAX_LENGTH,
+    PHONE_NUMBER_MAX_LENGTH,
+    TELEGRAM_USERNAME_MAX_LENGTH,
+    USERNAME_MAX_LENGTH,
+)
 from src.database.models.auth.user import User
 from src.database.schemas.auth.user import UserCreate
 from src.database.schemas.auth.user_session import UserSessionCreate, UserSessionUpdate
@@ -362,16 +368,22 @@ async def _verify_latest_email_code(user: User, code: str, db: AsyncSession) -> 
     verification_code.used_at = ufa_now()
 
 
-async def _get_email_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
-    user = await get_user_by_email(db, payload.login)
-    if user is not None and user.is_active and user.email and verify_password(payload.password, user.password_hash):
+async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
+    requested_login = str(payload.login).strip()
+    requested_email = normalize_email(requested_login)
+    user = (
+        await get_user_by_email(db, requested_email)
+        if requested_email
+        else await get_user_by_username(db, requested_login)
+    )
+    if user is not None and user.is_active and verify_password(payload.password, user.password_hash):
         return user
 
     if not AUTH_LOGIN_WEBSITE_FIRST_ENABLED or not website_identity_configured():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     try:
-        identity = await WebsiteIdentityClient().authenticate(login=str(payload.login), password=payload.password)
+        identity = await WebsiteIdentityClient().authenticate(login=requested_login, password=payload.password)
     except WebsiteIdentityError as error:
         if error.status_code in (401, 404):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") from error
@@ -384,11 +396,21 @@ async def _get_email_login_user(payload: UserLoginPayload, db: AsyncSession) -> 
     website_user = identity.get("user")
     if not isinstance(website_user, dict):
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website identity response is invalid")
+    website_login = optional_str(website_user.get("login"))
     website_email = normalize_email(website_user.get("email"))
-    requested_email = normalize_email(payload.login)
-    if not website_email or website_email != requested_email:
-        logger.warning("Website identity returned a mismatched email")
+    identity_matches = (
+        bool(website_email and website_email == requested_email)
+        if requested_email
+        else bool(website_login and website_login.casefold() == requested_login.casefold())
+    )
+    if not website_login or not website_email or not identity_matches:
+        logger.warning("Website identity returned a mismatched login")
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website identity response is invalid")
+
+    if user is None:
+        user = await get_user_by_email(db, website_email)
+    if user is None:
+        user = await get_user_by_username(db, website_login)
 
     website_name = optional_str(website_user.get("name")) or "Customer"
     website_surname = optional_str(website_user.get("last_name")) or "Customer"
@@ -411,6 +433,7 @@ async def _get_email_login_user(payload: UserLoginPayload, db: AsyncSession) -> 
             db,
             UserCreate(
                 email=website_email,
+                username=website_login[:USERNAME_MAX_LENGTH],
                 password_hash=password_hash,
                 name=website_name[:PERSON_NAME_MAX_LENGTH],
                 surname=website_surname[:PERSON_NAME_MAX_LENGTH],
@@ -421,6 +444,7 @@ async def _get_email_login_user(payload: UserLoginPayload, db: AsyncSession) -> 
             commit=False,
         )
     else:
+        user.username = website_login[:USERNAME_MAX_LENGTH]
         user.password_hash = password_hash
         user.is_active = True
         user.is_verified = True
@@ -451,6 +475,8 @@ async def register_user(request: Request, payload: UserRegisterPayload, db: Asyn
 
     try:
         if existing_user is not None:
+            if not optional_str(existing_user.username):
+                existing_user.username = str(payload.email)
             existing_user.password_hash = password_hash
             existing_user.name = payload.name
             existing_user.surname = payload.surname
@@ -461,6 +487,7 @@ async def register_user(request: Request, payload: UserRegisterPayload, db: Asyn
             user = await create_user(
                 db,
                 UserCreate(
+                    username=str(payload.email),
                     email=payload.email,
                     password_hash=password_hash,
                     name=payload.name,
@@ -518,7 +545,7 @@ async def resend_registration_verification_code(request: Request, payload: UserV
 
 async def login_user(request: Request, payload: UserLoginPayload, db: AsyncSession) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
     await _apply_auth_rate_limit(request, scope="auth:login", principal=payload.login)
-    user = await _get_email_login_user(payload, db)
+    user = await _get_login_user(payload, db)
 
     if AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA and await is_admin_user(db, user.id):
         return await _build_auth_tokens_response(user, db)
@@ -549,7 +576,7 @@ async def verify_login_user(request: Request, payload: UserLoginVerifyPayload, d
 
 async def resend_login_verification_code(request: Request, payload: UserLoginPayload, db: AsyncSession) -> AuthVerificationRequiredResponse:
     await _apply_auth_rate_limit(request, scope="auth:login_resend", principal=payload.login)
-    user = await _get_email_login_user(payload, db)
+    user = await _get_login_user(payload, db)
     try:
         await _create_and_send_verification_code(user, db)
         await db.commit()
@@ -563,6 +590,8 @@ async def resend_login_verification_code(request: Request, payload: UserLoginPay
 
 async def _finalize_phone_auth_setup(user: User, db: AsyncSession) -> AuthTokensWithUserResponse | PhoneAuthVerificationRequiredResponse:
     if user.email:
+        if not optional_str(user.username):
+            user.username = user.email
         try:
             await _create_and_send_verification_code(user, db)
             await db.commit()

@@ -9,8 +9,10 @@ from urllib.parse import urlencode
 import pytest
 
 from src.app.modules.auth.schemas.phone import PhoneAuthRegisterPayload, PhoneAuthStartPayload
+from src.app.modules.auth.schemas.login import UserLoginPayload
 from src.app.modules.auth.schemas.telegram import TelegramAuthPayload
 from src.app.services.auth.service import (
+    _get_login_user,
     _link_moysklad_counterparty_by_email,
     link_telegram_contact_to_user,
     login_user_by_phone,
@@ -34,6 +36,63 @@ class _DummyDbSession:
 
     async def rollback(self):
         self.rolled_back = True
+
+
+def test_login_payload_accepts_username_and_normalizes_email():
+    username_payload = UserLoginPayload(login=" urusy001 ", password="supersecret")
+    email_payload = UserLoginPayload(login=" USER@Example.com ", password="supersecret")
+
+    assert username_payload.login == "urusy001"
+    assert email_payload.login == "user@example.com"
+
+
+@pytest.mark.anyio
+async def test_website_username_login_creates_app_user_with_bitrix_login(monkeypatch: pytest.MonkeyPatch):
+    payload = UserLoginPayload(login="urusy001", password="supersecret")
+    captured: dict[str, object] = {}
+
+    async def fake_get_user_by_username(_db, username):
+        captured.setdefault("username_lookups", []).append(username)
+        return None
+
+    async def fake_get_user_by_email(_db, email):
+        captured.setdefault("email_lookups", []).append(email)
+        return None
+
+    class FakeWebsiteIdentityClient:
+        async def authenticate(self, *, login: str, password: str):
+            captured["website_credentials"] = (login, password)
+            return {
+                "user": {
+                    "id": 98,
+                    "login": "urusy001",
+                    "email": "urusy001@umn.edu",
+                    "name": "Website",
+                    "last_name": "Customer",
+                },
+                "discounts": {},
+            }
+
+    async def fake_create_user(_db, user_create, *, commit: bool):
+        captured["user_create"] = user_create
+        captured["commit"] = commit
+        return SimpleNamespace(**user_create.model_dump())
+
+    monkeypatch.setattr("src.app.services.auth.service.get_user_by_username", fake_get_user_by_username)
+    monkeypatch.setattr("src.app.services.auth.service.get_user_by_email", fake_get_user_by_email)
+    monkeypatch.setattr("src.app.services.auth.service.AUTH_LOGIN_WEBSITE_FIRST_ENABLED", True)
+    monkeypatch.setattr("src.app.services.auth.service.website_identity_configured", lambda: True)
+    monkeypatch.setattr("src.app.services.auth.service.WebsiteIdentityClient", FakeWebsiteIdentityClient)
+    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "hashed-password")
+    monkeypatch.setattr("src.app.services.auth.service.create_user", fake_create_user)
+
+    user = await _get_login_user(payload, object())
+
+    assert captured["website_credentials"] == ("urusy001", "supersecret")
+    assert captured["email_lookups"] == ["urusy001@umn.edu"]
+    assert captured["commit"] is False
+    assert user.username == "urusy001"
+    assert user.email == "urusy001@umn.edu"
 
 
 @pytest.mark.anyio

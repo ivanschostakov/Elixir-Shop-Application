@@ -33,14 +33,15 @@ export function CustomersPage() {
   const pageSize = 50
   const query = useQuery({ queryKey: ["customers", search, active, page], queryFn: () => apiRequest<Page<CustomerListItem>>(`/customers${queryString({ q: search, is_active: active, limit: pageSize, offset: (page - 1) * pageSize })}`) })
   const copy = locale === "ru"
-    ? { title: "Клиенты", description: "Профили, история покупок и активность", search: "Имя, email или телефон", all: "Все клиенты", active: "Активные", blocked: "Заблокированные", customer: "Клиент", contact: "Контакт", orders: "Заказы", ltv: "Выручка", lastOrder: "Последний заказ", state: "Статус" }
-    : { title: "Customers", description: "Profiles, purchase history and activity", search: "Name, email or phone", all: "All customers", active: "Active", blocked: "Blocked", customer: "Customer", contact: "Contact", orders: "Orders", ltv: "Revenue", lastOrder: "Last order", state: "Status" }
+    ? { title: "Клиенты", description: "Профили, история покупок и активность", search: "Имя, логин, email или телефон", all: "Все клиенты", active: "Активные", blocked: "Заблокированные", customer: "Клиент", username: "Логин", contact: "Контакт", orders: "Заказы", ltv: "Выручка", lastOrder: "Последний заказ", state: "Статус" }
+    : { title: "Customers", description: "Profiles, purchase history and activity", search: "Name, username, email or phone", all: "All customers", active: "Active", blocked: "Blocked", customer: "Customer", username: "Username", contact: "Contact", orders: "Orders", ltv: "Revenue", lastOrder: "Last order", state: "Status" }
   const customerOrdersPath = (row: CustomerListItem) => {
     const query = row.email || row.phone_number || `${row.name} ${row.surname}`.trim()
     return `/sales/orders?q=${encodeURIComponent(query)}`
   }
   const tableColumns = [
     { title: copy.customer, key: "customer", render: (_: unknown, row: CustomerListItem) => <Space><Avatar>{`${row.name[0] || ""}${row.surname[0] || ""}`}</Avatar><div className="table-primary"><Link to={`/customers/${row.id}`}><strong>{row.name} {row.surname}</strong></Link><small>ID {row.id}</small></div></Space> },
+    { title: copy.username, dataIndex: "username", key: "username", render: (value: string | null) => value || "—" },
     { title: copy.contact, key: "contact", render: (_: unknown, row: CustomerListItem) => <div className="table-primary"><span>{row.phone_number || "—"}</span><small>{row.email || "—"}</small></div> },
     { title: copy.orders, dataIndex: "orders_count", key: "orders", align: "center" as const, render: (value: number, row: CustomerListItem) => hasPermission("orders.read") ? <Link className="table-value-link" to={customerOrdersPath(row)}>{value}</Link> : value },
     { title: copy.ltv, key: "ltv", align: "right" as const, render: (_: unknown, row: CustomerListItem) => money(row.paid_total, "RUB", locale) },
@@ -49,6 +50,7 @@ export function CustomersPage() {
   ]
   const columnOptions: TableColumnOption[] = [
     { key: "customer", label: copy.customer, exportKeys: ["customer"] },
+    { key: "username", label: copy.username, exportKeys: ["username"] },
     { key: "contact", label: copy.contact, exportKeys: ["email", "phone", "telegram"] },
     { key: "orders", label: copy.orders, exportKeys: ["orders_count"] },
     { key: "ltv", label: copy.ltv, exportKeys: ["paid_total"] },

@@ -54,6 +54,7 @@ class AdminAnalyticsResponse(BaseModel):
 
 class CustomerCompact(BaseModel):
     id: int
+    username: str | None = None
     name: str
     surname: str
     email: EmailStr | None = None

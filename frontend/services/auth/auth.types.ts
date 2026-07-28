@@ -58,6 +58,7 @@ export type RegistrationCodeSentResponse = {
 
 export type BackendAuthUser = {
     id: number
+    username: string | null
     email: string | null
     name: string
     surname: string
@@ -104,6 +105,7 @@ export type AuthRefreshPayload = {
 
 export type AuthUser = {
     id: number
+    username: string | null
     email: string | null
     name: string
     surname: string

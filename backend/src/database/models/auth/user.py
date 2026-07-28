@@ -1,7 +1,7 @@
 from datetime import datetime
 import uuid
 
-from sqlalchemy import BigInteger, Boolean, DateTime, String, text
+from sqlalchemy import BigInteger, Boolean, DateTime, Index, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -13,13 +13,23 @@ from src.database.limits import (
     PHONE_NUMBER_MAX_LENGTH,
     PROMO_CODE_MAX_LENGTH,
     TELEGRAM_USERNAME_MAX_LENGTH,
+    USERNAME_MAX_LENGTH,
 )
 from src.database.mixins import IdPkMixin, TimestampMixin
 
 
 class User(Base, IdPkMixin, TimestampMixin):
     __tablename__ = "users"
+    __table_args__ = (
+        Index(
+            "uq_users_username_lower",
+            text("lower(username)"),
+            unique=True,
+            postgresql_where=text("username IS NOT NULL"),
+        ),
+    )
 
+    username: Mapped[str | None] = mapped_column(String(length=USERNAME_MAX_LENGTH), nullable=True)
     email: Mapped[str | None] = mapped_column(String(length=EMAIL_MAX_LENGTH), nullable=True, unique=True)
     password_hash: Mapped[str] = mapped_column(String(length=PASSWORD_HASH_MAX_LENGTH), nullable=False)
 

@@ -43,6 +43,7 @@ def ensure_not_stale(*, actual, expected) -> None:
 def customer_compact(user) -> CustomerCompact:
     return CustomerCompact(
         id=user.id,
+        username=user.username,
         name=user.name,
         surname=user.surname,
         email=user.email,

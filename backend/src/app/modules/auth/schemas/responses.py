@@ -9,6 +9,7 @@ class AuthUserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    username: str | None = None
     email: EmailStr | None = None
     name: str
     surname: str

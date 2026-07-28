@@ -152,6 +152,7 @@ export type OrderStatusCode =
 
 export type CustomerCompact = {
   id: number
+  username: string | null
   name: string
   surname: string
   email: string | null

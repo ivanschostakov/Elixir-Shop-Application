@@ -1,4 +1,4 @@
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Basket
@@ -7,7 +7,10 @@ from src.database.schemas import UserCreate, UserUpdate
 
 
 async def create_user(session: AsyncSession, data: UserCreate, *, commit: bool = True) -> User:
-    user = User(**data.model_dump())
+    values = data.model_dump()
+    if not values.get("username") and values.get("email"):
+        values["username"] = values["email"]
+    user = User(**values)
     user.basket = Basket()
     session.add(user)
     if commit:
@@ -28,6 +31,15 @@ async def get_user_by_email(session: AsyncSession, email: str | None) -> User | 
     return (await session.execute(select(User).where(User.email == email))).scalar_one_or_none()
 
 
+async def get_user_by_username(session: AsyncSession, username: str | None) -> User | None:
+    normalized = str(username or "").strip().casefold()
+    if not normalized:
+        return None
+    return (
+        await session.execute(select(User).where(func.lower(User.username) == normalized))
+    ).scalar_one_or_none()
+
+
 async def get_user_by_phone_number(session: AsyncSession, phone_number: str | None) -> User | None:
     if not phone_number:
         return None
@@ -45,6 +57,7 @@ async def get_users(session: AsyncSession, *, q: str | None = None, is_active: b
     if q:
         stmt = stmt.where(
             or_(
+                User.username.ilike(f"%{q}%"),
                 User.email.ilike(f"%{q}%"),
                 User.name.ilike(f"%{q}%"),
                 User.surname.ilike(f"%{q}%"),

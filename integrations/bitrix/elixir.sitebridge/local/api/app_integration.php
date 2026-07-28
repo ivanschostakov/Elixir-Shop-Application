@@ -91,8 +91,20 @@ try {
         'discounts' => app_integration_get_user_discounts($userId),
     ));
 } catch (\Throwable $exception) {
+    error_log(
+        'app_integration internal error: '
+        . get_class($exception)
+        . ': '
+        . $exception->getMessage()
+    );
     if (function_exists('AddMessage2Log')) {
-        AddMessage2Log('app_integration internal error: ' . get_class($exception), 'app_integration');
+        AddMessage2Log(
+            'app_integration internal error: '
+            . get_class($exception)
+            . ': '
+            . $exception->getMessage(),
+            'app_integration'
+        );
     }
     app_integration_fail(500, 'internal_error', 'Unable to load website identity');
 }
@@ -279,13 +291,27 @@ function app_integration_normalize_row(array $row)
 
 function app_integration_authenticate_user($login, $password)
 {
-    $authUser = new CUser();
-    $authResult = $authUser->Login((string)$login, (string)$password, 'N', 'Y');
-    if ($authResult !== true || !$authUser->IsAuthorized()) {
-        app_integration_fail(401, 'invalid_credentials', 'Invalid login or password');
+    $authLogin = (string)$login;
+    if (filter_var($authLogin, FILTER_VALIDATE_EMAIL) !== false) {
+        $escapedEmail = app_integration_sqlh()->forSql($authLogin, 190);
+        $matchingUsers = app_integration_query_all(
+            "SELECT ID, LOGIN FROM b_user
+             WHERE ACTIVE='Y' AND EMAIL='" . $escapedEmail . "'
+             ORDER BY ID ASC LIMIT 2"
+        );
+        if (count($matchingUsers) === 1 && trim((string)$matchingUsers[0]['LOGIN']) !== '') {
+            $authLogin = (string)$matchingUsers[0]['LOGIN'];
+        }
     }
-    $userId = (int)$authUser->GetID();
-    $authUser->Logout();
+
+    $authParams = array(
+        'LOGIN' => $authLogin,
+        'PASSWORD' => (string)$password,
+        'PASSWORD_ORIGINAL' => 'Y',
+    );
+    $authMessage = true;
+    $authError = array();
+    $userId = (int)CUser::LoginInternal($authParams, $authMessage, null, $authError);
     if ($userId <= 0) {
         app_integration_fail(401, 'invalid_credentials', 'Invalid login or password');
     }
@@ -371,16 +397,16 @@ function app_integration_load_referral_program($userId)
 {
     $row = app_integration_query_row(
         "SELECT
-            current_user.UF_PROMO,
-            current_user.UF_PARENT_ID,
-            current_user.UF_PERCENT,
-            current_user.UF_ORDER_SUMM,
-            current_user.UF_SUM_PAID_ORDERS_MONTH,
-            parent_user.UF_PROMO AS REFERRER_PROMO_CODE
-         FROM b_uts_user current_user
-         LEFT JOIN b_uts_user parent_user
-            ON parent_user.VALUE_ID=current_user.UF_PARENT_ID
-         WHERE current_user.VALUE_ID=" . (int)$userId . "
+            current_uts.UF_PROMO,
+            current_uts.UF_PARENT_ID,
+            current_uts.UF_PERCENT,
+            current_uts.UF_ORDER_SUMM,
+            current_uts.UF_SUM_PAID_ORDERS_MONTH,
+            parent_uts.UF_PROMO AS REFERRER_PROMO_CODE
+         FROM b_uts_user current_uts
+         LEFT JOIN b_uts_user parent_uts
+            ON parent_uts.VALUE_ID=current_uts.UF_PARENT_ID
+         WHERE current_uts.VALUE_ID=" . (int)$userId . "
          LIMIT 1"
     );
     if (!$row) {

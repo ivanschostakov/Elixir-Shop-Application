@@ -38,11 +38,6 @@ export default function LoginScreen() {
             return
         }
 
-        if (!login.includes("@")) {
-            setError(t("auth.error.invalidEmail"))
-            return
-        }
-
         setError("")
         setIsSubmitting(true)
 
@@ -142,14 +137,14 @@ export default function LoginScreen() {
                 <Text style={authSharedStyles.fieldLabel}>{t("auth.login.username")}</Text>
                 <TextInput
                     autoCapitalize="none"
+                    autoComplete="username"
                     autoCorrect={false}
-                    keyboardType="email-address"
                     onChangeText={setLogin}
                     onFocus={() => scrollToField("login")}
                     placeholder={t("auth.login.usernamePlaceholder")}
                     returnKeyType="next"
                     style={authSharedStyles.input}
-                    textContentType="emailAddress"
+                    textContentType="username"
                     value={login}
                 />
             </View>
