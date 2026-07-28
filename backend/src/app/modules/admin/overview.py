@@ -18,8 +18,9 @@ from src.app.modules.admin.schemas import (
 )
 from src.app.modules.admin.helpers import ensure_not_stale
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
+from src.app.services.admin.abandoned_baskets import count_abandoned_baskets
 from src.database import get_db
-from src.database.models import AdminDashboardPreference, AdminTask, Basket, BasketItem, IntegrationRun, Order, Product, Review, User, Variant
+from src.database.models import AdminDashboardPreference, AdminTask, IntegrationRun, Order, Product, Review, User, Variant
 from starlette import status
 
 admin_overview_router = APIRouter(tags=["admin_overview"])
@@ -71,9 +72,7 @@ async def get_dashboard(
         Variant.archived.is_(False),
         Variant.stock <= 3,
     ))).scalar_one())
-    abandoned = int((await db.execute(select(func.count(func.distinct(Basket.id))).join(BasketItem).where(
-        Basket.updated_at <= now - timedelta(hours=24),
-    ))).scalar_one())
+    abandoned = await count_abandoned_baskets(db, start=start, end=now)
     integration_errors = int((await db.execute(select(func.count(IntegrationRun.id)).where(
         IntegrationRun.status == "error",
         IntegrationRun.started_at >= start,

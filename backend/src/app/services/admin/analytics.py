@@ -13,13 +13,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from config import ufa_now
+from src.app.services.admin.abandoned_baskets import count_abandoned_baskets
 from src.database.models import (
     AdminPushCampaign,
     AdminPushCampaignRecipient,
     CustomerMarketingProfile,
     Order,
     OrderBenefitApplication,
-    OrderDraft,
     OrderItem,
     Product,
     ReferralProfile,
@@ -151,7 +151,7 @@ async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     new_customers = int((await db.execute(select(func.count(User.id)).where(User.created_at >= start))).scalar_one())
     active_customers = int((await db.execute(select(func.count(User.id)).where(User.last_active_at >= start))).scalar_one())
     inactive_customers = int((await db.execute(select(func.count(User.id)).where((User.last_active_at.is_(None)) | (User.last_active_at < end - timedelta(days=30))))).scalar_one())
-    abandoned_carts = int((await db.execute(select(func.count(OrderDraft.id)).where(OrderDraft.status == "draft", OrderDraft.items_count > 0, OrderDraft.updated_at >= start))).scalar_one())
+    abandoned_carts = await count_abandoned_baskets(db, start=start, end=end)
     ltv_rows = (await db.execute(select(
         User.id,
         User.name,
