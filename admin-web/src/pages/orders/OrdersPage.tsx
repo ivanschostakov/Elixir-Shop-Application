@@ -56,7 +56,7 @@ export function OrdersPage() {
 
   const tableColumns = [
     { title: copy.order, dataIndex: "order_code", key: "order", render: (value: string, record: OrderListItem) => <Link to={`/sales/orders/${record.id}`}><strong>{value}</strong></Link> },
-    { title: copy.customer, key: "customer", render: (_: unknown, record: OrderListItem) => <div className="table-primary"><span>{record.customer.name} {record.customer.surname}</span><small>{record.customer.phone_number || record.customer.email || "—"}</small></div> },
+    { title: copy.customer, key: "customer", render: (_: unknown, record: OrderListItem) => <div className="table-primary">{hasPermission("customers.read") ? <Link to={`/customers/${record.customer.id}`}>{record.customer.name} {record.customer.surname}</Link> : <span>{record.customer.name} {record.customer.surname}</span>}<small>{record.customer.phone_number || record.customer.email || "—"}</small></div> },
     { title: copy.status, dataIndex: "status_code", key: "status", render: (value: OrderStatusCode) => <Tag color={statusColors[value]}>{statusLabel(value, locale)}</Tag> },
     { title: copy.payment, key: "payment", render: (_: unknown, record: OrderListItem) => <div className="table-primary"><span>{domainLabel(record.payment_status, locale)}</span><small>{record.payment_method?.toUpperCase() || "—"}</small></div> },
     { title: copy.delivery, dataIndex: "delivery_service", key: "delivery", render: (value: string) => value || "—" },
@@ -140,7 +140,7 @@ export function OrdersPage() {
                   {orders.map((order) => (
                     <Card key={order.id} size="small" className="kanban-card" draggable={hasPermission("orders.transition")} onDragStart={(event) => event.dataTransfer.setData("order-id", String(order.id))}>
                       <Link to={`/sales/orders/${order.id}`}><Typography.Text strong>{order.order_code}</Typography.Text></Link>
-                      <Typography.Text>{order.customer.name} {order.customer.surname}</Typography.Text>
+                      {hasPermission("customers.read") ? <Link to={`/customers/${order.customer.id}`}>{order.customer.name} {order.customer.surname}</Link> : <Typography.Text>{order.customer.name} {order.customer.surname}</Typography.Text>}
                       <div><Typography.Text type="secondary">{dateTime(order.created_at, locale)}</Typography.Text><strong>{money(order.grand_total, order.currency, locale)}</strong></div>
                     </Card>
                   ))}

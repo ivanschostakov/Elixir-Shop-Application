@@ -2,9 +2,10 @@ import { SearchOutlined } from "@ant-design/icons"
 import { useQuery } from "@tanstack/react-query"
 import { Card, Input, Table, Tag, Typography } from "antd"
 import { useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { apiRequest, queryString } from "../../api/client"
 import type { AuditLog, Page } from "../../api/types"
+import { useAuth } from "../../auth/AuthProvider"
 import { PageHeader } from "../../components/PageHeader"
 import { parseVisibleColumns, TableToolbar, type TableColumnOption } from "../../components/TableToolbar"
 import { useLanguage } from "../../i18n/LanguageProvider"
@@ -13,6 +14,7 @@ import { dateTime } from "../../utils/format"
 
 export function AuditPage() {
   const { locale } = useLanguage()
+  const { hasPermission } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const search = searchParams.get("q") || ""
   const page = Math.max(Number(searchParams.get("page") || 1) || 1, 1)
@@ -30,11 +32,23 @@ export function AuditPage() {
   const pageSize = 50
   const query = useQuery({ queryKey: ["audit", search, page], queryFn: () => apiRequest<Page<AuditLog>>(`/audit${queryString({ q: search, limit: pageSize, offset: (page - 1) * pageSize })}`) })
   const copy = locale === "ru" ? { title: "Журнал действий", description: "Неизменяемая история административных операций", search: "Действие или ID сущности", time: "Время", actor: "Сотрудник", action: "Действие", entity: "Объект", ip: "IP", details: "Изменения" } : { title: "Audit log", description: "Immutable history of administrative operations", search: "Action or entity ID", time: "Time", actor: "Staff member", action: "Action", entity: "Entity", ip: "IP", details: "Changes" }
+  const entityPath = (row: AuditLog) => {
+    if (!row.entity_id) return undefined
+    if (row.entity_type === "order" && hasPermission("orders.read")) return `/sales/orders/${row.entity_id}`
+    if (["customer", "user"].includes(row.entity_type) && hasPermission("customers.read")) return `/customers/${row.entity_id}`
+    if (row.entity_type === "product" && hasPermission("catalog.read")) return `/catalog/products?product_id=${row.entity_id}`
+    if (["campaign", "push_campaign"].includes(row.entity_type) && hasPermission("campaigns.read")) return `/marketing?tab=campaigns&campaign_id=${row.entity_id}`
+    if (["conversation", "support_conversation"].includes(row.entity_type) && hasPermission("support.read")) return `/communications?conversation_id=${row.entity_id}`
+    return undefined
+  }
   const tableColumns = [
     { title: copy.time, dataIndex: "created_at", key: "time", render: (value: string) => dateTime(value, locale) },
     { title: copy.actor, dataIndex: "actor_name", key: "actor" },
     { title: copy.action, dataIndex: "action", key: "action", render: (value: string) => <Tag>{domainLabel(value, locale)}</Tag> },
-    { title: copy.entity, key: "entity", render: (_: unknown, row: AuditLog) => `${row.entity_type}${row.entity_id ? ` #${row.entity_id}` : ""}` },
+    { title: copy.entity, key: "entity", render: (_: unknown, row: AuditLog) => {
+      const label = `${row.entity_type}${row.entity_id ? ` #${row.entity_id}` : ""}`
+      return entityPath(row) ? <Link to={entityPath(row)!}>{label}</Link> : label
+    } },
     { title: copy.ip, dataIndex: "ip_address", key: "ip", render: (value: string | null) => value || "—" },
   ]
   const columnOptions: TableColumnOption[] = [

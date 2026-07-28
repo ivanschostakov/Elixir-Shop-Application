@@ -2,9 +2,11 @@ import { DownloadOutlined, LineChartOutlined } from "@ant-design/icons"
 import { useQuery } from "@tanstack/react-query"
 import { Button, Card, Col, Progress, Row, Segmented, Space, Statistic, Table, Tabs, Tag, Typography, message } from "antd"
 import { useMemo, useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { apiDownload, apiRequest } from "../api/client"
 import type { AnalyticsSnapshot } from "../api/types"
+import { useAuth } from "../auth/AuthProvider"
+import { LinkedCard } from "../components/LinkedCard"
 import { PageHeader } from "../components/PageHeader"
 import { QueryState } from "../components/QueryState"
 import { useLanguage } from "../i18n/LanguageProvider"
@@ -28,6 +30,7 @@ export function analyticsCsvPath(section: AnalyticsSection, days: number) {
 
 export function AnalyticsPage() {
   const { locale } = useLanguage()
+  const { hasPermission } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedDays = Number(searchParams.get("days") || 30)
   const days = [7, 30, 90, 365].includes(requestedDays) ? requestedDays : 30
@@ -51,6 +54,13 @@ export function AnalyticsPage() {
     }
   }
   const exportAction = <Button icon={<DownloadOutlined />} onClick={() => void exportCsv(tab)}>{copy.export}</Button>
+  const paymentOrdersPath = (status: string) => {
+    if (!hasPermission("orders.read")) return undefined
+    const filter = ["error", "canceled"].includes(status) ? "failed" : status
+    if (!["failed", "pending", "paid", "refunded"].includes(filter)) return undefined
+    return `/sales/orders?payment_status=${encodeURIComponent(filter)}`
+  }
+  const productPath = (productId: number) => `/catalog/products?product_id=${productId}`
 
   return <div className="page-stack">
     <PageHeader
@@ -72,19 +82,19 @@ export function AnalyticsPage() {
         {tab === "sales" ? <>
           <Row gutter={[16, 16]}>
             <Col xs={24} md={6}><Card><Statistic title={copy.revenue} value={money(data.sales.summary.revenue, "RUB", locale)} /></Card></Col>
-            <Col xs={24} md={6}><Card><Statistic title={copy.paidOrders} value={data.sales.summary.paid_orders} /></Card></Col>
+            <Col xs={24} md={6}><LinkedCard to={paymentOrdersPath("paid")} linkLabel={copy.paidOrders}><Statistic title={copy.paidOrders} value={data.sales.summary.paid_orders} /></LinkedCard></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.averageOrder} value={money(data.sales.summary.average_order_value, "RUB", locale)} /></Card></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.repeat} value={`${data.sales.summary.repeat_rate}%`} /></Card></Col>
           </Row>
           <Card title={<Space><LineChartOutlined />{copy.trend}</Space>}>
             <div className="analytics-bars">{data.sales.trend.map((point) => <div key={point.date} className="analytics-bar-column" title={`${point.date}: ${money(point.revenue, "RUB", locale)}`}><div className="analytics-bar" style={{ height: `${Math.max(8, Number(point.revenue) / maxRevenue * 160)}px` }} /><small>{String(point.date).slice(5)}</small></div>)}</div>
           </Card>
-          <Table rowKey="status" dataSource={data.sales.payment_statuses} pagination={false} columns={[{ title: copy.status, dataIndex: "status", render: (value: string) => <Tag>{domainLabel(value, locale)}</Tag> }, { title: copy.count, dataIndex: "count", align: "right" }]} />
+          <Table rowKey="status" dataSource={data.sales.payment_statuses} pagination={false} columns={[{ title: copy.status, dataIndex: "status", render: (value: string) => paymentOrdersPath(value) ? <Link to={paymentOrdersPath(value)!}><Tag className="navigation-tag">{domainLabel(value, locale)}</Tag></Link> : <Tag>{domainLabel(value, locale)}</Tag> }, { title: copy.count, dataIndex: "count", align: "right", render: (value: number, row) => paymentOrdersPath(row.status) ? <Link className="table-value-link" to={paymentOrdersPath(row.status)!}>{value}</Link> : value }]} />
         </> : null}
 
         {tab === "customers" ? <>
           <Row gutter={[16, 16]}>
-            <Col xs={24} md={6}><Card><Statistic title={copy.customers} value={data.customers.summary.total_customers} /></Card></Col>
+            <Col xs={24} md={6}><LinkedCard to={hasPermission("customers.read") ? "/customers" : undefined} linkLabel={copy.customers}><Statistic title={copy.customers} value={data.customers.summary.total_customers} /></LinkedCard></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.newCustomers} value={data.customers.summary.new_customers} /></Card></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.active} value={`${data.customers.summary.activation_rate}%`} /></Card></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.abandoned} value={data.customers.summary.abandoned_carts} /></Card></Col>
@@ -100,7 +110,7 @@ export function AnalyticsPage() {
           >
             {openTrend.length ? <div className="analytics-bars">{openTrend.map((point) => <div key={point.period} className="analytics-bar-column" title={`${String(point.period).slice(0, 10)}: ${point.opens} · ${copy.uniqueCustomers}: ${point.customers}`}><div className="analytics-bar" style={{ height: `${Math.max(8, point.opens / maxOpens * 160)}px` }} /><small>{openGranularity === "daily" ? String(point.period).slice(5, 10) : String(point.period).slice(0, 7)}</small></div>)}</div> : <Typography.Text type="secondary">{locale === "ru" ? "За выбранный период открытий нет" : "No app opens in this period"}</Typography.Text>}
           </Card>
-          <Table rowKey="user_id" dataSource={data.customers.top_customers} pagination={{ pageSize: 10 }} columns={[{ title: copy.customers, render: (_: unknown, row) => <div className="table-primary"><strong>{row.name}</strong><small>{row.email || `#${row.user_id}`}</small></div> }, { title: copy.orders, dataIndex: "orders", align: "right" }, { title: copy.ltv, dataIndex: "ltv", render: (value: string) => money(value, "RUB", locale) }]} />
+          <Table rowKey="user_id" dataSource={data.customers.top_customers} pagination={{ pageSize: 10 }} columns={[{ title: copy.customers, render: (_: unknown, row) => <div className="table-primary">{hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.name}</strong></Link> : <strong>{row.name}</strong>}<small>{row.email || `#${row.user_id}`}</small></div> }, { title: copy.orders, dataIndex: "orders", align: "right" }, { title: copy.ltv, dataIndex: "ltv", render: (value: string) => money(value, "RUB", locale) }]} />
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={8}>
               <Card title={locale === "ru" ? "Платформы" : "Platforms"}>
@@ -125,20 +135,20 @@ export function AnalyticsPage() {
 
         {tab === "products" ? <>
           <Row gutter={[16, 16]}>
-            <Col xs={24} md={6}><Card><Statistic title={copy.products} value={data.products.summary.active_products} /></Card></Col>
+            <Col xs={24} md={6}><LinkedCard to={hasPermission("catalog.read") ? "/catalog/products" : undefined} linkLabel={copy.products}><Statistic title={copy.products} value={data.products.summary.active_products} /></LinkedCard></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.active} value={`${data.products.summary.stock_coverage_rate}%`} /></Card></Col>
-            <Col xs={24} md={6}><Card><Statistic title={copy.lowStock} value={data.products.summary.low_stock_products} /></Card></Col>
+            <Col xs={24} md={6}><LinkedCard to={hasPermission("catalog.read") ? "/catalog/products?low_stock=true" : undefined} linkLabel={copy.lowStock}><Statistic title={copy.lowStock} value={data.products.summary.low_stock_products} /></LinkedCard></Col>
             <Col xs={24} md={6}><Card><Progress type="circle" size={68} percent={Number(data.products.summary.stock_coverage_rate)} /></Card></Col>
           </Row>
-          <Table scroll={{ x: 1080 }} rowKey="product_id" dataSource={data.products.top_products} pagination={{ pageSize: 10 }} columns={[{ title: copy.products, fixed: "left", render: (_: unknown, row) => <div className="table-primary"><strong>{row.name}</strong><small>{row.sku}</small></div> }, { title: copy.units, dataIndex: "quantity", align: "right" }, { title: copy.orders, dataIndex: "orders", align: "right" }, { title: copy.buyers, dataIndex: "customers", align: "right" }, { title: copy.views, dataIndex: "views", align: "right" }, { title: copy.viewers, dataIndex: "viewers", align: "right" }, { title: copy.conversion, dataIndex: "conversion_rate", align: "right", render: (value: string) => `${value}%` }, { title: copy.stock, dataIndex: "stock", align: "right" }, { title: copy.revenue, dataIndex: "revenue", render: (value: string) => money(value, "RUB", locale) }]} />
-          <Table rowKey="product_id" dataSource={data.products.low_stock} pagination={{ pageSize: 10 }} columns={[{ title: copy.lowStock, render: (_: unknown, row) => <div className="table-primary"><strong>{row.name}</strong><small>{row.sku}</small></div> }, { title: copy.stock, dataIndex: "stock", align: "right" }]} />
+          <Table scroll={{ x: 1080 }} rowKey="product_id" dataSource={data.products.top_products} pagination={{ pageSize: 10 }} columns={[{ title: copy.products, fixed: "left", render: (_: unknown, row) => <div className="table-primary">{hasPermission("catalog.read") ? <Link to={productPath(row.product_id)}><strong>{row.name}</strong></Link> : <strong>{row.name}</strong>}<small>{row.sku}</small></div> }, { title: copy.units, dataIndex: "quantity", align: "right" }, { title: copy.orders, dataIndex: "orders", align: "right" }, { title: copy.buyers, dataIndex: "customers", align: "right" }, { title: copy.views, dataIndex: "views", align: "right" }, { title: copy.viewers, dataIndex: "viewers", align: "right" }, { title: copy.conversion, dataIndex: "conversion_rate", align: "right", render: (value: string) => `${value}%` }, { title: copy.stock, dataIndex: "stock", align: "right" }, { title: copy.revenue, dataIndex: "revenue", render: (value: string) => money(value, "RUB", locale) }]} />
+          <Table rowKey="product_id" dataSource={data.products.low_stock} pagination={{ pageSize: 10 }} columns={[{ title: copy.lowStock, render: (_: unknown, row) => <div className="table-primary">{hasPermission("catalog.read") ? <Link to={productPath(row.product_id)}><strong>{row.name}</strong></Link> : <strong>{row.name}</strong>}<small>{row.sku}</small></div> }, { title: copy.stock, dataIndex: "stock", align: "right" }]} />
         </> : null}
 
         {tab === "discounts" ? <>
           <Row gutter={[16, 16]}>
             <Col xs={24} md={6}><Card><Statistic title={copy.totalDiscount} value={money(data.discounts.summary.total_discount, "RUB", locale)} /></Card></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.applications} value={data.discounts.summary.applications} /></Card></Col>
-            <Col xs={24} md={6}><Card><Statistic title={copy.referralProfiles} value={data.discounts.summary.referral_profiles} /></Card></Col>
+            <Col xs={24} md={6}><LinkedCard to={hasPermission("referrals.read") ? "/marketing?tab=referrals" : undefined} linkLabel={copy.referralProfiles}><Statistic title={copy.referralProfiles} value={data.discounts.summary.referral_profiles} /></LinkedCard></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.active} value={`${data.discounts.summary.active_referral_rate}%`} /></Card></Col>
           </Row>
           <Table rowKey="source" dataSource={data.discounts.sources} pagination={false} columns={[{ title: copy.source, dataIndex: "source", render: (value: string) => domainLabel(value, locale) }, { title: copy.applications, dataIndex: "applications", align: "right" }, { title: copy.totalDiscount, dataIndex: "discount_amount", render: (value: string) => money(value, "RUB", locale) }]} />
@@ -146,12 +156,12 @@ export function AnalyticsPage() {
 
         {tab === "marketing" ? <>
           <Row gutter={[16, 16]}>
-            <Col xs={24} md={6}><Card><Statistic title={copy.campaigns} value={data.marketing.summary.campaigns} /></Card></Col>
+            <Col xs={24} md={6}><LinkedCard to={hasPermission("campaigns.read") ? "/marketing?tab=campaigns" : undefined} linkLabel={copy.campaigns}><Statistic title={copy.campaigns} value={data.marketing.summary.campaigns} /></LinkedCard></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.delivery} value={`${data.marketing.summary.delivery_rate}%`} /></Card></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.clicks} value={`${data.marketing.summary.click_rate}%`} /></Card></Col>
             <Col xs={24} md={6}><Card><Statistic title={copy.failures} value={`${data.marketing.summary.failure_rate}%`} /></Card></Col>
           </Row>
-          <Table rowKey="campaign_id" dataSource={data.marketing.campaigns} pagination={{ pageSize: 10 }} columns={[{ title: copy.campaigns, render: (_: unknown, row) => <div className="table-primary"><strong>{row.name}</strong><small>{row.goal || domainLabel(row.status, locale)}</small></div> }, { title: copy.delivery, render: (_: unknown, row) => `${row.delivery_rate}%` }, { title: copy.clicks, render: (_: unknown, row) => `${row.click_rate}%` }, { title: copy.failures, dataIndex: "failed", align: "right" }, { title: copy.generated, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) }]} />
+          <Table rowKey="campaign_id" dataSource={data.marketing.campaigns} pagination={{ pageSize: 10 }} columns={[{ title: copy.campaigns, render: (_: unknown, row) => <div className="table-primary">{hasPermission("campaigns.read") ? <Link to={`/marketing?tab=campaigns&campaign_id=${row.campaign_id}`}><strong>{row.name}</strong></Link> : <strong>{row.name}</strong>}<small>{row.goal || domainLabel(row.status, locale)}</small></div> }, { title: copy.delivery, render: (_: unknown, row) => `${row.delivery_rate}%` }, { title: copy.clicks, render: (_: unknown, row) => `${row.click_rate}%` }, { title: copy.failures, dataIndex: "failed", align: "right" }, { title: copy.generated, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) }]} />
         </> : null}
     </> : null}
   </div>

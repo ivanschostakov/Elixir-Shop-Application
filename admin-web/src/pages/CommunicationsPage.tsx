@@ -431,7 +431,7 @@ function AIChatsTab() {
                         <Space wrap>
                           <Typography.Text strong>{eventLabels[action.event_name] || domainLabel(action.event_name, locale)}</Typography.Text>
                           {action.action_type ? <Tag color="blue">{domainLabel(action.action_type, locale)}</Tag> : null}
-                          {action.product_id ? <Tag>{copy.product} #{action.product_id}</Tag> : null}
+                          {action.product_id ? hasPermission("catalog.read") ? <Link to={`/catalog/products?product_id=${action.product_id}`}><Tag className="navigation-tag">{copy.product} #{action.product_id}</Tag></Link> : <Tag>{copy.product} #{action.product_id}</Tag> : null}
                           {action.variant_id ? <Tag>{copy.variant} #{action.variant_id}</Tag> : null}
                           <Typography.Text type="secondary">{dateTime(action.occurred_at, locale)}</Typography.Text>
                         </Space>
@@ -467,7 +467,7 @@ function AIChatsTab() {
                       {cards.map((card, cardIndex) => {
                         const actions = Array.isArray(card.actions) ? card.actions as Array<Record<string, unknown>> : []
                         return (
-                          <Card key={`${item.id}-${cardIndex}`} size="small" title={String(card.title || `${copy.product} ${card.product_id || ""}`)}>
+                          <Card key={`${item.id}-${cardIndex}`} size="small" title={card.product_id && hasPermission("catalog.read") ? <Link className="section-navigation-link" to={`/catalog/products?product_id=${String(card.product_id)}`}>{String(card.title || `${copy.product} ${card.product_id}`)}</Link> : String(card.title || `${copy.product} ${card.product_id || ""}`)}>
                             <Space wrap>
                               {actions.map((action, actionIndex) => <Tag key={String(action.id || actionIndex)} color={action.completed ? "green" : "default"}>{domainLabel(String(action.type || "action"), locale)}{action.completed ? ` · ${copy.completed}` : ""}</Tag>)}
                             </Space>

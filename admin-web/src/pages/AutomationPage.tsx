@@ -54,6 +54,7 @@ import type {
 } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
 import { InternalLinkGuide } from "../components/InternalLinkGuide"
+import { LinkedCard } from "../components/LinkedCard"
 import { PageHeader } from "../components/PageHeader"
 import { useLanguage } from "../i18n/LanguageProvider"
 import { domainLabel, humanizeApiError } from "../i18n/domain"
@@ -261,8 +262,8 @@ export function AutomationPage() {
       <Alert type="info" showIcon message={copy.policiesHint} />
       <Row gutter={[16, 16]}>
         <Col xs={24} md={8}><Card><Statistic title={copy.compliance} value={overallCompliance} suffix="%" prefix={<CheckCircleOutlined />} /></Card></Col>
-        <Col xs={24} md={8}><Card><Statistic title={copy.openTasks} value={(slaSummary.data || []).reduce((sum, row) => sum + row.open_tasks, 0)} /></Card></Col>
-        <Col xs={24} md={8}><Card><Statistic title={copy.breached} value={(slaSummary.data || []).reduce((sum, row) => sum + row.breached_tasks, 0)} valueStyle={{ color: "#dc2626" }} /></Card></Col>
+        <Col xs={24} md={8}><LinkedCard to={hasPermission("tasks.read") ? "/tasks" : undefined} linkLabel={copy.openTasks}><Statistic title={copy.openTasks} value={(slaSummary.data || []).reduce((sum, row) => sum + row.open_tasks, 0)} /></LinkedCard></Col>
+        <Col xs={24} md={8}><LinkedCard to={hasPermission("tasks.read") ? "/tasks?sla_breached=true" : undefined} linkLabel={copy.breached}><Statistic title={copy.breached} value={(slaSummary.data || []).reduce((sum, row) => sum + row.breached_tasks, 0)} valueStyle={{ color: "#dc2626" }} /></LinkedCard></Col>
       </Row>
       <Table<SlaPolicy> rowKey="id" loading={policies.isLoading} dataSource={policies.data} pagination={false} columns={[
         { title: copy.taskPriority, render: (_: unknown, row) => <Tag color={priorityColors[row.priority]}>{locale === "ru" ? row.name_ru : row.name_en}</Tag> },

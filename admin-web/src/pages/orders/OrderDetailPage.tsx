@@ -2,7 +2,7 @@ import { ArrowLeftOutlined, CheckCircleOutlined, CreditCardOutlined, LinkOutline
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button, Card, Col, Descriptions, Divider, List, Row, Select, Space, Table, Tag, Timeline, Typography, message } from "antd"
 import { useEffect, useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 import { apiRequest } from "../../api/client"
 import type { IntegrationRun, OrderDetail, OrderStatusCode } from "../../api/types"
 import { useAuth } from "../../auth/AuthProvider"
@@ -85,7 +85,7 @@ export function OrderDetailPage() {
             <Col xs={24} xl={16}>
               <Card title={copy.overview}>
                 <Descriptions column={{ xs: 1, md: 2 }}>
-                  <Descriptions.Item label={copy.customer}>{order.customer.name} {order.customer.surname}</Descriptions.Item>
+                  <Descriptions.Item label={copy.customer}>{hasPermission("customers.read") ? <Link to={`/customers/${order.customer.id}`}>{order.customer.name} {order.customer.surname}</Link> : `${order.customer.name} ${order.customer.surname}`}</Descriptions.Item>
                   <Descriptions.Item label={copy.phone}>{order.customer.phone_number || "—"}</Descriptions.Item>
                   <Descriptions.Item label="Email">{order.customer.email || "—"}</Descriptions.Item>
                   <Descriptions.Item label={copy.comment}>{order.comment || "—"}</Descriptions.Item>
@@ -100,7 +100,7 @@ export function OrderDetailPage() {
               </Card>
               <Card title={copy.items}>
                 <Table rowKey="id" pagination={false} dataSource={order.items} columns={[
-                  { title: locale === "ru" ? "Товар" : "Product", key: "product", render: (_: unknown, item) => <div className="table-primary"><span>{item.product_name}</span><small>{item.product_sku} · {item.variant_name}</small></div> },
+                  { title: locale === "ru" ? "Товар" : "Product", key: "product", render: (_: unknown, item) => <div className="table-primary">{hasPermission("catalog.read") ? <Link to={`/catalog/products?product_id=${item.product_id}`}>{item.product_name}</Link> : <span>{item.product_name}</span>}<small>{item.product_sku} · {item.variant_name}</small></div> },
                   { title: locale === "ru" ? "Кол-во" : "Qty", dataIndex: "quantity", align: "center" as const },
                   { title: locale === "ru" ? "Цена" : "Price", key: "price", align: "right" as const, render: (_: unknown, item) => money(item.unit_price, order.currency, locale) },
                   { title: locale === "ru" ? "Сумма" : "Total", key: "total", align: "right" as const, render: (_: unknown, item) => <strong>{money(item.line_total, order.currency, locale)}</strong> },

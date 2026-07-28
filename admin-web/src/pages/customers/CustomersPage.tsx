@@ -5,6 +5,7 @@ import { useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { apiRequest, queryString } from "../../api/client"
 import type { CustomerListItem, Page } from "../../api/types"
+import { useAuth } from "../../auth/AuthProvider"
 import { PageHeader } from "../../components/PageHeader"
 import { parseVisibleColumns, TableToolbar, type TableColumnOption } from "../../components/TableToolbar"
 import { useLanguage } from "../../i18n/LanguageProvider"
@@ -12,6 +13,7 @@ import { dateTime, money } from "../../utils/format"
 
 export function CustomersPage() {
   const { locale } = useLanguage()
+  const { hasPermission } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const search = searchParams.get("q") || ""
   const activeFilter = searchParams.get("active")
@@ -33,10 +35,14 @@ export function CustomersPage() {
   const copy = locale === "ru"
     ? { title: "Клиенты", description: "Профили, история покупок и активность", search: "Имя, email или телефон", all: "Все клиенты", active: "Активные", blocked: "Заблокированные", customer: "Клиент", contact: "Контакт", orders: "Заказы", ltv: "Выручка", lastOrder: "Последний заказ", state: "Статус" }
     : { title: "Customers", description: "Profiles, purchase history and activity", search: "Name, email or phone", all: "All customers", active: "Active", blocked: "Blocked", customer: "Customer", contact: "Contact", orders: "Orders", ltv: "Revenue", lastOrder: "Last order", state: "Status" }
+  const customerOrdersPath = (row: CustomerListItem) => {
+    const query = row.email || row.phone_number || `${row.name} ${row.surname}`.trim()
+    return `/sales/orders?q=${encodeURIComponent(query)}`
+  }
   const tableColumns = [
     { title: copy.customer, key: "customer", render: (_: unknown, row: CustomerListItem) => <Space><Avatar>{`${row.name[0] || ""}${row.surname[0] || ""}`}</Avatar><div className="table-primary"><Link to={`/customers/${row.id}`}><strong>{row.name} {row.surname}</strong></Link><small>ID {row.id}</small></div></Space> },
     { title: copy.contact, key: "contact", render: (_: unknown, row: CustomerListItem) => <div className="table-primary"><span>{row.phone_number || "—"}</span><small>{row.email || "—"}</small></div> },
-    { title: copy.orders, dataIndex: "orders_count", key: "orders", align: "center" as const },
+    { title: copy.orders, dataIndex: "orders_count", key: "orders", align: "center" as const, render: (value: number, row: CustomerListItem) => hasPermission("orders.read") ? <Link className="table-value-link" to={customerOrdersPath(row)}>{value}</Link> : value },
     { title: copy.ltv, key: "ltv", align: "right" as const, render: (_: unknown, row: CustomerListItem) => money(row.paid_total, "RUB", locale) },
     { title: copy.lastOrder, dataIndex: "last_order_at", key: "lastOrder", render: (value: string | null) => dateTime(value, locale) },
     { title: copy.state, key: "state", render: (_: unknown, row: CustomerListItem) => <Tag color={row.is_active ? "green" : "red"}>{row.is_active ? copy.active : copy.blocked}</Tag> },

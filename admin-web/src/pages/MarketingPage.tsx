@@ -2,7 +2,8 @@ import { CameraOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutl
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Alert, Button, Card, Col, DatePicker, Drawer, Form, Input, InputNumber, List, Modal, Progress, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, message } from "antd"
 import dayjs, { type Dayjs } from "dayjs"
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { Link, useSearchParams } from "react-router-dom"
 import { apiDownload, apiRequest } from "../api/client"
 import type { AudiencePreview, CustomerSegment, MarketingAutomation, Page, PushCampaign, PushCampaignMetrics, PushCampaignPreview, PushCampaignRecipient, PushCampaignTemplate, ReferralProfile, ReferralSummary, SegmentDefinition, SegmentHistory } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
@@ -122,8 +123,16 @@ export function MarketingPage() {
   const { locale } = useLanguage()
   const { principal, hasPermission } = useAuth()
   const client = useQueryClient()
+  const [searchParams, setSearchParams] = useSearchParams()
   const defaultTab = hasPermission("campaigns.read") ? "campaigns" : hasPermission("segments.read") ? "segments" : "referrals"
-  const [tab, setTab] = useState(defaultTab)
+  const requestedTab = searchParams.get("tab")
+  const tabAllowed = (value: string | null) => (
+    value === "referrals" ? hasPermission("referrals.read")
+      : value === "segments" ? hasPermission("segments.read")
+        : value === "campaigns" || value === "automations" ? hasPermission("campaigns.read")
+          : false
+  )
+  const tab = requestedTab && tabAllowed(requestedTab) ? requestedTab : defaultTab
   const [segmentDrawer, setSegmentDrawer] = useState(false)
   const [editingSegment, setEditingSegment] = useState<CustomerSegment | null>(null)
   const [preview, setPreview] = useState<AudiencePreview | null>(null)
@@ -152,6 +161,16 @@ export function MarketingPage() {
   const campaignMetrics = useQuery({ queryKey: ["campaign-metrics", detailsCampaign?.id], queryFn: () => apiRequest<PushCampaignMetrics>(`/campaigns/${detailsCampaign?.id}/metrics`), enabled: Boolean(detailsCampaign) })
   const campaignRecipients = useQuery({ queryKey: ["campaign-recipients", detailsCampaign?.id], queryFn: () => apiRequest<Page<PushCampaignRecipient>>(`/campaigns/${detailsCampaign?.id}/recipients?limit=100&offset=0`), enabled: Boolean(detailsCampaign) })
   const referralRows = referrals.data || []
+
+  useEffect(() => {
+    const campaignId = Number(searchParams.get("campaign_id") || 0)
+    if (!campaignId) {
+      setDetailsCampaign(null)
+      return
+    }
+    const campaign = campaigns.data?.items.find((item) => item.id === campaignId)
+    if (campaign && detailsCampaign?.id !== campaign.id) setDetailsCampaign(campaign)
+  }, [campaigns.data?.items, detailsCampaign?.id, searchParams])
 
   const copy = locale === "ru"
     ? { title: "Маркетинг", description: "Сегменты, push‑кампании и автоматические сценарии", referrals: "Рефералы", segments: "Сегменты", campaigns: "Push‑кампании", automations: "Автоматизация", profiles: "Участники", base: "База скидки", discount: "Текущая скидка", purchases: "Покупки", created: "Создан", newSegment: "Новый сегмент", newCampaign: "Новая кампания", segmentName: "Название сегмента", team: "Доступен команде", dynamic: "Динамический", static: "Статический", makeSnapshot: "Зафиксировать состав", snapshot: "Снимок", preview: "Рассчитать", audience: "Клиентов", reachable: "Доступны по push", save: "Сохранить", filters: "Условия", campaignName: "Внутреннее название", pushTitle: "Заголовок push", pushBody: "Текст сообщения", deepLink: "Путь внутри приложения", segment: "Сегмент", status: "Статус", sent: "Доставлено", launch: "Запустить", launchTitle: "Подтверждение отправки", launchNow: "Отправить сейчас", schedule: "Запланировать", scheduleTime: "Время отправки", launchWarning: "Аудитория фиксируется перед запуском. После подтверждения состав получателей изменить нельзя.", cancel: "Отменить", lastRun: "Последний запуск", enabled: "Включён", disabled: "Выключен", processed: "Обработано", edit: "Изменить", afterDays: "Запуск через, дней", afterHours: "Запуск через, часов", cooldownDays: "Повтор не чаще, дней", cooldownHours: "Повтор не чаще, часов", triggerHint: "Изменения шаблона применяются к следующим автоматическим отправкам.", combinator: "Логика группы", addCondition: "Добавить условие", field: "Поле", operator: "Оператор", value: "Значение", exclusions: "Исключить сегменты", customers: "Клиенты", history: "История", export: "CSV", saved: "Сегмент сохранён", deleted: "Сегмент удалён", snapshotted: "Состав сегмента зафиксирован", template: "Шаблон", goal: "Цель", utm: "UTM", previewPush: "Предпросмотр push", applyTemplate: "Применить шаблон", delivery: "Доставка", clicks: "Клики", failures: "Ошибки", details: "Детали", recipients: "Получатели", pending: "Ожидают", opened: "Открыто", clicked: "Клик", activeReferrers: "Активные", avgDiscount: "Средняя скидка", maxDiscount: "Макс. скидка", before: "до даты", after: "после даты", contains: "содержит", and: "И", or: "ИЛИ", automationNotSelected: "Сценарий автоматизации не выбран", goalPlaceholder: "продажи / удержание / возврат", sourcePlaceholder: "источник", campaignPlaceholder: "кампания", contentPlaceholder: "содержание" }
@@ -276,6 +295,29 @@ export function MarketingPage() {
     hasPermission("campaigns.read") ? { key: "automations", label: copy.automations } : null,
   ].filter(Boolean) as Array<{ key: string; label: string }>, [copy.automations, copy.campaigns, copy.referrals, copy.segments, hasPermission])
   const pageAction = tab === "segments" && hasPermission("segments.manage") ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openSegment()}>{copy.newSegment}</Button> : tab === "campaigns" && hasPermission("campaigns.manage") ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openCampaign()}>{copy.newCampaign}</Button> : null
+  const changeTab = (value: string) => setSearchParams((current) => {
+    const next = new URLSearchParams(current)
+    next.set("tab", value)
+    if (value !== "campaigns") next.delete("campaign_id")
+    return next
+  })
+  const openCampaignDetails = (campaign: PushCampaign) => {
+    setDetailsCampaign(campaign)
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set("tab", "campaigns")
+      next.set("campaign_id", String(campaign.id))
+      return next
+    })
+  }
+  const closeCampaignDetails = () => {
+    setDetailsCampaign(null)
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      next.delete("campaign_id")
+      return next
+    })
+  }
 
   const renderValueInput = (field: number) => {
     const selectedField = segmentForm.getFieldValue(["conditions", field, "field"]) as string
@@ -296,7 +338,7 @@ export function MarketingPage() {
 
   return <div className="page-stack">
     <PageHeader title={copy.title} description={copy.description} actions={pageAction} />
-    <Tabs activeKey={tab} items={tabs} onChange={setTab} />
+    <Tabs activeKey={tab} items={tabs} onChange={changeTab} />
 
     {tab === "referrals" ? <>
       <Row gutter={[16, 16]}>
@@ -305,13 +347,13 @@ export function MarketingPage() {
         <Col xs={24} md={6}><Card><Statistic title={copy.base} value={money(referralSummary.data?.total_discount_base ?? 0, "RUB", locale)} /></Card></Col>
         <Col xs={24} md={6}><Card><Statistic title={copy.avgDiscount} value={`${referralSummary.data?.average_discount_percent ?? "0.00"}%`} suffix={<Typography.Text type="secondary">{locale === "ru" ? "макс." : "max"} {referralSummary.data?.max_discount_percent ?? "0.00"}%</Typography.Text>} /></Card></Col>
       </Row>
-      <Table<ReferralProfile> rowKey="id" loading={referrals.isLoading} dataSource={referralRows} pagination={{ pageSize: 25 }} columns={[{ title: locale === "ru" ? "ID пользователя" : "User ID", dataIndex: "user_id" }, { title: copy.purchases, dataIndex: "total_purchases", render: (value: string) => money(value, "RUB", locale) }, { title: copy.base, dataIndex: "referral_discount_base_total", render: (value: string) => money(value, "RUB", locale) }, { title: copy.discount, dataIndex: "current_discount_percent", render: (value: string) => <Tag color="green">{value}%</Tag> }, { title: copy.created, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) }]} />
+      <Table<ReferralProfile> rowKey="id" loading={referrals.isLoading} dataSource={referralRows} pagination={{ pageSize: 25 }} columns={[{ title: locale === "ru" ? "ID пользователя" : "User ID", dataIndex: "user_id", render: (value: number) => hasPermission("customers.read") ? <Link to={`/customers/${value}`}>#{value}</Link> : `#${value}` }, { title: copy.purchases, dataIndex: "total_purchases", render: (value: string) => money(value, "RUB", locale) }, { title: copy.base, dataIndex: "referral_discount_base_total", render: (value: string) => money(value, "RUB", locale) }, { title: copy.discount, dataIndex: "current_discount_percent", render: (value: string) => <Tag color="green">{value}%</Tag> }, { title: copy.created, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) }]} />
     </> : null}
 
     {tab === "segments" ? <Table<CustomerSegment> rowKey="id" loading={segments.isLoading} dataSource={segments.data} pagination={false} columns={[
       { title: copy.segmentName, key: "name", render: (_: unknown, row) => <div className="table-primary"><strong>{row.name}</strong><small>{row.is_shared ? copy.team : row.owner_name}</small></div> },
       { title: copy.status, key: "type", render: (_: unknown, row) => <Space><Tag color={row.segment_type === "static" ? "purple" : "blue"}>{row.segment_type === "static" ? copy.static : copy.dynamic}</Tag>{row.snapshot_at ? <Typography.Text type="secondary">v{row.snapshot_version} · {dateTime(row.snapshot_at, locale)}</Typography.Text> : null}</Space> },
-      { title: copy.audience, dataIndex: "audience_count", align: "right" },
+      { title: copy.audience, dataIndex: "audience_count", align: "right", render: (value: number, row) => <Button className="table-value-button" type="link" onClick={() => setCustomersSegment(row)}>{value}</Button> },
       { title: copy.reachable, dataIndex: "push_reachable_count", align: "right", render: (value: number, row) => <Space><Progress type="circle" size={30} showInfo={false} percent={row.audience_count ? Math.round(value / row.audience_count * 100) : 0} />{value}</Space> },
       { title: copy.filters, dataIndex: "filters_json", render: (value: SegmentDefinition) => <Typography.Text type="secondary">{value.conditions?.map((item) => "field" in item ? formatCondition(item, locale) : item.combinator).join(" · ") || "—"}</Typography.Text> },
       { title: "", align: "right", render: (_: unknown, row) => <Space>
@@ -323,7 +365,7 @@ export function MarketingPage() {
     ]} /> : null}
 
     {tab === "campaigns" ? <Table<PushCampaign> rowKey="id" loading={campaigns.isLoading} dataSource={campaigns.data?.items} pagination={{ pageSize: 25 }} columns={[
-      { title: copy.campaignName, key: "name", render: (_: unknown, row) => <div className="table-primary"><strong>{row.name}</strong><small>{row.template_name || row.title}</small></div> },
+      { title: copy.campaignName, key: "name", render: (_: unknown, row) => <div className="table-primary"><button type="button" className="table-primary-button" onClick={() => openCampaignDetails(row)}><strong>{row.name}</strong></button><small>{row.template_name || row.title}</small></div> },
       { title: copy.segment, dataIndex: "segment_name", render: (value: string | null) => value || "—" },
       { title: copy.audience, dataIndex: "audience_count", align: "right" },
       { title: copy.sent, key: "sent", align: "right", render: (_: unknown, row) => row.status === "running" ? <Progress percent={row.audience_count ? Math.round(row.sent_count / row.audience_count * 100) : 0} size="small" /> : row.sent_count },
@@ -331,7 +373,7 @@ export function MarketingPage() {
       { title: copy.clicks, key: "clicks", align: "right", render: (_: unknown, row) => `${row.click_rate}%` },
       { title: copy.status, dataIndex: "status", render: (value: string) => <Tag color={campaignColors[value]}>{domainLabel(value, locale)}</Tag> },
       { title: copy.created, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) },
-      { title: "", align: "right", render: (_: unknown, row) => <Space><Button size="small" icon={<EyeOutlined />} onClick={() => setDetailsCampaign(row)}>{copy.details}</Button>{row.status === "draft" && hasPermission("campaigns.manage") ? <Button size="small" icon={<EditOutlined />} onClick={() => openCampaign(row)}>{copy.edit}</Button> : null}{row.status === "draft" && hasPermission("campaigns.send") ? <Button size="small" type="primary" icon={<RocketOutlined />} disabled={!segments.data?.find((segment) => segment.id === row.segment_id)?.push_reachable_count} onClick={() => setLaunchTarget(row)}>{copy.launch}</Button> : null}{["scheduled", "queued"].includes(row.status) && hasPermission("campaigns.send") ? <Button size="small" danger onClick={() => cancelCampaign.mutate(row)}>{copy.cancel}</Button> : null}</Space> },
+      { title: "", align: "right", render: (_: unknown, row) => <Space><Button size="small" icon={<EyeOutlined />} onClick={() => openCampaignDetails(row)}>{copy.details}</Button>{row.status === "draft" && hasPermission("campaigns.manage") ? <Button size="small" icon={<EditOutlined />} onClick={() => openCampaign(row)}>{copy.edit}</Button> : null}{row.status === "draft" && hasPermission("campaigns.send") ? <Button size="small" type="primary" icon={<RocketOutlined />} disabled={!segments.data?.find((segment) => segment.id === row.segment_id)?.push_reachable_count} onClick={() => setLaunchTarget(row)}>{copy.launch}</Button> : null}{["scheduled", "queued"].includes(row.status) && hasPermission("campaigns.send") ? <Button size="small" danger onClick={() => cancelCampaign.mutate(row)}>{copy.cancel}</Button> : null}</Space> },
     ]} /> : null}
 
     {tab === "automations" ? <Row gutter={[16, 16]}>{(automations.data || []).map((row) => <Col xs={24} lg={12} key={row.id}><Card className="automation-card"><div className="automation-card-header"><div><Typography.Title level={5}>{locale === "ru" ? row.name_ru : row.name_en}</Typography.Title><Typography.Text type="secondary">{copy.lastRun}: {dateTime(row.last_run_at, locale)}</Typography.Text></div><Switch checked={row.is_enabled} disabled={!hasPermission("campaigns.manage")} loading={toggleAutomation.isPending} onChange={() => toggleAutomation.mutate(row)} /></div><Typography.Paragraph type="secondary" ellipsis={{ rows: 2 }}>{String(row.settings_json.body || "")}</Typography.Paragraph><Space><Tag color={row.is_enabled ? "green" : "default"}>{row.is_enabled ? copy.enabled : copy.disabled}</Tag><Typography.Text>{copy.processed}: {String(row.last_result_json.processed ?? 0)}</Typography.Text>{hasPermission("campaigns.manage") ? <Button size="small" icon={<EditOutlined />} onClick={() => openAutomation(row)}>{copy.edit}</Button> : null}</Space>{row.last_error ? <Alert type="error" showIcon message={humanizeApiError(row.last_error, 500, locale)} /> : null}</Card></Col>)}</Row> : null}
@@ -353,12 +395,12 @@ export function MarketingPage() {
         </Space>}</Form.List>
         <Form.Item name="exclusions" label={copy.exclusions} style={{ marginTop: 16 }}><Select mode="multiple" options={(segments.data || []).filter((segment) => segment.id !== editingSegment?.id).map((segment) => ({ value: segment.id, label: segment.name }))} /></Form.Item>
         <Button block loading={previewSegment.isPending} onClick={() => void segmentForm.validateFields().then((values) => previewSegment.mutate(values))}>{copy.preview}</Button>
-        {preview ? <div className="audience-preview"><Row gutter={12}><Col span={12}><Statistic title={copy.audience} value={preview.count} /></Col><Col span={12}><Statistic title={copy.reachable} value={preview.push_reachable_count} /></Col></Row><Table rowKey="id" size="small" dataSource={preview.sample} pagination={false} columns={[{ title: copy.customers, render: (_: unknown, row: AudiencePreview["sample"][number]) => `${row.name} ${row.surname}`.trim() }, { title: "LTV", dataIndex: "paid_total", render: (value: string) => money(value, "RUB", locale) }]} /></div> : null}
+        {preview ? <div className="audience-preview"><Row gutter={12}><Col span={12}><Statistic title={copy.audience} value={preview.count} /></Col><Col span={12}><Statistic title={copy.reachable} value={preview.push_reachable_count} /></Col></Row><Table rowKey="id" size="small" dataSource={preview.sample} pagination={false} columns={[{ title: copy.customers, render: (_: unknown, row: AudiencePreview["sample"][number]) => hasPermission("customers.read") ? <Link to={`/customers/${row.id}`}>{`${row.name} ${row.surname}`.trim()}</Link> : `${row.name} ${row.surname}`.trim() }, { title: "LTV", dataIndex: "paid_total", render: (value: string) => money(value, "RUB", locale) }]} /></div> : null}
       </Form>
     </Drawer>
 
     <Drawer width={680} open={Boolean(customersSegment)} title={`${copy.customers}: ${customersSegment?.name || ""}`} onClose={() => setCustomersSegment(null)}>
-      <Table rowKey="id" loading={segmentCustomers.isLoading} dataSource={segmentCustomers.data?.items} pagination={false} columns={[{ title: copy.customers, render: (_: unknown, row: AudiencePreview["sample"][number]) => <div className="table-primary"><strong>{row.name} {row.surname}</strong><small>{row.email || row.phone_number || "—"}</small></div> }, { title: locale === "ru" ? "Заказы" : "Orders", dataIndex: "orders_count", align: "right" }, { title: "LTV", dataIndex: "paid_total", render: (value: string) => money(value, "RUB", locale) }, { title: locale === "ru" ? "Последний заказ" : "Last order", dataIndex: "last_order_at", render: (value: string | null) => dateTime(value, locale) }]} />
+      <Table rowKey="id" loading={segmentCustomers.isLoading} dataSource={segmentCustomers.data?.items} pagination={false} columns={[{ title: copy.customers, render: (_: unknown, row: AudiencePreview["sample"][number]) => <div className="table-primary">{hasPermission("customers.read") ? <Link to={`/customers/${row.id}`}><strong>{row.name} {row.surname}</strong></Link> : <strong>{row.name} {row.surname}</strong>}<small>{row.email || row.phone_number || "—"}</small></div> }, { title: locale === "ru" ? "Заказы" : "Orders", dataIndex: "orders_count", align: "right" }, { title: "LTV", dataIndex: "paid_total", render: (value: string) => money(value, "RUB", locale) }, { title: locale === "ru" ? "Последний заказ" : "Last order", dataIndex: "last_order_at", render: (value: string | null) => dateTime(value, locale) }]} />
     </Drawer>
     <Drawer width={560} open={Boolean(historySegment)} title={`${copy.history}: ${historySegment?.name || ""}`} onClose={() => setHistorySegment(null)}>
       <List loading={segmentHistory.isLoading} dataSource={segmentHistory.data || []} renderItem={(item) => <List.Item><List.Item.Meta title={<Space><Tag>{domainLabel(item.action, locale)}</Tag>{item.actor_name || "—"}</Space>} description={dateTime(item.created_at, locale)} /></List.Item>} />
@@ -391,7 +433,7 @@ export function MarketingPage() {
       </Form>
     </Drawer>
 
-    <Drawer width={760} open={Boolean(detailsCampaign)} title={`${copy.details}: ${detailsCampaign?.name || ""}`} onClose={() => setDetailsCampaign(null)}>
+    <Drawer width={760} open={Boolean(detailsCampaign)} title={`${copy.details}: ${detailsCampaign?.name || ""}`} onClose={closeCampaignDetails}>
       <Row gutter={[12, 12]}>
         <Col xs={12} md={6}><Card><Statistic title={copy.audience} value={campaignMetrics.data?.audience_count ?? detailsCampaign?.audience_count ?? 0} /></Card></Col>
         <Col xs={12} md={6}><Card><Statistic title={copy.delivery} value={`${campaignMetrics.data?.delivery_rate ?? detailsCampaign?.delivery_rate ?? "0.00"}%`} /></Card></Col>
@@ -405,7 +447,7 @@ export function MarketingPage() {
         <Space wrap>{detailsCampaign?.deep_link ? <Tag>{detailsCampaign.deep_link}</Tag> : null}{Object.entries(detailsCampaign?.utm_json || {}).map(([key, value]) => <Tag key={key}>{key}: {value}</Tag>)}</Space>
       </Card>
       <Table<PushCampaignRecipient> rowKey="id" loading={campaignRecipients.isLoading} dataSource={campaignRecipients.data?.items} pagination={{ pageSize: 25 }} columns={[
-        { title: copy.recipients, key: "customer", render: (_: unknown, row) => <div className="table-primary"><strong>{row.customer_name}</strong><small>{row.customer_email || `${locale === "ru" ? "Пользователь" : "User"} ${row.user_id}`}</small></div> },
+        { title: copy.recipients, key: "customer", render: (_: unknown, row) => <div className="table-primary">{hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.customer_name}</strong></Link> : <strong>{row.customer_name}</strong>}<small>{row.customer_email || `${locale === "ru" ? "Пользователь" : "User"} ${row.user_id}`}</small></div> },
         { title: copy.status, dataIndex: "status", render: (value: string) => <Tag>{domainLabel(value, locale)}</Tag> },
         { title: copy.sent, dataIndex: "sent_at", render: (value: string | null) => dateTime(value, locale) },
         { title: copy.opened, dataIndex: "opened_at", render: (value: string | null) => dateTime(value, locale) },

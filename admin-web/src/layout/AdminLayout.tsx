@@ -122,10 +122,10 @@ export function AdminLayout() {
   const initials = `${principal?.user.name?.[0] || ""}${principal?.user.surname?.[0] || ""}`.toUpperCase() || "A"
   const environment = import.meta.env.VITE_ENVIRONMENT || import.meta.env.MODE
   const notificationItems = dashboard ? [
-    { key: "payments", count: dashboard.metrics.failed_payments, label: locale === "ru" ? "Проблемные оплаты" : "Payment issues", path: "/sales/orders?payment_status=failed" },
-    { key: "reviews", count: dashboard.metrics.pending_reviews, label: locale === "ru" ? "Отзывы на модерации" : "Reviews awaiting moderation", path: "/content/reviews?status=pending" },
-    { key: "integrations", count: dashboard.metrics.integration_errors, label: locale === "ru" ? "Ошибки интеграций" : "Integration errors", path: "/integrations?status=error" },
-    { key: "stock", count: dashboard.metrics.low_stock_variants, label: locale === "ru" ? "Низкие остатки" : "Low stock", path: "/catalog/products?low_stock=true" },
+    ...(hasPermission("orders.read") ? [{ key: "payments", count: dashboard.metrics.failed_payments, label: locale === "ru" ? "Проблемные оплаты" : "Payment issues", path: "/sales/orders?payment_status=failed" }] : []),
+    ...(hasPermission("reviews.read") ? [{ key: "reviews", count: dashboard.metrics.pending_reviews, label: locale === "ru" ? "Отзывы на модерации" : "Reviews awaiting moderation", path: "/content/reviews?status=pending" }] : []),
+    ...(hasPermission("integrations.read") ? [{ key: "integrations", count: dashboard.metrics.integration_errors, label: locale === "ru" ? "Ошибки интеграций" : "Integration errors", path: "/integrations?status=error" }] : []),
+    ...(hasPermission("catalog.read") ? [{ key: "stock", count: dashboard.metrics.low_stock_variants, label: locale === "ru" ? "Низкие остатки" : "Low stock", path: "/catalog/products?low_stock=true" }] : []),
     ...(hasPermission("tasks.read") ? [{ key: "tasks", count: dashboard.metrics.overdue_tasks, label: locale === "ru" ? "Просроченные задачи" : "Overdue tasks", path: "/tasks?overdue=true" }] : []),
   ].filter((item) => item.count > 0) : []
   const notificationCount = notificationItems.reduce((total, item) => total + item.count, 0) + (alerts.data?.unread_count || 0)

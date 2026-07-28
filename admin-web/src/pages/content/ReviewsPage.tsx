@@ -2,7 +2,7 @@ import { CheckOutlined, CloseOutlined, EyeOutlined, SearchOutlined, StarFilled, 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Alert, Avatar, Badge, Button, Card, Descriptions, Drawer, Empty, Image, Input, List, Select, Space, Table, Tag, Typography, message } from "antd"
 import { useState } from "react"
-import { useSearchParams } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import { apiRequest, queryString } from "../../api/client"
 import type { Page, Review, ReviewModerationEvent } from "../../api/types"
 import { useAuth } from "../../auth/AuthProvider"
@@ -134,8 +134,8 @@ export function ReviewsPage() {
   })
 
   const tableColumns = [
-    { title: copy.author, key: "author", render: (_: unknown, row: Review) => <Space><Avatar>{row.author_name[0] || "G"}</Avatar><div className="table-primary"><strong>{row.author_name}</strong><small>{row.author_email || copy.guest}</small></div></Space> },
-    { title: copy.product, dataIndex: "product_name", key: "product" },
+    { title: copy.author, key: "author", render: (_: unknown, row: Review) => <Space><Avatar>{row.author_name[0] || "G"}</Avatar><div className="table-primary">{row.user_id && hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.author_name}</strong></Link> : <strong>{row.author_name}</strong>}<small>{row.author_email || copy.guest}</small></div></Space> },
+    { title: copy.product, dataIndex: "product_name", key: "product", render: (value: string, row: Review) => hasPermission("catalog.read") ? <Link to={`/catalog/products?product_id=${row.product_id}`}>{value}</Link> : value },
     { title: copy.rating, dataIndex: "value", key: "rating", render: (value: number) => <span className="rating-cell"><StarFilled /> {value}</span> },
     { title: copy.flags, key: "flags", render: (_: unknown, row: Review) => <Space size={4} wrap>
       <Tag color={flagColor(row.spam_score)}>{row.spam_score}</Tag>
@@ -212,9 +212,9 @@ export function ReviewsPage() {
       </Space> : null}
     >
       {selected ? <Space direction="vertical" size={18} style={{ width: "100%" }}>
-        <div className="review-author"><Avatar size={48}>{selected.author_name[0] || "G"}</Avatar><div><Typography.Title level={4}>{selected.author_name}</Typography.Title><Typography.Text type="secondary">{selected.author_email || copy.guest} · {dateTime(selected.created_at, locale)}</Typography.Text></div></div>
+        <div className="review-author"><Avatar size={48}>{selected.author_name[0] || "G"}</Avatar><div><Typography.Title level={4}>{selected.user_id && hasPermission("customers.read") ? <Link to={`/customers/${selected.user_id}`}>{selected.author_name}</Link> : selected.author_name}</Typography.Title><Typography.Text type="secondary">{selected.author_email || copy.guest} · {dateTime(selected.created_at, locale)}</Typography.Text></div></div>
         <Descriptions size="small" column={2} bordered>
-          <Descriptions.Item label={copy.product}>{selected.product_name}</Descriptions.Item>
+          <Descriptions.Item label={copy.product}>{hasPermission("catalog.read") ? <Link to={`/catalog/products?product_id=${selected.product_id}`}>{selected.product_name}</Link> : selected.product_name}</Descriptions.Item>
           <Descriptions.Item label={copy.rating}><span className="rating-cell"><StarFilled /> {selected.value}</span></Descriptions.Item>
           <Descriptions.Item label={copy.score}><Tag color={flagColor(selected.spam_score)}>{selected.spam_score}</Tag></Descriptions.Item>
           <Descriptions.Item label={copy.ip}>{selected.submitter_ip || "—"}</Descriptions.Item>

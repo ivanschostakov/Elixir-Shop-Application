@@ -1,7 +1,8 @@
 import { CheckCircleOutlined, CloudSyncOutlined, CloseCircleOutlined, PauseCircleOutlined, ReloadOutlined } from "@ant-design/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Button, Card, Col, Descriptions, Row, Space, Statistic, Table, Tag, Typography, message } from "antd"
-import { apiRequest } from "../api/client"
+import { Link, useSearchParams } from "react-router-dom"
+import { apiRequest, queryString } from "../api/client"
 import type { IntegrationQueueHealth, IntegrationRun, IntegrationStatus, Page } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
 import { PageHeader } from "../components/PageHeader"
@@ -9,7 +10,6 @@ import { QueryState } from "../components/QueryState"
 import { useLanguage } from "../i18n/LanguageProvider"
 import { domainLabel } from "../i18n/domain"
 import { dateTime } from "../utils/format"
-import { useSearchParams } from "react-router-dom"
 
 const stateMeta = {
   healthy: { color: "green", icon: <CheckCircleOutlined /> },
@@ -32,8 +32,9 @@ export function IntegrationsPage() {
   const client = useQueryClient()
   const [searchParams] = useSearchParams()
   const runStatus = searchParams.get("status") || undefined
+  const provider = searchParams.get("provider") || undefined
   const integrations = useQuery({ queryKey: ["integrations"], queryFn: () => apiRequest<IntegrationStatus[]>("/integrations"), refetchInterval: 30_000 })
-  const runs = useQuery({ queryKey: ["integration-runs", runStatus], queryFn: () => apiRequest<Page<IntegrationRun>>(`/integrations/runs?limit=50${runStatus ? `&status=${encodeURIComponent(runStatus)}` : ""}`), refetchInterval: 10_000 })
+  const runs = useQuery({ queryKey: ["integration-runs", runStatus, provider], queryFn: () => apiRequest<Page<IntegrationRun>>(`/integrations/runs${queryString({ limit: 50, status: runStatus, provider })}`), refetchInterval: 10_000 })
   const health = useQuery({ queryKey: ["integration-queue-health"], queryFn: () => apiRequest<IntegrationQueueHealth>("/integrations/queue-health"), refetchInterval: 15_000 })
   const refresh = () => {
     void integrations.refetch()
@@ -59,20 +60,26 @@ export function IntegrationsPage() {
     <QueryState loading={health.isLoading} error={health.isError} onRetry={() => void health.refetch()} />
     {health.data ? <Card size="small" className="queue-health-card">
       <div className="queue-health-grid">
-        <Statistic title={copy.queue} value={health.data.queued + health.data.queue_depth} />
-        <Statistic title={copy.active} value={health.data.running + health.data.processing_depth} />
-        <Statistic title={copy.scheduled} value={health.data.retrying + health.data.scheduled_depth} />
-        <Statistic title={copy.failed} value={health.data.failed_24h} valueStyle={health.data.failed_24h ? { color: "#b42318" } : undefined} />
+        <Link className="statistic-navigation-link" to="/integrations?status=queued#history"><Statistic title={copy.queue} value={health.data.queued + health.data.queue_depth} /></Link>
+        <Link className="statistic-navigation-link" to="/integrations?status=running#history"><Statistic title={copy.active} value={health.data.running + health.data.processing_depth} /></Link>
+        <Link className="statistic-navigation-link" to="/integrations?status=retrying#history"><Statistic title={copy.scheduled} value={health.data.retrying + health.data.scheduled_depth} /></Link>
+        <Link className="statistic-navigation-link" to="/integrations?status=error#history"><Statistic title={copy.failed} value={health.data.failed_24h} valueStyle={health.data.failed_24h ? { color: "#b42318" } : undefined} /></Link>
         <Statistic title={copy.stale} value={health.data.stale_running} valueStyle={health.data.stale_running ? { color: "#b42318" } : undefined} />
         <Tag color={health.data.queue_available ? "success" : "error"}>{health.data.queue_available ? copy.available : copy.unavailable}</Tag>
       </div>
     </Card> : null}
-    <Row gutter={[16, 16]}>{(integrations.data || []).map((item) => <Col xs={24} md={12} xl={8} key={item.provider}><Card className="integration-card"><div className="integration-card-header"><span className={`integration-icon ${item.status}`}>{stateMeta[item.status].icon}</span><div><Typography.Title level={4}>{domainLabel(item.provider, locale)}</Typography.Title><Tag color={stateMeta[item.status].color}>{domainLabel(item.status, locale)}</Tag></div></div><Descriptions column={1} size="small"><Descriptions.Item label={item.configured ? copy.configured : copy.disabled}>{item.configured ? (locale === "ru" ? "Да" : "Yes") : (locale === "ru" ? "Нет" : "No")}</Descriptions.Item><Descriptions.Item label={copy.last}>{dateTime(item.last_run_at, locale)}</Descriptions.Item></Descriptions>{item.provider === "moysklad" && hasPermission("integrations.retry") ? <Button block icon={<CloudSyncOutlined />} loading={catalogSync.isPending} onClick={() => catalogSync.mutate()}>{copy.sync}</Button> : null}</Card></Col>)}</Row>
-    <Card title={copy.history}>
+    <Row gutter={[16, 16]}>{(integrations.data || []).map((item) => <Col xs={24} md={12} xl={8} key={item.provider}><Card className="integration-card"><div className="integration-card-header"><span className={`integration-icon ${item.status}`}>{stateMeta[item.status].icon}</span><div><Typography.Title level={4}><Link className="section-navigation-link" to={`/integrations?provider=${encodeURIComponent(item.provider)}#history`}>{domainLabel(item.provider, locale)}</Link></Typography.Title><Tag color={stateMeta[item.status].color}>{domainLabel(item.status, locale)}</Tag></div></div><Descriptions column={1} size="small"><Descriptions.Item label={item.configured ? copy.configured : copy.disabled}>{item.configured ? (locale === "ru" ? "Да" : "Yes") : (locale === "ru" ? "Нет" : "No")}</Descriptions.Item><Descriptions.Item label={copy.last}>{dateTime(item.last_run_at, locale)}</Descriptions.Item></Descriptions>{item.provider === "moysklad" && hasPermission("integrations.retry") ? <Button block icon={<CloudSyncOutlined />} loading={catalogSync.isPending} onClick={() => catalogSync.mutate()}>{copy.sync}</Button> : null}</Card></Col>)}</Row>
+    <Card title={copy.history} id="history">
       <Table<IntegrationRun> rowKey="id" loading={runs.isLoading} dataSource={runs.data?.items} pagination={false} scroll={{ x: 980 }} expandable={{ expandedRowRender: (row) => row.error ? <Typography.Text type="danger">{row.error}</Typography.Text> : <pre className="json-preview">{JSON.stringify(row.counters_json, null, 2)}</pre> }} columns={[
         { title: copy.provider, dataIndex: "provider", render: (value: string) => domainLabel(value, locale) },
         { title: copy.operation, dataIndex: "operation", render: (value: string) => domainLabel(value, locale) },
-        { title: copy.target, key: "target", render: (_, row) => row.target_type ? `${domainLabel(row.target_type, locale)} #${row.target_id}` : "—" },
+        { title: copy.target, key: "target", render: (_, row) => {
+          if (!row.target_type) return "—"
+          const label = `${domainLabel(row.target_type, locale)} #${row.target_id}`
+          if (row.target_type === "order" && row.target_id && hasPermission("orders.read")) return <Link to={`/sales/orders/${row.target_id}`}>{label}</Link>
+          if (row.target_type === "product" && row.target_id && hasPermission("catalog.read")) return <Link to={`/catalog/products?product_id=${row.target_id}`}>{label}</Link>
+          return label
+        } },
         { title: copy.status, dataIndex: "status", render: (value: string) => <Tag color={runColor[value] || "default"}>{domainLabel(value, locale)}</Tag> },
         { title: copy.attempts, key: "attempts", render: (_, row) => `${row.attempts}/${row.max_attempts}` },
         { title: copy.started, dataIndex: "started_at", render: (value: string) => dateTime(value, locale) },

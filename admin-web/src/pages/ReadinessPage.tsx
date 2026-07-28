@@ -1,8 +1,10 @@
 import { CheckCircleOutlined, CloseCircleOutlined, ExclamationCircleOutlined, QuestionCircleOutlined, ReloadOutlined } from "@ant-design/icons"
 import { useQuery } from "@tanstack/react-query"
 import { Button, Card, Col, Row, Space, Statistic, Table, Tag, Typography } from "antd"
+import { Link } from "react-router-dom"
 import { apiRequest } from "../api/client"
 import type { ProductionReadiness, ReadinessCheck, WorkerHeartbeat } from "../api/types"
+import { useAuth } from "../auth/AuthProvider"
 import { PageHeader } from "../components/PageHeader"
 import { QueryState } from "../components/QueryState"
 import { useLanguage } from "../i18n/LanguageProvider"
@@ -18,6 +20,7 @@ const statusMeta = {
 
 export function ReadinessPage() {
   const { locale } = useLanguage()
+  const { hasPermission } = useAuth()
   const readiness = useQuery({
     queryKey: ["production-readiness"],
     queryFn: () => apiRequest<ProductionReadiness>("/integrations/production-readiness"),
@@ -33,6 +36,12 @@ export function ReadinessPage() {
     if (status === "warning") return copy.warning
     if (status === "error") return copy.error
     return copy.unknown
+  }
+  const checkPath = (key: string) => {
+    if (["queues", "workers", "integrations"].includes(key) && hasPermission("integrations.read")) return "/integrations"
+    if (key === "active_alerts" && hasPermission("alerts.read")) return "/automation?tab=alerts"
+    if (["rbac_mfa", "security_config"].includes(key) && hasPermission("staff.manage")) return "/settings/staff"
+    return undefined
   }
 
   return <div className="page-stack">
@@ -53,7 +62,7 @@ export function ReadinessPage() {
           scroll={{ x: 860 }}
           columns={[
             { title: copy.status, width: 130, render: (_: unknown, row) => <Tag icon={statusMeta[row.status].icon} color={statusMeta[row.status].color}>{statusText(row.status)}</Tag> },
-            { title: copy.check, render: (_: unknown, row) => <Typography.Text strong>{label(row)}</Typography.Text> },
+            { title: copy.check, render: (_: unknown, row) => checkPath(row.key) ? <Link to={checkPath(row.key)!}><Typography.Text strong>{label(row)}</Typography.Text></Link> : <Typography.Text strong>{label(row)}</Typography.Text> },
             { title: copy.message, render: (_: unknown, row) => <Typography.Text type={row.status === "error" ? "danger" : undefined}>{message(row)}</Typography.Text> },
             { title: copy.details, render: (_: unknown, row) => Object.keys(row.details || {}).length ? <Typography.Text code>{JSON.stringify(row.details)}</Typography.Text> : "—" },
           ]}
@@ -65,7 +74,7 @@ export function ReadinessPage() {
           dataSource={readiness.data.workers}
           pagination={false}
           columns={[
-            { title: copy.check, dataIndex: "name", render: (value: string) => domainLabel(value, locale) },
+            { title: copy.check, dataIndex: "name", render: (value: string) => hasPermission("integrations.read") ? <Link to="/integrations">{domainLabel(value, locale)}</Link> : domainLabel(value, locale) },
             { title: copy.status, render: (_: unknown, row) => <Tag color={statusMeta[row.status].color}>{statusText(row.status)}</Tag> },
             { title: copy.lastSeen, dataIndex: "last_seen_at", render: (value: string | null) => dateTime(value, locale) },
             { title: copy.staleAfter, dataIndex: "stale_after_seconds", render: (value: number) => `${value} ${locale === "ru" ? "с" : "s"}` },

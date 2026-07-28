@@ -2,10 +2,11 @@ import { ArrowLeftOutlined, BellOutlined, CheckSquareOutlined, DeleteOutlined, L
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Alert, Avatar, Button, Card, Col, Descriptions, Form, Input, List, Modal, Row, Space, Statistic, Tag, Timeline, Typography, message } from "antd"
 import { useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 import { apiRequest } from "../../api/client"
 import type { CustomerDetail } from "../../api/types"
 import { useAuth } from "../../auth/AuthProvider"
+import { LinkedCard } from "../../components/LinkedCard"
 import { PageHeader } from "../../components/PageHeader"
 import { QueryState } from "../../components/QueryState"
 import { useLanguage } from "../../i18n/LanguageProvider"
@@ -67,6 +68,15 @@ export function CustomerDetailPage() {
     permission_denied: copy.pushDenied,
     unknown: copy.pushUnknown,
   }[customer?.push_delivery_status || "unknown"]
+  const customerOrdersPath = customer && hasPermission("orders.read")
+    ? `/sales/orders?q=${encodeURIComponent(customer.email || customer.phone_number || `${customer.name} ${customer.surname}`.trim())}`
+    : undefined
+  const eventEntityPath = (entityType: string | null, entityId: string | number | null) => {
+    if (!entityType || !entityId) return undefined
+    if (entityType === "order" && hasPermission("orders.read")) return `/sales/orders/${entityId}`
+    if (entityType === "product" && hasPermission("catalog.read")) return `/catalog/products?product_id=${entityId}`
+    return undefined
+  }
 
   return (
     <div className="page-stack">
@@ -79,8 +89,8 @@ export function CustomerDetailPage() {
       {customer ? (
         <>
           <Row gutter={[16, 16]}>
-            <Col xs={12} lg={6}><Card><Statistic title={copy.revenue} value={money(customer.paid_total, "RUB", locale)} /></Card></Col>
-            <Col xs={12} lg={6}><Card><Statistic title={copy.orders} value={customer.orders_count} /></Card></Col>
+            <Col xs={12} lg={6}><LinkedCard to={customerOrdersPath} linkLabel={copy.revenue}><Statistic title={copy.revenue} value={money(customer.paid_total, "RUB", locale)} /></LinkedCard></Col>
+            <Col xs={12} lg={6}><LinkedCard to={customerOrdersPath} linkLabel={copy.orders}><Statistic title={copy.orders} value={customer.orders_count} /></LinkedCard></Col>
             <Col xs={12} lg={6}><Card><Statistic title={copy.basket} value={money(customer.basket_total, "RUB", locale)} suffix={`· ${customer.basket_items}`} /></Card></Col>
             <Col xs={12} lg={6}><Card><Statistic title={copy.views} value={customer.total_product_views} /></Card></Col>
           </Row>
@@ -143,7 +153,7 @@ export function CustomerDetailPage() {
                 {customer.recent_events.length ? <Timeline items={customer.recent_events.slice(0, 20).map((event) => ({
                   color: ["order_created", "order_paid"].includes(event.event_name) ? "green" : event.event_name === "checkout_failed" ? "red" : "blue",
                   children: <div>
-                    <Space wrap><strong>{domainLabel(event.event_name, locale)}</strong><Tag>{domainLabel(event.source, locale)}</Tag>{event.entity_type ? <Typography.Text type="secondary">{domainLabel(event.entity_type, locale)} #{event.entity_id}</Typography.Text> : null}</Space>
+                    <Space wrap><strong>{domainLabel(event.event_name, locale)}</strong><Tag>{domainLabel(event.source, locale)}</Tag>{event.entity_type ? eventEntityPath(event.entity_type, event.entity_id) ? <Link to={eventEntityPath(event.entity_type, event.entity_id)!}>{domainLabel(event.entity_type, locale)} #{event.entity_id}</Link> : <Typography.Text type="secondary">{domainLabel(event.entity_type, locale)} #{event.entity_id}</Typography.Text> : null}</Space>
                     <div><Typography.Text type="secondary">{dateTime(event.occurred_at, locale)}</Typography.Text></div>
                     {Object.keys(event.properties).length ? <Typography.Text code>{JSON.stringify(event.properties)}</Typography.Text> : null}
                   </div>,
