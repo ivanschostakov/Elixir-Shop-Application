@@ -29,6 +29,7 @@ from src.app.services.admin import AdminContext, add_admin_audit, require_permis
 from src.app.services.avatar_storage import remove_existing_avatars
 from src.database import get_db
 from src.database.models import (
+    Admin,
     AdminNote,
     Basket,
     BasketItem,
