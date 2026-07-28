@@ -22,12 +22,12 @@ from src.app.services.admin.role_catalog import ASSIGNABLE_ROLE_CODES, SYSTEM_RO
 from src.database import get_db
 from src.database.models import (
     Admin,
+    AdminIdentity,
+    AdminSession,
     AdminAuditLog,
     AdminRole,
     AdminRoleAssignment,
     AdminSavedView,
-    User,
-    UserSession,
 )
 
 admin_settings_router = APIRouter(tags=["admin_settings"])
@@ -74,12 +74,12 @@ async def _ensure_not_last_active_superadmin(db: AsyncSession, admin: Admin) -> 
         return
     active_superadmin_ids = list((await db.execute(
         select(Admin.user_id)
-        .join(User, User.id == Admin.user_id)
+        .join(AdminIdentity, AdminIdentity.id == Admin.user_id)
         .join(AdminRoleAssignment, AdminRoleAssignment.admin_user_id == Admin.user_id)
         .join(AdminRole, AdminRole.id == AdminRoleAssignment.role_id)
         .where(
             Admin.is_active.is_(True),
-            User.is_active.is_(True),
+            AdminIdentity.is_active.is_(True),
             AdminRole.code == "superadmin",
         )
         .order_by(Admin.user_id)
@@ -208,10 +208,9 @@ async def remove_staff(
     before = _staff_read(admin).model_dump(mode="json")
     now = ufa_now()
     sessions = list((await db.execute(
-        select(UserSession).where(
-            UserSession.user_id == user_id,
-            UserSession.purpose == "admin",
-            UserSession.revoked_at.is_(None),
+        select(AdminSession).where(
+            AdminSession.admin_user_id == user_id,
+            AdminSession.revoked_at.is_(None),
         )
     )).scalars().all())
     for session in sessions:

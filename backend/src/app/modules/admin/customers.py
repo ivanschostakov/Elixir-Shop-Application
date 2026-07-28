@@ -29,9 +29,7 @@ from src.app.services.admin import AdminContext, add_admin_audit, require_permis
 from src.app.services.avatar_storage import remove_existing_avatars
 from src.database import get_db
 from src.database.models import (
-    Admin,
     AdminNote,
-    AdminRoleAssignment,
     Basket,
     BasketItem,
     CustomerAttribution,
@@ -361,19 +359,6 @@ async def delete_customer(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
     ensure_not_stale(actual=user.updated_at, expected=payload.expected_updated_at)
-
-    admin = await db.get(Admin, customer_id)
-    if admin is not None:
-        role_assignment = (await db.execute(
-            select(AdminRoleAssignment.admin_user_id)
-            .where(AdminRoleAssignment.admin_user_id == customer_id)
-            .limit(1)
-        )).scalar_one_or_none()
-        if admin.is_active or role_assignment is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Remove this user's staff access before deleting the customer profile",
-            )
 
     conversation_ids = list((await db.execute(
         select(CrmConversation.id).where(CrmConversation.customer_user_id == customer_id)

@@ -36,7 +36,11 @@ class AdminRoleAssignment(Base):
 class Admin(Base):
     __tablename__ = "admins"
 
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("admin_identities.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     totp_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -44,7 +48,7 @@ class Admin(Base):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     locale: Mapped[str] = mapped_column(String(5), nullable=False, default="ru", server_default=text("'ru'"))
 
-    user: Mapped["User"] = relationship(back_populates="admin")
+    user: Mapped["AdminIdentity"] = relationship(back_populates="admin")
     role_assignments: Mapped[list["AdminRoleAssignment"]] = relationship(
         back_populates="admin",
         cascade="all, delete-orphan",

@@ -53,7 +53,12 @@ from src.app.services.rate_limit import client_ip_from_request, enforce_rate_lim
 from src.app.services.security import hash_password, verify_password
 from src.app.services.security.refresh import create_refresh_token, hash_refresh_token, verify_refresh_token
 from src.database import get_db
-from src.database.models import Admin, AdminPasswordReset, User, UserSession
+from src.database.models import (
+    Admin,
+    AdminIdentity,
+    AdminPasswordReset,
+    AdminSession,
+)
 
 admin_auth_router = APIRouter(prefix="/auth", tags=["admin_auth"])
 logger = logging.getLogger(__name__)
@@ -140,8 +145,12 @@ async def request_admin_password_reset(
     admin = (
         await db.execute(
             select(Admin)
-            .join(User, User.id == Admin.user_id)
-            .where(User.email == email, User.is_active.is_(True), Admin.is_active.is_(True))
+            .join(AdminIdentity, AdminIdentity.id == Admin.user_id)
+            .where(
+                AdminIdentity.email == email,
+                AdminIdentity.is_active.is_(True),
+                Admin.is_active.is_(True),
+            )
         )
     ).scalar_one_or_none()
     # The response is intentionally identical for known and unknown addresses.
@@ -211,11 +220,10 @@ async def confirm_admin_password_reset(
     admin.user.password_hash = hash_password(payload.password)
     reset.used_at = now
     await db.execute(
-        update(UserSession)
+        update(AdminSession)
         .where(
-            UserSession.user_id == reset.user_id,
-            UserSession.purpose == "admin",
-            UserSession.revoked_at.is_(None),
+            AdminSession.admin_user_id == reset.user_id,
+            AdminSession.revoked_at.is_(None),
         )
         .values(revoked_at=now)
     )
@@ -232,14 +240,13 @@ async def _issue_admin_session(
 ) -> AdminAuthResponse:
     now = ufa_now()
     refresh_token = create_refresh_token()
-    session = UserSession(
-        user_id=admin.user_id,
+    session = AdminSession(
+        admin_user_id=admin.user_id,
         refresh_token_hash=hash_refresh_token(refresh_token),
         expires_at=now + timedelta(days=REFRESH_TOKEN_LIFETIME_DAYS),
         last_used_at=now,
         user_agent=(request.headers.get("user-agent") or "")[:512] or None,
         ip_address=client_ip_from_request(request)[:64],
-        purpose="admin",
         mfa_verified_at=now,
     )
     db.add(session)
@@ -259,7 +266,13 @@ async def _issue_admin_session(
 @admin_auth_router.post("/login", response_model=AdminChallengeResponse)
 async def login_admin(payload: AdminLoginPayload, request: Request, db: AsyncSession = Depends(get_db)) -> AdminChallengeResponse:
     await enforce_rate_limit(request, scope="admin:login", limit=10, window_seconds=60, key=f"{client_ip_from_request(request)}:{str(payload.email).lower()}")
-    user = (await db.execute(select(User).where(User.email == str(payload.email).lower()))).scalar_one_or_none()
+    user = (
+        await db.execute(
+            select(AdminIdentity).where(
+                AdminIdentity.email == str(payload.email).lower(),
+            )
+        )
+    ).scalar_one_or_none()
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     admin = await _load_active_admin(db, user.id)
@@ -311,16 +324,15 @@ async def verify_admin_mfa(payload: AdminMfaVerifyPayload, request: Request, res
 async def refresh_admin_session(request: Request, response: Response, db: AsyncSession = Depends(get_db)) -> AdminAuthResponse:
     await enforce_rate_limit(request, scope="admin:refresh", limit=30, window_seconds=60)
     session_id, current_refresh_token = _parse_refresh_cookie(request)
-    session = await db.get(UserSession, session_id)
+    session = await db.get(AdminSession, session_id)
     if (
         session is None
-        or session.purpose != "admin"
         or session.revoked_at is not None
         or session.expires_at <= ufa_now()
         or not verify_refresh_token(current_refresh_token, session.refresh_token_hash)
     ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Admin refresh session is invalid")
-    admin = await _load_active_admin(db, session.user_id)
+    admin = await _load_active_admin(db, session.admin_user_id)
     if admin.mfa_confirmed_at is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="MFA is required")
     new_refresh_token = create_refresh_token()
@@ -351,7 +363,13 @@ async def update_admin_locale(payload: AdminLocalePayload, db: AsyncSession = De
 
 @admin_auth_router.get("/sessions", response_model=list[AdminSessionRead])
 async def list_admin_sessions(db: AsyncSession = Depends(get_db), context: AdminContext = Depends(get_current_admin_context)) -> list[AdminSessionRead]:
-    rows = list((await db.execute(select(UserSession).where(UserSession.user_id == context.user.id, UserSession.purpose == "admin").order_by(UserSession.created_at.desc()))).scalars().all())
+    rows = list((
+        await db.execute(
+            select(AdminSession)
+            .where(AdminSession.admin_user_id == context.user.id)
+            .order_by(AdminSession.created_at.desc())
+        )
+    ).scalars().all())
     return [AdminSessionRead(
         id=row.id,
         user_agent=row.user_agent,
@@ -366,8 +384,8 @@ async def list_admin_sessions(db: AsyncSession = Depends(get_db), context: Admin
 
 @admin_auth_router.delete("/sessions/{session_id}", response_model=AdminOkResponse)
 async def revoke_admin_session(session_id: int, db: AsyncSession = Depends(get_db), context: AdminContext = Depends(get_current_admin_context)) -> AdminOkResponse:
-    target = await db.get(UserSession, session_id)
-    if target is None or target.user_id != context.user.id or target.purpose != "admin":
+    target = await db.get(AdminSession, session_id)
+    if target is None or target.admin_user_id != context.user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     target.revoked_at = target.revoked_at or ufa_now()
     await db.commit()

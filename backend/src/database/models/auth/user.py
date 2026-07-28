@@ -40,7 +40,6 @@ class User(Base, IdPkMixin, TimestampMixin):
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     email_verification_codes: Mapped[list["EmailVerificationCode"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)
-    admin: Mapped["Admin | None"] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True, uselist=False)
     delivery_addresses: Mapped[list["DeliveryAddress"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",

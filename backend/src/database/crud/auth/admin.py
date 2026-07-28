@@ -1,9 +1,13 @@
-from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from src.database.models.auth.admin import Admin
 
 
 async def is_admin_user(session: AsyncSession, user_id: int) -> bool:
-    stmt = select(exists().where(Admin.user_id == user_id, Admin.is_active.is_(True)))
-    return bool((await session.execute(stmt)).scalar())
+    """Customer tokens never grant admin privileges.
+
+    Admin authentication uses the isolated ``admin_identities`` and
+    ``admin_sessions`` tables. Numeric IDs from the two identity stores may
+    overlap and therefore must never be compared.
+    """
+
+    del session, user_id
+    return False

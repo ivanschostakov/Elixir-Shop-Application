@@ -10,7 +10,12 @@ from starlette import status
 from config import ADMIN_READ_ONLY, ufa_now
 from src.app.services.admin.security import decode_admin_token
 from src.database import get_db
-from src.database.models import Admin, AdminRoleAssignment, User, UserSession
+from src.database.models import (
+    Admin,
+    AdminIdentity,
+    AdminRoleAssignment,
+    AdminSession,
+)
 
 admin_bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -62,9 +67,9 @@ ALL_PERMISSIONS: tuple[str, ...] = (
 
 @dataclass(frozen=True, slots=True)
 class AdminContext:
-    user: User
+    user: AdminIdentity
     admin: Admin
-    session: UserSession
+    session: AdminSession
     roles: tuple[str, ...]
     permissions: frozenset[str]
 
@@ -88,7 +93,7 @@ async def get_admin_by_user_id(db: AsyncSession, user_id: int) -> Admin | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-def build_admin_context(*, admin: Admin, session: UserSession) -> AdminContext:
+def build_admin_context(*, admin: Admin, session: AdminSession) -> AdminContext:
     roles = tuple(sorted({assignment.role.code for assignment in admin.role_assignments}))
     permissions = frozenset(
         permission
@@ -113,11 +118,10 @@ async def get_current_admin_context(
     except (KeyError, TypeError, ValueError):
         raise _unauthorized() from None
 
-    session = await db.get(UserSession, session_id)
+    session = await db.get(AdminSession, session_id)
     if (
         session is None
-        or session.user_id != user_id
-        or session.purpose != "admin"
+        or session.admin_user_id != user_id
         or session.mfa_verified_at is None
         or session.revoked_at is not None
         or session.expires_at <= ufa_now()

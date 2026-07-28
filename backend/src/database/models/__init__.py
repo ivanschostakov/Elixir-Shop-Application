@@ -3,6 +3,8 @@ from .ai.chat import AIChat
 from .ai.message import AIMessage
 from .ai.usage import AIMessageUsage
 from .auth.admin import Admin, AdminRoleAssignment
+from .auth.admin_identity import AdminIdentity
+from .auth.admin_session import AdminSession
 from .admin import (
     AdminAlert,
     AdminAlertReadReceipt,
@@ -80,6 +82,7 @@ from .webhooks.webhook_delivery import WebhookDelivery
 
 __all__ = [
     "Admin",
+    "AdminIdentity",
     "AdminAlert",
     "AdminAlertReadReceipt",
     "AdminAuditLog",
@@ -98,6 +101,7 @@ __all__ = [
     "AdminPushCampaignTemplate",
     "AdminRole",
     "AdminRoleAssignment",
+    "AdminSession",
     "AdminSavedView",
     "AdminSlaPolicy",
     "AdminTask",

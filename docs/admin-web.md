@@ -6,9 +6,9 @@
 
 1. Start PostgreSQL, Redis and the backend.
 2. Apply the migration: `cd backend && alembic upgrade head`.
-3. If the database has no administrator yet, bootstrap the first superadministrator from an existing registered application user:
+3. If the database has no administrator yet, create the first independent superadministrator identity. The command asks for the admin password without echoing it:
 
-   `cd backend && python -m src.scripts.bootstrap_admin admin@example.com`
+   `cd backend && python -m src.scripts.bootstrap_admin admin@example.com --name Admin --surname Owner`
 
 4. Start the SPA: `cd admin-web && npm install && npm run dev`.
 5. Open `http://localhost:4173`. The first sign-in requires TOTP setup.
@@ -66,16 +66,17 @@ Only the superadministrator has `staff.manage`. Granting `superadmin` requires a
 5. Send the invitation. The email contains a one-time link valid for 72 hours by default.
 6. Track the invitation in Invitation history. A pending or expired invitation can be resent; resending rotates the token and extends the deadline. A pending invitation can be revoked.
 
-If the email is not registered in Elixir Shop, the recipient enters name, surname and a new password. If a customer account already uses the email, the recipient must enter that account's current password. In both cases the email link proves control of the address, creates the admin record and assigns the selected roles. The recipient is then sent to the normal admin login and must configure TOTP MFA on first sign-in.
+The recipient enters a name, surname and a new admin password. If a customer account already uses the same email, it is neither read nor changed: the invitation creates an independent admin identity with its own password and sessions. The email link proves control of the address, creates the admin record and assigns the selected roles. The recipient is then sent to the normal admin login and must configure TOTP MFA on first sign-in.
 
 The invitation token is never stored in plaintext. PostgreSQL stores only its SHA-256 hash. The browser receives the token in the URL fragment, and the SPA sends it in a request body, keeping it out of API paths. Creation, resending, revocation, acceptance and subsequent role/status changes are retained in the admin audit log. Only one unaccepted, non-revoked invitation can exist per email.
 
 ### Change or remove access
 
 - Use Edit roles on an active employee to replace their complete role set.
-- Disable Active to block the employee immediately; each protected request rechecks both the user and admin status.
+- Disable Active to block the employee immediately; each protected request rechecks the independent admin identity and admin status.
 - An administrator cannot disable their own account or remove their own superadministrator role.
 - Revoke the employee's active sessions from the security/session control when account compromise is suspected.
+- Removing staff access revokes admin sessions and roles without changing a buyer profile with the same email. Deleting a buyer profile likewise cannot remove or change admin access.
 - Never share a superadministrator account. Invite a named person so every action has an attributable audit actor.
 
 ## Order recovery and job reliability

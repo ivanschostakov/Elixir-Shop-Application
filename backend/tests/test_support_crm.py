@@ -25,16 +25,38 @@ def _database_connection():
     )
 
 
-def _promote_to_support_admin(*, user_id: int) -> None:
+def _create_support_admin_identity(*, customer_user_id: int) -> int:
     with _database_connection() as connection, connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO admin_identities (
+                email,
+                password_hash,
+                name,
+                surname,
+                is_active,
+                last_active_at
+            )
+            SELECT
+                email,
+                password_hash,
+                name,
+                surname,
+                true,
+                last_active_at
+            FROM users
+            WHERE id = %s
+            RETURNING id
+            """,
+            (customer_user_id,),
+        )
+        admin_user_id = int(cursor.fetchone()[0])
         cursor.execute(
             """
             INSERT INTO admins (user_id, is_active, mfa_confirmed_at, locale)
             VALUES (%s, true, now(), 'ru')
-            ON CONFLICT (user_id) DO UPDATE
-            SET is_active = true, mfa_confirmed_at = now()
             """,
-            (user_id,),
+            (admin_user_id,),
         )
         cursor.execute(
             """
@@ -44,8 +66,9 @@ def _promote_to_support_admin(*, user_id: int) -> None:
             WHERE code = 'support'
             ON CONFLICT (admin_user_id, role_id) DO NOTHING
             """,
-            (user_id, user_id),
+            (admin_user_id, admin_user_id),
         )
+        return admin_user_id
 
 
 def _seed_ai_chat(*, user_id: int) -> int:
@@ -176,13 +199,15 @@ def test_support_to_crm_reply_lead_and_ai_visibility_flow(
         "surname": "Оператор",
     })
     customer_id = int(customer_auth["user"]["id"])
-    operator_id = int(operator_auth["user"]["id"])
-    _promote_to_support_admin(user_id=operator_id)
+    operator_customer_id = int(operator_auth["user"]["id"])
+    operator_admin_id = _create_support_admin_identity(
+        customer_user_id=operator_customer_id,
+    )
     ai_chat_id = _seed_ai_chat(user_id=customer_id)
 
     context = AdminContext(
-        user=SimpleNamespace(id=operator_id, name="Анна", surname="Оператор"),
-        admin=SimpleNamespace(user_id=operator_id),
+        user=SimpleNamespace(id=operator_admin_id, name="Анна", surname="Оператор"),
+        admin=SimpleNamespace(user_id=operator_admin_id),
         session=SimpleNamespace(id=1),
         roles=("support",),
         permissions=frozenset({"*"}),
@@ -282,7 +307,7 @@ def test_support_to_crm_reply_lead_and_ai_visibility_flow(
         lead = created_lead.json()
         lead_id = int(lead["id"])
         assert lead["customer_user_id"] == customer_id
-        assert lead["owner_user_id"] == operator_id
+        assert lead["owner_user_id"] == operator_admin_id
         assert lead["stage_history"][0]["to_status"] == "new"
 
         lost = client.patch(

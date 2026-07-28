@@ -41,6 +41,7 @@ from src.app.services.admin.security import (
 )
 from src.app.services.security import create_access_token
 from src.database import get_db
+from src.database.models import Admin, AdminIdentity, AdminSession, User
 
 
 def test_totp_matches_rfc_vector_and_rejects_invalid_code():
@@ -58,6 +59,20 @@ def test_admin_access_token_has_isolated_audience_and_type():
     assert payload["sub"] == "42"
     assert payload["sid"] == "7"
     assert decode_admin_token(token, expected_type="admin_challenge") is None
+
+
+def test_admin_identity_and_sessions_are_structurally_separate_from_customers():
+    admin_identity_fk = next(iter(Admin.__table__.c.user_id.foreign_keys))
+    admin_session_fk = next(iter(AdminSession.__table__.c.admin_user_id.foreign_keys))
+
+    assert admin_identity_fk.target_fullname == "admin_identities.id"
+    assert admin_session_fk.target_fullname == "admin_identities.id"
+    assert "admin" not in User.__mapper__.relationships
+    assert AdminIdentity.__table__.c.email.unique is None
+    assert any(
+        constraint.name == "uq_admin_identities_email"
+        for constraint in AdminIdentity.__table__.constraints
+    )
 
 
 def test_totp_secret_encryption_round_trip():

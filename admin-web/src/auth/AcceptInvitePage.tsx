@@ -32,9 +32,9 @@ export function AcceptInvitePage() {
         name: "Имя",
         surname: "Фамилия",
         password: "Новый пароль",
-        existingPassword: "Пароль от вашего аккаунта Elixir Shop",
-        existingHint: "Для этого email уже есть аккаунт покупателя. Подтвердите владение им текущим паролем.",
-        newHint: "Создайте рабочий аккаунт. Email уже подтвержден одноразовой ссылкой.",
+        existingPassword: "Новый пароль админки",
+        existingHint: "Для этого email уже была отдельная учётная запись администратора. Приглашение восстановит её и задаст новый пароль. Аккаунт покупателя не используется.",
+        newHint: "Создайте отдельную рабочую учётную запись. Она не связана с аккаунтом покупателя.",
         accept: "Принять приглашение",
         invalid: "Ссылка приглашения отсутствует или повреждена.",
         unavailable: "Приглашение больше недоступно",
@@ -51,9 +51,9 @@ export function AcceptInvitePage() {
         name: "First name",
         surname: "Last name",
         password: "New password",
-        existingPassword: "Your existing Elixir Shop password",
-        existingHint: "A customer account already uses this email. Confirm ownership with its current password.",
-        newHint: "Create your work account. The one-time link has already verified the email.",
+        existingPassword: "New admin password",
+        existingHint: "A separate admin identity already existed for this email. The invitation will restore it and set a new password. The customer account is not used.",
+        newHint: "Create a separate work identity. It is not linked to a customer account.",
         accept: "Accept invitation",
         invalid: "The invitation link is missing or malformed.",
         unavailable: "Invitation is no longer available",
@@ -145,7 +145,7 @@ export function AcceptInvitePage() {
                     </div>
                   ) : null}
                   <Form.Item name="password" label={preview.existing_user ? copy.existingPassword : copy.password} rules={[{ required: true, min: 8, max: 128 }]}>
-                    <Input.Password prefix={<LockOutlined />} autoComplete={preview.existing_user ? "current-password" : "new-password"} />
+                    <Input.Password prefix={<LockOutlined />} autoComplete="new-password" />
                   </Form.Item>
                   <Button type="primary" htmlType="submit" block loading={submitting}>{copy.accept}</Button>
                 </Form>
