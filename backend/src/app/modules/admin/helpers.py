@@ -17,6 +17,7 @@ from src.app.modules.admin.schemas import (
     CustomerCompact,
 )
 from src.app.modules.products.helpers import review_attachment_path
+from src.app.services.stock_visibility import StockVisibilityPolicy
 from src.app.services.review_attachments import build_review_attachment_url
 from src.database.models import Banner, BusinessContentPage, BusinessContentVersion, Order, Product, ProductCategory, Review, ReviewModerationEvent
 from src.database.models.orders.history import get_order_status_code
@@ -124,7 +125,13 @@ def serialize_admin_order_detail(order: Order) -> AdminOrderDetail:
     )
 
 
-def serialize_admin_product(request: Request, product: Product) -> AdminProductRead:
+def serialize_admin_product(
+    request: Request,
+    product: Product,
+    *,
+    stock_policy: StockVisibilityPolicy | None = None,
+) -> AdminProductRead:
+    policy = stock_policy or StockVisibilityPolicy()
     return AdminProductRead(
         id=product.id,
         system_id=str(product.system_id),
@@ -136,6 +143,8 @@ def serialize_admin_product(request: Request, product: Product) -> AdminProductR
         in_stock=product.in_stock,
         archived=product.archived,
         priority=product.priority,
+        stock_reduction_override=product.stock_reduction_override,
+        effective_stock_reduction=policy.reduction_for(product),
         image_url=build_products_media_url(str(request.base_url), product.image_path),
         category_ids=sorted(link.category_id for link in product.products_by_category),
         variants=[AdminVariantRead(
@@ -144,6 +153,7 @@ def serialize_admin_product(request: Request, product: Product) -> AdminProductR
             sku=variant.sku,
             name=variant.name,
             stock=variant.stock,
+            display_stock=policy.visible_stock(variant.stock, product),
             price=variant.price,
             archived=variant.archived,
             image_url=build_products_media_url(str(request.base_url), variant.image_path),

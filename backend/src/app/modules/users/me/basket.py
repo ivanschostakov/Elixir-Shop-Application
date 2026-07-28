@@ -5,6 +5,7 @@ from starlette import status
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.recommendations import record_cart_add
 from src.app.services.customer_intelligence import record_customer_event_safe
+from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.app.modules.users.me.schemas import UpdateOrderDraftPayload
 from src.app.services.basket import (
     _ensure_basket,
@@ -17,7 +18,7 @@ from src.app.services.basket import (
 from src.database import get_db
 from src.database.crud import clear_basket, create_basket_item, delete_basket_item, get_basket_item_by_id, update_basket_item
 from src.database.crud.basket.basket_item import get_basket_item_by_basket_and_variant
-from src.database.models import User
+from src.database.models import Product, User
 from src.database.schemas import BasketItemCreate, BasketItemUpdate, BasketRead, OrderDraftCheckoutOptionsRead
 
 my_basket_router = APIRouter(prefix="/basket", tags=["my_basket"])
@@ -36,10 +37,13 @@ async def create_my_basket_item(payload: BasketItemCreate, request: Request, db:
     basket = await _ensure_basket(db, current_user.id)
     variant = await _get_variant_for_update(db, payload.variant_id)
     if variant is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    product = await db.get(Product, variant.product_id)
+    stock_policy = await get_stock_visibility_policy(db)
 
     existing_item = await get_basket_item_by_basket_and_variant(db, basket.id, variant.id, user_id=current_user.id)
     next_quantity = payload.quantity if existing_item is None else existing_item.quantity + payload.quantity
-    if next_quantity > variant.stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
+    if next_quantity > stock_policy.visible_stock(variant.stock, product):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
 
     await create_basket_item(db, basket_id=basket.id, user_id=current_user.id, product_id=variant.product_id, variant_id=variant.id, quantity=payload.quantity, price=variant.price)
     await record_cart_add( db, user_id=current_user.id, product_id=variant.product_id, quantity=payload.quantity)
@@ -63,7 +67,10 @@ async def update_my_basket_item(item_id: int, payload: BasketItemUpdate, request
 
     variant = await _get_variant_for_update(db, basket_item.variant_id)
     if variant is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
-    if payload.quantity > variant.stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
+    product = await db.get(Product, variant.product_id)
+    stock_policy = await get_stock_visibility_policy(db)
+    if payload.quantity > stock_policy.visible_stock(variant.stock, product):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
 
     quantity_delta = payload.quantity - basket_item.quantity
     await update_basket_item(db, basket_item, basket_id=basket.id, user_id=current_user.id, product_id=variant.product_id, quantity=payload.quantity, price=variant.price)

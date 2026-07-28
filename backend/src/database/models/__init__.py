@@ -55,6 +55,7 @@ from .catalog.product import Product
 from .catalog.banner import Banner
 from .catalog.banner_click import BannerClick
 from .catalog.banner_impression import BannerImpression
+from .catalog.settings import CatalogSettings
 from .catalog.product_category import ProductCategory
 from .catalog.products_by_category import ProductByCategory
 from .catalog.review import Review
@@ -129,6 +130,7 @@ __all__ = [
     "CustomerAttribution",
     "CustomerConsent",
     "CustomerMarketingProfile",
+    "CatalogSettings",
     "CrmAssignmentHistory",
     "CrmConversation",
     "CrmLead",

@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
@@ -26,6 +27,10 @@ ANALYTICS_TIMEZONE = "Asia/Yekaterinburg"
 
 DEFAULT_DASHBOARD_WIDGETS = ["revenue", "paid_orders", "average_order", "new_customers", "revenue_trend", "attention", "sla"]
 DASHBOARD_WIDGETS = frozenset(DEFAULT_DASHBOARD_WIDGETS)
+
+
+def _catalog_product_path(product: Product) -> str:
+    return f"/catalog/products?{urlencode({'q': product.sku})}"
 
 
 @admin_overview_router.get("/dashboard", response_model=DashboardResponse)
@@ -195,5 +200,5 @@ async def global_search(
 
     items = [SearchResultItem(type="order", id=row.id, title=f"Заказ {row.order_code}", subtitle=f"{row.status} · {row.grand_total} {row.currency}", path=f"/sales/orders/{row.id}") for row in order_rows]
     items.extend(SearchResultItem(type="customer", id=row.id, title=f"{row.name} {row.surname}".strip(), subtitle=row.email or row.phone_number or f"ID {row.id}", path=f"/customers/{row.id}") for row in customer_rows)
-    items.extend(SearchResultItem(type="product", id=row.id, title=row.name, subtitle=row.sku, path=f"/catalog/products/{row.id}") for row in product_rows)
+    items.extend(SearchResultItem(type="product", id=row.id, title=row.name, subtitle=row.sku, path=_catalog_product_path(row)) for row in product_rows)
     return SearchResponse(items=items)

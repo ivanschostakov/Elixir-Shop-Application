@@ -21,6 +21,7 @@ from src.app.main import app
 from src.app.modules.admin.orders import ALLOWED_TRANSITIONS
 from src.app.modules.admin.campaigns import _normalize_utm, _rate
 from src.app.modules.admin.integrations import REQUIRED_ADMIN_PERMISSIONS, REQUIRED_ADMIN_ROUTES
+from src.app.modules.admin.overview import _catalog_product_path
 from src.app.services.admin.analytics import analytics_csv, percent
 from src.app.services.admin.jobs import get_worker_heartbeats, is_retryable_error, parse_job, record_worker_heartbeat, retry_delay_seconds
 from src.app.services.admin.exports import _write_csv, _write_xlsx, normalize_export_payload
@@ -259,6 +260,12 @@ def test_crm_and_campaign_routes_are_registered():
     )
     assert not (REQUIRED_ADMIN_ROUTES - paths)
     assert REQUIRED_ADMIN_PERMISSIONS.issubset(ALL_PERMISSIONS)
+
+
+def test_global_search_product_path_targets_existing_catalog_page():
+    product = SimpleNamespace(sku="SKU 10 & 20")
+
+    assert _catalog_product_path(product) == "/catalog/products?q=SKU+10+%26+20"
 
 
 def test_customer_hard_delete_requires_explicit_confirmation():

@@ -287,6 +287,7 @@ class AdminVariantRead(BaseModel):
     sku: str | None
     name: str
     stock: int
+    display_stock: int
     price: Decimal
     archived: bool
     image_url: str
@@ -303,6 +304,8 @@ class AdminProductRead(BaseModel):
     in_stock: bool
     archived: bool
     priority: int
+    stock_reduction_override: int | None
+    effective_stock_reduction: int
     image_url: str
     category_ids: list[int]
     variants: list[AdminVariantRead]
@@ -314,8 +317,20 @@ class AdminProductMerchandisePayload(BaseModel):
     usage: str | None = None
     expiration: str | None = None
     priority: int = Field(ge=0)
+    stock_reduction_override: int | None = Field(default=None, ge=0, le=1_000_000)
     category_ids: list[int] = Field(default_factory=list)
     expected_updated_at: datetime
+
+
+class AdminCatalogStockSettingsRead(BaseModel):
+    enabled: bool
+    reduction: int
+    updated_at: datetime | None
+
+
+class AdminCatalogStockSettingsPayload(BaseModel):
+    enabled: bool
+    reduction: int = Field(ge=0, le=1_000_000)
 
 
 class AdminCategoryPayload(BaseModel):

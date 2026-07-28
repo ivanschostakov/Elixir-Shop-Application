@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
 
+from src.app.services.stock_visibility import StockVisibilityPolicy, get_stock_visibility_policy
 from src.database.crud import get_order_drafts_for_user
 from src.database.models import Basket, BasketItem, OrderDraft, OrderDraftItem, Variant
 
@@ -43,16 +44,27 @@ async def _get_locked_basket_items(session: AsyncSession, basket_id: int) -> lis
 async def _get_locked_variants(session: AsyncSession, variant_ids: list[int]) -> dict[int, Variant]:
     if not variant_ids: return {}
 
-    stmt = select(Variant).where(Variant.id.in_(variant_ids)).with_for_update()
+    stmt = (
+        select(Variant)
+        .options(selectinload(Variant.product))
+        .where(Variant.id.in_(variant_ids))
+        .with_for_update()
+    )
     variants = list((await session.execute(stmt)).scalars().all())
     return {variant.id: variant for variant in variants}
 
 
-def _validate_checkout_items(items: list[BasketItem], variants_by_id: dict[int, Variant]) -> None:
+def _validate_checkout_items(
+    items: list[BasketItem],
+    variants_by_id: dict[int, Variant],
+    stock_policy: StockVisibilityPolicy,
+) -> None:
     for item in items:
         variant = variants_by_id.get(item.variant_id)
         if variant is None: raise _checkout_conflict("Basket contains a variant that is no longer available")
-        if variant.archived or variant.stock <= 0 or item.quantity > variant.stock: raise _checkout_conflict("Basket contains unavailable items")
+        visible_stock = stock_policy.visible_stock(variant.stock, variant.product)
+        if variant.archived or visible_stock <= 0 or item.quantity > visible_stock:
+            raise _checkout_conflict("Basket contains unavailable items")
 
 
 def _build_draft_items_from_basket(*, user_id: int, draft_id: int, basket_items: list[BasketItem], variants_by_id: dict[int, Variant]) -> tuple[list[OrderDraftItem], Decimal, int]:
@@ -103,7 +115,11 @@ async def _sync_order_draft_items_from_basket(session: AsyncSession, *, draft: O
         return
 
     variants_by_id = await _get_locked_variants(session, [item.variant_id for item in basket_items])
-    _validate_checkout_items(basket_items, variants_by_id)
+    _validate_checkout_items(
+        basket_items,
+        variants_by_id,
+        await get_stock_visibility_policy(session),
+    )
     draft_items, basket_subtotal, total_quantity = _build_draft_items_from_basket(
         user_id=user_id,
         draft_id=draft.id,

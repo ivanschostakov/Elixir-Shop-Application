@@ -343,6 +343,8 @@ export type Product = {
   in_stock: boolean
   archived: boolean
   priority: number
+  stock_reduction_override: number | null
+  effective_stock_reduction: number
   image_url: string
   category_ids: number[]
   variants: Array<{
@@ -351,11 +353,18 @@ export type Product = {
     sku: string | null
     name: string
     stock: number
+    display_stock: number
     price: string
     archived: boolean
     image_url: string
   }>
   updated_at: string
+}
+
+export type CatalogStockSettings = {
+  enabled: boolean
+  reduction: number
+  updated_at: string | null
 }
 
 export type Category = {

@@ -16,6 +16,7 @@ from src.app.services.benefits.money import quantize_money
 from src.app.services.benefits.service import resolve_benefits_for_user
 from src.app.services.discounts import discountable_subtotal_for_lines
 from src.app.services.recommendations import record_purchase
+from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.database.crud import create_delivery_recipient, create_order, create_order_draft, delete_order_draft, get_basket_by_user_id, get_delivery_recipient_by_fields, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id, get_orders_for_user as get_orders_for_user_crud
 from src.database.models import BasketItem, Order, OrderBenefitApplication, OrderDraft, OrderDraftItem, OrderItem, User, Variant
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode, get_order_history_bucket
@@ -388,6 +389,21 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
 
     if draft.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
     if not draft.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft is empty")
+    current_variants = list((await session.execute(
+        select(Variant)
+        .options(selectinload(Variant.product))
+        .where(Variant.id.in_([item.variant_id for item in draft.items]))
+        .with_for_update()
+    )).scalars().all())
+    variants_by_id = {variant.id: variant for variant in current_variants}
+    stock_policy = await get_stock_visibility_policy(session)
+    for item in draft.items:
+        variant = variants_by_id.get(item.variant_id)
+        if variant is None:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft contains unavailable items")
+        visible_stock = stock_policy.visible_stock(variant.stock, variant.product)
+        if variant.archived or visible_stock <= 0 or item.quantity > visible_stock:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft contains unavailable items")
 
     selected_delivery_service, selected_delivery_payload = await _build_selected_delivery_payload(draft)
     discountable_subtotal = await discountable_subtotal_for_lines(
@@ -469,10 +485,15 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     total_quantity = 0
     snapshot_items = []
     order_item_rows: list[tuple[BasketItem, Decimal, Decimal]] = []
+    stock_policy = await get_stock_visibility_policy(session)
 
     for basket_item in basket.items:
         variant = basket_item.variant
-        if variant is None or variant.archived or variant.stock <= 0 or basket_item.quantity > variant.stock:
+        visible_stock = stock_policy.visible_stock(
+            variant.stock if variant is not None else 0,
+            basket_item.product,
+        )
+        if variant is None or variant.archived or visible_stock <= 0 or basket_item.quantity > visible_stock:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
 
         unit_price = variant.price
@@ -596,6 +617,7 @@ async def repeat_order_as_draft_for_user(session: AsyncSession, *, user_id: int,
     if not order.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order is empty")
 
     variants_by_id = await _get_locked_variants_for_repeat(session, [item.variant_id for item in order.items])
+    stock_policy = await get_stock_visibility_policy(session)
     draft_items: list[OrderDraftItem] = []
     basket_subtotal = Decimal("0.00")
     total_quantity = 0
@@ -603,7 +625,9 @@ async def repeat_order_as_draft_for_user(session: AsyncSession, *, user_id: int,
     for order_item in order.items:
         variant = variants_by_id.get(order_item.variant_id)
         if variant is None or variant.product is None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
-        if variant.archived or variant.stock <= 0 or order_item.quantity > variant.stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
+        visible_stock = stock_policy.visible_stock(variant.stock, variant.product)
+        if variant.archived or visible_stock <= 0 or order_item.quantity > visible_stock:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order contains unavailable items")
 
         line_total = variant.price * order_item.quantity
         basket_subtotal += line_total

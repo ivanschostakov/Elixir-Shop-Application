@@ -6,6 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.services.recommendations import record_cart_add
+from src.app.services.stock_visibility import (
+    StockVisibilityPolicy,
+    get_stock_visibility_policy,
+)
 from src.database.crud import (
     create_basket_item,
     create_delivery_address,
@@ -22,7 +26,7 @@ from src.database.crud import (
     update_basket,
 )
 from src.database.crud.basket.basket_item import get_basket_item_by_basket_and_variant
-from src.database.models import Basket, BasketItem, User, Variant
+from src.database.models import Basket, BasketItem, Product, User, Variant
 from src.database.schemas import (
     BasketCreate,
     BasketItemRead,
@@ -65,7 +69,13 @@ def _filter_self_like_recipients(*, recipients: list, user: User) -> list:
     return [recipient for recipient in recipients if not _is_self_like_recipient(recipient=recipient, user=user)]
 
 
-def serialize_basket(request: Request, basket: Basket) -> BasketRead:
+def serialize_basket(
+    request: Request,
+    basket: Basket,
+    *,
+    stock_policy: StockVisibilityPolicy | None = None,
+) -> BasketRead:
+    policy = stock_policy or StockVisibilityPolicy()
     items = []
     total_quantity = 0
     total_amount = Decimal("0.00")
@@ -75,7 +85,7 @@ def serialize_basket(request: Request, basket: Basket) -> BasketRead:
     for item in sorted_items:
         unit_price = item.variant.price
         line_total = unit_price * item.quantity
-        available_quantity = max(item.variant.stock, 0)
+        available_quantity = policy.visible_stock(item.variant.stock, item.product)
         is_available = available_quantity > 0 and item.quantity <= available_quantity
         has_unavailable_items = has_unavailable_items or not is_available
         total_quantity += item.quantity
@@ -91,7 +101,7 @@ def serialize_basket(request: Request, basket: Basket) -> BasketRead:
             id=item.variant.id,
             sku=item.variant.sku,
             name=item.variant.name,
-            stock=item.variant.stock,
+            stock=available_quantity,
             price=item.variant.price,
             image_url=_variant_image_url(request, item.variant),
         ), created_at=item.created_at, updated_at=item.updated_at))
@@ -137,7 +147,11 @@ async def _get_variant_for_update(db: AsyncSession, variant_id: int) -> Variant 
 
 async def _get_serialized_basket(request: Request, db: AsyncSession, user_id: int) -> BasketRead:
     basket = await _ensure_basket(db, user_id)
-    return serialize_basket(request, basket)
+    return serialize_basket(
+        request,
+        basket,
+        stock_policy=await get_stock_visibility_policy(db),
+    )
 
 
 async def get_basket_checkout_options_for_user(db: AsyncSession, *, user: User, limit: int = 20) -> OrderDraftCheckoutOptionsRead:
@@ -219,7 +233,11 @@ async def update_basket_checkout_for_user(request: Request, db: AsyncSession, *,
     await update_basket(db, basket, BasketUpdate(**update_data))
     updated_basket = await get_basket_by_id(db, basket.id)
     if updated_basket is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load basket")
-    return serialize_basket(request, updated_basket)
+    return serialize_basket(
+        request,
+        updated_basket,
+        stock_policy=await get_stock_visibility_policy(db),
+    )
 
 
 async def _get_or_create_locked_basket(db: AsyncSession, user_id: int) -> Basket:
@@ -251,10 +269,13 @@ async def add_variant_to_basket_for_user(db: AsyncSession, *, user_id: int, vari
     basket = await _get_or_create_locked_basket(db, user_id)
     variant = await _get_variant_for_update(db, variant_id)
     if variant is None or variant.archived: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    product = await db.get(Product, variant.product_id)
+    stock_policy = await get_stock_visibility_policy(db)
 
     existing_item = await get_basket_item_by_basket_and_variant(db, basket.id, variant.id, user_id=user_id)
     next_quantity = quantity if existing_item is None else existing_item.quantity + quantity
-    if next_quantity > variant.stock: raise _basket_conflict("Requested quantity exceeds available stock")
+    if next_quantity > stock_policy.visible_stock(variant.stock, product):
+        raise _basket_conflict("Requested quantity exceeds available stock")
 
     basket_item = await create_basket_item(db, basket_id=basket.id, user_id=user_id, product_id=variant.product_id, variant_id=variant.id, quantity=quantity, price=variant.price, commit=False)
     await record_cart_add(db, user_id=user_id, product_id=variant.product_id, quantity=quantity, commit=False)
@@ -271,12 +292,22 @@ async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, u
     await _lock_basket_items(db, basket.id)
 
     variants_by_id = await _get_locked_variants(db, {item.variant_id for item in draft.items})
+    products_by_id = {
+        product_id: await db.get(Product, product_id)
+        for product_id in {item.product_id for item in draft.items}
+    }
+    stock_policy = await get_stock_visibility_policy(db)
     restored_items: list[BasketItem] = []
 
     for draft_item in draft.items:
         variant = variants_by_id.get(draft_item.variant_id)
         if variant is None: raise _basket_conflict("Order draft contains unavailable items")
-        if variant.archived or variant.stock <= 0 or draft_item.quantity > variant.stock: raise _basket_conflict("Order draft contains unavailable items")
+        visible_stock = stock_policy.visible_stock(
+            variant.stock,
+            products_by_id.get(draft_item.product_id),
+        )
+        if variant.archived or visible_stock <= 0 or draft_item.quantity > visible_stock:
+            raise _basket_conflict("Order draft contains unavailable items")
 
         restored_items.append(BasketItem(basket_id=basket.id, user_id=user_id, product_id=variant.product_id, variant_id=variant.id, quantity=draft_item.quantity, price=variant.price))
 
@@ -286,4 +317,8 @@ async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, u
     await db.commit()
     restored_basket = await get_basket_by_id(db, basket.id)
     if restored_basket is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load restored basket")
-    return serialize_basket(request, restored_basket)
+    return serialize_basket(
+        request,
+        restored_basket,
+        stock_policy=stock_policy,
+    )

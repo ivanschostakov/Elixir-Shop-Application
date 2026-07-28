@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import Boolean, Integer, String, Text, text
+from sqlalchemy import Boolean, CheckConstraint, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from config import API_BASE_URL
@@ -17,6 +17,12 @@ from src.database.models.catalog.variant import Variant
 
 class Product(Base, SystemMixin):
     __tablename__ = "products"
+    __table_args__ = (
+        CheckConstraint(
+            "stock_reduction_override IS NULL OR stock_reduction_override >= 0",
+            name="ck_products_stock_reduction_override_nonnegative",
+        ),
+    )
 
     sku: Mapped[str] = mapped_column(String(length=PRODUCT_SKU_MAX_LENGTH), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(length=PRODUCT_NAME_MAX_LENGTH), nullable=False, unique=True)
@@ -26,6 +32,7 @@ class Product(Base, SystemMixin):
     in_stock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    stock_reduction_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     variants: Mapped[list["Variant"]] = relationship(
         "Variant",

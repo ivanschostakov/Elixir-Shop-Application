@@ -4,14 +4,27 @@ import { Avatar, Button, Card, Drawer, Form, Image, Input, InputNumber, Select, 
 import { useEffect, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { apiRequest, queryString } from "../../api/client"
-import type { Category, Page, Product } from "../../api/types"
+import type { CatalogStockSettings, Category, Page, Product } from "../../api/types"
 import { useAuth } from "../../auth/AuthProvider"
 import { PageHeader } from "../../components/PageHeader"
 import { parseVisibleColumns, TableToolbar, type TableColumnOption } from "../../components/TableToolbar"
 import { useLanguage } from "../../i18n/LanguageProvider"
 import { money } from "../../utils/format"
+import { resolveAdminMediaUrl } from "../../utils/media"
 
-type MerchandiseForm = { description: string | null; usage: string | null; expiration: string | null; priority: number; category_ids: number[] }
+type MerchandiseForm = {
+  description: string | null
+  usage: string | null
+  expiration: string | null
+  priority: number
+  stock_reduction_override: number | null
+  category_ids: number[]
+}
+
+type StockSettingsForm = {
+  enabled: boolean
+  reduction: number
+}
 
 export function ProductsPage() {
   const { locale } = useLanguage()
@@ -25,6 +38,7 @@ export function ProductsPage() {
   const [selected, setSelected] = useState<Product | null>(null)
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [form] = Form.useForm<MerchandiseForm>()
+  const [stockSettingsForm] = Form.useForm<StockSettingsForm>()
   const pageSize = 50
   const updateFilters = (values: Record<string, string | number | undefined>) => {
     setSearchParams((current) => {
@@ -38,7 +52,30 @@ export function ProductsPage() {
   }
   const query = useQuery({ queryKey: ["products", search, archived, lowStock, page], queryFn: () => apiRequest<Page<Product>>(`/products${queryString({ q: search, archived: archived || undefined, low_stock: lowStock || undefined, limit: pageSize, offset: (page - 1) * pageSize })}`) })
   const categories = useQuery({ queryKey: ["categories-all"], queryFn: () => apiRequest<Page<Category>>("/categories?limit=200&offset=0") })
-  useEffect(() => { if (selected) form.setFieldsValue({ description: selected.description, usage: selected.usage, expiration: selected.expiration, priority: selected.priority, category_ids: selected.category_ids }) }, [form, selected])
+  const stockSettings = useQuery({
+    queryKey: ["catalog-stock-settings"],
+    queryFn: () => apiRequest<CatalogStockSettings>("/products/stock-visibility/settings"),
+  })
+  useEffect(() => {
+    if (selected) {
+      form.setFieldsValue({
+        description: selected.description,
+        usage: selected.usage,
+        expiration: selected.expiration,
+        priority: selected.priority,
+        stock_reduction_override: selected.stock_reduction_override,
+        category_ids: selected.category_ids,
+      })
+    }
+  }, [form, selected])
+  useEffect(() => {
+    if (stockSettings.data) {
+      stockSettingsForm.setFieldsValue({
+        enabled: stockSettings.data.enabled,
+        reduction: stockSettings.data.reduction,
+      })
+    }
+  }, [stockSettings.data, stockSettingsForm])
   const update = useMutation({
     mutationFn: (values: MerchandiseForm) => apiRequest<Product>(`/products/${selected?.id}/merchandise`, { method: "PATCH", body: JSON.stringify({ ...values, expected_updated_at: selected?.updated_at }) }),
     onSuccess: (product) => { setSelected(null); void client.invalidateQueries({ queryKey: ["products"] }); void message.success(locale === "ru" ? "Карточка товара обновлена" : "Product updated") },
@@ -60,13 +97,25 @@ export function ProductsPage() {
     },
     onError: (error: Error) => void message.error(error.message),
   })
+  const updateStockSettings = useMutation({
+    mutationFn: (values: StockSettingsForm) => apiRequest<CatalogStockSettings>("/products/stock-visibility/settings", {
+      method: "PUT",
+      body: JSON.stringify(values),
+    }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["catalog-stock-settings"] })
+      void client.invalidateQueries({ queryKey: ["products"] })
+      void message.success(locale === "ru" ? "Настройка отображаемых остатков сохранена" : "Displayed stock settings saved")
+    },
+    onError: (error: Error) => void message.error(error.message),
+  })
   const copy = locale === "ru"
-    ? { title: "Товары", description: "Данные МойСклад и локальное оформление витрины", search: "Название или SKU", archived: "Показать архив", lowStock: "Только низкие остатки", product: "Товар", source: "Источник", stock: "Остаток", price: "Цена", priority: "Приоритет", state: "Статус", edit: "Оформление", drawer: "Оформление товара", locked: "Название, SKU, цены и остатки синхронизируются из МойСклад", descriptionField: "Описание", usage: "Применение", expiration: "Срок годности", categories: "Категории", save: "Сохранить", active: "Активен", out: "Нет в наличии", archivedState: "В архиве", mainImage: "Основное изображение", variantImages: "Изображения вариантов", upload: "Загрузить", imageHint: "JPEG, PNG или WEBP до 10 МБ. Изображение будет сохранено в PNG." }
-    : { title: "Products", description: "MoySklad data and local storefront content", search: "Name or SKU", archived: "Show archived", lowStock: "Low stock only", product: "Product", source: "Source", stock: "Stock", price: "Price", priority: "Priority", state: "Status", edit: "Merchandising", drawer: "Product merchandising", locked: "Name, SKU, prices and stock are synchronized from MoySklad", descriptionField: "Description", usage: "Usage", expiration: "Expiration", categories: "Categories", save: "Save", active: "Active", out: "Out of stock", archivedState: "Archived", mainImage: "Main image", variantImages: "Variant images", upload: "Upload", imageHint: "JPEG, PNG or WEBP up to 10 MB. The image will be stored as PNG." }
+    ? { title: "Товары", description: "Данные МойСклад и локальное оформление витрины", search: "Название или SKU", archived: "Показать архив", lowStock: "Только низкие остатки", product: "Товар", source: "Источник", stock: "Остаток", stockShown: "На витрине", stockActual: "Фактически", stockSettings: "Занижение остатков на витрине", stockSettingsHint: "Из фактического остатка каждого варианта вычитается указанное количество. Остаток в МойСклад не изменяется. Общий выключатель отключает и индивидуальные значения.", stockEnabled: "Включить занижение", stockReduction: "Вычитать по умолчанию, шт.", stockOverride: "Индивидуально вычитать, шт.", stockOverrideHint: "Оставьте пустым, чтобы использовать общее значение. Укажите 0, чтобы отключить занижение только для этого товара.", price: "Цена", priority: "Приоритет", state: "Статус", edit: "Оформление", drawer: "Оформление товара", locked: "Название, SKU, цены и фактические остатки синхронизируются из МойСклад", descriptionField: "Описание", usage: "Применение", expiration: "Срок годности", categories: "Категории", save: "Сохранить", active: "Активен", out: "Нет в наличии", archivedState: "В архиве", mainImage: "Основное изображение", variantImages: "Изображения вариантов", upload: "Загрузить", imageHint: "JPEG, PNG или WEBP до 10 МБ. Изображение будет сохранено в PNG." }
+    : { title: "Products", description: "MoySklad data and local storefront content", search: "Name or SKU", archived: "Show archived", lowStock: "Low stock only", product: "Product", source: "Source", stock: "Stock", stockShown: "Storefront", stockActual: "Actual", stockSettings: "Storefront stock reduction", stockSettingsHint: "The configured amount is subtracted from each variant's actual stock. MoySklad stock is not changed. The master switch also disables custom values.", stockEnabled: "Enable reduction", stockReduction: "Default subtraction", stockOverride: "Custom subtraction, units", stockOverrideHint: "Leave empty to use the global value. Enter 0 to disable reduction for this product only.", price: "Price", priority: "Priority", state: "Status", edit: "Merchandising", drawer: "Product merchandising", locked: "Name, SKU, prices and actual stock are synchronized from MoySklad", descriptionField: "Description", usage: "Usage", expiration: "Expiration", categories: "Categories", save: "Save", active: "Active", out: "Out of stock", archivedState: "Archived", mainImage: "Main image", variantImages: "Variant images", upload: "Upload", imageHint: "JPEG, PNG or WEBP up to 10 MB. The image will be stored as PNG." }
   const tableColumns = [
-    { title: copy.product, key: "product", render: (_: unknown, row: Product) => <Space><Avatar shape="square" size={48} src={row.image_url} icon={<ProductFallback />} /><div className="table-primary"><strong>{row.name}</strong><small>{row.sku}</small></div></Space> },
+    { title: copy.product, key: "product", render: (_: unknown, row: Product) => <Space><Avatar shape="square" size={48} src={resolveAdminMediaUrl(row.image_url)} icon={<ProductFallback />} /><div className="table-primary"><strong>{row.name}</strong><small>{row.sku}</small></div></Space> },
     { title: copy.source, key: "source", render: () => <Tag bordered={false}>МойСклад</Tag> },
-    { title: copy.stock, key: "stock", render: (_: unknown, row: Product) => row.variants.reduce((sum, variant) => sum + variant.stock, 0) },
+    { title: copy.stock, key: "stock", render: (_: unknown, row: Product) => <div className="table-primary"><strong>{copy.stockShown}: {row.variants.reduce((sum, variant) => sum + variant.display_stock, 0)}</strong><small>{copy.stockActual}: {row.variants.reduce((sum, variant) => sum + variant.stock, 0)} · −{row.effective_stock_reduction}</small></div> },
     { title: copy.price, key: "price", render: (_: unknown, row: Product) => row.variants.length ? `${money(Math.min(...row.variants.map((variant) => Number(variant.price))), "RUB", locale)} — ${money(Math.max(...row.variants.map((variant) => Number(variant.price))), "RUB", locale)}` : "—" },
     { title: copy.priority, dataIndex: "priority", key: "priority", align: "center" as const },
     { title: copy.state, key: "state", render: (_: unknown, row: Product) => <Space><Tag color={row.archived ? "default" : row.in_stock ? "green" : "orange"}>{row.archived ? copy.archivedState : row.in_stock ? copy.active : copy.out}</Tag></Space> },
@@ -87,6 +136,20 @@ export function ProductsPage() {
   return (
     <div className="page-stack">
       <PageHeader title={copy.title} description={copy.description} />
+      <Card title={copy.stockSettings} style={{ marginBottom: 16 }}>
+        <Typography.Paragraph type="secondary">{copy.stockSettingsHint}</Typography.Paragraph>
+        <Form form={stockSettingsForm} layout="inline" requiredMark={false}>
+          <Form.Item name="enabled" valuePropName="checked" label={copy.stockEnabled}>
+            <Switch checkedChildren={copy.active} unCheckedChildren={locale === "ru" ? "Выключено" : "Off"} />
+          </Form.Item>
+          <Form.Item name="reduction" label={copy.stockReduction} rules={[{ required: true }]}>
+            <InputNumber min={0} max={1_000_000} />
+          </Form.Item>
+          <Form.Item>
+            <Button type="primary" loading={updateStockSettings.isPending} disabled={!hasPermission("catalog.merchandise")} onClick={() => void stockSettingsForm.validateFields().then((values) => updateStockSettings.mutate(values))}>{copy.save}</Button>
+          </Form.Item>
+        </Form>
+      </Card>
       <Card className="filter-card"><Space wrap><Input allowClear prefix={<SearchOutlined />} placeholder={copy.search} value={search} onChange={(event) => updateFilters({ q: event.target.value, page: 1 })} /><Space><Switch checked={archived} onChange={(value) => updateFilters({ archived: value ? "true" : undefined, page: 1 })} />{copy.archived}</Space><Space><Switch checked={lowStock} onChange={(value) => updateFilters({ low_stock: value ? "true" : undefined, page: 1 })} />{copy.lowStock}</Space></Space></Card>
       <TableToolbar
         resource="products"
@@ -105,7 +168,7 @@ export function ProductsPage() {
         dataSource={query.data?.items}
         rowSelection={{ selectedRowKeys, preserveSelectedRowKeys: true, onChange: setSelectedRowKeys }}
         pagination={{ current: page, pageSize, total: query.data?.total, showSizeChanger: false, onChange: (nextPage) => updateFilters({ page: nextPage }) }}
-        expandable={{ expandedRowRender: (product) => <Table rowKey="id" pagination={false} size="small" dataSource={product.variants} columns={[{ title: "SKU", dataIndex: "sku" }, { title: locale === "ru" ? "Вариант" : "Variant", dataIndex: "name" }, { title: copy.stock, dataIndex: "stock" }, { title: copy.price, dataIndex: "price", render: (value: string) => money(value, "RUB", locale) }, { title: copy.state, dataIndex: "archived", render: (value: boolean) => <Tag color={value ? "default" : "green"}>{value ? copy.archivedState : copy.active}</Tag> }]} /> }}
+        expandable={{ expandedRowRender: (product) => <Table rowKey="id" pagination={false} size="small" dataSource={product.variants} columns={[{ title: "SKU", dataIndex: "sku" }, { title: locale === "ru" ? "Вариант" : "Variant", dataIndex: "name" }, { title: copy.stockActual, dataIndex: "stock" }, { title: copy.stockShown, dataIndex: "display_stock" }, { title: copy.price, dataIndex: "price", render: (value: string) => money(value, "RUB", locale) }, { title: copy.state, dataIndex: "archived", render: (value: boolean) => <Tag color={value ? "default" : "green"}>{value ? copy.archivedState : copy.active}</Tag> }]} /> }}
         columns={tableColumns.filter((column) => visibleColumns.includes(String(column.key)))}
       />
       <Drawer width={620} open={Boolean(selected)} onClose={() => setSelected(null)} title={copy.drawer} extra={<Button type="primary" loading={update.isPending} onClick={() => void form.validateFields().then((values) => update.mutate(values))}>{copy.save}</Button>}>
@@ -113,7 +176,7 @@ export function ProductsPage() {
           <div className="source-lock"><LockOutlined /><div><strong>{selected.name}</strong><span>{copy.locked}</span></div></div>
           <Typography.Title level={5}>{copy.mainImage}</Typography.Title>
           <Space align="start" style={{ marginBottom: 8 }}>
-            <Image width={112} height={112} style={{ objectFit: "contain", borderRadius: 10 }} src={selected.image_url} />
+            <Image width={112} height={112} style={{ objectFit: "contain", borderRadius: 10 }} src={resolveAdminMediaUrl(selected.image_url)} />
             <Upload
               accept="image/jpeg,image/png,image/webp"
               maxCount={1}
@@ -133,7 +196,7 @@ export function ProductsPage() {
           <Space direction="vertical" style={{ width: "100%", marginBottom: 20 }}>
             {selected.variants.map((variant) => (
               <div key={variant.id} className="product-variant-image-row">
-                <Image width={56} height={56} style={{ objectFit: "contain", borderRadius: 8 }} src={variant.image_url} />
+                <Image width={56} height={56} style={{ objectFit: "contain", borderRadius: 8 }} src={resolveAdminMediaUrl(variant.image_url)} />
                 <div className="table-primary"><strong>{variant.name}</strong><small>{variant.sku || "—"}</small></div>
                 <Upload
                   accept="image/jpeg,image/png,image/webp"
@@ -156,6 +219,7 @@ export function ProductsPage() {
             <Form.Item name="usage" label={copy.usage}><Input.TextArea rows={5} /></Form.Item>
             <Form.Item name="expiration" label={copy.expiration}><Input.TextArea rows={3} /></Form.Item>
             <Form.Item name="priority" label={copy.priority} rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item>
+            <Form.Item name="stock_reduction_override" label={copy.stockOverride} extra={copy.stockOverrideHint}><InputNumber min={0} max={1_000_000} placeholder={String(selected.effective_stock_reduction)} style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="category_ids" label={copy.categories}><Select mode="multiple" optionFilterProp="label" options={(categories.data?.items || []).map((category) => ({ value: category.id, label: category.name }))} /></Form.Item>
           </Form>
         </> : null}

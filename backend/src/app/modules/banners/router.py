@@ -1,3 +1,4 @@
+import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -15,6 +16,7 @@ from src.database.schemas import BannerRead
 
 banners_router = APIRouter(prefix="/banners", tags=["banners"])
 BANNERS_CACHE_TTL_SECONDS = 10 * 60
+logger = logging.getLogger(__name__)
 
 
 @banners_router.get("", response_model=list[BannerRead])
@@ -63,6 +65,12 @@ async def banner_click(
             properties={"target_url": target_url},
         )
     await db.commit()
+    logger.info(
+        "banner_click_recorded banner_id=%s authenticated=%s target_url=%s",
+        banner.id,
+        current_user is not None,
+        bool(target_url),
+    )
 
 
 @banners_router.post("/{banner_id}/impression", status_code=204)
@@ -88,3 +96,8 @@ async def banner_impression(
         .values(impression_count=Banner.impression_count + 1)
     )
     await db.commit()
+    logger.info(
+        "banner_impression_recorded banner_id=%s authenticated=%s",
+        banner.id,
+        current_user is not None,
+    )

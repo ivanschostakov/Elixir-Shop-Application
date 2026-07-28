@@ -24,6 +24,10 @@ from src.app.services.orders.crm import ensure_order_has_amocrm_lead
 from src.app.services.orders.fulfillment_payloads import normalize_address_for_cf
 from src.app.services.recommendations import record_purchase
 from src.app.services.security import hash_password
+from src.app.services.stock_visibility import (
+    StockVisibilityPolicy,
+    get_stock_visibility_policy,
+)
 from src.database.crud import create_delivery_address, create_delivery_recipient, create_order, get_order_by_id
 from src.database.crud import get_delivery_recipient_by_fields
 from src.database.crud.auth.user import create_user, get_user_by_phone_number
@@ -59,19 +63,32 @@ async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[
     return {variant.id: variant for variant in variants}
 
 
-def _validate_guest_variants(items_by_variant_id: dict[int, int], variants_by_id: dict[int, Variant]) -> None:
+def _validate_guest_variants(
+    items_by_variant_id: dict[int, int],
+    variants_by_id: dict[int, Variant],
+    stock_policy: StockVisibilityPolicy,
+) -> None:
     if len(variants_by_id) != len(items_by_variant_id): raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
     for variant_id, quantity in items_by_variant_id.items():
         variant = variants_by_id[variant_id]
-        if variant.archived or variant.stock <= 0: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
-        if quantity > variant.stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
+        visible_stock = stock_policy.visible_stock(variant.stock, variant.product)
+        if variant.archived or visible_stock <= 0: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
+        if quantity > visible_stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
 
 
-def _guest_basket_item_read(request: Request, *, variant: Variant, quantity: int, now: datetime) -> BasketItemRead:
+def _guest_basket_item_read(
+    request: Request,
+    *,
+    variant: Variant,
+    quantity: int,
+    now: datetime,
+    stock_policy: StockVisibilityPolicy,
+) -> BasketItemRead:
     product = variant.product
     if product is None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
     line_total = variant.price * quantity
-    return BasketItemRead(id=variant.id, variant_id=variant.id, quantity=quantity, unit_price=variant.price, line_total=line_total, available_quantity=max(variant.stock, 0), is_available=variant.stock > 0 and quantity <= variant.stock, product=BasketProductSummaryRead(
+    visible_stock = stock_policy.visible_stock(variant.stock, product)
+    return BasketItemRead(id=variant.id, variant_id=variant.id, quantity=quantity, unit_price=variant.price, line_total=line_total, available_quantity=visible_stock, is_available=visible_stock > 0 and quantity <= visible_stock, product=BasketProductSummaryRead(
         id=product.id,
         sku=product.sku,
         name=product.name,
@@ -81,7 +98,7 @@ def _guest_basket_item_read(request: Request, *, variant: Variant, quantity: int
         id=variant.id,
         sku=variant.sku,
         name=variant.name,
-        stock=variant.stock,
+        stock=visible_stock,
         price=variant.price,
         image_url=_variant_image_url(request, variant),
     ), created_at=now, updated_at=now)
@@ -91,7 +108,8 @@ async def quote_guest_basket(session: AsyncSession, request: Request, payload: l
     now = ufa_now()
     items_by_variant_id = _normalize_guest_items(payload)
     variants_by_id = await _load_guest_variants(session, items_by_variant_id)
-    _validate_guest_variants(items_by_variant_id, variants_by_id)
+    stock_policy = await get_stock_visibility_policy(session)
+    _validate_guest_variants(items_by_variant_id, variants_by_id, stock_policy)
 
     items: list[BasketItemRead] = []
     total_quantity = 0
@@ -99,7 +117,13 @@ async def quote_guest_basket(session: AsyncSession, request: Request, payload: l
     for variant_id in sorted(items_by_variant_id.keys()):
         quantity = items_by_variant_id[variant_id]
         variant = variants_by_id[variant_id]
-        item = _guest_basket_item_read(request, variant=variant, quantity=quantity, now=now)
+        item = _guest_basket_item_read(
+            request,
+            variant=variant,
+            quantity=quantity,
+            now=now,
+            stock_policy=stock_policy,
+        )
         items.append(item)
         total_quantity += quantity
         total_amount += item.line_total
@@ -157,7 +181,8 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
 
     items_by_variant_id = _normalize_guest_items(payload.items)
     variants_by_id = await _load_guest_variants(session, items_by_variant_id, lock=True)
-    _validate_guest_variants(items_by_variant_id, variants_by_id)
+    stock_policy = await get_stock_visibility_policy(session)
+    _validate_guest_variants(items_by_variant_id, variants_by_id, stock_policy)
 
     user = await create_user(session, UserCreate(
         email=None,

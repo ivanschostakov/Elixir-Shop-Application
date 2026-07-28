@@ -11,6 +11,7 @@ from src.app.services.recommendations import (
     record_product_view,
 )
 from src.app.services.customer_intelligence import record_customer_event_safe
+from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.database import get_db
 from src.database.models import User
 from src.database.schemas import ProductWithVariantsRead
@@ -51,4 +52,10 @@ async def create_my_recommendation_category_view(payload: RecommendationCategory
 async def list_my_recommendations(request: Request, surface: RecommendationSurface = Query(...), product_id: int | None = Query(default=None, ge=1), draft_id: int | None = Query(default=None, ge=1), limit: int | None = Query(default=None, ge=1, le=20), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[ProductWithVariantsRead]:
     products = await get_recommended_products_for_user(db, user_id=current_user.id, surface=surface, product_id=product_id, draft_id=draft_id, limit=limit, offset=offset)
     discount_context = await get_user_product_price_discount_context(db, current_user)
-    return serialize_products_with_variants(request, products, discount_context=discount_context)
+    stock_policy = await get_stock_visibility_policy(db)
+    return serialize_products_with_variants(
+        request,
+        products,
+        discount_context=discount_context,
+        stock_policy=stock_policy,
+    )

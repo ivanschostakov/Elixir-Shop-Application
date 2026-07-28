@@ -15,7 +15,7 @@
 
 All later employees must be added from Settings → Staff through an email invitation. Direct staff creation is disabled after the initial bootstrap.
 
-The Vite server proxies `/api` to `http://127.0.0.1:8000`. Override this with `ADMIN_API_PROXY_TARGET` in `admin-web/.env` when needed.
+The Vite server proxies `/api` and `/media` to `http://127.0.0.1:8000`. Override this with `ADMIN_API_PROXY_TARGET` in `admin-web/.env` when needed.
 
 ## Production
 

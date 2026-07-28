@@ -18,6 +18,7 @@ from src.app.services.review_attachments import (
     validate_review_attachments_count,
     validate_review_attachments_total_size,
 )
+from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.database import get_db
 from src.database.crud import (
     create_product,
@@ -73,7 +74,14 @@ async def products_get_by_id(request: Request, product_id: int, db: AsyncSession
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     review_stats = await get_product_review_stats(db, product_ids=[product.id])
     discount_context = await get_user_product_price_discount_context(db, current_user)
-    payload = serialize_product_with_variants(request, product, review_stats_by_product_id=review_stats, discount_context=discount_context)
+    stock_policy = await get_stock_visibility_policy(db)
+    payload = serialize_product_with_variants(
+        request,
+        product,
+        review_stats_by_product_id=review_stats,
+        discount_context=discount_context,
+        stock_policy=stock_policy,
+    )
     if current_user is None: await cache.set_json(cache_key, payload.model_dump(mode="json"), ttl_seconds=PRODUCT_DETAIL_CACHE_TTL_SECONDS, key_prefix="products:detail")
     return payload
 
@@ -97,7 +105,14 @@ async def products_get_similar(request: Request, product_id: int, limit: int = Q
     similar_products = await get_similar_products(db, product_id=product_id, offset=offset, limit=limit)
     review_stats = await get_product_review_stats(db, product_ids=[item.id for item in similar_products])
     discount_context = await get_user_product_price_discount_context(db, current_user)
-    payload = serialize_products_with_variants(request, similar_products, review_stats_by_product_id=review_stats, discount_context=discount_context)
+    stock_policy = await get_stock_visibility_policy(db)
+    payload = serialize_products_with_variants(
+        request,
+        similar_products,
+        review_stats_by_product_id=review_stats,
+        discount_context=discount_context,
+        stock_policy=stock_policy,
+    )
     if current_user is None: await cache.set_json(cache_key, [item.model_dump(mode="json") for item in payload], ttl_seconds=PRODUCT_SIMILAR_CACHE_TTL_SECONDS, key_prefix="products:similar")
     return payload
 
@@ -207,7 +222,14 @@ async def products_get(request: Request, q: str | None = Query(default=None, min
     products = await get_products(db, q=normalized_q, sku=normalized_sku, min_priority=min_priority, category_id=category_id, offset=offset, limit=limit, sort=sort)
     review_stats = await get_product_review_stats(db, product_ids=[product.id for product in products])
     discount_context = await get_user_product_price_discount_context(db, current_user)
-    payload = serialize_products_with_variants(request, products, review_stats_by_product_id=review_stats, discount_context=discount_context)
+    stock_policy = await get_stock_visibility_policy(db)
+    payload = serialize_products_with_variants(
+        request,
+        products,
+        review_stats_by_product_id=review_stats,
+        discount_context=discount_context,
+        stock_policy=stock_policy,
+    )
     if current_user is None: await cache.set_json(cache_key, [item.model_dump(mode="json") for item in payload], ttl_seconds=PRODUCT_LIST_CACHE_TTL_SECONDS, key_prefix="products:list")
     return payload
 

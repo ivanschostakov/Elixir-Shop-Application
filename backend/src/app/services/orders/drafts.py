@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
 
+from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.database.crud import create_delivery_address, create_delivery_recipient, create_order_draft, delete_order_draft, get_delivery_address_by_fields, get_delivery_address_by_id, get_delivery_addresses, get_delivery_recipient_by_fields, get_delivery_recipient_by_id, get_delivery_recipients, get_latest_named_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
 from src.database.limits import ORDER_DRAFT_COMMENT_MAX_LENGTH, ORDER_DRAFT_NAME_MAX_LENGTH
 from src.database.models import BasketItem, OrderDraft, OrderDraftItem, User, Variant
@@ -83,7 +84,11 @@ async def create_order_draft_for_user(session: AsyncSession, *, user: User, payl
     if not basket_items: raise _checkout_conflict("Basket is empty")
 
     variants_by_id = await _get_locked_variants(session, [item.variant_id for item in basket_items])
-    _validate_checkout_items(basket_items, variants_by_id)
+    _validate_checkout_items(
+        basket_items,
+        variants_by_id,
+        await get_stock_visibility_policy(session),
+    )
 
     duplicate_draft = await _find_duplicate_order_draft(session, user_id=user.id, basket_items=basket_items)
     if duplicate_draft is not None: raise _checkout_conflict({"message": "Черновик с такими товарами уже существует", "draft_id": duplicate_draft.id})
@@ -155,6 +160,7 @@ async def create_order_draft_from_variant_selection(session: AsyncSession, *, us
     variants = list((await session.execute(stmt)).scalars().all())
     variants_by_id = {variant.id: variant for variant in variants}
     if len(variants_by_id) != len(normalized_items): raise _checkout_conflict("Some selected variants are no longer available")
+    stock_policy = await get_stock_visibility_policy(session)
 
     draft_items: list[OrderDraftItem] = []
     basket_subtotal = Decimal("0.00")
@@ -162,7 +168,9 @@ async def create_order_draft_from_variant_selection(session: AsyncSession, *, us
 
     for variant_id, quantity in normalized_items.items():
         variant = variants_by_id[variant_id]
-        if variant.archived or variant.stock <= 0 or quantity > variant.stock: raise _checkout_conflict("Selected products are no longer available in the requested quantity")
+        visible_stock = stock_policy.visible_stock(variant.stock, variant.product)
+        if variant.archived or visible_stock <= 0 or quantity > visible_stock:
+            raise _checkout_conflict("Selected products are no longer available in the requested quantity")
         line_total = variant.price * quantity
         basket_subtotal += line_total
         total_quantity += quantity

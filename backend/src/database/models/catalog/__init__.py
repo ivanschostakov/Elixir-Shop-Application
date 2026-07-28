@@ -7,4 +7,5 @@ from .products_by_category import ProductByCategory
 from .review import Review
 from .review_attachment import ReviewAttachment
 from .review_moderation_event import ReviewModerationEvent
+from .settings import CatalogSettings
 from .variant import Variant
