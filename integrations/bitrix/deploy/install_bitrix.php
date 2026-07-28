@@ -117,6 +117,8 @@ $reviewOptions = [
     'rate_limit' => '120',
     'rate_limit_window_seconds' => '60',
     'private_dir' => $privateRoot . '/elixir-reviewsync',
+    'app_media_base_url' => 'https://api-elixirshop.devsivanschostakov.org/media/reviews',
+    'site_public_base_url' => 'https://elixirpeptide.com',
 ];
 foreach ($reviewOptions as $name => $value) {
     Option::set('elixir.reviewsync', $name, $value);

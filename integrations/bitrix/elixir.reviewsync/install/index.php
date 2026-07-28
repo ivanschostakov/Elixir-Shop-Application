@@ -21,8 +21,8 @@ class elixir_reviewsync extends CModule
     {
         $arModuleVersion = [];
         include __DIR__ . '/version.php';
-        $this->MODULE_VERSION = (string)($arModuleVersion['VERSION'] ?? '1.0.0');
-        $this->MODULE_VERSION_DATE = (string)($arModuleVersion['VERSION_DATE'] ?? '2026-07-27 00:00:00');
+        $this->MODULE_VERSION = (string)($arModuleVersion['VERSION'] ?? '1.1.0');
+        $this->MODULE_VERSION_DATE = (string)($arModuleVersion['VERSION_DATE'] ?? '2026-07-29 00:00:00');
         $this->MODULE_NAME = Loc::getMessage('ELIXIR_REVIEWSYNC_MODULE_NAME');
         $this->MODULE_DESCRIPTION = Loc::getMessage('ELIXIR_REVIEWSYNC_MODULE_DESCRIPTION');
     }
@@ -79,6 +79,8 @@ class elixir_reviewsync extends CModule
             'rate_limit' => '120',
             'rate_limit_window_seconds' => '60',
             'private_dir' => dirname((string)$_SERVER['DOCUMENT_ROOT']) . '/private/elixir-reviewsync',
+            'app_media_base_url' => 'https://api-elixirshop.devsivanschostakov.org/media/reviews',
+            'site_public_base_url' => 'https://elixirpeptide.com',
         ];
         foreach ($defaults as $name => $value) {
             if (Option::get($this->MODULE_ID, $name, '__ELIXIR_OPTION_NOT_SET__') === '__ELIXIR_OPTION_NOT_SET__') {

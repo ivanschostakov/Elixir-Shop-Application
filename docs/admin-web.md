@@ -89,11 +89,13 @@ The admin worker uses a Redis processing list so a job is not lost when the proc
 
 Orders, customers, products, reviews and the audit log keep filters, page and visible columns in the URL. Staff can save the current filters and columns as a private or shared database-backed view. Creating, updating and deleting a view is audited.
 
-Row selection enables exports of either the complete filtered result or only selected records. CSV and XLSX files are created by the reliable admin worker, limited to 20,000 rows, checked against a server-side column/filter allowlist and protected from spreadsheet formula injection. A completed file can be downloaded only by the employee who requested it or a superadministrator. Review moderation additionally supports checked, concurrency-protected bulk publish/reject operations.
+Row selection enables exports of either the complete filtered result or only selected records. CSV and XLSX files are created by the reliable admin worker, limited to 20,000 rows, checked against a server-side column/filter allowlist and protected from spreadsheet formula injection. A completed file can be downloaded only by the employee who requested it or a superadministrator.
 
 ## Reviews
 
-Review submission is public and rate-limited. Signed-in users keep their profile identity; guests are stored as guests. Every new review starts unpublished and appears in Content → Reviews. Only a user with `reviews.moderate` can publish or reject it. Public product endpoints and rating aggregates include only published, non-rejected reviews.
+Review submission is public and rate-limited. Signed-in users keep their profile identity; guests are stored as guests. Every app review is saved locally and delivered immediately to the Bitrix `sotbit.reviews` moderation queue. It is forced to `MODERATED=N`, `ACTIVE=Y` and therefore remains absent from the public site and app until approved in the Bitrix website admin.
+
+Bitrix is the only moderation authority. Content → Reviews in the CRM is read-only and mirrors pending/published/rejected status, merchant answer, moderation history and attachment state. A one-minute retry worker propagates Bitrix decisions back to the app and retries temporary delivery failures without duplicating reviews or files. Public product endpoints and rating aggregates include only published, non-rejected reviews.
 
 ## CRM tasks, segments and campaigns
 
@@ -135,7 +137,7 @@ Known statuses, operations, providers, roles, events and common API errors have 
 
 ## Website review synchronization package
 
-The repository contains an installable but intentionally uninstalled Bitrix module under `integrations/bitrix/elixir.reviewsync`. It synchronizes rating, text, merchant answer, likes/dislikes and moderation status with `sotbit.reviews` over HMAC-signed HTTPS requests. Version 1.0 does not synchronize review media attachments. Follow the package README and obtain explicit production approval before installation or enabling `worker-website-review-sync`.
+The repository contains the production Bitrix module under `integrations/bitrix/elixir.reviewsync`. Version 1.1 synchronizes rating, text, merchant answer, likes/dislikes, moderation status and JPEG/PNG/WEBP attachments with `sotbit.reviews` over HMAC-signed HTTPS requests. Product matching uses the shared MoySklad UUID stored as Bitrix `XML_ID` and application `products.system_id`. Follow the package README for backup, installation, limits and rollback instructions.
 
 ## Operational automation, SLA and alerts
 

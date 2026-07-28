@@ -36,6 +36,7 @@ from src.database.crud import (
 from src.database.models import AdminIdentity, User
 from src.database.search import normalize_search_text
 from src.database.schemas import ProductCreate, ProductUpdate, ProductWithVariantsRead, ReviewCreate, ReviewEligibilityRead, ReviewRead
+from src.integrations.website_reviews import push_review_to_website_safely
 
 from .helpers import get_user_product_price_discount_context, serialize_product_with_variants, serialize_products_with_variants, serialize_review, serialize_reviews
 
@@ -187,6 +188,7 @@ async def products_create_review(request: Request, product_id: int, value: int =
             created_file_paths.append(saved_path)
 
         await db.commit()
+        await push_review_to_website_safely(db, review_id=review.id)
         await _bump_review_cache_namespaces()
 
     except Exception:

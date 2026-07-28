@@ -43,8 +43,10 @@ foreach (['host', 'database', 'login', 'password'] as $requiredKey) {
 $filesArchive = $backupDirectory . '/affected-files.tar.gz';
 $relativePaths = [
     'local/modules/elixir.promo',
+    'local/modules/elixir.reviewsync',
     'local/api/app_integration.php',
     'bitrix/tools/elixir.promo/api.php',
+    'bitrix/tools/elixir.reviewsync',
 ];
 $tarCommand = array_merge(
     ['tar', '-czf', $filesArchive, '-C', $documentRoot],

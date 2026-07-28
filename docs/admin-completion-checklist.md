@@ -6,7 +6,7 @@ The admin panel is considered production-complete when the following checks are 
 
 - Dashboard, sales, customers, leads, support/AI communications, catalog, content, marketing, automation, analytics, integrations and settings are mounted in the SPA.
 - Public reviews always enter moderation before publication.
-- The Bitrix review-sync module remains an isolated installable package and is not installed or enabled on production until the owner explicitly approves it.
+- The Bitrix review-sync module is backed up, installed and configured; Bitrix remains the only review moderation authority.
 - Mobile API contracts are unchanged.
 - Telegram/community messages are not imported into the CRM support inbox.
 - Known system values have RU/EN labels; unknown values are displayed exactly as received.

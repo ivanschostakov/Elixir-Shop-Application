@@ -32,6 +32,8 @@ if ($request->isPost() && check_bitrix_sessid()) {
             (string)max(1, (int)$request->getPost('rate_limit_window_seconds'))
         );
         Option::set($moduleId, 'private_dir', rtrim(trim((string)$request->getPost('private_dir')), '/'));
+        Option::set($moduleId, 'app_media_base_url', rtrim(trim((string)$request->getPost('app_media_base_url')), '/'));
+        Option::set($moduleId, 'site_public_base_url', rtrim(trim((string)$request->getPost('site_public_base_url')), '/'));
         $message = 'Настройки синхронизации сохранены.';
     } catch (Throwable $exception) {
         $error = $exception->getMessage();
@@ -66,6 +68,8 @@ $get = static fn(string $name, string $default = ''): string => htmlspecialchars
         <tr><td>Запросов за окно:</td><td><input type="number" name="rate_limit" min="1" value="<?= $get('rate_limit', '120') ?>"></td></tr>
         <tr><td>Окно ограничения, секунд:</td><td><input type="number" name="rate_limit_window_seconds" min="1" value="<?= $get('rate_limit_window_seconds', '60') ?>"></td></tr>
         <tr><td>Закрытый служебный каталог:</td><td><input type="text" name="private_dir" size="80" value="<?= $get('private_dir', dirname((string)$_SERVER['DOCUMENT_ROOT']) . '/private/elixir-reviewsync') ?>"></td></tr>
+        <tr><td>Публичный URL изображений приложения:</td><td><input type="url" name="app_media_base_url" size="80" value="<?= $get('app_media_base_url', 'https://api-elixirshop.devsivanschostakov.org/media/reviews') ?>"></td></tr>
+        <tr><td>Публичный URL сайта:</td><td><input type="url" name="site_public_base_url" size="80" value="<?= $get('site_public_base_url', 'https://elixirpeptide.com') ?>"></td></tr>
     </table>
     <input type="submit" class="adm-btn-save" value="Сохранить">
 </form>

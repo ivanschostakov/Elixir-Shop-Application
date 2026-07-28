@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 import src.app.modules.auth.dependencies as auth_dependencies
+import src.app.modules.admin.content as admin_content_module
 import src.app.modules.products.router as products_router_module
 import src.app.services.admin.analytics as admin_analytics
 import src.app.services.admin.password_reset as admin_password_reset
@@ -483,6 +484,7 @@ async def test_mobile_access_token_cannot_use_admin_session(monkeypatch: pytest.
 
 def test_guest_can_submit_review_for_moderation(monkeypatch: pytest.MonkeyPatch):
     now = datetime.now(timezone.utc)
+    delivered_review_ids: list[int] = []
 
     class FakeDb:
         async def commit(self):
@@ -511,6 +513,10 @@ def test_guest_can_submit_review_for_moderation(monkeypatch: pytest.MonkeyPatch)
 
     async def fake_bump_review_cache_namespaces():
         return None
+
+    async def fake_push_review_to_website_safely(*args, review_id, **kwargs):
+        delivered_review_ids.append(review_id)
+        return True
 
     async def fake_analyze_review_submission(*args, **kwargs):
         return {
@@ -546,6 +552,7 @@ def test_guest_can_submit_review_for_moderation(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(products_router_module, "enforce_rate_limit", fake_rate_limit)
     monkeypatch.setattr(products_router_module, "analyze_review_submission", fake_analyze_review_submission)
     monkeypatch.setattr(products_router_module, "_bump_review_cache_namespaces", fake_bump_review_cache_namespaces)
+    monkeypatch.setattr(products_router_module, "push_review_to_website_safely", fake_push_review_to_website_safely)
     monkeypatch.setattr(products_router_module, "serialize_review", fake_serialize_review)
 
     try:
@@ -556,5 +563,15 @@ def test_guest_can_submit_review_for_moderation(monkeypatch: pytest.MonkeyPatch)
             )
         assert response.status_code == 201, response.text
         assert response.json()["moderated"] is False
+        assert delivered_review_ids == [501]
     finally:
         app.dependency_overrides.pop(get_db, None)
+
+
+def test_crm_review_moderation_is_read_only():
+    with pytest.raises(HTTPException) as error:
+        admin_content_module._raise_bitrix_review_moderation_authority()
+    assert error.value.status_code == 409
+    assert error.value.detail["code"] == "bitrix_review_moderation_authority"
+    assert "Bitrix" in error.value.detail["message_ru"]
+    assert "Bitrix" in error.value.detail["message_en"]

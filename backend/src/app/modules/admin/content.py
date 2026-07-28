@@ -89,6 +89,18 @@ async def _bump_banner_cache() -> None:
     await get_cache_service().bump_namespace("banners")
 
 
+def _raise_bitrix_review_moderation_authority() -> None:
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "bitrix_review_moderation_authority",
+            "message": "Модерация отзывов выполняется в админке сайта Bitrix.",
+            "message_ru": "Модерация отзывов выполняется в админке сайта Bitrix.",
+            "message_en": "Reviews are moderated in the Bitrix website admin.",
+        },
+    )
+
+
 @admin_content_router.get("/reviews", response_model=AdminPage[AdminReviewRead])
 async def list_reviews(
     request: Request,
@@ -223,6 +235,7 @@ async def moderate_review(
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("reviews.moderate", write=True)),
 ) -> AdminReviewRead:
+    _raise_bitrix_review_moderation_authority()
     review, product_name = await _get_review(db, review_id)
     ensure_not_stale(actual=review.updated_at, expected=payload.expected_updated_at)
     before = _review_moderation_snapshot(request, review, product_name)
@@ -290,6 +303,7 @@ async def bulk_moderate_reviews(
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("reviews.moderate", write=True)),
 ) -> list[AdminReviewRead]:
+    _raise_bitrix_review_moderation_authority()
     item_by_id = {item.id: item for item in payload.items}
     if len(item_by_id) != len(payload.items):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Review IDs must be unique")
@@ -344,6 +358,7 @@ async def bulk_reject_spam_reviews(
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("reviews.moderate", write=True)),
 ) -> list[AdminReviewRead]:
+    _raise_bitrix_review_moderation_authority()
     rows = (await db.execute(
         select(Review, Product.name)
         .join(Product, Product.id == Review.product_id)

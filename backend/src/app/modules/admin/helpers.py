@@ -246,14 +246,17 @@ def serialize_banner(banner: Banner) -> AdminBannerRead:
 
 
 def serialize_review_moderation_event(event: ReviewModerationEvent) -> dict:
+    metadata = event.metadata_json or {}
     return {
         "id": event.id,
         "action": event.action,
-        "actor_name": _admin_actor_name(event.actor),
+        "actor_name": _admin_actor_name(event.actor) or (
+            "Bitrix" if metadata.get("source") == "bitrix" else None
+        ),
         "comment": event.comment,
         "before_json": event.before_json,
         "after_json": event.after_json,
-        "metadata_json": event.metadata_json or {},
+        "metadata_json": metadata,
         "created_at": event.created_at,
     }
 
