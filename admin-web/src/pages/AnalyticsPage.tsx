@@ -111,7 +111,7 @@ export function AnalyticsPage() {
             {openTrend.length ? <div className="analytics-bars">{openTrend.map((point) => <div key={point.period} className="analytics-bar-column" title={`${String(point.period).slice(0, 10)}: ${point.opens} · ${copy.uniqueCustomers}: ${point.customers}`}><div className="analytics-bar" style={{ height: `${Math.max(8, point.opens / maxOpens * 160)}px` }} /><small>{openGranularity === "daily" ? String(point.period).slice(5, 10) : String(point.period).slice(0, 7)}</small></div>)}</div> : <Typography.Text type="secondary">{locale === "ru" ? "За выбранный период открытий нет" : "No app opens in this period"}</Typography.Text>}
           </Card>
           <Table rowKey="user_id" dataSource={data.customers.top_customers} pagination={{ pageSize: 10 }} columns={[{ title: copy.customers, render: (_: unknown, row) => <div className="table-primary">{hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.name}</strong></Link> : <strong>{row.name}</strong>}<small>{row.email || `#${row.user_id}`}</small></div> }, { title: copy.orders, dataIndex: "orders", align: "right" }, { title: copy.ltv, dataIndex: "ltv", render: (value: string) => money(value, "RUB", locale) }]} />
-          <Row gutter={[16, 16]}>
+          <Row gutter={[16, 16]} className="analytics-device-grid">
             <Col xs={24} lg={8}>
               <Card title={locale === "ru" ? "Платформы" : "Platforms"}>
                 <Table rowKey="platform" size="small" dataSource={data.customers.devices.platforms} pagination={false} columns={[{ title: locale === "ru" ? "Платформа" : "Platform", dataIndex: "platform", render: (value: string) => <Tag>{domainLabel(value, locale)}</Tag> }, { title: copy.customers, dataIndex: "customers", align: "right" }]} />
@@ -119,7 +119,7 @@ export function AnalyticsPage() {
             </Col>
             <Col xs={24} lg={8}>
               <Card title={locale === "ru" ? "Версии приложения" : "App versions"}>
-                <Table rowKey={(row) => `${row.platform}-${row.app_version}`} size="small" dataSource={data.customers.devices.app_versions} pagination={{ pageSize: 8 }} columns={[{ title: locale === "ru" ? "Версия" : "Version", render: (_: unknown, row) => <Space><Tag>{domainLabel(row.platform, locale)}</Tag>{row.app_version}</Space> }, { title: copy.customers, dataIndex: "customers", align: "right" }]} />
+                <Table rowKey={(row) => `${row.platform}-${row.app_version}`} size="small" dataSource={data.customers.devices.app_versions} pagination={data.customers.devices.app_versions.length > 8 ? { pageSize: 8, showSizeChanger: false } : false} columns={[{ title: locale === "ru" ? "Версия" : "Version", render: (_: unknown, row) => <Space><Tag>{domainLabel(row.platform, locale)}</Tag>{row.app_version}</Space> }, { title: copy.customers, dataIndex: "customers", align: "right" }]} />
               </Card>
             </Col>
             <Col xs={24} lg={8}>
