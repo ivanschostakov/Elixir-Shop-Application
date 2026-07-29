@@ -306,6 +306,17 @@ final class ReviewSyncService
                     throw new \InvalidArgumentException('Review attachment ID is missing');
                 }
                 $existingFileId = max(0, (int)($existingMap[$appAttachmentId] ?? 0));
+                $websiteFileId = max(0, (int)($attachment['website_file_id'] ?? 0));
+                if (
+                    $existingFileId <= 0
+                    && $websiteFileId > 0
+                    && in_array($websiteFileId, $existingFileIds, true)
+                ) {
+                    // The attachment originated in Bitrix and was downloaded by
+                    // the app. Reuse the same file instead of uploading a copy
+                    // back into the review on every later app-side update.
+                    $existingFileId = $websiteFileId;
+                }
                 if ($existingFileId > 0 && in_array($existingFileId, $existingFileIds, true)) {
                     $file = \CFile::GetFileArray($existingFileId);
                     if (is_array($file)) {

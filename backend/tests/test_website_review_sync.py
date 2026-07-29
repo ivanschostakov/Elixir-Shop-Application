@@ -93,6 +93,7 @@ def test_push_payload_contains_public_attachment_urls(monkeypatch):
         attachments=[
             SimpleNamespace(
                 id=7,
+                website_file_id=812,
                 filename="photo.jpg",
                 mime_type="image/jpeg",
             ),
@@ -110,6 +111,7 @@ def test_push_payload_contains_public_attachment_urls(monkeypatch):
     assert payload["status"] == "pending"
     assert payload["attachments"] == [{
         "app_attachment_id": 7,
+        "website_file_id": 812,
         "url": "https://api.example.test/media/reviews/42/photo.jpg",
         "filename": "photo.jpg",
         "mime_type": "image/jpeg",

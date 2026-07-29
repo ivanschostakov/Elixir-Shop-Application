@@ -204,6 +204,7 @@ def _push_payload(
         "attachments": [
             {
                 "app_attachment_id": attachment.id,
+                "website_file_id": attachment.website_file_id,
                 "url": _attachment_public_url(review, attachment),
                 "filename": attachment.filename,
                 "mime_type": attachment.mime_type,
