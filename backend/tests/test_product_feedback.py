@@ -8,6 +8,7 @@ from src.app.modules.products.helpers import (
     serialize_product_question,
     serialize_review,
 )
+from src.app.services import review_attachments
 from src.database.schemas import ReviewCreate
 from src.integrations.website_reviews import _push_payload
 
@@ -116,3 +117,25 @@ def test_product_question_serialization_keeps_answer_and_author():
 
     assert serialized.author_username == "Анна"
     assert serialized.answer == "В прохладном месте."
+
+
+def test_review_attachment_url_uses_public_api_base(
+    monkeypatch,
+    tmp_path,
+):
+    media_dir = tmp_path / "media"
+    image_path = media_dir / "reviews" / "64" / "photo.jpg"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"image")
+    monkeypatch.setattr(review_attachments, "MEDIA_DIR", media_dir)
+    monkeypatch.setattr(
+        review_attachments,
+        "PUBLIC_API_BASE_URL",
+        "https://api.example.test",
+    )
+
+    url = review_attachments.build_review_attachment_url(_request(), image_path)
+
+    assert url.startswith(
+        "https://api.example.test/media/reviews/64/photo.jpg?v=",
+    )

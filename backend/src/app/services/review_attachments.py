@@ -5,7 +5,7 @@ import aiofiles
 from fastapi import HTTPException, Request
 from starlette import status
 
-from config import MEDIA_DIR, REVIEWS_MEDIA_DIR
+from config import MEDIA_DIR, PUBLIC_API_BASE_URL, REVIEWS_MEDIA_DIR
 
 ALLOWED_REVIEW_IMAGE_TYPES = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
 MAX_REVIEW_IMAGES_COUNT = 6
@@ -27,7 +27,7 @@ def build_review_attachment_dir(review_id: int) -> Path:
 
 
 def build_review_attachment_url(request: Request, image_path: Path) -> str:
-    base_url = str(request.base_url).rstrip("/")
+    base_url = (PUBLIC_API_BASE_URL or str(request.base_url)).rstrip("/")
     version = int(image_path.stat().st_mtime_ns) if image_path.exists() else 0
 
     try: relative_path = image_path.relative_to(MEDIA_DIR).as_posix()
