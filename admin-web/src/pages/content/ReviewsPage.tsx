@@ -41,6 +41,7 @@ export function ReviewsPage() {
       privacy: "Email и IP видны только сотрудникам и не публикуются.",
       score: "Оценка спама", ip: "IP", appeal: "Апелляция", notified: "Клиент уведомлён", attachments: "Вложения", history: "История модерации", noHistory: "Истории пока нет",
       approved: "Одобрено", attachmentRejected: "Отклонено", attachmentPending: "На проверке", profanity: "мат", duplicate: "дубликат", suspiciousIp: "IP",
+      anonymous: "Имя скрыто",
     }
     : {
       title: "Reviews",
@@ -53,6 +54,7 @@ export function ReviewsPage() {
       privacy: "Email and IP are staff-only and never public.",
       score: "Spam score", ip: "IP", appeal: "Appeal", notified: "Customer notified", attachments: "Attachments", history: "Moderation history", noHistory: "No history yet",
       approved: "Approved", attachmentRejected: "Rejected", attachmentPending: "Pending", profanity: "profanity", duplicate: "duplicate", suspiciousIp: "IP",
+      anonymous: "Name hidden",
     }
 
   const updateFilters = (values: Record<string, string | number | undefined>) => {
@@ -80,7 +82,7 @@ export function ReviewsPage() {
     enabled: Boolean(selected),
   })
   const tableColumns = [
-    { title: copy.author, key: "author", render: (_: unknown, row: Review) => <Space><Avatar>{row.author_name[0] || "G"}</Avatar><div className="table-primary">{row.user_id && hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.author_name}</strong></Link> : <strong>{row.author_name}</strong>}<small>{row.author_email || copy.guest}</small></div></Space> },
+    { title: copy.author, key: "author", render: (_: unknown, row: Review) => <Space><Avatar>{row.author_name[0] || "G"}</Avatar><div className="table-primary">{row.user_id && hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.author_name}</strong></Link> : <strong>{row.author_name}</strong>}<small>{row.author_email || copy.guest}</small>{row.hide_sender_name ? <Tag color="purple">{copy.anonymous}</Tag> : null}</div></Space> },
     { title: copy.product, dataIndex: "product_name", key: "product", render: (value: string, row: Review) => hasPermission("catalog.read") ? <Link to={`/catalog/products?product_id=${row.product_id}`}>{value}</Link> : value },
     { title: copy.rating, dataIndex: "value", key: "rating", render: (value: number) => <span className="rating-cell"><StarFilled /> {value}</span> },
     { title: copy.flags, key: "flags", render: (_: unknown, row: Review) => <Space size={4} wrap>

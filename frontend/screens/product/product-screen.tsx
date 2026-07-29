@@ -13,21 +13,24 @@ import { useSimilarProducts } from "@/hooks/products/use-similar-products"
 import { useRecommendations } from "@/hooks/recommendations/use-recommendations"
 import { useProductFavourite } from "@/hooks/products/use-product-favourite"
 import { useProduct } from "@/hooks/products/use-product"
+import { useProductQuestions } from "@/hooks/products/use-product-questions"
 import { useProductReviewEligibility } from "@/hooks/products/use-product-review-eligibility"
 import { useProductReviews } from "@/hooks/products/use-product-reviews"
 import { useLanguage } from "@/providers/language-provider"
 import {
     useProductInfoTabs,
+    useProductFeedbackPanels,
     useProductScreenActions,
     useSelectedProductVariant,
 } from "@/screens/product/product-screen.hooks"
 import { ProductInfoTabs } from "@/screens/product/product-info-tabs"
+import { ProductFeedbackPanels } from "@/screens/product/product-feedback-panels"
 import { createProductScreenStyle } from "@/screens/product/product-screen.styles"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useTheme } from "@/providers/theme-provider"
 import { ProductScreenProps } from "@/screens/product/product-screen.types"
 import { getVariantStockLabel } from "@/screens/product/product-screen.utils"
-import { createProductReview } from "@/services/api/products"
+import { createProductQuestion, createProductReview } from "@/services/api/products"
 import { trackRecommendationView } from "@/services/api/recommendations"
 import type { UploadableReviewAttachment } from "@/types/product"
 
@@ -36,6 +39,12 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
     const { palette } = useTheme()
     const { product, loading, error } = useProduct(productId)
     const { reviews, loading: reviewsLoading, error: reviewsError } = useProductReviews(productId)
+    const {
+        questions,
+        total: questionTotalCount,
+        loading: questionsLoading,
+        error: questionsError,
+    } = useProductQuestions(productId)
     const { canReview, loading: reviewEligibilityLoading } = useProductReviewEligibility(productId)
     const {
         error: favouriteError,
@@ -52,6 +61,10 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
         activeInfoTab,
         handleInfoTabChange,
     } = useProductInfoTabs(product?.id ?? null)
+    const {
+        activeFeedbackPanel,
+        handleFeedbackPanelChange,
+    } = useProductFeedbackPanels(product?.id ?? null)
     const { handleBookmarkPress, handleCopyShareLink, handleSharePress } = useProductScreenActions({
         favouriteError,
         isFavourite,
@@ -65,6 +78,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
     const [isScreenshotPromptVisible, setIsScreenshotPromptVisible] = useState(false)
     const [hasCopiedScreenshotLink, setHasCopiedScreenshotLink] = useState(false)
     const [reviewsSubmitting, setReviewsSubmitting] = useState(false)
+    const [questionSubmitting, setQuestionSubmitting] = useState(false)
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,
@@ -179,12 +193,31 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
         }
     }, [hasMoreRecommendations, loadMoreRecommendations, recommendationsLoadingMore])
 
-    const handleSubmitReview = useCallback(async (value: number, text: string | null, attachments: UploadableReviewAttachment[]) => {
+    const handleSubmitReview = useCallback(async (
+        value: number,
+        text: string | null,
+        attachments: UploadableReviewAttachment[],
+        hideSenderName: boolean,
+    ) => {
         setReviewsSubmitting(true)
         try {
-            await createProductReview(productId, { text, value, attachments })
+            await createProductReview(productId, {
+                text,
+                value,
+                attachments,
+                hide_sender_name: hideSenderName,
+            })
         } finally {
             setReviewsSubmitting(false)
+        }
+    }, [productId])
+
+    const handleSubmitQuestion = useCallback(async (text: string) => {
+        setQuestionSubmitting(true)
+        try {
+            await createProductQuestion(productId, { text })
+        } finally {
+            setQuestionSubmitting(false)
         }
     }, [productId])
 
@@ -360,18 +393,31 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                     ) : null}
 
                     <View style={productScreenStyle.sectionStack}>
-                        <ProductInfoTabs
-                            activeInfoTab={activeInfoTab}
-                            onChangeTab={handleInfoTabChange}
-                            onCopySku={handleCopy}
+                        <ProductFeedbackPanels
+                            activePanel={activeFeedbackPanel}
+                            onChangePanel={handleFeedbackPanelChange}
+                            onSubmitQuestion={handleSubmitQuestion}
                             onSubmitReview={handleSubmitReview}
-                            product={product}
+                            questionError={questionsError}
+                            questionLoading={questionsLoading}
+                            questionSubmitting={questionSubmitting}
+                            questionTotalCount={questionTotalCount}
+                            questions={questions}
                             reviewEligibilityLoading={reviewEligibilityLoading}
                             reviews={reviews}
                             reviewsCanSubmit={canReview}
                             reviewsError={reviewsError}
                             reviewsLoading={reviewsLoading}
                             reviewsSubmitting={reviewsSubmitting}
+                            reviewRatingAverage={product.rating_avg}
+                            reviewTotalCount={product.rating_count}
+                            t={t}
+                        />
+                        <ProductInfoTabs
+                            activeInfoTab={activeInfoTab}
+                            onChangeTab={handleInfoTabChange}
+                            onCopySku={handleCopy}
+                            product={product}
                             t={t}
                         />
                     </View>

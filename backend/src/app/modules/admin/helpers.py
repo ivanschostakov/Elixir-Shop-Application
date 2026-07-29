@@ -12,6 +12,7 @@ from src.app.modules.admin.schemas import (
     AdminOrderItemRead,
     AdminOrderListItem,
     AdminProductRead,
+    AdminProductQuestionRead,
     AdminReviewRead,
     AdminVariantRead,
     CustomerCompact,
@@ -19,7 +20,7 @@ from src.app.modules.admin.schemas import (
 from src.app.modules.products.helpers import review_attachment_path
 from src.app.services.stock_visibility import StockVisibilityPolicy
 from src.app.services.review_attachments import build_review_attachment_url
-from src.database.models import Banner, BusinessContentPage, BusinessContentVersion, Order, Product, ProductCategory, Review, ReviewModerationEvent
+from src.database.models import Banner, BusinessContentPage, BusinessContentVersion, Order, Product, ProductCategory, ProductQuestion, Review, ReviewModerationEvent
 from src.database.models.orders.history import get_order_status_code
 from src.product_media import build_products_media_url
 
@@ -190,6 +191,7 @@ def serialize_admin_review(request: Request, review: Review, *, product_name: st
         user_id=review.user_id,
         author_name=author_name,
         author_email=author_email,
+        hide_sender_name=review.hide_sender_name,
         value=review.value,
         text=review.text,
         answer=review.answer,
@@ -209,6 +211,42 @@ def serialize_admin_review(request: Request, review: Review, *, product_name: st
         customer_notified_at=review.customer_notified_at,
         created_at=review.created_at,
         updated_at=review.updated_at,
+    )
+
+
+def serialize_admin_product_question(
+    question: ProductQuestion,
+    *,
+    product_name: str,
+) -> AdminProductQuestionRead:
+    if question.rejected_at is not None:
+        question_status = "rejected"
+    elif question.moderated:
+        question_status = "published"
+    else:
+        question_status = "pending"
+    if question.user is not None:
+        author_name = " ".join(
+            part for part in (question.user.name, question.user.surname) if part
+        ).strip() or question.user.email or "Гость"
+        author_email = question.user.email
+    else:
+        author_name = question.guest_name or "Гость"
+        author_email = None
+    return AdminProductQuestionRead(
+        id=question.id,
+        product_id=question.product_id,
+        product_name=product_name,
+        user_id=question.user_id,
+        author_name=author_name or "Гость",
+        author_email=author_email,
+        text=question.text,
+        answer=question.answer,
+        status=question_status,
+        internal_moderation_comment=question.internal_moderation_comment,
+        moderated_at=question.moderated_at,
+        created_at=question.created_at,
+        updated_at=question.updated_at,
     )
 
 

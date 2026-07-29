@@ -22,10 +22,13 @@ from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.database import get_db
 from src.database.crud import (
     create_product,
+    create_product_question,
     create_product_review,
     create_review_attachment,
     delete_product,
     get_product_by_id,
+    get_product_question_count,
+    get_product_questions,
     get_product_review_stats,
     get_product_reviews,
     get_products,
@@ -35,10 +38,28 @@ from src.database.crud import (
 )
 from src.database.models import AdminIdentity, User
 from src.database.search import normalize_search_text
-from src.database.schemas import ProductCreate, ProductUpdate, ProductWithVariantsRead, ReviewCreate, ReviewEligibilityRead, ReviewRead
+from src.database.schemas import (
+    ProductCreate,
+    ProductQuestionCreate,
+    ProductQuestionListRead,
+    ProductQuestionRead,
+    ProductUpdate,
+    ProductWithVariantsRead,
+    ReviewCreate,
+    ReviewEligibilityRead,
+    ReviewRead,
+)
 from src.integrations.website_reviews import push_review_to_website_safely
 
-from .helpers import get_user_product_price_discount_context, serialize_product_with_variants, serialize_products_with_variants, serialize_review, serialize_reviews
+from .helpers import (
+    get_user_product_price_discount_context,
+    serialize_product_question,
+    serialize_product_questions,
+    serialize_product_with_variants,
+    serialize_products_with_variants,
+    serialize_review,
+    serialize_reviews,
+)
 
 products_router = APIRouter(prefix="/products", tags=["products"])
 PRODUCT_DETAIL_CACHE_TTL_SECONDS = 180
@@ -146,8 +167,61 @@ async def products_get_review_eligibility(product_id: int, db: AsyncSession = De
     return ReviewEligibilityRead(can_review=True)
 
 
+@products_router.get("/{product_id}/questions", response_model=ProductQuestionListRead)
+async def products_get_questions(
+    product_id: int,
+    limit: int = Query(default=100, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    product = await get_product_by_id(db, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    questions = await get_product_questions(
+        db,
+        product_id=product_id,
+        offset=offset,
+        limit=limit,
+    )
+    return ProductQuestionListRead(
+        items=serialize_product_questions(questions),
+        total=await get_product_question_count(db, product_id=product_id),
+    )
+
+
+@products_router.post(
+    "/{product_id}/questions",
+    response_model=ProductQuestionRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def products_create_question(
+    request: Request,
+    product_id: int,
+    data: ProductQuestionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+):
+    await enforce_rate_limit(
+        request,
+        scope="product-questions:create",
+        limit=10,
+        window_seconds=3600,
+    )
+    product = await get_product_by_id(db, product_id)
+    if product is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    question = await create_product_question(
+        db,
+        user_id=current_user.id if current_user else None,
+        product_id=product_id,
+        data=data,
+        guest_name="Гость" if current_user is None else None,
+    )
+    return serialize_product_question(question)
+
+
 @products_router.post("/{product_id}/reviews", response_model=ReviewRead, status_code=status.HTTP_201_CREATED)
-async def products_create_review(request: Request, product_id: int, value: int = Form(..., ge=0, le=5), text: str | None = Form(default=None), guest_name: str | None = Form(default=None, max_length=120), guest_email: str | None = Form(default=None, max_length=320), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
+async def products_create_review(request: Request, product_id: int, value: int = Form(..., ge=0, le=5), text: str | None = Form(default=None), guest_name: str | None = Form(default=None, max_length=120), guest_email: str | None = Form(default=None, max_length=320), hide_sender_name: bool = Form(default=False), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
     await enforce_rate_limit(request, scope="reviews:create", limit=5, window_seconds=3600)
     product = await get_product_by_id(db, product_id)
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
@@ -157,6 +231,7 @@ async def products_create_review(request: Request, product_id: int, value: int =
         text=text.strip() if text else None,
         guest_name=guest_name.strip() if guest_name else ("Гость" if current_user is None else None),
         guest_email=guest_email.strip().lower() if guest_email else None,
+        hide_sender_name=hide_sender_name,
     )
     uploaded_attachments = attachments or []
     validate_review_attachments_count(len(uploaded_attachments))

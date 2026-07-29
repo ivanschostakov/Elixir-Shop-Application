@@ -11,9 +11,16 @@ from src.app.services.referrals.calculations import quantize_money, quantize_per
 from src.app.services.referrals.profile import get_referral_profile_by_user_id, user_has_promo_code
 from src.app.services.review_attachments import build_review_attachment_url
 from src.app.services.stock_visibility import StockVisibilityPolicy
-from src.database.models import Product, Review
+from src.database.models import Product, ProductQuestion, Review
 from src.database.models.auth.user import User
-from src.database.schemas import ProductRead, ProductVariantRead, ProductWithVariantsRead, ReviewAttachmentRead, ReviewRead
+from src.database.schemas import (
+    ProductQuestionRead,
+    ProductRead,
+    ProductVariantRead,
+    ProductWithVariantsRead,
+    ReviewAttachmentRead,
+    ReviewRead,
+)
 from src.product_media import build_products_media_url
 
 ReviewStatsByProductId = dict[int, tuple[float, int]]
@@ -161,7 +168,9 @@ def serialize_review(request: Request, review: Review) -> ReviewRead:
         updated_at=attachment.updated_at,
     ) for attachment in review.attachments if getattr(attachment, "moderation_status", "approved") == "approved"]
     author_label = PLACEHOLDER_SITE_REVIEW_AUTHOR
-    if review.user is not None:
+    if review.hide_sender_name:
+        author_label = "Анонимный покупатель"
+    elif review.user is not None:
         author_label = (review.user.name or review.user.phone_number or review.user.email or PLACEHOLDER_SITE_REVIEW_AUTHOR).strip()
     elif review.guest_name:
         author_label = review.guest_name.strip()
@@ -169,6 +178,7 @@ def serialize_review(request: Request, review: Review) -> ReviewRead:
     return ReviewRead(
         id=review.id,
         author_username=author_label or PLACEHOLDER_SITE_REVIEW_AUTHOR,
+        is_anonymous=review.hide_sender_name,
         product_id=review.product_id,
         value=review.value,
         text=review.text,
@@ -184,3 +194,32 @@ def serialize_review(request: Request, review: Review) -> ReviewRead:
 
 def serialize_reviews(request: Request, reviews: list[Review]) -> list[ReviewRead]:
     return [serialize_review(request, review) for review in reviews]
+
+
+def serialize_product_question(question: ProductQuestion) -> ProductQuestionRead:
+    author_label = "Гость"
+    if question.user is not None:
+        author_label = (
+            question.user.name
+            or question.user.phone_number
+            or question.user.email
+            or author_label
+        ).strip()
+    elif question.guest_name:
+        author_label = question.guest_name.strip()
+
+    return ProductQuestionRead(
+        id=question.id,
+        author_username=author_label or "Гость",
+        product_id=question.product_id,
+        text=question.text,
+        answer=question.answer,
+        created_at=question.created_at,
+        updated_at=question.updated_at,
+    )
+
+
+def serialize_product_questions(
+    questions: list[ProductQuestion],
+) -> list[ProductQuestionRead]:
+    return [serialize_product_question(question) for question in questions]

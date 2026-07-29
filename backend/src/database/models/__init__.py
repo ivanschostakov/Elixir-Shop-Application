@@ -52,6 +52,7 @@ from .customer_intelligence import CustomerAttribution, CustomerConsent, Custome
 from .crm import CrmAssignmentHistory, CrmConversation, CrmLead, CrmLeadNote, CrmLeadStageHistory, CrmMessage, CrmMessageAttachment
 from .benefits.order_benefit_application import OrderBenefitApplication
 from .catalog.product import Product
+from .catalog.product_question import ProductQuestion
 from .catalog.banner import Banner
 from .catalog.banner_click import BannerClick
 from .catalog.banner_impression import BannerImpression
@@ -153,6 +154,7 @@ __all__ = [
     "NotificationDispatch",
     "OrderBenefitApplication",
     "Product",
+    "ProductQuestion",
     "ProductCategory",
     "ProductByCategory",
     "AppReferralAccrual",

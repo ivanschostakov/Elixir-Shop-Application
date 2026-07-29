@@ -188,7 +188,11 @@ def _push_payload(
     name: str | None,
     surname: str | None,
 ) -> dict[str, Any]:
-    author_name = f"{name or ''} {surname or ''}".strip() or review.guest_name or "Покупатель из приложения"
+    author_name = (
+        "Анонимный покупатель"
+        if getattr(review, "hide_sender_name", False)
+        else f"{name or ''} {surname or ''}".strip() or review.guest_name or "Покупатель из приложения"
+    )
     return {
         "app_review_id": review.id,
         "remote_id": review.website_review_id,

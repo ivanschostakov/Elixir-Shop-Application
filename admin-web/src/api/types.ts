@@ -386,6 +386,7 @@ export type Review = {
   user_id: number | null
   author_name: string
   author_email: string | null
+  hide_sender_name: boolean
   value: number
   text: string | null
   answer: string | null
@@ -409,6 +410,22 @@ export type Review = {
   moderated_at: string | null
   restored_at: string | null
   customer_notified_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ProductQuestion = {
+  id: number
+  product_id: number
+  product_name: string
+  user_id: number | null
+  author_name: string
+  author_email: string | null
+  text: string
+  answer: string | null
+  status: "pending" | "published" | "rejected"
+  internal_moderation_comment: string | null
+  moderated_at: string | null
   created_at: string
   updated_at: string
 }

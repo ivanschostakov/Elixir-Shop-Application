@@ -20,6 +20,7 @@ class Review(Base, IdPkMixin, TimestampMixin):
     guest_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     guest_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     submitter_ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    hide_sender_name: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
     value: Mapped[int] = mapped_column(nullable=False)
     text: Mapped[str | None] = mapped_column(String(REVIEW_MAXIMUM_LENGTH), nullable=True)

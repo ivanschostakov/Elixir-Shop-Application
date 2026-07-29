@@ -522,6 +522,19 @@ def test_resolve_user_bot_model_thresholds():
     assert model_premium == BotModel.PREMIUM
 
 
+def test_ai_chat_uses_gpt_5_6_sol_for_all_bot_tiers():
+    assert ProfessorClient._resolve_model_name(BotModel.FREE) == "gpt-5.6-sol"
+    assert ProfessorClient._resolve_model_name(BotModel.PREMIUM) == "gpt-5.6-sol"
+
+
+def test_ai_chat_preserves_reasoning_behavior_for_gpt_5_6_sol():
+    assert ProfessorClient._build_reasoning_payload(BotModel.FREE) == {"effort": "none"}
+    assert ProfessorClient._build_reasoning_payload(BotModel.PREMIUM) == {
+        "effort": "high",
+        "summary": "detailed",
+    }
+
+
 def test_resolve_user_bot_model_query_filters():
     session = _FakeAsyncSession(0)
     asyncio.run(resolve_user_bot_model(session, user_id=7))

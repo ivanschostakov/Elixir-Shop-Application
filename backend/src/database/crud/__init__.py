@@ -74,6 +74,7 @@ from .catalog.review import create_product_review
 from .catalog.review import create_review_attachment
 from .catalog.review import get_product_review_stats
 from .catalog.review import has_user_purchased_product
+from .catalog.product_question import create_product_question, get_product_question_by_id, get_product_question_count, get_product_questions
 from .catalog.product_category import (
     create_product_category,
     delete_product_category,
@@ -225,6 +226,10 @@ __all__ = [
     "create_product_review",
     "create_review_attachment",
     "has_user_purchased_product",
+    "create_product_question",
+    "get_product_question_by_id",
+    "get_product_question_count",
+    "get_product_questions",
     "get_similar_products",
     "update_product",
     "create_banner",

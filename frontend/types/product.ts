@@ -39,6 +39,7 @@ export type ProductWithVariantsRead = ProductRead & {
 export type ProductReviewRead = {
     id: number
     author_username: string
+    is_anonymous: boolean
     product_id: number
     value: number
     text: string | null
@@ -68,10 +69,30 @@ export type ProductReviewCreate = {
     value: number
     text?: string | null
     attachments?: UploadableReviewAttachment[]
+    hide_sender_name?: boolean
 }
 
 export type ProductReviewEligibilityRead = {
     can_review: boolean
+}
+
+export type ProductQuestionRead = {
+    id: number
+    author_username: string
+    product_id: number
+    text: string
+    answer: string | null
+    created_at: string
+    updated_at: string
+}
+
+export type ProductQuestionListRead = {
+    items: ProductQuestionRead[]
+    total: number
+}
+
+export type ProductQuestionCreate = {
+    text: string
 }
 
 export type ProductCreate = {

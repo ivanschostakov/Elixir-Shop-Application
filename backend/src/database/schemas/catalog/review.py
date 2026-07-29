@@ -17,6 +17,7 @@ class ReviewRead(BaseModel):
 
     id: int
     author_username: str
+    is_anonymous: bool = False
     product_id: int
     value: int = Field(ge=0, le=5)
     text: str | None = Field(default=None, max_length=REVIEW_MAXIMUM_LENGTH)
@@ -34,6 +35,7 @@ class ReviewCreate(BaseModel):
     text: str | None = Field(default=None, max_length=REVIEW_MAXIMUM_LENGTH)
     guest_name: str | None = Field(default=None, min_length=1, max_length=120)
     guest_email: EmailStr | None = None
+    hide_sender_name: bool = False
 
 
 class ReviewEligibilityRead(BaseModel):

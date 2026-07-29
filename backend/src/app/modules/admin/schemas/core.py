@@ -355,6 +355,7 @@ class AdminReviewRead(BaseModel):
     user_id: int | None
     author_name: str
     author_email: str | None
+    hide_sender_name: bool = False
     value: int
     text: str | None
     answer: str | None
@@ -381,6 +382,29 @@ class AdminReviewModerationPayload(BaseModel):
     answer: str | None = Field(default=None, max_length=4000)
     internal_comment: str | None = Field(default=None, max_length=4000)
     attachment_statuses: dict[int, Literal["approved", "rejected", "pending"]] = Field(default_factory=dict)
+    expected_updated_at: datetime
+
+
+class AdminProductQuestionRead(BaseModel):
+    id: int
+    product_id: int
+    product_name: str
+    user_id: int | None
+    author_name: str
+    author_email: str | None
+    text: str
+    answer: str | None
+    status: Literal["pending", "published", "rejected"]
+    internal_moderation_comment: str | None = None
+    moderated_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminProductQuestionModerationPayload(BaseModel):
+    action: Literal["publish", "reject"]
+    answer: str | None = Field(default=None, max_length=4000)
+    internal_comment: str | None = Field(default=None, max_length=4000)
     expected_updated_at: datetime
 
 

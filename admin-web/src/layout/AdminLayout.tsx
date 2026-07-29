@@ -94,6 +94,7 @@ export function AdminLayout() {
         label: t("content"),
         children: [
           allowed("reviews.read") ? { key: "/content/reviews", label: t("reviews") } : null,
+          allowed("reviews.read") ? { key: "/content/questions", label: locale === "ru" ? "Вопросы" : "Questions" } : null,
           allowed("banners.manage") ? { key: "/content/banners", label: t("banners") } : null,
           allowed("banners.manage") ? { key: "/content/business", label: t("businessContent") } : null,
         ].filter(Boolean),

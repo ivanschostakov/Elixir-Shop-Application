@@ -173,7 +173,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     },
     sectionStack: {
         flex: 1,
-        gap: 0,
+        gap: spacing.md,
         width: "100%",
     },
     sectionWrap: {
@@ -321,6 +321,154 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
             },
         }),
         width: "100%",
+    },
+    feedbackSection: {
+        gap: spacing.sm,
+        width: "100%",
+    },
+    feedbackSummaryRow: {
+        alignItems: "stretch",
+        flexDirection: "row",
+        gap: spacing.sm,
+        width: "100%",
+    },
+    feedbackSummaryCard: {
+        backgroundColor: colors.surface,
+        borderColor: "transparent",
+        borderRadius: spacing.lg,
+        borderWidth: 1,
+        gap: 6,
+        justifyContent: "center",
+        minHeight: 96,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.md,
+        ...Platform.select({
+            web: {
+                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
+            },
+            default: {
+                shadowColor: "#000000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.04,
+                shadowRadius: 16,
+            },
+        }),
+    },
+    feedbackReviewsSummaryCard: {
+        flex: 1.35,
+    },
+    feedbackQuestionsSummaryCard: {
+        flex: 1,
+    },
+    feedbackSummaryCardPressed: {
+        opacity: 0.82,
+        transform: [{ scale: 0.99 }],
+    },
+    feedbackSummaryValueRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        flexWrap: "wrap",
+        gap: 7,
+    },
+    feedbackSummaryValue: {
+        color: colors.text,
+        fontSize: 24,
+        fontWeight: "800",
+        lineHeight: 30,
+    },
+    feedbackSummaryLabel: {
+        color: colors.mutedText,
+        fontSize: 14,
+        fontWeight: "600",
+        lineHeight: 18,
+    },
+    questionIcon: {
+        alignItems: "center",
+        borderRadius: 9,
+        height: 27,
+        justifyContent: "center",
+        width: 27,
+    },
+    questionIconText: {
+        fontSize: 18,
+        fontWeight: "900",
+        lineHeight: 22,
+    },
+    feedbackExpandedCard: {
+        backgroundColor: colors.surface,
+        borderRadius: spacing.lg,
+        gap: spacing.sm,
+        padding: spacing.md,
+        ...Platform.select({
+            web: {
+                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
+            },
+            default: {
+                shadowColor: "#000000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.04,
+                shadowRadius: 16,
+            },
+        }),
+    },
+    feedbackPanelTitle: {
+        color: colors.text,
+        fontSize: 20,
+        fontWeight: "800",
+        lineHeight: 26,
+    },
+    composerFieldLabel: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: "700",
+    },
+    reviewStarPickerRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 2,
+    },
+    reviewStarPickerButton: {
+        alignItems: "center",
+        justifyContent: "center",
+        minHeight: 42,
+        minWidth: 42,
+    },
+    reviewAnonymousRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: spacing.md,
+        justifyContent: "space-between",
+    },
+    reviewAnonymousCopy: {
+        flex: 1,
+        gap: 2,
+    },
+    reviewAnonymousTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "700",
+        lineHeight: 19,
+    },
+    reviewAnonymousHint: {
+        color: colors.mutedText,
+        fontSize: 12,
+        lineHeight: 16,
+    },
+    feedbackAnswer: {
+        backgroundColor: colors.surface,
+        borderLeftColor: colors.primary,
+        borderLeftWidth: 3,
+        borderRadius: 8,
+        gap: 3,
+        marginTop: 2,
+        padding: spacing.sm,
+    },
+    feedbackAnswerLabel: {
+        color: colors.primary,
+        fontSize: 11,
+        fontWeight: "800",
+        letterSpacing: 0.4,
+        textTransform: "uppercase",
     },
     infoTabsHeader: {
         alignItems: "center",

@@ -3,4 +3,6 @@ export type ProductScreenProps = {
     preferredVariantId?: number
 }
 
-export type ProductInfoTabKey = "overview" | "usage" | "details" | "reviews"
+export type ProductInfoTabKey = "overview" | "usage" | "details"
+
+export type ProductFeedbackPanelKey = "reviews" | "questions"

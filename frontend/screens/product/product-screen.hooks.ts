@@ -14,6 +14,7 @@ import {
     DEFAULT_PRODUCT_INFO_TAB,
 } from "@/screens/product/product-screen.constants"
 import type {
+    ProductFeedbackPanelKey,
     ProductInfoTabKey,
 } from "@/screens/product/product-screen.types"
 import { getPreferredVariantId } from "@/screens/product/product-screen.utils"
@@ -110,6 +111,23 @@ export function useProductInfoTabs(productId: number | null) {
     return {
         activeInfoTab,
         handleInfoTabChange,
+    }
+}
+
+export function useProductFeedbackPanels(productId: number | null) {
+    const [activeFeedbackPanel, setActiveFeedbackPanel] = useState<ProductFeedbackPanelKey | null>(null)
+
+    useEffect(() => {
+        setActiveFeedbackPanel(null)
+    }, [productId])
+
+    const handleFeedbackPanelChange = useCallback((panel: ProductFeedbackPanelKey) => {
+        setActiveFeedbackPanel((currentPanel) => currentPanel === panel ? currentPanel : panel)
+    }, [])
+
+    return {
+        activeFeedbackPanel,
+        handleFeedbackPanelChange,
     }
 }
 

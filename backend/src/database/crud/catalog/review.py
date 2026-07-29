@@ -46,6 +46,7 @@ async def create_product_review(session: AsyncSession, *, user_id: int | None, p
         text=data.text,
         guest_name=data.guest_name,
         guest_email=str(data.guest_email) if data.guest_email else None,
+        hide_sender_name=data.hide_sender_name,
     )
     session.add(review)
     await session.flush()

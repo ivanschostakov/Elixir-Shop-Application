@@ -19,8 +19,7 @@ from .enums import BotModel
 
 FREE_VECTOR_STORE_ID = "vs_69e94b0c9e048191bf3cd7d79b6efbb6"
 PREMIUM_VECTOR_STORE_ID = "vs_69e94b468f6481919aec96887cf97ac9"
-FREE_MODEL = "gpt-4.1-mini"
-PREMIUM_MODEL = "gpt-4.1"
+AI_CHAT_MODEL = "gpt-5.6-sol"
 _professor_client: "ProfessorClient | None" = None
 
 
@@ -45,9 +44,7 @@ class ProfessorClient(AsyncClient):
 
     @staticmethod
     def _resolve_model_name(model: BotModel) -> str:
-        if model == BotModel.PREMIUM:
-            return PREMIUM_MODEL
-        return FREE_MODEL
+        return AI_CHAT_MODEL
 
     @staticmethod
     def _build_tools(model: BotModel, function_tools: list[dict[str, Any]] | None = None) -> list[Any]:
@@ -63,7 +60,10 @@ class ProfessorClient(AsyncClient):
         return guessed or fallback
 
     @staticmethod
-    def _build_reasoning_payload(model: BotModel) -> dict[str, str] | None: return {"effort": "high", "summary": "detailed"} if model == "premium" else None
+    def _build_reasoning_payload(model: BotModel) -> dict[str, str]:
+        if model == BotModel.PREMIUM:
+            return {"effort": "high", "summary": "detailed"}
+        return {"effort": "none"}
 
     async def transcribe_audio_bytes(self, filename: str, content: bytes) -> str:
         audio_file = io.BytesIO(content)

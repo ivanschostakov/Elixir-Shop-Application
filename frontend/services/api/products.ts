@@ -2,6 +2,9 @@ import { ENDPOINTS } from "@/services/api/constants"
 import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart } from "@/services/api/client"
 import type {
     ProductCreate,
+    ProductQuestionCreate,
+    ProductQuestionListRead,
+    ProductQuestionRead,
     ProductReviewCreate,
     ProductReviewEligibilityRead,
     ProductReviewRead,
@@ -31,6 +34,11 @@ export type GetSimilarProductsOptions = {
 }
 
 export type GetProductReviewsOptions = {
+    limit?: number
+    offset?: number
+}
+
+export type GetProductQuestionsOptions = {
     limit?: number
     offset?: number
 }
@@ -86,6 +94,7 @@ export function createProductReview(
     if (typeof data.text === "string") {
         formData.append("text", data.text)
     }
+    formData.append("hide_sender_name", String(Boolean(data.hide_sender_name)))
 
     for (const attachment of data.attachments ?? []) {
         formData.append(
@@ -99,6 +108,26 @@ export function createProductReview(
     }
 
     return apiPostMultipart<ProductReviewRead>(`${ENDPOINTS.PRODUCTS}/${productId}/reviews`, formData)
+}
+
+export function getProductQuestions(
+    productId: number,
+    { limit, offset }: GetProductQuestionsOptions = {},
+): Promise<ProductQuestionListRead> {
+    return apiGet<ProductQuestionListRead>(`${ENDPOINTS.PRODUCTS}/${productId}/questions`, {
+        limit,
+        offset,
+    })
+}
+
+export function createProductQuestion(
+    productId: number,
+    data: ProductQuestionCreate,
+): Promise<ProductQuestionRead> {
+    return apiPost<ProductQuestionRead, ProductQuestionCreate>(
+        `${ENDPOINTS.PRODUCTS}/${productId}/questions`,
+        data,
+    )
 }
 
 export function getProductReviewEligibility(productId: number): Promise<ProductReviewEligibilityRead> {

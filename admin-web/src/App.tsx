@@ -24,6 +24,7 @@ const ProductsPage = lazy(() => import("./pages/catalog/ProductsPage").then((mod
 const BannersPage = lazy(() => import("./pages/content/BannersPage").then((module) => ({ default: module.BannersPage })))
 const BusinessContentPage = lazy(() => import("./pages/content/BusinessContentPage").then((module) => ({ default: module.BusinessContentPage })))
 const ReviewsPage = lazy(() => import("./pages/content/ReviewsPage").then((module) => ({ default: module.ReviewsPage })))
+const QuestionsPage = lazy(() => import("./pages/content/QuestionsPage").then((module) => ({ default: module.QuestionsPage })))
 const CustomerDetailPage = lazy(() => import("./pages/customers/CustomerDetailPage").then((module) => ({ default: module.CustomerDetailPage })))
 const CustomersPage = lazy(() => import("./pages/customers/CustomersPage").then((module) => ({ default: module.CustomersPage })))
 const OrderDetailPage = lazy(() => import("./pages/orders/OrderDetailPage").then((module) => ({ default: module.OrderDetailPage })))
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="catalog/products" element={guarded("catalog.read", <ProductsPage />)} />
           <Route path="catalog/categories" element={guarded("catalog.read", <CategoriesPage />)} />
           <Route path="content/reviews" element={guarded("reviews.read", <ReviewsPage />)} />
+          <Route path="content/questions" element={guarded("reviews.read", <QuestionsPage />)} />
           <Route path="content/banners" element={guarded("banners.manage", <BannersPage />)} />
           <Route path="content/business" element={guarded("banners.manage", <BusinessContentPage />)} />
           <Route path="marketing" element={guardedAny(["referrals.read", "segments.read", "campaigns.read"], <MarketingPage />)} />
