@@ -45,6 +45,7 @@ from .delivery.cdek_pickup_address import CdekPickupAddressBase, CdekPickupAddre
 from .delivery.recipient import DeliveryRecipientBase, DeliveryRecipientCreate, DeliveryRecipientRead
 from .delivery.yandex_pickup_address import YandexPickupAddressBase, YandexPickupAddressCreate, YandexPickupAddressRead, YandexPickupAddressUpdate
 from .legal.requisite import RequisiteBase, RequisiteCreate, RequisiteRead, RequisiteUpdate
+from .notifications import ProductStockSubscriptionStatusRead
 from .favorites.favoured_product import (
     FavouredProductBase,
     FavouredProductCreate,
@@ -163,6 +164,7 @@ __all__ = [
     "ProductBase",
     "ProductCreate",
     "ProductRead",
+    "ProductStockSubscriptionStatusRead",
     "ProductUpdate",
     "ProductWithVariantsRead",
     "ProductQuestionCreate",

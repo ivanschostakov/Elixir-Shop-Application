@@ -54,5 +54,7 @@ class ProductVariantRead(BaseModel):
     original_price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
     discounted_price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
     discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=7, decimal_places=2)
+    catalog_discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=5, decimal_places=2)
+    personal_discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=5, decimal_places=2)
     created_at: datetime
     updated_at: datetime

@@ -58,7 +58,6 @@ def test_restock_processor_sends_once_and_deactivates(monkeypatch: pytest.Monkey
 
     session = _FakeSession(
         [
-            _FakeScalarResult(rows=[]),
             _FakeScalarResult(rows=[(subscription, variant)]),
             _FakeScalarResult(rows=[]),
         ]
@@ -97,7 +96,6 @@ def test_restock_processor_waits_for_stock_increase(monkeypatch: pytest.MonkeyPa
         [
             _FakeScalarResult(rows=[]),
             _FakeScalarResult(rows=[]),
-            _FakeScalarResult(rows=[]),
         ]
     )
 
@@ -121,7 +119,6 @@ def test_restock_processor_tracks_low_stock_decreases(monkeypatch: pytest.Monkey
 
     session = _FakeSession(
         [
-            _FakeScalarResult(rows=[]),
             _FakeScalarResult(rows=[]),
             _FakeScalarResult(rows=[(subscription, variant)]),
         ]

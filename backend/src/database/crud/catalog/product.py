@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -7,6 +9,7 @@ from src.database.search import build_search_query_variants
 
 from src.database.models import Product, ProductByCategory, Variant
 from src.database.schemas import ProductCreate, ProductUpdate
+from config import ufa_now
 
 
 def _in_stock_product_clause():
@@ -80,7 +83,20 @@ async def get_product_by_sku(session: AsyncSession, sku: str) -> Product | None:
     return (await session.execute(select(Product).where(Product.sku == sku))).scalar_one_or_none()
 
 
-async def get_products(session: AsyncSession, *, q: str | None = None, sku: str | None = None, min_priority: int | None = None, category_id: int | None = None, offset: int = 0, limit: int = 100, sort: str = None, include_archived: bool = False) -> list[Product]:
+async def get_products(
+    session: AsyncSession,
+    *,
+    q: str | None = None,
+    sku: str | None = None,
+    min_priority: int | None = None,
+    category_id: int | None = None,
+    new_only: bool = False,
+    new_product_days: int = 30,
+    offset: int = 0,
+    limit: int = 100,
+    sort: str = None,
+    include_archived: bool = False,
+) -> list[Product]:
     stmt = select(Product).options(*_product_price_options())
     if not include_archived:
         stmt = stmt.where(_not_archived_product_clause())
@@ -88,6 +104,15 @@ async def get_products(session: AsyncSession, *, q: str | None = None, sku: str 
         stmt = stmt.join(ProductByCategory, ProductByCategory.product_id == Product.id).where(ProductByCategory.category_id == category_id)
     if sku is not None: stmt = stmt.where(Product.sku == sku)
     if min_priority is not None: stmt = stmt.where(Product.priority >= min_priority)
+    new_product_clause = or_(
+        Product.is_new_manual.is_(True),
+        Product.created_at >= ufa_now() - timedelta(days=max(new_product_days, 0)),
+    )
+    if new_only:
+        if new_product_days <= 0:
+            stmt = stmt.where(Product.is_new_manual.is_(True))
+        else:
+            stmt = stmt.where(new_product_clause)
     if q:
         query_variants = build_search_query_variants(q)
         predicates = []
@@ -114,14 +139,14 @@ async def get_products(session: AsyncSession, *, q: str | None = None, sku: str 
     max_variant_price = select(func.max(Variant.price)).where(Variant.product_id == Product.id).correlate(Product).scalar_subquery()
     in_stock_first = Product.in_stock.desc()
     sort_map = {
-        "newest": (in_stock_first, Product.created_at.desc(), Product.id.desc()),
+        "newest": (in_stock_first, new_product_clause.desc(), Product.created_at.desc(), Product.id.desc()),
         "name_asc": (in_stock_first, func.lower(Product.name).asc(), Product.id.asc()),
         "name_desc": (in_stock_first, func.lower(Product.name).desc(), Product.id.asc()),
         "price_asc": (in_stock_first, min_variant_price.is_(None), min_variant_price.asc(), Product.id.asc()),
         "price_desc": (in_stock_first, max_variant_price.is_(None), max_variant_price.desc(), Product.id.asc()),
     }
     if sort in sort_map: stmt = stmt.order_by(*sort_map[sort])
-    else: stmt = stmt.order_by(in_stock_first, Product.priority.desc(), Product.id.desc())
+    else: stmt = stmt.order_by(in_stock_first, new_product_clause.desc(), Product.priority.desc(), Product.id.desc())
 
     stmt = stmt.offset(offset).limit(limit)
     return list((await session.execute(stmt)).scalars().all())

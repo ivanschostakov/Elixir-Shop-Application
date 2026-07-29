@@ -19,6 +19,11 @@ from src.app.modules.admin.schemas import (
 )
 from src.app.modules.products.helpers import review_attachment_path
 from src.app.services.stock_visibility import StockVisibilityPolicy
+from src.app.services.catalog_merchandising import (
+    CatalogMerchandisingPolicy,
+    product_catalog_discount_percent,
+    product_is_new,
+)
 from src.app.services.review_attachments import build_review_attachment_url
 from src.database.models import Banner, BusinessContentPage, BusinessContentVersion, Order, Product, ProductCategory, ProductQuestion, Review, ReviewModerationEvent
 from src.database.models.orders.history import get_order_status_code
@@ -132,8 +137,10 @@ def serialize_admin_product(
     product: Product,
     *,
     stock_policy: StockVisibilityPolicy | None = None,
+    merchandising_policy: CatalogMerchandisingPolicy | None = None,
 ) -> AdminProductRead:
     policy = stock_policy or StockVisibilityPolicy()
+    merchandising = merchandising_policy or CatalogMerchandisingPolicy()
     return AdminProductRead(
         id=product.id,
         system_id=str(product.system_id),
@@ -145,6 +152,10 @@ def serialize_admin_product(
         in_stock=product.in_stock,
         archived=product.archived,
         priority=product.priority,
+        is_new_manual=product.is_new_manual,
+        is_new=product_is_new(product, merchandising),
+        discount_percent=product.discount_percent,
+        effective_discount_percent=product_catalog_discount_percent(product),
         stock_reduction_override=product.stock_reduction_override,
         effective_stock_reduction=policy.reduction_for(product),
         image_url=build_products_media_url(str(request.base_url), product.image_path),
@@ -160,6 +171,7 @@ def serialize_admin_product(
             archived=variant.archived,
             image_url=build_products_media_url(str(request.base_url), variant.image_path),
         ) for variant in product.variants],
+        created_at=product.created_at,
         updated_at=product.updated_at,
     )
 
@@ -256,6 +268,7 @@ def serialize_category(category: ProductCategory) -> AdminCategoryRead:
         name=category.name,
         description=category.description,
         archived=category.archived,
+        discount_percent=category.discount_percent,
         created_at=category.created_at,
         updated_at=category.updated_at,
     )

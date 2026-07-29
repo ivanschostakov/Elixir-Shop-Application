@@ -1,6 +1,7 @@
 import uuid
 
 from datetime import datetime
+from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src.database.limits import (
@@ -19,6 +20,8 @@ class ProductBase(BaseModel):
     expiration: str | None = Field(default=None)
     archived: bool = False
     priority: int = Field(default=0, ge=0)
+    is_new_manual: bool = False
+    discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=5, decimal_places=2)
 
     @field_validator("description", "usage", "expiration", mode="before")
     @classmethod
@@ -38,6 +41,8 @@ class ProductUpdate(BaseModel):
     expiration: str | None = Field(default=None)
     archived: bool | None = None
     priority: int | None = Field(default=None, ge=0)
+    is_new_manual: bool | None = None
+    discount_percent: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
     system_id: uuid.UUID | None = None
 
     @field_validator("description", "usage", "expiration", mode="before")
@@ -56,6 +61,8 @@ class ProductRead(ProductBase):
     image_url: str
     rating_avg: float = 0.0
     rating_count: int = 0
+    is_new: bool = False
+    catalog_discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=5, decimal_places=2)
     created_at: datetime
     updated_at: datetime
 

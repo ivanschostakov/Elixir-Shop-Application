@@ -20,9 +20,11 @@ import { useTheme } from "@/providers/theme-provider"
 
 const discoverBrowseMemory: {
     categoryId: number | null
+    newOnly: boolean
     sort: ProductBrowseSort
 } = {
     categoryId: null,
+    newOnly: false,
     sort: "newest",
 }
 
@@ -93,17 +95,20 @@ export default function DiscoverScreen() {
         tab?: string | string[]
         categoryId?: string | string[]
         q?: string | string[]
+        newOnly?: string | string[]
         resetCategory?: string | string[]
     }>()
     const isProductsTab = resolveContentTab(params.tab) === "products"
     const incomingCategoryId = parseCategoryId(params.categoryId)
     const shouldResetCategory = parseQuery(params.resetCategory) === "1"
+    const incomingNewOnly = parseQuery(params.newOnly) === "1"
     const query = parseQuery(params.q)
     const isWeb = Platform.OS === "web"
     const isDesktop = isWeb && windowWidth >= 1100
     const isTablet = isWeb && windowWidth >= 760
     const [listWidth, setListWidth] = useState(0)
     const [categoryId, setCategoryId] = useState<number | null>(() => discoverBrowseMemory.categoryId)
+    const [newOnly, setNewOnly] = useState(() => discoverBrowseMemory.newOnly)
     const [sort, setSort] = useState<ProductBrowseSort>(() => discoverBrowseMemory.sort)
     const trackedCategoryIdRef = useRef<number | null>(null)
     const { categories, reload: reloadCategories } = useProductCategories(isProductsTab)
@@ -117,6 +122,7 @@ export default function DiscoverScreen() {
     } = useInfiniteProductCatalog({
         categoryId,
         enabled: isProductsTab,
+        newOnly,
         query,
         sort,
     })
@@ -138,19 +144,27 @@ export default function DiscoverScreen() {
 
     useEffect(() => {
         discoverBrowseMemory.categoryId = categoryId
+        discoverBrowseMemory.newOnly = newOnly
         discoverBrowseMemory.sort = sort
-    }, [categoryId, sort])
+    }, [categoryId, newOnly, sort])
 
     useEffect(() => {
         if (shouldResetCategory) {
             setCategoryId(null)
+            setNewOnly(false)
             return
         }
 
         if (incomingCategoryId !== null) {
             setCategoryId(incomingCategoryId)
+            setNewOnly(false)
+            return
         }
-    }, [incomingCategoryId, shouldResetCategory])
+        if (incomingNewOnly) {
+            setCategoryId(null)
+            setNewOnly(true)
+        }
+    }, [incomingCategoryId, incomingNewOnly, shouldResetCategory])
 
     useEffect(() => {
         if (
@@ -261,7 +275,9 @@ export default function DiscoverScreen() {
                         <ProductBrowseControls
                             categories={categories}
                             categoryId={categoryId}
+                            newOnly={newOnly}
                             onChangeCategoryId={setCategoryId}
+                            onChangeNewOnly={setNewOnly}
                             onChangeSort={setSort}
                             sort={sort}
                         />

@@ -164,82 +164,84 @@ export function ProductFeedbackPanels({
                             value={hideSenderName}
                         />
                     </View>
-                    <Pressable
-                        accessibilityRole="button"
-                        disabled={reviewsSubmitting}
-                        onPress={() => {
-                            setReviewSubmitError(null)
-                            setReviewSubmitSuccess(false)
-                            void onSubmitReview(
-                                draftReviewValue,
-                                draftReviewText.trim() || null,
-                                draftReviewAttachments,
-                                hideSenderName,
-                            )
-                                .then(() => {
-                                    setDraftReviewText("")
-                                    setDraftReviewValue(5)
-                                    setDraftReviewAttachments([])
-                                    setHideSenderName(false)
-                                    setReviewSubmitSuccess(true)
-                                })
-                                .catch((error: unknown) => {
-                                    setReviewSubmitError(
-                                        error instanceof Error
-                                            ? error.message
-                                            : t("product.reviewSubmitFailed"),
-                                    )
-                                })
-                        }}
-                        style={({ pressed }) => [
-                            productScreenStyle.reviewSubmitButton,
-                            { backgroundColor: accentPalette.primary },
-                            reviewsSubmitting && productScreenStyle.reviewSubmitButtonDisabled,
-                            pressed && { backgroundColor: accentPalette.primaryPressed },
-                        ]}
-                    >
-                        <Text style={[productScreenStyle.reviewSubmitButtonText, { color: accentPalette.onPrimary }]}>
-                            {reviewsSubmitting ? t("product.reviewSubmitLoading") : t("product.reviewSubmit")}
-                        </Text>
-                    </Pressable>
-                    <Pressable
-                        accessibilityRole="button"
-                        disabled={reviewsSubmitting}
-                        onPress={() => {
-                            void (async () => {
-                                const result = await ImagePicker.launchImageLibraryAsync({
-                                    allowsMultipleSelection: true,
-                                    mediaTypes: ["images"],
-                                    quality: 0.9,
-                                })
-                                if (result.canceled) {
-                                    return
-                                }
+                    <View style={productScreenStyle.reviewComposerActions}>
+                        <Pressable
+                            accessibilityRole="button"
+                            disabled={reviewsSubmitting}
+                            onPress={() => {
                                 setReviewSubmitError(null)
-                                setDraftReviewAttachments((current) => [
-                                    ...current,
-                                    ...result.assets.map((asset, index) => ({
-                                        uri: asset.uri,
-                                        fileName: asset.fileName ?? `review-image-${Date.now()}-${index + 1}.jpg`,
-                                        mimeType: asset.mimeType ?? "image/jpeg",
-                                    })),
-                                ])
-                            })()
-                        }}
-                        style={({ pressed }) => [
-                            productScreenStyle.reviewPhotoButton,
-                            {
-                                borderColor: accentPalette.primary,
-                                backgroundColor: accentPalette.primaryMuted,
-                            },
-                            reviewsSubmitting && productScreenStyle.reviewSubmitButtonDisabled,
-                            pressed && productScreenStyle.reviewPhotoButtonPressed,
-                        ]}
-                    >
-                        <Text style={[productScreenStyle.reviewPhotoButtonText, { color: accentPalette.primary }]}>
-                            {t("product.reviewAddPhoto")}
-                        </Text>
-                    </Pressable>
+                                setReviewSubmitSuccess(false)
+                                void onSubmitReview(
+                                    draftReviewValue,
+                                    draftReviewText.trim() || null,
+                                    draftReviewAttachments,
+                                    hideSenderName,
+                                )
+                                    .then(() => {
+                                        setDraftReviewText("")
+                                        setDraftReviewValue(5)
+                                        setDraftReviewAttachments([])
+                                        setHideSenderName(false)
+                                        setReviewSubmitSuccess(true)
+                                    })
+                                    .catch((error: unknown) => {
+                                        setReviewSubmitError(
+                                            error instanceof Error
+                                                ? error.message
+                                                : t("product.reviewSubmitFailed"),
+                                        )
+                                    })
+                            }}
+                            style={({ pressed }) => [
+                                productScreenStyle.reviewSubmitButton,
+                                { backgroundColor: accentPalette.primary },
+                                reviewsSubmitting && productScreenStyle.reviewSubmitButtonDisabled,
+                                pressed && { backgroundColor: accentPalette.primaryPressed },
+                            ]}
+                        >
+                            <Text style={[productScreenStyle.reviewSubmitButtonText, { color: accentPalette.onPrimary }]}>
+                                {reviewsSubmitting ? t("product.reviewSubmitLoading") : t("product.reviewSubmit")}
+                            </Text>
+                        </Pressable>
+                        <Pressable
+                            accessibilityRole="button"
+                            disabled={reviewsSubmitting}
+                            onPress={() => {
+                                void (async () => {
+                                    const result = await ImagePicker.launchImageLibraryAsync({
+                                        allowsMultipleSelection: true,
+                                        mediaTypes: ["images"],
+                                        quality: 0.9,
+                                    })
+                                    if (result.canceled) {
+                                        return
+                                    }
+                                    setReviewSubmitError(null)
+                                    setDraftReviewAttachments((current) => [
+                                        ...current,
+                                        ...result.assets.map((asset, index) => ({
+                                            uri: asset.uri,
+                                            fileName: asset.fileName ?? `review-image-${Date.now()}-${index + 1}.jpg`,
+                                            mimeType: asset.mimeType ?? "image/jpeg",
+                                        })),
+                                    ])
+                                })()
+                            }}
+                            style={({ pressed }) => [
+                                productScreenStyle.reviewPhotoButton,
+                                {
+                                    borderColor: accentPalette.primary,
+                                    backgroundColor: accentPalette.primaryMuted,
+                                },
+                                reviewsSubmitting && productScreenStyle.reviewSubmitButtonDisabled,
+                                pressed && productScreenStyle.reviewPhotoButtonPressed,
+                            ]}
+                        >
+                            <Text style={[productScreenStyle.reviewPhotoButtonText, { color: accentPalette.primary }]}>
+                                {t("product.reviewAddPhoto")}
+                            </Text>
+                        </Pressable>
+                    </View>
                     {draftReviewAttachments.length ? (
                         <View style={productScreenStyle.reviewAttachmentPreviewRow}>
                             {draftReviewAttachments.map((attachment, attachmentIndex) => (
@@ -406,6 +408,7 @@ export function ProductFeedbackPanels({
                         productScreenStyle.feedbackReviewsSummaryCard,
                         activePanel === "reviews" && {
                             borderColor: accentPalette.primary,
+                            backgroundColor: accentPalette.primaryMuted,
                         },
                         pressed && productScreenStyle.feedbackSummaryCardPressed,
                     ]}
@@ -429,6 +432,7 @@ export function ProductFeedbackPanels({
                         productScreenStyle.feedbackQuestionsSummaryCard,
                         activePanel === "questions" && {
                             borderColor: accentPalette.primary,
+                            backgroundColor: accentPalette.primaryMuted,
                         },
                         pressed && productScreenStyle.feedbackSummaryCardPressed,
                     ]}

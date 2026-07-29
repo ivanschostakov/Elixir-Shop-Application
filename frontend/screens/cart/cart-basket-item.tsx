@@ -93,6 +93,11 @@ export function CartBasketItem({
     const itemImageUrl = item.variant.image_url || item.product.image_url
     const lineTotalLabel = formatProductPrice(item.line_total) ?? "—"
     const unitPriceLabel = formatProductPrice(item.unit_price) ?? "—"
+    const originalLineTotal = item.original_unit_price
+        ? Number(item.original_unit_price) * item.quantity
+        : null
+    const originalLineTotalLabel = formatProductPrice(originalLineTotal)
+    const hasDiscount = Number(item.discount_percent) > 0 && originalLineTotal !== null
     const availabilityLabel = !item.is_available
         ? item.available_quantity === 0
             ? t("product.variantOutOfStock")
@@ -187,7 +192,13 @@ export function CartBasketItem({
                     ]}
                 >
                     <View style={cartScreenStyles.priceStack}>
-                        <Text style={cartScreenStyles.itemLineTotal}>{lineTotalLabel}</Text>
+                        <Text style={[cartScreenStyles.itemLineTotal, hasDiscount && cartScreenStyles.itemLineTotalDiscounted]}>{lineTotalLabel}</Text>
+                        {hasDiscount ? (
+                            <View style={cartScreenStyles.itemDiscountRow}>
+                                <Text style={cartScreenStyles.itemOriginalTotal}>{originalLineTotalLabel}</Text>
+                                <Text style={cartScreenStyles.itemDiscountBadge}>−{Number(item.discount_percent)}%</Text>
+                            </View>
+                        ) : null}
                         <Text style={cartScreenStyles.itemUnitPrice}>{`${unitPriceLabel}/ед`}</Text>
                     </View>
 

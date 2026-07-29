@@ -35,6 +35,8 @@ class BasketVariantSummaryRead(BaseModel):
     name: str
     stock: int
     price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    original_price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=5, decimal_places=2)
     image_url: str
 
 
@@ -45,6 +47,8 @@ class BasketItemRead(BaseModel):
     variant_id: int = Field(ge=1)
     quantity: int = Field(ge=1)
     unit_price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    original_unit_price: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=5, decimal_places=2)
     line_total: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     available_quantity: int = Field(ge=0)
     is_available: bool

@@ -7,6 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import REVIEWS_MEDIA_DIR
 from src.app.services.discounts import product_is_discountable
+from src.app.services.catalog_merchandising import (
+    CatalogMerchandisingPolicy,
+    apply_percent_discount,
+    product_catalog_discount_percent,
+    product_is_new,
+)
 from src.app.services.referrals.calculations import quantize_money, quantize_percent
 from src.app.services.referrals.profile import get_referral_profile_by_user_id, user_has_promo_code
 from src.app.services.review_attachments import build_review_attachment_url
@@ -33,6 +39,7 @@ class ProductPriceDiscountContext:
 
 
 NO_PRODUCT_PRICE_DISCOUNT_CONTEXT = ProductPriceDiscountContext()
+DEFAULT_CATALOG_MERCHANDISING_POLICY = CatalogMerchandisingPolicy()
 
 
 def product_image_url(request: Request, product: Product) -> str: return build_products_media_url(str(request.base_url), product.image_path)
@@ -66,11 +73,24 @@ def effective_discount_percent(original: Decimal, discounted: Decimal) -> Decima
     return quantize_percent(((original - discounted) * Decimal("100.00")) / original)
 
 
-def resolve_variant_price(price: Decimal, ctx: ProductPriceDiscountContext, *, product: Product | None = None) -> tuple[Decimal, Decimal, Decimal]:
+def resolve_variant_price(
+    price: Decimal,
+    ctx: ProductPriceDiscountContext,
+    *,
+    product: Product | None = None,
+) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
     original = quantize_money(price)
-    discount_percent = ctx.app_referral_percent if product_is_discountable(product) else Decimal("0.00")
-    discounted = discounted_price(original, discount_percent)
-    return original, discounted, effective_discount_percent(original, discounted)
+    catalog_percent = product_catalog_discount_percent(product)
+    catalog_discounted = apply_percent_discount(original, catalog_percent)
+    personal_percent = ctx.app_referral_percent if product_is_discountable(product) else Decimal("0.00")
+    discounted = apply_percent_discount(catalog_discounted, personal_percent)
+    return (
+        original,
+        discounted,
+        effective_discount_percent(original, discounted),
+        catalog_percent,
+        personal_percent,
+    )
 
 
 def serialize_product_variant(
@@ -82,7 +102,7 @@ def serialize_product_variant(
     stock_policy: StockVisibilityPolicy | None = None,
 ) -> ProductVariantRead:
     resolved_product = product or getattr(variant, "product", None)
-    original, discounted, percent = resolve_variant_price(
+    original, discounted, percent, catalog_percent, personal_percent = resolve_variant_price(
         variant.price,
         discount_context,
         product=resolved_product,
@@ -94,12 +114,26 @@ def serialize_product_variant(
         "original_price": original,
         "discounted_price": discounted,
         "discount_percent": percent,
+        "catalog_discount_percent": catalog_percent,
+        "personal_discount_percent": personal_percent,
     })
 
 
-def serialize_product(request: Request, product: Product, *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> ProductRead:
+def serialize_product(
+    request: Request,
+    product: Product,
+    *,
+    review_stats_by_product_id: ReviewStatsByProductId | None = None,
+    merchandising_policy: CatalogMerchandisingPolicy = DEFAULT_CATALOG_MERCHANDISING_POLICY,
+) -> ProductRead:
     avg, count = review_stats(product.id, review_stats_by_product_id)
-    return ProductRead.model_validate(product).model_copy(update={"image_url": product_image_url(request, product), "rating_avg": avg, "rating_count": count})
+    return ProductRead.model_validate(product).model_copy(update={
+        "image_url": product_image_url(request, product),
+        "rating_avg": avg,
+        "rating_count": count,
+        "is_new": product_is_new(product, merchandising_policy),
+        "catalog_discount_percent": product_catalog_discount_percent(product),
+    })
 
 
 def serialize_product_with_variants(
@@ -110,6 +144,7 @@ def serialize_product_with_variants(
     include_archived_variants: bool = False,
     discount_context: ProductPriceDiscountContext = NO_PRODUCT_PRICE_DISCOUNT_CONTEXT,
     stock_policy: StockVisibilityPolicy | None = None,
+    merchandising_policy: CatalogMerchandisingPolicy = DEFAULT_CATALOG_MERCHANDISING_POLICY,
 ) -> ProductWithVariantsRead:
     avg, count = review_stats(product.id, review_stats_by_product_id)
     policy = stock_policy or StockVisibilityPolicy()
@@ -134,11 +169,27 @@ def serialize_product_with_variants(
         ),
         "rating_avg": avg,
         "rating_count": count,
+        "is_new": product_is_new(product, merchandising_policy),
+        "catalog_discount_percent": product_catalog_discount_percent(product),
     })
 
 
-def serialize_products(request: Request, products: list[Product], *, review_stats_by_product_id: ReviewStatsByProductId | None = None) -> list[ProductRead]:
-    return [serialize_product(request, product, review_stats_by_product_id=review_stats_by_product_id) for product in products]
+def serialize_products(
+    request: Request,
+    products: list[Product],
+    *,
+    review_stats_by_product_id: ReviewStatsByProductId | None = None,
+    merchandising_policy: CatalogMerchandisingPolicy = DEFAULT_CATALOG_MERCHANDISING_POLICY,
+) -> list[ProductRead]:
+    return [
+        serialize_product(
+            request,
+            product,
+            review_stats_by_product_id=review_stats_by_product_id,
+            merchandising_policy=merchandising_policy,
+        )
+        for product in products
+    ]
 
 
 def serialize_products_with_variants(
@@ -149,6 +200,7 @@ def serialize_products_with_variants(
     include_archived_variants: bool = False,
     discount_context: ProductPriceDiscountContext = NO_PRODUCT_PRICE_DISCOUNT_CONTEXT,
     stock_policy: StockVisibilityPolicy | None = None,
+    merchandising_policy: CatalogMerchandisingPolicy = DEFAULT_CATALOG_MERCHANDISING_POLICY,
 ) -> list[ProductWithVariantsRead]:
     return [serialize_product_with_variants(
         request,
@@ -157,6 +209,7 @@ def serialize_products_with_variants(
         include_archived_variants=include_archived_variants,
         discount_context=discount_context,
         stock_policy=stock_policy,
+        merchandising_policy=merchandising_policy,
     ) for product in products]
 
 

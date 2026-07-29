@@ -9,6 +9,7 @@ type BuildProductBrowseQueryOptionsArgs = {
     categoryId?: number | null
     limit?: number
     minPriority?: number
+    newOnly?: boolean
     query?: string
     sort?: ProductBrowseSort
 }
@@ -17,6 +18,7 @@ export function buildProductBrowseQueryOptions({
     categoryId = null,
     limit = PRODUCT_BROWSE_LIMIT,
     minPriority,
+    newOnly,
     query,
     sort = "newest",
 }: BuildProductBrowseQueryOptionsArgs): GetProductsOptions {
@@ -24,6 +26,7 @@ export function buildProductBrowseQueryOptions({
         categoryId: categoryId ?? undefined,
         limit,
         minPriority,
+        newOnly,
         q: query,
         sort,
     }

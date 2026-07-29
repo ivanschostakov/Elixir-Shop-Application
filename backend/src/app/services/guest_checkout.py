@@ -14,6 +14,10 @@ from starlette import status
 from config import ufa_now
 from src.app.modules.guest.schemas import GuestBasketItemPayload, GuestBasketQuoteRead, GuestDeliveryAddressPayload, GuestOrderPayload
 from src.app.services.basket import _product_image_url, _variant_image_url
+from src.app.services.catalog_merchandising import (
+    catalog_unit_price,
+    product_catalog_discount_percent,
+)
 from src.app.services.orders.creation import (
     _build_checkout_snapshot,
     _build_selected_delivery_payload,
@@ -31,7 +35,7 @@ from src.app.services.stock_visibility import (
 from src.database.crud import create_delivery_address, create_delivery_recipient, create_order, get_order_by_id
 from src.database.crud import get_delivery_recipient_by_fields
 from src.database.crud.auth.user import create_user, get_user_by_phone_number
-from src.database.models import OrderItem, Product, User, Variant
+from src.database.models import OrderItem, Product, ProductByCategory, User, Variant
 from src.database.schemas import (
     BasketItemRead,
     BasketProductSummaryRead,
@@ -57,7 +61,15 @@ def _normalize_guest_items(items: list[GuestBasketItemPayload]) -> dict[int, int
 
 async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[int, int], *, lock: bool = False) -> dict[int, Variant]:
     if not items_by_variant_id: return {}
-    stmt = select(Variant).options(selectinload(Variant.product)).where(Variant.id.in_(items_by_variant_id.keys()))
+    stmt = (
+        select(Variant)
+        .options(
+            selectinload(Variant.product)
+            .selectinload(Product.products_by_category)
+            .selectinload(ProductByCategory.category),
+        )
+        .where(Variant.id.in_(items_by_variant_id.keys()))
+    )
     if lock: stmt = stmt.with_for_update()
     variants = list((await session.execute(stmt)).scalars().all())
     return {variant.id: variant for variant in variants}
@@ -86,9 +98,11 @@ def _guest_basket_item_read(
 ) -> BasketItemRead:
     product = variant.product
     if product is None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
-    line_total = variant.price * quantity
+    discount_percent = product_catalog_discount_percent(product)
+    unit_price = catalog_unit_price(variant.price, product)
+    line_total = unit_price * quantity
     visible_stock = stock_policy.visible_stock(variant.stock, product)
-    return BasketItemRead(id=variant.id, variant_id=variant.id, quantity=quantity, unit_price=variant.price, line_total=line_total, available_quantity=visible_stock, is_available=visible_stock > 0 and quantity <= visible_stock, product=BasketProductSummaryRead(
+    return BasketItemRead(id=variant.id, variant_id=variant.id, quantity=quantity, unit_price=unit_price, original_unit_price=variant.price, discount_percent=discount_percent, line_total=line_total, available_quantity=visible_stock, is_available=visible_stock > 0 and quantity <= visible_stock, product=BasketProductSummaryRead(
         id=product.id,
         sku=product.sku,
         name=product.name,
@@ -99,7 +113,9 @@ def _guest_basket_item_read(
         sku=variant.sku,
         name=variant.name,
         stock=visible_stock,
-        price=variant.price,
+        price=unit_price,
+        original_price=variant.price,
+        discount_percent=discount_percent,
         image_url=_variant_image_url(request, variant),
     ), created_at=now, updated_at=now)
 
@@ -209,7 +225,8 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
         product: Product | None = variant.product
         if product is None:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
-        line_total = variant.price * quantity
+        unit_price = catalog_unit_price(variant.price, product)
+        line_total = unit_price * quantity
         basket_subtotal += line_total
         total_quantity += quantity
         checkout_items.append(
@@ -220,7 +237,7 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
                 product_sku=product.sku,
                 variant_name=variant.name,
                 quantity=quantity,
-                unit_price=variant.price,
+                unit_price=unit_price,
                 line_total=line_total,
             )
         )
@@ -294,7 +311,8 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
         variant = variants_by_id[variant_id]
         product = variant.product
         if product is None: continue
-        line_total = variant.price * quantity
+        unit_price = catalog_unit_price(variant.price, product)
+        line_total = unit_price * quantity
         order_items.append(OrderItem(
             user_id=user.id,
             order_id=order.id,
@@ -305,7 +323,7 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
             variant_name=variant.name,
             variant_sku=variant.sku,
             quantity=quantity,
-            unit_price=variant.price,
+            unit_price=unit_price,
             line_total=line_total,
         ))
     session.add_all(order_items)

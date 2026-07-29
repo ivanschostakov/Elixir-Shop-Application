@@ -8,8 +8,9 @@ from sqlalchemy.orm import selectinload
 from starlette import status
 
 from src.app.services.stock_visibility import StockVisibilityPolicy, get_stock_visibility_policy
+from src.app.services.catalog_merchandising import catalog_unit_price
 from src.database.crud import get_order_drafts_for_user
-from src.database.models import Basket, BasketItem, OrderDraft, OrderDraftItem, Variant
+from src.database.models import Basket, BasketItem, OrderDraft, OrderDraftItem, Product, ProductByCategory, Variant
 
 
 def _checkout_conflict(detail: str | dict[str, Any]) -> HTTPException:
@@ -46,7 +47,11 @@ async def _get_locked_variants(session: AsyncSession, variant_ids: list[int]) ->
 
     stmt = (
         select(Variant)
-        .options(selectinload(Variant.product))
+        .options(
+            selectinload(Variant.product)
+            .selectinload(Product.products_by_category)
+            .selectinload(ProductByCategory.category),
+        )
         .where(Variant.id.in_(variant_ids))
         .with_for_update()
     )
@@ -74,7 +79,7 @@ def _build_draft_items_from_basket(*, user_id: int, draft_id: int, basket_items:
 
     for basket_item in basket_items:
         variant = variants_by_id[basket_item.variant_id]
-        unit_price = variant.price
+        unit_price = catalog_unit_price(variant.price, variant.product)
         line_total = unit_price * basket_item.quantity
         basket_subtotal += line_total
         total_quantity += basket_item.quantity

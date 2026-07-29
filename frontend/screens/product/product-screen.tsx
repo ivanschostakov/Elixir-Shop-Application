@@ -317,6 +317,22 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                         style={productScreenStyle.image}
                         resizeMode="cover"
                     />
+                    {product.is_new || selectedVariantPriceDisplay?.hasDiscount ? (
+                        <View pointerEvents="none" style={productScreenStyle.imageBadgeStack}>
+                            {product.is_new ? (
+                                <View style={[productScreenStyle.imageBadge, productScreenStyle.imageNewBadge]}>
+                                    <Text style={productScreenStyle.imageBadgeText}>{t("product.newBadge")}</Text>
+                                </View>
+                            ) : null}
+                            {selectedVariantPriceDisplay?.hasDiscount ? (
+                                <View style={[productScreenStyle.imageBadge, productScreenStyle.imageSaleBadge]}>
+                                    <Text style={productScreenStyle.imageBadgeText}>
+                                        {selectedVariantPriceDisplay.discountLabel ?? t("product.saleBadge")}
+                                    </Text>
+                                </View>
+                            ) : null}
+                        </View>
+                    ) : null}
                     {selectedVariantPriceDisplay ? (
                         <View style={productScreenStyle.priceInlineWrap}>
                             <View style={productScreenStyle.priceInlineRow}>

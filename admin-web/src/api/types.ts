@@ -346,6 +346,10 @@ export type Product = {
   in_stock: boolean
   archived: boolean
   priority: number
+  is_new_manual: boolean
+  is_new: boolean
+  discount_percent: string
+  effective_discount_percent: string
   stock_reduction_override: number | null
   effective_stock_reduction: number
   image_url: string
@@ -361,12 +365,14 @@ export type Product = {
     archived: boolean
     image_url: string
   }>
+  created_at: string
   updated_at: string
 }
 
 export type CatalogStockSettings = {
   enabled: boolean
   reduction: number
+  new_product_days: number
   updated_at: string | null
 }
 
@@ -375,6 +381,7 @@ export type Category = {
   name: string
   description: string | null
   archived: boolean
+  discount_percent: string
   created_at: string
   updated_at: string
 }

@@ -44,6 +44,22 @@ export function ProductCard({ product, style }: ProductCardProps) {
                         style={contentStyles.productImage}
                         resizeMode="cover"
                     />
+                    {product.is_new || priceDisplay?.hasDiscount ? (
+                        <View pointerEvents="none" style={contentStyles.productImageBadgeStack}>
+                            {product.is_new ? (
+                                <View style={[contentStyles.productImageBadge, contentStyles.productImageNewBadge]}>
+                                    <Text style={contentStyles.productImageBadgeText}>{t("product.newBadge")}</Text>
+                                </View>
+                            ) : null}
+                            {priceDisplay?.hasDiscount ? (
+                                <View style={[contentStyles.productImageBadge, contentStyles.productImageSaleBadge]}>
+                                    <Text style={contentStyles.productImageBadgeText}>
+                                        {priceDisplay.discountLabel ?? t("product.saleBadge")}
+                                    </Text>
+                                </View>
+                            ) : null}
+                        </View>
+                    ) : null}
                     {isOutOfStock ? (
                         <View
                             style={[

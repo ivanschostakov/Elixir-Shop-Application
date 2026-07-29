@@ -3,9 +3,14 @@ from types import SimpleNamespace
 from fastapi import HTTPException, Request
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from starlette import status
 
 from src.app.services.recommendations import record_cart_add
+from src.app.services.catalog_merchandising import (
+    catalog_unit_price,
+    product_catalog_discount_percent,
+)
 from src.app.services.stock_visibility import (
     StockVisibilityPolicy,
     get_stock_visibility_policy,
@@ -26,7 +31,7 @@ from src.database.crud import (
     update_basket,
 )
 from src.database.crud.basket.basket_item import get_basket_item_by_basket_and_variant
-from src.database.models import Basket, BasketItem, Product, User, Variant
+from src.database.models import Basket, BasketItem, Product, ProductByCategory, User, Variant
 from src.database.schemas import (
     BasketCreate,
     BasketItemRead,
@@ -83,7 +88,9 @@ def serialize_basket(
 
     sorted_items = sorted(basket.items, key=lambda item: (item.created_at, item.id))
     for item in sorted_items:
-        unit_price = item.variant.price
+        original_unit_price = item.variant.price
+        discount_percent = product_catalog_discount_percent(item.product)
+        unit_price = catalog_unit_price(original_unit_price, item.product)
         line_total = unit_price * item.quantity
         available_quantity = policy.visible_stock(item.variant.stock, item.product)
         is_available = available_quantity > 0 and item.quantity <= available_quantity
@@ -91,7 +98,7 @@ def serialize_basket(
         total_quantity += item.quantity
         total_amount += line_total
 
-        items.append(BasketItemRead(id=item.id, variant_id=item.variant_id, quantity=item.quantity, unit_price=unit_price, line_total=line_total, available_quantity=available_quantity, is_available=is_available, product=BasketProductSummaryRead(
+        items.append(BasketItemRead(id=item.id, variant_id=item.variant_id, quantity=item.quantity, unit_price=unit_price, original_unit_price=original_unit_price, discount_percent=discount_percent, line_total=line_total, available_quantity=available_quantity, is_available=is_available, product=BasketProductSummaryRead(
             id=item.product.id,
             sku=item.product.sku,
             name=item.product.name,
@@ -102,7 +109,9 @@ def serialize_basket(
             sku=item.variant.sku,
             name=item.variant.name,
             stock=available_quantity,
-            price=item.variant.price,
+            price=unit_price,
+            original_price=original_unit_price,
+            discount_percent=discount_percent,
             image_url=_variant_image_url(request, item.variant),
         ), created_at=item.created_at, updated_at=item.updated_at))
 
@@ -142,6 +151,17 @@ async def _ensure_basket(db: AsyncSession, user_id: int):
 
 async def _get_variant_for_update(db: AsyncSession, variant_id: int) -> Variant | None:
     stmt = select(Variant).where(Variant.id == variant_id).with_for_update()
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def _get_product_for_pricing(db: AsyncSession, product_id: int) -> Product | None:
+    stmt = (
+        select(Product)
+        .options(
+            selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
+        )
+        .where(Product.id == product_id)
+    )
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
@@ -269,7 +289,7 @@ async def add_variant_to_basket_for_user(db: AsyncSession, *, user_id: int, vari
     basket = await _get_or_create_locked_basket(db, user_id)
     variant = await _get_variant_for_update(db, variant_id)
     if variant is None or variant.archived: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
-    product = await db.get(Product, variant.product_id)
+    product = await _get_product_for_pricing(db, variant.product_id)
     stock_policy = await get_stock_visibility_policy(db)
 
     existing_item = await get_basket_item_by_basket_and_variant(db, basket.id, variant.id, user_id=user_id)
@@ -277,7 +297,16 @@ async def add_variant_to_basket_for_user(db: AsyncSession, *, user_id: int, vari
     if next_quantity > stock_policy.visible_stock(variant.stock, product):
         raise _basket_conflict("Requested quantity exceeds available stock")
 
-    basket_item = await create_basket_item(db, basket_id=basket.id, user_id=user_id, product_id=variant.product_id, variant_id=variant.id, quantity=quantity, price=variant.price, commit=False)
+    basket_item = await create_basket_item(
+        db,
+        basket_id=basket.id,
+        user_id=user_id,
+        product_id=variant.product_id,
+        variant_id=variant.id,
+        quantity=quantity,
+        price=catalog_unit_price(variant.price, product),
+        commit=False,
+    )
     await record_cart_add(db, user_id=user_id, product_id=variant.product_id, quantity=quantity, commit=False)
     if commit: await db.commit()
     return basket_item
@@ -292,10 +321,18 @@ async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, u
     await _lock_basket_items(db, basket.id)
 
     variants_by_id = await _get_locked_variants(db, {item.variant_id for item in draft.items})
-    products_by_id = {
-        product_id: await db.get(Product, product_id)
-        for product_id in {item.product_id for item in draft.items}
-    }
+    product_rows = list(
+        (
+            await db.execute(
+                select(Product)
+                .options(
+                    selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
+                )
+                .where(Product.id.in_({item.product_id for item in draft.items}))
+            )
+        ).scalars().all()
+    )
+    products_by_id = {product.id: product for product in product_rows}
     stock_policy = await get_stock_visibility_policy(db)
     restored_items: list[BasketItem] = []
 
@@ -309,7 +346,14 @@ async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, u
         if variant.archived or visible_stock <= 0 or draft_item.quantity > visible_stock:
             raise _basket_conflict("Order draft contains unavailable items")
 
-        restored_items.append(BasketItem(basket_id=basket.id, user_id=user_id, product_id=variant.product_id, variant_id=variant.id, quantity=draft_item.quantity, price=variant.price))
+        restored_items.append(BasketItem(
+            basket_id=basket.id,
+            user_id=user_id,
+            product_id=variant.product_id,
+            variant_id=variant.id,
+            quantity=draft_item.quantity,
+            price=catalog_unit_price(variant.price, products_by_id.get(draft_item.product_id)),
+        ))
 
     await db.execute(delete(BasketItem).where(BasketItem.basket_id == basket.id))
     db.add_all(restored_items)

@@ -12,6 +12,10 @@ import { useBasket } from "@/hooks/basket/use-basket"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { setOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { useRememberedProductVariantSelection } from "@/hooks/products/product-variant-selection-store"
+import {
+    STOCK_SUBSCRIPTION_AUTH_REQUIRED_PROMPTED_ERROR,
+    useProductStockSubscription,
+} from "@/hooks/products/use-product-stock-subscription"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { updateOrderDraft } from "@/services/api/order-drafts"
@@ -29,8 +33,17 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     const basketDraftId = pathname === ROUTES.basket ? parseDraftId(params.draftId) : null
     const currentProductId = isProductRoute(pathname) ? Number(getProductIdFromRoute(pathname)) : null
     const selectedVariant = useRememberedProductVariantSelection(currentProductId)
+    const isProductUnavailable =
+        variant === "product" &&
+        currentProductId !== null &&
+        selectedVariant !== null &&
+        selectedVariant.stock <= 0
+    const stockSubscription = useProductStockSubscription(
+        currentProductId,
+        isProductUnavailable,
+    )
 
-    const isProductActionDisabled = updating || !selectedVariant?.variantId || selectedVariant.stock <= 0
+    const isProductActionDisabled = updating || !selectedVariant?.variantId
     const selectedBasketItem = selectedVariant?.variantId
         ? basket?.items.find((item) => item.variant_id === selectedVariant.variantId) ?? null
         : null
@@ -76,6 +89,28 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
             await addItem(selectedVariant.variantId, 1)
         } catch (error) {
             handleBasketActionError(error)
+        }
+    }
+
+    const handleStockSubscriptionPress = async () => {
+        if (stockSubscription.isSubscribed || stockSubscription.updating) {
+            return
+        }
+
+        try {
+            await stockSubscription.subscribe()
+            Alert.alert(
+                t("product.stockSubscribeSuccessTitle"),
+                t("product.stockSubscribeSuccessMessage"),
+            )
+        } catch (error) {
+            if (
+                error instanceof Error &&
+                error.message === STOCK_SUBSCRIPTION_AUTH_REQUIRED_PROMPTED_ERROR
+            ) {
+                return
+            }
+            Alert.alert(stockSubscription.error ?? t("product.stockSubscribeFailed"))
         }
     }
 
@@ -140,6 +175,39 @@ export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
     }
 
     if (variant === "product") {
+        if (isProductUnavailable) {
+            const subscriptionLabel = stockSubscription.isSubscribed
+                ? t("product.stockSubscribedCta")
+                : stockSubscription.updating
+                    ? t("product.stockSubscribeLoading")
+                    : t("product.stockSubscribeCta")
+            const subscriptionDisabled =
+                stockSubscription.loading ||
+                stockSubscription.updating ||
+                stockSubscription.isSubscribed
+
+            return (
+                <Pressable
+                    accessibilityLabel={subscriptionLabel}
+                    accessibilityRole="button"
+                    disabled={subscriptionDisabled}
+                    onPress={() => {
+                        void handleStockSubscriptionPress()
+                    }}
+                    style={({ pressed }) => [
+                        stickyFooterStyles.actionButton,
+                        { backgroundColor: accentPalette.primary },
+                        subscriptionDisabled && stickyFooterStyles.actionButtonDisabled,
+                        pressed && { backgroundColor: accentPalette.primaryPressed },
+                    ]}
+                >
+                    <Text style={[stickyFooterStyles.actionButtonText, { color: accentPalette.onPrimary }]}>
+                        {subscriptionLabel}
+                    </Text>
+                </Pressable>
+            )
+        }
+
         if (selectedBasketItem) {
             return (
                 <View style={[stickyFooterStyles.quantityControl, { backgroundColor: accentPalette.primary }]}>

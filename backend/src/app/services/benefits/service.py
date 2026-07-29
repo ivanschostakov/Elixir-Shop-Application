@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.discounts import product_is_discountable
+from src.app.services.catalog_merchandising import catalog_unit_price
 from src.app.services.referrals import attach_referrer_code, get_or_create_referral_profile, refresh_profile_discount_from_moysklad, user_has_promo_code
 from src.app.services.referrals.calculations import calculate_personal_discount_percent
 from src.database.crud import get_basket_by_user_id
@@ -49,7 +50,7 @@ def _basket_subtotals(basket) -> tuple[Decimal, Decimal]:
     total = Decimal("0.00")
     discountable_total = Decimal("0.00")
     for item in basket.items:
-        line_total = item.variant.price * item.quantity
+        line_total = catalog_unit_price(item.variant.price, item.product) * item.quantity
         total += line_total
         if product_is_discountable(item.product):
             discountable_total += line_total

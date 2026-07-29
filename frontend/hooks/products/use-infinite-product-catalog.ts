@@ -11,6 +11,7 @@ type UseInfiniteProductCatalogOptions = {
     enabled?: boolean
     pageSize?: number
     query?: string
+    newOnly?: boolean
     sort?: ProductBrowseSort
 }
 
@@ -19,6 +20,7 @@ export function useInfiniteProductCatalog({
     enabled = true,
     pageSize = PRODUCT_DISCOVER_PAGE_SIZE,
     query = "",
+    newOnly = false,
     sort = "newest",
 }: UseInfiniteProductCatalogOptions = {}) {
     const normalizedQuery = query.trim()
@@ -31,13 +33,14 @@ export function useInfiniteProductCatalog({
         loadingMore,
         reload,
     } = usePaginatedData({
-        deps: [categoryId, normalizedQuery, sort],
+        deps: [categoryId, newOnly, normalizedQuery, sort],
         enabled,
         fetchPage: ({ limit, offset }) =>
             getProducts({
                 ...buildProductBrowseQueryOptions({
                     categoryId,
                     limit,
+                    newOnly,
                     query: normalizedQuery || undefined,
                     sort,
                 }),

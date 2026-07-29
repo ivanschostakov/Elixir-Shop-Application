@@ -114,7 +114,7 @@ def registered_user(register_verified_user):
         _delete_user(user_id)
 
 
-def test_favouriting_product_activates_all_variant_subscriptions(client: TestClient, registered_user):
+def test_favouriting_product_does_not_create_stock_subscriptions(client: TestClient, registered_user):
     catalog = _create_product_with_variant_stocks([0, 4, 11], price=_decimal("12.00"))
     product_id = int(catalog["product_id"])
     variant_ids = list(catalog["variant_ids"])
@@ -126,19 +126,11 @@ def test_favouriting_product_activates_all_variant_subscriptions(client: TestCli
         )
         assert favourite_response.status_code == 201, favourite_response.text
 
-        out_of_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[0])
-        low_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[1])
-        in_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[2])
-
-        assert out_of_stock_subscription is not None
-        assert out_of_stock_subscription.is_active is True
-        assert out_of_stock_subscription.last_seen_stock == 0
-        assert low_stock_subscription is not None
-        assert low_stock_subscription.is_active is True
-        assert low_stock_subscription.last_seen_stock == 4
-        assert in_stock_subscription is not None
-        assert in_stock_subscription.is_active is True
-        assert in_stock_subscription.last_seen_stock == 11
+        for variant_id in variant_ids:
+            assert _get_stock_subscription(
+                registered_user["user_id"],
+                variant_id,
+            ) is None
 
         delete_response = client.delete(
             f"/api/v1/users/me/favorites/products/{product_id}",
@@ -146,15 +138,96 @@ def test_favouriting_product_activates_all_variant_subscriptions(client: TestCli
         )
         assert delete_response.status_code == 204, delete_response.text
 
-        out_of_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[0])
-        low_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[1])
-        in_stock_subscription = _get_stock_subscription(registered_user["user_id"], variant_ids[2])
-        assert out_of_stock_subscription is not None
-        assert out_of_stock_subscription.is_active is False
-        assert low_stock_subscription is not None
-        assert low_stock_subscription.is_active is False
-        assert in_stock_subscription is not None
-        assert in_stock_subscription.is_active is False
+        for variant_id in variant_ids:
+            assert _get_stock_subscription(
+                registered_user["user_id"],
+                variant_id,
+            ) is None
     finally:
         _delete_product(product_id)
 
+
+def test_stock_subscription_is_rejected_while_product_is_available(client: TestClient, registered_user):
+    catalog = _create_product_with_variant_stocks([0, 1], price=_decimal("12.00"))
+    product_id = int(catalog["product_id"])
+
+    try:
+        response = client.post(
+            f"/api/v1/users/me/stock-subscriptions/products/{product_id}",
+            headers=registered_user["headers"],
+        )
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"] == (
+            "Stock notifications are only available for unavailable products"
+        )
+    finally:
+        _delete_product(product_id)
+
+
+def test_unavailable_product_can_be_subscribed_independently_from_favourites(
+    client: TestClient,
+    registered_user,
+):
+    catalog = _create_product_with_variant_stocks([0, 0], price=_decimal("12.00"))
+    product_id = int(catalog["product_id"])
+    variant_ids = list(catalog["variant_ids"])
+
+    try:
+        initial_status = client.get(
+            f"/api/v1/users/me/stock-subscriptions/products/{product_id}",
+            headers=registered_user["headers"],
+        )
+        assert initial_status.status_code == 200, initial_status.text
+        assert initial_status.json()["is_subscribed"] is False
+
+        favourite_response = client.post(
+            f"/api/v1/users/me/favorites/products/{product_id}",
+            headers=registered_user["headers"],
+        )
+        assert favourite_response.status_code == 201, favourite_response.text
+
+        subscribe_response = client.post(
+            f"/api/v1/users/me/stock-subscriptions/products/{product_id}",
+            headers=registered_user["headers"],
+        )
+        assert subscribe_response.status_code == 201, subscribe_response.text
+        assert subscribe_response.json()["is_subscribed"] is True
+
+        for variant_id in variant_ids:
+            subscription = _get_stock_subscription(
+                registered_user["user_id"],
+                variant_id,
+            )
+            assert subscription is not None
+            assert subscription.is_active is True
+            assert subscription.last_seen_stock == 0
+
+        remove_favourite_response = client.delete(
+            f"/api/v1/users/me/favorites/products/{product_id}",
+            headers=registered_user["headers"],
+        )
+        assert remove_favourite_response.status_code == 204, remove_favourite_response.text
+
+        for variant_id in variant_ids:
+            subscription = _get_stock_subscription(
+                registered_user["user_id"],
+                variant_id,
+            )
+            assert subscription is not None
+            assert subscription.is_active is True
+
+        unsubscribe_response = client.delete(
+            f"/api/v1/users/me/stock-subscriptions/products/{product_id}",
+            headers=registered_user["headers"],
+        )
+        assert unsubscribe_response.status_code == 204, unsubscribe_response.text
+
+        for variant_id in variant_ids:
+            subscription = _get_stock_subscription(
+                registered_user["user_id"],
+                variant_id,
+            )
+            assert subscription is not None
+            assert subscription.is_active is False
+    finally:
+        _delete_product(product_id)

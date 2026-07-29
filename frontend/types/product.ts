@@ -9,6 +9,10 @@ export type ProductRead = {
     priority: number
     in_stock: boolean
     archived: boolean
+    is_new_manual: boolean
+    is_new: boolean
+    discount_percent: string
+    catalog_discount_percent: string
     rating_avg: number
     rating_count: number
     image_url: string
@@ -28,6 +32,8 @@ export type ProductVariantRead = {
     original_price: string | null
     discounted_price: string | null
     discount_percent: string
+    catalog_discount_percent: string
+    personal_discount_percent: string
     created_at: string
     updated_at: string
 }

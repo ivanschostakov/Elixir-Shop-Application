@@ -23,6 +23,8 @@ export type BasketVariantSummaryRead = {
     name: string
     stock: number
     price: string
+    original_price: string | null
+    discount_percent: string
     image_url: string
 }
 
@@ -31,6 +33,8 @@ export type BasketItemRead = {
     variant_id: number
     quantity: number
     unit_price: string
+    original_unit_price: string | null
+    discount_percent: string
     line_total: string
     available_quantity: number
     is_available: boolean

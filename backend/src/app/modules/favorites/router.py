@@ -4,10 +4,7 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.products.helpers import serialize_products
-from src.app.services.notifications.core import (
-    activate_stock_notifications_for_favourite_product,
-    deactivate_stock_notifications_for_favourite_product,
-)
+from src.app.services.catalog_merchandising import get_catalog_merchandising_policy
 from src.database import get_db
 from src.database.crud import (
     create_favoured_product,
@@ -32,7 +29,17 @@ async def favourite_products_get_status(product_id: int, db: AsyncSession = Depe
 async def favourite_products_get(request: Request, user_id: int | None = Query(default=None, ge=1), product_id: int | None = Query(default=None, ge=1), offset: int = Query(default=0, ge=0), limit: int = Query(default=100, ge=1, le=100), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[ProductRead]:
     resolved_user_id = current_user.id if user_id is None else user_id
     if resolved_user_id != current_user.id: raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only access your own favorites")
-    return serialize_products(request, await get_favourite_products_for_user(db, resolved_user_id, product_id=product_id, offset=offset, limit=limit))
+    return serialize_products(
+        request,
+        await get_favourite_products_for_user(
+            db,
+            resolved_user_id,
+            product_id=product_id,
+            offset=offset,
+            limit=limit,
+        ),
+        merchandising_policy=await get_catalog_merchandising_policy(db),
+    )
 
 
 @favourite_products_router.post("/{product_id}", response_model=FavouriteProductStatusRead, status_code=status.HTTP_201_CREATED)
@@ -43,7 +50,6 @@ async def favourite_products_create(product_id: int, db: AsyncSession = Depends(
     favourite = await get_favoured_product_by_user_and_product(db, current_user.id, product_id)
     if favourite is None:
         await create_favoured_product(db, FavouredProductCreate(user_id=current_user.id, product_id=product_id))
-        await activate_stock_notifications_for_favourite_product(db, user_id=current_user.id, product_id=product_id)
 
     return FavouriteProductStatusRead(product_id=product_id, is_favoured=True)
 
@@ -52,6 +58,5 @@ async def favourite_products_create(product_id: int, db: AsyncSession = Depends(
 async def favourite_products_delete(product_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     favourite = await get_favoured_product_by_user_and_product(db, current_user.id, product_id)
     if favourite is None: return None
-    await deactivate_stock_notifications_for_favourite_product(db, user_id=current_user.id, product_id=product_id)
     await delete_favoured_product(db, favourite)
     return None

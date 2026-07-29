@@ -17,6 +17,8 @@ type MerchandiseForm = {
   usage: string | null
   expiration: string | null
   priority: number
+  is_new_manual: boolean
+  discount_percent: number
   stock_reduction_override: number | null
   category_ids: number[]
 }
@@ -24,6 +26,7 @@ type MerchandiseForm = {
 type StockSettingsForm = {
   enabled: boolean
   reduction: number
+  new_product_days: number
 }
 
 export function ProductsPage() {
@@ -74,6 +77,8 @@ export function ProductsPage() {
         usage: selected.usage,
         expiration: selected.expiration,
         priority: selected.priority,
+        is_new_manual: selected.is_new_manual,
+        discount_percent: Number(selected.discount_percent),
         stock_reduction_override: selected.stock_reduction_override,
         category_ids: selected.category_ids,
       })
@@ -84,6 +89,7 @@ export function ProductsPage() {
       stockSettingsForm.setFieldsValue({
         enabled: stockSettings.data.enabled,
         reduction: stockSettings.data.reduction,
+        new_product_days: stockSettings.data.new_product_days,
       })
     }
   }, [stockSettings.data, stockSettingsForm])
@@ -127,8 +133,8 @@ export function ProductsPage() {
     onError: (error: Error) => void message.error(error.message),
   })
   const copy = locale === "ru"
-    ? { title: "Товары", description: "Данные МойСклад и локальное оформление витрины", search: "Название или SKU", archived: "Показать архив", lowStock: "Только низкие остатки", product: "Товар", source: "Источник", stock: "Остаток", stockShown: "На витрине", stockActual: "Фактически", stockSettings: "Занижение остатков на витрине", stockSettingsHint: "Из фактического остатка каждого варианта вычитается указанное количество. Остаток в МойСклад не изменяется. Общий выключатель отключает и индивидуальные значения.", stockEnabled: "Включить занижение", stockReduction: "Вычитать по умолчанию, шт.", stockOverride: "Индивидуально вычитать, шт.", stockOverrideHint: "Оставьте пустым, чтобы использовать общее значение. Укажите 0, чтобы отключить занижение только для этого товара.", price: "Цена", priority: "Приоритет", state: "Статус", edit: "Оформление", drawer: "Оформление товара", locked: "Название, SKU, цены и фактические остатки синхронизируются из МойСклад", descriptionField: "Описание", usage: "Применение", expiration: "Срок годности", categories: "Категории", save: "Сохранить", active: "Активен", out: "Нет в наличии", archivedState: "В архиве", mainImage: "Основное изображение", variantImages: "Изображения вариантов", upload: "Загрузить", imageHint: "JPEG, PNG или WEBP до 10 МБ. Изображение будет сохранено в PNG." }
-    : { title: "Products", description: "MoySklad data and local storefront content", search: "Name or SKU", archived: "Show archived", lowStock: "Low stock only", product: "Product", source: "Source", stock: "Stock", stockShown: "Storefront", stockActual: "Actual", stockSettings: "Storefront stock reduction", stockSettingsHint: "The configured amount is subtracted from each variant's actual stock. MoySklad stock is not changed. The master switch also disables custom values.", stockEnabled: "Enable reduction", stockReduction: "Default subtraction", stockOverride: "Custom subtraction, units", stockOverrideHint: "Leave empty to use the global value. Enter 0 to disable reduction for this product only.", price: "Price", priority: "Priority", state: "Status", edit: "Merchandising", drawer: "Product merchandising", locked: "Name, SKU, prices and actual stock are synchronized from MoySklad", descriptionField: "Description", usage: "Usage", expiration: "Expiration", categories: "Categories", save: "Save", active: "Active", out: "Out of stock", archivedState: "Archived", mainImage: "Main image", variantImages: "Variant images", upload: "Upload", imageHint: "JPEG, PNG or WEBP up to 10 MB. The image will be stored as PNG." }
+    ? { title: "Товары", description: "Данные МойСклад и локальное оформление витрины", search: "Название или SKU", archived: "Показать архив", lowStock: "Только низкие остатки", product: "Товар", source: "Источник", stock: "Остаток", stockShown: "На витрине", stockActual: "Фактически", stockSettings: "Настройки каталога", stockSettingsHint: "Настройте срок автоматической метки «Новинка» и отображаемые остатки. Данные МойСклад не изменяются.", stockEnabled: "Включить занижение", stockReduction: "Вычитать по умолчанию, шт.", newProductDays: "Считать новинкой, дней", newProductDaysHint: "0 отключает автоматическую метку; товары, отмеченные вручную, останутся новинками.", stockOverride: "Индивидуально вычитать, шт.", stockOverrideHint: "Оставьте пустым, чтобы использовать общее значение. Укажите 0, чтобы отключить занижение только для этого товара.", price: "Цена", priority: "Приоритет", state: "Статус", edit: "Оформление", drawer: "Оформление товара", locked: "Название, SKU, цены и фактические остатки синхронизируются из МойСклад", descriptionField: "Описание", usage: "Применение", expiration: "Срок годности", categories: "Категории", newManual: "Пометить как «Новинка» вручную", newManualHint: "Метка останется активной независимо от даты создания товара.", discount: "Скидка на товар, %", discountHint: "Если у категории скидка выше, на витрине применяется более выгодная скидка.", save: "Сохранить", active: "Активен", out: "Нет в наличии", archivedState: "В архиве", newLabel: "Новинка", mainImage: "Основное изображение", variantImages: "Изображения вариантов", upload: "Загрузить", imageHint: "JPEG, PNG или WEBP до 10 МБ. Изображение будет сохранено в PNG." }
+    : { title: "Products", description: "MoySklad data and local storefront content", search: "Name or SKU", archived: "Show archived", lowStock: "Low stock only", product: "Product", source: "Source", stock: "Stock", stockShown: "Storefront", stockActual: "Actual", stockSettings: "Catalog settings", stockSettingsHint: "Configure the automatic New label window and displayed stock. MoySklad data is not changed.", stockEnabled: "Enable reduction", stockReduction: "Default subtraction", newProductDays: "Mark as new for, days", newProductDaysHint: "0 disables the automatic label; manually marked products remain new.", stockOverride: "Custom subtraction, units", stockOverrideHint: "Leave empty to use the global value. Enter 0 to disable reduction for this product only.", price: "Price", priority: "Priority", state: "Status", edit: "Merchandising", drawer: "Product merchandising", locked: "Name, SKU, prices and actual stock are synchronized from MoySklad", descriptionField: "Description", usage: "Usage", expiration: "Expiration", categories: "Categories", newManual: "Manually mark as New", newManualHint: "The label remains active regardless of the product creation date.", discount: "Product discount, %", discountHint: "If a category discount is higher, the better discount is shown in the storefront.", save: "Save", active: "Active", out: "Out of stock", archivedState: "Archived", newLabel: "New", mainImage: "Main image", variantImages: "Variant images", upload: "Upload", imageHint: "JPEG, PNG or WEBP up to 10 MB. The image will be stored as PNG." }
   const openProduct = (product: Product) => {
     setSelected(product)
     updateFilters({ product_id: product.id })
@@ -138,7 +144,7 @@ export function ProductsPage() {
     updateFilters({ product_id: undefined })
   }
   const tableColumns = [
-    { title: copy.product, key: "product", render: (_: unknown, row: Product) => <Space><Avatar shape="square" size={48} src={resolveAdminMediaUrl(row.image_url)} icon={<ProductFallback />} /><div className="table-primary"><strong>{row.name}</strong><small>{row.sku}</small></div></Space> },
+    { title: copy.product, key: "product", render: (_: unknown, row: Product) => <Space><Avatar shape="square" size={48} src={resolveAdminMediaUrl(row.image_url)} icon={<ProductFallback />} /><div className="table-primary"><strong>{row.name}</strong><small>{row.sku}</small><Space size={4} wrap>{row.is_new ? <Tag color="cyan">{copy.newLabel}</Tag> : null}{Number(row.effective_discount_percent) > 0 ? <Tag color="volcano">−{Number(row.effective_discount_percent)}%</Tag> : null}</Space></div></Space> },
     { title: copy.source, key: "source", render: () => <Tag bordered={false}>МойСклад</Tag> },
     { title: copy.stock, key: "stock", render: (_: unknown, row: Product) => <div className="table-primary"><strong>{copy.stockShown}: {row.variants.reduce((sum, variant) => sum + variant.display_stock, 0)}</strong><small>{copy.stockActual}: {row.variants.reduce((sum, variant) => sum + variant.stock, 0)} · −{row.effective_stock_reduction}</small></div> },
     { title: copy.price, key: "price", render: (_: unknown, row: Product) => row.variants.length ? `${money(Math.min(...row.variants.map((variant) => Number(variant.price))), "RUB", locale)} — ${money(Math.max(...row.variants.map((variant) => Number(variant.price))), "RUB", locale)}` : "—" },
@@ -169,6 +175,9 @@ export function ProductsPage() {
           </Form.Item>
           <Form.Item name="reduction" label={copy.stockReduction} rules={[{ required: true }]}>
             <InputNumber min={0} max={1_000_000} />
+          </Form.Item>
+          <Form.Item name="new_product_days" label={copy.newProductDays} extra={copy.newProductDaysHint} rules={[{ required: true }]}>
+            <InputNumber min={0} max={3650} />
           </Form.Item>
           <Form.Item>
             <Button type="primary" loading={updateStockSettings.isPending} disabled={!canManage} onClick={() => void stockSettingsForm.validateFields().then((values) => updateStockSettings.mutate(values))}>{copy.save}</Button>
@@ -246,6 +255,8 @@ export function ProductsPage() {
             <Form.Item name="usage" label={copy.usage}><Input.TextArea rows={5} /></Form.Item>
             <Form.Item name="expiration" label={copy.expiration}><Input.TextArea rows={3} /></Form.Item>
             <Form.Item name="priority" label={copy.priority} rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item>
+            <Form.Item name="is_new_manual" label={copy.newManual} extra={copy.newManualHint} valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name="discount_percent" label={copy.discount} extra={copy.discountHint} rules={[{ required: true }]}><InputNumber min={0} max={100} precision={2} addonAfter="%" style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="stock_reduction_override" label={copy.stockOverride} extra={copy.stockOverrideHint}><InputNumber min={0} max={1_000_000} placeholder={String(selected.effective_stock_reduction)} style={{ width: "100%" }} /></Form.Item>
             <Form.Item name="category_ids" label={copy.categories}><Select mode="multiple" optionFilterProp="label" options={(categories.data?.items || []).map((category) => ({ value: category.id, label: category.name }))} /></Form.Item>
           </Form>

@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from sqlalchemy import Boolean, CheckConstraint, Integer, String, Text, text
+from decimal import Decimal
+
+from sqlalchemy import Boolean, CheckConstraint, Integer, Numeric, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from config import API_BASE_URL
@@ -22,6 +24,10 @@ class Product(Base, SystemMixin):
             "stock_reduction_override IS NULL OR stock_reduction_override >= 0",
             name="ck_products_stock_reduction_override_nonnegative",
         ),
+        CheckConstraint(
+            "discount_percent >= 0 AND discount_percent <= 100",
+            name="ck_products_discount_percent_range",
+        ),
     )
 
     sku: Mapped[str] = mapped_column(String(length=PRODUCT_SKU_MAX_LENGTH), nullable=False, unique=True)
@@ -33,6 +39,13 @@ class Product(Base, SystemMixin):
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     stock_reduction_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_new_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    discount_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        default=Decimal("0.00"),
+        server_default=text("0.00"),
+    )
 
     variants: Mapped[list["Variant"]] = relationship(
         "Variant",

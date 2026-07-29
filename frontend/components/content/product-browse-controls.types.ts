@@ -4,12 +4,14 @@ import type { ProductCategory } from "@/types/product-category"
 export type ProductBrowseControlsProps = {
     categories: ProductCategory[]
     categoryId: number | null
+    newOnly: boolean
     onChangeCategoryId: (categoryId: number | null) => void
+    onChangeNewOnly: (newOnly: boolean) => void
     onChangeSort: (sort: ProductBrowseSort) => void
     sort: ProductBrowseSort
 }
 
-export type CategorySelectionValue = number | "all"
+export type CategorySelectionValue = number | "all" | "new"
 
 export type PickerOption<TValue extends number | string> = {
     key: string

@@ -23,6 +23,7 @@ export type GetProductsOptions = {
     categoryId?: number
     q?: string
     minPriority?: number
+    newOnly?: boolean
     limit?: number
     offset?: number
     sort?: ProductApiSort
@@ -47,6 +48,7 @@ export function getProducts({
     categoryId,
     q,
     minPriority,
+    newOnly,
     limit,
     offset,
     sort,
@@ -55,6 +57,7 @@ export function getProducts({
         category_id: categoryId,
         q,
         min_priority: minPriority,
+        new_only: newOnly,
         limit,
         offset,
         sort,

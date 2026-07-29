@@ -285,6 +285,32 @@ export const createContentStyles = (colors: ThemePalette) => StyleSheet.create({
         backgroundColor: colors.surfaceMuted,
         width: "100%",
     },
+    productImageBadgeStack: {
+        alignItems: "flex-start",
+        gap: 5,
+        left: 8,
+        position: "absolute",
+        top: 8,
+        zIndex: 3,
+    },
+    productImageBadge: {
+        borderRadius: 999,
+        paddingHorizontal: 9,
+        paddingVertical: 5,
+    },
+    productImageNewBadge: {
+        backgroundColor: "#0F8F83",
+    },
+    productImageSaleBadge: {
+        backgroundColor: "#E34D6F",
+    },
+    productImageBadgeText: {
+        color: "#FFFFFF",
+        fontSize: 10,
+        fontWeight: "900",
+        letterSpacing: 0.4,
+        textTransform: "uppercase",
+    },
     productImageOutOfStockOverlay: {
         alignItems: "center",
         backgroundColor: "rgba(233, 104, 124, 0.05)",
@@ -355,6 +381,8 @@ export const createContentStyles = (colors: ThemePalette) => StyleSheet.create({
     },
     productPriceDiscounted: {
         color: colors.discountedPrice,
+        fontSize: 16,
+        lineHeight: 20,
     },
     productDiscountMetaRow: {
         alignItems: "center",
@@ -371,10 +399,15 @@ export const createContentStyles = (colors: ThemePalette) => StyleSheet.create({
         textDecorationLine: "line-through",
     },
     productDiscountPercent: {
+        backgroundColor: "rgba(227, 77, 111, 0.12)",
+        borderRadius: 999,
         color: colors.discountedPrice,
         fontSize: 11,
         fontWeight: "800",
         lineHeight: 14,
+        overflow: "hidden",
+        paddingHorizontal: 5,
+        paddingVertical: 1,
     },
     productRatingRow: {
         alignItems: "center",

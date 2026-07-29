@@ -145,7 +145,9 @@ function PickerSheetField<TValue extends number | string>({
 export function ProductBrowseControls({
     categories,
     categoryId,
+    newOnly,
     onChangeCategoryId,
+    onChangeNewOnly,
     onChangeSort,
     sort,
 }: ProductBrowseControlsProps) {
@@ -157,6 +159,11 @@ export function ProductBrowseControls({
                 key: "category-all",
                 label: t("common.all"),
                 value: "all",
+            },
+            {
+                key: "category-new",
+                label: t("common.newArrivals"),
+                value: "new",
             },
             ...categories.map((category) => ({
                 key: `category-${category.id}`,
@@ -173,7 +180,7 @@ export function ProductBrowseControls({
         { key: "price_asc", label: t("common.priceAsc"), value: "price_asc" },
         { key: "price_desc", label: t("common.priceDesc"), value: "price_desc" },
     ]
-    const selectedCategoryValue: CategorySelectionValue = categoryId ?? "all"
+    const selectedCategoryValue: CategorySelectionValue = newOnly ? "new" : categoryId ?? "all"
     const isCategoryPickerEnabled = categoryOptions.length > 1
     const categoryLabel =
         categoryOptions.find((option) => option.value === selectedCategoryValue)?.label ??
@@ -187,6 +194,12 @@ export function ProductBrowseControls({
                 label={t("common.category")}
                 labelStyle={contentStyles.browseSectionLabel}
                 onChange={(value) => {
+                    if (value === "new") {
+                        onChangeCategoryId(null)
+                        onChangeNewOnly(true)
+                        return
+                    }
+                    onChangeNewOnly(false)
                     onChangeCategoryId(value === "all" ? null : value)
                 }}
                 options={categoryOptions}

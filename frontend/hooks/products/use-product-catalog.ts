@@ -12,6 +12,7 @@ type UseProductCatalogOptions = {
     enabled?: boolean
     limit?: number
     minPriority?: number
+    newOnly?: boolean
     query?: string
     skipEmptyQuery?: boolean
     sort?: ProductBrowseSort
@@ -23,6 +24,7 @@ export function useProductCatalog({
     enabled = true,
     limit,
     minPriority,
+    newOnly = false,
     query = "",
     skipEmptyQuery = false,
     sort = "newest",
@@ -31,7 +33,7 @@ export function useProductCatalog({
     const isEnabled = enabled && (!skipEmptyQuery || normalizedQuery.length > 0)
     const { data: products, error, loading, reload } = useAsyncData<ProductWithVariantsRead[]>({
         debounceMs,
-        deps: [categoryId, limit, minPriority, normalizedQuery, sort],
+        deps: [categoryId, limit, minPriority, newOnly, normalizedQuery, sort],
         enabled: isEnabled,
         fetcher: () =>
             getProducts(
@@ -39,6 +41,7 @@ export function useProductCatalog({
                     categoryId,
                     limit,
                     minPriority,
+                    newOnly,
                     query: normalizedQuery || undefined,
                     sort,
                 })

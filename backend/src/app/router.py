@@ -14,6 +14,7 @@ from .modules.payments import payments_router
 from .modules.product_categories import product_categories_router
 from .modules.products import products_router
 from .modules.requisites import requisites_router
+from .modules.stock_subscriptions import stock_subscriptions_router
 from .modules.users import users_router
 from .modules.webhooks import webhooks_router
 
@@ -32,6 +33,7 @@ v1_router.include_router(products_router)
 v1_router.include_router(requisites_router)
 v1_router.include_router(favourites_router)
 v1_router.include_router(favourites_query_router)
+v1_router.include_router(stock_subscriptions_router)
 v1_router.include_router(guest_router)
 v1_router.include_router(users_router)
 v1_router.include_router(delivery_router)
@@ -52,6 +54,7 @@ __all__ = [
     "product_categories_router",
     "products_router",
     "requisites_router",
+    "stock_subscriptions_router",
     "favourites_router",
     "favourites_query_router",
     "guest_router",

@@ -487,6 +487,32 @@ export const createCartScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         fontWeight: "800",
         lineHeight: 21,
     },
+    itemLineTotalDiscounted: {
+        color: colors.discountedPrice,
+        fontSize: 19,
+        lineHeight: 23,
+    },
+    itemDiscountRow: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: 6,
+    },
+    itemOriginalTotal: {
+        color: colors.mutedText,
+        fontSize: 12,
+        fontWeight: "700",
+        textDecorationLine: "line-through",
+    },
+    itemDiscountBadge: {
+        backgroundColor: "rgba(227, 77, 111, 0.12)",
+        borderRadius: 999,
+        color: colors.discountedPrice,
+        fontSize: 11,
+        fontWeight: "900",
+        overflow: "hidden",
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+    },
     itemUnitPrice: {
         color: colors.mutedText,
         fontSize: 12,
