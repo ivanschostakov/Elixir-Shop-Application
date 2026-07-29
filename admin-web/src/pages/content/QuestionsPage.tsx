@@ -7,7 +7,6 @@ import {
 } from "@ant-design/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
-  Alert,
   Avatar,
   Button,
   Card,
@@ -52,8 +51,6 @@ export function QuestionsPage() {
     ? {
       title: "Вопросы",
       description: "Вопросы покупателей модерируются только здесь и не отправляются в Bitrix.",
-      localTitle: "Отдельная очередь приложения",
-      localDescription: "Публикация, отклонение и ответ магазина остаются внутри приложения.",
       pending: "Ожидают",
       published: "Опубликованы",
       rejected: "Отклонены",
@@ -76,8 +73,6 @@ export function QuestionsPage() {
     : {
       title: "Questions",
       description: "Customer questions are moderated only here and are never sent to Bitrix.",
-      localTitle: "Separate app queue",
-      localDescription: "Publishing, rejection, and the store answer stay inside the app.",
       pending: "Pending",
       published: "Published",
       rejected: "Rejected",
@@ -164,12 +159,6 @@ export function QuestionsPage() {
   return (
     <div className="page-stack">
       <PageHeader title={copy.title} description={copy.description} />
-      <Alert
-        showIcon
-        type="info"
-        message={copy.localTitle}
-        description={copy.localDescription}
-      />
       <Card className="filter-card">
         <Space wrap>
           <Select
