@@ -90,6 +90,19 @@ def _iso(value: datetime | None) -> str | None:
     return value.isoformat()
 
 
+def _mark_review_synced(review: Review, result: dict[str, Any]) -> None:
+    remote_id = int(result.get("remote_id") or 0)
+    if remote_id > 0:
+        review.website_review_id = remote_id
+    synced_at = _parse_datetime(result.get("updated_at")) or datetime.now(timezone.utc)
+    # Review.updated_at has an automatic on-update value. Updating only the
+    # website metadata would therefore make the review look locally modified
+    # again and cause an endless push loop. Persist both timestamps explicitly
+    # at the same remote checkpoint.
+    review.website_updated_at = synced_at
+    review.updated_at = synced_at
+
+
 class WebsiteReviewSyncClient:
     def __init__(self) -> None:
         if not website_review_sync_configured():
@@ -537,13 +550,7 @@ async def _push_rows(
         review = reviews_by_id.get(app_review_id)
         if review is None:
             continue
-        remote_id = int(result.get("remote_id") or 0)
-        if remote_id > 0:
-            review.website_review_id = remote_id
-        review.website_updated_at = (
-            _parse_datetime(result.get("updated_at"))
-            or review.website_updated_at
-        )
+        _mark_review_synced(review, result)
         outcome = str(result.get("outcome") or "")
         if outcome == "created":
             stats.created_on_website += 1

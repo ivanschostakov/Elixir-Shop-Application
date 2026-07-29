@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from src.integrations import website_reviews
 from src.integrations.website_reviews import (
+    _mark_review_synced,
     _push_payload,
     _remote_values,
     _review_state,
@@ -52,6 +53,22 @@ def test_local_review_state_is_stable():
     assert _review_state(SimpleNamespace(rejected_at=None, moderated=False)) == "pending"
     assert _review_state(SimpleNamespace(rejected_at=None, moderated=True)) == "published"
     assert _review_state(SimpleNamespace(rejected_at=datetime.now(timezone.utc), moderated=False)) == "rejected"
+
+
+def test_mark_review_synced_keeps_local_and_remote_checkpoints_equal():
+    review = SimpleNamespace(
+        website_review_id=None,
+        website_updated_at=None,
+        updated_at=datetime(2026, 7, 29, 9, 0, tzinfo=timezone.utc),
+    )
+    _mark_review_synced(review, {
+        "remote_id": 105,
+        "updated_at": "2026-07-29T10:00:00+00:00",
+    })
+    expected = datetime(2026, 7, 29, 10, 0, tzinfo=timezone.utc)
+    assert review.website_review_id == 105
+    assert review.website_updated_at == expected
+    assert review.updated_at == expected
 
 
 def test_push_payload_contains_public_attachment_urls(monkeypatch):
