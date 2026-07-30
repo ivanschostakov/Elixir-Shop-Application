@@ -152,13 +152,15 @@ export function buildPickupOrderDraftPayload(
         latitude: pickupPointDraft.latitude,
         longitude: pickupPointDraft.longitude,
         provider_reference: pickupPointDraft.code,
-        delivery_calculation: buildOrderDraftCalculationPayload(deliveryCalculation),
+        ...(pickupPointDraft.provider === "yandex"
+            ? { delivery_calculation: buildOrderDraftCalculationPayload(deliveryCalculation) }
+            : {}),
     }
 }
 
 export function buildDoorOrderDraftPayload(
     doorDeliveryDraft: DeliveryDoorDraft,
-    deliveryCalculation: CdekDeliveryCalculation,
+    _deliveryCalculation: CdekDeliveryCalculation,
     fallbackCountryCode: DeliveryCountryCode | null,
 ): CreateOrderDraftPayload {
     return {
@@ -173,7 +175,6 @@ export function buildDoorOrderDraftPayload(
         latitude: doorDeliveryDraft.latitude,
         longitude: doorDeliveryDraft.longitude,
         provider_reference: null,
-        delivery_calculation: buildOrderDraftCalculationPayload(deliveryCalculation),
     }
 }
 

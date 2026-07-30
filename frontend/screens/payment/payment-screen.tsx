@@ -144,12 +144,16 @@ function buildGuestOrderPayload(orderDraft: OrderDraftRead, paymentMethod: Payme
             latitude: deliveryAddress.latitude,
             longitude: deliveryAddress.longitude,
             provider_reference: deliveryAddress.provider_reference,
-            delivery_calculation: {
-                delivery_sum: Number(orderDraft.delivery_total),
-                period_min: orderDraft.delivery_period_min ?? 0,
-                period_max: orderDraft.delivery_period_max ?? 0,
-                currency: orderDraft.currency,
-            },
+            ...(deliveryAddress.provider === "YANDEX"
+                ? {
+                      delivery_calculation: {
+                          delivery_sum: Number(orderDraft.delivery_total),
+                          period_min: orderDraft.delivery_period_min ?? 0,
+                          period_max: orderDraft.delivery_period_max ?? 0,
+                          currency: orderDraft.currency,
+                      },
+                  }
+                : {}),
         },
         recipient: {
             name: recipient.name,

@@ -49,6 +49,30 @@ def disable_app_integrity_by_default(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "off")
 
 
+@pytest.fixture(autouse=True)
+def stub_authoritative_bitrix_delivery(monkeypatch: pytest.MonkeyPatch):
+    async def fake_quote(_session, *, user, address, items, cdek=None):
+        mode = address.get("mode") if isinstance(address, dict) else getattr(address, "mode", None)
+        is_door = mode == "door"
+        return {
+            "delivery_sum": 299.0 if is_door else 199.0,
+            "period_min": 1 if is_door else 2,
+            "period_max": 2 if is_door else 4,
+            "weight_calc": 357,
+            "currency": "RUB",
+        }
+
+    targets = (
+        "src.app.modules.delivery.cdek.router.calculate_authoritative_cdek_quote",
+        "src.app.services.basket.calculate_authoritative_cdek_quote",
+        "src.app.services.guest_checkout.calculate_authoritative_cdek_quote",
+        "src.app.services.orders.creation.calculate_authoritative_cdek_quote",
+        "src.app.services.orders.drafts.calculate_authoritative_cdek_quote",
+    )
+    for target in targets:
+        monkeypatch.setattr(target, fake_quote)
+
+
 @pytest.fixture()
 def register_verified_user(client: TestClient):
     def _register(payload: dict) -> dict:

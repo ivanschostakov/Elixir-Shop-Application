@@ -10,8 +10,9 @@
    начислений в Bitrix, учёт прогресса покупок и автоматическое создание купона
    из `UF_PROMO`.
 2. `elixir.reviewsync` — двусторонний обмен отзывами сайта и приложения.
-3. `app_integration.php` — вход покупателей приложения через учётную запись сайта с последующей локальной email-2FA.
-4. `giveaways.php` — совместимый защищённый endpoint действующего giveaway-бота.
+3. `elixir.delivery` — расчёт доставки приложения через Bitrix Sale и активные настройки IPOL.СДЭК.
+4. `app_integration.php` — вход покупателей приложения через учётную запись сайта с последующей локальной email-2FA.
+5. `giveaways.php` — совместимый защищённый endpoint действующего giveaway-бота.
 
 AI-чат в этот состав не входит и на сайт не устанавливается.
 
@@ -77,6 +78,19 @@ elixir.reviewsync → <DOCUMENT_ROOT>/local/modules/elixir.reviewsync
 
 Установить модуль, задать отдельный secret, проверить сопоставление `XML_ID` и выполнить разовый обмен при остановленном worker. Периодический worker включать только после сравнения результатов.
 
+### 5.1. Расчёт доставки приложения
+
+Скопировать `elixir.delivery` в `local/modules`, установить и задать отдельный
+HMAC secret. Разрешить только IP production backend. Endpoint:
+
+```text
+https://elixirpeptide.com:8443/bitrix/tools/elixir.delivery/quote.php
+```
+
+Приложение отправляет адрес, а backend сам добавляет фактическую серверную
+корзину. Расчёт выполняет активный профиль IPOL.СДЭК; цена, переданная мобильным
+клиентом, для CDEK игнорируется. Публичный сайт и его шаблон не изменяются.
+
 ### 6. App + Giveaway Bridge
 
 Скопировать только `app_integration.php` и `giveaways.php` из `elixir.sitebridge/local/api`.
@@ -92,6 +106,10 @@ elixir.reviewsync → <DOCUMENT_ROOT>/local/modules/elixir.reviewsync
 BITRIX_PROMO_ENDPOINT=https://elixirpeptide.com:8443/bitrix/tools/elixir.promo/api.php
 BITRIX_PROMO_TOKEN=<отдельный_секрет>
 BITRIX_PROMO_TIMEOUT_SECONDS=15
+
+BITRIX_DELIVERY_ENDPOINT=https://elixirpeptide.com:8443/bitrix/tools/elixir.delivery/quote.php
+BITRIX_DELIVERY_SECRET=<отдельный_секрет>
+BITRIX_DELIVERY_TIMEOUT_SECONDS=30
 
 WEBSITE_IDENTITY_ENDPOINT=https://elixirpeptide.com:8443/local/api/app_integration.php
 WEBSITE_IDENTITY_TOKEN=<отдельный_секрет>
@@ -138,6 +156,9 @@ v-add-firewall-rule ACCEPT <GIVEAWAY_IP>/32 8443 TCP ELIXIR_GIVEAWAY_BITRIX_API
 - чужой IP возвращает `403`, если allowlist включён;
 - активный промокод находится;
 - промокод корректно рассчитывается на корзине;
+- цена СДЭК рассчитывается Bitrix по реальной корзине и активному профилю IPOL;
+- отключённый в Bitrix способ доставки отклоняется;
+- повторный расчёт перед созданием заказа не принимает цену мобильного клиента;
 - итог совпадает с корзиной сайта Bitrix;
 - расчёт начисления не создаёт в Bitrix начисление или бонусную операцию;
 - приложение сохраняет начисление один раз и показывает его в админке;

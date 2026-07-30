@@ -18,6 +18,7 @@ from src.app.services.catalog_merchandising import (
     catalog_unit_price,
     product_catalog_discount_percent,
 )
+from src.app.services.delivery_quotes import calculate_authoritative_cdek_quote
 from src.app.services.orders.creation import (
     _build_checkout_snapshot,
     _build_selected_delivery_payload,
@@ -242,6 +243,32 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
             )
         )
 
+    client_calculation = payload.delivery_address.delivery_calculation
+    if str(delivery_address.provider).upper() == "CDEK":
+        authoritative_quote = await calculate_authoritative_cdek_quote(
+            session,
+            user=user,
+            address=delivery_address,
+            items=[
+                SimpleNamespace(variant_id=variant_id, quantity=quantity)
+                for variant_id, quantity in items_by_variant_id.items()
+            ],
+        )
+        delivery_total = Decimal(str(authoritative_quote["delivery_sum"]))
+        delivery_currency = str(authoritative_quote["currency"])
+        delivery_period_min = int(authoritative_quote["period_min"])
+        delivery_period_max = int(authoritative_quote["period_max"])
+    elif client_calculation is not None:
+        delivery_total = client_calculation.delivery_sum
+        delivery_currency = client_calculation.currency
+        delivery_period_min = client_calculation.period_min
+        delivery_period_max = client_calculation.period_max
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Для выбранного способа доставки не хватает расчёта стоимости.",
+        )
+
     checkout_source = SimpleNamespace(
         delivery_address=delivery_address,
         delivery_address_id=delivery_address.id,
@@ -249,11 +276,11 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
         recipient_id=recipient.id,
         items=checkout_items,
         basket_subtotal=basket_subtotal,
-        delivery_total=payload.delivery_address.delivery_calculation.delivery_sum,
-        grand_total=basket_subtotal + payload.delivery_address.delivery_calculation.delivery_sum,
-        currency=payload.delivery_address.delivery_calculation.currency,
-        delivery_period_min=payload.delivery_address.delivery_calculation.period_min,
-        delivery_period_max=payload.delivery_address.delivery_calculation.period_max,
+        delivery_total=delivery_total,
+        grand_total=basket_subtotal + delivery_total,
+        currency=delivery_currency,
+        delivery_period_min=delivery_period_min,
+        delivery_period_max=delivery_period_max,
         comment=None,
     )
     selected_delivery_service, selected_delivery_payload = await _build_selected_delivery_payload(checkout_source)

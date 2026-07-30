@@ -41,13 +41,23 @@ foreach (['host', 'database', 'login', 'password'] as $requiredKey) {
 }
 
 $filesArchive = $backupDirectory . '/affected-files.tar.gz';
-$relativePaths = [
+$candidatePaths = [
     'local/modules/elixir.promo',
     'local/modules/elixir.reviewsync',
+    'local/modules/elixir.delivery',
     'local/api/app_integration.php',
     'bitrix/tools/elixir.promo/api.php',
     'bitrix/tools/elixir.reviewsync',
+    'bitrix/tools/elixir.delivery',
 ];
+$relativePaths = array_values(array_filter(
+    $candidatePaths,
+    static fn(string $path): bool => file_exists($documentRoot . '/' . $path)
+));
+if ($relativePaths === []) {
+    fwrite(STDERR, "No affected files were found for backup\n");
+    exit(2);
+}
 $tarCommand = array_merge(
     ['tar', '-czf', $filesArchive, '-C', $documentRoot],
     $relativePaths

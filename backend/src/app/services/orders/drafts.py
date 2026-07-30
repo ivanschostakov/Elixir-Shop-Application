@@ -10,6 +10,7 @@ from starlette import status
 
 from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.app.services.catalog_merchandising import catalog_unit_price
+from src.app.services.delivery_quotes import calculate_authoritative_cdek_quote
 from src.database.crud import create_delivery_address, create_delivery_recipient, create_order_draft, delete_order_draft, get_delivery_address_by_fields, get_delivery_address_by_id, get_delivery_addresses, get_delivery_recipient_by_fields, get_delivery_recipient_by_id, get_delivery_recipients, get_latest_named_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
 from src.database.limits import ORDER_DRAFT_COMMENT_MAX_LENGTH, ORDER_DRAFT_NAME_MAX_LENGTH
 from src.database.models import BasketItem, OrderDraft, OrderDraftItem, Product, ProductByCategory, User, Variant
@@ -104,10 +105,22 @@ async def create_order_draft_for_user(session: AsyncSession, *, user: User, payl
 
     draft_items, basket_subtotal, total_quantity = _build_draft_items_from_basket(user_id=user.id, draft_id=0, basket_items=basket_items, variants_by_id=variants_by_id)
     calculation = payload.delivery_calculation
-    delivery_total = calculation.delivery_sum if calculation is not None else Decimal("0.00")
-    currency = calculation.currency if calculation is not None else "RUB"
-    delivery_period_min = calculation.period_min if calculation is not None else None
-    delivery_period_max = calculation.period_max if calculation is not None else None
+    if delivery_address is not None and str(delivery_address.provider).upper() == "CDEK":
+        authoritative_quote = await calculate_authoritative_cdek_quote(
+            session,
+            user=user,
+            address=delivery_address,
+            items=basket_items,
+        )
+        delivery_total = Decimal(str(authoritative_quote["delivery_sum"]))
+        currency = str(authoritative_quote["currency"])
+        delivery_period_min = int(authoritative_quote["period_min"])
+        delivery_period_max = int(authoritative_quote["period_max"])
+    else:
+        delivery_total = calculation.delivery_sum if calculation is not None else Decimal("0.00")
+        currency = calculation.currency if calculation is not None else "RUB"
+        delivery_period_min = calculation.period_min if calculation is not None else None
+        delivery_period_max = calculation.period_max if calculation is not None else None
     order_draft = await create_order_draft(
         session,
         OrderDraftCreate(
@@ -297,15 +310,24 @@ async def update_order_draft_for_user(session: AsyncSession, *, user_id: int, dr
         created_recipient = await _get_or_create_delivery_recipient(session, data=_build_new_recipient_data(user_id, payload.new_recipient))
         update_data["recipient_id"] = created_recipient.id
 
+    effective_delivery_address = draft.delivery_address
+    delivery_address_changed = False
     if payload.delivery_address_id is not None:
         delivery_address = await get_delivery_address_by_id(session, payload.delivery_address_id)
         if delivery_address is None or delivery_address.user_id != user_id: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery address not found")
         update_data["delivery_address_id"] = delivery_address.id
+        effective_delivery_address = delivery_address
+        delivery_address_changed = True
 
     if payload.new_delivery_address is not None:
         created_address = await _get_or_create_delivery_address(session, data=_build_new_delivery_address_data(draft, payload.new_delivery_address))
         update_data["delivery_address_id"] = created_address.id
-        if payload.new_delivery_address.delivery_calculation is not None:
+        effective_delivery_address = created_address
+        delivery_address_changed = True
+        if (
+            str(created_address.provider).upper() != "CDEK"
+            and payload.new_delivery_address.delivery_calculation is not None
+        ):
             delivery_total = payload.new_delivery_address.delivery_calculation.delivery_sum
             update_data["delivery_total"] = delivery_total
             update_data["currency"] = payload.new_delivery_address.delivery_calculation.currency
@@ -314,6 +336,38 @@ async def update_order_draft_for_user(session: AsyncSession, *, user_id: int, dr
             update_data["grand_total"] = draft.basket_subtotal + delivery_total
 
     if payload.sync_basket_items: await _sync_order_draft_items_from_basket(session, draft=draft, user_id=user_id, update_data=update_data)
+
+    if (
+        effective_delivery_address is not None
+        and str(effective_delivery_address.provider).upper() == "CDEK"
+        and (delivery_address_changed or payload.sync_basket_items)
+    ):
+        await session.flush()
+        draft_items = list((
+            await session.execute(
+                select(OrderDraftItem)
+                .where(OrderDraftItem.draft_id == draft.id)
+                .order_by(OrderDraftItem.id.asc())
+            )
+        ).scalars().all())
+        user = await session.get(User, user_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Покупатель не найден.")
+        authoritative_quote = await calculate_authoritative_cdek_quote(
+            session,
+            user=user,
+            address=effective_delivery_address,
+            items=draft_items,
+        )
+        delivery_total = Decimal(str(authoritative_quote["delivery_sum"]))
+        update_data["delivery_total"] = delivery_total
+        update_data["currency"] = str(authoritative_quote["currency"])
+        update_data["delivery_period_min"] = int(authoritative_quote["period_min"])
+        update_data["delivery_period_max"] = int(authoritative_quote["period_max"])
+        basket_subtotal = update_data.get("basket_subtotal")
+        if not isinstance(basket_subtotal, Decimal):
+            basket_subtotal = draft.basket_subtotal
+        update_data["grand_total"] = basket_subtotal + delivery_total
 
     update_payload = OrderDraftUpdate(**update_data)
     updated_draft = await update_order_draft(session, draft, update_payload)

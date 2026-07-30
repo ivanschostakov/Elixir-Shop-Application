@@ -269,7 +269,13 @@ export default function CartScreen() {
                 latitude: selectedDeliveryPoint.latitude,
                 longitude: selectedDeliveryPoint.longitude,
                 provider_reference: selectedDeliveryPoint.code,
-                delivery_calculation: buildOrderDraftCalculationPayload(selectedDeliveryPoint.deliveryCalculation),
+                ...(selectedDeliveryPoint.provider === "yandex"
+                    ? {
+                          delivery_calculation: buildOrderDraftCalculationPayload(
+                              selectedDeliveryPoint.deliveryCalculation,
+                          ),
+                      }
+                    : {}),
             }
         }
 
@@ -286,7 +292,6 @@ export default function CartScreen() {
                 latitude: selectedDeliveryAddress.latitude,
                 longitude: selectedDeliveryAddress.longitude,
                 provider_reference: null,
-                delivery_calculation: buildOrderDraftCalculationPayload(selectedDeliveryAddress.deliveryCalculation),
             }
         }
 

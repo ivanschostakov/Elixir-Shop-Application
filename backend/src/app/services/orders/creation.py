@@ -17,6 +17,7 @@ from src.app.services.benefits.service import resolve_benefits_for_user
 from src.app.services.benefits.redemption import redeem_order_bonus_safe
 from src.app.services.discounts import discountable_subtotal_for_lines
 from src.app.services.catalog_merchandising import catalog_unit_price
+from src.app.services.delivery_quotes import calculate_authoritative_cdek_quote
 from src.app.services.recommendations import record_purchase
 from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.database.crud import create_delivery_recipient, create_order, create_order_draft, delete_order_draft, get_basket_by_user_id, get_delivery_recipient_by_fields, get_order_by_code, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id, get_orders_for_user as get_orders_for_user_crud
@@ -428,6 +429,20 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
         if variant.archived or visible_stock <= 0 or item.quantity > visible_stock:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft contains unavailable items")
 
+    if str(draft.delivery_address.provider).upper() == "CDEK":
+        authoritative_quote = await calculate_authoritative_cdek_quote(
+            session,
+            user=user,
+            address=draft.delivery_address,
+            items=draft.items,
+        )
+        draft.delivery_total = Decimal(str(authoritative_quote["delivery_sum"]))
+        draft.currency = str(authoritative_quote["currency"])
+        draft.delivery_period_min = int(authoritative_quote["period_min"])
+        draft.delivery_period_max = int(authoritative_quote["period_max"])
+        draft.grand_total = draft.basket_subtotal + draft.delivery_total
+        await session.flush()
+
     selected_delivery_service, selected_delivery_payload = await _build_selected_delivery_payload(draft)
     discountable_subtotal = await discountable_subtotal_for_lines(
         session,
@@ -549,6 +564,19 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
                 line_total=line_total,
             )
         )
+
+    if str(basket.delivery_address.provider).upper() == "CDEK":
+        authoritative_quote = await calculate_authoritative_cdek_quote(
+            session,
+            user=user,
+            address=basket.delivery_address,
+            items=basket.items,
+        )
+        basket.delivery_total = Decimal(str(authoritative_quote["delivery_sum"]))
+        basket.currency = str(authoritative_quote["currency"])
+        basket.delivery_period_min = int(authoritative_quote["period_min"])
+        basket.delivery_period_max = int(authoritative_quote["period_max"])
+        await session.flush()
 
     checkout_source = SimpleNamespace(
         delivery_address=basket.delivery_address,

@@ -11,6 +11,7 @@ if ($documentRoot === '' || !is_file($documentRoot . '/bitrix/modules/main/inclu
 $requiredSecrets = [
     'ELIXIR_PROMO_TOKEN',
     'ELIXIR_REVIEW_SECRET',
+    'ELIXIR_DELIVERY_SECRET',
     'ELIXIR_APP_TOKEN',
     'ELIXIR_GIVEAWAY_TOKEN',
 ];
@@ -80,6 +81,7 @@ function writePhpConfig(string $path, array $config): void
 
 installOrRefreshModule($documentRoot, 'elixir.promo', 'elixir_promo');
 installOrRefreshModule($documentRoot, 'elixir.reviewsync', 'elixir_reviewsync');
+installOrRefreshModule($documentRoot, 'elixir.delivery', 'elixir_delivery');
 
 $appIp = trim((string)getenv('ELIXIR_APP_IP'));
 $giveawayIp = trim((string)getenv('ELIXIR_GIVEAWAY_IP'));
@@ -124,6 +126,24 @@ foreach ($reviewOptions as $name => $value) {
     Option::set('elixir.reviewsync', $name, $value);
 }
 
+$deliveryOptions = [
+    'enabled' => 'Y',
+    'shared_secret' => trim((string)getenv('ELIXIR_DELIVERY_SECRET')),
+    'allowed_ips' => $appIp,
+    'rate_limit' => '120',
+    'rate_limit_window_seconds' => '60',
+    'max_items' => '100',
+    'private_dir' => $privateRoot . '/elixir-delivery',
+    'site_id' => 's1',
+    'person_type_id' => '1',
+    'currency' => 'RUB',
+    'pickup_service_code' => 'sdek:pickup',
+    'courier_service_code' => 'sdek:courier',
+];
+foreach ($deliveryOptions as $name => $value) {
+    Option::set('elixir.delivery', $name, $value);
+}
+
 $apiDirectory = $documentRoot . '/local/api';
 if (!is_dir($apiDirectory) && !mkdir($apiDirectory, 0750, true) && !is_dir($apiDirectory)) {
     throw new RuntimeException('Unable to create local API directory');
@@ -157,4 +177,4 @@ writePhpConfig($apiDirectory . '/giveaways.config.php', [
     'rate_limit_dir' => $privateRoot . '/giveaways-api-rate-limit',
 ]);
 
-echo "CONFIGURED=promo,reviews,app,giveaway\n";
+echo "CONFIGURED=promo,reviews,delivery,app,giveaway\n";

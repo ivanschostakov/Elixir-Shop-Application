@@ -15,6 +15,7 @@ from src.app.services.stock_visibility import (
     StockVisibilityPolicy,
     get_stock_visibility_policy,
 )
+from src.app.services.delivery_quotes import calculate_authoritative_cdek_quote
 from src.database.crud import (
     create_basket_item,
     create_delivery_address,
@@ -233,10 +234,12 @@ async def update_basket_checkout_for_user(request: Request, db: AsyncSession, *,
         recipient = await _get_or_create_delivery_recipient(db, data=_build_new_recipient_data(user.id, payload.new_recipient))
         update_data["recipient_id"] = recipient.id
 
+    address_for_quote = None
     if payload.delivery_address_id is not None:
         address = await get_delivery_address_by_id(db, payload.delivery_address_id)
         if address is None or address.user_id != user.id: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery address not found")
         update_data["delivery_address_id"] = address.id
+        address_for_quote = address
 
     if payload.new_delivery_address is not None:
         address = await _get_or_create_delivery_address(db, data=_build_new_delivery_address_data(
@@ -244,11 +247,39 @@ async def update_basket_checkout_for_user(request: Request, db: AsyncSession, *,
             payload.new_delivery_address,
         ))
         update_data["delivery_address_id"] = address.id
-        if payload.new_delivery_address.delivery_calculation is not None:
+        address_for_quote = address
+        if str(address.provider).upper() == "CDEK":
+            authoritative_quote = await calculate_authoritative_cdek_quote(
+                db,
+                user=user,
+                address=address,
+                items=basket.items,
+            )
+            update_data["delivery_total"] = Decimal(str(authoritative_quote["delivery_sum"]))
+            update_data["currency"] = str(authoritative_quote["currency"])
+            update_data["delivery_period_min"] = int(authoritative_quote["period_min"])
+            update_data["delivery_period_max"] = int(authoritative_quote["period_max"])
+        elif payload.new_delivery_address.delivery_calculation is not None:
             update_data["delivery_total"] = payload.new_delivery_address.delivery_calculation.delivery_sum
             update_data["currency"] = payload.new_delivery_address.delivery_calculation.currency
             update_data["delivery_period_min"] = payload.new_delivery_address.delivery_calculation.period_min
             update_data["delivery_period_max"] = payload.new_delivery_address.delivery_calculation.period_max
+
+    if (
+        address_for_quote is not None
+        and payload.new_delivery_address is None
+        and str(address_for_quote.provider).upper() == "CDEK"
+    ):
+        authoritative_quote = await calculate_authoritative_cdek_quote(
+            db,
+            user=user,
+            address=address_for_quote,
+            items=basket.items,
+        )
+        update_data["delivery_total"] = Decimal(str(authoritative_quote["delivery_sum"]))
+        update_data["currency"] = str(authoritative_quote["currency"])
+        update_data["delivery_period_min"] = int(authoritative_quote["period_min"])
+        update_data["delivery_period_max"] = int(authoritative_quote["period_max"])
 
     await update_basket(db, basket, BasketUpdate(**update_data))
     updated_basket = await get_basket_by_id(db, basket.id)

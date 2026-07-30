@@ -54,7 +54,7 @@ class GuestDeliveryAddressPayload(BaseModel):
     latitude: float
     longitude: float
     provider_reference: str | None = None
-    delivery_calculation: DeliveryCalculationPayload
+    delivery_calculation: DeliveryCalculationPayload | None = None
 
 
 class GuestOrderPayload(BaseModel):

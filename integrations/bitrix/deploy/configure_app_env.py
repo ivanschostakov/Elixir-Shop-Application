@@ -9,6 +9,9 @@ TARGETS = {
     "BITRIX_PROMO_ENDPOINT": "https://elixirpeptide.com:8443/bitrix/tools/elixir.promo/api.php",
     "BITRIX_PROMO_TOKEN": os.environ.get("ELIXIR_PROMO_TOKEN", ""),
     "BITRIX_PROMO_TIMEOUT_SECONDS": "15",
+    "BITRIX_DELIVERY_ENDPOINT": "https://elixirpeptide.com:8443/bitrix/tools/elixir.delivery/quote.php",
+    "BITRIX_DELIVERY_SECRET": os.environ.get("ELIXIR_DELIVERY_SECRET", ""),
+    "BITRIX_DELIVERY_TIMEOUT_SECONDS": "30",
     "WEBSITE_IDENTITY_ENDPOINT": "https://elixirpeptide.com:8443/local/api/app_integration.php",
     "WEBSITE_IDENTITY_TOKEN": os.environ.get("ELIXIR_APP_TOKEN", ""),
     "WEBSITE_IDENTITY_TIMEOUT_SECONDS": "15",
@@ -24,7 +27,7 @@ REMOVE_KEYS = {"BITRIX_PROXY_URL"}
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("Usage: configure_app_env.py <backend/.env>")
-    for name in ("BITRIX_PROMO_TOKEN", "WEBSITE_IDENTITY_TOKEN", "WEBSITE_REVIEW_SYNC_SECRET"):
+    for name in ("BITRIX_PROMO_TOKEN", "BITRIX_DELIVERY_SECRET", "WEBSITE_IDENTITY_TOKEN", "WEBSITE_REVIEW_SYNC_SECRET"):
         if len(TARGETS[name]) < 32:
             raise SystemExit(f"Missing or weak secret: {name}")
 

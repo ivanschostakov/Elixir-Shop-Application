@@ -17,6 +17,8 @@ from config import (
     ADMIN_READ_ONLY,
     AUTH_RATE_LIMIT_MAX_REQUESTS,
     AUTH_RATE_LIMIT_WINDOW_SECONDS,
+    BITRIX_DELIVERY_ENDPOINT,
+    BITRIX_DELIVERY_SECRET,
     BITRIX_PROMO_ENDPOINT,
     BITRIX_PROMO_TOKEN,
     CORS_ALLOWED_ORIGINS,
@@ -67,6 +69,7 @@ PROVIDERS = (
     ("yandex_delivery", "Яндекс Доставка", lambda: bool(YANDEX_DELIVERY_TOKEN)),
     ("telegram", "Telegram", lambda: bool(TELEGRAM_BOT_TOKEN)),
     ("bitrix_promo", "Промокоды Bitrix", lambda: bool(BITRIX_PROMO_ENDPOINT and BITRIX_PROMO_TOKEN)),
+    ("bitrix_delivery", "Доставка Bitrix / IPOL.СДЭК", lambda: bool(BITRIX_DELIVERY_ENDPOINT and BITRIX_DELIVERY_SECRET)),
     ("website_identity", "Профили покупателей сайта", lambda: bool(WEBSITE_IDENTITY_ENDPOINT and WEBSITE_IDENTITY_TOKEN)),
     ("website_reviews", "Отзывы сайта", lambda: bool(WEBSITE_REVIEW_SYNC_ENDPOINT and WEBSITE_REVIEW_SYNC_SECRET)),
 )

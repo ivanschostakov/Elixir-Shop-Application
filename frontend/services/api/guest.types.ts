@@ -1,5 +1,4 @@
 import type {
-    DeliveryCalculationPayload,
     NewDeliveryAddressPayload,
     NewRecipientPayload,
 } from "@/services/api/order-drafts.types"
@@ -18,9 +17,7 @@ export type GuestBasketQuotePayload = {
 
 export type GuestBasketQuoteRead = BasketRead
 
-export type GuestDeliveryAddressPayload = Omit<NewDeliveryAddressPayload, "delivery_calculation"> & {
-    delivery_calculation: DeliveryCalculationPayload
-}
+export type GuestDeliveryAddressPayload = NewDeliveryAddressPayload
 
 export type GuestOrderPayload = {
     items: GuestBasketItemPayload[]

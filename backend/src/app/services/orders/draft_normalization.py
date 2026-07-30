@@ -7,7 +7,7 @@ from src.database.schemas import DeliveryAddressCreate, DeliveryRecipientCreate
 from src.normalize import fit_text, normalize_person_name, optional_str
 
 CREATE_ORDER_DRAFT_DELIVERY_FIELDS = ("mode", "provider", "country_code", "name", "full_address", "details", "city", "postal_code", "latitude", "longitude", "provider_reference", "delivery_calculation")
-REQUIRED_CREATE_ORDER_DRAFT_DELIVERY_FIELDS = ("mode", "provider", "country_code", "name", "full_address", "latitude", "longitude", "delivery_calculation")
+REQUIRED_CREATE_ORDER_DRAFT_DELIVERY_FIELDS = ("mode", "provider", "country_code", "name", "full_address", "latitude", "longitude")
 
 
 def _normalize_required_recipient_text(value: str | None, *, max_length: int, field_name: str) -> str:
