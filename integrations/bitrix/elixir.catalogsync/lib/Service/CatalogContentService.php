@@ -40,6 +40,7 @@ final class CatalogContentService
                 'ID',
                 'NAME',
                 'XML_ID',
+                'ACTIVE',
                 'TIMESTAMP_X',
                 'PREVIEW_TEXT',
                 'DETAIL_TEXT',
@@ -52,6 +53,7 @@ final class CatalogContentService
             $rows[$id] = [
                 'system_id' => $systemId,
                 'name' => trim((string)$element['NAME']),
+                'active' => (string)($element['ACTIVE'] ?? 'N') === 'Y',
                 'updated_at' => $this->dateIso($element['TIMESTAMP_X'] ?? null),
                 'preview_text' => $element['PREVIEW_TEXT'] ?? null,
                 'detail_text' => $element['DETAIL_TEXT'] ?? null,
@@ -77,7 +79,7 @@ final class CatalogContentService
             );
         }
 
-        $products = [];
+        $resolvedRows = [];
         foreach ($rows as $elementId => $row) {
             $elementProperties = is_array($properties[$elementId] ?? null)
                 ? $properties[$elementId]
@@ -110,6 +112,37 @@ final class CatalogContentService
                 $fallback['storage'] ?? null,
             );
             unset($row['preview_text'], $row['detail_text']);
+            $resolvedRows[] = $row;
+        }
+
+        $activeSystemIds = [];
+        $activeSkus = [];
+        foreach ($resolvedRows as $row) {
+            if (!$row['active']) {
+                continue;
+            }
+            if ($row['system_id'] !== null) {
+                $activeSystemIds[$row['system_id']] = true;
+            }
+            $skuKey = $this->skuKey($row['sku']);
+            if ($skuKey !== null) {
+                $activeSkus[$skuKey] = true;
+            }
+        }
+
+        $products = [];
+        foreach ($resolvedRows as $row) {
+            if (!$row['active']) {
+                $skuKey = $this->skuKey($row['sku']);
+                if (
+                    $row['system_id'] === null
+                    || isset($activeSystemIds[$row['system_id']])
+                    || ($skuKey !== null && isset($activeSkus[$skuKey]))
+                ) {
+                    continue;
+                }
+            }
+            unset($row['active']);
             $products[] = $row;
         }
 
@@ -232,6 +265,12 @@ final class CatalogContentService
         }
         $text = trim((string)$value);
         return $text === '' ? null : $text;
+    }
+
+    private function skuKey(mixed $value): ?string
+    {
+        $value = $this->plainText($value);
+        return $value === null ? null : mb_strtolower($value);
     }
 
     private function firstContent(mixed ...$values): ?string
