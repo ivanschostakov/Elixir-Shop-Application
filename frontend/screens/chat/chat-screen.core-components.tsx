@@ -4,6 +4,7 @@ import {
     Animated,
     Image,
     Linking,
+    Platform,
     Pressable,
     ScrollView,
     type StyleProp,
@@ -29,16 +30,22 @@ import type {
 import type { BasketItemRead, BasketRead } from "@/types/basket"
 
 export function AnimatedMessageBlock({ children }: { children: ReactNode }) {
-    const progress = useRef(new Animated.Value(0)).current
+    const shouldAnimate = Platform.OS !== "android"
+    const progress = useRef(new Animated.Value(shouldAnimate ? 0 : 1)).current
 
     useEffect(() => {
+        if (!shouldAnimate) {
+            progress.setValue(1)
+            return
+        }
+
         Animated.timing(progress, {
             duration: motion.duration.enter,
             easing: motion.easing.enter,
             toValue: 1,
             useNativeDriver: true,
         }).start()
-    }, [progress])
+    }, [progress, shouldAnimate])
 
     return (
         <Animated.View

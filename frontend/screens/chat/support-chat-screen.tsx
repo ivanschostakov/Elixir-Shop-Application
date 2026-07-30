@@ -367,8 +367,12 @@ export function SupportChatScreen({
         spam: t("chat.supportStatusSpam"),
     }
 
+    if (!active) {
+        return null
+    }
+
     return (
-        <View pointerEvents={active ? "auto" : "none"} style={[styles.overlay, active ? null : styles.hidden]}>
+        <View style={styles.overlay}>
             <View style={styles.screen}>
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_LIGHT} style={[chatStyles.backgroundImage, themeName === "dark" ? chatStyles.backgroundImageHidden : null]} />
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_DARK} style={[chatStyles.backgroundImage, themeName === "dark" ? null : chatStyles.backgroundImageHidden]} />

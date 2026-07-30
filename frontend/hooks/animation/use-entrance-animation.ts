@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react"
-import { Animated } from "react-native"
+import { Animated, Platform } from "react-native"
 
 import { motion } from "@/theme/motion"
 
@@ -14,9 +14,15 @@ export function useEntranceAnimation({
     duration = motion.duration.enter,
     translateY = 8,
 }: EntranceAnimationOptions = {}) {
-    const progress = useRef(new Animated.Value(0)).current
+    const shouldAnimate = Platform.OS !== "android"
+    const progress = useRef(new Animated.Value(shouldAnimate ? 0 : 1)).current
 
     useEffect(() => {
+        if (!shouldAnimate) {
+            progress.setValue(1)
+            return
+        }
+
         progress.setValue(0)
         Animated.timing(progress, {
             delay,
@@ -25,7 +31,7 @@ export function useEntranceAnimation({
             toValue: 1,
             useNativeDriver: true,
         }).start()
-    }, [delay, duration, progress])
+    }, [delay, duration, progress, shouldAnimate])
 
     return {
         opacity: progress,

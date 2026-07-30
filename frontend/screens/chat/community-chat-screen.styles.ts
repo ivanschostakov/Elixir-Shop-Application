@@ -5,7 +5,6 @@ import { spacing } from "@/theme/spacing"
 export const createCommunityChatStyles = (colors: ThemePalette) => StyleSheet.create({
     screen: { flex: 1, backgroundColor: colors.surfaceSoft },
     overlay: { ...StyleSheet.absoluteFillObject, zIndex: 50 },
-    hidden: { display: "none" },
     header: { position: "absolute", left: spacing.md, right: spacing.md, zIndex: 10, flexDirection: "row", alignItems: "center", gap: spacing.sm },
     backButton: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceOverlay, borderColor: colors.borderSoft, borderWidth: 1, shadowColor: "#0C2A3A", shadowOpacity: 0.14, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 6 },
     backText: { color: colors.text, fontSize: 25, lineHeight: 27, fontWeight: "500" },

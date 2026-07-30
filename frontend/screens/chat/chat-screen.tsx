@@ -698,7 +698,8 @@ export default function ChatScreen() {
 
     return (
         <View style={chatScreenStyles.container}>
-            <View style={chatScreenStyles.content}>
+            {chatMode === "ai" ? (
+                <View style={chatScreenStyles.content}>
                 <ImageBackground
                     imageStyle={chatScreenStyles.backgroundImageAsset}
                     resizeMode="cover"
@@ -1022,7 +1023,8 @@ export default function ChatScreen() {
                     onSelectMode={handleSelectAttachmentMode}
                     visible={attachmentSheetVisible}
                 />
-            </View>
+                </View>
+            ) : null}
             <CommunityChatScreen
                 active={chatMode === "community"}
                 mode={chatMode}

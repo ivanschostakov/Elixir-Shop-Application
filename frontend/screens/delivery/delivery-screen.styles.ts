@@ -11,9 +11,10 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         backgroundColor: colors.pageBackground,
     },
     mapBox: {
-        height: 400,
+        alignSelf: "stretch",
+        flex: 1,
+        position: "relative",
         width: "100%",
-        position: "static",
     },
     mapFallback: {
         ...StyleSheet.absoluteFillObject,
