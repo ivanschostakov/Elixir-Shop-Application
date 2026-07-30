@@ -12,7 +12,9 @@ from src.integrations.website_catalog import (
     WebsiteCatalogSyncClient,
     WebsiteCatalogSyncStats,
     _apply_content,
+    _legacy_category_candidates,
     _match_content_rows,
+    _parse_categories,
     _parse_content_rows,
 )
 
@@ -186,3 +188,75 @@ def test_apply_content_maps_storage_to_expiration_and_clears_empty_fields():
     assert stats.updated_description == 1
     assert stats.updated_usage == 1
     assert stats.updated_storage == 1
+
+
+def test_parse_catalog_categories_and_product_certificates():
+    product_id = "7e2a5eeb-13e1-11f1-0a80-176100294e52"
+    stats = WebsiteCatalogSyncStats()
+    payload = {
+        "products": [{
+            "system_id": product_id,
+            "sku": "00-00000123",
+            "description": None,
+            "usage": None,
+            "storage": None,
+            "certificates": [{
+                "source_file_id": 7342,
+                "title": "Сертификат соответствия",
+                "original_name": "certificate.pdf",
+                "content_type": "application/pdf",
+                "size_bytes": 1024,
+                "path": "/upload/iblock/aa/certificate.pdf",
+            }],
+        }],
+        "categories": [{
+            "source_id": 149,
+            "name": "Все пептиды",
+            "product_system_ids": [product_id, product_id],
+        }],
+    }
+
+    products = _parse_content_rows(
+        payload,
+        stats,
+        public_base_url="https://elixirpeptide.com/",
+    )
+    categories = _parse_categories(payload, stats)
+
+    assert len(products) == 1
+    assert products[0].certificates is not None
+    assert products[0].certificates[0].url == (
+        "https://elixirpeptide.com/upload/iblock/aa/certificate.pdf"
+    )
+    assert categories is not None
+    assert len(categories) == 1
+    assert categories[0].source_id == 149
+    assert categories[0].name == "Все пептиды"
+    assert categories[0].product_system_ids == (UUID(product_id),)
+    assert stats.certificates_fetched == 1
+    assert stats.categories_fetched == 1
+
+
+def test_category_parser_rejects_duplicate_active_names():
+    stats = WebsiteCatalogSyncStats()
+
+    with pytest.raises(ValueError, match="names must be unique"):
+        _parse_categories(
+            {
+                "categories": [
+                    {"source_id": 1, "name": "Категория", "product_system_ids": []},
+                    {"source_id": 2, "name": " категория ", "product_system_ids": []},
+                ],
+            },
+            stats,
+        )
+
+
+def test_legacy_category_aliases_preserve_existing_icon_ids():
+    assert _legacy_category_candidates("Все пептиды") == ("пептиды",)
+    assert _legacy_category_candidates("Для иммунной системы") == (
+        "для имунной системы",
+    )
+    assert _legacy_category_candidates("Антидепресанты") == (
+        "антидепрессанты",
+    )

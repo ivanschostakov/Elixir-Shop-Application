@@ -58,6 +58,12 @@ class Product(Base, SystemMixin):
     products_by_category: Mapped[list["ProductByCategory"]] = relationship(
         back_populates="product", cascade="all, delete-orphan", passive_deletes=True
     )
+    certificates: Mapped[list["ProductCertificate"]] = relationship(
+        back_populates="product",
+        cascade="all, delete-orphan",
+        order_by="(ProductCertificate.sort_order, ProductCertificate.id)",
+        passive_deletes=True,
+    )
     favoured_products: Mapped[list["FavouredProduct"]] = relationship(back_populates="product", cascade="all, delete-orphan")
     basket_items: Mapped[list["BasketItem"]] = relationship(back_populates="product", cascade="all, delete-orphan", passive_deletes=True)
 

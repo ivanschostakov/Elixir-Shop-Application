@@ -34,6 +34,7 @@ from .basket.basket_item import (
 )
 from .catalog.banner import BannerBase, BannerCreate, BannerRead, BannerUpdate
 from .catalog.product import ProductBase, ProductCreate, ProductRead, ProductUpdate, ProductWithVariantsRead
+from .catalog.product_certificate import ProductCertificateRead
 from .catalog.product_question import ProductQuestionCreate, ProductQuestionListRead, ProductQuestionRead
 from .catalog.product_category import ProductCategoryBase, ProductCategoryCreate, ProductCategoryRead, ProductCategoryUpdate
 from .catalog.products_by_category import ProductByCategoryBase, ProductByCategoryCreate, ProductByCategoryRead, ProductByCategoryUpdate
@@ -162,6 +163,7 @@ __all__ = [
     "RequisiteRead",
     "RequisiteUpdate",
     "ProductBase",
+    "ProductCertificateRead",
     "ProductCreate",
     "ProductRead",
     "ProductStockSubscriptionStatusRead",

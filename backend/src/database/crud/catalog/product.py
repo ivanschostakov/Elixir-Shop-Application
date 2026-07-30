@@ -18,6 +18,7 @@ def _not_archived_product_clause():
 def _product_price_options():
     return (
         selectinload(Product.variants),
+        selectinload(Product.certificates),
         selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
     )
 

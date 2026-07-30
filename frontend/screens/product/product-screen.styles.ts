@@ -558,6 +558,59 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     infoTabContent: {
         marginTop: spacing.xs,
     },
+    certificateList: {
+        gap: spacing.sm,
+        paddingTop: spacing.xs,
+    },
+    certificateRow: {
+        alignItems: "center",
+        backgroundColor: colors.surfaceMuted,
+        borderColor: colors.borderSoft,
+        borderRadius: spacing.md,
+        borderWidth: 1,
+        flexDirection: "row",
+        gap: spacing.sm,
+        minHeight: 68,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
+    },
+    certificateRowPressed: {
+        opacity: 0.75,
+    },
+    certificateFileBadge: {
+        alignItems: "center",
+        backgroundColor: colors.primary,
+        borderRadius: 10,
+        height: 38,
+        justifyContent: "center",
+        width: 44,
+    },
+    certificateFileBadgeText: {
+        color: colors.onPrimary,
+        fontSize: 11,
+        fontWeight: "900",
+    },
+    certificateCopy: {
+        flex: 1,
+        gap: 2,
+        minWidth: 0,
+    },
+    certificateTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "700",
+        lineHeight: 19,
+    },
+    certificateMeta: {
+        color: colors.mutedText,
+        fontSize: 12,
+        lineHeight: 16,
+    },
+    certificateOpenIcon: {
+        color: colors.primary,
+        fontSize: 20,
+        fontWeight: "700",
+    },
     sectionCardLast: {
         borderBottomWidth: 0,
         flex: 1,

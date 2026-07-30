@@ -9,6 +9,7 @@ from src.database.limits import (
     PRODUCT_SKU_MAX_LENGTH,
 )
 from src.database.product_text import normalize_product_text
+from src.database.schemas.catalog.product_certificate import ProductCertificateRead
 from src.database.schemas.catalog.variant import ProductVariantRead
 
 
@@ -69,3 +70,4 @@ class ProductRead(ProductBase):
 
 class ProductWithVariantsRead(ProductRead):
     variants: list[ProductVariantRead]
+    certificates: list[ProductCertificateRead] = Field(default_factory=list)

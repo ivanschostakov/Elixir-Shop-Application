@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Animated, Easing, Pressable, Text, View } from "react-native"
+import { Alert, Animated, Easing, Linking, Pressable, Text, View } from "react-native"
 import type { LayoutChangeEvent } from "react-native"
 
 import { HtmlContent, hasRenderableHtmlContent } from "@/components/content/html-content"
@@ -16,6 +16,19 @@ type InfoTabLayout = {
     x: number
 }
 
+function formatCertificateSize(sizeBytes: number, t: ProductInfoTabsProps["t"]) {
+    if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) {
+        return t("product.certificateFile")
+    }
+    if (sizeBytes >= 1024 * 1024) {
+        return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+    }
+    if (sizeBytes >= 1024) {
+        return `${Math.round(sizeBytes / 1024)} KB`
+    }
+    return `${sizeBytes} B`
+}
+
 export function ProductInfoTabs({
     activeInfoTab,
     onChangeTab,
@@ -29,6 +42,7 @@ export function ProductInfoTabs({
     const overviewHtml = hasRenderableHtmlContent(product.description) ? product.description : null
     const usageHtml = hasRenderableHtmlContent(product.usage) ? product.usage : null
     const expirationHtml = hasRenderableHtmlContent(product.expiration) ? product.expiration : null
+    const certificates = product.certificates ?? []
     const productSku = product.sku?.trim() || null
     const [infoTabLayouts, setInfoTabLayouts] = useState<Partial<Record<ProductInfoTabKey, InfoTabLayout>>>({})
     const infoTabIndicatorX = useRef(new Animated.Value(0)).current
@@ -39,8 +53,11 @@ export function ProductInfoTabs({
             { key: "overview" as const, label: t("product.tabOverview") },
             { key: "usage" as const, label: t("product.tabUsage") },
             { key: "details" as const, label: t("product.tabDetails") },
+            ...(certificates.length
+                ? [{ key: "certificates" as const, label: t("product.tabCertificates") }]
+                : []),
         ],
-        [t],
+        [certificates.length, t],
     )
     const activeInfoTabLayout = infoTabLayouts[activeInfoTab]
 
@@ -126,9 +143,51 @@ export function ProductInfoTabs({
                 ? <HtmlContent html={usageHtml} variant="detail" />
                 : <Text style={productScreenStyle.detailRichText}>{detailsFallback}</Text>
         }
-        return expirationHtml
-            ? <HtmlContent html={expirationHtml} variant="detail" />
-            : <Text style={productScreenStyle.detailRichText}>{detailsFallback}</Text>
+        if (activeInfoTab === "details") {
+            return expirationHtml
+                ? <HtmlContent html={expirationHtml} variant="detail" />
+                : <Text style={productScreenStyle.detailRichText}>{detailsFallback}</Text>
+        }
+        return (
+            <View style={productScreenStyle.certificateList}>
+                {certificates.map((certificate) => (
+                    <Pressable
+                        key={certificate.id}
+                        accessibilityLabel={certificate.title}
+                        accessibilityRole="link"
+                        onPress={() => {
+                            void Linking.openURL(certificate.url).catch(() => {
+                                Alert.alert(
+                                    t("product.certificateOpenFailedTitle"),
+                                    t("product.certificateOpenFailedMessage"),
+                                )
+                            })
+                        }}
+                        style={({ pressed }) => [
+                            productScreenStyle.certificateRow,
+                            pressed && productScreenStyle.certificateRowPressed,
+                        ]}
+                    >
+                        <View style={productScreenStyle.certificateFileBadge}>
+                            <Text style={productScreenStyle.certificateFileBadgeText}>
+                                {certificate.content_type?.includes("pdf")
+                                    ? "PDF"
+                                    : t("product.certificateFile")}
+                            </Text>
+                        </View>
+                        <View style={productScreenStyle.certificateCopy}>
+                            <Text style={productScreenStyle.certificateTitle}>
+                                {certificate.title}
+                            </Text>
+                            <Text style={productScreenStyle.certificateMeta}>
+                                {formatCertificateSize(certificate.size_bytes, t)}
+                            </Text>
+                        </View>
+                        <Text style={productScreenStyle.certificateOpenIcon}>↗</Text>
+                    </Pressable>
+                ))}
+            </View>
+        )
     }
 
     return (

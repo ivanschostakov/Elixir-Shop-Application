@@ -40,6 +40,16 @@ export type ProductVariantRead = {
 
 export type ProductWithVariantsRead = ProductRead & {
     variants: ProductVariantRead[]
+    certificates: ProductCertificateRead[]
+}
+
+export type ProductCertificateRead = {
+    id: number
+    title: string
+    original_name: string | null
+    content_type: string | null
+    size_bytes: number
+    url: string
 }
 
 export type ProductReviewRead = {

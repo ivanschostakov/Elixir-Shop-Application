@@ -2,6 +2,7 @@ from .banner import Banner
 from .banner_click import BannerClick
 from .banner_impression import BannerImpression
 from .product import Product
+from .product_certificate import ProductCertificate
 from .product_question import ProductQuestion
 from .product_category import ProductCategory
 from .products_by_category import ProductByCategory

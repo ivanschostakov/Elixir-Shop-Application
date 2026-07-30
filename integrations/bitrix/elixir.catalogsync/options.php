@@ -56,7 +56,7 @@ $get = static fn(string $name, string $default = ''): string => htmlspecialchars
 <form method="post" action="<?= $APPLICATION->GetCurPage() ?>?mid=<?= urlencode($moduleId) ?>&lang=<?= LANGUAGE_ID ?>">
     <?= bitrix_sessid_post() ?>
     <table class="adm-detail-content-table edit-table">
-        <tr class="heading"><td colspan="2">Контент каталога Bitrix → приложение</td></tr>
+        <tr class="heading"><td colspan="2">Каталог Bitrix → приложение</td></tr>
         <tr><td width="40%">Синхронизация включена:</td><td><input type="checkbox" name="enabled" value="Y" <?= $get('enabled', 'N') === 'Y' ? 'checked' : '' ?>></td></tr>
         <tr><td>Состояние секрета:</td><td><?= $isConfigured ? 'Настроен' : 'Не настроен' ?></td></tr>
         <tr><td>Новый shared secret:</td><td><input type="password" name="shared_secret_new" size="60" autocomplete="new-password" placeholder="Пусто — оставить текущий"></td></tr>
@@ -66,6 +66,8 @@ $get = static fn(string $name, string $default = ''): string => htmlspecialchars
         <tr><td>Описание:</td><td><code>DETAIL_TEXT</code>, затем <code>PREVIEW_TEXT</code></td></tr>
         <tr><td>Применение:</td><td><code>SPOSOB_PRIMENENIYA</code></td></tr>
         <tr><td>Хранение:</td><td><code>SROK_KHRANENIYA_1</code></td></tr>
+        <tr><td>Категории:</td><td>активные разделы инфоблока и их состав</td></tr>
+        <tr><td>Сертификаты товаров:</td><td><code>FILES</code></td></tr>
         <tr><td>Разрешённые IP через запятую:</td><td><input type="text" name="allowed_ips" size="60" value="<?= $get('allowed_ips') ?>"></td></tr>
         <tr><td>Запросов за окно:</td><td><input type="number" name="rate_limit" min="1" value="<?= $get('rate_limit', '60') ?>"></td></tr>
         <tr><td>Окно ограничения, секунд:</td><td><input type="number" name="rate_limit_window_seconds" min="1" value="<?= $get('rate_limit_window_seconds', '60') ?>"></td></tr>
