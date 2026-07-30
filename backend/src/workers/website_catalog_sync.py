@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from config import WEBSITE_CATALOG_SYNC_INTERVAL_MINUTES
 from logger import setup_logging
+from src.app.services.cache import get_cache_service
 from src.database import SessionLocal
 from src.database.models import IntegrationRun
 from src.integrations.website_catalog import (
@@ -58,21 +59,28 @@ async def _run_once() -> None:
 
 async def run_forever() -> None:
     stop_event = asyncio.Event()
+    cache = get_cache_service()
+    await cache.connect()
+    if cache.client is None:
+        raise RuntimeError("Redis is required for the website catalog sync worker")
     interval_seconds = max(int(WEBSITE_CATALOG_SYNC_INTERVAL_MINUTES), 1) * 60
     loop = asyncio.get_running_loop()
     for signal_name in ("SIGINT", "SIGTERM"):
         with suppress(AttributeError, NotImplementedError):
             loop.add_signal_handler(getattr(signal, signal_name), stop_event.set)
 
-    while not stop_event.is_set():
-        try:
-            await _run_once()
-        except Exception:
-            log.exception("Website catalog sync tick failed")
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-        except TimeoutError:
-            continue
+    try:
+        while not stop_event.is_set():
+            try:
+                await _run_once()
+            except Exception:
+                log.exception("Website catalog sync tick failed")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            except TimeoutError:
+                continue
+    finally:
+        await cache.close()
 
 
 if __name__ == "__main__":
