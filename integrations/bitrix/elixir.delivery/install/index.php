@@ -90,6 +90,7 @@ class elixir_delivery extends CModule
             'currency' => 'RUB',
             'pickup_service_code' => 'sdek:pickup',
             'courier_service_code' => 'sdek:courier',
+            'app_only_product_xml_ids' => '',
         ];
         foreach ($defaults as $name => $value) {
             if (Option::get($this->MODULE_ID, $name, '__ELIXIR_OPTION_NOT_SET__') === '__ELIXIR_OPTION_NOT_SET__') {

@@ -35,6 +35,7 @@ if ($request->isPost() && check_bitrix_sessid()) {
         Option::set($moduleId, 'currency', strtoupper(trim((string)$request->getPost('currency'))));
         Option::set($moduleId, 'pickup_service_code', trim((string)$request->getPost('pickup_service_code')));
         Option::set($moduleId, 'courier_service_code', trim((string)$request->getPost('courier_service_code')));
+        Option::set($moduleId, 'app_only_product_xml_ids', trim((string)$request->getPost('app_only_product_xml_ids')));
         $message = 'Настройки расчёта доставки сохранены.';
     } catch (Throwable $exception) {
         $error = $exception->getMessage();
@@ -70,6 +71,14 @@ $get = static fn(string $name, string $default = ''): string => htmlspecialchars
         <tr><td>Валюта:</td><td><input type="text" name="currency" maxlength="3" value="<?= $get('currency', 'RUB') ?>"></td></tr>
         <tr><td>Код доставки в ПВЗ:</td><td><input type="text" name="pickup_service_code" value="<?= $get('pickup_service_code', 'sdek:pickup') ?>"></td></tr>
         <tr><td>Код курьерской доставки:</td><td><input type="text" name="courier_service_code" value="<?= $get('courier_service_code', 'sdek:courier') ?>"></td></tr>
+        <tr>
+            <td>UUID товаров только для приложения:</td>
+            <td>
+                <textarea name="app_only_product_xml_ids" rows="4" cols="80"><?= $get('app_only_product_xml_ids') ?></textarea>
+                <br>
+                <small>По одному UUID МойСклад на строку или через запятую. Эти товары разрешаются только в закрытом расчёте приложения и не включаются на публичном сайте.</small>
+            </td>
+        </tr>
     </table>
     <input type="submit" class="adm-btn-save" value="Сохранить">
 </form>

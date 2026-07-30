@@ -175,18 +175,25 @@ final class DeliveryQuoteService
     private function buildBasket(string $siteId, string $currency, array $items): Basket
     {
         $basket = Basket::create($siteId);
+        $appOnlyProductXmlIds = $this->getAppOnlyProductXmlIds();
         foreach ($items as $item) {
             $element = $this->findCatalogElement(
                 $item['variant_system_id'],
                 $item['product_system_id']
             );
             $basketItem = $basket->createItem('catalog', (int)$element['ID']);
-            $setResult = $basketItem->setFields([
-                'QUANTITY' => (float)$item['quantity'],
-                'CURRENCY' => $currency,
-                'LID' => $siteId,
-                'PRODUCT_PROVIDER_CLASS' => CatalogProvider::class,
-            ]);
+            if ($this->isAppOnlyProductAllowed($item, $element, $appOnlyProductXmlIds)) {
+                $setResult = $basketItem->setFields(
+                    $this->buildAppOnlyBasketFields($siteId, $currency, $item, $element)
+                );
+            } else {
+                $setResult = $basketItem->setFields([
+                    'QUANTITY' => (float)$item['quantity'],
+                    'CURRENCY' => $currency,
+                    'LID' => $siteId,
+                    'PRODUCT_PROVIDER_CLASS' => CatalogProvider::class,
+                ]);
+            }
             if (!$setResult->isSuccess()) {
                 throw new \RuntimeException(
                     'basket_item_failed:' . implode('; ', $setResult->getErrorMessages())
@@ -200,6 +207,67 @@ final class DeliveryQuoteService
             );
         }
         return $basket;
+    }
+
+    private function getAppOnlyProductXmlIds(): array
+    {
+        $rawValue = trim(Option::get(self::MODULE_ID, 'app_only_product_xml_ids', ''));
+        if ($rawValue === '') {
+            return [];
+        }
+        $values = preg_split('/[\s,;]+/', $rawValue, -1, PREG_SPLIT_NO_EMPTY);
+        if (!is_array($values)) {
+            return [];
+        }
+        return array_fill_keys(array_map('strtolower', array_unique($values)), true);
+    }
+
+    private function isAppOnlyProductAllowed(array $item, array $element, array $allowlist): bool
+    {
+        if ($allowlist === []) {
+            return false;
+        }
+        foreach ([
+            $item['variant_system_id'] ?? '',
+            $item['product_system_id'] ?? '',
+            $element['XML_ID'] ?? '',
+        ] as $xmlId) {
+            $normalized = strtolower(trim((string)$xmlId));
+            if ($normalized !== '' && isset($allowlist[$normalized])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function buildAppOnlyBasketFields(
+        string $siteId,
+        string $currency,
+        array $item,
+        array $element
+    ): array {
+        $elementId = (int)$element['ID'];
+        $catalogProduct = \CCatalogProduct::GetByID($elementId);
+        $basePrice = \CPrice::GetBasePrice($elementId);
+        if (!is_array($catalogProduct) || !is_array($basePrice) || !is_numeric($basePrice['PRICE'] ?? null)) {
+            throw new \RuntimeException('app_only_product_snapshot_unavailable:' . $elementId);
+        }
+        $priceCurrency = strtoupper(trim((string)($basePrice['CURRENCY'] ?? '')));
+        if ($priceCurrency !== $currency) {
+            throw new \RuntimeException('app_only_product_currency_mismatch:' . $elementId);
+        }
+
+        return [
+            'QUANTITY' => (float)$item['quantity'],
+            'CURRENCY' => $currency,
+            'LID' => $siteId,
+            'NAME' => (string)$element['NAME'],
+            'PRICE' => (float)$basePrice['PRICE'],
+            'BASE_PRICE' => (float)$basePrice['PRICE'],
+            'CUSTOM_PRICE' => 'Y',
+            'WEIGHT' => max(0, (float)($catalogProduct['WEIGHT'] ?? 0)),
+            'PRODUCT_XML_ID' => (string)$element['XML_ID'],
+        ];
     }
 
     private function findCatalogElement(string $variantSystemId, string $productSystemId): array
