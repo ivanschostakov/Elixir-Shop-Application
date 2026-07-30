@@ -2,7 +2,10 @@ import { useMemo, useState } from "react"
 import type { Point } from "react-native-yamap"
 
 import { DEFAULT_DELIVERY_COUNTRY_CODE } from "@/services/api/delivery"
-import { DOOR_DELIVERY_PROVIDER, supportsDoorDeliveryForCountry } from "@/screens/delivery/delivery-screen.constants"
+import {
+    DOOR_DELIVERY_PROVIDER,
+    supportsDoorDeliveryForCountry,
+} from "@/screens/delivery/delivery-screen.constants"
 import type { DeliveryDoorDraft, DeliveryPickupDraft } from "@/screens/delivery/delivery-screen.types"
 import { buildPickupPointDraft, getDoorDeliveryPoint, getPickupPoint } from "@/screens/delivery/delivery-screen.utils"
 import { useDeliveryGeoSearch } from "@/hooks/delivery/use-delivery-geo-search"
@@ -34,14 +37,16 @@ export function useDeliveryFlowController({
     const [searchEnabled, setSearchEnabled] = useState(true)
 
     const [doorDeliveryDraft, setDoorDeliveryDraft] = useState<DeliveryDoorDraft | null>(
-        selectedDeliveryAddress
+        supportsDoorDelivery && selectedDeliveryAddress
             ? {
                   ...selectedDeliveryAddress,
                   provider: DOOR_DELIVERY_PROVIDER,
               }
             : null,
     )
-    const [isDoorFooterExpanded, setIsDoorFooterExpanded] = useState(Boolean(selectedDeliveryAddress))
+    const [isDoorFooterExpanded, setIsDoorFooterExpanded] = useState(
+        Boolean(supportsDoorDelivery && selectedDeliveryAddress),
+    )
 
     const [pickupPointDraft, setPickupPointDraft] = useState<DeliveryPickupDraft | null>(
         selectedDeliveryPoint ? buildPickupPointDraft(selectedDeliveryPoint) : null,

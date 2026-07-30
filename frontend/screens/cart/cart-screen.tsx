@@ -56,6 +56,7 @@ import {
     getBasketErrorMessage,
     getOrderDraftProvider,
 } from "@/screens/cart/cart-screen.utils"
+import { DOOR_DELIVERY_ENABLED } from "@/screens/delivery/delivery-screen.constants"
 import { ApiError } from "@/services/api/client"
 import { checkMyBenefits } from "@/services/api/benefits"
 import type { BenefitCheckResponse } from "@/services/api/benefits.types"
@@ -279,7 +280,7 @@ export default function CartScreen() {
             }
         }
 
-        if (selectedDeliveryAddress?.deliveryCalculation) {
+        if (DOOR_DELIVERY_ENABLED && selectedDeliveryAddress?.deliveryCalculation) {
             return {
                 mode: "door",
                 provider: getOrderDraftProvider(selectedDeliveryAddress.provider),

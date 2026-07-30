@@ -9,6 +9,7 @@ import type {
 
 const SUPPORTED_DELIVERY_COUNTRY_CODES = new Set<DeliveryCountryCode>(COUNTRY_SELECTOR_CODES)
 const DOOR_DELIVERY_COUNTRY_CODES = new Set<DeliveryCountryCode>(["RU", "BY", "KZ"])
+export const DOOR_DELIVERY_ENABLED = false
 
 // Country bounds are hardcoded from the Natural Earth–derived dataset here:
 // https://github.com/sandstrom/country-bounding-boxes
@@ -113,7 +114,7 @@ export function isPreciseDoorDeliverySelection(
 }
 
 export function supportsDoorDeliveryForCountry(countryCode: DeliveryCountryCode | null | undefined): boolean {
-    return countryCode ? DOOR_DELIVERY_COUNTRY_CODES.has(countryCode) : false
+    return DOOR_DELIVERY_ENABLED && Boolean(countryCode && DOOR_DELIVERY_COUNTRY_CODES.has(countryCode))
 }
 
 export function getDoorDeliveryStartRegion(countryCode: DeliveryCountryCode): InitialRegion {
