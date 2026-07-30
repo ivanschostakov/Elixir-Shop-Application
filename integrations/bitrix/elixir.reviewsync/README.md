@@ -1,4 +1,5 @@
-# Elixir Review Sync for 1С-Битрикс
+cd /Users/paylakurusyan/Projects/Elixir-Shop-Application
+git push origin main# Elixir Review Sync for 1С-Битрикс
 
 Модуль синхронизирует отзывы сайта (`sotbit.reviews`) и приложения Elixir Shop в обе стороны. Передаются рейтинг, текст, ответ магазина, лайки/дизлайки, фотографии и статус `pending` / `published` / `rejected`. Товары сопоставляются только по `XML_ID` сайта и `products.system_id` приложения. Обмен подписан HMAC-SHA256; база сайта наружу не открывается.
 
