@@ -47,6 +47,7 @@ export type CdekDeliveryCalculationRequest = {
     postalCode?: string | null
     address?: string | null
     city?: string | null
+    deliveryPointCode?: string | null
 }
 
 export type DeliveryPointMarkerWithProvider = DeliveryPointMarker & {

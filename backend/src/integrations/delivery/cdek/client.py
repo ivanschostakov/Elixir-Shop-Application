@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import httpx
 import time
 
@@ -21,6 +22,29 @@ from .schemas import CDEKCalculatedDelivery
 from ..schemas import CountryCode, DeliveryPointMarker, DeliveryPoint, CdekDeliveryMode
 
 log = logging.getLogger(__name__)
+EARTH_RADIUS_KM = 6371.0088
+CITY_MATCH_MAX_DISTANCE_KM = 150.0
+CITY_MATCH_AMBIGUITY_MARGIN_KM = 1.0
+
+
+def _distance_km(
+    latitude_a: float,
+    longitude_a: float,
+    latitude_b: float,
+    longitude_b: float,
+) -> float:
+    latitude_a_rad = math.radians(latitude_a)
+    latitude_b_rad = math.radians(latitude_b)
+    latitude_delta = math.radians(latitude_b - latitude_a)
+    longitude_delta = math.radians(longitude_b - longitude_a)
+    haversine = (
+        math.sin(latitude_delta / 2) ** 2
+        + math.cos(latitude_a_rad)
+        * math.cos(latitude_b_rad)
+        * math.sin(longitude_delta / 2) ** 2
+    )
+    haversine = min(1.0, max(0.0, haversine))
+    return EARTH_RADIUS_KM * 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine))
 
 class AsyncCDEKClient:
     def __init__(self, account: str | None = CDEK_ACCOUNT, secure_password: str | None = CDEK_SECURE_PASSWORD, base_url: str | None = CDEK_API_URL):
@@ -169,42 +193,141 @@ class AsyncCDEKClient:
             )
         return response
 
-    async def get_city_code_by_coordinates(self, latitude: float, longitude: float) -> int:
-        self.log.info("CDEK calculate_delivery step=resolve_city:start latitude=%s longitude=%s", latitude, longitude)
-        city_candidates = await self._request("GET", "/v2/location/cities", params={
-            "lat": latitude,
-            "long": longitude,
-            "size": 1,
+    async def get_delivery_point_city_code(
+        self,
+        delivery_point_code: str,
+        *,
+        country_code: CountryCode | None = None,
+    ) -> int:
+        normalized_code = delivery_point_code.strip()
+        if not normalized_code:
+            raise HTTPException(status_code=422, detail="Не выбран пункт выдачи CDEK.")
+
+        response = await self._request("GET", "/v2/deliverypoints", params={"code": normalized_code})
+        if isinstance(response, dict):
+            response = [response]
+        if not isinstance(response, list):
+            response = []
+
+        normalized_country_code = str(country_code or "").strip().upper()
+        for point in response:
+            if not isinstance(point, dict) or str(point.get("code") or "").strip() != normalized_code:
+                continue
+            location = point.get("location")
+            if not isinstance(location, dict):
+                continue
+            point_country_code = str(location.get("country_code") or "").strip().upper()
+            if normalized_country_code and point_country_code != normalized_country_code:
+                continue
+            city_code = location.get("city_code")
+            if isinstance(city_code, int) and city_code > 0:
+                self.log.info(
+                    "CDEK pickup destination resolved point_code=%s city_code=%s city=%s",
+                    normalized_code,
+                    city_code,
+                    location.get("city"),
+                )
+                return city_code
+
+        raise HTTPException(
+            status_code=422,
+            detail="Пункт выдачи CDEK не найден или не относится к выбранной стране.",
+        )
+
+    async def resolve_city_code(
+        self,
+        *,
+        latitude: float,
+        longitude: float,
+        city: str | None,
+        postal_code: str | None,
+        country_code: CountryCode | None,
+    ) -> int:
+        normalized_city = str(city or "").strip()
+        normalized_postal_code = str(postal_code or "").strip()
+        normalized_country_code = str(country_code or "").strip().upper()
+        if not normalized_city or not normalized_country_code:
+            raise HTTPException(
+                status_code=422,
+                detail="Для доставки CDEK должны быть указаны город и страна.",
+            )
+
+        params: dict[str, Any] = {
+            "city": normalized_city,
+            "country_codes": normalized_country_code,
+            "size": 100,
             "page": 0,
-        })
-        self.log.info("CDEK calculate_delivery step=resolve_city:response response_type=%s candidates_count=%s", type(city_candidates).__name__, len(city_candidates) if isinstance(city_candidates, list) else None)
+        }
+        if normalized_postal_code:
+            params["postal_code"] = normalized_postal_code
 
-        if not isinstance(city_candidates, list) or not city_candidates:
-            raise external_service_http_exception(
-                service="cdek",
-                operation="resolve_city_by_coordinates",
-                public_detail="Delivery provider could not resolve destination city",
-                raw_detail={"latitude": latitude, "longitude": longitude, "response": city_candidates},
+        response = await self._request("GET", "/v2/location/cities", params=params)
+        if not isinstance(response, list):
+            response = []
+
+        candidates: list[tuple[float, dict[str, Any]]] = []
+        normalized_city_key = normalized_city.casefold().replace("ё", "е")
+        for candidate in response:
+            if not isinstance(candidate, dict):
+                continue
+            city_code = candidate.get("code")
+            candidate_latitude = candidate.get("latitude")
+            candidate_longitude = candidate.get("longitude")
+            candidate_city_key = str(candidate.get("city") or "").strip().casefold().replace("ё", "е")
+            candidate_country_code = str(candidate.get("country_code") or "").strip().upper()
+            if (
+                not isinstance(city_code, int)
+                or city_code <= 0
+                or candidate_city_key != normalized_city_key
+                or candidate_country_code != normalized_country_code
+                or not isinstance(candidate_latitude, (int, float))
+                or not isinstance(candidate_longitude, (int, float))
+            ):
+                continue
+            distance = _distance_km(
+                float(latitude),
+                float(longitude),
+                float(candidate_latitude),
+                float(candidate_longitude),
+            )
+            if math.isfinite(distance):
+                candidates.append((distance, candidate))
+
+        candidates.sort(key=lambda item: item[0])
+        if not candidates or candidates[0][0] > CITY_MATCH_MAX_DISTANCE_KM:
+            raise HTTPException(
+                status_code=422,
+                detail="Город не найден в CDEK. Проверьте адрес и почтовый индекс.",
+            )
+        if (
+            len(candidates) > 1
+            and candidates[1][0] - candidates[0][0] < CITY_MATCH_AMBIGUITY_MARGIN_KM
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Найдено несколько одинаковых городов. Уточните адрес или почтовый индекс.",
             )
 
-        city_candidate = city_candidates[0]
-        city_code = city_candidate.get("code")
-        self.log.info("CDEK calculate_delivery step=resolve_city:candidate city_code=%s city=%s postal_code=%s", city_code, city_candidate.get("city"), city_candidate.get("postal_code"))
-
-        if not isinstance(city_code, int):
-            raise external_service_http_exception(
-                service="cdek",
-                operation="resolve_city_code",
-                public_detail="Delivery provider returned invalid city code",
-                raw_detail={"latitude": latitude, "longitude": longitude, "response": city_candidate},
-            )
-
-        self.log.info("CDEK calculate_delivery step=resolve_city:done city_code=%s", city_code)
+        selected = candidates[0][1]
+        city_code = int(selected["code"])
+        self.log.info(
+            "CDEK door destination resolved city_code=%s city=%s region=%s country_code=%s",
+            city_code,
+            selected.get("city"),
+            selected.get("region"),
+            selected.get("country_code"),
+        )
         return city_code
 
     async def calculate_delivery(self, latitude: float, longitude: float, mode: CdekDeliveryMode, *, country_code: CountryCode | None = None, postal_code: str | None = None, address: str | None = None, city: str | None = None) -> CDEKCalculatedDelivery:
         self.log.info("CDEK calculate_delivery step=start latitude=%s longitude=%s mode=%s country_code=%s postal_code=%s city=%s has_address=%s", latitude, longitude, mode, country_code, postal_code, city, bool(address))
-        city_code = await self.get_city_code_by_coordinates(latitude, longitude)
+        city_code = await self.resolve_city_code(
+            latitude=latitude,
+            longitude=longitude,
+            city=city,
+            postal_code=postal_code,
+            country_code=country_code,
+        )
         to_location: dict[str, Any] = {"code": city_code}
         if country_code:
             to_location["country_code"] = country_code

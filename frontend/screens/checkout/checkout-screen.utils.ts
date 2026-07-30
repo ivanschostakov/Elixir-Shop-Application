@@ -265,6 +265,7 @@ export async function calculateDeliveryForSavedAddress(
             postalCode: deliveryAddress.postal_code,
             address: deliveryAddress.full_address,
             city: deliveryAddress.city,
+            deliveryPointCode: deliveryAddress.provider_reference,
         })
     }
 

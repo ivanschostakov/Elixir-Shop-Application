@@ -72,7 +72,22 @@ async def calculate_authoritative_cdek_quote(
     if latitude is None or longitude is None:
         raise HTTPException(status_code=422, detail="Для расчёта доставки не хватает координат адреса.")
 
-    city_code = await (cdek or get_cdek_client()).get_city_code_by_coordinates(float(latitude), float(longitude))
+    cdek_client = cdek or get_cdek_client()
+    mode = str(_address_value(address, "mode") or "").lower()
+    delivery_point_code = str(_address_value(address, "provider_reference") or "").strip()
+    if mode in {"pickup", "office"} and delivery_point_code:
+        city_code = await cdek_client.get_delivery_point_city_code(
+            delivery_point_code,
+            country_code=_address_value(address, "country_code"),
+        )
+    else:
+        city_code = await cdek_client.resolve_city_code(
+            latitude=float(latitude),
+            longitude=float(longitude),
+            city=_address_value(address, "city"),
+            postal_code=_address_value(address, "postal_code"),
+            country_code=_address_value(address, "country_code"),
+        )
     bitrix_items = await build_bitrix_delivery_items(session, items)
     destination = {
         "cdek_city_code": city_code,
@@ -85,7 +100,7 @@ async def calculate_authoritative_cdek_quote(
     }
     try:
         return await BitrixDeliveryClient().quote(
-            mode=str(_address_value(address, "mode") or ""),
+            mode=mode,
             destination=destination,
             items=bitrix_items,
             user_email=user.email,

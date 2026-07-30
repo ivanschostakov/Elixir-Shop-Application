@@ -132,6 +132,7 @@ export function buildCdekPickupCalculationRequest(
         postalCode: pickupPointDraft.postalCode,
         address: pickupPointDraft.address_full || pickupPointDraft.address,
         city: pickupPointDraft.city,
+        deliveryPointCode: pickupPointDraft.code,
     }
 }
 

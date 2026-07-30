@@ -42,6 +42,7 @@ export function calculateCdekDelivery({
     postalCode,
     address,
     city,
+    deliveryPointCode,
 }: CdekDeliveryCalculationRequest): Promise<CdekDeliveryCalculation> {
     return apiGet<CdekDeliveryCalculation>(deliveryPath("/cdek/calculate"), {
         latitude,
@@ -51,6 +52,7 @@ export function calculateCdekDelivery({
         postal_code: postalCode,
         address,
         city,
+        delivery_point_code: deliveryPointCode,
     })
 }
 

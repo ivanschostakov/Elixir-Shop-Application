@@ -129,13 +129,6 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
     if not isinstance(configured_tariff_code, int):
         configured_tariff_code = cdek_client.tariff_codes["office" if delivery_mode == "office" else "door"]
 
-    city_code = await cdek_client.get_city_code_by_coordinates(order.delivery_address.latitude, order.delivery_address.longitude)
-    log.info(
-        "Building CDEK order body order_number=%s delivery_mode=%s city_code=%s",
-        order.order_number,
-        delivery_mode,
-        city_code,
-    )
     package = {"number": "1", "weight": 357, "length": 18, "width": 7, "height": 24, "items": _build_cdek_order_items(order)}
     order_body: dict[str, Any] = {
         "type": 1,
@@ -159,6 +152,18 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
     city = address.get("city") or order.delivery_address.city
     postal_code = address.get("postal_code") or order.delivery_address.postal_code
     country_code = address.get("country_code") or order.delivery_address.country_code
+    city_code = await cdek_client.resolve_city_code(
+        latitude=order.delivery_address.latitude,
+        longitude=order.delivery_address.longitude,
+        city=city,
+        postal_code=postal_code,
+        country_code=country_code,
+    )
+    log.info(
+        "Building CDEK door order body order_number=%s city_code=%s",
+        order.order_number,
+        city_code,
+    )
     formatted = address.get("formatted") or address.get("address") or order.delivery_address.full_address
     if not formatted:
         raise HTTPException(status_code=400, detail="CDEK door delivery requires address")
