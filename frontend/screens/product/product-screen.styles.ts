@@ -60,15 +60,18 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     imageNewBadge: {
         backgroundColor: "#0F8F83",
     },
-    imageSaleBadge: {
-        backgroundColor: "#E34D6F",
-    },
     imageBadgeText: {
         color: "#FFFFFF",
         fontSize: 12,
         fontWeight: "900",
         letterSpacing: 0.6,
         textTransform: "uppercase",
+    },
+    imageSaleText: {
+        color: "#E34D6F",
+        fontSize: 14,
+        fontWeight: "900",
+        letterSpacing: 0.2,
     },
     priceInlineWrap: {
         paddingHorizontal: spacing.lg,
@@ -97,15 +100,10 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         textDecorationLine: "line-through",
     },
     priceInlinePercent: {
-        backgroundColor: "rgba(227, 77, 111, 0.12)",
-        borderRadius: 999,
         color: colors.discountedPrice,
         fontSize: 15,
         fontWeight: "800",
         lineHeight: 22,
-        overflow: "hidden",
-        paddingHorizontal: 8,
-        paddingVertical: 2,
     },
     skuPressable: {
         alignSelf: "flex-start",

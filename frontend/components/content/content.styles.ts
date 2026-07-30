@@ -301,15 +301,18 @@ export const createContentStyles = (colors: ThemePalette) => StyleSheet.create({
     productImageNewBadge: {
         backgroundColor: "#0F8F83",
     },
-    productImageSaleBadge: {
-        backgroundColor: "#E34D6F",
-    },
     productImageBadgeText: {
         color: "#FFFFFF",
         fontSize: 10,
         fontWeight: "900",
         letterSpacing: 0.4,
         textTransform: "uppercase",
+    },
+    productImageSaleText: {
+        color: "#E34D6F",
+        fontSize: 11,
+        fontWeight: "900",
+        letterSpacing: 0.2,
     },
     productImageOutOfStockOverlay: {
         alignItems: "center",
@@ -399,15 +402,10 @@ export const createContentStyles = (colors: ThemePalette) => StyleSheet.create({
         textDecorationLine: "line-through",
     },
     productDiscountPercent: {
-        backgroundColor: "rgba(227, 77, 111, 0.12)",
-        borderRadius: 999,
         color: colors.discountedPrice,
         fontSize: 11,
         fontWeight: "800",
         lineHeight: 14,
-        overflow: "hidden",
-        paddingHorizontal: 5,
-        paddingVertical: 1,
     },
     productRatingRow: {
         alignItems: "center",

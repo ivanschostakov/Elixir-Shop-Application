@@ -57,6 +57,7 @@ export type ProductPriceDisplay = {
     currentLabel: string
     originalLabel: string | null
     discountLabel: string | null
+    discountKind: "product" | "category" | null
     hasDiscount: boolean
     prefix: string
 }
@@ -65,7 +66,11 @@ type ProductPriceDisplayCandidate = ProductPriceDisplay & {
     currentPrice: number
 }
 
-export function getVariantPriceDisplay(variant?: ProductVariantRead | null, prefix = ""): ProductPriceDisplay | null {
+export function getVariantPriceDisplay(
+    variant?: ProductVariantRead | null,
+    prefix = "",
+    product?: Pick<ProductRead, "discount_percent"> | null,
+): ProductPriceDisplay | null {
     if (!variant) {
         return null
     }
@@ -77,7 +82,10 @@ export function getVariantPriceDisplay(variant?: ProductVariantRead | null, pref
     }
 
     const discountPercent = getNumericPrice(variant.discount_percent)
+    const catalogDiscountPercent = getNumericPrice(variant.catalog_discount_percent)
+    const productDiscountPercent = getNumericPrice(product?.discount_percent)
     const hasDiscount = Boolean(discountPercent && discountPercent > 0 && discountedPrice < originalPrice)
+    const hasCatalogDiscount = Boolean(catalogDiscountPercent && catalogDiscountPercent > 0)
     const currentLabel = formatProductPrice(hasDiscount ? discountedPrice : originalPrice)
     if (!currentLabel) {
         return null
@@ -86,14 +94,23 @@ export function getVariantPriceDisplay(variant?: ProductVariantRead | null, pref
     return {
         currentLabel,
         originalLabel: hasDiscount ? formatProductPrice(originalPrice) : null,
-        discountLabel: hasDiscount ? `-${Math.round(discountPercent ?? 0)}%` : null,
+        discountLabel: hasCatalogDiscount ? `−${Number(catalogDiscountPercent)}%` : null,
+        discountKind: hasCatalogDiscount
+            ? productDiscountPercent && productDiscountPercent >= (catalogDiscountPercent ?? 0)
+                ? "product"
+                : "category"
+            : null,
         hasDiscount,
         prefix,
     }
 }
 
-const getVariantPriceDisplayCandidate = (variant: ProductVariantRead, prefix: string): ProductPriceDisplayCandidate | null => {
-    const display = getVariantPriceDisplay(variant, prefix)
+const getVariantPriceDisplayCandidate = (
+    variant: ProductVariantRead,
+    prefix: string,
+    product: Pick<ProductRead, "discount_percent">,
+): ProductPriceDisplayCandidate | null => {
+    const display = getVariantPriceDisplay(variant, prefix, product)
     const currentPrice = getNumericPrice(variant.discounted_price ?? variant.price)
     if (!display || currentPrice === null) {
         return null
@@ -105,16 +122,20 @@ const getVariantPriceDisplayCandidate = (variant: ProductVariantRead, prefix: st
     }
 }
 
-export const getProductPriceDisplay = (product: Pick<ProductWithVariantsRead, "variants">): ProductPriceDisplay | null => {
+export const getProductPriceDisplay = (
+    product: Pick<ProductWithVariantsRead, "variants" | "discount_percent">,
+): ProductPriceDisplay | null => {
     const candidates = product.variants
-        .map((variant) => getVariantPriceDisplayCandidate(variant, "от "))
+        .map((variant) => getVariantPriceDisplayCandidate(variant, "от ", product))
         .filter((candidate): candidate is ProductPriceDisplayCandidate => candidate !== null)
         .sort((left, right) => left.currentPrice - right.currentPrice)
 
     return candidates[0] ?? null
 }
 
-export const getProductPriceLabel = (product: Pick<ProductWithVariantsRead, "variants">) => {
+export const getProductPriceLabel = (
+    product: Pick<ProductWithVariantsRead, "variants" | "discount_percent">,
+) => {
     const priceDisplay = getProductPriceDisplay(product)
 
     return priceDisplay ? `${priceDisplay.prefix}${priceDisplay.currentLabel}` : null

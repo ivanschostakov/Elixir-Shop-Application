@@ -25,6 +25,13 @@ export function ProductCard({ product, style }: ProductCardProps) {
     const { handleCopy } = useCopyableProfileValue({ t })
     const subtitle = getProductContentSubtitle(product)
     const priceDisplay = getProductPriceDisplay(product)
+    const catalogDiscountLabel = priceDisplay?.discountLabel && priceDisplay.discountKind
+        ? `${priceDisplay.discountLabel} ${t(
+            priceDisplay.discountKind === "product"
+                ? "product.discountOnProduct"
+                : "product.discountOnCategory",
+        )}`
+        : null
     const isOutOfStock = isProductOutOfStock(product)
 
     return (
@@ -44,19 +51,17 @@ export function ProductCard({ product, style }: ProductCardProps) {
                         style={contentStyles.productImage}
                         resizeMode="cover"
                     />
-                    {product.is_new || priceDisplay?.hasDiscount ? (
+                    {product.is_new || catalogDiscountLabel ? (
                         <View pointerEvents="none" style={contentStyles.productImageBadgeStack}>
                             {product.is_new ? (
                                 <View style={[contentStyles.productImageBadge, contentStyles.productImageNewBadge]}>
                                     <Text style={contentStyles.productImageBadgeText}>{t("product.newBadge")}</Text>
                                 </View>
                             ) : null}
-                            {priceDisplay?.hasDiscount ? (
-                                <View style={[contentStyles.productImageBadge, contentStyles.productImageSaleBadge]}>
-                                    <Text style={contentStyles.productImageBadgeText}>
-                                        {priceDisplay.discountLabel ?? t("product.saleBadge")}
-                                    </Text>
-                                </View>
+                            {catalogDiscountLabel ? (
+                                <Text style={contentStyles.productImageSaleText}>
+                                    {catalogDiscountLabel}
+                                </Text>
                             ) : null}
                         </View>
                     ) : null}
@@ -94,9 +99,11 @@ export function ProductCard({ product, style }: ProductCardProps) {
                                         <Text numberOfLines={1} style={contentStyles.productOriginalPrice}>
                                             {priceDisplay.originalLabel ?? ""}
                                         </Text>
-                                        <Text numberOfLines={1} style={contentStyles.productDiscountPercent}>
-                                            {priceDisplay.discountLabel ?? ""}
-                                        </Text>
+                                        {catalogDiscountLabel ? (
+                                            <Text numberOfLines={1} style={contentStyles.productDiscountPercent}>
+                                                {catalogDiscountLabel}
+                                            </Text>
+                                        ) : null}
                                     </View>
                                 ) : null}
                             </View>
