@@ -1,10 +1,13 @@
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from src.integrations import website_reviews
 from src.integrations.website_reviews import (
+    WebsiteReviewSyncStats,
     _mark_review_synced,
     _push_payload,
+    _push_rows,
     _remote_values,
     _review_state,
     _valid_website_attachment_url,
@@ -133,3 +136,58 @@ def test_website_attachment_url_is_restricted_to_sotbit_uploads(monkeypatch):
     assert not _valid_website_attachment_url(
         "https://elixirpeptide.com/private/secret.txt",
     )
+
+
+def test_push_rows_keeps_missing_product_review_pending():
+    async def run() -> None:
+        now = datetime(2026, 7, 30, tzinfo=timezone.utc)
+        review = SimpleNamespace(
+            id=213,
+            website_review_id=None,
+            website_updated_at=None,
+            value=5,
+            text="Отлично",
+            answer=None,
+            likes=0,
+            dislikes=0,
+            rejected_at=None,
+            moderated=False,
+            guest_name="Покупатель",
+            guest_email=None,
+            hide_sender_name=False,
+            attachments=[],
+            created_at=now,
+            updated_at=now,
+        )
+
+        class FakeClient:
+            async def request(self, action, payload):
+                assert action == "push"
+                assert payload["reviews"][0]["app_review_id"] == 213
+                return {
+                    "results": [{
+                        "app_review_id": 213,
+                        "remote_id": 0,
+                        "outcome": "skipped_missing_product",
+                        "updated_at": None,
+                    }],
+                }
+
+        class FakeSession:
+            async def flush(self):
+                return None
+
+        stats = WebsiteReviewSyncStats()
+        await _push_rows(
+            FakeSession(),
+            FakeClient(),
+            stats,
+            [(review, "045dca71-8762-11f1-0a80-1062000ffb86", None, None, None)],
+        )
+
+        assert stats.skipped_missing_product == 1
+        assert stats.pushed == 0
+        assert review.website_review_id is None
+        assert review.website_updated_at is None
+
+    asyncio.run(run())

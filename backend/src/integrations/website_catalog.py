@@ -33,6 +33,8 @@ MAX_CONTENT_LENGTH = 200_000
 class WebsiteCatalogSyncStats:
     fetched: int = 0
     matched: int = 0
+    matched_by_system_id: int = 0
+    matched_by_sku: int = 0
     updated_products: int = 0
     updated_description: int = 0
     updated_usage: int = 0
@@ -40,6 +42,7 @@ class WebsiteCatalogSyncStats:
     unchanged: int = 0
     skipped_invalid_system_id: int = 0
     skipped_duplicate_system_id: int = 0
+    skipped_ambiguous_sku: int = 0
     skipped_missing_product: int = 0
 
     def as_dict(self) -> dict[str, int]:
@@ -48,7 +51,8 @@ class WebsiteCatalogSyncStats:
 
 @dataclass(frozen=True)
 class WebsiteCatalogContent:
-    system_id: UUID
+    system_id: UUID | None
+    sku: str | None
     description: str | None
     usage: str | None
     storage: str | None
@@ -128,10 +132,17 @@ def _content(value: Any) -> str | None:
     return normalized
 
 
+def _sku(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.replace("\x00", "").strip().casefold()
+    return normalized[:256] or None
+
+
 def _parse_content_rows(
     payload: dict[str, Any],
     stats: WebsiteCatalogSyncStats,
-) -> dict[UUID, WebsiteCatalogContent]:
+) -> list[WebsiteCatalogContent]:
     raw_products = payload.get("products")
     if not isinstance(raw_products, list):
         raise ValueError("Catalog sync response does not contain a product list")
@@ -139,30 +150,95 @@ def _parse_content_rows(
         raise ValueError("Catalog sync response contains too many products")
 
     stats.fetched = len(raw_products)
-    parsed: dict[UUID, WebsiteCatalogContent] = {}
+    parsed: list[WebsiteCatalogContent] = []
+    seen_system_ids: set[UUID] = set()
     duplicates: set[UUID] = set()
     for row in raw_products:
         if not isinstance(row, dict):
             stats.skipped_invalid_system_id += 1
             continue
         system_id = coerce_uuid(row.get("system_id"))
-        if system_id is None:
+        sku = _sku(row.get("sku"))
+        if system_id is None and sku is None:
             stats.skipped_invalid_system_id += 1
             continue
-        if system_id in parsed:
+        if system_id is not None and system_id in seen_system_ids:
             duplicates.add(system_id)
             continue
-        parsed[system_id] = WebsiteCatalogContent(
+        if system_id is not None:
+            seen_system_ids.add(system_id)
+        parsed.append(WebsiteCatalogContent(
             system_id=system_id,
+            sku=sku,
             description=_content(row.get("description")),
             usage=_content(row.get("usage")),
             storage=_content(row.get("storage")),
-        )
+        ))
 
-    for system_id in duplicates:
-        parsed.pop(system_id, None)
+    parsed = [
+        content
+        for content in parsed
+        if content.system_id not in duplicates
+    ]
     stats.skipped_duplicate_system_id = len(duplicates)
     return parsed
+
+
+def _match_content_rows(
+    products: list[Product],
+    contents: list[WebsiteCatalogContent],
+    stats: WebsiteCatalogSyncStats,
+) -> list[tuple[Product, WebsiteCatalogContent]]:
+    local_by_system_id = {
+        product.system_id: product
+        for product in products
+        if product.system_id is not None
+    }
+    local_by_sku: dict[str, list[Product]] = {}
+    for product in products:
+        sku = _sku(product.sku)
+        if sku is not None:
+            local_by_sku.setdefault(sku, []).append(product)
+    remote_by_sku: dict[str, list[WebsiteCatalogContent]] = {}
+    for content in contents:
+        if content.sku is not None:
+            remote_by_sku.setdefault(content.sku, []).append(content)
+
+    matched: list[tuple[Product, WebsiteCatalogContent]] = []
+    assigned_product_ids: set[int] = set()
+    for content in contents:
+        product = (
+            local_by_system_id.get(content.system_id)
+            if content.system_id is not None
+            else None
+        )
+        match_kind = "system_id" if product is not None else None
+        if product is None and content.sku is not None:
+            remote_sku_rows = remote_by_sku.get(content.sku, [])
+            local_sku_rows = local_by_sku.get(content.sku, [])
+            if len(remote_sku_rows) > 1 or len(local_sku_rows) > 1:
+                stats.skipped_ambiguous_sku += 1
+                continue
+            if len(remote_sku_rows) == 1 and len(local_sku_rows) == 1:
+                product = local_sku_rows[0]
+                match_kind = "sku"
+        if product is None:
+            stats.skipped_missing_product += 1
+            continue
+
+        product_key = int(product.id) if product.id is not None else id(product)
+        if product_key in assigned_product_ids:
+            stats.skipped_ambiguous_sku += 1
+            continue
+        assigned_product_ids.add(product_key)
+        matched.append((product, content))
+        if match_kind == "system_id":
+            stats.matched_by_system_id += 1
+        else:
+            stats.matched_by_sku += 1
+
+    stats.matched = len(matched)
+    return matched
 
 
 def _apply_content(
@@ -191,27 +267,16 @@ async def sync_catalog_content_with_website(
 ) -> WebsiteCatalogSyncStats:
     sync_client = client or WebsiteCatalogSyncClient()
     stats = WebsiteCatalogSyncStats()
-    remote_by_system_id = _parse_content_rows(await sync_client.pull(), stats)
-    if not remote_by_system_id:
+    contents = _parse_content_rows(await sync_client.pull(), stats)
+    if not contents:
         return stats
 
     products = list((
         await session.execute(
-            select(Product).where(Product.system_id.in_(remote_by_system_id))
+            select(Product)
         )
     ).scalars().all())
-    local_by_system_id = {
-        product.system_id: product
-        for product in products
-        if product.system_id is not None
-    }
-    stats.matched = len(local_by_system_id)
-    stats.skipped_missing_product = len(remote_by_system_id) - stats.matched
-
-    for system_id, content in remote_by_system_id.items():
-        product = local_by_system_id.get(system_id)
-        if product is None:
-            continue
+    for product, content in _match_content_rows(products, contents, stats):
         if _apply_content(product, content, stats):
             stats.updated_products += 1
         else:

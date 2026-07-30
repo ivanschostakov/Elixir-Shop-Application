@@ -412,6 +412,7 @@ async def _pull_website_reviews(
                     website_updated_at=remote_updated_at,
                     created_at=_parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
                     updated_at=remote_updated_at or _parse_datetime(row.get("created_at")) or datetime.now(timezone.utc),
+                    attachments=[],
                     **values,
                 )
                 db.add(review)
@@ -555,8 +556,11 @@ async def _push_rows(
         review = reviews_by_id.get(app_review_id)
         if review is None:
             continue
-        _mark_review_synced(review, result)
         outcome = str(result.get("outcome") or "")
+        if outcome == "skipped_missing_product":
+            stats.skipped_missing_product += 1
+            continue
+        _mark_review_synced(review, result)
         if outcome == "created":
             stats.created_on_website += 1
         elif outcome == "updated":

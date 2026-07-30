@@ -16,6 +16,7 @@ final class ReviewSyncService
     private const MAX_ATTACHMENTS_TOTAL_SIZE = 25165824;
     private const ALLOWED_ATTACHMENT_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
     private const META_KEY = '_elixir_sync';
+    private const APP_SYSTEM_ID_PROPERTY = 'ELIXIR_APP_SYSTEM_ID';
 
     public function handle(array $payload): array
     {
@@ -119,7 +120,11 @@ final class ReviewSyncService
         $productSystemId = trim((string)($incoming['product_system_id'] ?? ''));
         $productId = $this->productIdBySystemId($productSystemId);
         if ($productId <= 0) {
-            throw new \RuntimeException('Product mapping is missing');
+            return [
+                'remote_id' => 0,
+                'outcome' => 'skipped_missing_product',
+                'updated_at' => null,
+            ];
         }
 
         $authorEmail = trim((string)($incoming['author_email'] ?? ''));
@@ -510,15 +515,40 @@ final class ReviewSyncService
             return [];
         }
         $result = [];
+        $elementIds = [];
         $iterator = \CIBlockElement::GetList(
             ['ID' => 'ASC'],
-            ['ID' => $productIds],
+            [
+                'IBLOCK_ID' => $this->catalogIblockId(),
+                'ID' => $productIds,
+            ],
             false,
             false,
             ['ID', 'XML_ID']
         );
         while ($row = $iterator->Fetch()) {
-            $result[(int)$row['ID']] = trim((string)$row['XML_ID']);
+            $elementId = (int)$row['ID'];
+            $elementIds[] = $elementId;
+            $result[$elementId] = trim((string)$row['XML_ID']);
+        }
+        if ($elementIds === []) {
+            return $result;
+        }
+
+        $properties = [];
+        \CIBlockElement::GetPropertyValuesArray(
+            $properties,
+            $this->catalogIblockId(),
+            ['ID' => $elementIds],
+            ['CODE' => [self::APP_SYSTEM_ID_PROPERTY]]
+        );
+        foreach ($elementIds as $elementId) {
+            $appSystemId = trim((string)(
+                $properties[$elementId][self::APP_SYSTEM_ID_PROPERTY]['VALUE'] ?? ''
+            ));
+            if ($appSystemId !== '') {
+                $result[$elementId] = $appSystemId;
+            }
         }
         return $result;
     }
@@ -528,14 +558,39 @@ final class ReviewSyncService
         if ($systemId === '') {
             return 0;
         }
-        $row = \CIBlockElement::GetList(
+
+        $mappedProductId = $this->uniqueProductId([
+            'IBLOCK_ID' => $this->catalogIblockId(),
+            '=PROPERTY_' . self::APP_SYSTEM_ID_PROPERTY => $systemId,
+        ]);
+        if ($mappedProductId > 0) {
+            return $mappedProductId;
+        }
+        return $this->uniqueProductId([
+            'IBLOCK_ID' => $this->catalogIblockId(),
+            '=XML_ID' => $systemId,
+        ]);
+    }
+
+    private function uniqueProductId(array $filter): int
+    {
+        $iterator = \CIBlockElement::GetList(
             ['ID' => 'ASC'],
-            ['=XML_ID' => $systemId],
+            $filter,
             false,
-            ['nTopCount' => 1],
+            ['nTopCount' => 2],
             ['ID']
-        )->Fetch();
-        return $row ? (int)$row['ID'] : 0;
+        );
+        $ids = [];
+        while ($row = $iterator->Fetch()) {
+            $ids[] = (int)$row['ID'];
+        }
+        return count($ids) === 1 ? $ids[0] : 0;
+    }
+
+    private function catalogIblockId(): int
+    {
+        return max(1, (int)Option::get('elixir.reviewsync', 'catalog_iblock_id', '21'));
     }
 
     private function status(array $row): string

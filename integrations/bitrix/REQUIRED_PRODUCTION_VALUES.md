@@ -23,7 +23,9 @@
 - [x] ID правила реферальной скидки `24`;
 - [x] поле `UF_PROMO`;
 - [x] версия и схема `sotbit.reviews`;
-- [x] совпадение текущего `XML_ID` с `system_id` приложения.
+- [x] подтверждено, что текущие `XML_ID` и `system_id` различаются после
+  пересоздания товаров; 79 карточек однозначно сопоставляются по
+  `CML2_ARTICLE`, неоднозначные соответствия отклоняются.
 
 ## Сеть
 
@@ -35,7 +37,7 @@
 
 - [x] `BITRIX_PROMO_TOKEN`;
 - [x] `WEBSITE_REVIEW_SYNC_SECRET`;
-- [ ] `WEBSITE_CATALOG_SYNC_SECRET`;
+- [x] `WEBSITE_CATALOG_SYNC_SECRET`;
 - [x] `APP_INTEGRATION_TOKEN`;
 - [x] `GIVEAWAY_BOT_TOKEN`.
 

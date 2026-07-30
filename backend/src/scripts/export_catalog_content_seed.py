@@ -19,6 +19,8 @@ async def export_catalog_content_seed() -> None:
             "products": [
                 {
                     "system_id": str(product.system_id),
+                    "sku": product.sku,
+                    "name": product.name,
                     "description": product.description,
                     "usage": product.usage,
                     "storage": product.expiration,

@@ -59,6 +59,7 @@ $get = static fn(string $name, string $default = ''): string => htmlspecialchars
         <tr><td>Состояние секрета:</td><td><?= $isConfigured ? 'Настроен' : 'Не настроен' ?></td></tr>
         <tr><td>Новый shared secret:</td><td><input type="password" name="shared_secret_new" size="60" autocomplete="new-password" placeholder="Пусто — оставить текущий"></td></tr>
         <tr><td>Инфоблок каталога:</td><td><?= $get('catalog_iblock_id', '21') ?></td></tr>
+        <tr><td>Служебный ID приложения:</td><td><code>ELIXIR_APP_SYSTEM_ID</code></td></tr>
         <tr><td>Описание:</td><td><code>ELIXIR_APP_DESCRIPTION</code></td></tr>
         <tr><td>Применение:</td><td><code>ELIXIR_APP_USAGE</code></td></tr>
         <tr><td>Хранение:</td><td><code>ELIXIR_APP_STORAGE</code></td></tr>

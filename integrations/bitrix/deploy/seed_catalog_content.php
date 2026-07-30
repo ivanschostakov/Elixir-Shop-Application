@@ -43,12 +43,27 @@ $mapping = [
     'usage' => 'ELIXIR_APP_USAGE',
     'storage' => 'ELIXIR_APP_STORAGE',
 ];
+$systemIdProperty = 'ELIXIR_APP_SYSTEM_ID';
+function elixirCatalogSeedNormalizeSku(mixed $value): string
+{
+    if (!is_scalar($value)) {
+        return '';
+    }
+    return mb_strtolower(trim((string)$value), 'UTF-8');
+}
+
 $stats = [
     'input_products' => count($rows),
     'matched_products' => 0,
+    'matched_by_system_id' => 0,
+    'matched_by_sku' => 0,
     'missing_products' => 0,
     'invalid_system_ids' => 0,
     'duplicate_bitrix_system_ids' => 0,
+    'ambiguous_bitrix_skus' => 0,
+    'seeded_system_id' => 0,
+    'kept_system_id' => 0,
+    'system_id_conflicts' => 0,
     'seeded_description' => 0,
     'seeded_usage' => 0,
     'seeded_storage' => 0,
@@ -56,6 +71,7 @@ $stats = [
 ];
 
 $elementIdsBySystemId = [];
+$bitrixElementIds = [];
 $elements = \CIBlockElement::GetList(
     ['ID' => 'ASC'],
     ['IBLOCK_ID' => $iblockId],
@@ -64,11 +80,28 @@ $elements = \CIBlockElement::GetList(
     ['ID', 'XML_ID']
 );
 while ($element = $elements->Fetch()) {
+    $elementId = (int)$element['ID'];
+    $bitrixElementIds[] = $elementId;
     $systemId = strtolower(trim((string)($element['XML_ID'] ?? '')));
-    if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D', $systemId) !== 1) {
+    if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D', $systemId) !== 1) {
         continue;
     }
-    $elementIdsBySystemId[$systemId][] = (int)$element['ID'];
+    $elementIdsBySystemId[$systemId][] = $elementId;
+}
+
+$current = [];
+\CIBlockElement::GetPropertyValuesArray(
+    $current,
+    $iblockId,
+    ['ID' => $bitrixElementIds],
+    ['CODE' => array_merge(array_values($mapping), [$systemIdProperty, 'CML2_ARTICLE'])]
+);
+$elementIdsBySku = [];
+foreach ($bitrixElementIds as $elementId) {
+    $sku = elixirCatalogSeedNormalizeSku($current[$elementId]['CML2_ARTICLE']['VALUE'] ?? null);
+    if ($sku !== '') {
+        $elementIdsBySku[$sku][] = $elementId;
+    }
 }
 
 foreach ($rows as $row) {
@@ -77,29 +110,46 @@ foreach ($rows as $row) {
         continue;
     }
     $systemId = strtolower(trim((string)($row['system_id'] ?? '')));
-    if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D', $systemId) !== 1) {
+    if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D', $systemId) !== 1) {
         $stats['invalid_system_ids']++;
         continue;
     }
     $matches = $elementIdsBySystemId[$systemId] ?? [];
-    if (count($matches) !== 1) {
-        if (count($matches) > 1) {
-            $stats['duplicate_bitrix_system_ids']++;
-        } else {
-            $stats['missing_products']++;
-        }
+    if (count($matches) > 1) {
+        $stats['duplicate_bitrix_system_ids']++;
         continue;
     }
-
-    $elementId = $matches[0];
-    $current = [];
-    \CIBlockElement::GetPropertyValuesArray(
-        $current,
-        $iblockId,
-        ['ID' => $elementId],
-        ['CODE' => array_values($mapping)]
-    );
+    if (count($matches) === 1) {
+        $elementId = $matches[0];
+        $stats['matched_by_system_id']++;
+    } else {
+        $sku = elixirCatalogSeedNormalizeSku($row['sku'] ?? null);
+        $skuMatches = $sku === '' ? [] : ($elementIdsBySku[$sku] ?? []);
+        if (count($skuMatches) > 1) {
+            $stats['ambiguous_bitrix_skus']++;
+            continue;
+        }
+        if (count($skuMatches) !== 1) {
+            $stats['missing_products']++;
+            continue;
+        }
+        $elementId = $skuMatches[0];
+        $stats['matched_by_sku']++;
+    }
     $updates = [];
+    $existingSystemId = strtolower(trim((string)(
+        $current[$elementId][$systemIdProperty]['VALUE'] ?? ''
+    )));
+    if ($existingSystemId !== '' && $existingSystemId !== $systemId) {
+        $stats['system_id_conflicts']++;
+        continue;
+    }
+    if ($existingSystemId === '') {
+        $updates[$systemIdProperty] = $systemId;
+        $stats['seeded_system_id']++;
+    } else {
+        $stats['kept_system_id']++;
+    }
     foreach ($mapping as $sourceField => $propertyCode) {
         $incoming = $row[$sourceField] ?? null;
         if (!is_string($incoming)) {

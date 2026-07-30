@@ -13,6 +13,7 @@ class elixir_catalogsync extends CModule
     public const DESCRIPTION_PROPERTY = 'ELIXIR_APP_DESCRIPTION';
     public const USAGE_PROPERTY = 'ELIXIR_APP_USAGE';
     public const STORAGE_PROPERTY = 'ELIXIR_APP_STORAGE';
+    public const SYSTEM_ID_PROPERTY = 'ELIXIR_APP_SYSTEM_ID';
 
     public $MODULE_ID = 'elixir.catalogsync';
     public $MODULE_VERSION;
@@ -91,12 +92,33 @@ class elixir_catalogsync extends CModule
         }
 
         $definitions = [
-            self::DESCRIPTION_PROPERTY => ['NAME' => 'Описание для приложения', 'SORT' => 900],
-            self::USAGE_PROPERTY => ['NAME' => 'Применение для приложения', 'SORT' => 910],
-            self::STORAGE_PROPERTY => ['NAME' => 'Хранение для приложения', 'SORT' => 920],
+            self::SYSTEM_ID_PROPERTY => [
+                'NAME' => 'ID товара приложения (служебное)',
+                'SORT' => 890,
+                'USER_TYPE' => '',
+                'ROW_COUNT' => 1,
+            ],
+            self::DESCRIPTION_PROPERTY => [
+                'NAME' => 'Описание для приложения',
+                'SORT' => 900,
+                'USER_TYPE' => 'HTML',
+                'ROW_COUNT' => 12,
+            ],
+            self::USAGE_PROPERTY => [
+                'NAME' => 'Применение для приложения',
+                'SORT' => 910,
+                'USER_TYPE' => 'HTML',
+                'ROW_COUNT' => 12,
+            ],
+            self::STORAGE_PROPERTY => [
+                'NAME' => 'Хранение для приложения',
+                'SORT' => 920,
+                'USER_TYPE' => 'HTML',
+                'ROW_COUNT' => 12,
+            ],
         ];
         foreach ($definitions as $code => $definition) {
-            if (\CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, '=CODE' => $code])->Fetch()) {
+            if (\CIBlockProperty::GetList([], ['IBLOCK_ID' => $iblockId, 'CODE' => $code])->Fetch()) {
                 continue;
             }
             $property = new \CIBlockProperty();
@@ -107,9 +129,9 @@ class elixir_catalogsync extends CModule
                 'NAME' => $definition['NAME'],
                 'CODE' => $code,
                 'PROPERTY_TYPE' => 'S',
-                'USER_TYPE' => 'HTML',
+                'USER_TYPE' => $definition['USER_TYPE'],
                 'MULTIPLE' => 'N',
-                'ROW_COUNT' => 12,
+                'ROW_COUNT' => $definition['ROW_COUNT'],
                 'COL_COUNT' => 80,
             ]);
             if (!$propertyId) {

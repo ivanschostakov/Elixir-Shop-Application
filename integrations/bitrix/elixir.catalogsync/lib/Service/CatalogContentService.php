@@ -12,6 +12,8 @@ final class CatalogContentService
     private const DESCRIPTION_PROPERTY = 'ELIXIR_APP_DESCRIPTION';
     private const USAGE_PROPERTY = 'ELIXIR_APP_USAGE';
     private const STORAGE_PROPERTY = 'ELIXIR_APP_STORAGE';
+    private const SYSTEM_ID_PROPERTY = 'ELIXIR_APP_SYSTEM_ID';
+    private const SKU_PROPERTY = 'CML2_ARTICLE';
     private const MAX_CONTENT_LENGTH = 200000;
 
     public function pull(): array
@@ -28,9 +30,6 @@ final class CatalogContentService
         );
         while ($element = $elements->Fetch()) {
             $systemId = $this->systemId($element['XML_ID'] ?? null);
-            if ($systemId === null) {
-                continue;
-            }
             $id = (int)$element['ID'];
             $elementIds[] = $id;
             $rows[$id] = [
@@ -50,6 +49,8 @@ final class CatalogContentService
                     self::DESCRIPTION_PROPERTY,
                     self::USAGE_PROPERTY,
                     self::STORAGE_PROPERTY,
+                    self::SYSTEM_ID_PROPERTY,
+                    self::SKU_PROPERTY,
                 ]]
             );
         }
@@ -59,11 +60,23 @@ final class CatalogContentService
             $elementProperties = is_array($properties[$elementId] ?? null)
                 ? $properties[$elementId]
                 : [];
-            $products[] = $row + [
-                'description' => $this->content($elementProperties[self::DESCRIPTION_PROPERTY]['VALUE'] ?? null),
-                'usage' => $this->content($elementProperties[self::USAGE_PROPERTY]['VALUE'] ?? null),
-                'storage' => $this->content($elementProperties[self::STORAGE_PROPERTY]['VALUE'] ?? null),
-            ];
+            $mappedSystemId = $this->systemId(
+                $this->propertyValue($elementProperties, self::SYSTEM_ID_PROPERTY)
+            );
+            $row['system_id'] = $mappedSystemId ?? $row['system_id'];
+            $row['sku'] = $this->plainText(
+                $this->propertyValue($elementProperties, self::SKU_PROPERTY)
+            );
+            $row['description'] = $this->content(
+                $this->propertyValue($elementProperties, self::DESCRIPTION_PROPERTY)
+            );
+            $row['usage'] = $this->content(
+                $this->propertyValue($elementProperties, self::USAGE_PROPERTY)
+            );
+            $row['storage'] = $this->content(
+                $this->propertyValue($elementProperties, self::STORAGE_PROPERTY)
+            );
+            $products[] = $row;
         }
 
         return [
@@ -77,7 +90,7 @@ final class CatalogContentService
     {
         $normalized = strtolower(trim(is_scalar($value) ? (string)$value : ''));
         return preg_match(
-            '/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D',
+            '/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/D',
             $normalized
         ) === 1 ? $normalized : null;
     }
@@ -95,6 +108,26 @@ final class CatalogContentService
             return null;
         }
         return mb_substr($text, 0, self::MAX_CONTENT_LENGTH);
+    }
+
+    private function plainText(mixed $value): ?string
+    {
+        if (!is_scalar($value)) {
+            return null;
+        }
+        $text = trim((string)$value);
+        return $text === '' ? null : $text;
+    }
+
+    private function propertyValue(array $properties, string $code): mixed
+    {
+        $property = $properties[$code] ?? null;
+        if (!is_array($property)) {
+            return null;
+        }
+        return array_key_exists('~VALUE', $property)
+            ? $property['~VALUE']
+            : ($property['VALUE'] ?? null);
     }
 
     private function dateIso(mixed $value): ?string
