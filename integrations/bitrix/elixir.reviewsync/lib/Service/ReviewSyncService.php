@@ -157,7 +157,7 @@ final class ReviewSyncService
             'XML_ID_ELEMENT' => $productSystemId,
             'ID_USER' => $userId,
             'RATING' => max(0, min(5, (int)($incoming['rating'] ?? 0))),
-            'TEXT' => $this->text($incoming['text'] ?? null),
+            'TEXT' => $this->reviewText($incoming['text'] ?? null),
             'ANSWER' => $this->text($incoming['answer'] ?? null),
             'LIKES' => max(0, (int)($incoming['likes'] ?? 0)),
             'DISLIKES' => max(0, (int)($incoming['dislikes'] ?? 0)),
@@ -590,7 +590,7 @@ final class ReviewSyncService
 
     private function catalogIblockId(): int
     {
-        return max(1, (int)Option::get('elixir.reviewsync', 'catalog_iblock_id', '21'));
+        return max(1, (int)Option::get('elixir.reviewsync', 'catalog_iblock_id', '2'));
     }
 
     private function status(array $row): string
@@ -605,6 +605,14 @@ final class ReviewSyncService
     {
         $result = $this->text($value);
         return $result === '' ? null : $result;
+    }
+
+    private function reviewText($value): string
+    {
+        $result = $this->text($value);
+        return $result !== ''
+            ? $result
+            : 'Пользователь оставил оценку без текстового комментария.';
     }
 
     private function text($value): string

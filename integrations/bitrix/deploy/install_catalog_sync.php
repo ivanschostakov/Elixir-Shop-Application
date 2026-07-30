@@ -59,6 +59,7 @@ $options = [
     'rate_limit_window_seconds' => '60',
     'private_dir' => $privateRoot . '/elixir-catalogsync',
     'catalog_iblock_id' => (string)$catalogIblockId,
+    'legacy_catalog_iblock_id' => '21',
 ];
 foreach ($options as $name => $value) {
     Option::set('elixir.catalogsync', $name, $value);

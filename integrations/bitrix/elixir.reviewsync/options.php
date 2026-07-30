@@ -71,7 +71,7 @@ $get = static fn(string $name, string $default = ''): string => htmlspecialchars
         <tr><td>Закрытый служебный каталог:</td><td><input type="text" name="private_dir" size="80" value="<?= $get('private_dir', dirname((string)$_SERVER['DOCUMENT_ROOT']) . '/private/elixir-reviewsync') ?>"></td></tr>
         <tr><td>Публичный URL изображений приложения:</td><td><input type="url" name="app_media_base_url" size="80" value="<?= $get('app_media_base_url', 'https://api-elixirshop.devsivanschostakov.org/media/reviews') ?>"></td></tr>
         <tr><td>Публичный URL сайта:</td><td><input type="url" name="site_public_base_url" size="80" value="<?= $get('site_public_base_url', 'https://elixirpeptide.com') ?>"></td></tr>
-        <tr><td>ID инфоблока товаров:</td><td><input type="number" name="catalog_iblock_id" min="1" value="<?= $get('catalog_iblock_id', '21') ?>"></td></tr>
+        <tr><td>ID публичного инфоблока товаров:</td><td><input type="number" name="catalog_iblock_id" min="1" value="<?= $get('catalog_iblock_id', '2') ?>"></td></tr>
     </table>
     <input type="submit" class="adm-btn-save" value="Сохранить">
 </form>

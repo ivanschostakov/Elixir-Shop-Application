@@ -81,7 +81,7 @@ class elixir_reviewsync extends CModule
             'private_dir' => dirname((string)$_SERVER['DOCUMENT_ROOT']) . '/private/elixir-reviewsync',
             'app_media_base_url' => 'https://api-elixirshop.devsivanschostakov.org/media/reviews',
             'site_public_base_url' => 'https://elixirpeptide.com',
-            'catalog_iblock_id' => '21',
+            'catalog_iblock_id' => '2',
         ];
         foreach ($defaults as $name => $value) {
             if (Option::get($this->MODULE_ID, $name, '__ELIXIR_OPTION_NOT_SET__') === '__ELIXIR_OPTION_NOT_SET__') {

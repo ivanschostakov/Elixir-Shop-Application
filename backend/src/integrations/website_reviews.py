@@ -167,6 +167,31 @@ def _remote_values(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _local_review_for_remote(
+    row: dict[str, Any],
+    *,
+    product_id: int,
+    existing_by_remote_id: dict[int, Review],
+    existing_by_app_id: dict[int, Review],
+) -> Review | None:
+    remote_id = max(0, int(row.get("remote_id") or 0))
+    review = existing_by_remote_id.get(remote_id)
+    if review is not None:
+        return review
+
+    app_review_id = max(0, int(row.get("app_review_id") or 0))
+    review = existing_by_app_id.get(app_review_id)
+    if (
+        review is None
+        or review.product_id != product_id
+        or review.website_review_id not in (None, remote_id)
+    ):
+        return None
+    review.website_review_id = remote_id
+    existing_by_remote_id[remote_id] = review
+    return review
+
+
 def _attachment_status(review: Review) -> str:
     if review.rejected_at is not None:
         return "rejected"
@@ -382,16 +407,27 @@ async def _pull_website_reviews(
                 products_by_key.setdefault(str(variant.system_id), product)
 
         remote_ids = [int(row["remote_id"]) for row in rows if str(row.get("remote_id") or "").isdigit()]
+        app_review_ids = [
+            int(row["app_review_id"])
+            for row in rows
+            if str(row.get("app_review_id") or "").isdigit()
+        ]
+        review_filters = []
+        if remote_ids:
+            review_filters.append(Review.website_review_id.in_(remote_ids))
+        if app_review_ids:
+            review_filters.append(Review.id.in_(app_review_ids))
         existing_reviews = list(
             (
                 await db.execute(
                     select(Review)
                     .options(selectinload(Review.attachments))
-                    .where(Review.website_review_id.in_(remote_ids))
+                    .where(or_(*review_filters))
                 )
             ).scalars().all()
-        ) if remote_ids else []
+        ) if review_filters else []
         existing_by_remote_id = {int(review.website_review_id): review for review in existing_reviews if review.website_review_id}
+        existing_by_app_id = {int(review.id): review for review in existing_reviews if review.id}
 
         for row in rows:
             stats.pulled += 1
@@ -401,7 +437,12 @@ async def _pull_website_reviews(
                 stats.skipped_missing_product += 1
                 continue
             remote_updated_at = _parse_datetime(row.get("updated_at")) or _parse_datetime(row.get("created_at"))
-            review = existing_by_remote_id.get(remote_id)
+            review = _local_review_for_remote(
+                row,
+                product_id=product.id,
+                existing_by_remote_id=existing_by_remote_id,
+                existing_by_app_id=existing_by_app_id,
+            )
             values = _remote_values(row)
             if review is None:
                 review = Review(

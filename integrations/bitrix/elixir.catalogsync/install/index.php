@@ -86,7 +86,7 @@ class elixir_catalogsync extends CModule
         if (!Loader::includeModule('iblock')) {
             throw new SystemException('Модуль iblock недоступен.');
         }
-        $iblockId = max(1, (int)Option::get($this->MODULE_ID, 'catalog_iblock_id', '21'));
+        $iblockId = max(1, (int)Option::get($this->MODULE_ID, 'catalog_iblock_id', '2'));
         if (!\CIBlock::GetByID($iblockId)->Fetch()) {
             throw new SystemException('Инфоблок каталога не найден.');
         }
@@ -146,7 +146,8 @@ class elixir_catalogsync extends CModule
     {
         $defaults = [
             'enabled' => 'N',
-            'catalog_iblock_id' => '21',
+            'catalog_iblock_id' => '2',
+            'legacy_catalog_iblock_id' => '21',
             'allowed_ips' => '',
             'rate_limit' => '60',
             'rate_limit_window_seconds' => '60',

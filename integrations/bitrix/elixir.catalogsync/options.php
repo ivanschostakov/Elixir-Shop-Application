@@ -33,6 +33,8 @@ if ($request->isPost() && check_bitrix_sessid()) {
             (string)max(1, (int)$request->getPost('rate_limit_window_seconds'))
         );
         Option::set($moduleId, 'private_dir', rtrim(trim((string)$request->getPost('private_dir')), '/'));
+        Option::set($moduleId, 'catalog_iblock_id', (string)max(1, (int)$request->getPost('catalog_iblock_id')));
+        Option::set($moduleId, 'legacy_catalog_iblock_id', (string)max(1, (int)$request->getPost('legacy_catalog_iblock_id')));
         $message = 'Настройки синхронизации каталога сохранены.';
     } catch (Throwable $exception) {
         $error = $exception->getMessage();
@@ -58,11 +60,12 @@ $get = static fn(string $name, string $default = ''): string => htmlspecialchars
         <tr><td width="40%">Синхронизация включена:</td><td><input type="checkbox" name="enabled" value="Y" <?= $get('enabled', 'N') === 'Y' ? 'checked' : '' ?>></td></tr>
         <tr><td>Состояние секрета:</td><td><?= $isConfigured ? 'Настроен' : 'Не настроен' ?></td></tr>
         <tr><td>Новый shared secret:</td><td><input type="password" name="shared_secret_new" size="60" autocomplete="new-password" placeholder="Пусто — оставить текущий"></td></tr>
-        <tr><td>Инфоблок каталога:</td><td><?= $get('catalog_iblock_id', '21') ?></td></tr>
+        <tr><td>Инфоблок публичного каталога:</td><td><input type="number" name="catalog_iblock_id" min="1" value="<?= $get('catalog_iblock_id', '2') ?>"></td></tr>
+        <tr><td>Резервный инфоблок app-only полей:</td><td><input type="number" name="legacy_catalog_iblock_id" min="1" value="<?= $get('legacy_catalog_iblock_id', '21') ?>"></td></tr>
         <tr><td>Служебный ID приложения:</td><td><code>ELIXIR_APP_SYSTEM_ID</code></td></tr>
-        <tr><td>Описание:</td><td><code>ELIXIR_APP_DESCRIPTION</code></td></tr>
-        <tr><td>Применение:</td><td><code>ELIXIR_APP_USAGE</code></td></tr>
-        <tr><td>Хранение:</td><td><code>ELIXIR_APP_STORAGE</code></td></tr>
+        <tr><td>Описание:</td><td><code>DETAIL_TEXT</code>, затем <code>PREVIEW_TEXT</code></td></tr>
+        <tr><td>Применение:</td><td><code>SPOSOB_PRIMENENIYA</code></td></tr>
+        <tr><td>Хранение:</td><td><code>SROK_KHRANENIYA_1</code></td></tr>
         <tr><td>Разрешённые IP через запятую:</td><td><input type="text" name="allowed_ips" size="60" value="<?= $get('allowed_ips') ?>"></td></tr>
         <tr><td>Запросов за окно:</td><td><input type="number" name="rate_limit" min="1" value="<?= $get('rate_limit', '60') ?>"></td></tr>
         <tr><td>Окно ограничения, секунд:</td><td><input type="number" name="rate_limit_window_seconds" min="1" value="<?= $get('rate_limit_window_seconds', '60') ?>"></td></tr>

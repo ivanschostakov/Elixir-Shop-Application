@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from src.integrations import website_reviews
 from src.integrations.website_reviews import (
     WebsiteReviewSyncStats,
+    _local_review_for_remote,
     _mark_review_synced,
     _push_payload,
     _push_rows,
@@ -72,6 +73,46 @@ def test_mark_review_synced_keeps_local_and_remote_checkpoints_equal():
     assert review.website_review_id == 105
     assert review.website_updated_at == expected
     assert review.updated_at == expected
+
+
+def test_pull_links_remote_review_back_to_its_app_review():
+    review = SimpleNamespace(
+        id=213,
+        product_id=255,
+        website_review_id=None,
+    )
+    existing_by_remote_id = {}
+    matched = _local_review_for_remote(
+        {
+            "remote_id": 111,
+            "app_review_id": 213,
+        },
+        product_id=255,
+        existing_by_remote_id=existing_by_remote_id,
+        existing_by_app_id={213: review},
+    )
+    assert matched is review
+    assert review.website_review_id == 111
+    assert existing_by_remote_id[111] is review
+
+
+def test_pull_does_not_link_app_review_from_another_product():
+    review = SimpleNamespace(
+        id=213,
+        product_id=255,
+        website_review_id=None,
+    )
+    matched = _local_review_for_remote(
+        {
+            "remote_id": 111,
+            "app_review_id": 213,
+        },
+        product_id=999,
+        existing_by_remote_id={},
+        existing_by_app_id={213: review},
+    )
+    assert matched is None
+    assert review.website_review_id is None
 
 
 def test_push_payload_contains_public_attachment_urls(monkeypatch):
