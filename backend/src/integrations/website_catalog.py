@@ -6,8 +6,9 @@ import json
 import logging
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import unquote, urljoin, urlsplit
 from uuid import UUID
 
 import httpx
@@ -28,6 +29,12 @@ from src.database.models import (
     ProductCategory,
     ProductCertificate,
 )
+from src.integrations.website_catalog_certificates import (
+    MAX_CERTIFICATE_SIZE_BYTES,
+    certificate_local_path_from_url,
+    mirror_certificate,
+    remove_local_certificate,
+)
 from src.normalize import coerce_uuid
 
 
@@ -37,7 +44,6 @@ MAX_CATEGORIES = 200
 MAX_CATEGORY_LINKS = 10_000
 MAX_CERTIFICATES_PER_PRODUCT = 50
 MAX_CONTENT_LENGTH = 200_000
-MAX_CERTIFICATE_SIZE_BYTES = 100 * 1024 * 1024
 
 LEGACY_CATEGORY_NAMES: dict[str, tuple[str, ...]] = {
     "все пептиды": ("пептиды",),
@@ -78,6 +84,9 @@ class WebsiteCatalogSyncStats:
     certificates_created: int = 0
     certificates_updated: int = 0
     certificates_deleted: int = 0
+    certificates_downloaded: int = 0
+    certificate_bytes_downloaded: int = 0
+    certificate_files_deleted: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return asdict(self)
@@ -100,7 +109,7 @@ class WebsiteCatalogCertificate:
     original_name: str | None
     content_type: str | None
     size_bytes: int
-    url: str
+    source_url: str
 
 
 @dataclass(frozen=True)
@@ -268,7 +277,7 @@ def _parse_certificates(
             or parsed_path.netloc
             or parsed_path.query
             or parsed_path.fragment
-            or ".." in parsed_path.path.split("/")
+            or ".." in unquote(parsed_path.path).split("/")
         ):
             raise ValueError("Certificate path is invalid")
         size_bytes = raw_certificate.get("size_bytes", 0)
@@ -288,7 +297,7 @@ def _parse_certificates(
             original_name=_short_text(raw_certificate.get("original_name"), max_length=500),
             content_type=_short_text(raw_certificate.get("content_type"), max_length=255),
             size_bytes=size_bytes,
-            url=urljoin(public_base_url, path),
+            source_url=urljoin(public_base_url, path),
         ))
 
     stats.certificates_fetched += len(parsed)
@@ -493,6 +502,10 @@ async def _apply_certificates(
     product: Product,
     certificates: tuple[WebsiteCatalogCertificate, ...] | None,
     stats: WebsiteCatalogSyncStats,
+    *,
+    download_client: httpx.AsyncClient,
+    downloaded_paths: set[Path],
+    stale_paths: set[Path],
 ) -> bool:
     if certificates is None:
         return False
@@ -506,28 +519,42 @@ async def _apply_certificates(
 
     for sort_order, remote in enumerate(certificates):
         certificate = existing_by_file_id.get(remote.source_file_id)
+        mirrored = await mirror_certificate(
+            download_client,
+            product_id=product.id,
+            source_file_id=remote.source_file_id,
+            source_url=remote.source_url,
+            original_name=remote.original_name,
+            content_type=remote.content_type,
+            expected_size_bytes=remote.size_bytes,
+        )
+        if mirrored.downloaded:
+            downloaded_paths.add(mirrored.path)
+            stats.certificates_downloaded += 1
+            stats.certificate_bytes_downloaded += mirrored.size_bytes
         if certificate is None:
             session.add(ProductCertificate(
                 product_id=product.id,
                 website_file_id=remote.source_file_id,
                 title=remote.title,
                 original_name=remote.original_name,
-                content_type=remote.content_type,
-                size_bytes=remote.size_bytes,
-                url=remote.url,
+                content_type=mirrored.content_type,
+                size_bytes=mirrored.size_bytes,
+                url=mirrored.url,
                 sort_order=sort_order,
             ))
             stats.certificates_created += 1
             changed = True
             continue
 
+        previous_path = certificate_local_path_from_url(certificate.url)
         certificate_changed = False
         for field, value in (
             ("title", remote.title),
             ("original_name", remote.original_name),
-            ("content_type", remote.content_type),
-            ("size_bytes", remote.size_bytes),
-            ("url", remote.url),
+            ("content_type", mirrored.content_type),
+            ("size_bytes", mirrored.size_bytes),
+            ("url", mirrored.url),
             ("sort_order", sort_order),
         ):
             if getattr(certificate, field) == value:
@@ -537,10 +564,15 @@ async def _apply_certificates(
         if certificate_changed:
             stats.certificates_updated += 1
             changed = True
+        if previous_path is not None and previous_path != mirrored.path:
+            stale_paths.add(previous_path)
 
     for source_file_id, certificate in existing_by_file_id.items():
         if source_file_id in desired_file_ids:
             continue
+        local_path = certificate_local_path_from_url(certificate.url)
+        if local_path is not None:
+            stale_paths.add(local_path)
         await session.delete(certificate)
         stats.certificates_deleted += 1
         changed = True
@@ -708,28 +740,53 @@ async def sync_catalog_content_with_website(
         )
     ).scalars().all())
     certificates_changed = False
-    for product, content in _match_content_rows(products, contents, stats):
-        if _apply_content(product, content, stats):
-            stats.updated_products += 1
-        else:
-            stats.unchanged += 1
-        if await _apply_certificates(
+    downloaded_paths: set[Path] = set()
+    stale_paths: set[Path] = set()
+    try:
+        async with httpx.AsyncClient(
+            timeout=sync_client.timeout,
+            transport=sync_client.transport,
+            follow_redirects=False,
+        ) as download_client:
+            for product, content in _match_content_rows(products, contents, stats):
+                if _apply_content(product, content, stats):
+                    stats.updated_products += 1
+                else:
+                    stats.unchanged += 1
+                if await _apply_certificates(
+                    session,
+                    product,
+                    content.certificates,
+                    stats,
+                    download_client=download_client,
+                    downloaded_paths=downloaded_paths,
+                    stale_paths=stale_paths,
+                ):
+                    certificates_changed = True
+
+        categories_changed = await _sync_categories(
             session,
-            product,
-            content.certificates,
+            categories,
+            products,
             stats,
-        ):
-            certificates_changed = True
+        )
 
-    categories_changed = await _sync_categories(
-        session,
-        categories,
-        products,
-        stats,
-    )
+        changed = bool(
+            stats.updated_products
+            or certificates_changed
+            or categories_changed
+        )
+        if changed:
+            await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
 
-    if stats.updated_products or certificates_changed or categories_changed:
-        await session.commit()
+    for stale_path in stale_paths - downloaded_paths:
+        if remove_local_certificate(stale_path):
+            stats.certificate_files_deleted += 1
+
+    if changed:
         cache = get_cache_service()
         await cache.bump_namespace("catalog")
         await cache.bump_namespace("product")

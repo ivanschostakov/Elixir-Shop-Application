@@ -17,6 +17,7 @@ from src.integrations.website_catalog import (
     _parse_categories,
     _parse_content_rows,
 )
+from src.integrations import website_catalog_certificates as certificate_storage
 
 
 @pytest.mark.anyio
@@ -84,6 +85,31 @@ def test_parse_content_rows_rejects_duplicate_and_invalid_ids():
     assert stats.fetched == 3
     assert stats.skipped_duplicate_system_id == 1
     assert stats.skipped_invalid_system_id == 1
+
+
+def test_certificate_parser_rejects_encoded_parent_path():
+    stats = WebsiteCatalogSyncStats()
+
+    with pytest.raises(ValueError, match="Certificate path is invalid"):
+        _parse_content_rows(
+            {
+                "products": [{
+                    "system_id": "7e2a5eeb-13e1-11f1-0a80-176100294e52",
+                    "sku": "00-00000123",
+                    "description": None,
+                    "usage": None,
+                    "storage": None,
+                    "certificates": [{
+                        "source_file_id": 7342,
+                        "title": "Сертификат",
+                        "size_bytes": 100,
+                        "path": "/upload/%2e%2e/private/file.pdf",
+                    }],
+                }]
+            },
+            stats,
+            public_base_url="https://elixirpeptide.com/",
+        )
 
 
 def test_catalog_content_matches_unique_sku_when_moysklad_ids_differ():
@@ -232,7 +258,7 @@ def test_parse_catalog_categories_and_product_certificates():
 
     assert len(products) == 1
     assert products[0].certificates is not None
-    assert products[0].certificates[0].url == (
+    assert products[0].certificates[0].source_url == (
         "https://elixirpeptide.com/upload/iblock/aa/certificate.pdf"
     )
     assert categories is not None
@@ -242,6 +268,114 @@ def test_parse_catalog_categories_and_product_certificates():
     assert categories[0].product_system_ids == (UUID(product_id),)
     assert stats.certificates_fetched == 1
     assert stats.categories_fetched == 1
+
+
+@pytest.mark.anyio
+async def test_certificate_is_mirrored_to_application_media(
+    tmp_path,
+    monkeypatch,
+):
+    media_dir = tmp_path / "media"
+    certificates_dir = media_dir / "product-certificates"
+    monkeypatch.setattr(certificate_storage, "MEDIA_DIR", media_dir)
+    monkeypatch.setattr(
+        certificate_storage,
+        "PRODUCT_CERTIFICATES_MEDIA_DIR",
+        certificates_dir,
+    )
+    monkeypatch.setattr(
+        certificate_storage,
+        "PUBLIC_API_BASE_URL",
+        "https://api.example.test",
+    )
+    content = b"%PDF-1.7 local certificate"
+    request_count = 0
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal request_count
+        request_count += 1
+        assert request.url == "https://catalog.example.test/upload/certificate.pdf"
+        return httpx.Response(
+            200,
+            content=content,
+            headers={
+                "Content-Type": "application/pdf",
+                "Content-Length": str(len(content)),
+            },
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+    ) as download_client:
+        mirrored = await certificate_storage.mirror_certificate(
+            download_client,
+            product_id=42,
+            source_file_id=7342,
+            source_url="https://catalog.example.test/upload/certificate.pdf",
+            original_name="certificate.pdf",
+            content_type="application/pdf",
+            expected_size_bytes=len(content),
+        )
+        cached = await certificate_storage.mirror_certificate(
+            download_client,
+            product_id=42,
+            source_file_id=7342,
+            source_url="https://catalog.example.test/upload/certificate.pdf",
+            original_name="certificate.pdf",
+            content_type="application/pdf",
+            expected_size_bytes=len(content),
+        )
+
+    assert request_count == 1
+    assert mirrored.downloaded is True
+    assert cached.downloaded is False
+    assert mirrored.path.read_bytes() == content
+    assert mirrored.url.startswith(
+        "https://api.example.test/media/product-certificates/42/7342.pdf?v="
+    )
+    assert "catalog.example.test" not in mirrored.url
+    assert certificate_storage.certificate_local_path_from_url(mirrored.url) == (
+        mirrored.path
+    )
+
+
+@pytest.mark.anyio
+async def test_certificate_size_mismatch_does_not_publish_partial_file(
+    tmp_path,
+    monkeypatch,
+):
+    media_dir = tmp_path / "media"
+    certificates_dir = media_dir / "product-certificates"
+    monkeypatch.setattr(certificate_storage, "MEDIA_DIR", media_dir)
+    monkeypatch.setattr(
+        certificate_storage,
+        "PRODUCT_CERTIFICATES_MEDIA_DIR",
+        certificates_dir,
+    )
+    monkeypatch.setattr(
+        certificate_storage,
+        "PUBLIC_API_BASE_URL",
+        "https://api.example.test",
+    )
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"short")
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+    ) as download_client:
+        with pytest.raises(RuntimeError, match="does not match"):
+            await certificate_storage.mirror_certificate(
+                download_client,
+                product_id=42,
+                source_file_id=7342,
+                source_url="https://catalog.example.test/upload/certificate.pdf",
+                original_name="certificate.pdf",
+                content_type="application/pdf",
+                expected_size_bytes=100,
+            )
+
+    assert not certificates_dir.exists() or not list(certificates_dir.rglob("*.*"))
 
 
 def test_category_parser_rejects_duplicate_active_names():

@@ -12,6 +12,7 @@ MEDIA_DIR = WORKING_DIR / "media"
 PRIVATE_MEDIA_DIR = WORKING_DIR / "private_media"
 ATTACHMENTS_DIR = MEDIA_DIR / "attachments"
 PRODUCTS_MEDIA_DIR = MEDIA_DIR / "products"
+PRODUCT_CERTIFICATES_MEDIA_DIR = MEDIA_DIR / "product-certificates"
 AVATARS_MEDIA_DIR = MEDIA_DIR / "avatars"
 ORDERS_MEDIA_DIR = MEDIA_DIR / "orders"
 REVIEWS_MEDIA_DIR = MEDIA_DIR / "reviews"
@@ -29,6 +30,7 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 PRIVATE_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 PRODUCTS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
+PRODUCT_CERTIFICATES_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 AVATARS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 ORDERS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 REVIEWS_MEDIA_DIR.mkdir(parents=True, exist_ok=True)
