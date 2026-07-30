@@ -672,6 +672,9 @@ export type SearchResult = {
 export type ReferralProfile = {
   id: number
   user_id: number
+  reward_program: "bonus" | "partner" | null
+  reward_program_selected_at: string | null
+  reward_program_selection_source: string | null
   total_purchases: string
   referral_discount_base_total: string
   current_discount_percent: string
@@ -702,7 +705,7 @@ export type ReferralAccrual = {
   beneficiary_bitrix_user_id: number
   beneficiary_email: string | null
   beneficiary_name: string | null
-  promo_code: string
+  promo_code: string | null
   period: string
   level: 1 | 2
   buyer_discount_percent: string

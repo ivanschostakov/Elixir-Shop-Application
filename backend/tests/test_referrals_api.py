@@ -24,7 +24,7 @@ if "PIL" not in sys.modules:
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
 from src.app.services.referrals.calculations import calculate_personal_discount_percent
-from src.database.models import ReferralProfile, User
+from src.database.models import ReferralProfile, RewardProgramSelectionEvent, User
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
@@ -47,6 +47,20 @@ def _user_promo_code(user_id: int) -> str | None:
     with Session(sync_engine) as session:
         user = session.get(User, user_id)
         return user.promo_code if user is not None else None
+
+
+def _set_reward_program(user_id: int, program: str) -> None:
+    with Session(sync_engine) as session:
+        profile = (
+            session.query(ReferralProfile)
+            .filter(ReferralProfile.user_id == user_id)
+            .one_or_none()
+        )
+        if profile is None:
+            profile = ReferralProfile(user_id=user_id)
+            session.add(profile)
+        profile.reward_program = program
+        session.commit()
 
 
 @pytest.fixture()
@@ -72,21 +86,30 @@ def registered_user_factory(register_verified_user):
             _delete_user(user_id)
 
 
-def test_personal_discount_table_requires_promo_code():
+def test_personal_discount_table_is_independent_from_partner_promo():
     assert calculate_personal_discount_percent("0.00", has_promo_code=False) == Decimal("0.00")
-    assert calculate_personal_discount_percent("0.00", has_promo_code=True) == Decimal("3.00")
-    assert calculate_personal_discount_percent("29999.99", has_promo_code=True) == Decimal("3.00")
+    assert calculate_personal_discount_percent("0.00", has_promo_code=True) == Decimal("0.00")
+    assert calculate_personal_discount_percent("29999.99", has_promo_code=True) == Decimal("0.00")
     assert calculate_personal_discount_percent("30000.00", has_promo_code=True) == Decimal("3.00")
     assert calculate_personal_discount_percent("40000.00", has_promo_code=True) == Decimal("4.00")
     assert calculate_personal_discount_percent("100000.00", has_promo_code=True) == Decimal("10.00")
     assert calculate_personal_discount_percent("170000.00", has_promo_code=True) == Decimal("17.00")
-    assert calculate_personal_discount_percent("999999.00", has_promo_code=True) == Decimal("17.00")
+    assert calculate_personal_discount_percent("200000.00", has_promo_code=False) == Decimal("20.00")
+    assert calculate_personal_discount_percent("999999.00", has_promo_code=True) == Decimal("20.00")
 
 
-def test_referrer_code_check_is_stubbed_until_owner_source_is_known(client: TestClient, registered_user_factory):
+def test_referrer_code_requires_partner_program_and_then_uses_configured_source(client: TestClient, registered_user_factory):
     buyer = registered_user_factory(email_prefix="buyer")
     code = f"REF{uuid.uuid4().hex[:8]}".upper()
 
+    check_response = client.post(
+        "/api/v1/users/me/referral-profile/referrer-code/check",
+        headers=buyer["headers"],
+        json={"code": f"  {code.lower()}  "},
+    )
+    assert check_response.status_code == 409, check_response.text
+
+    _set_reward_program(buyer["user_id"], "partner")
     check_response = client.post(
         "/api/v1/users/me/referral-profile/referrer-code/check",
         headers=buyer["headers"],
@@ -126,3 +149,46 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
     with Session(sync_engine) as session:
         profile_count = session.query(ReferralProfile).filter(ReferralProfile.user_id == buyer["user_id"]).count()
         assert profile_count == 1
+
+
+def test_bonus_program_selection_is_persisted_and_locked(
+    client: TestClient,
+    registered_user_factory,
+    monkeypatch,
+):
+    async def no_website_profile(_user):
+        return None
+
+    monkeypatch.setattr(
+        "src.app.services.referrals.program._load_bitrix_program_profile",
+        no_website_profile,
+    )
+    buyer = registered_user_factory(email_prefix="bonus-program")
+
+    selected = client.post(
+        "/api/v1/users/me/referral-profile/program",
+        headers=buyer["headers"],
+        json={"program": "bonus"},
+    )
+    assert selected.status_code == 200, selected.text
+    payload = selected.json()
+    assert payload["reward_program"] == "bonus"
+    assert payload["program_selection_required"] is False
+    assert payload["promo_code"] is None
+
+    locked = client.post(
+        "/api/v1/users/me/referral-profile/program",
+        headers=buyer["headers"],
+        json={"program": "partner"},
+    )
+    assert locked.status_code == 409, locked.text
+
+    with Session(sync_engine) as session:
+        events = (
+            session.query(RewardProgramSelectionEvent)
+            .filter(RewardProgramSelectionEvent.user_id == buyer["user_id"])
+            .all()
+        )
+        assert len(events) == 1
+        assert events[0].selected_program == "bonus"
+        assert events[0].source == "user"

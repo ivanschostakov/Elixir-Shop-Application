@@ -6,14 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.discounts import product_is_discountable
 from src.app.services.catalog_merchandising import catalog_unit_price
-from src.app.services.referrals import (
-    attach_referrer_code,
-    get_or_create_referral_profile,
-    refresh_assigned_referrer_promo,
-    refresh_profile_discount,
-    user_has_promo_code,
-)
+from src.app.services.referrals import get_or_create_referral_profile, refresh_profile_discount
 from src.app.services.referrals.calculations import calculate_personal_discount_percent
+from src.app.services.referrals.program import normalize_reward_program
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User
 from src.integrations.bitrix_promo import (
@@ -65,10 +60,7 @@ def _basket_subtotals(basket) -> tuple[Decimal, Decimal]:
 
 
 def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal) -> ResolvedDiscountOption | None:
-    if not user_has_promo_code(user):
-        return None
-
-    discount_percent = calculate_personal_discount_percent(profile.referral_discount_base_total, has_promo_code=True)
+    discount_percent = calculate_personal_discount_percent(profile.referral_discount_base_total)
     if discount_percent <= Decimal("0.00"):
         return None
 
@@ -81,8 +73,8 @@ def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal
     return ResolvedDiscountOption(
         source_kind="app_referral",
         source_record_id=profile.id,
-        code=user.promo_code,
-        title="App referral personal discount",
+        code=None,
+        title="Персональная скидка / Personal discount",
         status="available",
         is_applicable=True,
         is_personal=True,
@@ -210,26 +202,12 @@ async def resolve_benefits_for_user(
         explicit_discountable_subtotal=discountable_subtotal,
     )
     referral_profile = await get_or_create_referral_profile(db, user=user)
-    await refresh_assigned_referrer_promo(db, user=user)
     bonus_wallet = await get_user_moysklad_bonus_wallet(user)
-
-    entered_code_accepted = True
-    if trimmed_code:
-        try:
-            referral_profile = await attach_referrer_code(db, user=user, code=trimmed_code, confirmed=True)
-        except HTTPException as error:
-            if error.status_code >= 500:
-                raise
-            entered_code_accepted = False
-
-    effective_code = (
-        optional_str(user.promo_code)
-        if not trimmed_code or entered_code_accepted
-        else trimmed_code
-    )
+    reward_program = normalize_reward_program(referral_profile.reward_program)
+    effective_code = trimmed_code or optional_str(user.promo_code)
     bitrix_option = None
     app_referral_option = None
-    if bitrix_promo_configured() and effective_code:
+    if reward_program == "partner" and bitrix_promo_configured() and effective_code:
         client = BitrixPromoClient()
         try:
             lookup = await client.lookup(effective_code)
@@ -256,12 +234,8 @@ async def resolve_benefits_for_user(
                     status_code=503,
                     detail="Расчёт промокода временно недоступен / Promo calculation is temporarily unavailable",
                 ) from error
-    elif not bitrix_promo_configured():
-        referral_profile.referral_discount_base_total = bonus_wallet.sales_amount_rubles
-        refresh_profile_discount(
-            referral_profile,
-            has_promo_code=user_has_promo_code(user),
-        )
+    elif reward_program == "bonus":
+        refresh_profile_discount(referral_profile)
         app_referral_option = _build_app_referral_option(
             referral_profile,
             user=user,
@@ -343,6 +317,8 @@ async def resolve_benefits_for_user(
 
     return {
         "referral_profile_id": referral_profile.id,
+        "reward_program": reward_program,
+        "program_selection_required": reward_program is None,
         "subtotal_source": subtotal_source,
         "basket_subtotal": effective_subtotal,
         "currency": resolved_currency,

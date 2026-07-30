@@ -156,7 +156,12 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
         if error_text: patch["payment_error"] = error_text
 
     updated_order = await update_order(session, order, OrderUpdate(**patch), commit=True)
-    if updated_order.payment_status == "paid" or updated_order.is_paid:
+    if updated_order.payment_status == "refunded":
+        user = await session.get(User, updated_order.user_id)
+        if user is not None:
+            await reverse_order_bonus_safe(session, order=updated_order, user=user)
+        await sync_paid_order_referral_to_app_safe(session, order=updated_order)
+    elif updated_order.payment_status == "paid" or updated_order.is_paid:
         await record_customer_event_safe(
             session,
             user_id=updated_order.user_id,
@@ -174,14 +179,12 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
             source="webhook",
             commit=True,
         )
+    if updated_order.payment_status == "refunded":
+        return updated_order
     if updated_order.payment_status == "paid" or updated_order.is_paid:
         await sync_moysklad_customerorder_state(updated_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
         await sync_moysklad_invoiceout_state(updated_order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID)
         await sync_paid_order_referral_to_app_safe(session, order=updated_order)
-    elif updated_order.payment_status == "refunded":
-        user = await session.get(User, updated_order.user_id)
-        if user is not None:
-            await reverse_order_bonus_safe(session, order=updated_order, user=user)
     return updated_order
 
 

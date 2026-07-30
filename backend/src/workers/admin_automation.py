@@ -10,6 +10,7 @@ from src.app.services.admin.automation import process_order_automations_once
 from src.app.services.admin.jobs import record_worker_heartbeat
 from src.app.services.admin.sla import scan_sla_breaches
 from src.app.services.referrals.paid_orders import (
+    backfill_missing_paid_order_rewards,
     finalize_closed_app_referral_accruals,
     retry_unsynced_app_referral_purchases,
 )
@@ -24,20 +25,23 @@ async def _run_once() -> None:
     results = await process_order_automations_once()
     async with get_session() as session:
         sla_breaches = await scan_sla_breaches(session)
+        referral_purchase_backfill = await backfill_missing_paid_order_rewards(session)
         referral_purchase_sync = await retry_unsynced_app_referral_purchases(session)
         referral_accruals = await finalize_closed_app_referral_accruals(session)
     if (
         results["executed"]
         or results["failed"]
         or sla_breaches
+        or referral_purchase_backfill["processed"]
         or referral_purchase_sync["processed"]
         or referral_accruals["processed"]
         or referral_accruals["failed"]
     ):
         log.info(
-            "automation tick completed rules=%s sla_breaches=%s referral_purchase_sync=%s referral_accruals=%s",
+            "automation tick completed rules=%s sla_breaches=%s referral_purchase_backfill=%s referral_purchase_sync=%s referral_accruals=%s",
             results,
             sla_breaches,
+            referral_purchase_backfill,
             referral_purchase_sync,
             referral_accruals,
         )

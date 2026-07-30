@@ -146,9 +146,11 @@ export function MarketingPage() {
   const [launchAt, setLaunchAt] = useState<Dayjs | null>(null)
   const [automationDrawer, setAutomationDrawer] = useState(false)
   const [editingAutomation, setEditingAutomation] = useState<MarketingAutomation | null>(null)
+  const [programTarget, setProgramTarget] = useState<ReferralProfile | null>(null)
   const [segmentForm] = Form.useForm<SegmentForm>()
   const [campaignForm] = Form.useForm<CampaignForm>()
   const [automationForm] = Form.useForm()
+  const [programForm] = Form.useForm<{ program: "bonus" | "partner"; reason: string }>()
 
   const referrals = useQuery({ queryKey: ["referrals"], queryFn: () => apiRequest<ReferralProfile[]>("/referrals/profiles?limit=100&offset=0"), enabled: hasPermission("referrals.read") })
   const referralSummary = useQuery({ queryKey: ["referrals-summary"], queryFn: () => apiRequest<ReferralSummary>("/referrals/summary"), enabled: hasPermission("referrals.read") })
@@ -163,6 +165,23 @@ export function MarketingPage() {
   const campaignRecipients = useQuery({ queryKey: ["campaign-recipients", detailsCampaign?.id], queryFn: () => apiRequest<Page<PushCampaignRecipient>>(`/campaigns/${detailsCampaign?.id}/recipients?limit=100&offset=0`), enabled: Boolean(detailsCampaign) })
   const referralRows = referrals.data || []
   const referralAccrualRows = referralAccruals.data || []
+  const changeRewardProgram = useMutation({
+    mutationFn: (values: { program: "bonus" | "partner"; reason: string }) => {
+      if (!programTarget) throw new Error(locale === "ru" ? "Профиль не выбран" : "No profile selected")
+      return apiRequest(`/referrals/profiles/${programTarget.user_id}/program`, {
+        method: "PATCH",
+        body: JSON.stringify(values),
+      })
+    },
+    onSuccess: () => {
+      setProgramTarget(null)
+      programForm.resetFields()
+      void client.invalidateQueries({ queryKey: ["referrals"] })
+      void client.invalidateQueries({ queryKey: ["referrals-summary"] })
+      void message.success(locale === "ru" ? "Программа изменена" : "Program changed")
+    },
+    onError: (error: Error) => void message.error(error.message),
+  })
 
   useEffect(() => {
     const campaignId = Number(searchParams.get("campaign_id") || 0)
@@ -425,8 +444,57 @@ export function MarketingPage() {
         ]}
       />
       <Typography.Title level={4}>{referralCopy.participants}</Typography.Title>
-      <Table<ReferralProfile> rowKey="id" loading={referrals.isLoading} dataSource={referralRows} pagination={{ pageSize: 25 }} columns={[{ title: locale === "ru" ? "ID пользователя" : "User ID", dataIndex: "user_id", render: (value: number) => hasPermission("customers.read") ? <Link to={`/customers/${value}`}>#{value}</Link> : `#${value}` }, { title: copy.purchases, dataIndex: "total_purchases", render: (value: string) => money(value, "RUB", locale) }, { title: copy.base, dataIndex: "referral_discount_base_total", render: (value: string) => money(value, "RUB", locale) }, { title: copy.discount, dataIndex: "current_discount_percent", render: (value: string) => <Tag color="green">{value}%</Tag> }, { title: copy.created, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) }]} />
+      <Table<ReferralProfile> rowKey="id" loading={referrals.isLoading} dataSource={referralRows} pagination={{ pageSize: 25 }} columns={[
+        { title: locale === "ru" ? "ID пользователя" : "User ID", dataIndex: "user_id", render: (value: number) => hasPermission("customers.read") ? <Link to={`/customers/${value}`}>#{value}</Link> : `#${value}` },
+        {
+          title: locale === "ru" ? "Программа" : "Program",
+          dataIndex: "reward_program",
+          render: (value: ReferralProfile["reward_program"], row) => <Space>
+            <Tag color={value === "bonus" ? "blue" : value === "partner" ? "purple" : "default"}>
+              {value === "bonus" ? (locale === "ru" ? "Бонусная" : "Bonus") : value === "partner" ? (locale === "ru" ? "Партнёрская" : "Partner") : (locale === "ru" ? "Не выбрана" : "Not selected")}
+            </Tag>
+            {hasPermission("customers.manage") ? <Button size="small" onClick={() => {
+              setProgramTarget(row)
+              programForm.setFieldsValue({ program: value === "bonus" ? "partner" : "bonus", reason: "" })
+            }}>{locale === "ru" ? "Изменить" : "Change"}</Button> : null}
+          </Space>,
+        },
+        { title: copy.purchases, dataIndex: "total_purchases", render: (value: string) => money(value, "RUB", locale) },
+        { title: copy.base, dataIndex: "referral_discount_base_total", render: (value: string) => money(value, "RUB", locale) },
+        { title: copy.discount, dataIndex: "current_discount_percent", render: (value: string) => <Tag color="green">{value}%</Tag> },
+        { title: copy.created, dataIndex: "created_at", render: (value: string) => dateTime(value, locale) },
+      ]} />
     </> : null}
+
+    <Modal
+      open={Boolean(programTarget)}
+      title={locale === "ru" ? "Изменить программу участника" : "Change member program"}
+      okText={locale === "ru" ? "Сохранить" : "Save"}
+      cancelText={locale === "ru" ? "Отмена" : "Cancel"}
+      confirmLoading={changeRewardProgram.isPending}
+      onCancel={() => {
+        setProgramTarget(null)
+        programForm.resetFields()
+      }}
+      onOk={() => void programForm.validateFields().then((values) => changeRewardProgram.mutate(values))}
+    >
+      <Alert
+        type="warning"
+        showIcon
+        message={locale === "ru" ? "Изменение сохранится в истории аудита." : "The change will be saved in the audit history."}
+      />
+      <Form form={programForm} layout="vertical" requiredMark={false} style={{ marginTop: 16 }}>
+        <Form.Item name="program" label={locale === "ru" ? "Новая программа" : "New program"} rules={[{ required: true }]}>
+          <Select options={[
+            { value: "bonus", label: locale === "ru" ? "Бонусная" : "Bonus" },
+            { value: "partner", label: locale === "ru" ? "Партнёрская" : "Partner" },
+          ]} />
+        </Form.Item>
+        <Form.Item name="reason" label={locale === "ru" ? "Причина изменения" : "Reason for change"} rules={[{ required: true, min: 3, max: 500 }]}>
+          <Input.TextArea rows={3} maxLength={500} showCount />
+        </Form.Item>
+      </Form>
+    </Modal>
 
     {tab === "segments" ? <Table<CustomerSegment> rowKey="id" loading={segments.isLoading} dataSource={segments.data} pagination={false} columns={[
       { title: copy.segmentName, key: "name", render: (_: unknown, row) => <div className="table-primary"><strong>{row.name}</strong><small>{row.is_shared ? copy.team : row.owner_name}</small></div> },

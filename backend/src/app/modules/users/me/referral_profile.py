@@ -8,8 +8,15 @@ from src.app.modules.users.me.schemas.referrals import (
     ReferrerCodeCheckPayload,
     ReferrerCodeCheckRead,
     ReferralProfileRead,
+    RewardProgramSelectPayload,
 )
-from src.app.services.referrals import attach_referrer_code, check_referrer_code, detach_referrer_code, get_referral_profile_summary
+from src.app.services.referrals import (
+    attach_referrer_code,
+    check_referrer_code,
+    detach_referrer_code,
+    get_referral_profile_summary,
+    select_reward_program,
+)
 from src.database import get_db
 from src.database.models import User
 
@@ -18,6 +25,22 @@ my_referral_profile_router = APIRouter(prefix="/referral-profile", tags=["my_ref
 
 @my_referral_profile_router.get("", response_model=ReferralProfileRead, status_code=status.HTTP_200_OK)
 async def get_my_referral_profile(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> ReferralProfileRead:
+    summary = await get_referral_profile_summary(db, user=current_user)
+    await db.commit()
+    return ReferralProfileRead.model_validate(summary)
+
+
+@my_referral_profile_router.post(
+    "/program",
+    response_model=ReferralProfileRead,
+    status_code=status.HTTP_200_OK,
+)
+async def select_my_reward_program(
+    payload: RewardProgramSelectPayload,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ReferralProfileRead:
+    await select_reward_program(db, user=current_user, program=payload.program)
     summary = await get_referral_profile_summary(db, user=current_user)
     await db.commit()
     return ReferralProfileRead.model_validate(summary)

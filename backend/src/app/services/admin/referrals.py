@@ -16,6 +16,9 @@ def _profile_row(profile: ReferralProfile) -> dict[str, Any]:
     return {
         "id": profile.id,
         "user_id": profile.user_id,
+        "reward_program": profile.reward_program,
+        "reward_program_selected_at": profile.reward_program_selected_at,
+        "reward_program_selection_source": profile.reward_program_selection_source,
         "total_purchases": total,
         "referral_discount_base_total": total,
         "current_discount_percent": profile.current_discount_percent,

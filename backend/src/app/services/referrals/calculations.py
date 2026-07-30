@@ -2,7 +2,8 @@ from decimal import ROUND_HALF_UP, Decimal
 
 MONEY_QUANTIZER = Decimal("0.01")
 MIN_PARTICIPANT_DISCOUNT_PERCENT = Decimal("3.00")
-MAX_PERSONAL_DISCOUNT_PERCENT = Decimal("17.00")
+MAX_PERSONAL_DISCOUNT_PERCENT = Decimal("20.00")
+MIN_PERSONAL_DISCOUNT_SPEND = Decimal("30000.00")
 PERSONAL_DISCOUNT_STEP_SPEND = Decimal("10000.00")
 
 
@@ -24,10 +25,8 @@ def calculate_personal_discount_percent(
     has_promo_code: bool | None = None,
     has_referrer: bool | None = None,
 ) -> Decimal:
-    eligible = has_promo_code if has_promo_code is not None else has_referrer
-    if not eligible:
-        return Decimal("0.00")
-
     total = quantize_money(purchase_total)
-    stepped_percent = Decimal(max(3, int(total // PERSONAL_DISCOUNT_STEP_SPEND)))
+    if total < MIN_PERSONAL_DISCOUNT_SPEND:
+        return Decimal("0.00")
+    stepped_percent = Decimal(int(total // PERSONAL_DISCOUNT_STEP_SPEND))
     return min(MAX_PERSONAL_DISCOUNT_PERCENT, stepped_percent).quantize(Decimal("0.01"))

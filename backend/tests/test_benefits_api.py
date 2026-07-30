@@ -23,7 +23,7 @@ if "PIL" not in sys.modules:
     sys.modules["PIL"] = pil_module
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
-from src.database.models import User
+from src.database.models import ReferralProfile, User
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
@@ -51,6 +51,22 @@ def _set_user_promo_code(user_id: int, code: str | None) -> None:
         session.commit()
 
 
+def _set_bonus_program(user_id: int, purchase_total: str = "30000.00") -> None:
+    with Session(sync_engine) as session:
+        profile = (
+            session.query(ReferralProfile)
+            .filter(ReferralProfile.user_id == user_id)
+            .one_or_none()
+        )
+        if profile is None:
+            profile = ReferralProfile(user_id=user_id)
+            session.add(profile)
+        profile.reward_program = "bonus"
+        profile.referral_discount_base_total = Decimal(purchase_total)
+        profile.current_discount_percent = Decimal("3.00")
+        session.commit()
+
+
 @pytest.fixture()
 def registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
@@ -69,25 +85,24 @@ def registered_user(register_verified_user):
         _delete_user(user_id)
 
 
-def test_benefit_check_returns_referral_discount_only(client: TestClient, registered_user):
-    _set_user_promo_code(registered_user["user_id"], "WELCOME")
+def test_benefit_check_returns_bonus_program_discount_only(client: TestClient, registered_user):
+    _set_bonus_program(registered_user["user_id"])
 
     response = client.post(
         "/api/v1/users/me/benefits/check",
         headers=registered_user["headers"],
-        json={"code": "  WELCOME  ", "subtotal": "200.00", "currency": "RUB"},
+        json={"subtotal": "200.00", "currency": "RUB"},
     )
 
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["subtotal_source"] == "request"
     assert _decimal(payload["basket_subtotal"]) == Decimal("200.00")
-    assert payload["entered_code"] == "WELCOME"
+    assert payload["reward_program"] == "bonus"
+    assert payload["program_selection_required"] is False
+    assert payload["entered_code"] is None
     assert payload["unresolved_code_reason"] is None
-    assert len(payload["entered_code_matches"]) == 1
-    assert payload["entered_code_matches"][0]["source_kind"] == "app_referral"
-    assert payload["entered_code_matches"][0]["is_applicable"] is True
-    assert _decimal(payload["entered_code_matches"][0]["estimated_discount_amount"]) == Decimal("6.00")
+    assert payload["entered_code_matches"] == []
     assert payload["personal_discount"]["source_kind"] == "app_referral"
     assert _decimal(payload["personal_discount"]["estimated_discount_amount"]) == Decimal("6.00")
     assert payload["best_discount"]["source_kind"] == "app_referral"
@@ -98,19 +113,18 @@ def test_benefit_check_returns_referral_discount_only(client: TestClient, regist
     assert [option["source_kind"] for option in payload["stacked_discount_options"]] == ["app_referral"]
 
 
-def test_benefit_check_applies_referral_discount_to_discountable_subtotal_only(client: TestClient, registered_user):
-    _set_user_promo_code(registered_user["user_id"], "WELCOME")
+def test_benefit_check_applies_bonus_discount_to_discountable_subtotal_only(client: TestClient, registered_user):
+    _set_bonus_program(registered_user["user_id"])
 
     response = client.post(
         "/api/v1/users/me/benefits/check",
         headers=registered_user["headers"],
-        json={"code": "WELCOME", "subtotal": "200.00", "discountable_subtotal": "100.00", "currency": "RUB"},
+        json={"subtotal": "200.00", "discountable_subtotal": "100.00", "currency": "RUB"},
     )
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert len(payload["entered_code_matches"]) == 1
-    assert payload["entered_code_matches"][0]["source_kind"] == "app_referral"
+    assert payload["entered_code_matches"] == []
     assert _decimal(payload["stacked_discount_amount"]) == Decimal("3.00")
     assert _decimal(payload["total_after_discounts"]) == Decimal("197.00")
 

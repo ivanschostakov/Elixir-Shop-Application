@@ -80,7 +80,13 @@ from .notifications.notification_dispatch import NotificationDispatch
 from .notifications.stock_notification_subscription import StockNotificationSubscription
 from .recommendations.user_category_recommendation_signal import UserCategoryRecommendationSignal
 from .recommendations.user_product_recommendation_signal import UserProductRecommendationSignal
-from .referrals import AppReferralAccrual, AppReferralPurchase, ReferralProfile
+from .referrals import (
+    AppReferralAccrual,
+    AppReferralPurchase,
+    BonusProgramPurchase,
+    ReferralProfile,
+    RewardProgramSelectionEvent,
+)
 from .webhooks.webhook_delivery import WebhookDelivery
 
 __all__ = [
@@ -161,7 +167,9 @@ __all__ = [
     "ProductByCategory",
     "AppReferralAccrual",
     "AppReferralPurchase",
+    "BonusProgramPurchase",
     "ReferralProfile",
+    "RewardProgramSelectionEvent",
     "Review",
     "ReviewAttachment",
     "ReviewModerationEvent",

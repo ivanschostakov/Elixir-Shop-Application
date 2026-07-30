@@ -236,5 +236,6 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
         user = await session.get(User, refreshed_order.user_id)
         if user is not None:
             await reverse_order_bonus_safe(session, order=refreshed_order, user=user)
+        await sync_paid_order_referral_to_app_safe(session, order=refreshed_order)
     await send_order_status_change_notification_if_needed(session, previous_status=previous_status, order=refreshed_order)
     return refreshed_order

@@ -26,7 +26,16 @@ if "PIL" not in sys.modules:
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
 from src.integrations.amocrm import amocrm_client
-from src.database.models import Order, OrderDraft, Product, User, UserPushToken, Variant
+from src.database.models import (
+    BonusProgramPurchase,
+    Order,
+    OrderDraft,
+    Product,
+    ReferralProfile,
+    User,
+    UserPushToken,
+    Variant,
+)
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
@@ -87,6 +96,22 @@ def _get_order(order_id: int) -> Order:
         order = session.get(Order, order_id)
         assert order is not None
         return order
+
+
+def _get_bonus_purchase(order_id: int) -> BonusProgramPurchase | None:
+    with Session(sync_engine) as session:
+        return session.execute(
+            select(BonusProgramPurchase).where(BonusProgramPurchase.order_id == order_id)
+        ).scalar_one_or_none()
+
+
+def _get_referral_profile(user_id: int) -> ReferralProfile:
+    with Session(sync_engine) as session:
+        profile = session.execute(
+            select(ReferralProfile).where(ReferralProfile.user_id == user_id)
+        ).scalar_one()
+        session.expunge(profile)
+        return profile
 
 
 def _update_order(order_id: int, **fields) -> None:
@@ -201,8 +226,21 @@ def _create_order_for_history(
     return order_response.json()
 
 
+def _select_test_bonus_program(
+    client: TestClient,
+    *,
+    access_token: str,
+) -> None:
+    response = client.post(
+        "/api/v1/users/me/referral-profile/program",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"program": "bonus"},
+    )
+    assert response.status_code == 200, response.text
+
+
 @pytest.fixture()
-def registered_user(register_verified_user):
+def registered_user(client: TestClient, register_verified_user):
     token = uuid.uuid4().hex[:12]
     payload = register_verified_user({
         "username": f"u{token}",
@@ -213,6 +251,7 @@ def registered_user(register_verified_user):
     })
     user_id = payload["user"]["id"]
     email = payload["user"]["email"]
+    _select_test_bonus_program(client, access_token=payload["access_token"])
 
     try:
         yield {
@@ -225,7 +264,7 @@ def registered_user(register_verified_user):
 
 
 @pytest.fixture()
-def second_registered_user(register_verified_user):
+def second_registered_user(client: TestClient, register_verified_user):
     token = uuid.uuid4().hex[:12]
     payload = register_verified_user({
         "username": f"u{token}",
@@ -235,6 +274,7 @@ def second_registered_user(register_verified_user):
         "surname": "Second",
     })
     user_id = payload["user"]["id"]
+    _select_test_bonus_program(client, access_token=payload["access_token"])
 
     try:
         yield {
@@ -288,6 +328,40 @@ def stub_amocrm(monkeypatch):
     monkeypatch.setattr("src.app.services.orders.creation.amocrm_client", stub_client)
     monkeypatch.setattr("src.app.services.orders.crm.amocrm_client", stub_client)
     yield calls
+
+
+def test_create_final_order_requires_reward_program_selection(
+    client: TestClient,
+    register_verified_user,
+    variant_factory,
+    stub_amocrm,
+):
+    token = uuid.uuid4().hex[:12]
+    payload = register_verified_user(
+        {
+            "username": f"u{token}",
+            "email": f"orders_unselected_{token}@example.com",
+            "password": "test-password",
+            "name": "Orders",
+            "surname": "Unselected",
+        }
+    )
+    user_id = payload["user"]["id"]
+    headers = {"Authorization": f"Bearer {payload['access_token']}"}
+    try:
+        catalog = variant_factory(stock=5, price=Decimal("12.50"))
+        draft = _create_ready_draft(client, headers, catalog["variant_id"])
+
+        response = client.post(
+            "/api/v1/users/me/orders",
+            headers=headers,
+            json={"draft_id": draft["id"], "payment_method": "later"},
+        )
+
+        assert response.status_code == 409, response.text
+        assert "выберите бонусную или партнёрскую программу" in response.json()["detail"]
+    finally:
+        _delete_user(user_id)
 
 
 def test_create_final_order_uses_self_recipient_when_draft_recipient_is_missing(client: TestClient, registered_user, variant_factory, stub_amocrm):
@@ -942,6 +1016,7 @@ def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, regist
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
     order_number = order_response.json()["order_number"]
+    payment_id = f"invoice-paid-{uuid.uuid4().hex}"
 
     monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.verify_webhook_hash", lambda payload: True)
 
@@ -958,8 +1033,8 @@ def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, regist
             "UserName": "Иван Петров",
             "UserEmail": "ivan.petrov@example.com",
             "PaymentData": "2026-04-23 12:00:00",
-            "PaymentId": "invoice-paid",
-            "Hash": "ok",
+            "PaymentId": payment_id,
+            "Hash": uuid.uuid4().hex,
         },
     )
 
@@ -971,10 +1046,83 @@ def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, regist
 
     stored_order = _get_order(order_id)
     assert stored_order.payment_provider == "intellectmoney"
-    assert stored_order.payment_invoice_id == "invoice-paid"
+    assert stored_order.payment_invoice_id == payment_id
     assert stored_order.payment_status == "paid"
     assert stored_order.payment_paid_at is not None
     assert stored_order.is_paid is True
+    bonus_purchase = _get_bonus_purchase(order_id)
+    assert bonus_purchase is not None
+    assert bonus_purchase.status == "posted"
+    assert bonus_purchase.amount == Decimal("42.00")
+
+
+def test_intellectmoney_refund_reverses_bonus_program_purchase(
+    client: TestClient,
+    registered_user,
+    variant_factory,
+    stub_amocrm,
+    monkeypatch,
+):
+    catalog = variant_factory(stock=5, price=Decimal("21.00"))
+    draft = _create_ready_draft(
+        client,
+        registered_user["headers"],
+        catalog["variant_id"],
+    )
+    order_response = client.post(
+        "/api/v1/users/me/orders",
+        headers=registered_user["headers"],
+        json={"draft_id": draft["id"], "payment_method": "sbp"},
+    )
+    assert order_response.status_code == 200, order_response.text
+    order_id = order_response.json()["id"]
+    order_number = order_response.json()["order_number"]
+    monkeypatch.setattr(
+        "src.app.modules.webhooks.router.intellectmoney.verify_webhook_hash",
+        lambda payload: True,
+    )
+
+    common_payload = {
+        "EshopId": "shop-id",
+        "OrderId": order_number,
+        "ServiceName": f"Заказ №{order_number}",
+        "EshopAccount": "",
+        "RecipientAmount": "42.00",
+        "RecipientCurrency": "RUB",
+        "UserName": "Иван Петров",
+        "UserEmail": "ivan.petrov@example.com",
+        "PaymentData": "2026-04-23 12:00:00",
+    }
+    paid_response = client.post(
+        "/api/v1/webhooks/intellectmoney",
+        data={
+            **common_payload,
+            "PaymentStatus": "5",
+            "PaymentId": f"invoice-paid-{uuid.uuid4().hex}",
+            "Hash": uuid.uuid4().hex,
+        },
+    )
+    assert paid_response.status_code == 200, paid_response.text
+    assert _get_bonus_purchase(order_id).status == "posted"
+
+    refund_response = client.post(
+        "/api/v1/webhooks/intellectmoney",
+        data={
+            **common_payload,
+            "PaymentStatus": "8",
+            "PaymentId": f"invoice-refund-{uuid.uuid4().hex}",
+            "Hash": uuid.uuid4().hex,
+        },
+    )
+    assert refund_response.status_code == 200, refund_response.text
+
+    reversed_purchase = _get_bonus_purchase(order_id)
+    assert reversed_purchase is not None
+    assert reversed_purchase.status == "reversed"
+    assert reversed_purchase.reversed_at is not None
+    profile = _get_referral_profile(registered_user["user_id"])
+    assert profile.referral_discount_base_total == Decimal("0.00")
+    assert profile.current_discount_percent == Decimal("0.00")
 
 
 @pytest.mark.parametrize(
@@ -1024,8 +1172,8 @@ def test_intellectmoney_webhook_updates_amocrm_status_for_non_paid_results(
             "UserName": "Иван Петров",
             "UserEmail": "ivan.petrov@example.com",
             "PaymentData": "2026-04-23 12:00:00",
-            "PaymentId": f"invoice-{payment_status_code}",
-            "Hash": "ok",
+                "PaymentId": f"invoice-{payment_status_code}-{uuid.uuid4().hex}",
+                "Hash": uuid.uuid4().hex,
         },
     )
 

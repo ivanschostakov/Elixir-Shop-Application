@@ -306,7 +306,7 @@ async def _resolve_checkout_benefits(
     quote_items: list[dict[str, Any]],
     use_bonus_rubles: bool,
 ) -> dict[str, Any]:
-    return await resolve_benefits_for_user(
+    resolved = await resolve_benefits_for_user(
         session,
         user=user,
         entered_code=entered_code,
@@ -316,6 +316,12 @@ async def _resolve_checkout_benefits(
         quote_items=quote_items,
         use_bonus_rubles=use_bonus_rubles,
     )
+    if resolved.get("program_selection_required"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Перед оформлением выберите бонусную или партнёрскую программу / Choose the bonus or partner program before checkout",
+        )
+    return resolved
 
 
 def _build_order_create_data(*, user_id: int, delivery_address_id: int, recipient_id: int, order_code: str, items_count: int, total_quantity: int, basket_subtotal: Decimal, delivery_total: Decimal, grand_total: Decimal, currency: str, delivery_period_min: int | None, delivery_period_max: int | None, comment: str | None, delivery_string: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any], checkout_snapshot: dict[str, Any], payment_method: str) -> OrderCreate:

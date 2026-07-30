@@ -129,11 +129,12 @@ export default function CartScreen() {
         const trimmedCode = promoCode.trim()
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
-    const attachedPromoCode = referralProfile?.promo_code ?? null
+    const isPartnerProgram = referralProfile?.reward_program === "partner"
+    const attachedPromoCode = isPartnerProgram ? referralProfile?.promo_code ?? null : null
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
-    const activeEnteredPromoCode = hasAttachedPromoCode ? null : appliedPromoCode
+    const hasUnappliedPromoCode = Boolean(isAuthenticated && isPartnerProgram && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const activeEnteredPromoCode = isPartnerProgram && !hasAttachedPromoCode ? appliedPromoCode : null
 
     useFocusEffect(
         useCallback(() => {
@@ -337,6 +338,20 @@ export default function CartScreen() {
         if (!basket?.items.length || isOpeningCheckout) {
             return
         }
+        if (referralProfile?.program_selection_required) {
+            Alert.alert(
+                t("profile.referral.chooseProgramTitle"),
+                t("profile.referral.chooseProgramHint"),
+                [
+                    { text: t("common.cancel"), style: "cancel" },
+                    {
+                        text: t("profile.referral.chooseProgramAction"),
+                        onPress: () => router.push(ROUTES.profileDiscounts),
+                    },
+                ],
+            )
+            return
+        }
 
         setIsOpeningCheckout(true)
 
@@ -371,7 +386,7 @@ export default function CartScreen() {
         } finally {
             setIsOpeningCheckout(false)
         }
-    }, [appliedPromoCode, basket?.items.length, basketDraftEditingId, clear, isEnteredPromoCodeApplicable, isOpeningCheckout, t])
+    }, [appliedPromoCode, basket?.items.length, basketDraftEditingId, clear, isEnteredPromoCodeApplicable, isOpeningCheckout, referralProfile?.program_selection_required, t])
 
     const subtotalLabel = basket ? formatProductPrice(basket.total_amount) : null
     const deliveryAmount = Number(basket?.delivery_total ?? 0)
@@ -389,7 +404,7 @@ export default function CartScreen() {
         : null
     const grandTotalLabel = grandTotalAmount !== null ? formatProductPrice(grandTotalAmount) : null
     const handleApplyPromoCode = useCallback(async () => {
-        if (!isAuthenticated || !normalizedPromoCode || !basket || isCheckingPromoCode || hasAttachedPromoCode) {
+        if (!isAuthenticated || !isPartnerProgram || !normalizedPromoCode || !basket || isCheckingPromoCode || hasAttachedPromoCode) {
             return
         }
 
@@ -448,6 +463,7 @@ export default function CartScreen() {
         basket,
         hasAttachedPromoCode,
         isAuthenticated,
+        isPartnerProgram,
         isCheckingPromoCode,
         loadCartBenefitCheck,
         normalizedPromoCode,
@@ -704,7 +720,7 @@ export default function CartScreen() {
             >
                 <View style={cartScreenStyles.contentSurface}>
                     <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
-                        {isAuthenticated ? (
+                        {isAuthenticated && isPartnerProgram ? (
                             <View style={cartScreenStyles.summaryCard}>
                                 <View style={cartScreenStyles.promoInputShell}>
                                     <TextInput

@@ -33,6 +33,8 @@ export type BenefitOptionResponse = {
 
 export type BenefitCheckResponse = {
     referral_profile_id: number | null
+    reward_program: "bonus" | "partner" | null
+    program_selection_required: boolean
     subtotal_source: string
     basket_subtotal: string
     currency: string | null

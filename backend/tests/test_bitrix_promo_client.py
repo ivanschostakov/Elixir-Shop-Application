@@ -327,6 +327,67 @@ def test_referral_eligibility_uses_bitrix_user_identity(monkeypatch):
     assert result["status"] == "approved"
 
 
+def test_paid_purchase_without_partner_promo_omits_promo_field(monkeypatch):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {
+            "action": "record_paid_purchase",
+            "external_order_id": "EP-NOPROMO",
+            "user_email": "customer@example.com",
+            "amount": "5510.00",
+            "currency": "RUB",
+            "paid_at": "2026-07-26T12:00:00+00:00",
+        }
+        return httpx.Response(
+            200,
+            json={"ok": True, "data": {"outcome": "recorded", "accruals": []}},
+        )
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        lambda **kwargs: original_client(transport=transport, **kwargs),
+    )
+    client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
+    result = asyncio.run(
+        client.record_paid_purchase(
+            external_order_id="EP-NOPROMO",
+            user_email="customer@example.com",
+            promo=None,
+            amount="5510.00",
+            currency="RUB",
+            paid_at="2026-07-26T12:00:00+00:00",
+        )
+    )
+    assert result["accruals"] == []
+
+
+def test_paid_purchase_reversal_uses_only_idempotent_order_identity(monkeypatch):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {
+            "action": "reverse_paid_purchase",
+            "external_order_id": "EP-REFUND1",
+        }
+        return httpx.Response(
+            200,
+            json={"ok": True, "data": {"outcome": "reversed"}},
+        )
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        lambda **kwargs: original_client(transport=transport, **kwargs),
+    )
+    client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
+
+    result = asyncio.run(
+        client.reverse_paid_purchase(external_order_id="EP-REFUND1")
+    )
+
+    assert result["outcome"] == "reversed"
+
+
 def test_empty_configuration_is_rejected(monkeypatch):
     monkeypatch.setattr("src.integrations.bitrix_promo.BITRIX_PROMO_ENDPOINT", None)
     monkeypatch.setattr("src.integrations.bitrix_promo.BITRIX_PROMO_TOKEN", None)

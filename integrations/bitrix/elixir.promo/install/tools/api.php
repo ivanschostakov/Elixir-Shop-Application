@@ -142,6 +142,12 @@ try {
             'data' => (new ReferralAccrualService())->recordPaidPurchase($payload),
         ]);
     }
+    if ($action === 'reverse_paid_purchase') {
+        elixirPromoRespond([
+            'action' => 'reverse_paid_purchase',
+            'data' => (new ReferralAccrualService())->reversePaidPurchase($payload),
+        ]);
+    }
     if ($action === 'record_paid_order') {
         elixirPromoRespond([
             'action' => 'record_paid_order',
@@ -152,6 +158,12 @@ try {
         elixirPromoRespond([
             'action' => 'referral_eligibility',
             'data' => (new ReferralAccrualService())->eligibility($payload),
+        ]);
+    }
+    if ($action === 'partner_summary') {
+        elixirPromoRespond([
+            'action' => 'partner_summary',
+            'data' => (new ReferralAccrualService())->partnerSummary($payload),
         ]);
     }
     elixirPromoFail(422, 'unsupported_action', 'Неизвестная операция.', 'Unsupported action.');
@@ -165,11 +177,20 @@ try {
     if ($message === 'user_not_found') {
         elixirPromoFail(404, 'user_not_found', 'Покупатель Bitrix не найден.', 'Bitrix customer was not found.');
     }
+    if ($message === 'purchase_not_found') {
+        elixirPromoFail(404, 'purchase_not_found', 'Покупка приложения не найдена.', 'App purchase was not found.');
+    }
     if ($message === 'own_promo_not_allowed') {
         elixirPromoFail(409, 'own_promo_not_allowed', 'Собственный промокод нельзя применять к своим покупкам.', 'A customer cannot apply their own promo code.');
     }
     if ($message === 'referral_cycle_not_allowed') {
         elixirPromoFail(409, 'referral_cycle_not_allowed', 'Этот промокод создаёт недопустимую реферальную связь.', 'This promo code creates an invalid referral relationship.');
+    }
+    if ($message === 'promo_not_active') {
+        elixirPromoFail(409, 'promo_not_active', 'Промокод сейчас неактивен.', 'The promo code is currently inactive.');
+    }
+    if ($message === 'promo_usage_limit_reached') {
+        elixirPromoFail(409, 'promo_usage_limit_reached', 'Лимит применений промокода исчерпан.', 'The promo code usage limit has been reached.');
     }
     elixirPromoFail(404, 'promo_not_found', 'Промокод не найден или неактивен.', 'Promo code was not found or is inactive.');
 } catch (\Throwable $exception) {

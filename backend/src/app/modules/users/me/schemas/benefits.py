@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,6 +51,8 @@ class BenefitCheckRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     referral_profile_id: int | None = Field(default=None, ge=1)
+    reward_program: Literal["bonus", "partner"] | None = None
+    program_selection_required: bool = True
     subtotal_source: str = Field(max_length=SOURCE_KIND_MAX_LENGTH)
     basket_subtotal: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     currency: str | None = Field(default=None, max_length=CURRENCY_CODE_MAX_LENGTH)

@@ -107,13 +107,41 @@ final class SiteDiscountContext
         $profile = $this->getProgramProfile($userId);
         $previousTotal = round((float)($profile['order_sum']['amount'] ?? 0), 2);
         $newTotal = round($previousTotal + $amount, 2);
+        $result = $this->applyPurchaseTotal($userId, $previousTotal, $newTotal, $currency);
+
+        if ($newTotal >= 100000.0) {
+            $this->ensureOwnPromoForEligibleUser($userId);
+        }
+
+        return $result;
+    }
+
+    public function subtractPaidPurchase(int $userId, float $amount, string $currency = 'RUB'): array
+    {
+        if ($userId <= 0 || $amount <= 0 || !class_exists('\CUser')) {
+            throw new \InvalidArgumentException('invalid_paid_purchase');
+        }
+
+        $profile = $this->getProgramProfile($userId);
+        $previousTotal = round((float)($profile['order_sum']['amount'] ?? 0), 2);
+        $newTotal = max(0.0, round($previousTotal - $amount, 2));
+
+        return $this->applyPurchaseTotal($userId, $previousTotal, $newTotal, $currency);
+    }
+
+    private function applyPurchaseTotal(
+        int $userId,
+        float $previousTotal,
+        float $newTotal,
+        string $currency
+    ): array {
         $currency = strtoupper(trim($currency)) ?: 'RUB';
         $rateMap = $this->getLoyaltyGroupRateMap();
         $targetGroupId = 0;
-        $targetRate = 3.0;
+        $targetRate = 0.0;
         foreach ($rateMap as $groupId => $rate) {
             $threshold = max(30000.0, (float)$rate * 10000.0);
-            if ($newTotal >= $threshold && (float)$rate >= $targetRate) {
+            if ($newTotal >= $threshold && (float)$rate > $targetRate) {
                 $targetGroupId = (int)$groupId;
                 $targetRate = (float)$rate;
             }
@@ -134,10 +162,6 @@ final class SiteDiscountContext
             'UF_PERCENT' => $targetRate,
         ])) {
             throw new \RuntimeException('purchase_total_update_failed');
-        }
-
-        if ($newTotal >= 100000.0) {
-            $this->ensureOwnPromoForEligibleUser($userId);
         }
 
         return [

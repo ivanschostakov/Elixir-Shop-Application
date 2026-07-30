@@ -143,20 +143,32 @@ class BitrixPromoClient:
         *,
         external_order_id: str,
         user_email: str,
-        promo: str,
+        promo: str | None,
         amount: str,
         currency: str,
         paid_at: str,
     ) -> dict[str, Any]:
+        payload = {
+            "action": "record_paid_purchase",
+            "external_order_id": external_order_id,
+            "user_email": user_email,
+            "amount": amount,
+            "currency": currency,
+            "paid_at": paid_at,
+        }
+        if promo:
+            payload["promo"] = promo
+        return await self._request(payload)
+
+    async def reverse_paid_purchase(
+        self,
+        *,
+        external_order_id: str,
+    ) -> dict[str, Any]:
         return await self._request(
             {
-                "action": "record_paid_purchase",
+                "action": "reverse_paid_purchase",
                 "external_order_id": external_order_id,
-                "user_email": user_email,
-                "promo": promo,
-                "amount": amount,
-                "currency": currency,
-                "paid_at": paid_at,
             }
         )
 
@@ -175,6 +187,22 @@ class BitrixPromoClient:
             payload["user_id"] = bitrix_user_id
         if user_email:
             payload["user_email"] = user_email
+        return await self._request(payload)
+
+    async def partner_summary(
+        self,
+        *,
+        bitrix_user_id: int | None = None,
+        user_email: str | None = None,
+        period: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"action": "partner_summary"}
+        if bitrix_user_id is not None and bitrix_user_id > 0:
+            payload["user_id"] = bitrix_user_id
+        if user_email:
+            payload["user_email"] = user_email
+        if period:
+            payload["period"] = period
         return await self._request(payload)
 
     async def _user_request(

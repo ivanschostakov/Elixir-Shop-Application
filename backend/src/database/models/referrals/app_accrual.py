@@ -50,7 +50,16 @@ class AppReferralPurchase(Base, IdPkMixin, TimestampMixin):
         index=True,
     )
     bitrix_buyer_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
-    promo_code: Mapped[str] = mapped_column(String(length=PROMO_CODE_MAX_LENGTH), nullable=False, index=True)
+    promo_code: Mapped[str | None] = mapped_column(
+        String(length=PROMO_CODE_MAX_LENGTH),
+        nullable=True,
+        index=True,
+    )
+    bitrix_coupon_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    bitrix_discount_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    bitrix_purchase_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    coupon_use_count_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coupon_use_count_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     currency: Mapped[str] = mapped_column(
         String(length=CURRENCY_CODE_MAX_LENGTH),
@@ -70,6 +79,14 @@ class AppReferralPurchase(Base, IdPkMixin, TimestampMixin):
     )
     bitrix_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     sync_error: Mapped[str | None] = mapped_column(String(length=500), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(length=STATUS_MAX_LENGTH),
+        nullable=False,
+        default="posted",
+        server_default=text("'posted'"),
+        index=True,
+    )
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     calculation_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
@@ -106,6 +123,7 @@ class AppReferralAccrual(Base, IdPkMixin, TimestampMixin):
     beneficiary_bitrix_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     beneficiary_email: Mapped[str | None] = mapped_column(String(length=EMAIL_MAX_LENGTH), nullable=True, index=True)
     beneficiary_name: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
+    bitrix_accrual_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     referral_bitrix_user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
     level: Mapped[int] = mapped_column(Integer, nullable=False)
     buyer_discount_percent: Mapped[Decimal] = mapped_column(

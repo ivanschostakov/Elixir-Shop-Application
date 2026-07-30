@@ -60,12 +60,23 @@ $appPromoSummary = [
     'amount' => 0.0,
 ];
 $appPromoStats = [];
+$appPartnerSummary = [
+    'accruals' => 0,
+    'pending_amount' => 0.0,
+    'approved_amount' => 0.0,
+    'rejected_amount' => 0.0,
+];
+$networkMonthlySummary = [
+    'participants' => 0,
+    'turnover' => 0.0,
+    'amount' => 0.0,
+];
 $connection = Application::getConnection();
 if ($connection->isTableExists('b_elixir_referral_app_purchase')) {
     $summaryRow = $connection->query(
         "SELECT
             COUNT(*) AS ORDERS,
-            COUNT(DISTINCT PROMO) AS PROMOS,
+            COUNT(DISTINCT NULLIF(PROMO, '')) AS PROMOS,
             COUNT(DISTINCT USER_ID) AS BUYERS,
             COALESCE(SUM(AMOUNT), 0) AS AMOUNT
          FROM b_elixir_referral_app_purchase
@@ -91,13 +102,49 @@ if ($connection->isTableExists('b_elixir_referral_app_purchase')) {
          FROM b_elixir_referral_app_purchase purchases
          LEFT JOIN b_sale_discount_coupon coupons
             ON LOWER(TRIM(coupons.COUPON))=LOWER(TRIM(purchases.PROMO))
-         WHERE purchases.SOURCE='app'
+         WHERE purchases.SOURCE='app' AND TRIM(purchases.PROMO)<>''
          GROUP BY purchases.PROMO
          ORDER BY AMOUNT DESC, ORDERS DESC
          LIMIT 200"
     );
     while ($statsRow = $statsRows->fetch()) {
         $appPromoStats[] = $statsRow;
+    }
+}
+if ($connection->isTableExists('b_elixir_referral_partner_accrual')) {
+    $partnerRow = $connection->query(
+        "SELECT
+            COUNT(*) AS ACCRUALS,
+            COALESCE(SUM(CASE WHEN STATUS='pending' THEN COMMISSION_AMOUNT ELSE 0 END), 0) AS PENDING_AMOUNT,
+            COALESCE(SUM(CASE WHEN STATUS='approved' THEN COMMISSION_AMOUNT ELSE 0 END), 0) AS APPROVED_AMOUNT,
+            COALESCE(SUM(CASE WHEN STATUS='rejected' THEN COMMISSION_AMOUNT ELSE 0 END), 0) AS REJECTED_AMOUNT
+         FROM b_elixir_referral_partner_accrual
+         WHERE SOURCE='app'"
+    )->fetch();
+    if (is_array($partnerRow)) {
+        $appPartnerSummary = [
+            'accruals' => (int)$partnerRow['ACCRUALS'],
+            'pending_amount' => (float)$partnerRow['PENDING_AMOUNT'],
+            'approved_amount' => (float)$partnerRow['APPROVED_AMOUNT'],
+            'rejected_amount' => (float)$partnerRow['REJECTED_AMOUNT'],
+        ];
+    }
+}
+if ($connection->isTableExists('b_elixir_partner_network_monthly')) {
+    $networkRow = $connection->query(
+        "SELECT
+            COUNT(*) AS PARTICIPANTS,
+            COALESCE(SUM(NETWORK_TURNOVER), 0) AS TURNOVER,
+            COALESCE(SUM(AMOUNT), 0) AS AMOUNT
+         FROM b_elixir_partner_network_monthly
+         WHERE PERIOD='" . $connection->getSqlHelper()->forSql(date('Y-m'), 7) . "'"
+    )->fetch();
+    if (is_array($networkRow)) {
+        $networkMonthlySummary = [
+            'participants' => (int)$networkRow['PARTICIPANTS'],
+            'turnover' => (float)$networkRow['TURNOVER'],
+            'amount' => (float)$networkRow['AMOUNT'],
+        ];
     }
 }
 ?>
@@ -138,14 +185,42 @@ if ($connection->isTableExists('b_elixir_referral_app_purchase')) {
 
 <div class="adm-detail-content-wrap" style="margin-top: 24px;">
     <div class="adm-detail-content">
-        <div class="adm-detail-title">Статистика промокодов из приложения</div>
+        <div class="adm-detail-title">Партнёрская программа: покупки из приложения</div>
         <div class="adm-detail-content-item-block">
             <p>
                 Оплаченных заказов: <strong><?= $appPromoSummary['orders'] ?></strong>
-                · Промокодов: <strong><?= $appPromoSummary['promos'] ?></strong>
                 · Покупателей: <strong><?= $appPromoSummary['buyers'] ?></strong>
-                · Сумма: <strong><?= number_format($appPromoSummary['amount'], 2, ',', ' ') ?> ₽</strong>
+                · Сумма товаров без доставки: <strong><?= number_format($appPromoSummary['amount'], 2, ',', ' ') ?> ₽</strong>
             </p>
+            <p style="color: #666;">
+                Здесь учитываются только пользователи, выбравшие партнёрскую программу.
+                Бонусная программа хранится в приложении и в Bitrix не записывается.
+            </p>
+        </div>
+    </div>
+</div>
+
+<div class="adm-detail-content-wrap" style="margin-top: 24px;">
+    <div class="adm-detail-content">
+        <div class="adm-detail-title">Партнёрская программа: результаты приложения</div>
+        <div class="adm-detail-content-item-block">
+            <p>
+                Начислений: <strong><?= $appPartnerSummary['accruals'] ?></strong>
+                · Ожидают проверки: <strong><?= number_format($appPartnerSummary['pending_amount'], 2, ',', ' ') ?> ₽</strong>
+                · Подтверждено: <strong><?= number_format($appPartnerSummary['approved_amount'], 2, ',', ' ') ?> ₽</strong>
+                · Отклонено: <strong><?= number_format($appPartnerSummary['rejected_amount'], 2, ',', ' ') ?> ₽</strong>
+            </p>
+            <p style="color: #666;">
+                Это отдельный журнал партнёрских начислений первого и второго уровней.
+                Он не изменяет личную скидку и не смешивается с бонусным балансом МойСклад.
+            </p>
+            <p>
+                Дополнительные 3–5% за <?= htmlspecialcharsbx(date('m.Y')) ?>:
+                участников — <strong><?= $networkMonthlySummary['participants'] ?></strong>
+                · оборот сети — <strong><?= number_format($networkMonthlySummary['turnover'], 2, ',', ' ') ?> ₽</strong>
+                · расчётное начисление — <strong><?= number_format($networkMonthlySummary['amount'], 2, ',', ' ') ?> ₽</strong>
+            </p>
+            <h3>Применения партнёрских промокодов</h3>
             <?php if ($appPromoStats === []): ?>
                 <div class="adm-info-message">
                     Оплаченных заказов приложения с промокодом пока нет.

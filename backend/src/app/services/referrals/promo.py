@@ -11,10 +11,22 @@ from src.integrations.bitrix_promo import (
     bitrix_promo_configured,
 )
 from src.integrations.moysklad.client import MoySkladClient
-from .profile import get_or_create_referral_profile, normalize_referral_code, refresh_profile_discount, refresh_profile_discount_from_moysklad
+from .profile import get_or_create_referral_profile, normalize_referral_code, refresh_profile_discount
+from .program import normalize_reward_program
+
+
+async def _require_partner_program(db: AsyncSession, *, user: User) -> ReferralProfile:
+    profile = await get_or_create_referral_profile(db, user=user)
+    if normalize_reward_program(profile.reward_program) != "partner":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Промокоды доступны только в партнёрской программе / Promo codes are available only in the partner program",
+        )
+    return profile
 
 
 async def check_referrer_code(db: AsyncSession, *, user: User, code: str) -> dict[str, Any]:
+    await _require_partner_program(db, user=user)
     normalized_code = normalize_referral_code(code)
     if normalized_code and bitrix_promo_configured():
         try:
@@ -67,6 +79,7 @@ async def attach_referrer_code(
     confirmed: bool = False,
     moysklad_client: MoySkladClient | None = None,
 ) -> ReferralProfile:
+    profile = await _require_partner_program(db, user=user)
     check = await check_referrer_code(db, user=user, code=code)
     if not check["is_valid"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=check["reason"] or "Invalid promo code")
@@ -74,7 +87,6 @@ async def attach_referrer_code(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=check["warning"])
 
     normalized_code = check["code"]
-    profile = await get_or_create_referral_profile(db, user=user)
     if bitrix_promo_configured():
         try:
             remote_result = await BitrixPromoClient().attach_referrer(
@@ -103,14 +115,12 @@ async def attach_referrer_code(
     if remote_result is not None and remote_result.get("progress_reset"):
         profile.referral_discount_base_total = 0
         profile.current_discount_percent = 0
-    else:
-        await refresh_profile_discount_from_moysklad(profile, user=user, moysklad_client=moysklad_client)
     await db.flush()
     return profile
 
 
 async def detach_referrer_code(db: AsyncSession, *, user: User) -> ReferralProfile:
-    profile = await get_or_create_referral_profile(db, user=user)
+    profile = await _require_partner_program(db, user=user)
     if bitrix_promo_configured():
         try:
             await BitrixPromoClient().detach_referrer(user_email=user.email)

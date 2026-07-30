@@ -25,6 +25,7 @@ if "PIL" not in sys.modules:
     sys.modules["PIL"] = pil_module
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER, ufa_now
+from src.integrations.amocrm import amocrm_client
 from src.database.models import (
     FavouredProduct,
     Product,
@@ -258,7 +259,7 @@ def _create_ready_draft(client: TestClient, headers: dict[str, str], variant_id:
 
 
 @pytest.fixture()
-def registered_user(register_verified_user):
+def registered_user(client: TestClient, register_verified_user):
     token = uuid.uuid4().hex[:12]
     payload = register_verified_user({
         "username": f"u{token}",
@@ -268,6 +269,12 @@ def registered_user(register_verified_user):
         "surname": "Tester",
     })
     user_id = payload["user"]["id"]
+    program_response = client.post(
+        "/api/v1/users/me/referral-profile/program",
+        headers={"Authorization": f"Bearer {payload['access_token']}"},
+        json={"program": "bonus"},
+    )
+    assert program_response.status_code == 200, program_response.text
 
     try:
         yield {"user_id": user_id, "headers": {"Authorization": f"Bearer {payload['access_token']}"}}
@@ -320,22 +327,26 @@ def product_factory():
 
 @pytest.fixture()
 def stub_amocrm(monkeypatch):
-    async def fake_find_lead_by_order_number(order_number):
-        return None
+    class StubAmoCrmClient:
+        STATUS_IDS = amocrm_client.STATUS_IDS
+        STATUS_WORDS = amocrm_client.STATUS_WORDS
 
-    async def fake_find_or_create_contact(**kwargs):
-        return {"id": 12345}
+        async def find_lead_by_order_number(self, order_number):
+            return None
 
-    async def fake_create_lead_with_contact_and_note(**kwargs):
-        return {"id": 67890}
+        async def find_or_create_contact(self, **kwargs):
+            return {"id": 12345}
 
-    async def fake_update_lead_status(lead_id, status_id):
-        return {"id": lead_id, "status_id": status_id}
+        async def create_lead_with_contact_and_note(self, **kwargs):
+            return {"id": 67890}
 
-    monkeypatch.setattr("src.app.services.orders.amocrm_client.find_lead_by_order_number", fake_find_lead_by_order_number)
-    monkeypatch.setattr("src.app.services.orders.amocrm_client.find_or_create_contact", fake_find_or_create_contact)
-    monkeypatch.setattr("src.app.services.orders.amocrm_client.create_lead_with_contact_and_note", fake_create_lead_with_contact_and_note)
-    monkeypatch.setattr("src.app.services.orders.amocrm_client.update_lead_status", fake_update_lead_status)
+        async def update_lead_status(self, lead_id, status_id):
+            return {"id": lead_id, "status_id": status_id}
+
+    stub_client = StubAmoCrmClient()
+    monkeypatch.setattr("src.app.services.orders.get_amocrm_client", lambda: stub_client)
+    monkeypatch.setattr("src.app.services.orders.creation.amocrm_client", stub_client)
+    monkeypatch.setattr("src.app.services.orders.crm.amocrm_client", stub_client)
 
 
 def test_create_recommendation_view_dedupes_within_30_minutes(

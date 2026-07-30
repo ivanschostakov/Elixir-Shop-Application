@@ -265,11 +265,12 @@ export default function CheckoutScreen() {
         const trimmedCode = promoCode.trim()
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
-    const attachedPromoCode = referralProfile?.promo_code ?? null
+    const isPartnerProgram = referralProfile?.reward_program === "partner"
+    const attachedPromoCode = isPartnerProgram ? referralProfile?.promo_code ?? null : null
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
-    const activeEnteredPromoCode = hasAttachedPromoCode ? null : appliedPromoCode
+    const hasUnappliedPromoCode = Boolean(isAuthenticated && isPartnerProgram && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const activeEnteredPromoCode = isPartnerProgram && !hasAttachedPromoCode ? appliedPromoCode : null
     const loadBenefitCheck = useCallback(async (code: string | null) => {
         if (!orderDraft || !isAuthenticated) {
             setBenefitCheck(null)
@@ -379,7 +380,7 @@ export default function CheckoutScreen() {
     const isPositionsBusy = isRestoringDraft || isUpdatingPositions
     const isAddProductsBusy = isRestoringDraft
     const handleApplyPromoCode = useCallback(async () => {
-        if (!isAuthenticated || !normalizedPromoCode || !orderDraft || isCheckingPromoCode || hasAttachedPromoCode) {
+        if (!isAuthenticated || !isPartnerProgram || !normalizedPromoCode || !orderDraft || isCheckingPromoCode || hasAttachedPromoCode) {
             return
         }
 
@@ -435,6 +436,7 @@ export default function CheckoutScreen() {
         activeEnteredPromoCode,
         hasAttachedPromoCode,
         isAuthenticated,
+        isPartnerProgram,
         isCheckingPromoCode,
         loadBenefitCheck,
         normalizedPromoCode,
@@ -465,6 +467,20 @@ export default function CheckoutScreen() {
     }, [activeEnteredPromoCode, isBasketCheckout, orderDraft, useBonusRubles])
 
     const handlePressPay = useCallback(() => {
+        if (referralProfile?.program_selection_required) {
+            Alert.alert(
+                t("profile.referral.chooseProgramTitle"),
+                t("profile.referral.chooseProgramHint"),
+                [
+                    { text: t("common.cancel"), style: "cancel" },
+                    {
+                        text: t("profile.referral.chooseProgramAction"),
+                        onPress: () => router.push(ROUTES.profileDiscounts),
+                    },
+                ],
+            )
+            return
+        }
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
             {
                 text: t("checkout.paymentMethodCancel"),
@@ -483,7 +499,7 @@ export default function CheckoutScreen() {
                 },
             },
         ])
-    }, [openPaymentFlow, t])
+    }, [openPaymentFlow, referralProfile?.program_selection_required, t])
     const handleCheckoutFooterCtaPress = useCallback(() => {
         if (hasUnappliedPromoCode) {
             void handleApplyPromoCode()
@@ -1185,33 +1201,36 @@ export default function CheckoutScreen() {
 
                         {isAuthenticated ? (
                             <>
-                                <View style={checkoutScreenStyles.detailsSheetDivider} />
-
-                                <View style={checkoutScreenStyles.detailsSheetRow}>
-                                    <Text numberOfLines={1} style={checkoutScreenStyles.detailsSheetLabel}>
-                                        {t("checkout.promoCodeTitle")}
-                                    </Text>
-                                    <View style={checkoutScreenStyles.detailsSheetTrailing}>
-                                        <View style={checkoutScreenStyles.detailsSheetTextBlock}>
-                                            <TextInput
-                                                autoCapitalize="characters"
-                                                autoCorrect={false}
-                                                editable={!hasAttachedPromoCode}
-                                                onChangeText={handlePromoCodeChange}
-                                                placeholder={t("checkout.promoCodePlaceholder")}
-                                                placeholderTextColor="#94A3B8"
-                                                style={checkoutScreenStyles.detailsSheetInput}
-                                                value={displayedPromoCode}
-                                            />
+                                {isPartnerProgram ? (
+                                    <>
+                                        <View style={checkoutScreenStyles.detailsSheetDivider} />
+                                        <View style={checkoutScreenStyles.detailsSheetRow}>
+                                            <Text numberOfLines={1} style={checkoutScreenStyles.detailsSheetLabel}>
+                                                {t("checkout.promoCodeTitle")}
+                                            </Text>
+                                            <View style={checkoutScreenStyles.detailsSheetTrailing}>
+                                                <View style={checkoutScreenStyles.detailsSheetTextBlock}>
+                                                    <TextInput
+                                                        autoCapitalize="characters"
+                                                        autoCorrect={false}
+                                                        editable={!hasAttachedPromoCode}
+                                                        onChangeText={handlePromoCodeChange}
+                                                        placeholder={t("checkout.promoCodePlaceholder")}
+                                                        placeholderTextColor="#94A3B8"
+                                                        style={checkoutScreenStyles.detailsSheetInput}
+                                                        value={displayedPromoCode}
+                                                    />
+                                                </View>
+                                            </View>
                                         </View>
-                                    </View>
-                                </View>
-                                {hasAttachedPromoCode ? (
-                                    <View style={checkoutScreenStyles.detailsSheetHintRow}>
-                                        <Text style={[checkoutScreenStyles.detailsSheetHintText, checkoutScreenStyles.detailsSheetHintTextSuccess]}>
-                                            {t("checkout.promoCodeAlreadyApplied")}
-                                        </Text>
-                                    </View>
+                                        {hasAttachedPromoCode ? (
+                                            <View style={checkoutScreenStyles.detailsSheetHintRow}>
+                                                <Text style={[checkoutScreenStyles.detailsSheetHintText, checkoutScreenStyles.detailsSheetHintTextSuccess]}>
+                                                    {t("checkout.promoCodeAlreadyApplied")}
+                                                </Text>
+                                            </View>
+                                        ) : null}
+                                    </>
                                 ) : null}
                                 {Number(benefitCheck?.bonus_balance_rubles ?? 0) > 0 ? (
                                     <>
