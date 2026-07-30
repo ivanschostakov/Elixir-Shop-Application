@@ -188,3 +188,68 @@ async def test_fetch_catalog_rows_excludes_raw_material_folder_but_keeps_cosmeti
     assert len(variants) == 1
     assert str(variants[0].product_system_id) == cosmetic_product_id
     assert stats.fetched_products == 1
+
+
+@pytest.mark.anyio
+async def test_resolve_or_create_bonus_transaction_builds_spending_payload(monkeypatch):
+    client = MoySkladClient(token="token", base_url="https://example.test/api/remap/1.2")
+    counterparty_id = "12345678-1234-1234-1234-123456789012"
+    program_id = "87654321-4321-4321-4321-210987654321"
+    recorded: dict[str, object] = {}
+
+    async def fake_find(_external_code: str):
+        return None
+
+    async def fake_create(entity_type: str, payload: dict):
+        recorded["entity_type"] = entity_type
+        recorded["payload"] = payload
+        return {"id": "transaction-1", **payload}
+
+    monkeypatch.setattr(client, "find_bonus_transaction_by_external_code", fake_find)
+    monkeypatch.setattr(client, "_create_entity", fake_create)
+
+    result = await client.resolve_or_create_bonus_transaction(
+        counterparty_id=counterparty_id,
+        bonus_program_id=program_id,
+        bonus_points=70,
+        transaction_type="SPENDING",
+        external_code="elixir-bonus-spend-EP-TEST",
+        name="Списание бонусов",
+        description="Заказ EP-TEST",
+    )
+
+    assert result["id"] == "transaction-1"
+    assert recorded["entity_type"] == "bonustransaction"
+    payload = recorded["payload"]
+    assert isinstance(payload, dict)
+    assert payload["bonusValue"] == 70
+    assert payload["transactionType"] == "SPENDING"
+    assert payload["externalCode"] == "elixir-bonus-spend-EP-TEST"
+    assert payload["agent"]["meta"]["href"].endswith(f"/entity/counterparty/{counterparty_id}")
+    assert payload["bonusProgram"]["meta"]["href"].endswith(f"/entity/bonusprogram/{program_id}")
+
+
+@pytest.mark.anyio
+async def test_resolve_or_create_bonus_transaction_reuses_existing_transaction(monkeypatch):
+    client = MoySkladClient(token="token", base_url="https://example.test/api/remap/1.2")
+    existing = {"id": "transaction-1", "externalCode": "same-order"}
+
+    async def fake_find(_external_code: str):
+        return existing
+
+    async def fail_create(*_args, **_kwargs):
+        raise AssertionError("existing transaction must be reused")
+
+    monkeypatch.setattr(client, "find_bonus_transaction_by_external_code", fake_find)
+    monkeypatch.setattr(client, "_create_entity", fail_create)
+
+    result = await client.resolve_or_create_bonus_transaction(
+        counterparty_id="12345678-1234-1234-1234-123456789012",
+        bonus_program_id="87654321-4321-4321-4321-210987654321",
+        bonus_points=70,
+        transaction_type="SPENDING",
+        external_code="same-order",
+        name="Списание бонусов",
+    )
+
+    assert result is existing

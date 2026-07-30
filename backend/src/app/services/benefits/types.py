@@ -23,3 +23,6 @@ class ResolvedDiscountOption:
     estimated_discount_amount: Decimal | None
     estimated_total_after: Decimal | None
     reason: str | None
+    source_external_id: str | None = None
+    benefit_units: Decimal | None = None
+    benefit_unit_name: str | None = None

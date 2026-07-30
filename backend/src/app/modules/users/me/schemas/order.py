@@ -12,6 +12,7 @@ class CreateOrderPayload(BaseModel):
     draft_id: int | None = Field(default=None, ge=1)
     payment_method: PaymentMethod
     code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
+    use_bonus_rubles: bool = False
 
 
 class CreatePaymentPayload(BaseModel):

@@ -36,6 +36,7 @@ from src.database.models import (
 
 log = logging.getLogger(__name__)
 ACTIVE_CONVERSATION_STATUSES = ("new", "open", "waiting_customer", "waiting_team")
+SUPPORT_PUBLIC_AUTHOR_NAME = "Elixir Peptide"
 SUPPORTED_IMAGE_MIME_TYPES = {
     "image/gif",
     "image/heic",
@@ -155,9 +156,14 @@ def serialize_support_message(message: CrmMessage, *, admin_view: bool) -> dict[
         author_role = None
         author_user_id = message.user_id
     elif message.sender_type == "admin":
-        author_name = _admin_name(message.admin) or "Поддержка"
-        author_role = _admin_role(message.admin) or "Поддержка"
-        author_user_id = message.admin_user_id
+        if admin_view:
+            author_name = _admin_name(message.admin) or "Поддержка"
+            author_role = _admin_role(message.admin) or "Поддержка"
+            author_user_id = message.admin_user_id
+        else:
+            author_name = SUPPORT_PUBLIC_AUTHOR_NAME
+            author_role = None
+            author_user_id = None
     else:
         author_name = "Система"
         author_role = None
@@ -199,7 +205,11 @@ def serialize_support_conversation(
         "subject": conversation.subject,
         "status": conversation.status,
         "priority": conversation.priority,
-        "assignee_name": _admin_name(conversation.assignee),
+        "assignee_name": (
+            _admin_name(conversation.assignee)
+            if admin_view
+            else SUPPORT_PUBLIC_AUTHOR_NAME if conversation.assignee else None
+        ),
         "customer_unread_count": conversation.customer_unread_count,
         "last_message_at": conversation.last_message_at,
         "created_at": conversation.created_at,
@@ -480,7 +490,6 @@ async def send_support_reply_notification(
     *,
     conversation: CrmConversation,
     message: CrmMessage,
-    admin_name: str,
 ) -> None:
     if message.is_internal:
         return
@@ -489,7 +498,7 @@ async def send_support_reply_notification(
         sent = await send_push_to_user(
             db,
             user_id=conversation.customer_user_id,
-            title=f"{admin_name} · Поддержка",
+            title=SUPPORT_PUBLIC_AUTHOR_NAME,
             body=(message.body or "Новое сообщение от поддержки")[:180],
             data={
                 "type": "support_reply",

@@ -1,12 +1,12 @@
 import { useCallback, useMemo, useState } from "react"
-import { Alert, Pressable, Text, TextInput, View } from "react-native"
+import { Alert, Image, Pressable, Text, TextInput, View } from "react-native"
 import { router, useFocusEffect } from "expo-router"
 
 import { ProfileHeroCard } from "@/components/profile/profile-hero-card"
 import { ProfileQuickActions } from "@/components/profile/profile-quick-actions"
 import { FeedTemplate } from "@/components/templates/feed-template"
 import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
-import { ROUTES } from "@/constants/routes"
+import { getProductRoute, ROUTES } from "@/constants/routes"
 import { useProfileAvatar } from "@/hooks/profile/use-profile-avatar"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useAuth } from "@/providers/auth-provider"
@@ -14,10 +14,8 @@ import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
-import { checkMyBenefits } from "@/services/api/benefits"
-import type { BenefitCheckResponse, BenefitOptionResponse } from "@/services/api/benefits.types"
-import { attachMyReferrerCode, detachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
-import type { ReferralProfileResponse } from "@/services/api/users.types"
+import { attachMyReferrerCode, detachMyReferrerCode, getMyPromotions, getMyReferralProfile } from "@/services/api/users"
+import type { ProfilePromotionResponse, ReferralProfileResponse } from "@/services/api/users.types"
 import { formatMoney } from "@/utils/formatting"
 import { getProfileInitials } from "@/utils/profile/get-profile-initials"
 import { themeAccentPalettes, type ThemeAccentName } from "@/theme/colors"
@@ -31,28 +29,8 @@ function formatProfilePercent(value: string | null | undefined) {
     return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(amount)}%`
 }
 
-function formatProfileBenefitValue(option: BenefitOptionResponse) {
-    if (option.discount_percent !== null) {
-        return formatProfilePercent(option.discount_percent)
-    }
-
-    if (option.discount_amount !== null) {
-        return formatProfileMoney(option.discount_amount)
-    }
-
-    return null
-}
-
-function getProfileBenefitTitle(option: BenefitOptionResponse, t: ReturnType<typeof useLanguage>["t"]) {
-    if (option.source_kind === "app_referral") {
-        return t("profile.discounts.appReferral")
-    }
-
-    return t("profile.discounts.discount")
-}
-
-function getProfileBenefitKey(option: BenefitOptionResponse) {
-    return `${option.source_kind}-${option.source_record_id ?? "none"}-${option.code ?? "none"}`
+function getProfilePromotionKey(promotion: ProfilePromotionResponse) {
+    return `${promotion.kind}-${promotion.category_id ?? promotion.product_id}`
 }
 
 export default function ProfileScreen() {
@@ -81,16 +59,13 @@ export default function ProfileScreen() {
     const [isDeletingAccount, setIsDeletingAccount] = useState(false)
     const normalizedProfilePromoCode = useMemo(() => profilePromoCode.trim(), [profilePromoCode])
     const {
-        data: benefitCheck,
-        reload: reloadBenefits,
-    } = useAsyncData<BenefitCheckResponse | null>({
+        data: promotions,
+        reload: reloadPromotions,
+    } = useAsyncData<ProfilePromotionResponse[]>({
         deps: [user?.id ?? null],
         enabled: Boolean(user?.id),
-        fetcher: () => checkMyBenefits({
-            currency: "RUB",
-            subtotal: "0",
-        }),
-        initialData: null,
+        fetcher: getMyPromotions,
+        initialData: [],
         resetOnLoad: true,
     })
 
@@ -123,24 +98,10 @@ export default function ProfileScreen() {
         useCallback(() => {
             if (user?.id) {
                 void reloadReferralProfile({ showLoading: false })
-                void reloadBenefits({ showLoading: false })
+                void reloadPromotions({ showLoading: false })
             }
-        }, [reloadBenefits, reloadReferralProfile, user?.id]),
+        }, [reloadPromotions, reloadReferralProfile, user?.id]),
     )
-
-    const liveDiscountOptions = useMemo(() => {
-        const options = benefitCheck?.available_discount_options.filter((option) => option.is_applicable) ?? []
-        const seen = new Set<string>()
-
-        return options.filter((option) => {
-            const key = getProfileBenefitKey(option)
-            if (seen.has(key)) {
-                return false
-            }
-            seen.add(key)
-            return true
-        })
-    }, [benefitCheck])
 
     const handleApplyProfilePromo = useCallback(async () => {
         if (!normalizedProfilePromoCode) {
@@ -161,7 +122,6 @@ export default function ProfileScreen() {
             })
             setReferralProfile(nextReferralProfile)
             setProfilePromoCode("")
-            void reloadBenefits({ showLoading: false })
             Alert.alert(t("profile.referral.attachSuccessTitle"), t("profile.referral.attachSuccessMessage"))
         } catch (applyError) {
             Alert.alert(
@@ -173,7 +133,7 @@ export default function ProfileScreen() {
         } finally {
             setIsApplyingProfilePromo(false)
         }
-    }, [isApplyingProfilePromo, normalizedProfilePromoCode, reloadBenefits, setReferralProfile, t])
+    }, [isApplyingProfilePromo, normalizedProfilePromoCode, setReferralProfile, t])
 
     const handleDetachProfilePromo = useCallback(async () => {
         if (isDetachingProfilePromo) {
@@ -186,7 +146,6 @@ export default function ProfileScreen() {
             const nextReferralProfile = await detachMyReferrerCode()
             setReferralProfile(nextReferralProfile)
             setProfilePromoCode("")
-            void reloadBenefits({ showLoading: false })
             Alert.alert(t("profile.referral.detachSuccessTitle"), t("profile.referral.detachSuccessMessage"))
         } catch (detachError) {
             Alert.alert(
@@ -198,7 +157,22 @@ export default function ProfileScreen() {
         } finally {
             setIsDetachingProfilePromo(false)
         }
-    }, [isDetachingProfilePromo, reloadBenefits, setReferralProfile, t])
+    }, [isDetachingProfilePromo, setReferralProfile, t])
+
+    const handleOpenPromotion = useCallback((promotion: ProfilePromotionResponse) => {
+        if (promotion.kind === "category" && promotion.category_id) {
+            router.push({
+                pathname: ROUTES.discover,
+                params: {
+                    tab: "products",
+                    categoryId: String(promotion.category_id),
+                },
+            })
+            return
+        }
+
+        router.push(getProductRoute(promotion.product_id))
+    }, [])
 
     const handleSignOut = async () => {
         await signOut()
@@ -474,29 +448,42 @@ export default function ProfileScreen() {
                     </View>
                 </View>
 
-                {liveDiscountOptions.length ? (
+                {promotions.length ? (
                     <View style={ProfileScreenStyles.discountStack}>
-                        {liveDiscountOptions.map((option) => {
-                            const benefitValue = formatProfileBenefitValue(option)
-
-                            return (
-                                <View key={getProfileBenefitKey(option)} style={ProfileScreenStyles.discountRow}>
+                        {promotions.map((promotion) => (
+                                <Pressable
+                                    accessibilityLabel={`${promotion.title}, ${formatProfilePercent(promotion.discount_percent)}`}
+                                    accessibilityRole="button"
+                                    key={getProfilePromotionKey(promotion)}
+                                    onPress={() => handleOpenPromotion(promotion)}
+                                    style={({ pressed }) => [
+                                        ProfileScreenStyles.discountRow,
+                                        pressed && ProfileScreenStyles.discountRowPressed,
+                                    ]}
+                                >
+                                    <Image
+                                        resizeMode="cover"
+                                        source={{ uri: promotion.image_url }}
+                                        style={ProfileScreenStyles.discountImage}
+                                    />
                                     <View style={ProfileScreenStyles.discountCopy}>
                                         <Text style={ProfileScreenStyles.discountTitle}>
-                                            {getProfileBenefitTitle(option, t)}
+                                            {promotion.title}
                                         </Text>
-                                        {option.code ? (
-                                            <Text style={ProfileScreenStyles.discountCode}>
-                                                {option.code}
-                                            </Text>
-                                        ) : null}
+                                        <Text numberOfLines={2} style={ProfileScreenStyles.discountCode}>
+                                            {promotion.kind === "category"
+                                                ? t("profile.discounts.category")
+                                                : t("profile.discounts.product")}
+                                        </Text>
                                     </View>
-                                    <Text style={ProfileScreenStyles.discountValue}>
-                                        {benefitValue ?? t("profile.discounts.available")}
-                                    </Text>
-                                </View>
-                            )
-                        })}
+                                    <View style={ProfileScreenStyles.discountBadge}>
+                                        <Text style={ProfileScreenStyles.discountValue}>
+                                            −{formatProfilePercent(promotion.discount_percent)}
+                                        </Text>
+                                    </View>
+                                    <Text style={ProfileScreenStyles.discountArrow}>{">"}</Text>
+                                </Pressable>
+                        ))}
                     </View>
                 ) : (
                     <Text style={ProfileScreenStyles.sectionDescription}>
@@ -505,7 +492,7 @@ export default function ProfileScreen() {
                 )}
             </View>
 
-            {shouldShowReferralDetails && referralProfile ? (
+            {referralProfile ? (
                 <View style={ProfileScreenStyles.sectionCard}>
                     <View style={ProfileScreenStyles.sectionHeader}>
                         <View style={ProfileScreenStyles.sectionHeaderCopy}>
@@ -519,6 +506,12 @@ export default function ProfileScreen() {
                             <Text style={ProfileScreenStyles.metricLabel}>{t("profile.referral.totalPurchases")}</Text>
                             <Text style={ProfileScreenStyles.metricValue}>
                                 {formatProfileMoney(referralProfile.total_purchases)}
+                            </Text>
+                        </View>
+                        <View style={[ProfileScreenStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
+                            <Text style={ProfileScreenStyles.metricLabel}>{t("profile.referral.bonusRubles")}</Text>
+                            <Text style={ProfileScreenStyles.metricValue}>
+                                {formatProfileMoney(referralProfile.bonus_rubles)}
                             </Text>
                         </View>
                         <View style={[ProfileScreenStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
@@ -540,7 +533,14 @@ export default function ProfileScreen() {
                         <View style={ProfileScreenStyles.detailRow}>
                             <Text style={ProfileScreenStyles.detailLabel}>{t("profile.referral.referrerPromo")}</Text>
                             <Text style={ProfileScreenStyles.detailValue}>
-                                {referralProfile.promo_code}
+                                {referralProfile.promo_code ?? "—"}
+                            </Text>
+                        </View>
+                        <View style={ProfileScreenStyles.detailDivider} />
+                        <View style={ProfileScreenStyles.detailRow}>
+                            <Text style={ProfileScreenStyles.detailLabel}>{t("profile.referral.bonusPoints")}</Text>
+                            <Text style={ProfileScreenStyles.detailValue}>
+                                {new Intl.NumberFormat("ru-RU").format(referralProfile.bonus_points)}
                             </Text>
                         </View>
                     </View>

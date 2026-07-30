@@ -80,6 +80,7 @@ export type CreateOrderPayload = {
     draft_id?: number | null
     payment_method: "later" | "sbp"
     code?: string | null
+    use_bonus_rubles?: boolean
 }
 
 export type GetOrdersQuery = {

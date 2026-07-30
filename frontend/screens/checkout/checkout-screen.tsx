@@ -12,6 +12,7 @@ import {
     Platform,
     Pressable,
     ScrollView,
+    Switch,
     Text,
     TextInput,
     View,
@@ -93,6 +94,10 @@ import { updateGuestBasketCheckout, updateGuestCartItemQuantity } from "@/servic
 import { spacing } from "@/theme/spacing"
 
 function formatBenefitTitle(option: BenefitOptionResponse) {
+    if (option.source_kind === "moysklad_bonus") {
+        return "Бонусные рубли"
+    }
+
     if (option.source_kind === "app_referral") {
         return "Промокод"
     }
@@ -197,6 +202,7 @@ export default function CheckoutScreen() {
     const [promoCode, setPromoCode] = useState(routePromoCode ?? "")
     const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(routePromoCode ?? null)
     const [benefitCheck, setBenefitCheck] = useState<BenefitCheckResponse | null>(null)
+    const [useBonusRubles, setUseBonusRubles] = useState(false)
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const appliedRoutePromoCodeRef = useRef<string | null>(routePromoCode ?? null)
     const normalizedPromoCode = useMemo(() => {
@@ -219,13 +225,14 @@ export default function CheckoutScreen() {
                 code,
                 currency: orderDraft.currency,
                 subtotal: orderDraft.basket_subtotal,
+                use_bonus_rubles: useBonusRubles,
             })
             setBenefitCheck(nextBenefitCheck)
             return nextBenefitCheck
         } catch {
             return null
         }
-    }, [isAuthenticated, orderDraft])
+    }, [isAuthenticated, orderDraft, useBonusRubles])
 
     useEffect(() => {
         if (!routePromoCode || appliedRoutePromoCodeRef.current === routePromoCode) {
@@ -396,9 +403,10 @@ export default function CheckoutScreen() {
                 paymentMethod,
                 ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
                 ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
+                ...(useBonusRubles ? { useBonus: "1" } : {}),
             },
         })
-    }, [activeEnteredPromoCode, isBasketCheckout, orderDraft])
+    }, [activeEnteredPromoCode, isBasketCheckout, orderDraft, useBonusRubles])
 
     const handlePressPay = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
@@ -1146,6 +1154,37 @@ export default function CheckoutScreen() {
                                             {t("checkout.promoCodeAlreadyApplied")}
                                         </Text>
                                     </View>
+                                ) : null}
+                                {Number(benefitCheck?.bonus_balance_rubles ?? 0) > 0 ? (
+                                    <>
+                                        <View style={checkoutScreenStyles.detailsSheetDivider} />
+                                        <View style={checkoutScreenStyles.detailsSheetRow}>
+                                            <Text numberOfLines={2} style={checkoutScreenStyles.detailsSheetLabel}>
+                                                {t("checkout.bonusRublesTitle")}
+                                            </Text>
+                                            <View style={checkoutScreenStyles.bonusToggleCopy}>
+                                                <Text style={checkoutScreenStyles.bonusToggleValue}>
+                                                    {formatMoney(
+                                                        Number(benefitCheck?.bonus_balance_rubles ?? 0),
+                                                        benefitCheck?.currency ?? orderDraft.currency,
+                                                    )}
+                                                </Text>
+                                                <Text style={checkoutScreenStyles.bonusToggleHint}>
+                                                    {useBonusRubles && Number(benefitCheck?.bonus_applied_rubles ?? 0) > 0
+                                                        ? t("checkout.bonusRublesApplied")
+                                                        : t("checkout.bonusRublesHint")}
+                                                </Text>
+                                            </View>
+                                            <Switch
+                                                accessibilityLabel={t("checkout.bonusRublesTitle")}
+                                                disabled={!benefitCheck?.bonus_option?.is_applicable}
+                                                onValueChange={setUseBonusRubles}
+                                                trackColor={{ false: palette.border, true: palette.primaryMuted }}
+                                                thumbColor={useBonusRubles ? palette.primary : palette.mutedText}
+                                                value={useBonusRubles}
+                                            />
+                                        </View>
+                                    </>
                                 ) : null}
                             </>
                         ) : null}

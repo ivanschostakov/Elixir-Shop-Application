@@ -118,8 +118,25 @@ export type ReferralProfileResponse = {
     referral_discount_base_total: string
     current_discount_percent: string
     promo_code: string | null
+    bonus_points: number
+    bonus_rubles: string
+    bonus_program_name: string | null
+    bonus_spend_rate_points_to_ruble: number
+    bonus_max_paid_rate_percent: string
     created_at: string
     updated_at: string
+}
+
+export type ProfilePromotionResponse = {
+    kind: "product" | "category"
+    title: string
+    subtitle: string | null
+    discount_percent: string
+    image_url: string
+    product_id: number
+    product_name: string
+    category_id: number | null
+    category_name: string | null
 }
 
 export type ReferrerCodeCheckPayload = {

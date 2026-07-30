@@ -11,6 +11,7 @@ from .orders import my_orders_router
 from .presence import presence_router
 from .push_tokens import push_tokens_router
 from .profile import my_profile_router
+from .promotions import my_promotions_router
 from .recommendations import recommendations_router
 from .referral_profile import my_referral_profile_router
 from .search_queries import search_queries_router
@@ -28,6 +29,7 @@ me_router.include_router(my_orders_router)
 me_router.include_router(presence_router)
 me_router.include_router(push_tokens_router)
 me_router.include_router(my_profile_router)
+me_router.include_router(my_promotions_router)
 me_router.include_router(recommendations_router)
 me_router.include_router(my_referral_profile_router)
 me_router.include_router(search_queries_router)

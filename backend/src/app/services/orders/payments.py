@@ -13,8 +13,9 @@ from starlette import status
 from config import APP_PAYMENT_RETURN_BASE_URL, INTELLECTMONEY_IP_ADDRESS
 from src.app.services.external_errors import external_service_http_exception
 from src.app.services.customer_intelligence import record_customer_event_safe
+from src.app.services.benefits.redemption import reverse_order_bonus_safe
 from src.database.crud import update_order
-from src.database.models import Order
+from src.database.models import Order, User
 from src.database.schemas import OrderUpdate
 from src.integrations.intellectmoney import IntellectMoneyError, get_intellectmoney_client
 from src.integrations.moysklad.order_sync import MOY_SKLAD_INVOICEOUT_STATE_PAID, MOY_SKLAD_STATE_INVOICE_PAID, MOY_SKLAD_STATE_INVOICE_SENT, sync_moysklad_customerorder_state, sync_moysklad_invoiceout_state
@@ -177,6 +178,10 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
         await sync_moysklad_customerorder_state(updated_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
         await sync_moysklad_invoiceout_state(updated_order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID)
         await sync_paid_order_referral_to_app_safe(session, order=updated_order)
+    elif updated_order.payment_status == "refunded":
+        user = await session.get(User, updated_order.user_id)
+        if user is not None:
+            await reverse_order_bonus_safe(session, order=updated_order, user=user)
     return updated_order
 
 

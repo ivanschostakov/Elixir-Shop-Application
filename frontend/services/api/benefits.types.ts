@@ -3,6 +3,7 @@ export type BenefitCheckPayload = {
     subtotal?: string | null
     discountable_subtotal?: string | null
     currency?: string | null
+    use_bonus_rubles?: boolean
 }
 
 export type BenefitOptionResponse = {
@@ -21,6 +22,9 @@ export type BenefitOptionResponse = {
     estimated_discount_amount: string | null
     estimated_total_after: string | null
     reason: string | null
+    source_external_id: string | null
+    benefit_units: string | null
+    benefit_unit_name: string | null
     sequence: number | null
     applied_discount_amount: string | null
     subtotal_before: string | null
@@ -41,4 +45,12 @@ export type BenefitCheckResponse = {
     stacked_discount_options: BenefitOptionResponse[]
     stacked_discount_amount: string
     total_after_discounts: string
+    bonus_option: BenefitOptionResponse | null
+    bonus_balance_points: number
+    bonus_balance_rubles: string
+    bonus_program_name: string | null
+    bonus_max_paid_rate_percent: string
+    use_bonus_rubles: boolean
+    bonus_applied_points: number
+    bonus_applied_rubles: string
 }

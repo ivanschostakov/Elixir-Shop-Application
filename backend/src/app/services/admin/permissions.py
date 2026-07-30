@@ -64,6 +64,12 @@ ALL_PERMISSIONS: tuple[str, ...] = (
     "exports.read",
 )
 
+BASE_ADMIN_PERMISSIONS = frozenset({
+    "support.read",
+    "support.reply",
+    "support.assign",
+})
+
 
 @dataclass(frozen=True, slots=True)
 class AdminContext:
@@ -95,11 +101,12 @@ async def get_admin_by_user_id(db: AsyncSession, user_id: int) -> Admin | None:
 
 def build_admin_context(*, admin: Admin, session: AdminSession) -> AdminContext:
     roles = tuple(sorted({assignment.role.code for assignment in admin.role_assignments}))
-    permissions = frozenset(
+    role_permissions = {
         permission
         for assignment in admin.role_assignments
         for permission in (assignment.role.permissions or [])
-    )
+    }
+    permissions = frozenset(role_permissions | BASE_ADMIN_PERMISSIONS)
     return AdminContext(user=admin.user, admin=admin, session=session, roles=roles, permissions=permissions)
 
 

@@ -89,6 +89,9 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
             "reviews.read",
             "reviews.moderate",
             "banners.manage",
+            "support.read",
+            "support.reply",
+            "support.assign",
             "alerts.read",
             "exports.read",
         ),
@@ -113,6 +116,9 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
             "campaigns.send",
             "leads.read",
             "ai_chats.read",
+            "support.read",
+            "support.reply",
+            "support.assign",
             "analytics.read",
             "alerts.read",
             "exports.read",
@@ -135,6 +141,9 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
             "catalog.read",
             "automation.read",
             "automation.manage",
+            "support.read",
+            "support.reply",
+            "support.assign",
             "sla.read",
             "alerts.read",
             "alerts.manage",
@@ -147,8 +156,8 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
         code="analyst",
         name_ru="Аналитик / аудитор",
         name_en="Analyst / auditor",
-        description_ru="Сквозной доступ только на чтение, аналитика, экспорт и журнал аудита.",
-        description_en="Cross-functional read-only access, analytics, exports, and audit log.",
+        description_ru="Сквозной доступ на чтение, общая очередь поддержки, аналитика, экспорт и журнал аудита.",
+        description_en="Cross-functional read access, shared support inbox, analytics, exports, and audit log.",
         permissions=(
             "dashboard.read",
             "orders.read",
@@ -165,6 +174,8 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
             "community.read",
             "ai_chats.read",
             "support.read",
+            "support.reply",
+            "support.assign",
             "leads.read",
             "analytics.read",
             "integrations.read",
@@ -176,4 +187,3 @@ SYSTEM_ROLES: tuple[SystemRole, ...] = (
 
 SYSTEM_ROLE_BY_CODE = {role.code: role for role in SYSTEM_ROLES}
 ASSIGNABLE_ROLE_CODES = frozenset(SYSTEM_ROLE_BY_CODE)
-

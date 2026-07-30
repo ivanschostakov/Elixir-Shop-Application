@@ -14,6 +14,7 @@ from src.database.schemas import OrderUpdate
 from src.integrations.amocrm import get_amocrm_client
 from src.integrations.moysklad.order_sync import MOY_SKLAD_INVOICEOUT_STATE_PAID, MOY_SKLAD_STATE_INVOICE_PAID, sync_moysklad_customerorder_state, sync_moysklad_invoiceout_state
 from src.app.services.referrals.paid_orders import sync_paid_order_referral_to_app_safe
+from src.app.services.benefits.redemption import reverse_order_bonus_safe
 
 from .common import _normalize_phone
 from .fulfillment import create_delivery_for_order
@@ -231,5 +232,9 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
         await sync_moysklad_customerorder_state(refreshed_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
         await sync_moysklad_invoiceout_state(refreshed_order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID)
         await sync_paid_order_referral_to_app_safe(session, order=refreshed_order)
+    elif refreshed_order.is_canceled:
+        user = await session.get(User, refreshed_order.user_id)
+        if user is not None:
+            await reverse_order_bonus_safe(session, order=refreshed_order, user=user)
     await send_order_status_change_notification_if_needed(session, previous_status=previous_status, order=refreshed_order)
     return refreshed_order

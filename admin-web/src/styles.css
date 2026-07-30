@@ -158,6 +158,8 @@ button, input, textarea, select { font: inherit; }
 .admin-message-row-own { justify-content: flex-end; }
 .admin-message-bubble { display: flex; max-width: 78%; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px 14px 14px 4px; background: #fff; border: 1px solid #e5eaed; }
 .admin-message-row-own .admin-message-bubble { border-radius: 14px 14px 4px 14px; background: #e8f5f2; border-color: #c8e8e1; }
+.admin-message-author { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px; }
+.admin-message-author small { font-weight: 500; }
 .admin-message-bubble small { color: #7a8495; }
 .admin-message-internal { background: #fff8db !important; border-color: #f5dc8b !important; }
 .conversation-composer { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }

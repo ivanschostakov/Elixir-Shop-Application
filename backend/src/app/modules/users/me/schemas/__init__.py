@@ -16,6 +16,7 @@ from .support import (
     SupportReadResponse,
 )
 from .profile import PersonalDataUpdatePayload
+from .promotions import ProfilePromotionRead
 
 __all__ = [
     "AIChatResponse",
@@ -36,6 +37,7 @@ __all__ = [
     "PaymentStatusRead",
     "PersonalDataUpdatePayload",
     "PresenceHeartbeatResponse",
+    "ProfilePromotionRead",
     "ReferrerCodeAttachPayload",
     "ReferrerCodeCheckPayload",
     "ReferrerCodeCheckRead",

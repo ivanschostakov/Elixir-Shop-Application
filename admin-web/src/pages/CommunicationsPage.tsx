@@ -102,6 +102,10 @@ function SupportInboxTab() {
       delivered: "доставлено",
       leadCreated: "Лид создан",
       attachment: "Скачать вложение",
+      sender: "Отправитель",
+      replyBy: "Ответ от",
+      noteBy: "Заметка от",
+      system: "Система",
     }
     : {
       title: "Support inbox",
@@ -126,6 +130,10 @@ function SupportInboxTab() {
       delivered: "delivered",
       leadCreated: "Lead created",
       attachment: "Download attachment",
+      sender: "Sender",
+      replyBy: "Reply by",
+      noteBy: "Note by",
+      system: "System",
     }
   const statusLabels: Record<SupportConversationStatus, string> = locale === "ru"
     ? { new: "Новое", open: "В работе", waiting_customer: "Ждём клиента", waiting_team: "Ждём команду", resolved: "Закрыто", spam: "Спам" }
@@ -304,7 +312,14 @@ function SupportInboxTab() {
               {selected.messages.map((item) => (
                 <div key={item.id} className={`admin-message-row ${item.sender_type === "admin" ? "admin-message-row-own" : ""}`}>
                   <div className={`admin-message-bubble ${item.is_internal ? "admin-message-internal" : ""}`}>
-                    <strong>{item.author_name}{item.author_role ? ` · ${item.author_role}` : ""}</strong>
+                    <strong className="admin-message-author">
+                      {item.sender_type === "user"
+                        ? `${copy.sender}: ${item.author_name}`
+                        : item.sender_type === "admin"
+                          ? `${item.is_internal ? copy.noteBy : copy.replyBy}: ${item.author_name}`
+                          : copy.system}
+                      {item.author_role ? <small> · {item.author_role}</small> : null}
+                    </strong>
                     <span>{item.body}</span>
                     {item.attachments.map((attachment) => (
                       <Button

@@ -282,7 +282,8 @@ def test_support_to_crm_reply_lead_and_ai_visibility_flow(
         )
         assert customer_thread.status_code == 200, customer_thread.text
         visible_messages = customer_thread.json()["messages"]
-        assert visible_messages[-1]["author_name"] == "Анна Оператор"
+        assert visible_messages[-1]["author_name"] == "Elixir Peptide"
+        assert visible_messages[-1]["author_role"] is None
         assert all(not message["is_internal"] for message in visible_messages)
 
         marked_read = client.post(

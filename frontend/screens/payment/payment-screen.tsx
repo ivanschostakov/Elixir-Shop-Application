@@ -171,11 +171,13 @@ export default function PaymentScreen() {
         draftId?: string | string[]
         paymentMethod?: string | string[]
         orderId?: string | string[]
+        useBonus?: string | string[]
     }>()
     const draftId = parseDraftId(params.draftId)
     const routePaymentMethod = parsePaymentMethod(params.paymentMethod)
     const routeOrderId = parsePositiveRouteId(params.orderId)
     const routePromoCode = parseRouteString(params.code)
+    const useBonusRubles = parseRouteString(params.useBonus) === "1"
     const isBasketCheckout = draftId === null
     const { basket, loading: basketLoading } = useBasket()
     const { orderDraft: savedOrderDraft, error: savedDraftError, loading: savedDraftLoading } = useOrderDraft(draftId)
@@ -461,6 +463,7 @@ export default function PaymentScreen() {
                     nextOrder = await createOrder({
                         ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
                         ...(routePromoCode ? { code: routePromoCode } : {}),
+                        ...(useBonusRubles ? { use_bonus_rubles: true } : {}),
                         payment_method: effectiveMethod,
                     })
                     if (isBasketCheckout) {
@@ -540,7 +543,7 @@ export default function PaymentScreen() {
         } finally {
             setSubmitting(false)
         }
-    }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, routePromoCode, selectedMethod, t])
+    }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, routePromoCode, selectedMethod, t, useBonusRubles])
 
     const handleRetryPayment = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [

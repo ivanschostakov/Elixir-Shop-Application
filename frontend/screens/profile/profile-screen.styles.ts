@@ -444,8 +444,17 @@ export const createProfileScreenStyles = (colors: ThemePalette) => StyleSheet.cr
         flexDirection: "row",
         gap: spacing.md,
         justifyContent: "space-between",
-        paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
+        padding: spacing.sm,
+    },
+    discountRowPressed: {
+        opacity: 0.86,
+        transform: [{ scale: 0.99 }],
+    },
+    discountImage: {
+        width: 64,
+        height: 64,
+        borderRadius: 13,
+        backgroundColor: colors.surfaceMuted,
     },
     discountCopy: {
         flex: 1,
@@ -463,9 +472,20 @@ export const createProfileScreenStyles = (colors: ThemePalette) => StyleSheet.cr
         fontWeight: "700",
     },
     discountValue: {
-        color: colors.success,
-        fontSize: 20,
+        color: "#9A3412",
+        fontSize: 14,
         fontWeight: "900",
+    },
+    discountBadge: {
+        borderRadius: 999,
+        backgroundColor: "#FFEDD5",
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 6,
+    },
+    discountArrow: {
+        color: colors.primary,
+        fontSize: 20,
+        fontWeight: "800",
     },
     historyCardButton: {
         borderRadius: spacing.lg,

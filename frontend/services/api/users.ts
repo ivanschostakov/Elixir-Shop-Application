@@ -8,6 +8,7 @@ import type {
     DeleteMyPushTokenResponse,
     MyPushTokenResponse,
     PresenceHeartbeatResponse,
+    ProfilePromotionResponse,
     ReferralProfileResponse,
     ReferrerCodeAttachPayload,
     ReferrerCodeCheckPayload,
@@ -71,6 +72,10 @@ export function syncMyCustomerIntelligence(payload: CustomerIntelligenceSyncPayl
 
 export function getMyReferralProfile() {
     return apiGet<ReferralProfileResponse>(usersPath("/me/referral-profile"))
+}
+
+export function getMyPromotions() {
+    return apiGet<ProfilePromotionResponse[]>(usersPath("/me/promotions"))
 }
 
 export function checkMyReferrerCode(payload: ReferrerCodeCheckPayload) {

@@ -14,6 +14,7 @@ from starlette import status
 from config import ufa_now
 from src.app.services.benefits.money import quantize_money
 from src.app.services.benefits.service import resolve_benefits_for_user
+from src.app.services.benefits.redemption import redeem_order_bonus_safe
 from src.app.services.discounts import discountable_subtotal_for_lines
 from src.app.services.catalog_merchandising import catalog_unit_price
 from src.app.services.recommendations import record_purchase
@@ -189,6 +190,9 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
         "basket_subtotal": _json_money(resolved_benefits.get("basket_subtotal")),
         "stacked_discount_amount": _json_money(resolved_benefits.get("stacked_discount_amount")),
         "total_after_discounts": _json_money(resolved_benefits.get("total_after_discounts")),
+        "use_bonus_rubles": bool(resolved_benefits.get("use_bonus_rubles")),
+        "bonus_applied_points": int(resolved_benefits.get("bonus_applied_points") or 0),
+        "bonus_applied_rubles": _json_money(resolved_benefits.get("bonus_applied_rubles")),
         "applications": [
             {
                 "source_kind": option.get("source_kind"),
@@ -196,6 +200,9 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
                 "discount_percent": str(option.get("discount_percent")) if option.get("discount_percent") is not None else None,
                 "discount_amount": str(option.get("applied_discount_amount")) if option.get("applied_discount_amount") is not None else None,
                 "sequence": option.get("sequence"),
+                "source_external_id": option.get("source_external_id"),
+                "benefit_units": str(option.get("benefit_units")) if option.get("benefit_units") is not None else None,
+                "benefit_unit_name": option.get("benefit_unit_name"),
             }
             for option in resolved_benefits.get("stacked_discount_options", [])
         ],
@@ -254,6 +261,7 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
             "subtotal_before": str(option.get("subtotal_before")),
             "subtotal_after": str(option.get("subtotal_after")),
             "entered_code": resolved_benefits.get("entered_code"),
+            "benefit_unit_name": option.get("benefit_unit_name"),
         }
         if source_kind == "app_referral":
             snapshot.update(
@@ -267,10 +275,12 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
                 order_id=order.id,
                 user_id=user.id,
                 source_kind=source_kind,
+                source_external_id=option.get("source_external_id"),
                 entered_code=resolved_benefits.get("entered_code"),
                 resolved_code=option.get("code"),
                 discount_percent=option.get("discount_percent"),
                 discount_amount=option.get("applied_discount_amount"),
+                benefit_units=option.get("benefit_units"),
                 currency=option.get("currency") or resolved_benefits.get("currency") or order.currency,
                 status="applied",
                 applied_at=now,
@@ -293,6 +303,7 @@ async def _resolve_checkout_benefits(
     currency: str,
     entered_code: str | None,
     quote_items: list[dict[str, Any]],
+    use_bonus_rubles: bool,
 ) -> dict[str, Any]:
     return await resolve_benefits_for_user(
         session,
@@ -302,6 +313,7 @@ async def _resolve_checkout_benefits(
         discountable_subtotal=discountable_subtotal,
         currency=currency,
         quote_items=quote_items,
+        use_bonus_rubles=use_bonus_rubles,
     )
 
 
@@ -377,7 +389,7 @@ def _build_order_item_from_basket_row(*, user_id: int, order_id: int, row: tuple
     )
 
 
-async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
@@ -437,6 +449,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
             }
             for item in draft.items
         ],
+        use_bonus_rubles=use_bonus_rubles,
     )
     grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total
     checkout_snapshot = _build_checkout_snapshot(
@@ -483,13 +496,16 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     created_order = await get_order_by_id(session, order.id, user_id=user_id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     created_order_id = int(order.__dict__.get("id") or created_order.__dict__.get("id") or created_order.id)
+    await redeem_order_bonus_safe(session, order=created_order, user=user)
+    created_order = await get_order_by_id(session, created_order_id, user_id=user_id)
+    if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reload created order")
     await sync_order_to_moysklad_safe(session, order=created_order, user=user)
     reloaded_order = await get_order_by_id(session, created_order_id, user_id=user_id)
     if reloaded_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     return reloaded_order
 
 
-async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     basket = await get_basket_by_user_id(session, user_id)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
@@ -569,6 +585,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
             }
             for item, _, _ in order_item_rows
         ],
+        use_bonus_rubles=use_bonus_rubles,
     )
     grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total
     checkout_snapshot = _build_checkout_snapshot(
@@ -620,6 +637,9 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     created_order = await get_order_by_id(session, order.id, user_id=user_id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
     created_order_id = int(order.__dict__.get("id") or created_order.__dict__.get("id") or created_order.id)
+    await redeem_order_bonus_safe(session, order=created_order, user=user)
+    created_order = await get_order_by_id(session, created_order_id, user_id=user_id)
+    if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reload created order")
     await sync_order_to_moysklad_safe(session, order=created_order, user=user)
     reloaded_order = await get_order_by_id(session, created_order_id, user_id=user_id)
     if reloaded_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")

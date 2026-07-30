@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.discounts import product_is_discountable
 from src.app.services.catalog_merchandising import catalog_unit_price
-from src.app.services.referrals import attach_referrer_code, get_or_create_referral_profile, refresh_profile_discount_from_moysklad, user_has_promo_code
+from src.app.services.referrals import attach_referrer_code, get_or_create_referral_profile, refresh_profile_discount, user_has_promo_code
 from src.app.services.referrals.calculations import calculate_personal_discount_percent
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User
@@ -18,6 +18,7 @@ from src.integrations.bitrix_promo import (
 from src.normalize import lower_optional_str, optional_str
 
 from .money import estimate_discount_amount, preferred_currency, quantize_money
+from .moysklad_bonus import bonus_spend_for_subtotal, get_user_moysklad_bonus_wallet
 from .options import best_option_key, serialize_options
 from .types import ResolvedDiscountOption
 
@@ -192,6 +193,7 @@ async def resolve_benefits_for_user(
     discountable_subtotal: Decimal | None = None,
     currency: str | None = None,
     quote_items: list[dict] | None = None,
+    use_bonus_rubles: bool = False,
 ) -> dict:
     normalized_code = lower_optional_str(entered_code)
     trimmed_code = optional_str(entered_code)
@@ -202,6 +204,7 @@ async def resolve_benefits_for_user(
         explicit_discountable_subtotal=discountable_subtotal,
     )
     referral_profile = await get_or_create_referral_profile(db, user=user)
+    bonus_wallet = await get_user_moysklad_bonus_wallet(user)
 
     entered_code_accepted = True
     if trimmed_code:
@@ -247,7 +250,11 @@ async def resolve_benefits_for_user(
                     detail="Расчёт промокода временно недоступен / Promo calculation is temporarily unavailable",
                 ) from error
     elif not bitrix_promo_configured():
-        await refresh_profile_discount_from_moysklad(referral_profile, user=user)
+        referral_profile.referral_discount_base_total = bonus_wallet.sales_amount_rubles
+        refresh_profile_discount(
+            referral_profile,
+            has_promo_code=user_has_promo_code(user),
+        )
         app_referral_option = _build_app_referral_option(
             referral_profile,
             user=user,
@@ -280,6 +287,45 @@ async def resolve_benefits_for_user(
         subtotal=effective_subtotal,
         discountable_subtotal=effective_discountable_subtotal,
     )
+    bonus_points, bonus_rubles = bonus_spend_for_subtotal(
+        bonus_wallet,
+        total_after_discounts,
+    )
+    bonus_option = (
+        ResolvedDiscountOption(
+            source_kind="moysklad_bonus",
+            source_record_id=None,
+            source_external_id=str(bonus_wallet.program_id) if bonus_wallet.program_id else None,
+            code=None,
+            title=bonus_wallet.program_name or "Бонусные рубли МойСклад",
+            status="available" if bonus_points > 0 else "not_applicable",
+            is_applicable=bonus_points > 0,
+            is_personal=True,
+            is_stackable=True,
+            calculation_mode="fixed_amount",
+            discount_percent=None,
+            discount_amount=bonus_rubles,
+            currency="RUB",
+            estimated_discount_amount=bonus_rubles,
+            estimated_total_after=quantize_money(total_after_discounts - bonus_rubles),
+            reason=None if bonus_points > 0 else "Бонусные рубли недоступны для этой корзины",
+            benefit_units=Decimal(bonus_points),
+            benefit_unit_name="points",
+        )
+        if bonus_wallet.program_id is not None
+        else None
+    )
+    if use_bonus_rubles and bonus_option is not None and bonus_option.is_applicable:
+        bonus_application, total_after_discounts = _apply_discount_option(
+            bonus_option,
+            subtotal=total_after_discounts,
+            discountable_subtotal=total_after_discounts,
+            sequence=len(stacked_discount_options) + 1,
+        )
+        stacked_discount_options.append(bonus_application)
+        stacked_discount_amount = (
+            quantize_money(stacked_discount_amount + bonus_rubles) or Decimal("0.00")
+        )
     resolved_currency = preferred_currency(requested_currency=currency, available_options=available_discount_options)
 
     unresolved_code_reason = None
@@ -302,4 +348,12 @@ async def resolve_benefits_for_user(
         "stacked_discount_options": stacked_discount_options,
         "stacked_discount_amount": stacked_discount_amount,
         "total_after_discounts": total_after_discounts,
+        "bonus_option": asdict(bonus_option) if bonus_option is not None else None,
+        "bonus_balance_points": bonus_wallet.balance_points,
+        "bonus_balance_rubles": bonus_wallet.balance_rubles,
+        "bonus_program_name": bonus_wallet.program_name,
+        "bonus_max_paid_rate_percent": bonus_wallet.max_paid_rate_percent,
+        "use_bonus_rubles": use_bonus_rubles,
+        "bonus_applied_points": bonus_points if use_bonus_rubles else 0,
+        "bonus_applied_rubles": bonus_rubles if use_bonus_rubles else Decimal("0.00"),
     }

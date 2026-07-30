@@ -125,6 +125,21 @@ export const createCheckoutScreenStyles = (colors: ThemePalette) => StyleSheet.c
         maxWidth: "100%",
         textAlign: "right",
     },
+    bonusToggleCopy: {
+        flex: 1,
+        gap: 3,
+    },
+    bonusToggleValue: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "700",
+        lineHeight: 17,
+    },
+    bonusToggleHint: {
+        color: colors.mutedText,
+        fontSize: 12,
+        lineHeight: 16,
+    },
     detailsSheetSecondary: {
         color: colors.text,
         fontSize: 14,

@@ -29,8 +29,9 @@ from src.app.services.admin.exports import _write_csv, _write_xlsx, normalize_ex
 from src.app.services.admin.audiences import normalize_segment_filters
 from src.app.services.admin.automation import default_order_automation_presets, normalize_order_rule_action, normalize_order_rule_conditions, preset_rule_name
 from src.app.services.notifications.core import normalize_marketing_automation_settings
+from src.app.services.support import SUPPORT_PUBLIC_AUTHOR_NAME, serialize_support_message
 from src.app.modules.admin.schemas import AdminExportCreatePayload, CustomerDeletePayload
-from src.app.services.admin.permissions import ALL_PERMISSIONS
+from src.app.services.admin.permissions import ALL_PERMISSIONS, BASE_ADMIN_PERMISSIONS, build_admin_context
 from src.app.services.admin.invitations import admin_invitation_accept_url, generate_admin_invitation_token, hash_admin_invitation_token
 import src.app.services.admin.invitations as admin_invitation_service
 from src.app.services.admin.role_catalog import SYSTEM_ROLES
@@ -110,6 +111,7 @@ def test_admin_job_payload_and_recovery_permission_are_explicit():
 
 
 def test_admin_role_catalog_is_complete_and_least_privilege():
+    assert BASE_ADMIN_PERMISSIONS == {"support.read", "support.reply", "support.assign"}
     assert [role.code for role in SYSTEM_ROLES] == [
         "superadmin",
         "sales",
@@ -123,13 +125,59 @@ def test_admin_role_catalog_is_complete_and_least_privilege():
     known_permissions = set(ALL_PERMISSIONS)
     for role in SYSTEM_ROLES[1:]:
         assert set(role.permissions).issubset(known_permissions)
+        assert {"support.read", "support.reply", "support.assign"}.issubset(role.permissions)
         assert "staff.manage" not in role.permissions
         assert "customers.delete" not in role.permissions
     analyst = next(role for role in SYSTEM_ROLES if role.code == "analyst")
     assert not any(
         permission.endswith((".manage", ".send", ".reply", ".assign", ".retry", ".recover", ".transition", ".moderate", ".merchandise"))
         for permission in analyst.permissions
+        if permission not in {"support.reply", "support.assign"}
     )
+
+
+def test_every_admin_context_receives_shared_support_access():
+    role = SimpleNamespace(code="custom", permissions=[])
+    admin = SimpleNamespace(
+        user=SimpleNamespace(id=42),
+        role_assignments=[SimpleNamespace(role=role)],
+    )
+    context = build_admin_context(admin=admin, session=SimpleNamespace(id=7))
+
+    assert BASE_ADMIN_PERMISSIONS.issubset(context.permissions)
+
+
+def test_support_reply_uses_brand_publicly_and_staff_name_internally():
+    admin = SimpleNamespace(
+        user=SimpleNamespace(name="Анна", surname="Оператор"),
+        role_assignments=[
+            SimpleNamespace(role=SimpleNamespace(name_ru="Поддержка", name_en="Support")),
+        ],
+    )
+    message = SimpleNamespace(
+        id=1,
+        sender_type="admin",
+        user=None,
+        user_id=None,
+        admin=admin,
+        admin_user_id=42,
+        body="Ответ",
+        is_internal=False,
+        delivered_at=None,
+        read_at=None,
+        attachments=[],
+        created_at=None,
+        updated_at=None,
+    )
+
+    customer_view = serialize_support_message(message, admin_view=False)
+    admin_view = serialize_support_message(message, admin_view=True)
+
+    assert customer_view["author_name"] == SUPPORT_PUBLIC_AUTHOR_NAME
+    assert customer_view["author_role"] is None
+    assert customer_view["author_user_id"] is None
+    assert admin_view["author_name"] == "Анна Оператор"
+    assert admin_view["author_user_id"] == 42
 
 
 def test_admin_invitation_tokens_are_not_embedded_in_api_paths():

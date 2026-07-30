@@ -196,12 +196,10 @@ async def reply_to_support_conversation(
     )
     await db.commit()
     if not payload.is_internal:
-        admin_name = f"{context.user.name} {context.user.surname}".strip()
         await send_support_reply_notification(
             db,
             conversation=conversation,
             message=message,
-            admin_name=admin_name,
         )
     refreshed = await get_support_conversation(db, conversation.id)
     if refreshed is None:

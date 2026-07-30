@@ -29,6 +29,7 @@ import CameraSvgIcon from "@/assets/icons/chat/camera-svgrepo-com.svg"
 
 type AttachmentSheetProps = {
     activeMode: AttachmentMode
+    allowFiles?: boolean
     bottomInset: number
     onClose: () => void
     onOpenCamera: () => void
@@ -40,6 +41,7 @@ type AttachmentSheetProps = {
 
 export function AttachmentSheet({
     activeMode,
+    allowFiles = true,
     bottomInset,
     onClose,
     onOpenCamera,
@@ -91,7 +93,9 @@ export function AttachmentSheet({
 
                         <View style={chatScreenStyles.attachmentTitleButton}>
                             <Text numberOfLines={1} style={chatScreenStyles.attachmentSheetTitle}>
-                                {activeMode === "photo" ? t("chat.attachmentsPhotoTitle") : t("chat.attachmentsFileTitle")}
+                                {activeMode === "photo" || !allowFiles
+                                    ? t("chat.attachmentsPhotoTitle")
+                                    : t("chat.attachmentsFileTitle")}
                             </Text>
                         </View>
 
@@ -100,7 +104,7 @@ export function AttachmentSheet({
                     <View style={chatScreenStyles.attachmentHandle} />
 
                     <View style={chatScreenStyles.attachmentSheetBody}>
-                        {activeMode === "photo" ? (
+                        {activeMode === "photo" || !allowFiles ? (
                             <View style={chatScreenStyles.fileSheetBody}>
                                 <View style={chatScreenStyles.attachmentActionCard}>
                                     <Pressable
@@ -145,20 +149,22 @@ export function AttachmentSheet({
                         )}
                     </View>
 
-                    <View style={[chatScreenStyles.attachmentModeBar, { bottom: bottomControlOffset }]}>
-                        <AttachmentModeButton
-                            active={activeMode === "photo"}
-                            icon={<GalleryActionIcon active={activeMode === "photo"} compact />}
-                            label={t("chat.attachmentsPhotoTab")}
-                            onPress={() => onSelectMode("photo")}
-                        />
-                        <AttachmentModeButton
-                            active={activeMode === "file"}
-                            icon={<FileActionIcon active={activeMode === "file"} compact />}
-                            label={t("chat.attachmentsFileTab")}
-                            onPress={() => onSelectMode("file")}
-                        />
-                    </View>
+                    {allowFiles ? (
+                        <View style={[chatScreenStyles.attachmentModeBar, { bottom: bottomControlOffset }]}>
+                            <AttachmentModeButton
+                                active={activeMode === "photo"}
+                                icon={<GalleryActionIcon active={activeMode === "photo"} compact />}
+                                label={t("chat.attachmentsPhotoTab")}
+                                onPress={() => onSelectMode("photo")}
+                            />
+                            <AttachmentModeButton
+                                active={activeMode === "file"}
+                                icon={<FileActionIcon active={activeMode === "file"} compact />}
+                                label={t("chat.attachmentsFileTab")}
+                                onPress={() => onSelectMode("file")}
+                            />
+                        </View>
+                    ) : null}
                 </View>
             </View>
         </Modal>
