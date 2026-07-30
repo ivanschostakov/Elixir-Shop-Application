@@ -25,8 +25,12 @@ from src.app.services.auth.service import (
 class _DummyDbSession:
     def __init__(self):
         self.committed = False
+        self.flushed = False
         self.refreshed_user = None
         self.rolled_back = False
+
+    async def flush(self):
+        self.flushed = True
 
     async def commit(self):
         self.committed = True
@@ -93,6 +97,110 @@ async def test_website_username_login_creates_app_user_with_bitrix_login(monkeyp
     assert captured["commit"] is False
     assert user.username == "urusy001"
     assert user.email == "urusy001@umn.edu"
+
+
+@pytest.mark.anyio
+async def test_local_login_refreshes_assigned_referrer_promo_from_website(monkeypatch: pytest.MonkeyPatch):
+    payload = UserLoginPayload(login="customer@example.com", password="supersecret")
+    db = _DummyDbSession()
+    user = SimpleNamespace(
+        username="customer",
+        email="customer@example.com",
+        password_hash="local-hash",
+        name="Customer",
+        surname="User",
+        is_active=True,
+        is_verified=True,
+        promo_code="OLD-CODE",
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_get_user_by_email(_db, _email):
+        return user
+
+    class FakeWebsiteIdentityClient:
+        async def authenticate(self, *, login: str, password: str):
+            captured["website_credentials"] = (login, password)
+            return {
+                "user": {
+                    "id": 98,
+                    "login": "customer",
+                    "email": "customer@example.com",
+                    "name": "Customer",
+                    "last_name": "User",
+                },
+                "discounts": {
+                    "referral_program": {
+                        "promo_code": "OWN-CODE",
+                        "referrer_promo_code": "CURRENT-REFERRER",
+                    },
+                },
+            }
+
+    monkeypatch.setattr("src.app.services.auth.service.get_user_by_email", fake_get_user_by_email)
+    monkeypatch.setattr("src.app.services.auth.service.AUTH_LOGIN_WEBSITE_FIRST_ENABLED", True)
+    monkeypatch.setattr("src.app.services.auth.service.website_identity_configured", lambda: True)
+    monkeypatch.setattr("src.app.services.auth.service.WebsiteIdentityClient", FakeWebsiteIdentityClient)
+    monkeypatch.setattr("src.app.services.auth.service.verify_password", lambda _password, _hash: True)
+    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "refreshed-hash")
+
+    result = await _get_login_user(payload, db)
+
+    assert result is user
+    assert captured["website_credentials"] == ("customer@example.com", "supersecret")
+    assert user.promo_code == "CURRENT-REFERRER"
+    assert user.password_hash == "refreshed-hash"
+    assert db.flushed is True
+
+
+@pytest.mark.anyio
+async def test_local_login_clears_referrer_promo_removed_on_website(monkeypatch: pytest.MonkeyPatch):
+    payload = UserLoginPayload(login="customer@example.com", password="supersecret")
+    db = _DummyDbSession()
+    user = SimpleNamespace(
+        username="customer",
+        email="customer@example.com",
+        password_hash="local-hash",
+        name="Customer",
+        surname="User",
+        is_active=True,
+        is_verified=True,
+        promo_code="STALE-REFERRER",
+    )
+
+    async def fake_get_user_by_email(_db, _email):
+        return user
+
+    class FakeWebsiteIdentityClient:
+        async def authenticate(self, *, login: str, password: str):
+            return {
+                "user": {
+                    "id": 98,
+                    "login": "customer",
+                    "email": "customer@example.com",
+                    "name": "Customer",
+                    "last_name": "User",
+                },
+                "discounts": {
+                    "referral_program": {
+                        "promo_code": "OWN-CODE",
+                        "referrer_promo_code": None,
+                    },
+                },
+            }
+
+    monkeypatch.setattr("src.app.services.auth.service.get_user_by_email", fake_get_user_by_email)
+    monkeypatch.setattr("src.app.services.auth.service.AUTH_LOGIN_WEBSITE_FIRST_ENABLED", True)
+    monkeypatch.setattr("src.app.services.auth.service.website_identity_configured", lambda: True)
+    monkeypatch.setattr("src.app.services.auth.service.WebsiteIdentityClient", FakeWebsiteIdentityClient)
+    monkeypatch.setattr("src.app.services.auth.service.verify_password", lambda _password, _hash: True)
+    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "refreshed-hash")
+
+    result = await _get_login_user(payload, db)
+
+    assert result is user
+    assert user.promo_code is None
+    assert db.flushed is True
 
 
 @pytest.mark.anyio

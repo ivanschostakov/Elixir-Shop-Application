@@ -78,6 +78,18 @@ class BitrixPromoClient:
             user_email=user_email,
         )
 
+    async def profile(
+        self,
+        *,
+        bitrix_user_id: int | None = None,
+        user_email: str | None = None,
+    ) -> dict[str, Any]:
+        return await self._user_request(
+            action="profile",
+            bitrix_user_id=bitrix_user_id,
+            user_email=user_email,
+        )
+
     async def attach_referrer(
         self,
         *,

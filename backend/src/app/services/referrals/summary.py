@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import User
 from src.app.services.benefits.moysklad_bonus import get_user_moysklad_bonus_wallet
-from src.integrations.bitrix_promo import BitrixPromoClient, BitrixPromoError, bitrix_promo_configured
 from .calculations import quantize_money, quantize_percent
 from .profile import get_or_create_referral_profile, referral_profile_total_purchases, refresh_profile_discount, user_has_promo_code
+from .bitrix_sync import refresh_assigned_referrer_promo
 
 logger = logging.getLogger(__name__)
 
@@ -16,23 +16,23 @@ logger = logging.getLogger(__name__)
 async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[str, Any]:
     profile = await get_or_create_referral_profile(db, user=user)
     bonus_wallet = await get_user_moysklad_bonus_wallet(user)
-    if bitrix_promo_configured() and user.promo_code:
+    program_profile = await refresh_assigned_referrer_promo(db, user=user)
+    if program_profile is not None:
         try:
-            context = await BitrixPromoClient().context(
-                promo=user.promo_code,
-                user_email=user.email,
-            )
-            program_profile = context.get("program_profile")
-            order_sum = program_profile.get("order_sum") if isinstance(program_profile, dict) else None
+            order_sum = program_profile.get("order_sum")
             if isinstance(order_sum, dict) and order_sum.get("amount") is not None:
                 profile.referral_discount_base_total = quantize_money(
                     Decimal(str(order_sum["amount"]))
                 )
+            stored_percent = Decimal(str(program_profile.get("stored_discount_percent") or 0))
+            group_percent = Decimal(str(program_profile.get("group_discount_percent") or 0))
             profile.current_discount_percent = quantize_percent(
-                Decimal(str(context.get("display_discount_percent") or 0))
+                max(Decimal("3"), stored_percent, group_percent)
+                if user_has_promo_code(user)
+                else Decimal("0")
             )
-        except (BitrixPromoError, ValueError, TypeError):
-            logger.exception("Could not refresh Bitrix referral context for user_id=%s", user.id)
+        except (ValueError, TypeError):
+            logger.exception("Could not apply Bitrix referral profile for user_id=%s", user.id)
             profile.referral_discount_base_total = bonus_wallet.sales_amount_rubles
             refresh_profile_discount(profile, has_promo_code=user_has_promo_code(user))
     else:

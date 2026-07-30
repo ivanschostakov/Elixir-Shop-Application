@@ -76,14 +76,18 @@ final class ReferralAccrualService
 
     public function recordPaidPurchase(array $payload): array
     {
-        if (!Loader::includeModule('main') || !Loader::includeModule('iblock')) {
+        if (
+            !Loader::includeModule('main')
+            || !Loader::includeModule('iblock')
+            || !Loader::includeModule('sale')
+        ) {
             throw new \RuntimeException('required_module_unavailable');
         }
 
         $order = $this->normalizePaidOrder($payload);
         $buyer = $this->resolveUserByEmail($order['user_email']);
         $promoService = new PromoService();
-        $promoService->lookup($order['promo']);
+        $promoLookup = $promoService->lookup($order['promo']);
 
         $connection = Application::getConnection();
         $sqlHelper = $connection->getSqlHelper();
@@ -100,10 +104,11 @@ final class ReferralAccrualService
         $siteContext = new SiteDiscountContext();
         $assignment = $siteContext->attachReferrer($order['promo'], (int)$buyer['user_id']);
         $assignmentOutcome = (string)($assignment['outcome'] ?? '');
-        $referrerUserId = in_array($assignmentOutcome, ['attached', 'already_attached'], true)
+        $referrerUserId = in_array($assignmentOutcome, ['attached', 'changed', 'unchanged'], true)
             ? (int)($assignment['referrer_user_id'] ?? 0)
             : 0;
 
+        $couponUsage = null;
         $connection->startTransaction();
         try {
             $promoSql = $sqlHelper->forSql($order['promo'], 100);
@@ -133,6 +138,9 @@ final class ReferralAccrualService
                 return $this->purchaseResult((int)$raceWinner['ID'], 'already_recorded');
             }
 
+            $couponUsage = $this->incrementCouponUseCount(
+                (int)($promoLookup['coupon_id'] ?? 0)
+            );
             $purchaseProgress = $siteContext->addPaidPurchase(
                 (int)$buyer['user_id'],
                 (float)$order['amount'],
@@ -146,6 +154,7 @@ final class ReferralAccrualService
 
         return $this->purchaseResult($purchaseId, 'recorded') + [
             'assignment' => $assignment,
+            'coupon_usage' => $couponUsage,
             'purchase_progress' => $purchaseProgress,
         ];
     }
@@ -460,6 +469,36 @@ final class ReferralAccrualService
                 'paid_at' => (string)$purchase['PAID_AT'],
                 'period' => (string)$purchase['PERIOD'],
             ],
+        ];
+    }
+
+    private function incrementCouponUseCount(int $couponId): array
+    {
+        if ($couponId <= 0) {
+            throw new \RuntimeException('coupon_not_found');
+        }
+
+        $connection = Application::getConnection();
+        $tableName = \Bitrix\Sale\Internals\DiscountCouponTable::getTableName();
+        $connection->queryExecute(
+            "UPDATE " . $tableName . "
+             SET USE_COUNT=COALESCE(USE_COUNT, 0) + 1
+             WHERE ID=" . $couponId
+        );
+        $row = $connection->query(
+            "SELECT ID, USE_COUNT
+             FROM " . $tableName . "
+             WHERE ID=" . $couponId . "
+             LIMIT 1"
+        )->fetch();
+        if (!is_array($row)) {
+            throw new \RuntimeException('coupon_usage_update_failed');
+        }
+
+        return [
+            'coupon_id' => (int)$row['ID'],
+            'use_count' => (int)$row['USE_COUNT'],
+            'source' => 'app_paid_order',
         ];
     }
 

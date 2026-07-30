@@ -18,6 +18,7 @@ from src.database.models import (
     Order,
     User,
 )
+from src.integrations.bitrix_promo import BitrixPromoClient
 
 
 async def main() -> None:
@@ -124,10 +125,33 @@ async def main() -> None:
                 result is None
                 or stored.bitrix_sync_status != "synced"
                 or amounts != [(1, "2125.00", "pending"), (2, "375.00", "pending")]
+                or result.get("bitrix", {}).get("coupon_usage", {}).get("source")
+                != "app_paid_order"
             ):
                 raise RuntimeError(
                     f"Unexpected referral ledger result: result={result!r}, "
                     f"sync={stored.bitrix_sync_status!r}, accruals={amounts!r}"
+                )
+
+            promo_client = BitrixPromoClient()
+            usage_after_first = int((await promo_client.lookup(promo)).get("use_count") or 0)
+            bitrix_replay = await promo_client.record_paid_purchase(
+                external_order_id=order_code,
+                user_email=email,
+                promo=promo,
+                amount=str(order.grand_total),
+                currency=order.currency,
+                paid_at=paid_at.isoformat(),
+            )
+            usage_after_replay = int((await promo_client.lookup(promo)).get("use_count") or 0)
+            if (
+                bitrix_replay.get("outcome") != "already_recorded"
+                or usage_after_replay != usage_after_first
+            ):
+                raise RuntimeError(
+                    "Idempotent Bitrix retry changed coupon usage statistics: "
+                    f"replay={bitrix_replay!r}, before={usage_after_first}, "
+                    f"after={usage_after_replay}"
                 )
 
             duplicate = await sync_paid_order_referral_to_app(session, order=order)
@@ -148,6 +172,7 @@ async def main() -> None:
                         "storage": "app",
                         "purchase_sync": stored.bitrix_sync_status,
                         "accruals": amounts,
+                        "coupon_use_count": usage_after_replay,
                         "duplicate_accrual_count": len(duplicate_stored.accruals),
                     },
                     ensure_ascii=False,

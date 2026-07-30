@@ -1,9 +1,11 @@
 import json
 import asyncio
+from types import SimpleNamespace
 
 import httpx
 import pytest
 
+from src.app.services.referrals.bitrix_sync import refresh_assigned_referrer_promo
 from src.integrations.bitrix_promo import BitrixPromoClient, BitrixPromoError
 
 
@@ -152,6 +154,85 @@ def test_detach_referrer_includes_customer_context(monkeypatch):
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
     result = asyncio.run(client.detach_referrer(user_email="customer@example.com"))
     assert result["outcome"] == "detached"
+
+
+def test_profile_uses_customer_context_without_a_promo(monkeypatch):
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {
+            "action": "profile",
+            "user_email": "customer@example.com",
+        }
+        return httpx.Response(
+            200,
+            json={
+                "ok": True,
+                "data": {
+                    "user_context": "matched_by_email",
+                    "program_profile": {"referrer_promo": "REFERRER"},
+                },
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        lambda **kwargs: original_client(transport=transport, **kwargs),
+    )
+    client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
+
+    result = asyncio.run(client.profile(user_email="customer@example.com"))
+
+    assert result["program_profile"]["referrer_promo"] == "REFERRER"
+
+
+@pytest.mark.parametrize(
+    ("current_promo", "website_promo"),
+    [
+        ("OLD", "CURRENT"),
+        ("STALE", None),
+    ],
+)
+def test_profile_refresh_updates_or_clears_local_referrer_promo(
+    monkeypatch,
+    current_promo,
+    website_promo,
+):
+    class FakeDb:
+        def __init__(self):
+            self.flushed = False
+
+        async def flush(self):
+            self.flushed = True
+
+    class FakeClient:
+        async def profile(self, *, user_email):
+            assert user_email == "customer@example.com"
+            return {
+                "program_profile": {
+                    "referrer_promo": website_promo,
+                    "order_sum": {"amount": 50000},
+                },
+            }
+
+    db = FakeDb()
+    user = SimpleNamespace(
+        id=17,
+        email="customer@example.com",
+        promo_code=current_promo,
+    )
+    monkeypatch.setattr(
+        "src.app.services.referrals.bitrix_sync.bitrix_promo_configured",
+        lambda: True,
+    )
+
+    program_profile = asyncio.run(
+        refresh_assigned_referrer_promo(db, user=user, client=FakeClient())
+    )
+
+    assert program_profile["order_sum"]["amount"] == 50000
+    assert user.promo_code == website_promo
+    assert db.flushed is True
 
 
 @pytest.mark.parametrize(

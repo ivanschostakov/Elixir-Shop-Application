@@ -100,6 +100,18 @@ try {
             'data' => $service->context($promo, $userId, $userEmail),
         ]);
     }
+    if ($action === 'profile') {
+        $userId = isset($payload['user_id']) && is_numeric($payload['user_id'])
+            ? max(0, (int)$payload['user_id'])
+            : 0;
+        $userEmail = isset($payload['user_email']) && is_scalar($payload['user_email'])
+            ? trim((string)$payload['user_email'])
+            : null;
+        elixirPromoRespond([
+            'action' => 'profile',
+            'data' => $service->profile($userId, $userEmail),
+        ]);
+    }
     if ($action === 'attach_referrer' || $action === 'detach_referrer') {
         $userId = isset($payload['user_id']) && is_numeric($payload['user_id'])
             ? max(0, (int)$payload['user_id'])

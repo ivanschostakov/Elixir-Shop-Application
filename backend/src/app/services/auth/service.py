@@ -368,31 +368,15 @@ async def _verify_latest_email_code(user: User, code: str, db: AsyncSession) -> 
     verification_code.used_at = ufa_now()
 
 
-async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
-    requested_login = str(payload.login).strip()
-    requested_email = normalize_email(requested_login)
-    user = (
-        await get_user_by_email(db, requested_email)
-        if requested_email
-        else await get_user_by_username(db, requested_login)
-    )
-    if user is not None and user.is_active and verify_password(payload.password, user.password_hash):
-        return user
-
-    if not AUTH_LOGIN_WEBSITE_FIRST_ENABLED or not website_identity_configured():
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
-
-    try:
-        identity = await WebsiteIdentityClient().authenticate(login=requested_login, password=payload.password)
-    except WebsiteIdentityError as error:
-        if error.status_code in (401, 404):
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") from error
-        logger.warning("Website identity authentication is temporarily unavailable: %s", error.code)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Website login is temporarily unavailable",
-        ) from error
-
+async def _sync_user_from_website_identity(
+    *,
+    identity: dict,
+    requested_login: str,
+    requested_email: str | None,
+    password: str,
+    db: AsyncSession,
+    user: User | None,
+) -> User:
     website_user = identity.get("user")
     if not isinstance(website_user, dict):
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Website identity response is invalid")
@@ -416,17 +400,16 @@ async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
     website_surname = optional_str(website_user.get("last_name")) or "Customer"
     discounts = identity.get("discounts")
     referral_program = discounts.get("referral_program") if isinstance(discounts, dict) else None
-    website_own_promo = (
-        optional_str(referral_program.get("promo_code"))
-        if isinstance(referral_program, dict)
-        else None
+    has_referrer_promo_snapshot = (
+        isinstance(referral_program, dict)
+        and "referrer_promo_code" in referral_program
     )
     website_referrer_promo = (
         optional_str(referral_program.get("referrer_promo_code"))
         if isinstance(referral_program, dict)
         else None
     )
-    password_hash = hash_password(payload.password)
+    password_hash = hash_password(password)
 
     if user is None:
         user = await create_user(
@@ -452,17 +435,78 @@ async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
             user.name = website_name[:PERSON_NAME_MAX_LENGTH]
         if not optional_str(user.surname):
             user.surname = website_surname[:PERSON_NAME_MAX_LENGTH]
-        if website_referrer_promo:
+        # Bitrix is the source of truth for the promo assigned by a referrer.
+        # The user's own promo must never be used for their purchases.
+        if has_referrer_promo_snapshot:
             user.promo_code = website_referrer_promo
-        elif (
-            website_own_promo
-            and optional_str(user.promo_code)
-            and optional_str(user.promo_code).casefold() == website_own_promo.casefold()
-        ):
-            user.promo_code = None
         await db.flush()
 
     return user
+
+
+async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
+    requested_login = str(payload.login).strip()
+    requested_email = normalize_email(requested_login)
+    user = (
+        await get_user_by_email(db, requested_email)
+        if requested_email
+        else await get_user_by_username(db, requested_login)
+    )
+    local_authenticated = bool(
+        user is not None
+        and user.is_active
+        and verify_password(payload.password, user.password_hash)
+    )
+
+    website_login_enabled = (
+        AUTH_LOGIN_WEBSITE_FIRST_ENABLED
+        and website_identity_configured()
+    )
+    if not website_login_enabled:
+        if local_authenticated:
+            assert user is not None
+            return user
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
+    try:
+        identity = await WebsiteIdentityClient().authenticate(
+            login=requested_login,
+            password=payload.password,
+        )
+    except WebsiteIdentityError as error:
+        if local_authenticated:
+            assert user is not None
+            if error.status_code not in (401, 404):
+                logger.warning(
+                    "Website identity promo refresh is temporarily unavailable: %s",
+                    error.code,
+                )
+            return user
+        if error.status_code in (401, 404):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") from error
+        logger.warning("Website identity authentication is temporarily unavailable: %s", error.code)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Website login is temporarily unavailable",
+        ) from error
+
+    try:
+        return await _sync_user_from_website_identity(
+            identity=identity,
+            requested_login=requested_login,
+            requested_email=requested_email,
+            password=payload.password,
+            db=db,
+            user=user,
+        )
+    except HTTPException:
+        if local_authenticated:
+            assert user is not None
+            logger.warning(
+                "Website identity returned invalid data during promo refresh; using the local account",
+            )
+            return user
+        raise
 
 
 async def register_user(request: Request, payload: UserRegisterPayload, db: AsyncSession) -> UserRegistrationStartedResponse:

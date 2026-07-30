@@ -1,6 +1,7 @@
 <?php
 
 use Bitrix\Main\Config\Option;
+use Bitrix\Main\Application;
 use Bitrix\Main\Context;
 use Bitrix\Main\Loader;
 
@@ -52,6 +53,53 @@ if ($request->isPost() && check_bitrix_sessid()) {
 $get = static fn(string $name, string $default = ''): string => htmlspecialcharsbx(
     Option::get($moduleId, $name, $default)
 );
+$appPromoSummary = [
+    'orders' => 0,
+    'promos' => 0,
+    'buyers' => 0,
+    'amount' => 0.0,
+];
+$appPromoStats = [];
+$connection = Application::getConnection();
+if ($connection->isTableExists('b_elixir_referral_app_purchase')) {
+    $summaryRow = $connection->query(
+        "SELECT
+            COUNT(*) AS ORDERS,
+            COUNT(DISTINCT PROMO) AS PROMOS,
+            COUNT(DISTINCT USER_ID) AS BUYERS,
+            COALESCE(SUM(AMOUNT), 0) AS AMOUNT
+         FROM b_elixir_referral_app_purchase
+         WHERE SOURCE='app'"
+    )->fetch();
+    if (is_array($summaryRow)) {
+        $appPromoSummary = [
+            'orders' => (int)$summaryRow['ORDERS'],
+            'promos' => (int)$summaryRow['PROMOS'],
+            'buyers' => (int)$summaryRow['BUYERS'],
+            'amount' => (float)$summaryRow['AMOUNT'],
+        ];
+    }
+
+    $statsRows = $connection->query(
+        "SELECT
+            purchases.PROMO,
+            COUNT(*) AS ORDERS,
+            COUNT(DISTINCT purchases.USER_ID) AS BUYERS,
+            COALESCE(SUM(purchases.AMOUNT), 0) AS AMOUNT,
+            MAX(purchases.PAID_AT) AS LAST_PAID_AT,
+            MAX(coupons.USE_COUNT) AS TOTAL_USE_COUNT
+         FROM b_elixir_referral_app_purchase purchases
+         LEFT JOIN b_sale_discount_coupon coupons
+            ON LOWER(TRIM(coupons.COUPON))=LOWER(TRIM(purchases.PROMO))
+         WHERE purchases.SOURCE='app'
+         GROUP BY purchases.PROMO
+         ORDER BY AMOUNT DESC, ORDERS DESC
+         LIMIT 200"
+    );
+    while ($statsRow = $statsRows->fetch()) {
+        $appPromoStats[] = $statsRow;
+    }
+}
 ?>
 <?php if ($message !== null): ?>
     <div class="adm-info-message-wrap"><div class="adm-info-message"><?= htmlspecialcharsbx($message) ?></div></div>
@@ -87,3 +135,50 @@ $get = static fn(string $name, string $default = ''): string => htmlspecialchars
     </table>
     <input type="submit" class="adm-btn-save" value="Сохранить">
 </form>
+
+<div class="adm-detail-content-wrap" style="margin-top: 24px;">
+    <div class="adm-detail-content">
+        <div class="adm-detail-title">Статистика промокодов из приложения</div>
+        <div class="adm-detail-content-item-block">
+            <p>
+                Оплаченных заказов: <strong><?= $appPromoSummary['orders'] ?></strong>
+                · Промокодов: <strong><?= $appPromoSummary['promos'] ?></strong>
+                · Покупателей: <strong><?= $appPromoSummary['buyers'] ?></strong>
+                · Сумма: <strong><?= number_format($appPromoSummary['amount'], 2, ',', ' ') ?> ₽</strong>
+            </p>
+            <?php if ($appPromoStats === []): ?>
+                <div class="adm-info-message">
+                    Оплаченных заказов приложения с промокодом пока нет.
+                </div>
+            <?php else: ?>
+                <table class="adm-list-table" style="width: 100%;">
+                    <thead>
+                    <tr class="adm-list-table-header">
+                        <td class="adm-list-table-cell"><div class="adm-list-table-cell-inner">Промокод</div></td>
+                        <td class="adm-list-table-cell"><div class="adm-list-table-cell-inner">Заказы приложения</div></td>
+                        <td class="adm-list-table-cell"><div class="adm-list-table-cell-inner">Покупатели</div></td>
+                        <td class="adm-list-table-cell"><div class="adm-list-table-cell-inner">Сумма заказов</div></td>
+                        <td class="adm-list-table-cell"><div class="adm-list-table-cell-inner">Всего применений Bitrix</div></td>
+                        <td class="adm-list-table-cell"><div class="adm-list-table-cell-inner">Последняя оплата</div></td>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <?php foreach ($appPromoStats as $stat): ?>
+                        <tr class="adm-list-table-row">
+                            <td class="adm-list-table-cell"><?= htmlspecialcharsbx((string)$stat['PROMO']) ?></td>
+                            <td class="adm-list-table-cell"><?= (int)$stat['ORDERS'] ?></td>
+                            <td class="adm-list-table-cell"><?= (int)$stat['BUYERS'] ?></td>
+                            <td class="adm-list-table-cell"><?= number_format((float)$stat['AMOUNT'], 2, ',', ' ') ?> ₽</td>
+                            <td class="adm-list-table-cell"><?= (int)($stat['TOTAL_USE_COUNT'] ?? 0) ?></td>
+                            <td class="adm-list-table-cell"><?= htmlspecialcharsbx((string)$stat['LAST_PAID_AT']) ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+                <p style="color: #666;">
+                    «Всего применений Bitrix» объединяет штатный счётчик сайта и оплаченные применения из приложения.
+                </p>
+            <?php endif; ?>
+        </div>
+    </div>
+</div>

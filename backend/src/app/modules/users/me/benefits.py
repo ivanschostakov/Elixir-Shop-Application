@@ -22,4 +22,5 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
         currency=payload.currency,
         use_bonus_rubles=payload.use_bonus_rubles,
     )
+    await db.commit()
     return BenefitCheckRead.model_validate(resolved)

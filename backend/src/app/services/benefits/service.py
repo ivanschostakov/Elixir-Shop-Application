@@ -6,7 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.discounts import product_is_discountable
 from src.app.services.catalog_merchandising import catalog_unit_price
-from src.app.services.referrals import attach_referrer_code, get_or_create_referral_profile, refresh_profile_discount, user_has_promo_code
+from src.app.services.referrals import (
+    attach_referrer_code,
+    get_or_create_referral_profile,
+    refresh_assigned_referrer_promo,
+    refresh_profile_discount,
+    user_has_promo_code,
+)
 from src.app.services.referrals.calculations import calculate_personal_discount_percent
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User
@@ -204,6 +210,7 @@ async def resolve_benefits_for_user(
         explicit_discountable_subtotal=discountable_subtotal,
     )
     referral_profile = await get_or_create_referral_profile(db, user=user)
+    await refresh_assigned_referrer_promo(db, user=user)
     bonus_wallet = await get_user_moysklad_bonus_wallet(user)
 
     entered_code_accepted = True

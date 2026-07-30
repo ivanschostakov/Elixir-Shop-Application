@@ -32,6 +32,10 @@ final class PromoService
             'coupon_id' => (int)$row['COUPON_ID'],
             'discount_id' => (int)$row['DISCOUNT_ID'],
             'discount_name' => (string)$row['DISCOUNT_NAME'],
+            'use_count' => (int)($row['USE_COUNT'] ?? 0),
+            'max_use' => (int)($row['MAX_USE'] ?? 0) > 0
+                ? (int)$row['MAX_USE']
+                : null,
             'discount_percent' => $rule['discount_percent'] ?? null,
             'applicability' => 'requires_bitrix_cart',
             'price_authority' => 'bitrix',
@@ -273,6 +277,22 @@ final class PromoService
             'display_discount_percent' => $displayDiscountPercent,
             'program_profile' => $siteDiscountContext->getProgramProfile($resolvedUserId),
         ] + $context;
+    }
+
+    public function profile(
+        int $userId = 0,
+        ?string $userEmail = null
+    ): array {
+        $userContext = $this->resolveUserContext($userId, $userEmail);
+        $resolvedUserId = (int)$userContext['user_id'];
+        if ($resolvedUserId <= 0) {
+            throw new \DomainException('user_not_found');
+        }
+
+        return [
+            'user_context' => $userContext['status'],
+            'program_profile' => (new SiteDiscountContext())->getProgramProfile($resolvedUserId),
+        ];
     }
 
     public function detachReferrer(

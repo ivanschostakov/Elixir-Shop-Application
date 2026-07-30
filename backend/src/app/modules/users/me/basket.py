@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
+from src.app.services.referrals import refresh_assigned_referrer_promo
 from src.app.services.recommendations import record_cart_add
 from src.app.services.customer_intelligence import record_customer_event_safe
 from src.app.services.stock_visibility import get_stock_visibility_policy
@@ -27,11 +28,17 @@ my_basket_router = APIRouter(prefix="/basket", tags=["my_basket"])
 
 
 @my_basket_router.get("", response_model=BasketRead, status_code=status.HTTP_200_OK)
-async def get_my_basket(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead: return await _get_serialized_basket(request, db, current_user.id)
+async def get_my_basket(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead:
+    await refresh_assigned_referrer_promo(db, user=current_user)
+    await db.commit()
+    return await _get_serialized_basket(request, db, current_user.id)
 
 
 @my_basket_router.post("", response_model=BasketRead, status_code=status.HTTP_200_OK)
-async def create_my_basket(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead: return await _get_serialized_basket(request, db, current_user.id)
+async def create_my_basket(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead:
+    await refresh_assigned_referrer_promo(db, user=current_user)
+    await db.commit()
+    return await _get_serialized_basket(request, db, current_user.id)
 
 
 @my_basket_router.post("/items", response_model=BasketRead, status_code=status.HTTP_200_OK)
