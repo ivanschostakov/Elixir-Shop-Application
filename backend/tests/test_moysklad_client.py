@@ -191,6 +191,46 @@ async def test_fetch_catalog_rows_excludes_raw_material_folder_but_keeps_cosmeti
 
 
 @pytest.mark.anyio
+async def test_fetch_catalog_rows_can_include_one_product_from_an_excluded_folder(monkeypatch):
+    included_product_id = "3a4d52b1-4536-11f1-0a80-0d7f00195cef"
+    excluded_product_id = "bde05938-52bf-11f1-0a80-032c003c7a1b"
+    client = MoySkladClient(
+        token="token",
+        base_url="https://example.test/api/remap/1.2",
+        included_product_ids=[included_product_id, "not-a-uuid"],
+    )
+
+    async def fake_get_all(path: str, **_params):
+        if path == "/entity/product":
+            return [
+                {
+                    "id": included_product_id,
+                    "externalCode": "included-test-product",
+                    "article": "TEST-001",
+                    "name": "Тестовый товар приложения",
+                    "pathName": "Пасхалка",
+                },
+                {
+                    "id": excluded_product_id,
+                    "externalCode": "excluded-raw-product",
+                    "code": "RAW-001",
+                    "name": "Сырьё",
+                    "pathName": "Сырье и материалы",
+                },
+            ]
+        return []
+
+    monkeypatch.setattr(client, "get_all", fake_get_all)
+
+    products, variants, stats = await client.fetch_catalog_rows()
+
+    assert [str(row.system_id) for row in products] == [included_product_id]
+    assert len(variants) == 1
+    assert str(variants[0].product_system_id) == included_product_id
+    assert stats.fetched_products == 1
+
+
+@pytest.mark.anyio
 async def test_resolve_or_create_bonus_transaction_builds_spending_payload(monkeypatch):
     client = MoySkladClient(token="token", base_url="https://example.test/api/remap/1.2")
     counterparty_id = "12345678-1234-1234-1234-123456789012"

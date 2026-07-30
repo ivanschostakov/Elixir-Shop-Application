@@ -9,7 +9,7 @@ import httpx
 
 from .rows import build_variant_rows, build_product_rows, EXCLUDED_PATHS
 from .schemas import MoySkladCatalogSyncStats, MoySkladCounterpartySyncResult, MoySkladCustomerOrderSyncResult, MoySkladInitialRelinkStats, MoySkladInvoiceOutSyncResult
-from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, UFA_TZ
+from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_INCLUDED_PRODUCT_IDS, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, UFA_TZ
 from src.normalize import coerce_uuid, normalize_email, normalize_phone, optional_str
 
 logger = logging.getLogger(__name__)
@@ -64,10 +64,26 @@ def moysklad_money(amount: Decimal) -> int:
 
 
 class MoySkladClient:
-    def __init__(self, token: str | None = MOY_SKLAD_TOKEN, base_url: str | None = MOY_SKLAD_BASE_URL, timeout: int = MOY_SKLAD_TIMEOUT_SECONDS) -> None:
+    def __init__(
+        self,
+        token: str | None = MOY_SKLAD_TOKEN,
+        base_url: str | None = MOY_SKLAD_BASE_URL,
+        timeout: int = MOY_SKLAD_TIMEOUT_SECONDS,
+        included_product_ids: list[str] | tuple[str, ...] | None = None,
+    ) -> None:
         self._token = optional_str(token) or ""
         self._base_url = (optional_str(base_url) or MOY_SKLAD_API_BASE_URL).rstrip("/")
         self._timeout = max(int(timeout), 1)
+        configured_product_ids = (
+            MOY_SKLAD_INCLUDED_PRODUCT_IDS
+            if included_product_ids is None
+            else included_product_ids
+        )
+        self._included_product_ids = {
+            product_id
+            for value in configured_product_ids
+            if (product_id := coerce_uuid(value)) is not None
+        }
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
 
@@ -759,12 +775,19 @@ class MoySkladClient:
     async def fetch_catalog_rows(self):
         logger.info("MoySklad catalog fetch started")
         products, variants, stocks = await asyncio.gather(
-            self.get_all("/entity/product", filter="pathName!=Товары интернет-магазинов/elixirpeptide.ru"),
+            self.get_all("/entity/product"),
             self.get_all("/entity/variant", expand="product"),
             self.get_all("/report/stock/all"),
         )
 
-        products = [p for p in products if p.get("pathName") not in EXCLUDED_PATHS]
+        products = [
+            product
+            for product in products
+            if (
+                product.get("pathName") not in EXCLUDED_PATHS
+                or coerce_uuid(product.get("id")) in self._included_product_ids
+            )
+        ]
         stats = MoySkladCatalogSyncStats()
         product_rows, products_by_code, products_by_id = build_product_rows(products, stats)
         variant_rows = build_variant_rows(variants, stocks, products_by_code, products_by_id, stats)
