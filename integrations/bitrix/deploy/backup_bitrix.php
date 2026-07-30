@@ -45,10 +45,12 @@ $candidatePaths = [
     'local/modules/elixir.promo',
     'local/modules/elixir.reviewsync',
     'local/modules/elixir.delivery',
+    'local/modules/elixir.catalogsync',
     'local/api/app_integration.php',
     'bitrix/tools/elixir.promo/api.php',
     'bitrix/tools/elixir.reviewsync',
     'bitrix/tools/elixir.delivery',
+    'bitrix/tools/elixir.catalogsync',
 ];
 $relativePaths = array_values(array_filter(
     $candidatePaths,

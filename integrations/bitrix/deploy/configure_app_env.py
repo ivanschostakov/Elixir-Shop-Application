@@ -20,6 +20,10 @@ TARGETS = {
     "WEBSITE_REVIEW_SYNC_SECRET": os.environ.get("ELIXIR_REVIEW_SECRET", ""),
     "WEBSITE_REVIEW_SYNC_INTERVAL_MINUTES": "1",
     "WEBSITE_REVIEW_SYNC_TIMEOUT_SECONDS": "30",
+    "WEBSITE_CATALOG_SYNC_ENDPOINT": "https://elixirpeptide.com:8443/bitrix/tools/elixir.catalogsync/sync.php",
+    "WEBSITE_CATALOG_SYNC_SECRET": os.environ.get("ELIXIR_CATALOG_SECRET", ""),
+    "WEBSITE_CATALOG_SYNC_INTERVAL_MINUTES": "5",
+    "WEBSITE_CATALOG_SYNC_TIMEOUT_SECONDS": "30",
 }
 REMOVE_KEYS = {"BITRIX_PROXY_URL"}
 
@@ -27,7 +31,13 @@ REMOVE_KEYS = {"BITRIX_PROXY_URL"}
 def main() -> None:
     if len(sys.argv) != 2:
         raise SystemExit("Usage: configure_app_env.py <backend/.env>")
-    for name in ("BITRIX_PROMO_TOKEN", "BITRIX_DELIVERY_SECRET", "WEBSITE_IDENTITY_TOKEN", "WEBSITE_REVIEW_SYNC_SECRET"):
+    for name in (
+        "BITRIX_PROMO_TOKEN",
+        "BITRIX_DELIVERY_SECRET",
+        "WEBSITE_IDENTITY_TOKEN",
+        "WEBSITE_REVIEW_SYNC_SECRET",
+        "WEBSITE_CATALOG_SYNC_SECRET",
+    ):
         if len(TARGETS[name]) < 32:
             raise SystemExit(f"Missing or weak secret: {name}")
 

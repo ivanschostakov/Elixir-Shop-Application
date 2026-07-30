@@ -190,9 +190,9 @@ async def test_moysklad_upsert_unarchives_existing_rows_when_they_return():
         system_id=NEW_PRODUCT_ID,
         sku="P-001",
         name="Product",
-        description=None,
-        usage=None,
-        expiration=None,
+        description="<p>Описание из Bitrix</p>",
+        usage="<p>Применение из Bitrix</p>",
+        expiration="<p>Хранение из Bitrix</p>",
         archived=True,
         in_stock=True,
     )
@@ -215,7 +215,7 @@ async def test_moysklad_upsert_unarchives_existing_rows_when_they_return():
                 system_id=NEW_PRODUCT_ID,
                 sku="P-001",
                 name="Product",
-                description=None,
+                description="Описание из МойСклад не является источником контента",
                 archived=False,
             )
         ],
@@ -233,6 +233,9 @@ async def test_moysklad_upsert_unarchives_existing_rows_when_they_return():
 
     assert product.archived is False
     assert product.in_stock is True
+    assert product.description == "<p>Описание из Bitrix</p>"
+    assert product.usage == "<p>Применение из Bitrix</p>"
+    assert product.expiration == "<p>Хранение из Bitrix</p>"
     assert variant.archived is False
     assert variant.stock == 8
     assert stats.unarchived_products == 1

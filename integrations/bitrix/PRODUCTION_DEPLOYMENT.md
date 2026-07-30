@@ -11,8 +11,9 @@
    из `UF_PROMO`.
 2. `elixir.reviewsync` — двусторонний обмен отзывами сайта и приложения.
 3. `elixir.delivery` — расчёт доставки приложения через Bitrix Sale и активные настройки IPOL.СДЭК.
-4. `app_integration.php` — вход покупателей приложения через учётную запись сайта с последующей локальной email-2FA.
-5. `giveaways.php` — совместимый защищённый endpoint действующего giveaway-бота.
+4. `elixir.catalogsync` — односторонняя синхронизация описания, применения и хранения из закрытых полей Bitrix в приложение.
+5. `app_integration.php` — вход покупателей приложения через учётную запись сайта с последующей локальной email-2FA.
+6. `giveaways.php` — совместимый защищённый endpoint действующего giveaway-бота.
 
 AI-чат в этот состав не входит и на сайт не устанавливается.
 
@@ -91,6 +92,26 @@ https://elixirpeptide.com:8443/bitrix/tools/elixir.delivery/quote.php
 корзину. Расчёт выполняет активный профиль IPOL.СДЭК; цена, переданная мобильным
 клиентом, для CDEK игнорируется. Публичный сайт и его шаблон не изменяются.
 
+### 5.2. Контент карточек приложения
+
+Скопировать:
+
+```text
+elixir.catalogsync → <DOCUMENT_ROOT>/local/modules/elixir.catalogsync
+```
+
+Модуль создаёт в инфоблоке каталога три app-only HTML-свойства:
+
+- `ELIXIR_APP_DESCRIPTION`;
+- `ELIXIR_APP_USAGE`;
+- `ELIXIR_APP_STORAGE`.
+
+Они не используются публичным шаблоном сайта. Перед первым включением worker
+текущие значения приложения один раз переносятся в пустые свойства Bitrix.
+После сверки Bitrix становится единственным источником этих трёх полей.
+Название, цена, остаток, варианты, активность и стандартные поля описания сайта
+не синхронизируются этим модулем.
+
 ### 6. App + Giveaway Bridge
 
 Скопировать только `app_integration.php` и `giveaways.php` из `elixir.sitebridge/local/api`.
@@ -120,6 +141,11 @@ WEBSITE_REVIEW_SYNC_ENDPOINT=https://elixirpeptide.com:8443/bitrix/tools/elixir.
 WEBSITE_REVIEW_SYNC_SECRET=<отдельный_секрет>
 WEBSITE_REVIEW_SYNC_INTERVAL_MINUTES=1
 WEBSITE_REVIEW_SYNC_TIMEOUT_SECONDS=30
+
+WEBSITE_CATALOG_SYNC_ENDPOINT=https://elixirpeptide.com:8443/bitrix/tools/elixir.catalogsync/sync.php
+WEBSITE_CATALOG_SYNC_SECRET=<отдельный_секрет>
+WEBSITE_CATALOG_SYNC_INTERVAL_MINUTES=5
+WEBSITE_CATALOG_SYNC_TIMEOUT_SECONDS=30
 ```
 
 Покупатель Bitrix сопоставляется по email. Если email не найден на сайте, расчёт
@@ -166,6 +192,11 @@ v-add-firewall-rule ACCEPT <GIVEAWAY_IP>/32 8443 TCP ELIXIR_GIVEAWAY_BITRIX_API
 - несуществующий код отклоняется;
 - новый `UF_PROMO` создаёт один купон без дублей;
 - отзыв проходит в обе стороны без дублей;
+- контент каталога сопоставляется только по UUID `XML_ID`;
+- пустые новые поля Bitrix первоначально заполнены текущим контентом приложения;
+- повторный цикл контента не создаёт изменений;
+- изменение app-only свойства Bitrix появляется в приложении;
+- стандартные `PREVIEW_TEXT`, `DETAIL_TEXT` и публичная карточка сайта не изменяются;
 - вход существующего покупателя сайта создаёт/обновляет только покупательский профиль приложения и требует email-2FA;
 - giveaway-бот получает `404 not_found` для тестового несуществующего email и рабочий ответ для реальной записи;
 - серверные логи не содержат secrets или паролей.

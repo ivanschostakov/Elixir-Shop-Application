@@ -17,8 +17,8 @@
 
 - [x] ID сайта `s1`;
 - [x] ID типа плательщика `1`;
-- [x] ID инфоблока товаров `2`;
-- [x] ID инфоблока торговых предложений `3`;
+- [x] ID актуального инфоблока товаров `21`;
+- [x] ID актуального инфоблока торговых предложений `22`;
 - [x] ID типа цены `1`;
 - [x] ID правила реферальной скидки `24`;
 - [x] поле `UF_PROMO`;
@@ -35,6 +35,7 @@
 
 - [x] `BITRIX_PROMO_TOKEN`;
 - [x] `WEBSITE_REVIEW_SYNC_SECRET`;
+- [ ] `WEBSITE_CATALOG_SYNC_SECRET`;
 - [x] `APP_INTEGRATION_TOKEN`;
 - [x] `GIVEAWAY_BOT_TOKEN`.
 
