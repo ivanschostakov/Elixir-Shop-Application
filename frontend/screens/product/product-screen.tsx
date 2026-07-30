@@ -357,9 +357,9 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                                         <Text style={productScreenStyle.priceInlineOriginal}>
                                             {selectedVariantPriceDisplay.originalLabel ?? ""}
                                         </Text>
-                                        {selectedVariantPriceDisplay.discountLabel ? (
+                                        {selectedVariantPriceDisplay.effectiveDiscountLabel ? (
                                             <Text style={productScreenStyle.priceInlinePercent}>
-                                                {selectedVariantPriceDisplay.discountLabel}
+                                                {selectedVariantPriceDisplay.effectiveDiscountLabel}
                                             </Text>
                                         ) : null}
                                     </>

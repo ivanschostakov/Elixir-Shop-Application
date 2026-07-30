@@ -99,9 +99,9 @@ export function ProductCard({ product, style }: ProductCardProps) {
                                         <Text numberOfLines={1} style={contentStyles.productOriginalPrice}>
                                             {priceDisplay.originalLabel ?? ""}
                                         </Text>
-                                        {priceDisplay.discountLabel ? (
+                                        {priceDisplay.effectiveDiscountLabel ? (
                                             <Text numberOfLines={1} style={contentStyles.productDiscountPercent}>
-                                                {priceDisplay.discountLabel}
+                                                {priceDisplay.effectiveDiscountLabel}
                                             </Text>
                                         ) : null}
                                     </View>

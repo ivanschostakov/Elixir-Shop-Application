@@ -311,7 +311,7 @@ export const createContentStyles = (colors: ThemePalette) => StyleSheet.create({
     productImageSaleText: {
         color: "#FFFFFF",
         fontSize: 10,
-        fontWeight: "400",
+        fontWeight: "900",
         letterSpacing: 0.2,
         textTransform: "uppercase",
     },

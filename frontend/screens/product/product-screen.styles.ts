@@ -73,7 +73,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     imageSaleText: {
         color: "#FFFFFF",
         fontSize: 12,
-        fontWeight: "400",
+        fontWeight: "900",
         letterSpacing: 0.2,
         textTransform: "uppercase",
     },
@@ -366,7 +366,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         width: "100%",
     },
     feedbackSection: {
-        gap: spacing.xs,
+        gap: spacing.sm,
         width: "100%",
     },
     feedbackSummaryRow: {
@@ -376,18 +376,29 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         width: "100%",
     },
     feedbackSummaryCard: {
-        backgroundColor: colors.surfaceSoft,
-        borderColor: colors.borderSoft,
-        borderRadius: spacing.md,
+        backgroundColor: colors.surface,
+        borderColor: "transparent",
+        borderRadius: spacing.lg,
         borderWidth: 1,
-        gap: 4,
+        gap: 6,
         justifyContent: "center",
-        minHeight: 82,
+        minHeight: 96,
         paddingHorizontal: spacing.md,
-        paddingVertical: spacing.sm,
+        paddingVertical: spacing.md,
+        ...Platform.select({
+            web: {
+                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
+            },
+            default: {
+                shadowColor: "#000000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.04,
+                shadowRadius: 16,
+            },
+        }),
     },
     feedbackReviewsSummaryCard: {
-        flex: 1,
+        flex: 1.35,
     },
     feedbackQuestionsSummaryCard: {
         flex: 1,
@@ -404,9 +415,9 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     },
     feedbackSummaryValue: {
         color: colors.text,
-        fontSize: 22,
+        fontSize: 24,
         fontWeight: "800",
-        lineHeight: 27,
+        lineHeight: 30,
     },
     feedbackSummaryLabel: {
         color: colors.mutedText,
@@ -416,10 +427,10 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     },
     questionIcon: {
         alignItems: "center",
-        borderRadius: 8,
-        height: 25,
+        borderRadius: 9,
+        height: 27,
         justifyContent: "center",
-        width: 25,
+        width: 27,
     },
     questionIconText: {
         fontSize: 18,
@@ -428,17 +439,26 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     },
     feedbackExpandedCard: {
         backgroundColor: colors.surface,
-        borderColor: colors.borderSoft,
         borderRadius: spacing.lg,
-        borderWidth: 1,
-        gap: spacing.md,
+        gap: spacing.sm,
         padding: spacing.md,
+        ...Platform.select({
+            web: {
+                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
+            },
+            default: {
+                shadowColor: "#000000",
+                shadowOffset: { width: 0, height: 8 },
+                shadowOpacity: 0.04,
+                shadowRadius: 16,
+            },
+        }),
     },
     feedbackPanelTitle: {
         color: colors.text,
-        fontSize: 18,
+        fontSize: 20,
         fontWeight: "800",
-        lineHeight: 23,
+        lineHeight: 26,
     },
     composerFieldLabel: {
         color: colors.text,
@@ -458,12 +478,9 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     },
     reviewAnonymousRow: {
         alignItems: "center",
-        borderTopColor: colors.divider,
-        borderTopWidth: 1,
         flexDirection: "row",
         gap: spacing.md,
         justifyContent: "space-between",
-        paddingTop: spacing.sm,
     },
     reviewAnonymousCopy: {
         flex: 1,
@@ -484,7 +501,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         backgroundColor: colors.surface,
         borderLeftColor: colors.primary,
         borderLeftWidth: 3,
-        borderRadius: spacing.sm,
+        borderRadius: 8,
         gap: 3,
         marginTop: 2,
         padding: spacing.sm,
@@ -614,17 +631,16 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     },
     reviewWriteLabel: {
         alignSelf: "flex-start",
-        color: colors.mutedText,
-        fontSize: 12,
+        color: colors.primary,
+        fontSize: 14,
         fontWeight: "700",
+        textTransform: "uppercase",
     },
     reviewComposer: {
-        backgroundColor: colors.surfaceSoft,
-        borderColor: colors.borderSoft,
+        backgroundColor: colors.surfaceMuted,
         borderRadius: spacing.md,
-        borderWidth: 1,
         gap: spacing.sm,
-        padding: spacing.md,
+        padding: spacing.sm,
     },
     reviewRatingOptionsRow: {
         flexDirection: "row",
@@ -657,8 +673,8 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
     },
     reviewComposerInput: {
         backgroundColor: colors.surface,
-        borderColor: colors.borderSoft,
-        borderRadius: 12,
+        borderColor: colors.border,
+        borderRadius: spacing.sm,
         borderWidth: 1,
         color: colors.text,
         fontSize: 14,
@@ -673,14 +689,8 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         backgroundColor: colors.primary,
         borderRadius: 999,
         justifyContent: "center",
-        minHeight: 40,
+        minHeight: 36,
         paddingHorizontal: spacing.md,
-    },
-    reviewComposerActions: {
-        alignItems: "center",
-        flexDirection: "row",
-        flexWrap: "wrap",
-        gap: spacing.xs,
     },
     reviewSubmitButtonDisabled: {
         opacity: 0.6,
@@ -699,7 +709,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         borderRadius: 12,
         borderWidth: 1,
         justifyContent: "center",
-        minHeight: 40,
+        minHeight: 38,
         paddingHorizontal: 12,
     },
     reviewPhotoButtonPressed: {
@@ -731,12 +741,10 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         lineHeight: 16,
     },
     reviewCard: {
-        backgroundColor: colors.surfaceSoft,
-        borderColor: colors.borderSoft,
+        backgroundColor: colors.surfaceMuted,
         borderRadius: spacing.md,
-        borderWidth: 1,
-        gap: spacing.sm,
-        padding: spacing.md,
+        gap: spacing.xs,
+        padding: spacing.sm,
     },
     reviewCardHeader: {
         alignItems: "center",

@@ -57,6 +57,7 @@ export type ProductPriceDisplay = {
     currentLabel: string
     originalLabel: string | null
     discountLabel: string | null
+    effectiveDiscountLabel: string | null
     discountKind: "product" | "category" | null
     hasDiscount: boolean
     prefix: string
@@ -95,6 +96,7 @@ export function getVariantPriceDisplay(
         currentLabel,
         originalLabel: hasDiscount ? formatProductPrice(originalPrice) : null,
         discountLabel: hasCatalogDiscount ? `−${Number(catalogDiscountPercent)}%` : null,
+        effectiveDiscountLabel: hasDiscount ? `−${Number(discountPercent)}%` : null,
         discountKind: hasCatalogDiscount
             ? productDiscountPercent && productDiscountPercent >= (catalogDiscountPercent ?? 0)
                 ? "product"

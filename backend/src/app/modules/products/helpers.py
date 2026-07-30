@@ -81,13 +81,16 @@ def resolve_variant_price(
 ) -> tuple[Decimal, Decimal, Decimal, Decimal, Decimal]:
     original = quantize_money(price)
     catalog_percent = product_catalog_discount_percent(product)
-    catalog_discounted = apply_percent_discount(original, catalog_percent)
     personal_percent = ctx.app_referral_percent if product_is_discountable(product) else Decimal("0.00")
-    discounted = apply_percent_discount(catalog_discounted, personal_percent)
+    combined_percent = min(
+        Decimal("100.00"),
+        quantize_percent(catalog_percent + personal_percent),
+    )
+    discounted = apply_percent_discount(original, combined_percent)
     return (
         original,
         discounted,
-        effective_discount_percent(original, discounted),
+        combined_percent,
         catalog_percent,
         personal_percent,
     )
