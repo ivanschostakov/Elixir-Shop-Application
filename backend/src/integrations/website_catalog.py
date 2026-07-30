@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from config import (
+    WEBSITE_CATALOG_PUBLIC_BASE_URL,
     WEBSITE_CATALOG_SYNC_ENDPOINT,
     WEBSITE_CATALOG_SYNC_SECRET,
     WEBSITE_CATALOG_SYNC_TIMEOUT_SECONDS,
@@ -119,6 +120,7 @@ class WebsiteCatalogSyncClient:
         *,
         endpoint: str | None = WEBSITE_CATALOG_SYNC_ENDPOINT,
         secret: str | None = WEBSITE_CATALOG_SYNC_SECRET,
+        public_base_url: str | None = WEBSITE_CATALOG_PUBLIC_BASE_URL,
         timeout: int = WEBSITE_CATALOG_SYNC_TIMEOUT_SECONDS,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
@@ -132,10 +134,27 @@ class WebsiteCatalogSyncClient:
             or parsed_endpoint.password is not None
         ):
             raise RuntimeError("Website catalog sync endpoint must be an HTTPS URL without credentials")
+        derived_public_base_url = (
+            public_base_url
+            or f"{parsed_endpoint.scheme}://{parsed_endpoint.hostname}"
+        )
+        parsed_public_base_url = urlsplit(derived_public_base_url)
+        if (
+            parsed_public_base_url.scheme != "https"
+            or parsed_public_base_url.hostname is None
+            or parsed_public_base_url.username is not None
+            or parsed_public_base_url.password is not None
+            or parsed_public_base_url.path not in ("", "/")
+            or parsed_public_base_url.query
+            or parsed_public_base_url.fragment
+        ):
+            raise RuntimeError("Website catalog public base URL must be an HTTPS origin")
         if len(secret) < 32:
             raise RuntimeError("Website catalog sync secret must contain at least 32 characters")
         self.endpoint = endpoint
-        self.public_base_url = f"{parsed_endpoint.scheme}://{parsed_endpoint.netloc}/"
+        self.public_base_url = (
+            f"{parsed_public_base_url.scheme}://{parsed_public_base_url.netloc}/"
+        )
         self.secret = secret.encode("utf-8")
         self.timeout = timeout
         self.transport = transport

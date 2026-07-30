@@ -22,6 +22,7 @@ TARGETS = {
     "WEBSITE_REVIEW_SYNC_TIMEOUT_SECONDS": "30",
     "WEBSITE_CATALOG_SYNC_ENDPOINT": "https://elixirpeptide.com:8443/bitrix/tools/elixir.catalogsync/sync.php",
     "WEBSITE_CATALOG_SYNC_SECRET": os.environ.get("ELIXIR_CATALOG_SECRET", ""),
+    "WEBSITE_CATALOG_PUBLIC_BASE_URL": "https://elixirpeptide.com",
     "WEBSITE_CATALOG_SYNC_INTERVAL_MINUTES": "5",
     "WEBSITE_CATALOG_SYNC_TIMEOUT_SECONDS": "30",
 }

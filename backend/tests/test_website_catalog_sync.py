@@ -36,7 +36,7 @@ async def test_catalog_sync_client_signs_pull_request():
         return httpx.Response(200, json={"ok": True, "products": [], "total": 0})
 
     client = WebsiteCatalogSyncClient(
-        endpoint="https://example.test/bitrix/tools/elixir.catalogsync/sync.php",
+        endpoint="https://example.test:8443/bitrix/tools/elixir.catalogsync/sync.php",
         secret=secret,
         transport=httpx.MockTransport(handler),
     )
@@ -45,6 +45,7 @@ async def test_catalog_sync_client_signs_pull_request():
 
     assert result["products"] == []
     assert result["total"] == 0
+    assert client.public_base_url == "https://example.test/"
 
 
 def test_parse_content_rows_rejects_duplicate_and_invalid_ids():
@@ -161,6 +162,12 @@ def test_catalog_sync_client_rejects_insecure_configuration():
         WebsiteCatalogSyncClient(
             endpoint="https://example.test/sync.php",
             secret="short",
+        )
+    with pytest.raises(RuntimeError, match="public base URL"):
+        WebsiteCatalogSyncClient(
+            endpoint="https://example.test/sync.php",
+            secret="catalog-secret-" * 4,
+            public_base_url="https://example.test/files",
         )
 
 
