@@ -14,6 +14,7 @@ export const ROUTES = {
     payment: "/payment",
     profile: "/profile",
     personalData: "/personal-data",
+    profileDiscounts: "/profile-discounts",
     profileDrafts: "/profile-drafts",
     profileHistory: "/profile-history",
     contacts: "/contacts",
@@ -34,6 +35,7 @@ const headerTitleKeys: Record<string, TranslationKey> = {
     [ROUTES.payment]: "route.payment",
     [ROUTES.profile]: "route.profile",
     [ROUTES.personalData]: "route.personalData",
+    [ROUTES.profileDiscounts]: "route.profileDiscounts",
     [ROUTES.profileDrafts]: "route.profileDrafts",
     [ROUTES.profileHistory]: "route.profileHistory",
     [ROUTES.contacts]: "route.contacts",
@@ -54,6 +56,7 @@ const ACCOUNT_REQUIRED_ROUTES = [
     ROUTES.chat,
     ROUTES.profile,
     ROUTES.personalData,
+    ROUTES.profileDiscounts,
     ROUTES.profileDrafts,
     ROUTES.profileHistory,
 ] as const

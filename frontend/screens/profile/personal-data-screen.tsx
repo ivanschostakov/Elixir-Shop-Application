@@ -10,9 +10,12 @@ import {
     TextInput,
     View,
 } from "react-native"
+import { router } from "expo-router"
 
 import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
+import { ProfileQuickActions } from "@/components/profile/profile-quick-actions"
 import { FeedTemplate } from "@/components/templates/feed-template"
+import { ROUTES } from "@/constants/routes"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
@@ -35,7 +38,7 @@ export default function PersonalDataScreen() {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const ProfileScreenStyles = useThemeStyles(createProfileScreenStyles)
     const { t } = useLanguage()
-    const { updatePersonalData, user } = useAuth()
+    const { deleteAccount, signOut, updatePersonalData, user } = useAuth()
     const [form, setForm] = useState<PersonalDataForm>({
         name: user?.name ?? "",
         surname: user?.surname ?? "",
@@ -44,6 +47,7 @@ export default function PersonalDataScreen() {
     })
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
     const [isSaving, setIsSaving] = useState(false)
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false)
 
     useEffect(() => {
         setForm((current) => ({
@@ -116,8 +120,6 @@ export default function PersonalDataScreen() {
         const surname = normalizeFormText(form.surname)
         const email = normalizeFormText(form.email)
 
-        const phoneNumber = normalizeFormText(form.phoneNumber)
-
         if (!name || !surname || !email) {
             setErrorMessage(t("profile.personalData.required"))
             return
@@ -140,6 +142,50 @@ export default function PersonalDataScreen() {
             setIsSaving(false)
         }
     }, [form, isSaving, payload, t, updatePersonalData, user])
+
+    const handleSignOut = useCallback(async () => {
+        await signOut()
+        router.replace(ROUTES.login)
+    }, [signOut])
+
+    const handleDeleteAccount = useCallback(() => {
+        if (isDeletingAccount) {
+            return
+        }
+
+        Alert.alert(
+            t("profile.deleteAccountConfirmTitle"),
+            t("profile.deleteAccountConfirmMessage"),
+            [
+                {
+                    text: t("common.cancel"),
+                    style: "cancel",
+                },
+                {
+                    text: t("profile.deleteAccountConfirmAction"),
+                    style: "destructive",
+                    onPress: () => {
+                        setIsDeletingAccount(true)
+                        void deleteAccount()
+                            .then(() => {
+                                router.replace(ROUTES.login)
+                            })
+                            .catch((deleteError) => {
+                                Alert.alert(
+                                    t("profile.deleteAccountFailedTitle"),
+                                    deleteError instanceof Error && deleteError.message
+                                        ? deleteError.message
+                                        : t("profile.deleteAccountFailedMessage"),
+                                )
+                            })
+                            .finally(() => {
+                                setIsDeletingAccount(false)
+                            })
+                    },
+                },
+            ],
+        )
+    }, [deleteAccount, isDeletingAccount, t])
 
     const personalDataChromeTemplate = useMemo(() => {
         if (!hasPendingPersonalDataChanges) {
@@ -262,6 +308,14 @@ export default function PersonalDataScreen() {
                     </View>
 
                 </View>
+
+                <ProfileQuickActions
+                    isDeletingAccount={isDeletingAccount}
+                    onDeleteAccount={handleDeleteAccount}
+                    onSignOut={() => {
+                        void handleSignOut()
+                    }}
+                />
             </FeedTemplate>
         </KeyboardAvoidingView>
     )

@@ -293,7 +293,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
         ? getVariantStockLabel(selectedVariant.stock, t)
         : null
     const selectedVariantPriceDisplay = getVariantPriceDisplay(selectedVariant, "", product)
-    const catalogDiscountLabel =
+    const catalogDiscountBadgeLabel =
         selectedVariantPriceDisplay?.discountLabel && selectedVariantPriceDisplay.discountKind
             ? `${selectedVariantPriceDisplay.discountLabel} ${t(
                 selectedVariantPriceDisplay.discountKind === "product"
@@ -320,25 +320,27 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                 showsVerticalScrollIndicator={false}
             >
                 <View style={productScreenStyle.imageCard}>
-                    <Image
-                        source={{ uri: heroImageUrl }}
-                        style={productScreenStyle.image}
-                        resizeMode="cover"
-                    />
-                    {product.is_new || catalogDiscountLabel ? (
-                        <View pointerEvents="none" style={productScreenStyle.imageBadgeStack}>
-                            {product.is_new ? (
+                    <View style={productScreenStyle.imageMediaWrap}>
+                        <Image
+                            source={{ uri: heroImageUrl }}
+                            style={productScreenStyle.image}
+                            resizeMode="cover"
+                        />
+                        {product.is_new ? (
+                            <View pointerEvents="none" style={productScreenStyle.imageBadgeStack}>
                                 <View style={[productScreenStyle.imageBadge, productScreenStyle.imageNewBadge]}>
                                     <Text style={productScreenStyle.imageBadgeText}>{t("product.newBadge")}</Text>
                                 </View>
-                            ) : null}
-                            {catalogDiscountLabel ? (
+                            </View>
+                        ) : null}
+                        {catalogDiscountBadgeLabel ? (
+                            <View pointerEvents="none" style={productScreenStyle.imageSaleBadge}>
                                 <Text style={productScreenStyle.imageSaleText}>
-                                    {catalogDiscountLabel}
+                                    {catalogDiscountBadgeLabel}
                                 </Text>
-                            ) : null}
-                        </View>
-                    ) : null}
+                            </View>
+                        ) : null}
+                    </View>
                     {selectedVariantPriceDisplay ? (
                         <View style={productScreenStyle.priceInlineWrap}>
                             <View style={productScreenStyle.priceInlineRow}>
@@ -355,9 +357,9 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                                         <Text style={productScreenStyle.priceInlineOriginal}>
                                             {selectedVariantPriceDisplay.originalLabel ?? ""}
                                         </Text>
-                                        {catalogDiscountLabel ? (
+                                        {selectedVariantPriceDisplay.discountLabel ? (
                                             <Text style={productScreenStyle.priceInlinePercent}>
-                                                {catalogDiscountLabel}
+                                                {selectedVariantPriceDisplay.discountLabel}
                                             </Text>
                                         ) : null}
                                     </>

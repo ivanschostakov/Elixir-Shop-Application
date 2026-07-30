@@ -25,7 +25,7 @@ export function ProductCard({ product, style }: ProductCardProps) {
     const { handleCopy } = useCopyableProfileValue({ t })
     const subtitle = getProductContentSubtitle(product)
     const priceDisplay = getProductPriceDisplay(product)
-    const catalogDiscountLabel = priceDisplay?.discountLabel && priceDisplay.discountKind
+    const catalogDiscountBadgeLabel = priceDisplay?.discountLabel && priceDisplay.discountKind
         ? `${priceDisplay.discountLabel} ${t(
             priceDisplay.discountKind === "product"
                 ? "product.discountOnProduct"
@@ -51,18 +51,18 @@ export function ProductCard({ product, style }: ProductCardProps) {
                         style={contentStyles.productImage}
                         resizeMode="cover"
                     />
-                    {product.is_new || catalogDiscountLabel ? (
+                    {product.is_new ? (
                         <View pointerEvents="none" style={contentStyles.productImageBadgeStack}>
-                            {product.is_new ? (
-                                <View style={[contentStyles.productImageBadge, contentStyles.productImageNewBadge]}>
-                                    <Text style={contentStyles.productImageBadgeText}>{t("product.newBadge")}</Text>
-                                </View>
-                            ) : null}
-                            {catalogDiscountLabel ? (
-                                <Text style={contentStyles.productImageSaleText}>
-                                    {catalogDiscountLabel}
-                                </Text>
-                            ) : null}
+                            <View style={[contentStyles.productImageBadge, contentStyles.productImageNewBadge]}>
+                                <Text style={contentStyles.productImageBadgeText}>{t("product.newBadge")}</Text>
+                            </View>
+                        </View>
+                    ) : null}
+                    {catalogDiscountBadgeLabel ? (
+                        <View pointerEvents="none" style={contentStyles.productImageSaleBadge}>
+                            <Text style={contentStyles.productImageSaleText}>
+                                {catalogDiscountBadgeLabel}
+                            </Text>
                         </View>
                     ) : null}
                     {isOutOfStock ? (
@@ -99,9 +99,9 @@ export function ProductCard({ product, style }: ProductCardProps) {
                                         <Text numberOfLines={1} style={contentStyles.productOriginalPrice}>
                                             {priceDisplay.originalLabel ?? ""}
                                         </Text>
-                                        {catalogDiscountLabel ? (
+                                        {priceDisplay.discountLabel ? (
                                             <Text numberOfLines={1} style={contentStyles.productDiscountPercent}>
-                                                {catalogDiscountLabel}
+                                                {priceDisplay.discountLabel}
                                             </Text>
                                         ) : null}
                                     </View>

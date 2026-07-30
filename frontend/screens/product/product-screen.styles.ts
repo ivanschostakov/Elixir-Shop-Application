@@ -44,6 +44,9 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         backgroundColor: colors.surfaceMuted,
         borderRadius: spacing.md,
     },
+    imageMediaWrap: {
+        position: "relative",
+    },
     imageBadgeStack: {
         alignItems: "flex-start",
         gap: 7,
@@ -68,10 +71,21 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         textTransform: "uppercase",
     },
     imageSaleText: {
-        color: "#E34D6F",
-        fontSize: 14,
-        fontWeight: "900",
+        color: "#FFFFFF",
+        fontSize: 12,
+        fontWeight: "400",
         letterSpacing: 0.2,
+        textTransform: "uppercase",
+    },
+    imageSaleBadge: {
+        backgroundColor: "#E34D6F",
+        borderRadius: 999,
+        bottom: spacing.md,
+        left: spacing.md,
+        paddingHorizontal: 13,
+        paddingVertical: 7,
+        position: "absolute",
+        zIndex: 3,
     },
     priceInlineWrap: {
         paddingHorizontal: spacing.lg,
