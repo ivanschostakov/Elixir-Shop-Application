@@ -20,7 +20,6 @@ from src.app.modules.admin.schemas import (
 from src.app.modules.products.helpers import review_attachment_path
 from src.app.services.stock_visibility import StockVisibilityPolicy
 from src.app.services.catalog_merchandising import (
-    CatalogMerchandisingPolicy,
     product_catalog_discount_percent,
     product_is_new,
 )
@@ -137,10 +136,8 @@ def serialize_admin_product(
     product: Product,
     *,
     stock_policy: StockVisibilityPolicy | None = None,
-    merchandising_policy: CatalogMerchandisingPolicy | None = None,
 ) -> AdminProductRead:
     policy = stock_policy or StockVisibilityPolicy()
-    merchandising = merchandising_policy or CatalogMerchandisingPolicy()
     return AdminProductRead(
         id=product.id,
         system_id=str(product.system_id),
@@ -153,7 +150,7 @@ def serialize_admin_product(
         archived=product.archived,
         priority=product.priority,
         is_new_manual=product.is_new_manual,
-        is_new=product_is_new(product, merchandising),
+        is_new=product_is_new(product),
         discount_percent=product.discount_percent,
         effective_discount_percent=product_catalog_discount_percent(product),
         stock_reduction_override=product.stock_reduction_override,

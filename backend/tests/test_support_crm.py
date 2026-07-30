@@ -160,6 +160,7 @@ def test_support_crm_schema_routes_and_permissions_are_registered():
     assert {
         "/api/v1/users/me/support",
         "/api/v1/users/me/support/conversations",
+        "/api/v1/admin/support/customers",
         "/api/v1/admin/support/conversations",
         "/api/v1/admin/ai-chats",
         "/api/v1/admin/leads",
@@ -172,6 +173,76 @@ def test_support_crm_schema_routes_and_permissions_are_registered():
         "leads.read",
         "leads.manage",
     }.issubset(ALL_PERMISSIONS)
+
+
+def test_admin_can_start_a_customer_conversation(
+    client: TestClient,
+    register_verified_user,
+):
+    customer_auth = register_verified_user({
+        "email": f"support-outbound-customer-{uuid.uuid4().hex[:10]}@example.com",
+        "password": "SafePassword123!",
+        "name": "Мария",
+        "surname": "Клиент",
+    })
+    operator_auth = register_verified_user({
+        "email": f"support-outbound-operator-{uuid.uuid4().hex[:10]}@example.com",
+        "password": "SafePassword123!",
+        "name": "Олег",
+        "surname": "Оператор",
+    })
+    customer_id = int(customer_auth["user"]["id"])
+    operator_admin_id = _create_support_admin_identity(
+        customer_user_id=int(operator_auth["user"]["id"]),
+    )
+    context = AdminContext(
+        user=SimpleNamespace(id=operator_admin_id, name="Олег", surname="Оператор"),
+        admin=SimpleNamespace(user_id=operator_admin_id),
+        session=SimpleNamespace(id=1),
+        roles=("support",),
+        permissions=frozenset({"*"}),
+    )
+    app.dependency_overrides[get_current_admin_context] = lambda: context
+
+    try:
+        customer_search = client.get(
+            "/api/v1/admin/support/customers",
+            params={"customer_user_id": customer_id},
+        )
+        assert customer_search.status_code == 200, customer_search.text
+        assert customer_search.json()["items"][0]["active_conversation_id"] is None
+
+        started = client.post(
+            "/api/v1/admin/support/conversations",
+            json={
+                "customer_user_id": customer_id,
+                "subject": "Персональная консультация",
+                "body": "Мария, добрый день! Можем помочь с подбором курса.",
+            },
+        )
+        assert started.status_code == 201, started.text
+        conversation = started.json()
+        conversation_id = int(conversation["id"])
+        assert conversation["status"] == "waiting_customer"
+        assert conversation["customer_unread_count"] == 1
+        assert conversation["messages"][0]["author_name"] == "Олег Оператор"
+
+        customer_inbox = client.get(
+            "/api/v1/users/me/support",
+            headers={"Authorization": f"Bearer {customer_auth['access_token']}"},
+        )
+        assert customer_inbox.status_code == 200, customer_inbox.text
+        assert customer_inbox.json()["active"]["id"] == conversation_id
+        assert customer_inbox.json()["active"]["messages"][0]["author_name"] == "Elixir Peptide"
+
+        customer_search = client.get(
+            "/api/v1/admin/support/customers",
+            params={"customer_user_id": customer_id},
+        )
+        assert customer_search.status_code == 200, customer_search.text
+        assert customer_search.json()["items"][0]["active_conversation_id"] == conversation_id
+    finally:
+        app.dependency_overrides.pop(get_current_admin_context, None)
 
 
 def test_lead_terminal_stage_contract_requires_business_context():

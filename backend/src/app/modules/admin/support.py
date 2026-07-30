@@ -11,17 +11,21 @@ from config import ufa_now
 from src.app.modules.admin.helpers import ensure_not_stale
 from src.app.modules.admin.schemas import (
     AdminPage,
+    AdminSupportConversationCreatePayload,
     AdminSupportConversationDetail,
     AdminSupportConversationRead,
     AdminSupportConversationUpdatePayload,
+    AdminSupportCustomerRead,
     AdminSupportMessagePayload,
     AdminSupportReadResponse,
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission, resolve_admin_alert
 from src.app.services.support import (
+    ACTIVE_CONVERSATION_STATUSES,
     add_admin_support_message,
     apply_conversation_sla,
     conversation_list_options,
+    create_admin_support_conversation,
     get_support_conversation,
     mark_support_read,
     send_support_reply_notification,
@@ -63,6 +67,65 @@ async def _last_message_preview(db: AsyncSession, conversation_ids: list[int]) -
         select(ranked.c.conversation_id, ranked.c.body).where(ranked.c.row_number == 1)
     )).all()
     return {int(conversation_id): str(body or "")[:240] for conversation_id, body in rows}
+
+
+@admin_support_router.get("/customers", response_model=AdminPage[AdminSupportCustomerRead])
+async def search_support_customers(
+    q: str | None = Query(default=None, max_length=120),
+    customer_user_id: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=20, ge=1, le=50),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("support.read")),
+) -> AdminPage[AdminSupportCustomerRead]:
+    filters = []
+    if customer_user_id:
+        filters.append(User.id == customer_user_id)
+    if q:
+        pattern = f"%{q.strip()}%"
+        filters.append(or_(
+            func.concat_ws(" ", User.name, User.surname).ilike(pattern),
+            User.email.ilike(pattern),
+            User.phone_number.ilike(pattern),
+            User.username.ilike(pattern),
+        ))
+    active_conversation_id = (
+        select(CrmConversation.id)
+        .where(
+            CrmConversation.customer_user_id == User.id,
+            CrmConversation.channel == "app_support",
+            CrmConversation.status.in_(ACTIVE_CONVERSATION_STATUSES),
+        )
+        .order_by(CrmConversation.id.desc())
+        .limit(1)
+        .correlate(User)
+        .scalar_subquery()
+    )
+    total = int((await db.execute(select(func.count(User.id)).where(*filters))).scalar_one())
+    rows = (await db.execute(
+        select(User, active_conversation_id.label("active_conversation_id"))
+        .where(*filters)
+        .order_by(User.last_active_at.desc().nullslast(), User.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )).all()
+    return AdminPage(
+        items=[
+            AdminSupportCustomerRead(
+                id=user.id,
+                name=user.name,
+                surname=user.surname,
+                email=user.email,
+                phone_number=user.phone_number,
+                is_active=user.is_active,
+                active_conversation_id=conversation_id,
+            )
+            for user, conversation_id in rows
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @admin_support_router.get("/conversations", response_model=AdminPage[AdminSupportConversationRead])
@@ -137,6 +200,51 @@ async def list_support_conversations(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@admin_support_router.post(
+    "/conversations",
+    response_model=AdminSupportConversationDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def start_support_conversation(
+    payload: AdminSupportConversationCreatePayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("support.reply", write=True)),
+) -> AdminSupportConversationDetail:
+    conversation, support_message, created = await create_admin_support_conversation(
+        db,
+        user_id=payload.customer_user_id,
+        admin_user_id=context.user.id,
+        subject=payload.subject,
+        body=payload.body,
+    )
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="support.create" if created else "support.reply",
+        entity_type="support_conversation",
+        entity_id=conversation.id,
+        after={
+            "message_id": support_message.id,
+            "customer_user_id": payload.customer_user_id,
+            "admin_initiated": created,
+        },
+    )
+    await db.commit()
+    await send_support_reply_notification(
+        db,
+        conversation=conversation,
+        message=support_message,
+    )
+    refreshed = await get_support_conversation(db, conversation.id)
+    if refreshed is None:
+        raise RuntimeError("Support conversation could not be reloaded")
+    return AdminSupportConversationDetail.model_validate(
+        serialize_support_conversation(refreshed, admin_view=True, include_messages=True)
     )
 
 

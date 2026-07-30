@@ -205,6 +205,62 @@ export default function CheckoutScreen() {
     const [useBonusRubles, setUseBonusRubles] = useState(false)
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const appliedRoutePromoCodeRef = useRef<string | null>(routePromoCode ?? null)
+    const focusedRecipientInputRef = useRef<TextInput | null>(null)
+    const recipientEmailInputRef = useRef<TextInput>(null)
+    const recipientFirstNameInputRef = useRef<TextInput>(null)
+    const recipientLastNameInputRef = useRef<TextInput>(null)
+    const recipientPhoneInputRef = useRef<TextInput>(null)
+    const recipientEditorScrollOffsetRef = useRef(0)
+    const recipientEditorScrollRef = useRef<ScrollView>(null)
+    const scrollRecipientInputIntoView = useCallback((keyboardScreenY = Keyboard.metrics()?.screenY) => {
+        const input = focusedRecipientInputRef.current
+
+        if (!input || keyboardScreenY === undefined) {
+            return
+        }
+
+        requestAnimationFrame(() => {
+            input.measure((_x, _y, _width, height, _pageX, pageY) => {
+                const overlap = pageY + height + spacing.sm - keyboardScreenY
+
+                if (overlap <= 0) {
+                    return
+                }
+
+                recipientEditorScrollRef.current?.scrollTo({
+                    animated: true,
+                    y: recipientEditorScrollOffsetRef.current + overlap,
+                })
+            })
+        })
+    }, [])
+    const handleRecipientInputFocus = useCallback(
+        (input: TextInput | null) => {
+            focusedRecipientInputRef.current = input
+            scrollRecipientInputIntoView()
+        },
+        [scrollRecipientInputIntoView],
+    )
+
+    useEffect(() => {
+        if (!isRecipientEditorOpen) {
+            return
+        }
+
+        recipientEditorScrollOffsetRef.current = 0
+        requestAnimationFrame(() => {
+            recipientEditorScrollRef.current?.scrollTo({ animated: false, y: 0 })
+        })
+
+        const subscription = Keyboard.addListener("keyboardDidShow", (event) => {
+            scrollRecipientInputIntoView(event.endCoordinates.screenY)
+        })
+
+        return () => {
+            subscription.remove()
+        }
+    }, [isRecipientEditorOpen, scrollRecipientInputIntoView])
+
     const normalizedPromoCode = useMemo(() => {
         const trimmedCode = promoCode.trim()
         return trimmedCode ? trimmedCode : null
@@ -698,6 +754,7 @@ export default function CheckoutScreen() {
 
     const handleOpenRecipientEditor = () => {
         Keyboard.dismiss()
+        focusedRecipientInputRef.current = null
         setRecipientForm(
             savedRecipient
                 ? createEmptyRecipientForm()
@@ -709,6 +766,7 @@ export default function CheckoutScreen() {
 
     const handleCloseRecipientEditor = () => {
         Keyboard.dismiss()
+        focusedRecipientInputRef.current = null
         setRecipientFormErrors({})
         setIsRecipientEditorOpen(false)
     }
@@ -1472,43 +1530,54 @@ export default function CheckoutScreen() {
                     transparent
                     visible={isRecipientEditorOpen}
                 >
-                    <View style={contentStyles.browsePickerBackdrop}>
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === "ios" ? "padding" : "height"}
+                        keyboardVerticalOffset={0}
+                        style={contentStyles.browsePickerBackdrop}
+                    >
                         <Pressable
                             accessibilityRole="button"
                             onPress={handleCloseRecipientEditor}
                             style={contentStyles.browsePickerDismissArea}
                         />
 
-                        <KeyboardAvoidingView
-                            behavior={Platform.OS === "ios" ? "padding" : "height"}
-                            keyboardVerticalOffset={0}
-                            style={checkoutScreenStyles.recipientEditorKeyboardAvoiding}
+                        <View
+                            style={[
+                                contentStyles.browsePickerSheet,
+                                checkoutScreenStyles.recipientEditorSheet,
+                                { paddingBottom: Math.max(spacing.lg, bottomInset + spacing.sm) },
+                            ]}
                         >
-                            <View
-                                style={[
-                                    contentStyles.browsePickerSheet,
-                                    checkoutScreenStyles.recipientEditorSheet,
-                                    { paddingBottom: Math.max(spacing.lg, bottomInset + spacing.sm) },
-                                ]}
+                            <View style={checkoutScreenStyles.recipientEditorHeader}>
+                                <Text numberOfLines={2} style={checkoutScreenStyles.recipientEditorTitle}>
+                                    {t("checkout.recipientAddNew")}
+                                </Text>
+
+                                <Pressable
+                                    accessibilityLabel={t("common.close")}
+                                    accessibilityRole="button"
+                                    onPress={handleCloseRecipientEditor}
+                                    style={({ pressed }) => [
+                                        checkoutScreenStyles.recipientEditorCloseButton,
+                                        pressed && checkoutScreenStyles.recipientEditorCloseButtonPressed,
+                                    ]}
+                                >
+                                    <Text style={checkoutScreenStyles.recipientEditorCloseText}>×</Text>
+                                </Pressable>
+                            </View>
+
+                            <ScrollView
+                                contentContainerStyle={checkoutScreenStyles.recipientEditorScrollContent}
+                                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                                keyboardShouldPersistTaps="handled"
+                                onScroll={(event) => {
+                                    recipientEditorScrollOffsetRef.current = event.nativeEvent.contentOffset.y
+                                }}
+                                ref={recipientEditorScrollRef}
+                                scrollEventThrottle={16}
+                                showsVerticalScrollIndicator={false}
+                                style={checkoutScreenStyles.recipientEditorScroll}
                             >
-                                <View style={checkoutScreenStyles.recipientEditorHeader}>
-                                    <Text numberOfLines={2} style={checkoutScreenStyles.recipientEditorTitle}>
-                                        {t("checkout.recipientAddNew")}
-                                    </Text>
-
-                                    <Pressable
-                                        accessibilityLabel={t("common.close")}
-                                        accessibilityRole="button"
-                                        onPress={handleCloseRecipientEditor}
-                                        style={({ pressed }) => [
-                                            checkoutScreenStyles.recipientEditorCloseButton,
-                                            pressed && checkoutScreenStyles.recipientEditorCloseButtonPressed,
-                                        ]}
-                                    >
-                                        <Text style={checkoutScreenStyles.recipientEditorCloseText}>×</Text>
-                                    </Pressable>
-                                </View>
-
                                 <View style={checkoutScreenStyles.recipientEditorFields}>
                                     <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
                                         <TextInput
@@ -1517,8 +1586,12 @@ export default function CheckoutScreen() {
                                                 setRecipientForm((current) => ({ ...current, firstName: value }))
                                                 setRecipientFormErrors((current) => ({ ...current, firstName: undefined }))
                                             }}
+                                            onFocus={() => {
+                                                handleRecipientInputFocus(recipientFirstNameInputRef.current)
+                                            }}
                                             placeholder={t("checkout.recipientNamePlaceholder")}
                                             placeholderTextColor={palette.mutedText}
+                                            ref={recipientFirstNameInputRef}
                                             style={[
                                                 checkoutScreenStyles.recipientEditorInput,
                                                 recipientFormErrors.firstName && checkoutScreenStyles.recipientEditorInputError,
@@ -1538,8 +1611,12 @@ export default function CheckoutScreen() {
                                                 setRecipientForm((current) => ({ ...current, lastName: value }))
                                                 setRecipientFormErrors((current) => ({ ...current, lastName: undefined }))
                                             }}
+                                            onFocus={() => {
+                                                handleRecipientInputFocus(recipientLastNameInputRef.current)
+                                            }}
                                             placeholder={t("checkout.recipientSurnamePlaceholder")}
                                             placeholderTextColor={palette.mutedText}
+                                            ref={recipientLastNameInputRef}
                                             style={[
                                                 checkoutScreenStyles.recipientEditorInput,
                                                 recipientFormErrors.lastName && checkoutScreenStyles.recipientEditorInputError,
@@ -1560,8 +1637,12 @@ export default function CheckoutScreen() {
                                                 setRecipientForm((current) => ({ ...current, phone: value }))
                                                 setRecipientFormErrors((current) => ({ ...current, phone: undefined }))
                                             }}
+                                            onFocus={() => {
+                                                handleRecipientInputFocus(recipientPhoneInputRef.current)
+                                            }}
                                             placeholder={t("checkout.recipientPhonePlaceholder")}
                                             placeholderTextColor={palette.mutedText}
+                                            ref={recipientPhoneInputRef}
                                             style={[
                                                 checkoutScreenStyles.recipientEditorInput,
                                                 recipientFormErrors.phone && checkoutScreenStyles.recipientEditorInputError,
@@ -1584,8 +1665,12 @@ export default function CheckoutScreen() {
                                                 setRecipientForm((current) => ({ ...current, email: value }))
                                                 setRecipientFormErrors((current) => ({ ...current, email: undefined }))
                                             }}
+                                            onFocus={() => {
+                                                handleRecipientInputFocus(recipientEmailInputRef.current)
+                                            }}
                                             placeholder={t("checkout.recipientEmailPlaceholder")}
                                             placeholderTextColor={palette.mutedText}
+                                            ref={recipientEmailInputRef}
                                             style={[
                                                 checkoutScreenStyles.recipientEditorInput,
                                                 recipientFormErrors.email && checkoutScreenStyles.recipientEditorInputError,
@@ -1628,9 +1713,9 @@ export default function CheckoutScreen() {
                                         {t("checkout.recipientCreateAction")}
                                     </Text>
                                 </Pressable>
-                            </View>
-                        </KeyboardAvoidingView>
-                    </View>
+                            </ScrollView>
+                        </View>
+                    </KeyboardAvoidingView>
                 </Modal>
             </View>
     )

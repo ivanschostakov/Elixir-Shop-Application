@@ -218,11 +218,17 @@ export const createCheckoutScreenStyles = (colors: ThemePalette) => StyleSheet.c
     },
     recipientEditorSheet: {
         gap: 18,
+        maxHeight: "100%",
+        overflow: "hidden",
         paddingBottom: 0,
         paddingTop: 12,
     },
-    recipientEditorKeyboardAvoiding: {
-        width: "100%",
+    recipientEditorScroll: {
+        flexShrink: 1,
+    },
+    recipientEditorScrollContent: {
+        gap: 18,
+        paddingBottom: spacing.xs,
     },
     recipientEditorHeader: {
         alignItems: "flex-start",

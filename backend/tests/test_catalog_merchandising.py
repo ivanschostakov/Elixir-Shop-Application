@@ -8,7 +8,6 @@ from sqlalchemy.dialects import postgresql
 from config import ufa_now
 from src.app.modules.products.helpers import ProductPriceDiscountContext, resolve_variant_price
 from src.app.services.catalog_merchandising import (
-    CatalogMerchandisingPolicy,
     apply_percent_discount,
     product_catalog_discount_percent,
     product_is_new,
@@ -42,13 +41,10 @@ def _product(
     )
 
 
-def test_new_product_window_and_manual_override():
-    policy = CatalogMerchandisingPolicy(new_product_days=14)
-
-    assert product_is_new(_product(created_days_ago=13), policy)
-    assert not product_is_new(_product(created_days_ago=15), policy)
-    assert product_is_new(_product(created_days_ago=365, manual_new=True), policy)
-    assert not product_is_new(_product(), CatalogMerchandisingPolicy(new_product_days=0))
+def test_only_manual_flag_marks_product_as_new():
+    assert not product_is_new(_product(created_days_ago=0))
+    assert not product_is_new(_product(created_days_ago=365))
+    assert product_is_new(_product(created_days_ago=365, manual_new=True))
 
 
 def test_best_product_or_category_discount_wins():
@@ -126,7 +122,6 @@ async def test_new_only_filter_and_search_ranking_are_part_of_catalog_query():
         session,
         q="новинка",
         new_only=True,
-        new_product_days=21,
         sort="newest",
     )
 
@@ -137,5 +132,5 @@ async def test_new_only_filter_and_search_ranking_are_part_of_catalog_query():
         )
     )
     assert "products.is_new_manual IS true" in sql
-    assert "products.created_at >=" in sql
+    assert "products.created_at >=" not in sql
     assert "ORDER BY products.in_stock DESC" in sql

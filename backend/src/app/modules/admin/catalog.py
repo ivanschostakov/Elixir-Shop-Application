@@ -17,10 +17,6 @@ from src.app.modules.admin.schemas import (
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
 from src.app.services.cache import get_cache_service
-from src.app.services.catalog_merchandising import (
-    DEFAULT_NEW_PRODUCT_DAYS,
-    get_catalog_merchandising_policy,
-)
 from src.app.services.stock_visibility import (
     CATALOG_SETTINGS_ID,
     get_stock_visibility_policy,
@@ -69,7 +65,6 @@ async def list_products(
     _: AdminContext = Depends(require_permission("catalog.read")),
 ) -> AdminPage[AdminProductRead]:
     stock_policy = await get_stock_visibility_policy(db)
-    merchandising_policy = await get_catalog_merchandising_policy(db)
     filters = []
     if q:
         pattern = f"%{q.strip()}%"
@@ -95,7 +90,6 @@ async def list_products(
                 request,
                 row,
                 stock_policy=stock_policy,
-                merchandising_policy=merchandising_policy,
             )
             for row in rows
         ],
@@ -118,13 +112,11 @@ async def get_catalog_stock_settings(
         return AdminCatalogStockSettingsRead(
             enabled=False,
             reduction=0,
-            new_product_days=DEFAULT_NEW_PRODUCT_DAYS,
             updated_at=None,
         )
     return AdminCatalogStockSettingsRead(
         enabled=settings.stock_reduction_enabled,
         reduction=settings.stock_reduction,
-        new_product_days=settings.new_product_days,
         updated_at=settings.updated_at,
     )
 
@@ -150,17 +142,13 @@ async def update_catalog_stock_settings(
         before = {
             "enabled": settings.stock_reduction_enabled,
             "reduction": settings.stock_reduction,
-            "new_product_days": settings.new_product_days,
         }
     settings.stock_reduction_enabled = payload.enabled
     settings.stock_reduction = payload.reduction
-    if payload.new_product_days is not None:
-        settings.new_product_days = payload.new_product_days
     await db.flush()
     result = AdminCatalogStockSettingsRead(
         enabled=settings.stock_reduction_enabled,
         reduction=settings.stock_reduction,
-        new_product_days=settings.new_product_days,
         updated_at=settings.updated_at,
     )
     await add_admin_audit(
@@ -189,7 +177,6 @@ async def get_product(
         request,
         await _get_product(db, product_id),
         stock_policy=await get_stock_visibility_policy(db),
-        merchandising_policy=await get_catalog_merchandising_policy(db),
     )
 
 
@@ -203,7 +190,6 @@ async def update_product_merchandise(
 ) -> AdminProductRead:
     product = await _get_product(db, product_id)
     stock_policy = await get_stock_visibility_policy(db)
-    merchandising_policy = await get_catalog_merchandising_policy(db)
     ensure_not_stale(actual=product.updated_at, expected=payload.expected_updated_at)
     if payload.priority > 0 and not product.has_image:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Product needs an image before it can be prioritized")
@@ -216,7 +202,6 @@ async def update_product_merchandise(
         request,
         product,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     ).model_dump(mode="json")
     product.description = payload.description
     product.usage = payload.usage
@@ -239,7 +224,6 @@ async def update_product_merchandise(
         request,
         product,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     )
     await add_admin_audit(db, request, context, action="product.merchandise.update", entity_type="product", entity_id=product.id, before=before, after=after.model_dump(mode="json"))
     await db.commit()
@@ -257,7 +241,6 @@ async def upload_product_image(
 ) -> AdminProductRead:
     product = await _get_product(db, product_id)
     stock_policy = await get_stock_visibility_policy(db)
-    merchandising_policy = await get_catalog_merchandising_policy(db)
     target_path = product_image_path(product.id, product.system_id)
     if target_path is None:
         raise HTTPException(
@@ -268,7 +251,6 @@ async def upload_product_image(
         request,
         product,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     ).model_dump(mode="json")
     await save_product_image(target_path, await prepare_product_image(file))
     product.updated_at = ufa_now()
@@ -277,7 +259,6 @@ async def upload_product_image(
         request,
         product,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     )
     await add_admin_audit(
         db,
@@ -308,7 +289,6 @@ async def upload_variant_image(
 ) -> AdminProductRead:
     product = await _get_product(db, product_id)
     stock_policy = await get_stock_visibility_policy(db)
-    merchandising_policy = await get_catalog_merchandising_policy(db)
     variant = (
         await db.execute(
             select(Variant).where(
@@ -329,7 +309,6 @@ async def upload_variant_image(
         request,
         product,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     ).model_dump(mode="json")
     await save_product_image(target_path, await prepare_product_image(file))
     product.updated_at = ufa_now()
@@ -339,7 +318,6 @@ async def upload_variant_image(
         request,
         product,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     )
     await add_admin_audit(
         db,

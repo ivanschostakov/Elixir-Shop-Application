@@ -3,6 +3,7 @@ import {
   CustomerServiceOutlined,
   DownloadOutlined,
   MessageOutlined,
+  PlusOutlined,
   RobotOutlined,
   SearchOutlined,
   SendOutlined,
@@ -17,8 +18,10 @@ import {
   Col,
   Descriptions,
   Empty,
+  Form,
   Input,
   List,
+  Modal,
   Row,
   Select,
   Space,
@@ -41,6 +44,7 @@ import type {
   SupportConversation,
   SupportConversationDetail,
   SupportConversationStatus,
+  SupportCustomer,
 } from "../api/types"
 import { PageHeader } from "../components/PageHeader"
 import { useAuth } from "../auth/AuthProvider"
@@ -59,6 +63,12 @@ const statusColors: Record<SupportConversationStatus, string> = {
 
 const priorityColors = { low: "default", normal: "blue", high: "orange", urgent: "red" } as const
 
+type StartConversationForm = {
+  customer_user_id: number
+  subject?: string
+  body: string
+}
+
 function downloadBlob(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob)
   const anchor = document.createElement("a")
@@ -75,12 +85,28 @@ function SupportInboxTab() {
   const [params, setParams] = useSearchParams()
   const [reply, setReply] = useState("")
   const [internal, setInternal] = useState(false)
+  const [composeOpen, setComposeOpen] = useState(false)
+  const [customerSearch, setCustomerSearch] = useState("")
+  const [startForm] = Form.useForm<StartConversationForm>()
   const search = params.get("support_q") || ""
   const status = params.get("support_status") || "active"
   const selectedId = Number(params.get("conversation_id") || 0) || null
+  const targetCustomerId = Number(params.get("customer_id") || 0) || null
   const copy = locale === "ru"
     ? {
       title: "Обращения",
+      newConversation: "Написать клиенту",
+      newConversationTitle: "Новое сообщение клиенту",
+      chooseCustomer: "Клиент",
+      customerSearch: "Найдите клиента по имени, телефону или email",
+      subject: "Тема",
+      subjectPlaceholder: "Например: персональная консультация",
+      firstMessage: "Сообщение",
+      firstMessagePlaceholder: "Напишите первое сообщение клиенту…",
+      conversationStarted: "Сообщение отправлено",
+      inactiveCustomer: "заблокирован",
+      existingConversation: "есть активный чат",
+      cancel: "Отмена",
       search: "Клиент или тема",
       all: "Все",
       active: "Активные",
@@ -109,6 +135,18 @@ function SupportInboxTab() {
     }
     : {
       title: "Support inbox",
+      newConversation: "Message customer",
+      newConversationTitle: "New customer message",
+      chooseCustomer: "Customer",
+      customerSearch: "Find a customer by name, phone, or email",
+      subject: "Subject",
+      subjectPlaceholder: "For example: personal consultation",
+      firstMessage: "Message",
+      firstMessagePlaceholder: "Write the first message to the customer…",
+      conversationStarted: "Message sent",
+      inactiveCustomer: "blocked",
+      existingConversation: "active chat exists",
+      cancel: "Cancel",
       search: "Customer or subject",
       all: "All",
       active: "Active",
@@ -147,6 +185,21 @@ function SupportInboxTab() {
       return next
     })
   }
+  const openConversation = (conversationId: number) => {
+    setParams((current) => {
+      const next = new URLSearchParams(current)
+      next.set("conversation_id", String(conversationId))
+      next.delete("customer_id")
+      next.delete("support_status")
+      return next
+    })
+  }
+  const closeComposer = () => {
+    setComposeOpen(false)
+    setCustomerSearch("")
+    startForm.resetFields()
+    if (targetCustomerId) updateParam("customer_id")
+  }
   const listQuery = useQuery({
     queryKey: ["support-conversations", search, status],
     queryFn: () => apiRequest<Page<SupportConversation>>(`/support/conversations${queryString({
@@ -155,6 +208,22 @@ function SupportInboxTab() {
       limit: 100,
     })}`),
     refetchInterval: 5000,
+  })
+  const targetCustomerQuery = useQuery({
+    queryKey: ["support-target-customer", targetCustomerId],
+    queryFn: () => apiRequest<Page<SupportCustomer>>(`/support/customers${queryString({
+      customer_user_id: targetCustomerId,
+      limit: 1,
+    })}`),
+    enabled: Boolean(targetCustomerId),
+  })
+  const customerOptionsQuery = useQuery({
+    queryKey: ["support-customer-options", customerSearch],
+    queryFn: () => apiRequest<Page<SupportCustomer>>(`/support/customers${queryString({
+      q: customerSearch.trim() || undefined,
+      limit: 30,
+    })}`),
+    enabled: composeOpen,
   })
   const detailQuery = useQuery({
     queryKey: ["support-conversation", selectedId],
@@ -168,6 +237,12 @@ function SupportInboxTab() {
     enabled: hasPermission("support.assign"),
   })
   const selected = detailQuery.data
+  const targetCustomer = targetCustomerQuery.data?.items[0]
+  const customerOptions = useMemo(() => {
+    const items = [...(customerOptionsQuery.data?.items || [])]
+    if (targetCustomer && !items.some((item) => item.id === targetCustomer.id)) items.unshift(targetCustomer)
+    return items
+  }, [customerOptionsQuery.data?.items, targetCustomer])
 
   useEffect(() => {
     if (!selectedId || !selected?.admin_unread_count) return
@@ -176,6 +251,40 @@ function SupportInboxTab() {
       void queryClient.invalidateQueries({ queryKey: ["support-conversation", selectedId] })
     })
   }, [queryClient, selected?.admin_unread_count, selectedId])
+
+  useEffect(() => {
+    if (!targetCustomerId || !targetCustomer) return
+    if (targetCustomer.active_conversation_id) {
+      openConversation(targetCustomer.active_conversation_id)
+      return
+    }
+    setComposeOpen(true)
+    startForm.setFieldsValue({ customer_user_id: targetCustomer.id })
+  // The URL target is consumed by openConversation or closeComposer.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startForm, targetCustomer, targetCustomerId])
+
+  const startConversationMutation = useMutation({
+    mutationFn: (values: StartConversationForm) => apiRequest<SupportConversationDetail>("/support/conversations", {
+      method: "POST",
+      body: JSON.stringify({
+        customer_user_id: values.customer_user_id,
+        subject: values.subject?.trim() || null,
+        body: values.body.trim(),
+      }),
+    }),
+    onSuccess: (result) => {
+      setComposeOpen(false)
+      setCustomerSearch("")
+      startForm.resetFields()
+      queryClient.setQueryData(["support-conversation", result.id], result)
+      void queryClient.invalidateQueries({ queryKey: ["support-conversations"] })
+      void queryClient.invalidateQueries({ queryKey: ["support-customer-options"] })
+      openConversation(result.id)
+      void message.success(copy.conversationStarted)
+    },
+    onError: (error: Error) => void message.error(error.message),
+  })
 
   const replyMutation = useMutation({
     mutationFn: () => apiRequest<SupportConversationDetail>(`/support/conversations/${selectedId}/messages`, {
@@ -224,6 +333,19 @@ function SupportInboxTab() {
       <Col xs={24} lg={8} xl={7}>
         <Card
           title={<Space><CustomerServiceOutlined />{copy.title}<Badge count={listQuery.data?.items.reduce((sum, item) => sum + item.admin_unread_count, 0) || 0} /></Space>}
+          extra={hasPermission("support.reply") ? (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                startForm.resetFields()
+                setCustomerSearch("")
+                setComposeOpen(true)
+              }}
+            >
+              {copy.newConversation}
+            </Button>
+          ) : null}
           className="communications-list-card"
         >
           <Space direction="vertical" style={{ width: "100%" }}>
@@ -260,6 +382,61 @@ function SupportInboxTab() {
               </List.Item>
             )}
           />
+          <Modal
+            open={composeOpen}
+            title={copy.newConversationTitle}
+            okText={copy.send}
+            cancelText={copy.cancel}
+            confirmLoading={startConversationMutation.isPending}
+            onCancel={closeComposer}
+            onOk={() => void startForm.validateFields().then((values) => startConversationMutation.mutate(values))}
+          >
+            <Form form={startForm} layout="vertical">
+              <Form.Item
+                name="customer_user_id"
+                label={copy.chooseCustomer}
+                rules={[{ required: true }]}
+              >
+                <Select
+                  showSearch
+                  filterOption={false}
+                  loading={customerOptionsQuery.isFetching || targetCustomerQuery.isFetching}
+                  placeholder={copy.customerSearch}
+                  onSearch={setCustomerSearch}
+                  onChange={(customerId: number) => {
+                    const customer = customerOptions.find((item) => item.id === customerId)
+                    if (!customer?.active_conversation_id) return
+                    setComposeOpen(false)
+                    setCustomerSearch("")
+                    startForm.resetFields()
+                    openConversation(customer.active_conversation_id)
+                  }}
+                  options={customerOptions.map((customer) => {
+                    const customerName = `${customer.name} ${customer.surname}`.trim() || `#${customer.id}`
+                    const details = [
+                      customer.email || customer.phone_number,
+                      !customer.is_active ? copy.inactiveCustomer : null,
+                      customer.active_conversation_id ? copy.existingConversation : null,
+                    ].filter(Boolean)
+                    return {
+                      value: customer.id,
+                      label: `${customerName}${details.length ? ` · ${details.join(" · ")}` : ""}`,
+                    }
+                  })}
+                />
+              </Form.Item>
+              <Form.Item name="subject" label={copy.subject}>
+                <Input maxLength={240} placeholder={copy.subjectPlaceholder} />
+              </Form.Item>
+              <Form.Item
+                name="body"
+                label={copy.firstMessage}
+                rules={[{ required: true, whitespace: true, min: 1, max: 8000 }]}
+              >
+                <Input.TextArea rows={5} maxLength={8000} showCount placeholder={copy.firstMessagePlaceholder} />
+              </Form.Item>
+            </Form>
+          </Modal>
         </Card>
       </Col>
       <Col xs={24} lg={16} xl={17}>

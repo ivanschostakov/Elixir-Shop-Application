@@ -61,6 +61,24 @@ class AdminSupportConversationDetail(AdminSupportConversationRead):
     messages: list[AdminSupportMessageRead]
 
 
+class AdminSupportCustomerRead(BaseModel):
+    id: int
+    name: str
+    surname: str
+    email: str | None
+    phone_number: str | None
+    is_active: bool
+    active_conversation_id: int | None
+
+
+class AdminSupportConversationCreatePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    customer_user_id: int = Field(ge=1)
+    subject: str | None = Field(default=None, max_length=240)
+    body: str = Field(min_length=1, max_length=8000)
+
+
 class AdminSupportMessagePayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

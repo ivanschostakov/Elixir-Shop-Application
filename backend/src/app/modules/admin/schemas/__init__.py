@@ -40,9 +40,11 @@ from .invitations import (
 from .password_reset import AdminPasswordResetConfirm, AdminPasswordResetRequest
 from .support import (
     AdminSupportAttachmentRead,
+    AdminSupportConversationCreatePayload,
     AdminSupportConversationDetail,
     AdminSupportConversationRead,
     AdminSupportConversationUpdatePayload,
+    AdminSupportCustomerRead,
     AdminSupportMessagePayload,
     AdminSupportMessageRead,
     AdminSupportReadResponse,
@@ -80,9 +82,11 @@ __all__ = [
     "AdminPasswordResetConfirm",
     "AdminPasswordResetRequest",
     "AdminSupportAttachmentRead",
+    "AdminSupportConversationCreatePayload",
     "AdminSupportConversationDetail",
     "AdminSupportConversationRead",
     "AdminSupportConversationUpdatePayload",
+    "AdminSupportCustomerRead",
     "AdminSupportMessagePayload",
     "AdminSupportMessageRead",
     "AdminSupportReadResponse",

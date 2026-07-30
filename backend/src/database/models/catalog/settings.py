@@ -13,10 +13,6 @@ class CatalogSettings(Base, TimestampMixin):
             "stock_reduction >= 0",
             name="ck_catalog_settings_stock_reduction_nonnegative",
         ),
-        CheckConstraint(
-            "new_product_days >= 0 AND new_product_days <= 3650",
-            name="ck_catalog_settings_new_product_days_range",
-        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
@@ -31,10 +27,4 @@ class CatalogSettings(Base, TimestampMixin):
         nullable=False,
         default=0,
         server_default=text("0"),
-    )
-    new_product_days: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=30,
-        server_default=text("30"),
     )

@@ -372,7 +372,6 @@ export type Product = {
 export type CatalogStockSettings = {
   enabled: boolean
   reduction: number
-  new_product_days: number
   updated_at: string | null
 }
 
@@ -1068,6 +1067,16 @@ export type SupportConversation = {
 
 export type SupportConversationDetail = SupportConversation & {
   messages: SupportMessage[]
+}
+
+export type SupportCustomer = {
+  id: number
+  name: string
+  surname: string
+  email: string | null
+  phone_number: string | null
+  is_active: boolean
+  active_conversation_id: number | null
 }
 
 export type AIChatListItem = {

@@ -335,14 +335,12 @@ class AdminProductMerchandisePayload(BaseModel):
 class AdminCatalogStockSettingsRead(BaseModel):
     enabled: bool
     reduction: int
-    new_product_days: int
     updated_at: datetime | None
 
 
 class AdminCatalogStockSettingsPayload(BaseModel):
     enabled: bool
     reduction: int = Field(ge=0, le=1_000_000)
-    new_product_days: int | None = Field(default=None, ge=0, le=3650)
 
 
 class AdminCategoryPayload(BaseModel):

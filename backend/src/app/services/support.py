@@ -32,6 +32,7 @@ from src.database.models import (
     CrmMessage,
     CrmMessageAttachment,
     NotificationDispatch,
+    User,
 )
 
 log = logging.getLogger(__name__)
@@ -357,6 +358,72 @@ async def create_support_conversation(
     if result is None:
         raise RuntimeError("Created support conversation could not be reloaded")
     return result
+
+
+async def create_admin_support_conversation(
+    db: AsyncSession,
+    *,
+    user_id: int,
+    admin_user_id: int,
+    subject: str | None,
+    body: str,
+) -> tuple[CrmConversation, CrmMessage, bool]:
+    normalized_body = body.strip()
+    if not normalized_body:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Message is required",
+        )
+    customer = (await db.execute(
+        select(User)
+        .where(User.id == user_id)
+        .with_for_update()
+    )).scalar_one_or_none()
+    if customer is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+
+    existing = await get_active_support_conversation(db, user_id=user_id)
+    if existing is not None:
+        message = await add_admin_support_message(
+            db,
+            conversation=existing,
+            admin_user_id=admin_user_id,
+            body=normalized_body,
+            is_internal=False,
+        )
+        return existing, message, False
+
+    conversation = CrmConversation(
+        customer_user_id=user_id,
+        subject=(subject or "").strip()[:240] or normalized_body[:120] or "Сообщение от Elixir Peptide",
+        status="new",
+        priority="normal",
+    )
+    db.add(conversation)
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        concurrent = await get_active_support_conversation(db, user_id=user_id)
+        if concurrent is None:
+            raise
+        message = await add_admin_support_message(
+            db,
+            conversation=concurrent,
+            admin_user_id=admin_user_id,
+            body=normalized_body,
+            is_internal=False,
+        )
+        return concurrent, message, False
+    await apply_conversation_sla(db, conversation)
+    message = await add_admin_support_message(
+        db,
+        conversation=conversation,
+        admin_user_id=admin_user_id,
+        body=normalized_body,
+        is_internal=False,
+    )
+    return conversation, message, True
 
 
 async def add_user_support_message(

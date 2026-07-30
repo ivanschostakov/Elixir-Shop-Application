@@ -8,7 +8,6 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_admin_user, get_optional_current_user
 from src.app.services.cache import build_cache_key, get_cache_service
-from src.app.services.catalog_merchandising import get_catalog_merchandising_policy
 from src.app.services.content_moderation import analyze_review_submission
 from src.app.services.rate_limit import enforce_rate_limit
 from src.app.services.review_attachments import (
@@ -98,14 +97,12 @@ async def products_get_by_id(request: Request, product_id: int, db: AsyncSession
     review_stats = await get_product_review_stats(db, product_ids=[product.id])
     discount_context = await get_user_product_price_discount_context(db, current_user)
     stock_policy = await get_stock_visibility_policy(db)
-    merchandising_policy = await get_catalog_merchandising_policy(db)
     payload = serialize_product_with_variants(
         request,
         product,
         review_stats_by_product_id=review_stats,
         discount_context=discount_context,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     )
     if current_user is None: await cache.set_json(cache_key, payload.model_dump(mode="json"), ttl_seconds=PRODUCT_DETAIL_CACHE_TTL_SECONDS, key_prefix="products:detail")
     return payload
@@ -131,14 +128,12 @@ async def products_get_similar(request: Request, product_id: int, limit: int = Q
     review_stats = await get_product_review_stats(db, product_ids=[item.id for item in similar_products])
     discount_context = await get_user_product_price_discount_context(db, current_user)
     stock_policy = await get_stock_visibility_policy(db)
-    merchandising_policy = await get_catalog_merchandising_policy(db)
     payload = serialize_products_with_variants(
         request,
         similar_products,
         review_stats_by_product_id=review_stats,
         discount_context=discount_context,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     )
     if current_user is None: await cache.set_json(cache_key, [item.model_dump(mode="json") for item in payload], ttl_seconds=PRODUCT_SIMILAR_CACHE_TTL_SECONDS, key_prefix="products:similar")
     return payload
@@ -314,7 +309,6 @@ async def products_get(
         cached_items = await cache.get_json(cache_key, key_prefix="products:list")
         if cached_items is not None: return [ProductWithVariantsRead.model_validate(item) for item in cached_items]
 
-    merchandising_policy = await get_catalog_merchandising_policy(db)
     products = await get_products(
         db,
         q=normalized_q,
@@ -322,7 +316,6 @@ async def products_get(
         min_priority=min_priority,
         category_id=category_id,
         new_only=new_only,
-        new_product_days=merchandising_policy.new_product_days,
         offset=offset,
         limit=limit,
         sort=sort,
@@ -336,7 +329,6 @@ async def products_get(
         review_stats_by_product_id=review_stats,
         discount_context=discount_context,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     )
     if current_user is None: await cache.set_json(cache_key, [item.model_dump(mode="json") for item in payload], ttl_seconds=PRODUCT_LIST_CACHE_TTL_SECONDS, key_prefix="products:list")
     return payload
@@ -348,14 +340,12 @@ async def products_create(request: Request, data: ProductCreate, db: AsyncSessio
         product = await create_product(db, data)
         product = await get_product_by_id(db, product.id, include_out_of_stock=True, include_archived=True)
         review_stats = await get_product_review_stats(db, product_ids=[product.id])
-        merchandising_policy = await get_catalog_merchandising_policy(db)
         await _bump_product_cache_namespaces()
         return serialize_product_with_variants(
             request,
             product,
             review_stats_by_product_id=review_stats,
             include_archived_variants=True,
-            merchandising_policy=merchandising_policy,
         )
 
     except IntegrityError:
@@ -371,14 +361,12 @@ async def products_patch(request: Request, product_id: int, data: ProductUpdate,
         updated_product = await update_product(db, product, data)
         updated_product = await get_product_by_id(db, updated_product.id, include_out_of_stock=True, include_archived=True)
         review_stats = await get_product_review_stats(db, product_ids=[updated_product.id])
-        merchandising_policy = await get_catalog_merchandising_policy(db)
         await _bump_product_cache_namespaces()
         return serialize_product_with_variants(
             request,
             updated_product,
             review_stats_by_product_id=review_stats,
             include_archived_variants=True,
-            merchandising_policy=merchandising_policy,
         )
 
     except IntegrityError:

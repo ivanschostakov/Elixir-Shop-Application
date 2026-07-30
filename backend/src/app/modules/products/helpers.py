@@ -8,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import REVIEWS_MEDIA_DIR
 from src.app.services.discounts import product_is_discountable
 from src.app.services.catalog_merchandising import (
-    CatalogMerchandisingPolicy,
     apply_percent_discount,
     product_catalog_discount_percent,
     product_is_new,
@@ -39,7 +38,6 @@ class ProductPriceDiscountContext:
 
 
 NO_PRODUCT_PRICE_DISCOUNT_CONTEXT = ProductPriceDiscountContext()
-DEFAULT_CATALOG_MERCHANDISING_POLICY = CatalogMerchandisingPolicy()
 
 
 def product_image_url(request: Request, product: Product) -> str: return build_products_media_url(str(request.base_url), product.image_path)
@@ -127,14 +125,13 @@ def serialize_product(
     product: Product,
     *,
     review_stats_by_product_id: ReviewStatsByProductId | None = None,
-    merchandising_policy: CatalogMerchandisingPolicy = DEFAULT_CATALOG_MERCHANDISING_POLICY,
 ) -> ProductRead:
     avg, count = review_stats(product.id, review_stats_by_product_id)
     return ProductRead.model_validate(product).model_copy(update={
         "image_url": product_image_url(request, product),
         "rating_avg": avg,
         "rating_count": count,
-        "is_new": product_is_new(product, merchandising_policy),
+        "is_new": product_is_new(product),
         "catalog_discount_percent": product_catalog_discount_percent(product),
     })
 
@@ -147,7 +144,6 @@ def serialize_product_with_variants(
     include_archived_variants: bool = False,
     discount_context: ProductPriceDiscountContext = NO_PRODUCT_PRICE_DISCOUNT_CONTEXT,
     stock_policy: StockVisibilityPolicy | None = None,
-    merchandising_policy: CatalogMerchandisingPolicy = DEFAULT_CATALOG_MERCHANDISING_POLICY,
 ) -> ProductWithVariantsRead:
     avg, count = review_stats(product.id, review_stats_by_product_id)
     policy = stock_policy or StockVisibilityPolicy()
@@ -172,7 +168,7 @@ def serialize_product_with_variants(
         ),
         "rating_avg": avg,
         "rating_count": count,
-        "is_new": product_is_new(product, merchandising_policy),
+        "is_new": product_is_new(product),
         "catalog_discount_percent": product_catalog_discount_percent(product),
     })
 
@@ -182,14 +178,12 @@ def serialize_products(
     products: list[Product],
     *,
     review_stats_by_product_id: ReviewStatsByProductId | None = None,
-    merchandising_policy: CatalogMerchandisingPolicy = DEFAULT_CATALOG_MERCHANDISING_POLICY,
 ) -> list[ProductRead]:
     return [
         serialize_product(
             request,
             product,
             review_stats_by_product_id=review_stats_by_product_id,
-            merchandising_policy=merchandising_policy,
         )
         for product in products
     ]
@@ -203,7 +197,6 @@ def serialize_products_with_variants(
     include_archived_variants: bool = False,
     discount_context: ProductPriceDiscountContext = NO_PRODUCT_PRICE_DISCOUNT_CONTEXT,
     stock_policy: StockVisibilityPolicy | None = None,
-    merchandising_policy: CatalogMerchandisingPolicy = DEFAULT_CATALOG_MERCHANDISING_POLICY,
 ) -> list[ProductWithVariantsRead]:
     return [serialize_product_with_variants(
         request,
@@ -212,7 +205,6 @@ def serialize_products_with_variants(
         include_archived_variants=include_archived_variants,
         discount_context=discount_context,
         stock_policy=stock_policy,
-        merchandising_policy=merchandising_policy,
     ) for product in products]
 
 

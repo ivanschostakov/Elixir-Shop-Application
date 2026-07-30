@@ -4,7 +4,6 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.products.helpers import serialize_products
-from src.app.services.catalog_merchandising import get_catalog_merchandising_policy
 from src.database import get_db
 from src.database.crud import (
     create_favoured_product,
@@ -38,7 +37,6 @@ async def favourite_products_get(request: Request, user_id: int | None = Query(d
             offset=offset,
             limit=limit,
         ),
-        merchandising_policy=await get_catalog_merchandising_policy(db),
     )
 
 
