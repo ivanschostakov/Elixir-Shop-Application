@@ -49,18 +49,20 @@ def _user_promo_code(user_id: int) -> str | None:
         return user.promo_code if user is not None else None
 
 
-def _set_reward_program(user_id: int, program: str) -> None:
-    with Session(sync_engine) as session:
-        profile = (
-            session.query(ReferralProfile)
-            .filter(ReferralProfile.user_id == user_id)
-            .one_or_none()
-        )
-        if profile is None:
-            profile = ReferralProfile(user_id=user_id)
-            session.add(profile)
-        profile.reward_program = program
-        session.commit()
+@pytest.fixture(autouse=True)
+def disable_bitrix_promo_for_local_referral_tests(monkeypatch):
+    monkeypatch.setattr(
+        "src.app.services.referrals.promo.bitrix_promo_configured",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "src.app.services.referrals.bitrix_sync.bitrix_promo_configured",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "src.app.services.referrals.summary.bitrix_promo_configured",
+        lambda: False,
+    )
 
 
 @pytest.fixture()
@@ -86,30 +88,25 @@ def registered_user_factory(register_verified_user):
             _delete_user(user_id)
 
 
-def test_personal_discount_table_is_independent_from_partner_promo():
+def test_personal_discount_requires_program_promo():
     assert calculate_personal_discount_percent("0.00", has_promo_code=False) == Decimal("0.00")
-    assert calculate_personal_discount_percent("0.00", has_promo_code=True) == Decimal("0.00")
-    assert calculate_personal_discount_percent("29999.99", has_promo_code=True) == Decimal("0.00")
+    assert calculate_personal_discount_percent("0.00", has_promo_code=True) == Decimal("3.00")
+    assert calculate_personal_discount_percent("29999.99", has_promo_code=True) == Decimal("3.00")
     assert calculate_personal_discount_percent("30000.00", has_promo_code=True) == Decimal("3.00")
     assert calculate_personal_discount_percent("40000.00", has_promo_code=True) == Decimal("4.00")
     assert calculate_personal_discount_percent("100000.00", has_promo_code=True) == Decimal("10.00")
     assert calculate_personal_discount_percent("170000.00", has_promo_code=True) == Decimal("17.00")
-    assert calculate_personal_discount_percent("200000.00", has_promo_code=False) == Decimal("20.00")
+    assert calculate_personal_discount_percent("200000.00", has_promo_code=False) == Decimal("0.00")
     assert calculate_personal_discount_percent("999999.00", has_promo_code=True) == Decimal("20.00")
 
 
-def test_referrer_code_requires_partner_program_and_then_uses_configured_source(client: TestClient, registered_user_factory):
+def test_referrer_code_is_available_without_program_selection(
+    client: TestClient,
+    registered_user_factory,
+):
     buyer = registered_user_factory(email_prefix="buyer")
     code = f"REF{uuid.uuid4().hex[:8]}".upper()
 
-    check_response = client.post(
-        "/api/v1/users/me/referral-profile/referrer-code/check",
-        headers=buyer["headers"],
-        json={"code": f"  {code.lower()}  "},
-    )
-    assert check_response.status_code == 409, check_response.text
-
-    _set_reward_program(buyer["user_id"], "partner")
     check_response = client.post(
         "/api/v1/users/me/referral-profile/referrer-code/check",
         headers=buyer["headers"],
@@ -138,7 +135,12 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
         headers=buyer["headers"],
     )
     assert first_response.status_code == 200, first_response.text
-    assert _decimal(first_response.json()["current_discount_percent"]) == Decimal("0.00")
+    first_payload = first_response.json()
+    assert _decimal(first_payload["current_discount_percent"]) == Decimal("0.00")
+    assert first_payload["reward_program"] == "combined"
+    assert first_payload["program_selection_required"] is False
+    assert first_payload["bonus_program_enabled"] is False
+    assert first_payload["partner_program_status"] == "locked"
 
     second_response = client.get(
         "/api/v1/users/me/referral-profile",
@@ -151,19 +153,11 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
         assert profile_count == 1
 
 
-def test_bonus_program_selection_is_persisted_and_locked(
+def test_legacy_program_selection_endpoint_maps_every_choice_to_unified_program(
     client: TestClient,
     registered_user_factory,
-    monkeypatch,
 ):
-    async def no_website_profile(_user):
-        return None
-
-    monkeypatch.setattr(
-        "src.app.services.referrals.program._load_bitrix_program_profile",
-        no_website_profile,
-    )
-    buyer = registered_user_factory(email_prefix="bonus-program")
+    buyer = registered_user_factory(email_prefix="unified-program")
 
     selected = client.post(
         "/api/v1/users/me/referral-profile/program",
@@ -172,16 +166,17 @@ def test_bonus_program_selection_is_persisted_and_locked(
     )
     assert selected.status_code == 200, selected.text
     payload = selected.json()
-    assert payload["reward_program"] == "bonus"
+    assert payload["reward_program"] == "combined"
     assert payload["program_selection_required"] is False
     assert payload["promo_code"] is None
 
-    locked = client.post(
+    repeated = client.post(
         "/api/v1/users/me/referral-profile/program",
         headers=buyer["headers"],
         json={"program": "partner"},
     )
-    assert locked.status_code == 409, locked.text
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["reward_program"] == "combined"
 
     with Session(sync_engine) as session:
         events = (
@@ -189,6 +184,4 @@ def test_bonus_program_selection_is_persisted_and_locked(
             .filter(RewardProgramSelectionEvent.user_id == buyer["user_id"])
             .all()
         )
-        assert len(events) == 1
-        assert events[0].selected_program == "bonus"
-        assert events[0].source == "user"
+        assert events == []

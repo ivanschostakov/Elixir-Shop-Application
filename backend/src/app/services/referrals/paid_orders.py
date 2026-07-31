@@ -4,7 +4,6 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -24,9 +23,10 @@ from src.integrations.bitrix_promo import (
 )
 from src.normalize import optional_str
 
-from .calculations import quantize_money
-from .profile import get_or_create_referral_profile, refresh_profile_discount
-from .program import normalize_reward_program
+from .bitrix_sync import refresh_program_profile_from_bitrix
+from .calculations import PARTNER_UNLOCK_SPEND, quantize_money
+from .profile import refresh_profile_discount
+from .program import ensure_unified_reward_program
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,18 @@ def _rewardable_order_amount(order: Order) -> Decimal:
     )
 
 
+def _purchase_participates_in_program(purchase: AppReferralPurchase) -> bool:
+    snapshot = (
+        purchase.calculation_snapshot
+        if isinstance(purchase.calculation_snapshot, dict)
+        else {}
+    )
+    explicit = snapshot.get("participates_in_program")
+    if explicit is not None:
+        return bool(explicit)
+    return bool(optional_str(purchase.promo_code))
+
+
 async def _purchase_for_order(
     db: AsyncSession,
     order_id: int,
@@ -100,6 +112,181 @@ async def _local_user_id_for_email(db: AsyncSession, email: str | None) -> int |
     ).scalar_one_or_none()
 
 
+def _local_calculation(
+    *,
+    order: Order,
+    promo: str | None,
+    amount: Decimal,
+    paid_at: datetime,
+    participates_in_program: bool,
+) -> dict[str, Any]:
+    return {
+        "storage": "app",
+        "bitrix_writes": False,
+        "program": "combined",
+        "promo": promo,
+        "promo_mode": "unresolved" if promo else "none",
+        "participates_in_program": participates_in_program,
+        "amount": str(amount),
+        "currency": order.currency,
+        "paid_at": paid_at.isoformat(),
+        "accruals": [],
+    }
+
+
+async def _increment_local_purchase_progress(
+    db: AsyncSession,
+    *,
+    user: User,
+    order_id: int,
+    amount: Decimal,
+    participates_in_program: bool,
+) -> None:
+    if not participates_in_program:
+        return
+    legacy_purchase = (
+        await db.execute(
+            select(BonusProgramPurchase.id).where(
+                BonusProgramPurchase.order_id == order_id,
+                BonusProgramPurchase.status == "posted",
+            )
+        )
+    ).scalar_one_or_none()
+    if legacy_purchase is not None:
+        return
+
+    await ensure_unified_reward_program(db, user=user)
+    profile = (
+        await db.execute(
+            select(ReferralProfile)
+            .where(ReferralProfile.user_id == user.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    profile.referral_discount_base_total = quantize_money(
+        profile.referral_discount_base_total + amount
+    )
+    refresh_profile_discount(profile, has_promo_code=True)
+    if profile.referral_discount_base_total >= PARTNER_UNLOCK_SPEND:
+        profile.partner_unlocked_at = (
+            profile.partner_unlocked_at or datetime.now(timezone.utc)
+        )
+
+
+async def _apply_remote_purchase_progress(
+    db: AsyncSession,
+    *,
+    purchase: AppReferralPurchase,
+    progress: dict[str, Any] | None,
+) -> None:
+    if not isinstance(progress, dict) or purchase.buyer_user_id is None:
+        return
+    try:
+        purchase_total = quantize_money(progress.get("new_total"))
+        discount_percent = Decimal(str(progress.get("discount_percent") or 0))
+    except (ArithmeticError, TypeError, ValueError):
+        logger.warning(
+            "Could not parse Bitrix purchase progress purchase_id=%s",
+            purchase.id,
+        )
+        return
+
+    profile = (
+        await db.execute(
+            select(ReferralProfile)
+            .where(ReferralProfile.user_id == purchase.buyer_user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if profile is None:
+        return
+    profile.referral_discount_base_total = purchase_total
+    profile.current_discount_percent = discount_percent
+    profile.bitrix_sync_status = "synced"
+    profile.bitrix_synced_at = datetime.now(timezone.utc)
+    profile.bitrix_sync_error = None
+    if purchase.bitrix_buyer_user_id:
+        profile.bitrix_user_id = purchase.bitrix_buyer_user_id
+    if purchase_total >= PARTNER_UNLOCK_SPEND:
+        profile.partner_unlocked_at = (
+            profile.partner_unlocked_at or datetime.now(timezone.utc)
+        )
+
+
+async def _create_local_accrual_from_bitrix(
+    db: AsyncSession,
+    *,
+    purchase: AppReferralPurchase,
+    raw_accrual: dict[str, Any],
+) -> AppReferralAccrual | None:
+    beneficiary_bitrix_user_id = int(
+        raw_accrual.get("beneficiary_user_id") or 0
+    )
+    level = int(raw_accrual.get("level") or 0)
+    if beneficiary_bitrix_user_id <= 0 or level <= 0:
+        return None
+
+    beneficiary_user_id = (
+        await db.execute(
+            select(ReferralProfile.user_id)
+            .where(
+                ReferralProfile.bitrix_user_id == beneficiary_bitrix_user_id
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    beneficiary = (
+        await db.get(User, beneficiary_user_id)
+        if beneficiary_user_id is not None
+        else None
+    )
+    eligibility = raw_accrual.get("eligibility")
+    eligibility = eligibility if isinstance(eligibility, dict) else {}
+    row = AppReferralAccrual(
+        purchase_id=purchase.id,
+        beneficiary_user_id=beneficiary_user_id,
+        beneficiary_bitrix_user_id=beneficiary_bitrix_user_id,
+        beneficiary_email=beneficiary.email if beneficiary is not None else None,
+        beneficiary_name=(
+            optional_str(
+                " ".join(
+                    part
+                    for part in (
+                        getattr(beneficiary, "name", ""),
+                        getattr(beneficiary, "surname", ""),
+                    )
+                    if part
+                )
+            )
+            if beneficiary is not None
+            else None
+        ),
+        bitrix_accrual_id=(
+            int(raw_accrual["id"]) if raw_accrual.get("id") else None
+        ),
+        referral_bitrix_user_id=int(
+            raw_accrual.get("referral_user_id") or 0
+        ),
+        level=level,
+        buyer_discount_percent=Decimal(
+            str(raw_accrual.get("buyer_discount_percent") or 0)
+        ),
+        referrer_discount_percent=Decimal(
+            str(raw_accrual.get("referrer_discount_percent") or 0)
+        ),
+        commission_percent=Decimal(str(raw_accrual.get("percent") or 0)),
+        commission_amount=Decimal(str(raw_accrual.get("amount") or 0)),
+        currency=str(raw_accrual.get("currency") or purchase.currency),
+        status=str(raw_accrual.get("status") or "pending"),
+        reason=optional_str(raw_accrual.get("reason")),
+        eligibility_snapshot=eligibility,
+    )
+    db.add(row)
+    return row
+
+
 async def _create_app_calculation(
     db: AsyncSession,
     *,
@@ -108,28 +295,44 @@ async def _create_app_calculation(
     promo: str | None,
     amount: Decimal,
     paid_at: datetime,
-    client: BitrixPromoClient,
+    client: BitrixPromoClient | None,
 ) -> AppReferralPurchase:
-    calculation = (
-        await client.quote_referral_accrual(
-            external_order_id=order.order_code or str(order.id),
-            user_email=user.email or "",
-            promo=promo,
-            amount=str(amount),
-            currency=order.currency,
-            paid_at=paid_at.isoformat(),
-        )
-        if promo
-        else {
-            "storage": "app",
-            "promo": None,
-            "promo_mode": "none",
-            "amount": str(amount),
-            "currency": order.currency,
-            "paid_at": paid_at.isoformat(),
-            "accruals": [],
-        }
+    attached_promo = optional_str(user.promo_code)
+    locally_participates = bool(
+        promo
+        and attached_promo
+        and promo.casefold() == attached_promo.casefold()
     )
+    calculation = _local_calculation(
+        order=order,
+        promo=promo,
+        amount=amount,
+        paid_at=paid_at,
+        participates_in_program=locally_participates,
+    )
+    if promo and client is not None:
+        try:
+            calculation = await client.quote_referral_accrual(
+                external_order_id=order.order_code or str(order.id),
+                user_email=user.email or "",
+                promo=promo,
+                amount=str(amount),
+                currency=order.currency,
+                paid_at=paid_at.isoformat(),
+            )
+        except Exception as error:
+            calculation["quote_error"] = str(error)[:500]
+            logger.exception(
+                "Could not pre-calculate Bitrix partner accrual order_id=%s",
+                order.id,
+            )
+    participates_in_program = bool(
+        calculation.get("participates_in_program")
+        if calculation.get("participates_in_program") is not None
+        else calculation.get("referrer_user_id")
+        or locally_participates
+    )
+    calculation["participates_in_program"] = participates_in_program
     period_start, period_end = _period_bounds(paid_at)
     buyer = calculation.get("buyer")
     buyer = buyer if isinstance(buyer, dict) else {}
@@ -149,6 +352,13 @@ async def _create_app_calculation(
     )
     db.add(purchase)
     await db.flush()
+    await _increment_local_purchase_progress(
+        db,
+        user=user,
+        order_id=order.id,
+        amount=amount,
+        participates_in_program=participates_in_program,
+    )
 
     accruals = calculation.get("accruals")
     if isinstance(accruals, list):
@@ -196,7 +406,7 @@ async def _ensure_app_calculation(
     promo: str | None,
     amount: Decimal,
     paid_at: datetime,
-    client: BitrixPromoClient,
+    client: BitrixPromoClient | None,
 ) -> AppReferralPurchase:
     existing = await _purchase_for_order(db, order.id)
     if existing is not None:
@@ -276,6 +486,12 @@ async def _sync_purchase_progress_to_bitrix(
         purchase.coupon_use_count_after = int(
             bitrix_purchase["coupon_use_count_after"]
         )
+    if bitrix_purchase.get("program") is not None:
+        calculation_snapshot = dict(purchase.calculation_snapshot or {})
+        calculation_snapshot["participates_in_program"] = (
+            str(bitrix_purchase["program"]) == "combined"
+        )
+        purchase.calculation_snapshot = calculation_snapshot
 
     local_accruals_by_level = {row.level: row for row in purchase.accruals}
     bitrix_accruals = result.get("accruals")
@@ -283,18 +499,64 @@ async def _sync_purchase_progress_to_bitrix(
         for bitrix_accrual in bitrix_accruals:
             if not isinstance(bitrix_accrual, dict):
                 continue
-            local_accrual = local_accruals_by_level.get(int(bitrix_accrual.get("level") or 0))
+            level = int(bitrix_accrual.get("level") or 0)
+            local_accrual = local_accruals_by_level.get(level)
             if local_accrual is None:
-                continue
+                local_accrual = await _create_local_accrual_from_bitrix(
+                    db,
+                    purchase=purchase,
+                    raw_accrual=bitrix_accrual,
+                )
+                if local_accrual is None:
+                    continue
+                local_accruals_by_level[level] = local_accrual
             if bitrix_accrual.get("id"):
                 local_accrual.bitrix_accrual_id = int(bitrix_accrual["id"])
             if bitrix_accrual.get("status"):
                 local_accrual.status = str(bitrix_accrual["status"])
+            if bitrix_accrual.get("buyer_discount_percent") is not None:
+                local_accrual.buyer_discount_percent = Decimal(
+                    str(bitrix_accrual["buyer_discount_percent"])
+                )
+            if bitrix_accrual.get("referrer_discount_percent") is not None:
+                local_accrual.referrer_discount_percent = Decimal(
+                    str(bitrix_accrual["referrer_discount_percent"])
+                )
+            if bitrix_accrual.get("percent") is not None:
+                local_accrual.commission_percent = Decimal(
+                    str(bitrix_accrual["percent"])
+                )
+            if bitrix_accrual.get("amount") is not None:
+                local_accrual.commission_amount = Decimal(
+                    str(bitrix_accrual["amount"])
+                )
             local_accrual.reason = optional_str(bitrix_accrual.get("reason"))
             eligibility = bitrix_accrual.get("eligibility")
             if isinstance(eligibility, dict):
                 local_accrual.eligibility_snapshot = eligibility
 
+    assignment = result.get("assignment")
+    assignment = assignment if isinstance(assignment, dict) else {}
+    if (
+        purchase.promo_code
+        and str(assignment.get("outcome") or "")
+        in {"attached", "changed", "unchanged", "firm_promo"}
+    ):
+        user.promo_code = purchase.promo_code
+    await _apply_remote_purchase_progress(
+        db,
+        purchase=purchase,
+        progress=(
+            result.get("purchase_progress")
+            if isinstance(result.get("purchase_progress"), dict)
+            else None
+        ),
+    )
+    await refresh_program_profile_from_bitrix(
+        db,
+        user=user,
+        client=client,
+    )
     purchase.bitrix_sync_status = "synced"
     purchase.bitrix_synced_at = datetime.now(timezone.utc)
     purchase.sync_error = None
@@ -322,6 +584,38 @@ async def _sync_partner_reversal_to_bitrix(
             "outcome": "remote_purchase_not_found",
             "external_order_id": purchase.external_order_id,
         }
+        legacy_purchase = None
+        buyer_user_id = getattr(purchase, "buyer_user_id", None)
+        order_id = getattr(purchase, "order_id", None)
+        if order_id is not None and hasattr(db, "execute"):
+            legacy_purchase = (
+                await db.execute(
+                    select(BonusProgramPurchase.id).where(
+                        BonusProgramPurchase.order_id == order_id
+                    )
+                )
+            ).scalar_one_or_none()
+        if (
+            legacy_purchase is None
+            and buyer_user_id is not None
+            and hasattr(db, "execute")
+            and _purchase_participates_in_program(purchase)
+        ):
+            profile = (
+                await db.execute(
+                    select(ReferralProfile)
+                    .where(ReferralProfile.user_id == buyer_user_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if profile is not None:
+                profile.referral_discount_base_total = quantize_money(
+                    max(
+                        Decimal("0.00"),
+                        profile.referral_discount_base_total - purchase.amount,
+                    )
+                )
+                refresh_profile_discount(profile, has_promo_code=True)
 
     purchase.status = "reversed"
     purchase.reversed_at = datetime.now(timezone.utc)
@@ -331,69 +625,26 @@ async def _sync_partner_reversal_to_bitrix(
     for accrual in purchase.accruals:
         accrual.status = "rejected"
         accrual.reason = "order_reversed"
+    await _apply_remote_purchase_progress(
+        db,
+        purchase=purchase,
+        progress=(
+            result.get("purchase_progress")
+            if isinstance(result.get("purchase_progress"), dict)
+            else None
+        ),
+    )
+    buyer_user_id = getattr(purchase, "buyer_user_id", None)
+    if buyer_user_id is not None and hasattr(db, "get"):
+        user = await db.get(User, buyer_user_id)
+        if user is not None:
+            await refresh_program_profile_from_bitrix(
+                db,
+                user=user,
+                client=client,
+            )
     await db.commit()
     return result
-
-
-async def _record_bonus_program_purchase(
-    db: AsyncSession,
-    *,
-    order: Order,
-    user: User,
-    amount: Decimal,
-    paid_at: datetime,
-) -> dict[str, Any]:
-    await get_or_create_referral_profile(db, user=user)
-    profile = (
-        await db.execute(
-            select(ReferralProfile)
-            .where(ReferralProfile.user_id == user.id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one()
-    if normalize_reward_program(profile.reward_program) != "bonus":
-        return {"outcome": "program_changed"}
-
-    snapshot = {
-        "program": "bonus",
-        "external_order_id": order.order_code or str(order.id),
-        "amount": str(amount),
-        "currency": order.currency,
-        "paid_at": paid_at.isoformat(),
-        "bitrix_written": False,
-    }
-    statement = (
-        insert(BonusProgramPurchase)
-        .values(
-            order_id=order.id,
-            user_id=user.id,
-            external_order_id=order.order_code or str(order.id),
-            amount=amount,
-            currency=order.currency,
-            paid_at=paid_at,
-            status="posted",
-            calculation_snapshot=snapshot,
-        )
-        .on_conflict_do_nothing(index_elements=[BonusProgramPurchase.order_id])
-        .returning(BonusProgramPurchase.id)
-    )
-    purchase_id = (await db.execute(statement)).scalar_one_or_none()
-    if purchase_id is None:
-        await db.commit()
-        return {"outcome": "already_recorded"}
-
-    profile.referral_discount_base_total = quantize_money(
-        profile.referral_discount_base_total + amount
-    )
-    refresh_profile_discount(profile)
-    await db.commit()
-    return {
-        "outcome": "recorded",
-        "purchase_id": purchase_id,
-        "purchase_total": str(profile.referral_discount_base_total),
-        "discount_percent": str(profile.current_discount_percent),
-    }
 
 
 async def _reverse_bonus_program_purchase(
@@ -430,6 +681,7 @@ async def reverse_paid_order_reward(
     *,
     order: Order,
 ) -> dict[str, Any] | None:
+    legacy_result: dict[str, Any] | None = None
     bonus_purchase = (
         await db.execute(
             select(BonusProgramPurchase)
@@ -438,40 +690,78 @@ async def reverse_paid_order_reward(
         )
     ).scalar_one_or_none()
     if bonus_purchase is not None:
-        return {
-            "storage": "app_bonus_only",
-            "bitrix_written": False,
-            **await _reverse_bonus_program_purchase(db, purchase=bonus_purchase),
-        }
+        legacy_result = await _reverse_bonus_program_purchase(
+            db,
+            purchase=bonus_purchase,
+        )
 
-    partner_purchase = await _purchase_for_order(db, order.id)
-    if partner_purchase is None:
-        return None
-    if partner_purchase.status == "reversed":
+    purchase = await _purchase_for_order(db, order.id)
+    if purchase is None:
+        if legacy_result is None:
+            return None
+        return {
+            "storage": "legacy_app_bonus",
+            "bitrix_written": False,
+            **legacy_result,
+        }
+    if purchase.status == "reversed":
         return {
             "storage": "app_mirror_and_bitrix",
             "outcome": "already_reversed",
-            "purchase_id": partner_purchase.id,
+            "purchase_id": purchase.id,
         }
-    partner_purchase.status = "reversal_pending"
-    partner_purchase.bitrix_sync_status = "pending"
-    partner_purchase.sync_error = None
+    purchase.status = "reversal_pending"
+    purchase.bitrix_sync_status = "pending"
+    purchase.sync_error = None
     await db.commit()
     if not bitrix_promo_configured():
-        partner_purchase.sync_error = "Bitrix promo integration is not configured"
+        if (
+            legacy_result is None
+            and purchase.buyer_user_id is not None
+            and _purchase_participates_in_program(purchase)
+        ):
+            profile = (
+                await db.execute(
+                    select(ReferralProfile)
+                    .where(
+                        ReferralProfile.user_id == purchase.buyer_user_id
+                    )
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if profile is not None:
+                profile.referral_discount_base_total = quantize_money(
+                    max(
+                        Decimal("0.00"),
+                        profile.referral_discount_base_total - purchase.amount,
+                    )
+                )
+                refresh_profile_discount(profile, has_promo_code=True)
+        purchase.status = "reversed"
+        purchase.reversed_at = datetime.now(timezone.utc)
+        purchase.bitrix_sync_status = "not_configured"
+        purchase.sync_error = "Bitrix promo integration is not configured"
+        for accrual in purchase.accruals:
+            accrual.status = "rejected"
+            accrual.reason = "order_reversed"
         await db.commit()
-        return None
+        return {
+            "storage": "app_mirror",
+            "outcome": "reversed_locally",
+            "purchase_id": purchase.id,
+            "bitrix_written": False,
+        }
 
     result = await _sync_partner_reversal_to_bitrix(
         db,
-        purchase=partner_purchase,
+        purchase=purchase,
         client=BitrixPromoClient(),
     )
 
     return {
         "storage": "app_mirror_and_bitrix",
         "outcome": str(result.get("outcome") or "reversed"),
-        "purchase_id": partner_purchase.id,
+        "purchase_id": purchase.id,
         "bitrix": result,
     }
 
@@ -497,44 +787,10 @@ async def sync_paid_order_referral_to_app(
         logger.info("Skipping zero-value reward progress order_id=%s", order.id)
         return None
 
-    profile = await get_or_create_referral_profile(db, user=user)
-    reward_program = normalize_reward_program(profile.reward_program)
-    if reward_program is None:
-        logger.info(
-            "Skipping paid order reward without selected program order_id=%s",
-            order.id,
-        )
-        return None
-
+    await ensure_unified_reward_program(db, user=user)
     promo = _paid_order_promo(order)
     paid_at = order.payment_paid_at or order.updated_at or datetime.now(timezone.utc)
-    if reward_program == "bonus":
-        result = await _record_bonus_program_purchase(
-            db,
-            order=order,
-            user=user,
-            amount=amount,
-            paid_at=paid_at,
-        )
-        logger.info(
-            "Paid order stored in bonus program order_id=%s outcome=%s",
-            order.id,
-            result.get("outcome"),
-        )
-        return {
-            "storage": "app_bonus_only",
-            "bitrix_written": False,
-            **result,
-        }
-
-    if not bitrix_promo_configured():
-        logger.error(
-            "Partner order cannot sync because Bitrix promo is not configured order_id=%s",
-            order.id,
-        )
-        return None
-
-    client = BitrixPromoClient()
+    client = BitrixPromoClient() if bitrix_promo_configured() else None
     purchase = await _ensure_app_calculation(
         db,
         order=order,
@@ -544,6 +800,21 @@ async def sync_paid_order_referral_to_app(
         paid_at=paid_at,
         client=client,
     )
+    if client is None:
+        purchase.bitrix_sync_status = "not_configured"
+        purchase.sync_error = "Bitrix promo integration is not configured"
+        await db.commit()
+        logger.warning(
+            "Paid order stored locally until Bitrix is configured order_id=%s",
+            order.id,
+        )
+        return {
+            "storage": "app_mirror",
+            "purchase_id": purchase.id,
+            "accrual_count": len(purchase.accruals),
+            "bitrix_written": False,
+        }
+
     bitrix_result = await _sync_purchase_progress_to_bitrix(
         db,
         purchase=purchase,
@@ -551,7 +822,7 @@ async def sync_paid_order_referral_to_app(
         client=client,
     )
     logger.info(
-        "Paid order reward progress stored order_id=%s partner_accruals=%s bitrix_outcome=%s",
+        "Paid order reward progress stored order_id=%s accruals=%s bitrix_outcome=%s",
         order.id,
         len(purchase.accruals),
         bitrix_result.get("outcome"),
@@ -596,7 +867,12 @@ async def retry_unsynced_app_referral_purchases(
                 .options(selectinload(AppReferralPurchase.accruals))
                 .join(User, User.id == AppReferralPurchase.buyer_user_id)
                 .where(
-                    AppReferralPurchase.bitrix_sync_status.in_(("pending", "failed")),
+                    AppReferralPurchase.bitrix_sync_status.in_(
+                        ("pending", "failed", "not_configured")
+                    ),
+                    AppReferralPurchase.status.in_(
+                        ("posted", "reversal_pending")
+                    ),
                     AppReferralPurchase.updated_at <= cutoff,
                 )
                 .order_by(AppReferralPurchase.id)
@@ -657,14 +933,6 @@ async def backfill_missing_paid_order_rewards(
                     AppReferralPurchase,
                     AppReferralPurchase.order_id == Order.id,
                 )
-                .outerjoin(
-                    BonusProgramPurchase,
-                    BonusProgramPurchase.order_id == Order.id,
-                )
-                .join(
-                    ReferralProfile,
-                    ReferralProfile.user_id == Order.user_id,
-                )
                 .where(
                     Order.is_paid.is_(True),
                     Order.is_canceled.is_(False),
@@ -672,8 +940,6 @@ async def backfill_missing_paid_order_rewards(
                         ("refunded", "canceled", "error")
                     ),
                     AppReferralPurchase.id.is_(None),
-                    BonusProgramPurchase.id.is_(None),
-                    ReferralProfile.reward_program.in_(("bonus", "partner")),
                 )
                 .order_by(Order.id)
                 .limit(max(1, min(limit, 500)))

@@ -27,7 +27,7 @@ if "PIL" not in sys.modules:
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
 from src.integrations.amocrm import amocrm_client
 from src.database.models import (
-    BonusProgramPurchase,
+    AppReferralPurchase,
     Order,
     OrderDraft,
     Product,
@@ -98,10 +98,12 @@ def _get_order(order_id: int) -> Order:
         return order
 
 
-def _get_bonus_purchase(order_id: int) -> BonusProgramPurchase | None:
+def _get_reward_purchase(order_id: int) -> AppReferralPurchase | None:
     with Session(sync_engine) as session:
         return session.execute(
-            select(BonusProgramPurchase).where(BonusProgramPurchase.order_id == order_id)
+            select(AppReferralPurchase).where(
+                AppReferralPurchase.order_id == order_id
+            )
         ).scalar_one_or_none()
 
 
@@ -112,6 +114,14 @@ def _get_referral_profile(user_id: int) -> ReferralProfile:
         ).scalar_one()
         session.expunge(profile)
         return profile
+
+
+def _set_user_promo_code(user_id: int, promo_code: str | None) -> None:
+    with Session(sync_engine) as session:
+        user = session.get(User, user_id)
+        assert user is not None
+        user.promo_code = promo_code
+        session.commit()
 
 
 def _update_order(order_id: int, **fields) -> None:
@@ -226,7 +236,7 @@ def _create_order_for_history(
     return order_response.json()
 
 
-def _select_test_bonus_program(
+def _initialize_test_reward_program(
     client: TestClient,
     *,
     access_token: str,
@@ -251,7 +261,7 @@ def registered_user(client: TestClient, register_verified_user):
     })
     user_id = payload["user"]["id"]
     email = payload["user"]["email"]
-    _select_test_bonus_program(client, access_token=payload["access_token"])
+    _initialize_test_reward_program(client, access_token=payload["access_token"])
 
     try:
         yield {
@@ -274,7 +284,7 @@ def second_registered_user(client: TestClient, register_verified_user):
         "surname": "Second",
     })
     user_id = payload["user"]["id"]
-    _select_test_bonus_program(client, access_token=payload["access_token"])
+    _initialize_test_reward_program(client, access_token=payload["access_token"])
 
     try:
         yield {
@@ -330,7 +340,7 @@ def stub_amocrm(monkeypatch):
     yield calls
 
 
-def test_create_final_order_requires_reward_program_selection(
+def test_create_final_order_automatically_enables_unified_reward_program(
     client: TestClient,
     register_verified_user,
     variant_factory,
@@ -358,8 +368,14 @@ def test_create_final_order_requires_reward_program_selection(
             json={"draft_id": draft["id"], "payment_method": "later"},
         )
 
-        assert response.status_code == 409, response.text
-        assert "выберите бонусную или партнёрскую программу" in response.json()["detail"]
+        assert response.status_code == 200, response.text
+        with Session(sync_engine) as session:
+            profile = (
+                session.query(ReferralProfile)
+                .filter(ReferralProfile.user_id == user_id)
+                .one()
+            )
+            assert profile.reward_program == "combined"
     finally:
         _delete_user(user_id)
 
@@ -1050,19 +1066,24 @@ def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, regist
     assert stored_order.payment_status == "paid"
     assert stored_order.payment_paid_at is not None
     assert stored_order.is_paid is True
-    bonus_purchase = _get_bonus_purchase(order_id)
-    assert bonus_purchase is not None
-    assert bonus_purchase.status == "posted"
-    assert bonus_purchase.amount == Decimal("42.00")
+    reward_purchase = _get_reward_purchase(order_id)
+    assert reward_purchase is not None
+    assert reward_purchase.status == "posted"
+    assert reward_purchase.amount == Decimal("42.00")
+    assert reward_purchase.calculation_snapshot["participates_in_program"] is False
+    profile = _get_referral_profile(registered_user["user_id"])
+    assert profile.referral_discount_base_total == Decimal("0.00")
+    assert profile.current_discount_percent == Decimal("0.00")
 
 
-def test_intellectmoney_refund_reverses_bonus_program_purchase(
+def test_intellectmoney_refund_reverses_unified_reward_purchase(
     client: TestClient,
     registered_user,
     variant_factory,
     stub_amocrm,
     monkeypatch,
 ):
+    _set_user_promo_code(registered_user["user_id"], "TEST-REFERRER")
     catalog = variant_factory(stock=5, price=Decimal("21.00"))
     draft = _create_ready_draft(
         client,
@@ -1103,7 +1124,13 @@ def test_intellectmoney_refund_reverses_bonus_program_purchase(
         },
     )
     assert paid_response.status_code == 200, paid_response.text
-    assert _get_bonus_purchase(order_id).status == "posted"
+    posted_purchase = _get_reward_purchase(order_id)
+    assert posted_purchase is not None
+    assert posted_purchase.status == "posted"
+    assert posted_purchase.calculation_snapshot["participates_in_program"] is True
+    posted_profile = _get_referral_profile(registered_user["user_id"])
+    assert posted_profile.referral_discount_base_total == posted_purchase.amount
+    assert posted_profile.current_discount_percent == Decimal("3.00")
 
     refund_response = client.post(
         "/api/v1/webhooks/intellectmoney",
@@ -1116,7 +1143,7 @@ def test_intellectmoney_refund_reverses_bonus_program_purchase(
     )
     assert refund_response.status_code == 200, refund_response.text
 
-    reversed_purchase = _get_bonus_purchase(order_id)
+    reversed_purchase = _get_reward_purchase(order_id)
     assert reversed_purchase is not None
     assert reversed_purchase.status == "reversed"
     assert reversed_purchase.reversed_at is not None

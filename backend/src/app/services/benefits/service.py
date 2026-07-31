@@ -6,9 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.discounts import product_is_discountable
 from src.app.services.catalog_merchandising import catalog_unit_price
-from src.app.services.referrals import get_or_create_referral_profile, refresh_profile_discount
+from src.app.services.referrals import ensure_unified_reward_program, refresh_profile_discount
+from src.app.services.referrals.bitrix_sync import refresh_program_profile_from_bitrix
 from src.app.services.referrals.calculations import calculate_personal_discount_percent
-from src.app.services.referrals.program import normalize_reward_program
+from src.app.services.referrals.program import UNIFIED_REWARD_PROGRAM
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User
 from src.integrations.bitrix_promo import (
@@ -60,7 +61,13 @@ def _basket_subtotals(basket) -> tuple[Decimal, Decimal]:
 
 
 def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal) -> ResolvedDiscountOption | None:
-    discount_percent = calculate_personal_discount_percent(profile.referral_discount_base_total)
+    attached_promo = optional_str(user.promo_code)
+    if not attached_promo:
+        return None
+    discount_percent = calculate_personal_discount_percent(
+        profile.referral_discount_base_total,
+        has_promo_code=True,
+    )
     if discount_percent <= Decimal("0.00"):
         return None
 
@@ -73,7 +80,7 @@ def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal
     return ResolvedDiscountOption(
         source_kind="app_referral",
         source_record_id=profile.id,
-        code=None,
+        code=attached_promo,
         title="Персональная скидка / Personal discount",
         status="available",
         is_applicable=True,
@@ -201,13 +208,26 @@ async def resolve_benefits_for_user(
         explicit_subtotal=subtotal,
         explicit_discountable_subtotal=discountable_subtotal,
     )
-    referral_profile = await get_or_create_referral_profile(db, user=user)
+    referral_profile = await ensure_unified_reward_program(db, user=user)
+    remote_program_profile = await refresh_program_profile_from_bitrix(
+        db,
+        user=user,
+    )
+    if remote_program_profile is None:
+        refresh_profile_discount(
+            referral_profile,
+            has_promo_code=bool(optional_str(user.promo_code)),
+        )
     bonus_wallet = await get_user_moysklad_bonus_wallet(user)
-    reward_program = normalize_reward_program(referral_profile.reward_program)
     effective_code = trimmed_code or optional_str(user.promo_code)
     bitrix_option = None
-    app_referral_option = None
-    if reward_program == "partner" and bitrix_promo_configured() and effective_code:
+    app_referral_option = _build_app_referral_option(
+        referral_profile,
+        user=user,
+        subtotal=effective_subtotal,
+        discountable_subtotal=effective_discountable_subtotal,
+    )
+    if bitrix_promo_configured() and effective_code:
         client = BitrixPromoClient()
         try:
             lookup = await client.lookup(effective_code)
@@ -234,25 +254,19 @@ async def resolve_benefits_for_user(
                     status_code=503,
                     detail="Расчёт промокода временно недоступен / Promo calculation is temporarily unavailable",
                 ) from error
-    elif reward_program == "bonus":
-        refresh_profile_discount(referral_profile)
-        app_referral_option = _build_app_referral_option(
-            referral_profile,
-            user=user,
-            subtotal=effective_subtotal,
-            discountable_subtotal=effective_discountable_subtotal,
-        )
 
-    available_discount_options = [
-        option for option in (bitrix_option, app_referral_option) if option is not None and option.is_applicable
+    personal_discount_candidates = [
+        option
+        for option in (bitrix_option, app_referral_option)
+        if option is not None and option.is_applicable
     ]
-    personal_discount = next(
-        (
-            option
-            for option in (bitrix_option, app_referral_option)
-            if option is not None and option.is_applicable
-        ),
-        None,
+    personal_discount = (
+        max(personal_discount_candidates, key=best_option_key)
+        if personal_discount_candidates
+        else None
+    )
+    available_discount_options = (
+        [personal_discount] if personal_discount is not None and personal_discount.is_applicable else []
     )
     best_discount = max(available_discount_options, key=best_option_key) if available_discount_options else None
     code_matches = []
@@ -317,8 +331,8 @@ async def resolve_benefits_for_user(
 
     return {
         "referral_profile_id": referral_profile.id,
-        "reward_program": reward_program,
-        "program_selection_required": reward_program is None,
+        "reward_program": UNIFIED_REWARD_PROGRAM,
+        "program_selection_required": False,
         "subtotal_source": subtotal_source,
         "basket_subtotal": effective_subtotal,
         "currency": resolved_currency,

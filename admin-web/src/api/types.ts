@@ -672,9 +672,14 @@ export type SearchResult = {
 export type ReferralProfile = {
   id: number
   user_id: number
-  reward_program: "bonus" | "partner" | null
+  reward_program: "combined"
   reward_program_selected_at: string | null
   reward_program_selection_source: string | null
+  bitrix_user_id: number | null
+  bitrix_sync_status: string
+  bitrix_synced_at: string | null
+  partner_unlocked_at: string | null
+  partner_program_status: "locked" | "active"
   total_purchases: string
   referral_discount_base_total: string
   current_discount_percent: string

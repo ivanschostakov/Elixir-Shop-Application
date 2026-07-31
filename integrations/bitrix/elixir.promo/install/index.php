@@ -156,7 +156,7 @@ class elixir_promo extends CModule
                 CURRENCY CHAR(3) NOT NULL,
                 PAID_AT DATETIME NOT NULL,
                 PERIOD CHAR(7) NOT NULL,
-                PROGRAM VARCHAR(20) NOT NULL DEFAULT 'partner',
+                PROGRAM VARCHAR(20) NOT NULL DEFAULT 'combined',
                 COUPON_ID INT NULL,
                 DISCOUNT_ID INT NULL,
                 COUPON_USE_COUNT_BEFORE INT NULL,
@@ -179,7 +179,7 @@ class elixir_promo extends CModule
             $purchaseColumns[strtoupper((string)$purchaseColumn['Field'])] = true;
         }
         $requiredPurchaseColumns = [
-            'PROGRAM' => "VARCHAR(20) NOT NULL DEFAULT 'partner' AFTER PERIOD",
+            'PROGRAM' => "VARCHAR(20) NOT NULL DEFAULT 'combined' AFTER PERIOD",
             'COUPON_ID' => 'INT NULL AFTER PROGRAM',
             'DISCOUNT_ID' => 'INT NULL AFTER COUPON_ID',
             'COUPON_USE_COUNT_BEFORE' => 'INT NULL AFTER DISCOUNT_ID',
@@ -196,6 +196,11 @@ class elixir_promo extends CModule
                 );
             }
         }
+        $connection->queryExecute(
+            "UPDATE b_elixir_referral_app_purchase
+             SET PROGRAM='combined'
+             WHERE PROGRAM IN ('bonus', 'partner')"
+        );
         $connection->queryExecute(
             "CREATE TABLE IF NOT EXISTS b_elixir_referral_partner_accrual (
                 ID BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

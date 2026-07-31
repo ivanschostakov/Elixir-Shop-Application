@@ -114,16 +114,27 @@ export type UploadableAvatarImage = {
 
 export type ReferralProfileResponse = {
     user_id: number
-    reward_program: "bonus" | "partner" | null
+    reward_program: "combined"
     reward_program_selected_at: string | null
     reward_program_selection_source: string | null
     program_selection_required: boolean
     bitrix_user_id: number | null
+    bitrix_profile_found: boolean
+    bitrix_sync_status: string
+    bitrix_synced_at: string | null
+    bonus_program_enabled: boolean
+    partner_program_unlocked: boolean
+    partner_program_status: "locked" | "eligible" | "active"
+    partner_unlock_threshold: string
+    partner_unlock_remaining: string
+    personal_discount_next_threshold: string | null
+    personal_discount_remaining: string
     total_purchases: string
     referral_discount_base_total: string
     current_discount_percent: string
     promo_code: string | null
     own_promo_code: string | null
+    suggested_promo_code: string | null
     referrer_promo_code: string | null
     bonus_points: number
     bonus_rubles: string
@@ -172,8 +183,4 @@ export type ReferrerCodeCheckResponse = {
 
 export type ReferrerCodeAttachPayload = ReferrerCodeCheckPayload & {
     confirmed?: boolean
-}
-
-export type RewardProgramSelectPayload = {
-    program: "bonus" | "partner"
 }

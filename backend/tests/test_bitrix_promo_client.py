@@ -1,5 +1,6 @@
 import json
 import asyncio
+from decimal import Decimal
 from types import SimpleNamespace
 
 import httpx
@@ -187,16 +188,17 @@ def test_profile_uses_customer_context_without_a_promo(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("current_promo", "website_promo"),
+    ("current_promo", "website_promo", "expected_total"),
     [
-        ("OLD", "CURRENT"),
-        ("STALE", None),
+        ("OLD", "CURRENT", Decimal("50000.00")),
+        ("STALE", None, Decimal("0.00")),
     ],
 )
 def test_profile_refresh_updates_or_clears_local_referrer_promo(
     monkeypatch,
     current_promo,
     website_promo,
+    expected_total,
 ):
     class FakeDb:
         def __init__(self):
@@ -206,7 +208,8 @@ def test_profile_refresh_updates_or_clears_local_referrer_promo(
             self.flushed = True
 
     class FakeClient:
-        async def profile(self, *, user_email):
+        async def profile(self, *, bitrix_user_id=None, user_email):
+            assert bitrix_user_id is None
             assert user_email == "customer@example.com"
             return {
                 "program_profile": {
@@ -221,9 +224,26 @@ def test_profile_refresh_updates_or_clears_local_referrer_promo(
         email="customer@example.com",
         promo_code=current_promo,
     )
+    profile = SimpleNamespace(
+        bitrix_user_id=None,
+        bitrix_sync_status="pending",
+        bitrix_synced_at=None,
+        bitrix_sync_error=None,
+        partner_unlocked_at=None,
+        referral_discount_base_total=Decimal("0.00"),
+        current_discount_percent=Decimal("0.00"),
+        reward_program_snapshot={},
+    )
+    async def ensure_unified(_db, *, user):
+        return profile
+
     monkeypatch.setattr(
         "src.app.services.referrals.bitrix_sync.bitrix_promo_configured",
         lambda: True,
+    )
+    monkeypatch.setattr(
+        "src.app.services.referrals.bitrix_sync.ensure_unified_reward_program",
+        ensure_unified,
     )
 
     program_profile = asyncio.run(
@@ -232,7 +252,65 @@ def test_profile_refresh_updates_or_clears_local_referrer_promo(
 
     assert program_profile["order_sum"]["amount"] == 50000
     assert user.promo_code == website_promo
+    assert profile.referral_discount_base_total == expected_total
     assert db.flushed is True
+
+
+def test_profile_refresh_preserves_configured_firm_promo(monkeypatch):
+    class FakeDb:
+        async def flush(self):
+            return None
+
+    class FakeClient:
+        async def profile(self, *, bitrix_user_id=None, user_email):
+            return {
+                "user_id": 77,
+                "program_profile": {
+                    "referrer_promo": None,
+                    "firm_promo_codes": ["Elixir"],
+                    "order_sum": {"amount": 12500},
+                },
+            }
+
+    profile = SimpleNamespace(
+        bitrix_user_id=None,
+        bitrix_sync_status="pending",
+        bitrix_synced_at=None,
+        bitrix_sync_error=None,
+        partner_unlocked_at=None,
+        referral_discount_base_total=Decimal("0.00"),
+        current_discount_percent=Decimal("0.00"),
+        reward_program_snapshot={},
+    )
+    user = SimpleNamespace(
+        id=17,
+        email="customer@example.com",
+        promo_code="ELIXIR",
+    )
+
+    async def ensure_unified(_db, *, user):
+        return profile
+
+    monkeypatch.setattr(
+        "src.app.services.referrals.bitrix_sync.bitrix_promo_configured",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "src.app.services.referrals.bitrix_sync.ensure_unified_reward_program",
+        ensure_unified,
+    )
+
+    program_profile = asyncio.run(
+        refresh_assigned_referrer_promo(
+            FakeDb(),
+            user=user,
+            client=FakeClient(),
+        )
+    )
+
+    assert program_profile["firm_promo_codes"] == ["Elixir"]
+    assert user.promo_code == "ELIXIR"
+    assert profile.bitrix_user_id == 77
 
 
 @pytest.mark.parametrize(

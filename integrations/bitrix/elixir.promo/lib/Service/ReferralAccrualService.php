@@ -48,6 +48,8 @@ final class ReferralAccrualService
         $discountContext = $siteContext->resolve($order['promo'], (int)$buyer['user_id']);
         $buyerDiscount = $this->userDiscountPercent($siteContext, (int)$buyer['user_id'], true);
         $referrerUserId = $this->referrerForAppliedPromo($discountContext, (int)$buyer['user_id']);
+        $participatesInProgram = $referrerUserId > 0
+            || !empty($discountContext['is_firm_promo']);
         $accruals = [];
 
         if ($referrerUserId > 0) {
@@ -86,6 +88,7 @@ final class ReferralAccrualService
             'bitrix_writes' => false,
             'promo' => $order['promo'],
             'promo_mode' => (string)$discountContext['mode'],
+            'participates_in_program' => $participatesInProgram,
             'buyer' => $buyer,
             'buyer_discount_percent' => $buyerDiscount,
             'referrer_user_id' => $referrerUserId > 0 ? $referrerUserId : null,
@@ -137,7 +140,7 @@ final class ReferralAccrualService
                     ('app', '" . $externalOrderSql . "', " . (int)$buyer['user_id'] . ",
                      NULL, '" . $promoSql . "', "
                     . number_format((float)$order['amount'], 2, '.', '') . ", '" . $currencySql . "', '"
-                    . $paidAtSql . "', '" . $periodSql . "', 'partner', 'posted', NOW(), NOW())"
+                    . $paidAtSql . "', '" . $periodSql . "', 'combined', 'posted', NOW(), NOW())"
             );
             $purchaseId = (int)$connection->getInsertedId();
             if ($purchaseId <= 0) {
@@ -163,6 +166,7 @@ final class ReferralAccrualService
             $calculation = [
                 'promo' => null,
                 'promo_mode' => SiteDiscountContext::MODE_NONE,
+                'participates_in_program' => false,
                 'buyer' => $buyer,
                 'amount' => $order['amount'],
                 'currency' => $order['currency'],
@@ -172,13 +176,29 @@ final class ReferralAccrualService
             ];
             if ($order['promo'] !== '') {
                 $promoLookup = (new PromoService())->lookup($order['promo']);
-                $assignment = $siteContext->attachReferrer(
+                $discountContext = $siteContext->resolve(
                     $order['promo'],
                     (int)$buyer['user_id']
                 );
+                $assignment = !empty($discountContext['is_firm_promo'])
+                    ? [
+                        'outcome' => 'firm_promo',
+                        'user_id' => (int)$buyer['user_id'],
+                        'referrer_user_id' => null,
+                        'progress_reset' => false,
+                    ]
+                    : $siteContext->attachReferrer(
+                        $order['promo'],
+                        (int)$buyer['user_id']
+                    );
                 $calculation = $this->quotePaidOrder($payload);
             }
             $assignmentOutcome = (string)($assignment['outcome'] ?? '');
+            $participatesInProgram = in_array(
+                $assignmentOutcome,
+                ['attached', 'changed', 'unchanged', 'firm_promo'],
+                true
+            );
             $referrerUserId = in_array(
                 $assignmentOutcome,
                 ['attached', 'changed', 'unchanged'],
@@ -189,6 +209,7 @@ final class ReferralAccrualService
             $connection->queryExecute(
                 "UPDATE " . self::PURCHASE_TABLE . "
                  SET REFERRER_USER_ID=" . ($referrerUserId > 0 ? $referrerUserId : 'NULL') . ",
+                     PROGRAM='" . ($participatesInProgram ? 'combined' : 'none') . "',
                      UPDATED_AT=NOW()
                  WHERE ID=" . $purchaseId
             );
@@ -215,11 +236,17 @@ final class ReferralAccrualService
                      WHERE ID=" . $purchaseId
                 );
             }
-            $purchaseProgress = $siteContext->addPaidPurchase(
-                (int)$buyer['user_id'],
-                (float)$order['amount'],
-                $order['currency']
-            );
+            $purchaseProgress = $participatesInProgram
+                ? $siteContext->addPaidPurchase(
+                    (int)$buyer['user_id'],
+                    (float)$order['amount'],
+                    $order['currency']
+                )
+                : $this->unchangedPurchaseProgress(
+                    $siteContext,
+                    (int)$buyer['user_id'],
+                    $order['currency']
+                );
             $this->refreshAffectedNetworkMonthlyBonuses(
                 (int)$buyer['user_id'],
                 (string)$order['period']
@@ -259,7 +286,7 @@ final class ReferralAccrualService
         $connection->startTransaction();
         try {
             $purchase = $connection->query(
-                "SELECT ID, USER_ID, AMOUNT, CURRENCY, COUPON_ID, STATUS, PERIOD
+                "SELECT ID, USER_ID, AMOUNT, CURRENCY, PROGRAM, COUPON_ID, STATUS, PERIOD
                  FROM " . self::PURCHASE_TABLE . "
                  WHERE SOURCE='app' AND EXTERNAL_ORDER_ID='" . $externalOrderSql . "'
                  LIMIT 1 FOR UPDATE"
@@ -277,11 +304,18 @@ final class ReferralAccrualService
             if ($couponId > 0) {
                 $couponReversal = $this->decrementCouponUseCount($couponId);
             }
-            $purchaseProgress = (new SiteDiscountContext())->subtractPaidPurchase(
-                (int)$purchase['USER_ID'],
-                (float)$purchase['AMOUNT'],
-                (string)$purchase['CURRENCY']
-            );
+            $siteContext = new SiteDiscountContext();
+            $purchaseProgress = (string)($purchase['PROGRAM'] ?? '') === 'combined'
+                ? $siteContext->subtractPaidPurchase(
+                    (int)$purchase['USER_ID'],
+                    (float)$purchase['AMOUNT'],
+                    (string)$purchase['CURRENCY']
+                )
+                : $this->unchangedPurchaseProgress(
+                    $siteContext,
+                    (int)$purchase['USER_ID'],
+                    (string)$purchase['CURRENCY']
+                );
             if ($connection->isTableExists(self::ACCRUAL_TABLE)) {
                 $connection->queryExecute(
                     "UPDATE " . self::ACCRUAL_TABLE . "
@@ -494,6 +528,28 @@ final class ReferralAccrualService
         ];
     }
 
+    private function unchangedPurchaseProgress(
+        SiteDiscountContext $siteContext,
+        int $userId,
+        string $currency
+    ): array {
+        $profile = $siteContext->getProgramProfile($userId);
+        $total = round((float)($profile['order_sum']['amount'] ?? 0), 2);
+
+        return [
+            'previous_total' => $total,
+            'new_total' => $total,
+            'currency' => strtoupper(trim($currency)) ?: 'RUB',
+            'discount_percent' => max(
+                0.0,
+                (float)($profile['group_discount_percent'] ?? 0),
+                (float)($profile['stored_discount_percent'] ?? 0)
+            ),
+            'discount_group_id' => null,
+            'participates_in_program' => false,
+        ];
+    }
+
     private function storeAccruals(int $purchaseId, array $order, array $accruals): array
     {
         if ($purchaseId <= 0 || $accruals === []) {
@@ -561,8 +617,10 @@ final class ReferralAccrualService
         }
 
         $rows = $connection->query(
-            "SELECT ID, BENEFICIARY_USER_ID, REFERRAL_USER_ID, LEVEL, COMMISSION_PERCENT,
-                    COMMISSION_AMOUNT, CURRENCY, PERIOD, STATUS, REASON, ELIGIBILITY_JSON
+            "SELECT ID, BENEFICIARY_USER_ID, REFERRAL_USER_ID, LEVEL,
+                    BUYER_DISCOUNT_PERCENT, REFERRER_DISCOUNT_PERCENT,
+                    COMMISSION_PERCENT, COMMISSION_AMOUNT, CURRENCY, PERIOD,
+                    STATUS, REASON, ELIGIBILITY_JSON
              FROM " . self::ACCRUAL_TABLE . "
              WHERE SOURCE='" . $sourceSql . "' AND EXTERNAL_ORDER_ID='" . $externalOrderSql . "'
              ORDER BY LEVEL ASC"
@@ -633,12 +691,10 @@ final class ReferralAccrualService
         $isClosed = $periodEnd <= new \DateTimeImmutable('first day of this month 00:00:00');
         $lifetimeTotal = $this->lifetimeProgramTotal($siteContext, $userId);
         $monthlyOwnPurchases = $this->monthlyOwnPurchases($userId, $periodStart, $periodEnd);
-        $eligible = $lifetimeTotal >= 100000.0 && $monthlyOwnPurchases >= 10000.0;
+        $eligible = $lifetimeTotal >= 100000.0;
         $reason = null;
         if ($isClosed && !$eligible) {
-            $reason = $lifetimeTotal < 100000.0
-                ? 'lifetime_purchase_minimum_not_met'
-                : 'monthly_purchase_minimum_not_met';
+            $reason = 'lifetime_purchase_minimum_not_met';
         }
 
         return [
@@ -651,7 +707,7 @@ final class ReferralAccrualService
             'lifetime_purchase_total' => $lifetimeTotal,
             'monthly_own_purchase_total' => $monthlyOwnPurchases,
             'lifetime_minimum' => 100000.0,
-            'monthly_minimum' => 10000.0,
+            'monthly_minimum' => 0.0,
             'currency' => (string)Option::get(self::MODULE_ID, 'currency', 'RUB'),
         ];
     }
@@ -747,6 +803,7 @@ final class ReferralAccrualService
              WHERE USER_ID=" . $userId . "
                AND PAID_AT>='" . $fromSql . "'
                AND PAID_AT<'" . $toSql . "'
+               AND PROGRAM='combined'
                AND STATUS='posted'"
         )->fetch();
 
@@ -926,6 +983,7 @@ final class ReferralAccrualService
              WHERE USER_ID IN (" . $idsSql . ")
                AND PAID_AT>='" . $fromSql . "'
                AND PAID_AT<'" . $toSql . "'
+               AND PROGRAM='combined'
                AND STATUS='posted'"
         )->fetch();
 
@@ -1005,8 +1063,10 @@ final class ReferralAccrualService
         $accruals = [];
         if ($connection->isTableExists(self::ACCRUAL_TABLE)) {
             $rows = $connection->query(
-                "SELECT ID, BENEFICIARY_USER_ID, REFERRAL_USER_ID, LEVEL, COMMISSION_PERCENT,
-                        COMMISSION_AMOUNT, CURRENCY, PERIOD, STATUS, REASON, ELIGIBILITY_JSON
+                "SELECT ID, BENEFICIARY_USER_ID, REFERRAL_USER_ID, LEVEL,
+                        BUYER_DISCOUNT_PERCENT, REFERRER_DISCOUNT_PERCENT,
+                        COMMISSION_PERCENT, COMMISSION_AMOUNT, CURRENCY, PERIOD,
+                        STATUS, REASON, ELIGIBILITY_JSON
                  FROM " . self::ACCRUAL_TABLE . "
                  WHERE PURCHASE_ID=" . $purchaseId . "
                  ORDER BY LEVEL ASC"
@@ -1033,7 +1093,7 @@ final class ReferralAccrualService
                 'currency' => (string)$purchase['CURRENCY'],
                 'paid_at' => (string)$purchase['PAID_AT'],
                 'period' => (string)$purchase['PERIOD'],
-                'program' => (string)($purchase['PROGRAM'] ?? 'partner'),
+                'program' => (string)($purchase['PROGRAM'] ?? 'combined'),
                 'coupon_id' => (int)($purchase['COUPON_ID'] ?? 0) > 0
                     ? (int)$purchase['COUPON_ID']
                     : null,
@@ -1095,6 +1155,14 @@ final class ReferralAccrualService
             'beneficiary_user_id' => (int)$row['BENEFICIARY_USER_ID'],
             'referral_user_id' => (int)$row['REFERRAL_USER_ID'],
             'level' => (int)$row['LEVEL'],
+            'buyer_discount_percent' => round(
+                (float)($row['BUYER_DISCOUNT_PERCENT'] ?? 0),
+                2
+            ),
+            'referrer_discount_percent' => round(
+                (float)($row['REFERRER_DISCOUNT_PERCENT'] ?? 0),
+                2
+            ),
             'percent' => round((float)$row['COMMISSION_PERCENT'], 2),
             'amount' => round((float)$row['COMMISSION_AMOUNT'], 2),
             'currency' => (string)$row['CURRENCY'],

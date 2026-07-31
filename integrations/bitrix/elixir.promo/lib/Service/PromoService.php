@@ -290,6 +290,7 @@ final class PromoService
         }
 
         return [
+            'user_id' => $resolvedUserId,
             'user_context' => $userContext['status'],
             'program_profile' => (new SiteDiscountContext())->getProgramProfile($resolvedUserId),
         ];

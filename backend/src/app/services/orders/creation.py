@@ -316,11 +316,6 @@ async def _resolve_checkout_benefits(
         quote_items=quote_items,
         use_bonus_rubles=use_bonus_rubles,
     )
-    if resolved.get("program_selection_required"):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Перед оформлением выберите бонусную или партнёрскую программу / Choose the bonus or partner program before checkout",
-        )
     return resolved
 
 

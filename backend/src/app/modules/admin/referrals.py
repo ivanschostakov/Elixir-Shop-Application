@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -6,19 +6,14 @@ from src.app.services.admin import AdminContext, require_permission
 from src.app.modules.admin.schemas.referrals import (
     AdminReferralAccrualRead,
     AdminReferralProfileRead,
-    AdminRewardProgramChangePayload,
-    AdminRewardProgramChangeRead,
     AdminReferralSummaryRead,
 )
-from src.app.services.admin import add_admin_audit
-from src.app.services.referrals import select_reward_program
 from src.app.services.admin.referrals import (
     list_accruals,
     list_profiles,
     referral_summary,
 )
 from src.database import get_db
-from src.database.models import User
 
 admin_referrals_router = APIRouter(prefix="/referrals", tags=["admin_referrals"])
 
@@ -59,54 +54,3 @@ async def list_referral_accruals(
         period=period,
     )
     return [AdminReferralAccrualRead.model_validate(row) for row in rows]
-
-
-@admin_referrals_router.patch(
-    "/profiles/{user_id}/program",
-    response_model=AdminRewardProgramChangeRead,
-    status_code=status.HTTP_200_OK,
-)
-async def change_referral_reward_program(
-    user_id: int,
-    payload: AdminRewardProgramChangePayload,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    context: AdminContext = Depends(
-        require_permission("customers.manage", write=True)
-    ),
-) -> AdminRewardProgramChangeRead:
-    user = await db.get(User, user_id)
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Покупатель не найден / Customer was not found",
-        )
-    profile = await select_reward_program(
-        db,
-        user=user,
-        program=payload.program,
-        source="admin",
-        force=True,
-        reason=payload.reason,
-        selected_by_admin_user_id=context.user.id,
-    )
-    await add_admin_audit(
-        db,
-        request,
-        context,
-        action="referral.program.change",
-        entity_type="customer",
-        entity_id=user.id,
-        before={"reward_program": profile.reward_program_snapshot.get("previous_program")},
-        after={
-            "reward_program": profile.reward_program,
-            "reason": payload.reason,
-        },
-    )
-    await db.commit()
-    return AdminRewardProgramChangeRead(
-        user_id=user.id,
-        reward_program=profile.reward_program,
-        reward_program_selected_at=profile.reward_program_selected_at,
-        reward_program_selection_source=profile.reward_program_selection_source or "admin",
-    )

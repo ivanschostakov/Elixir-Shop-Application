@@ -13,7 +13,6 @@ import type {
     ReferrerCodeAttachPayload,
     ReferrerCodeCheckPayload,
     ReferrerCodeCheckResponse,
-    RewardProgramSelectPayload,
     UploadableAvatarImage,
     UpsertMyPushTokenPayload,
 } from "@/services/api/users.types"
@@ -73,13 +72,6 @@ export function syncMyCustomerIntelligence(payload: CustomerIntelligenceSyncPayl
 
 export function getMyReferralProfile() {
     return apiGet<ReferralProfileResponse>(usersPath("/me/referral-profile"))
-}
-
-export function selectMyRewardProgram(payload: RewardProgramSelectPayload) {
-    return apiPost<ReferralProfileResponse, RewardProgramSelectPayload>(
-        usersPath("/me/referral-profile/program"),
-        payload,
-    )
 }
 
 export function getMyPromotions() {

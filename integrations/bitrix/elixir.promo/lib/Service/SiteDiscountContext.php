@@ -79,8 +79,22 @@ final class SiteDiscountContext
             ? $this->normalizeGroupList((array)\CUser::GetUserGroup($userId))
             : [];
         $ownPromo = trim((string)($row['UF_PROMO'] ?? ''));
+        $firmPromoCodes = $this->getFirmPromoCodes();
+        $purchaseTotal = round((float)($this->parseMoney(
+            $row['UF_ORDER_SUMM'] ?? null
+        )['amount'] ?? 0), 2);
+        $nextThreshold = null;
+        if ($purchaseTotal < 30000.0) {
+            $nextThreshold = 30000.0;
+        } elseif ($purchaseTotal < 200000.0) {
+            $nextThreshold = min(
+                200000.0,
+                (floor($purchaseTotal / 10000.0) + 1.0) * 10000.0
+            );
+        }
 
         return [
+            'user_id' => $userId,
             'own_promo' => $ownPromo !== '' ? $ownPromo : null,
             'referrer_user_id' => (int)($row['UF_PARENT_ID'] ?? 0) > 0
                 ? (int)$row['UF_PARENT_ID']
@@ -95,6 +109,19 @@ final class SiteDiscountContext
             'order_sum' => $this->parseMoney($row['UF_ORDER_SUMM'] ?? null),
             'sum_paid_orders_month' => $this->parseMoney($row['UF_SUM_PAID_ORDERS_MONTH'] ?? null),
             'user_groups' => $groups,
+            'personal_purchase_total' => $purchaseTotal,
+            'personal_discount_next_threshold' => $nextThreshold,
+            'personal_discount_remaining' => $nextThreshold !== null
+                ? max(0.0, round($nextThreshold - $purchaseTotal, 2))
+                : 0.0,
+            'partner_unlock_threshold' => 100000.0,
+            'partner_unlock_remaining' => max(
+                0.0,
+                round(100000.0 - $purchaseTotal, 2)
+            ),
+            'partner_unlocked' => $ownPromo !== '' || $purchaseTotal >= 100000.0,
+            'firm_promo_codes' => $firmPromoCodes,
+            'suggested_promo' => $firmPromoCodes[0] ?? null,
         ];
     }
 
@@ -228,11 +255,12 @@ final class SiteDiscountContext
         }
 
         if ($this->isFirmPromoCode($promoCode)) {
+            $this->resetReferralProgress($userId, 0);
             return [
                 'outcome' => 'firm_promo',
                 'user_id' => $userId,
                 'referrer_user_id' => null,
-                'progress_reset' => false,
+                'progress_reset' => true,
             ];
         }
 
@@ -281,11 +309,12 @@ final class SiteDiscountContext
 
         $currentParentId = $this->getUserParentId($userId);
         if ($currentParentId <= 0) {
+            $this->resetReferralProgress($userId, 0);
             return [
-                'outcome' => 'unchanged',
+                'outcome' => 'detached',
                 'user_id' => $userId,
                 'previous_referrer_user_id' => null,
-                'progress_reset' => false,
+                'progress_reset' => true,
             ];
         }
 
@@ -514,7 +543,7 @@ final class SiteDiscountContext
         return is_array($row);
     }
 
-    private function isFirmPromoCode(string $promoCode): bool
+    public function getFirmPromoCodes(): array
     {
         $configured = Option::get(
             self::WEBSITE_MODULE_ID,
@@ -522,7 +551,20 @@ final class SiteDiscountContext
             'Elixir'
         );
         $codes = preg_split('/[\s,;]+/', $configured) ?: [];
+        $result = [];
         foreach ($codes as $code) {
+            $code = trim((string)$code);
+            if ($code !== '') {
+                $result[strtolower($code)] = $code;
+            }
+        }
+
+        return array_values($result);
+    }
+
+    private function isFirmPromoCode(string $promoCode): bool
+    {
+        foreach ($this->getFirmPromoCodes() as $code) {
             if ($this->samePromo($promoCode, (string)$code)) {
                 return true;
             }

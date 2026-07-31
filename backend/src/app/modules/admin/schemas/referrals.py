@@ -10,27 +10,19 @@ from pydantic import BaseModel, Field
 class AdminReferralProfileRead(BaseModel):
     id: int = Field(ge=1)
     user_id: int = Field(ge=1)
-    reward_program: Literal["bonus", "partner"] | None = None
+    reward_program: Literal["combined"]
     reward_program_selected_at: datetime | None = None
     reward_program_selection_source: str | None = Field(default=None, max_length=32)
+    bitrix_user_id: int | None = Field(default=None, ge=1)
+    bitrix_sync_status: str = Field(max_length=32)
+    bitrix_synced_at: datetime | None = None
+    partner_unlocked_at: datetime | None = None
+    partner_program_status: Literal["locked", "active"]
     total_purchases: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     referral_discount_base_total: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     current_discount_percent: Decimal = Field(ge=0, max_digits=7, decimal_places=2)
     created_at: datetime
     updated_at: datetime
-
-
-class AdminRewardProgramChangePayload(BaseModel):
-    program: Literal["bonus", "partner"]
-    reason: str = Field(min_length=3, max_length=500)
-
-
-class AdminRewardProgramChangeRead(BaseModel):
-    user_id: int = Field(ge=1)
-    reward_program: Literal["bonus", "partner"]
-    reward_program_selected_at: datetime
-    reward_program_selection_source: str
-
 
 class AdminReferralDiscountBandRead(BaseModel):
     band: str

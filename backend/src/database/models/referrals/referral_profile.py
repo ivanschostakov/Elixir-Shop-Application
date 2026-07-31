@@ -25,6 +25,16 @@ class ReferralProfile(Base, IdPkMixin, TimestampMixin):
         server_default=text("'{}'::jsonb"),
     )
     bitrix_user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
+    bitrix_sync_status: Mapped[str] = mapped_column(
+        String(length=32),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+        index=True,
+    )
+    bitrix_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    bitrix_sync_error: Mapped[str | None] = mapped_column(String(length=500), nullable=True)
+    partner_unlocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     referral_discount_base_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=Decimal("0.00"), server_default=text("0.00"))
     current_discount_percent: Mapped[Decimal] = mapped_column(Numeric(7, 2), nullable=False, default=Decimal("0.00"), server_default=text("0.00"))
 

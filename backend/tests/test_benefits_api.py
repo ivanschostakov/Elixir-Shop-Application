@@ -51,8 +51,16 @@ def _set_user_promo_code(user_id: int, code: str | None) -> None:
         session.commit()
 
 
-def _set_bonus_program(user_id: int, purchase_total: str = "30000.00") -> None:
+def _set_unified_program(
+    user_id: int,
+    purchase_total: str = "30000.00",
+    *,
+    promo_code: str | None = "REFERRER",
+) -> None:
     with Session(sync_engine) as session:
+        user = session.get(User, user_id)
+        assert user is not None
+        user.promo_code = promo_code
         profile = (
             session.query(ReferralProfile)
             .filter(ReferralProfile.user_id == user_id)
@@ -61,7 +69,7 @@ def _set_bonus_program(user_id: int, purchase_total: str = "30000.00") -> None:
         if profile is None:
             profile = ReferralProfile(user_id=user_id)
             session.add(profile)
-        profile.reward_program = "bonus"
+        profile.reward_program = "combined"
         profile.referral_discount_base_total = Decimal(purchase_total)
         profile.current_discount_percent = Decimal("3.00")
         session.commit()
@@ -85,8 +93,20 @@ def registered_user(register_verified_user):
         _delete_user(user_id)
 
 
-def test_benefit_check_returns_bonus_program_discount_only(client: TestClient, registered_user):
-    _set_bonus_program(registered_user["user_id"])
+@pytest.fixture(autouse=True)
+def disable_bitrix_promo_for_local_benefit_tests(monkeypatch):
+    monkeypatch.setattr(
+        "src.app.services.benefits.service.bitrix_promo_configured",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "src.app.services.referrals.bitrix_sync.bitrix_promo_configured",
+        lambda: False,
+    )
+
+
+def test_benefit_check_returns_unified_personal_discount(client: TestClient, registered_user):
+    _set_unified_program(registered_user["user_id"])
 
     response = client.post(
         "/api/v1/users/me/benefits/check",
@@ -98,7 +118,7 @@ def test_benefit_check_returns_bonus_program_discount_only(client: TestClient, r
     payload = response.json()
     assert payload["subtotal_source"] == "request"
     assert _decimal(payload["basket_subtotal"]) == Decimal("200.00")
-    assert payload["reward_program"] == "bonus"
+    assert payload["reward_program"] == "combined"
     assert payload["program_selection_required"] is False
     assert payload["entered_code"] is None
     assert payload["unresolved_code_reason"] is None
@@ -113,8 +133,31 @@ def test_benefit_check_returns_bonus_program_discount_only(client: TestClient, r
     assert [option["source_kind"] for option in payload["stacked_discount_options"]] == ["app_referral"]
 
 
-def test_benefit_check_applies_bonus_discount_to_discountable_subtotal_only(client: TestClient, registered_user):
-    _set_bonus_program(registered_user["user_id"])
+def test_benefit_check_does_not_offer_personal_discount_without_promo(
+    client: TestClient,
+    registered_user,
+):
+    _set_unified_program(
+        registered_user["user_id"],
+        purchase_total="200000.00",
+        promo_code=None,
+    )
+
+    response = client.post(
+        "/api/v1/users/me/benefits/check",
+        headers=registered_user["headers"],
+        json={"subtotal": "200.00", "currency": "RUB"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["personal_discount"] is None
+    assert payload["available_discount_options"] == []
+    assert payload["stacked_discount_amount"] == "0.00"
+
+
+def test_benefit_check_applies_personal_discount_to_discountable_subtotal_only(client: TestClient, registered_user):
+    _set_unified_program(registered_user["user_id"])
 
     response = client.post(
         "/api/v1/users/me/benefits/check",

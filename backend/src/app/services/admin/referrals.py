@@ -6,7 +6,10 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
-from src.app.services.referrals.calculations import quantize_money
+from src.app.services.referrals.calculations import (
+    PARTNER_UNLOCK_SPEND,
+    quantize_money,
+)
 from src.database.crud.referrals import list_referral_profiles as list_referral_profile_rows
 from src.database.models import AppReferralAccrual, AppReferralPurchase, ReferralProfile
 
@@ -16,9 +19,19 @@ def _profile_row(profile: ReferralProfile) -> dict[str, Any]:
     return {
         "id": profile.id,
         "user_id": profile.user_id,
-        "reward_program": profile.reward_program,
+        "reward_program": "combined",
         "reward_program_selected_at": profile.reward_program_selected_at,
         "reward_program_selection_source": profile.reward_program_selection_source,
+        "bitrix_user_id": profile.bitrix_user_id,
+        "bitrix_sync_status": profile.bitrix_sync_status,
+        "bitrix_synced_at": profile.bitrix_synced_at,
+        "partner_unlocked_at": profile.partner_unlocked_at,
+        "partner_program_status": (
+            "active"
+            if profile.partner_unlocked_at is not None
+            or total >= PARTNER_UNLOCK_SPEND
+            else "locked"
+        ),
         "total_purchases": total,
         "referral_discount_base_total": total,
         "current_discount_percent": profile.current_discount_percent,
@@ -94,7 +107,22 @@ async def referral_summary(db: AsyncSession) -> dict[str, Any]:
         func.coalesce(func.sum(ReferralProfile.referral_discount_base_total), 0),
         func.coalesce(func.avg(ReferralProfile.current_discount_percent), 0),
         func.coalesce(func.max(ReferralProfile.current_discount_percent), 0),
-        func.coalesce(func.sum(case((ReferralProfile.referral_discount_base_total > 0, 1), else_=0)), 0),
+        func.coalesce(
+            func.sum(
+                case(
+                    (
+                        (ReferralProfile.partner_unlocked_at.is_not(None))
+                        | (
+                            ReferralProfile.referral_discount_base_total
+                            >= PARTNER_UNLOCK_SPEND
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+            0,
+        ),
     ))).one()
     band_rows = (await db.execute(select(
         case(
