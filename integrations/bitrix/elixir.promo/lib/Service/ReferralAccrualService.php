@@ -1153,6 +1153,7 @@ final class ReferralAccrualService
         return [
             'id' => (int)$row['ID'],
             'beneficiary_user_id' => (int)$row['BENEFICIARY_USER_ID'],
+            'beneficiary' => $this->userSnapshot((int)$row['BENEFICIARY_USER_ID']),
             'referral_user_id' => (int)$row['REFERRAL_USER_ID'],
             'level' => (int)$row['LEVEL'],
             'buyer_discount_percent' => round(

@@ -292,7 +292,7 @@ async def resolve_benefits_for_user(
             source_record_id=None,
             source_external_id=str(bonus_wallet.program_id) if bonus_wallet.program_id else None,
             code=None,
-            title=bonus_wallet.program_name or "Бонусные рубли МойСклад",
+            title="Бонусные рубли",
             status="available" if bonus_points > 0 else "not_applicable",
             is_applicable=bonus_points > 0,
             is_personal=True,

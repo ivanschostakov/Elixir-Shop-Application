@@ -92,7 +92,6 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
     partner_pending, partner_approved, partner_rejected = (
         await _local_partner_totals(db, user_id=user.id)
     )
-    site_partner_balance = Decimal("0.00")
     network_monthly: dict[str, Any] = {}
 
     program_profile = await refresh_assigned_referrer_promo(db, user=user)
@@ -122,9 +121,6 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
                 partner_pending = quantize_money(authoritative.get("pending_amount"))
                 partner_approved = quantize_money(authoritative.get("approved_amount"))
                 partner_rejected = quantize_money(authoritative.get("rejected_amount"))
-            site_partner_balance = quantize_money(
-                partner_summary.get("site_partner_balance")
-            )
             raw_network_monthly = partner_summary.get("network_monthly_bonus")
             if isinstance(raw_network_monthly, dict):
                 network_monthly = raw_network_monthly
@@ -225,13 +221,16 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         "updated_at": profile.updated_at,
         "bonus_points": bonus_wallet.balance_points,
         "bonus_rubles": bonus_wallet.balance_rubles,
-        "bonus_program_name": bonus_wallet.program_name,
+        "bonus_wallet_available": bonus_wallet.is_loaded,
+        "bonus_program_name": "Бонусные рубли",
         "bonus_spend_rate_points_to_ruble": bonus_wallet.spend_rate_points_to_ruble,
         "bonus_max_paid_rate_percent": bonus_wallet.max_paid_rate_percent,
         "partner_pending_rubles": partner_pending,
         "partner_approved_rubles": partner_approved,
         "partner_rejected_rubles": partner_rejected,
-        "partner_site_balance_rubles": site_partner_balance,
+        # Compatibility alias for installed clients. The spendable balance
+        # always comes from the authoritative MoySklad wallet.
+        "partner_site_balance_rubles": bonus_wallet.balance_rubles,
         "partner_network_period": network_monthly.get("period"),
         "partner_network_status": network_monthly.get("status"),
         "partner_network_turnover": quantize_money(

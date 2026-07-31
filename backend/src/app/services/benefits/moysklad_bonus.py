@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True, slots=True)
 class MoySkladBonusWallet:
+    is_loaded: bool = False
     counterparty_id: UUID | None = None
     program_id: UUID | None = None
     program_name: str | None = None
@@ -84,6 +85,7 @@ def bonus_wallet_from_counterparty(counterparty: dict[str, Any] | None) -> MoySk
     sales_amount_minor = _nonnegative_decimal(counterparty.get("salesAmount"))
 
     return MoySkladBonusWallet(
+        is_loaded=True,
         counterparty_id=counterparty_id,
         program_id=program_id,
         program_name=optional_str(program.get("name")),
@@ -105,24 +107,10 @@ async def get_user_moysklad_bonus_wallet(
         return MoySkladBonusWallet()
 
     try:
-        counterparty = await client.get_counterparty(
+        return await get_moysklad_bonus_wallet(
             user.moysklad_counterparty_id,
-            expand_bonus_program=True,
+            moysklad_client=client,
         )
-        if not isinstance(counterparty, dict):
-            return MoySkladBonusWallet()
-
-        program = counterparty.get("bonusProgram")
-        program_id = _uuid_from_entity(program)
-        if (
-            program_id is not None
-            and isinstance(program, dict)
-            and program.get("spendRatePointsToRouble") is None
-        ):
-            expanded_program = await client.get_bonus_program(program_id)
-            if expanded_program is not None:
-                counterparty = {**counterparty, "bonusProgram": expanded_program}
-        return bonus_wallet_from_counterparty(counterparty)
     except Exception:
         logger.exception(
             "Could not load MoySklad bonus wallet user_id=%s counterparty_id=%s",
@@ -130,6 +118,35 @@ async def get_user_moysklad_bonus_wallet(
             user.moysklad_counterparty_id,
         )
         return MoySkladBonusWallet()
+
+
+async def get_moysklad_bonus_wallet(
+    counterparty_id: UUID,
+    *,
+    moysklad_client: MoySkladClient | None = None,
+) -> MoySkladBonusWallet:
+    client = moysklad_client or get_moysklad_client()
+    if not client.is_configured():
+        return MoySkladBonusWallet()
+
+    counterparty = await client.get_counterparty(
+        counterparty_id,
+        expand_bonus_program=True,
+    )
+    if not isinstance(counterparty, dict):
+        return MoySkladBonusWallet()
+
+    program = counterparty.get("bonusProgram")
+    program_id = _uuid_from_entity(program)
+    if (
+        program_id is not None
+        and isinstance(program, dict)
+        and program.get("spendRatePointsToRouble") is None
+    ):
+        expanded_program = await client.get_bonus_program(program_id)
+        if expanded_program is not None:
+            counterparty = {**counterparty, "bonusProgram": expanded_program}
+    return bonus_wallet_from_counterparty(counterparty)
 
 
 def bonus_spend_for_subtotal(

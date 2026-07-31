@@ -63,6 +63,17 @@ class AdminReferralAccrualRead(BaseModel):
     currency: str
     status: str
     reason: str | None
+    wallet_sync_status: str = Field(max_length=32)
+    bonus_points_credited: int | None = Field(default=None, ge=0)
+    bonus_rubles_credited: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=14,
+        decimal_places=2,
+    )
+    wallet_synced_at: datetime | None = None
+    wallet_sync_error: str | None = Field(default=None, max_length=500)
+    wallet_reversed_at: datetime | None = None
     bitrix_sync_status: str
     paid_at: datetime
     created_at: datetime

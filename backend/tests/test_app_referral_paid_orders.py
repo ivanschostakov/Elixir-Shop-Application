@@ -1,11 +1,12 @@
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from decimal import Decimal
 
 from src.app.services.referrals.paid_orders import (
+    _create_local_accrual_from_bitrix,
     _paid_order_promo,
     _period_bounds,
     _rewardable_order_amount,
@@ -74,6 +75,49 @@ def test_rewardable_order_amount_uses_legacy_total_without_delivery() -> None:
     )
 
     assert _rewardable_order_amount(order) == Decimal("5510.00")
+
+
+def test_remote_accrual_keeps_beneficiary_email_without_app_profile() -> None:
+    class EmptyScalarResult:
+        @staticmethod
+        def scalar_one_or_none():
+            return None
+
+    db = SimpleNamespace(
+        execute=AsyncMock(
+            side_effect=[EmptyScalarResult(), EmptyScalarResult()]
+        ),
+        add=Mock(),
+    )
+    purchase = SimpleNamespace(id=77, currency="RUB")
+
+    row = asyncio.run(
+        _create_local_accrual_from_bitrix(
+            db,
+            purchase=purchase,
+            raw_accrual={
+                "id": 811,
+                "beneficiary_user_id": 396,
+                "beneficiary": {
+                    "user_id": 396,
+                    "email": "referrer@example.com",
+                    "name": "Website Referrer",
+                },
+                "referral_user_id": 512,
+                "level": 1,
+                "amount": "340.50",
+                "currency": "RUB",
+                "status": "approved",
+            },
+        )
+    )
+
+    assert row is not None
+    assert row.beneficiary_user_id is None
+    assert row.beneficiary_bitrix_user_id == 396
+    assert row.beneficiary_email == "referrer@example.com"
+    assert row.beneficiary_name == "Website Referrer"
+    db.add.assert_called_once_with(row)
 
 
 def test_partner_reversal_is_idempotently_completed_in_local_mirror() -> None:

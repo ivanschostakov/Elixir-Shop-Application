@@ -1149,7 +1149,7 @@ def test_intellectmoney_refund_reverses_unified_reward_purchase(
     assert reversed_purchase.reversed_at is not None
     profile = _get_referral_profile(registered_user["user_id"])
     assert profile.referral_discount_base_total == Decimal("0.00")
-    assert profile.current_discount_percent == Decimal("0.00")
+    assert profile.current_discount_percent == Decimal("3.00")
 
 
 @pytest.mark.parametrize(

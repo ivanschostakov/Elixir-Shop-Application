@@ -180,7 +180,7 @@ export function MarketingPage() {
   const referralCopy = locale === "ru"
     ? {
       accruals: "Начисления приложения",
-      accrualsHint: "Bitrix рассчитывает правила и проценты, журнал и статусы хранятся только в приложении.",
+      accrualsHint: "Bitrix рассчитывает правила и проценты. После подтверждения сумма автоматически зачисляется в единый баланс «Бонусные рубли» в МойСклад.",
       pendingAmount: "Ожидает закрытия месяца",
       approvedAmount: "Одобрено",
       beneficiary: "Получатель",
@@ -189,12 +189,13 @@ export function MarketingPage() {
       level: "Уровень",
       calculation: "Расчёт",
       amount: "Начисление",
+      wallet: "Бонусные рубли",
       reason: "Причина",
       participants: "Участники программы",
     }
     : {
       accruals: "App accruals",
-      accrualsHint: "Bitrix calculates rules and percentages; the ledger and statuses are stored only in the app.",
+      accrualsHint: "Bitrix calculates the rules and rates. Once approved, the amount is automatically credited to the single Bonus rubles wallet in MoySklad.",
       pendingAmount: "Pending month close",
       approvedAmount: "Approved",
       beneficiary: "Beneficiary",
@@ -203,6 +204,7 @@ export function MarketingPage() {
       level: "Level",
       calculation: "Calculation",
       amount: "Accrual",
+      wallet: "Bonus rubles",
       reason: "Reason",
       participants: "Program members",
     }
@@ -414,6 +416,16 @@ export function MarketingPage() {
             render: (_: unknown, row) => <Typography.Text>{row.referrer_discount_percent}% − {row.buyer_discount_percent}% → <strong>{row.commission_percent}%</strong></Typography.Text>,
           },
           { title: referralCopy.amount, dataIndex: "commission_amount", align: "right", render: (value: string, row) => <strong>{money(value, row.currency, locale)}</strong> },
+          {
+            title: referralCopy.wallet,
+            key: "wallet",
+            render: (_: unknown, row) => <div className="table-primary">
+              <Tag color={row.wallet_sync_status === "credited" ? "green" : row.wallet_sync_status === "reversed" ? "red" : row.wallet_sync_status === "waiting_for_wallet" ? "gold" : "default"}>
+                {domainLabel(row.wallet_sync_status, locale)}
+              </Tag>
+              <small>{row.bonus_rubles_credited ? money(row.bonus_rubles_credited, "RUB", locale) : row.wallet_sync_error || "—"}</small>
+            </div>,
+          },
           {
             title: copy.status,
             dataIndex: "status",

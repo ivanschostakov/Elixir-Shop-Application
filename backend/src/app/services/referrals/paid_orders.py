@@ -228,6 +228,11 @@ async def _create_local_accrual_from_bitrix(
     if beneficiary_bitrix_user_id <= 0 or level <= 0:
         return None
 
+    raw_beneficiary = raw_accrual.get("beneficiary")
+    raw_beneficiary = (
+        raw_beneficiary if isinstance(raw_beneficiary, dict) else {}
+    )
+    beneficiary_email = optional_str(raw_beneficiary.get("email"))
     beneficiary_user_id = (
         await db.execute(
             select(ReferralProfile.user_id)
@@ -237,18 +242,25 @@ async def _create_local_accrual_from_bitrix(
             .limit(1)
         )
     ).scalar_one_or_none()
+    if beneficiary_user_id is None:
+        beneficiary_user_id = await _local_user_id_for_email(
+            db,
+            beneficiary_email,
+        )
     beneficiary = (
         await db.get(User, beneficiary_user_id)
         if beneficiary_user_id is not None
         else None
     )
+    if beneficiary is not None and beneficiary.email:
+        beneficiary_email = beneficiary.email
     eligibility = raw_accrual.get("eligibility")
     eligibility = eligibility if isinstance(eligibility, dict) else {}
     row = AppReferralAccrual(
         purchase_id=purchase.id,
         beneficiary_user_id=beneficiary_user_id,
         beneficiary_bitrix_user_id=beneficiary_bitrix_user_id,
-        beneficiary_email=beneficiary.email if beneficiary is not None else None,
+        beneficiary_email=beneficiary_email,
         beneficiary_name=(
             optional_str(
                 " ".join(
@@ -261,7 +273,7 @@ async def _create_local_accrual_from_bitrix(
                 )
             )
             if beneficiary is not None
-            else None
+            else optional_str(raw_beneficiary.get("name"))
         ),
         bitrix_accrual_id=(
             int(raw_accrual["id"]) if raw_accrual.get("id") else None

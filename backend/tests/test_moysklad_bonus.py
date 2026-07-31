@@ -29,6 +29,7 @@ def test_bonus_wallet_converts_points_and_sales_amount_from_moysklad():
     )
 
     assert wallet.balance_points == 70
+    assert wallet.is_loaded is True
     assert wallet.balance_rubles == Decimal("35.00")
     assert wallet.sales_amount_rubles == Decimal("1234.56")
     assert wallet.spend_rate_points_to_ruble == 2

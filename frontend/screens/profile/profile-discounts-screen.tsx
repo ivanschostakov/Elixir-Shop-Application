@@ -255,10 +255,6 @@ export default function ProfileDiscountsScreen() {
                                 <Text style={profileStyles.metricLabel}>{t("profile.referral.partnerApproved")}</Text>
                                 <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.partner_approved_rubles)}</Text>
                             </View>
-                            <View style={[profileStyles.metricCard, { flexBasis: "100%", flexGrow: 1 }]}>
-                                <Text style={profileStyles.metricLabel}>{t("profile.referral.partnerBalance")}</Text>
-                                <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.partner_site_balance_rubles)}</Text>
-                            </View>
                         </View>
                     </View>
                     <View style={profileStyles.sectionCard}>
@@ -318,7 +314,11 @@ export default function ProfileDiscountsScreen() {
                 <View style={profileStyles.metricsGrid}>
                     <View style={[profileStyles.metricCard, { flexBasis: "100%", flexGrow: 1 }]}>
                         <Text style={profileStyles.metricLabel}>{t("profile.referral.bonusRubles")}</Text>
-                        <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile?.bonus_rubles)}</Text>
+                        <Text style={profileStyles.metricValue}>
+                            {referralProfile?.bonus_wallet_available
+                                ? formatProfileMoney(referralProfile.bonus_rubles)
+                                : t("profile.referral.bonusUnavailable")}
+                        </Text>
                     </View>
                 </View>
             </View>

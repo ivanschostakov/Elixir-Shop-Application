@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -14,6 +15,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database import Base
@@ -164,6 +166,49 @@ class AppReferralAccrual(Base, IdPkMixin, TimestampMixin):
         index=True,
     )
     reason: Mapped[str | None] = mapped_column(String(length=255), nullable=True)
+    wallet_sync_status: Mapped[str] = mapped_column(
+        String(length=STATUS_MAX_LENGTH),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+        index=True,
+    )
+    moysklad_counterparty_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+    )
+    moysklad_bonus_program_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+    )
+    moysklad_bonus_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        unique=True,
+    )
+    bonus_points_credited: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bonus_rubles_credited: Mapped[Decimal | None] = mapped_column(
+        Numeric(14, 2),
+        nullable=True,
+    )
+    wallet_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    wallet_sync_error: Mapped[str | None] = mapped_column(
+        String(length=500),
+        nullable=True,
+    )
+    wallet_reversal_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        unique=True,
+    )
+    wallet_reversed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     eligibility_snapshot: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,

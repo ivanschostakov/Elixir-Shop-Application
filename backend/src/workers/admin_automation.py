@@ -14,6 +14,9 @@ from src.app.services.referrals.paid_orders import (
     finalize_closed_app_referral_accruals,
     retry_unsynced_app_referral_purchases,
 )
+from src.app.services.referrals.wallet_sync import (
+    sync_approved_referral_accruals_to_bonus_wallet,
+)
 from src.database import get_session
 
 
@@ -28,6 +31,9 @@ async def _run_once() -> None:
         referral_purchase_backfill = await backfill_missing_paid_order_rewards(session)
         referral_purchase_sync = await retry_unsynced_app_referral_purchases(session)
         referral_accruals = await finalize_closed_app_referral_accruals(session)
+        referral_wallet_sync = (
+            await sync_approved_referral_accruals_to_bonus_wallet(session)
+        )
     if (
         results["executed"]
         or results["failed"]
@@ -36,14 +42,17 @@ async def _run_once() -> None:
         or referral_purchase_sync["processed"]
         or referral_accruals["processed"]
         or referral_accruals["failed"]
+        or referral_wallet_sync["processed"]
+        or referral_wallet_sync["failed"]
     ):
         log.info(
-            "automation tick completed rules=%s sla_breaches=%s referral_purchase_backfill=%s referral_purchase_sync=%s referral_accruals=%s",
+            "automation tick completed rules=%s sla_breaches=%s referral_purchase_backfill=%s referral_purchase_sync=%s referral_accruals=%s referral_wallet_sync=%s",
             results,
             sla_breaches,
             referral_purchase_backfill,
             referral_purchase_sync,
             referral_accruals,
+            referral_wallet_sync,
         )
 
 

@@ -721,6 +721,12 @@ export type ReferralAccrual = {
   currency: string
   status: "pending" | "approved" | "rejected"
   reason: string | null
+  wallet_sync_status: "pending" | "waiting_for_wallet" | "credited" | "reversed" | "not_applicable" | "failed" | "reversal_failed"
+  bonus_points_credited: number | null
+  bonus_rubles_credited: string | null
+  wallet_synced_at: string | null
+  wallet_sync_error: string | null
+  wallet_reversed_at: string | null
   bitrix_sync_status: "pending" | "synced" | "failed"
   paid_at: string
   created_at: string
