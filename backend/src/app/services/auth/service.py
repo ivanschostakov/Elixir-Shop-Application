@@ -21,7 +21,7 @@ from config import (
     AUTH_VERIFY_RATE_LIMIT_MAX_REQUESTS,
     EMAIL_VERIFICATION_CODE_TTL_MINUTES,
     EMAIL_VERIFICATION_MAX_ATTEMPTS,
-    REFRESH_TOKEN_LIFETIME_DAYS,
+    USER_REFRESH_TOKEN_LIFETIME_DAYS,
     TELEGRAM_AUTH_MAX_AGE_SECONDS,
     TELEGRAM_BOT_TOKEN,
     ufa_now,
@@ -69,6 +69,7 @@ from src.app.services.email_verification import (
 from src.app.services.rate_limit import client_ip_from_request, enforce_rate_limit
 from src.app.services.security import create_access_token, hash_password, verify_password
 from src.app.services.security.refresh import create_refresh_token, hash_refresh_token, verify_refresh_token
+from src.app.services.benefits.loyalty import grant_welcome_bonus_safe
 from src.database.crud.auth.admin import is_admin_user
 from src.database.crud.auth.email_verification_code import (
     create_email_verification_code,
@@ -333,6 +334,13 @@ def _sync_phone_identity_from_counterparty(user: User, *, phone_number: str, cou
 
 async def _build_auth_tokens_response(user: User, db: AsyncSession) -> AuthTokensWithUserResponse:
     await _link_moysklad_counterparty_by_email(user, db)
+    user_id = user.id
+    try:
+        await grant_welcome_bonus_safe(db, user=user)
+    except Exception:
+        await db.rollback()
+        await db.refresh(user)
+        logger.exception("Failed to enqueue welcome bonus during authentication user_id=%s", user_id)
     refresh_token = create_refresh_token()
     refresh_token_hash = hash_refresh_token(refresh_token)
     session = await create_user_session(db, UserSessionCreate(user_id=user.id, refresh_token_hash=refresh_token_hash))
@@ -991,7 +999,7 @@ async def refresh_user_tokens(request: Request, payload: UserRefreshPayload, db:
         UserSessionUpdate(
             refresh_token_hash=hash_refresh_token(new_refresh_token),
             last_used_at=ufa_now(),
-            expires_at=ufa_now() + timedelta(days=REFRESH_TOKEN_LIFETIME_DAYS),
+            expires_at=ufa_now() + timedelta(days=USER_REFRESH_TOKEN_LIFETIME_DAYS),
         ),
     )
     access_token = create_access_token(user_id=user.id, session_id=session.id)

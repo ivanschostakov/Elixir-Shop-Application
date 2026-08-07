@@ -15,7 +15,7 @@ from src.integrations.bitrix_promo import (
 from src.normalize import optional_str
 
 from .calculations import PARTNER_UNLOCK_SPEND, quantize_money, quantize_percent
-from .program import ensure_unified_reward_program
+from .program import ensure_default_reward_program
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def apply_bitrix_program_profile(
     snapshot = dict(profile.reward_program_snapshot or {})
     snapshot.update(
         {
-            "mode": "combined",
+            "mode": "partner",
             "bitrix_user_id": profile.bitrix_user_id,
             "bitrix_purchase_total": str(remote_purchase_total),
             "participating_purchase_total": str(purchase_total),
@@ -115,7 +115,7 @@ async def refresh_program_profile_from_bitrix(
     client: BitrixPromoClient | None = None,
     strict: bool = False,
 ) -> dict[str, Any] | None:
-    profile = await ensure_unified_reward_program(db, user=user)
+    profile = await ensure_default_reward_program(db, user=user)
     if not bitrix_promo_configured() or not user.email:
         profile.bitrix_sync_status = (
             "not_configured" if not bitrix_promo_configured() else "unlinked"

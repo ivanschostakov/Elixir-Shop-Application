@@ -13,11 +13,17 @@ from src.integrations.bitrix_promo import (
 from src.integrations.moysklad.client import MoySkladClient
 from .bitrix_sync import refresh_program_profile_from_bitrix
 from .profile import normalize_referral_code, refresh_profile_discount
-from .program import ensure_unified_reward_program
+from .program import ensure_default_reward_program, normalize_reward_program
 
 
 async def _get_program_profile(db: AsyncSession, *, user: User) -> ReferralProfile:
-    return await ensure_unified_reward_program(db, user=user)
+    profile = await ensure_default_reward_program(db, user=user)
+    if normalize_reward_program(profile.reward_program) != "partner":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Промокод реферера доступен только в реферальной программе / A referrer promo is available only in the referral program",
+        )
+    return profile
 
 
 async def check_referrer_code(db: AsyncSession, *, user: User, code: str) -> dict[str, Any]:

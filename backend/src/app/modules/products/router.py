@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Literal
+import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +20,7 @@ from src.app.services.review_attachments import (
     validate_review_attachments_total_size,
 )
 from src.app.services.stock_visibility import get_stock_visibility_policy
+from src.app.services.benefits.loyalty import grant_review_bonus_safe
 from src.database import get_db
 from src.database.crud import (
     create_product,
@@ -62,6 +64,7 @@ from .helpers import (
 )
 
 products_router = APIRouter(prefix="/products", tags=["products"])
+logger = logging.getLogger(__name__)
 PRODUCT_DETAIL_CACHE_TTL_SECONDS = 180
 PRODUCT_SIMILAR_CACHE_TTL_SECONDS = 180
 PRODUCT_REVIEWS_CACHE_TTL_SECONDS = 90
@@ -270,6 +273,13 @@ async def products_create_review(request: Request, product_id: int, value: int =
         await db.rollback()
         for file_path in created_file_paths: remove_review_attachment_file(file_path)
         raise
+
+    if current_user is not None:
+        try:
+            await grant_review_bonus_safe(db, review=review, user=current_user)
+        except Exception:
+            await db.rollback()
+            logger.exception("Could not grant review bonus review_id=%s", review.id)
 
     created_review = await get_review_by_id(db, review_id=review.id)
     if created_review is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created review")

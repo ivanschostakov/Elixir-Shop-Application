@@ -279,6 +279,37 @@ class MoySkladClient:
             return None
         return await self._get_entity_by_id("bonusprogram", normalized_id)
 
+    async def get_default_bonus_program(self) -> dict[str, Any] | None:
+        programs = await self.get_all("/entity/bonusprogram")
+        return next(
+            (
+                program
+                for program in programs
+                if program.get("active") is not False and coerce_uuid(program.get("id")) is not None
+            ),
+            None,
+        )
+
+    async def assign_counterparty_bonus_program(
+        self,
+        counterparty_id: UUID | str,
+        bonus_program_id: UUID | str,
+    ) -> dict[str, Any]:
+        normalized_counterparty_id = coerce_uuid(counterparty_id)
+        normalized_program_id = coerce_uuid(bonus_program_id)
+        if normalized_counterparty_id is None or normalized_program_id is None:
+            raise ValueError("Invalid MoySklad counterparty or bonus program id")
+        return await self._update_entity(
+            "counterparty",
+            normalized_counterparty_id,
+            {
+                "bonusProgram": self._meta_payload(
+                    href=self.entity_href("bonusprogram", normalized_program_id),
+                    entity_type="bonusprogram",
+                )
+            },
+        )
+
     async def find_bonus_transaction_by_external_code(
         self,
         external_code: str,

@@ -188,12 +188,16 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
 
     return {
         "entered_code": resolved_benefits.get("entered_code"),
+        "reward_mode": resolved_benefits.get("reward_mode"),
         "basket_subtotal": _json_money(resolved_benefits.get("basket_subtotal")),
         "stacked_discount_amount": _json_money(resolved_benefits.get("stacked_discount_amount")),
         "total_after_discounts": _json_money(resolved_benefits.get("total_after_discounts")),
         "use_bonus_rubles": bool(resolved_benefits.get("use_bonus_rubles")),
         "bonus_applied_points": int(resolved_benefits.get("bonus_applied_points") or 0),
         "bonus_applied_rubles": _json_money(resolved_benefits.get("bonus_applied_rubles")),
+        "cashback_percent": str(resolved_benefits.get("cashback_percent") or 0),
+        "cashback_earned_points": int(resolved_benefits.get("cashback_earned_points") or 0),
+        "cashback_expires_in_days": int(resolved_benefits.get("cashback_expires_in_days") or 0),
         "applications": [
             {
                 "source_kind": option.get("source_kind"),
@@ -305,6 +309,7 @@ async def _resolve_checkout_benefits(
     entered_code: str | None,
     quote_items: list[dict[str, Any]],
     use_bonus_rubles: bool,
+    reward_mode: str | None,
 ) -> dict[str, Any]:
     resolved = await resolve_benefits_for_user(
         session,
@@ -315,6 +320,7 @@ async def _resolve_checkout_benefits(
         currency=currency,
         quote_items=quote_items,
         use_bonus_rubles=use_bonus_rubles,
+        reward_mode=reward_mode,
     )
     return resolved
 
@@ -391,7 +397,7 @@ def _build_order_item_from_basket_row(*, user_id: int, order_id: int, row: tuple
     )
 
 
-async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
@@ -466,6 +472,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
             for item in draft.items
         ],
         use_bonus_rubles=use_bonus_rubles,
+        reward_mode=reward_mode,
     )
     grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total
     checkout_snapshot = _build_checkout_snapshot(
@@ -521,7 +528,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     return reloaded_order
 
 
-async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     basket = await get_basket_by_user_id(session, user_id)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
@@ -615,6 +622,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
             for item, _, _ in order_item_rows
         ],
         use_bonus_rubles=use_bonus_rubles,
+        reward_mode=reward_mode,
     )
     grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total
     checkout_snapshot = _build_checkout_snapshot(

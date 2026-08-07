@@ -112,6 +112,22 @@ try {
             'data' => $service->profile($userId, $userEmail),
         ]);
     }
+    if ($action === 'set_opening_balance') {
+        $userId = isset($payload['user_id']) && is_numeric($payload['user_id'])
+            ? max(0, (int)$payload['user_id'])
+            : 0;
+        $userEmail = isset($payload['user_email']) && is_scalar($payload['user_email'])
+            ? trim((string)$payload['user_email'])
+            : null;
+        $amount = isset($payload['amount']) && is_numeric($payload['amount'])
+            ? (float)$payload['amount']
+            : -1.0;
+        $currency = strtoupper(trim((string)($payload['currency'] ?? 'RUB')));
+        elixirPromoRespond([
+            'action' => 'set_opening_balance',
+            'data' => $service->setOpeningBalance($amount, $currency, $userId, $userEmail),
+        ]);
+    }
     if ($action === 'attach_referrer' || $action === 'detach_referrer') {
         $userId = isset($payload['user_id']) && is_numeric($payload['user_id'])
             ? max(0, (int)$payload['user_id'])

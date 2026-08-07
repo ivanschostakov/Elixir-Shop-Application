@@ -114,10 +114,11 @@ export type UploadableAvatarImage = {
 
 export type ReferralProfileResponse = {
     user_id: number
-    reward_program: "combined"
+    reward_program: "bonus" | "partner"
     reward_program_selected_at: string | null
     reward_program_selection_source: string | null
     program_selection_required: boolean
+    program_selection_available: boolean
     bitrix_user_id: number | null
     bitrix_profile_found: boolean
     bitrix_sync_status: string
@@ -130,6 +131,8 @@ export type ReferralProfileResponse = {
     personal_discount_next_threshold: string | null
     personal_discount_remaining: string
     total_purchases: string
+    current_month_purchases: string
+    previous_month_purchases: string
     referral_discount_base_total: string
     current_discount_percent: string
     promo_code: string | null
@@ -142,10 +145,16 @@ export type ReferralProfileResponse = {
     bonus_program_name: string | null
     bonus_spend_rate_points_to_ruble: number
     bonus_max_paid_rate_percent: string
+    bonus_next_expiration_at: string | null
+    bonus_expiring_points: number
+    bonus_expiring_rubles: string
+    bonus_expiry_warning_days: number
     partner_pending_rubles: string
     partner_approved_rubles: string
     partner_rejected_rubles: string
     partner_site_balance_rubles: string
+    partner_monthly_minimum: string
+    partner_monthly_eligible: boolean
     partner_network_period: string | null
     partner_network_status: string | null
     partner_network_turnover: string
@@ -169,6 +178,10 @@ export type ProfilePromotionResponse = {
 
 export type ReferrerCodeCheckPayload = {
     code: string
+}
+
+export type RewardProgramSelectPayload = {
+    program: "bonus" | "partner"
 }
 
 export type ReferrerCodeCheckResponse = {

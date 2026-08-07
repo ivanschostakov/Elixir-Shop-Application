@@ -35,7 +35,7 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
     return await _order_crm.ensure_order_has_amocrm_lead(session, order, user=user)
 
 
-async def create_order_from_draft_for_user(session: AsyncSession, *, request: Request, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, request: Request, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None) -> Order:
     _sync_runtime_dependencies()
     return await _order_creation.create_order_from_draft_for_user(
         session,
@@ -44,10 +44,11 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, request: Re
         payment_method=payment_method,
         entered_code=entered_code,
         use_bonus_rubles=use_bonus_rubles,
+        reward_mode=reward_mode,
     )
 
 
-async def create_order_from_basket_for_user(session: AsyncSession, *, request: Request, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, request: Request, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None) -> Order:
     _sync_runtime_dependencies()
     return await _order_creation.create_order_from_basket_for_user(
         session,
@@ -55,6 +56,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, request: R
         payment_method=payment_method,
         entered_code=entered_code,
         use_bonus_rubles=use_bonus_rubles,
+        reward_mode=reward_mode,
     )
 
 

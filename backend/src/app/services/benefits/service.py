@@ -4,12 +4,17 @@ from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import LOYALTY_BONUS_LIFETIME_DAYS, LOYALTY_ORDER_CASHBACK_PERCENT
 from src.app.services.discounts import product_is_discountable
 from src.app.services.catalog_merchandising import catalog_unit_price
-from src.app.services.referrals import ensure_unified_reward_program, refresh_profile_discount
+from src.app.services.referrals import (
+    ensure_default_reward_program,
+    normalize_reward_program,
+    refresh_profile_discount,
+    reward_program_selection_required,
+)
 from src.app.services.referrals.bitrix_sync import refresh_program_profile_from_bitrix
 from src.app.services.referrals.calculations import calculate_personal_discount_percent
-from src.app.services.referrals.program import UNIFIED_REWARD_PROGRAM
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User
 from src.integrations.bitrix_promo import (
@@ -21,6 +26,12 @@ from src.normalize import lower_optional_str, optional_str
 
 from .money import estimate_discount_amount, preferred_currency, quantize_money
 from .moysklad_bonus import bonus_spend_for_subtotal, get_user_moysklad_bonus_wallet
+from .loyalty import (
+    REWARD_MODE_CASHBACK,
+    REWARD_MODE_PROMO,
+    cashback_points_for_amount,
+    pending_loyalty_bonus_points,
+)
 from .options import best_option_key, serialize_options
 from .types import ResolvedDiscountOption
 
@@ -199,6 +210,7 @@ async def resolve_benefits_for_user(
     currency: str | None = None,
     quote_items: list[dict] | None = None,
     use_bonus_rubles: bool = False,
+    reward_mode: str | None = None,
 ) -> dict:
     normalized_code = lower_optional_str(entered_code)
     trimmed_code = optional_str(entered_code)
@@ -208,24 +220,42 @@ async def resolve_benefits_for_user(
         explicit_subtotal=subtotal,
         explicit_discountable_subtotal=discountable_subtotal,
     )
-    referral_profile = await ensure_unified_reward_program(db, user=user)
-    remote_program_profile = await refresh_program_profile_from_bitrix(
-        db,
-        user=user,
-    )
-    if remote_program_profile is None:
-        refresh_profile_discount(
-            referral_profile,
-            has_promo_code=bool(optional_str(user.promo_code)),
+    referral_profile = await ensure_default_reward_program(db, user=user)
+    reward_program = normalize_reward_program(referral_profile.reward_program) or "bonus"
+    if reward_program == "partner":
+        remote_program_profile = await refresh_program_profile_from_bitrix(
+            db,
+            user=user,
         )
+        if remote_program_profile is None:
+            refresh_profile_discount(
+                referral_profile,
+                has_promo_code=bool(optional_str(user.promo_code)),
+            )
+    else:
+        refresh_profile_discount(referral_profile, has_promo_code=False)
     bonus_wallet = await get_user_moysklad_bonus_wallet(user)
-    effective_code = trimmed_code or optional_str(user.promo_code)
+    # reward_mode is accepted for compatibility with already installed app
+    # builds. The selected program is authoritative.
+    del reward_mode
+    resolved_reward_mode = (
+        REWARD_MODE_PROMO if reward_program == "partner" else REWARD_MODE_CASHBACK
+    )
+    effective_code = (
+        trimmed_code or optional_str(user.promo_code)
+        if resolved_reward_mode == REWARD_MODE_PROMO
+        else None
+    )
     bitrix_option = None
-    app_referral_option = _build_app_referral_option(
-        referral_profile,
-        user=user,
-        subtotal=effective_subtotal,
-        discountable_subtotal=effective_discountable_subtotal,
+    app_referral_option = (
+        _build_app_referral_option(
+            referral_profile,
+            user=user,
+            subtotal=effective_subtotal,
+            discountable_subtotal=effective_discountable_subtotal,
+        )
+        if resolved_reward_mode == REWARD_MODE_PROMO
+        else None
     )
     if bitrix_promo_configured() and effective_code:
         client = BitrixPromoClient()
@@ -276,7 +306,6 @@ async def resolve_benefits_for_user(
 
     applicable_code_matches = [option for option in code_matches if option.is_applicable]
     selected_option = max(applicable_code_matches, key=best_option_key) if applicable_code_matches else personal_discount
-
     stacked_discount_options, stacked_discount_amount, total_after_discounts = _stack_discount_options(
         selected_option=selected_option,
         subtotal=effective_subtotal,
@@ -321,6 +350,18 @@ async def resolve_benefits_for_user(
         stacked_discount_amount = (
             quantize_money(stacked_discount_amount + bonus_rubles) or Decimal("0.00")
         )
+    cashback_earned_points = (
+        cashback_points_for_amount(total_after_discounts)
+        if resolved_reward_mode == REWARD_MODE_CASHBACK
+        else 0
+    )
+    pending_bonus_points = await pending_loyalty_bonus_points(db, user_id=user.id)
+    pending_bonus_rubles = (
+        quantize_money(
+            Decimal(pending_bonus_points) / Decimal(max(1, bonus_wallet.spend_rate_points_to_ruble))
+        )
+        or Decimal("0.00")
+    )
     resolved_currency = preferred_currency(requested_currency=currency, available_options=available_discount_options)
 
     unresolved_code_reason = None
@@ -331,8 +372,9 @@ async def resolve_benefits_for_user(
 
     return {
         "referral_profile_id": referral_profile.id,
-        "reward_program": UNIFIED_REWARD_PROGRAM,
-        "program_selection_required": False,
+        "reward_program": reward_program,
+        "program_selection_required": reward_program_selection_required(referral_profile),
+        "reward_mode": resolved_reward_mode,
         "subtotal_source": subtotal_source,
         "basket_subtotal": effective_subtotal,
         "currency": resolved_currency,
@@ -346,11 +388,16 @@ async def resolve_benefits_for_user(
         "stacked_discount_amount": stacked_discount_amount,
         "total_after_discounts": total_after_discounts,
         "bonus_option": asdict(bonus_option) if bonus_option is not None else None,
-        "bonus_balance_points": bonus_wallet.balance_points,
-        "bonus_balance_rubles": bonus_wallet.balance_rubles,
+        "bonus_balance_points": bonus_wallet.balance_points + pending_bonus_points,
+        "bonus_balance_rubles": bonus_wallet.balance_rubles + pending_bonus_rubles,
+        "bonus_pending_points": pending_bonus_points,
+        "bonus_pending_rubles": pending_bonus_rubles,
         "bonus_program_name": bonus_wallet.program_name,
         "bonus_max_paid_rate_percent": bonus_wallet.max_paid_rate_percent,
         "use_bonus_rubles": use_bonus_rubles,
         "bonus_applied_points": bonus_points if use_bonus_rubles else 0,
         "bonus_applied_rubles": bonus_rubles if use_bonus_rubles else Decimal("0.00"),
+        "cashback_percent": Decimal(str(max(0, min(100, int(LOYALTY_ORDER_CASHBACK_PERCENT))))),
+        "cashback_earned_points": cashback_earned_points,
+        "cashback_expires_in_days": max(1, int(LOYALTY_BONUS_LIFETIME_DAYS)),
     }

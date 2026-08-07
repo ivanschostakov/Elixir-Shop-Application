@@ -4,13 +4,13 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminReferralProfileRead(BaseModel):
     id: int = Field(ge=1)
     user_id: int = Field(ge=1)
-    reward_program: Literal["combined"]
+    reward_program: Literal["bonus", "partner"]
     reward_program_selected_at: datetime | None = None
     reward_program_selection_source: str | None = Field(default=None, max_length=32)
     bitrix_user_id: int | None = Field(default=None, ge=1)
@@ -73,8 +73,56 @@ class AdminReferralAccrualRead(BaseModel):
     )
     wallet_synced_at: datetime | None = None
     wallet_sync_error: str | None = Field(default=None, max_length=500)
+    settlement_method: Literal["deposit", "transfer"]
+    settlement_reference: str | None = Field(default=None, max_length=255)
+    settled_at: datetime | None = None
+    settled_by_admin_user_id: int | None = Field(default=None, ge=1)
     wallet_reversed_at: datetime | None = None
     bitrix_sync_status: str
     paid_at: datetime
     created_at: datetime
     updated_at: datetime
+
+
+class AdminRewardProgramUpdatePayload(BaseModel):
+    program: Literal["bonus", "partner"]
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class AdminOpeningBalanceUpdatePayload(BaseModel):
+    amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    currency: str = Field(default="RUB", min_length=3, max_length=3)
+
+
+class AdminReferralTransferPayload(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    beneficiary_bitrix_user_id: int = Field(ge=1)
+    period: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+    currency: str = Field(default="RUB", min_length=3, max_length=3)
+    reference: str = Field(min_length=1, max_length=255)
+
+
+class AdminReferralSettlementRead(BaseModel):
+    beneficiary_user_id: int | None = Field(default=None, ge=1)
+    beneficiary_bitrix_user_id: int = Field(ge=1)
+    beneficiary_email: str | None = None
+    beneficiary_name: str | None = None
+    period: str
+    currency: str
+    accruals_count: int = Field(ge=0)
+    approved_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    deposited_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    transferred_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    awaiting_deposit_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    awaiting_settlement_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+
+
+class AdminReferralTransferResult(BaseModel):
+    beneficiary_bitrix_user_id: int = Field(ge=1)
+    period: str
+    currency: str
+    reference: str
+    accruals_count: int = Field(ge=1)
+    transferred_amount: Decimal = Field(gt=0, max_digits=14, decimal_places=2)
+    settled_at: datetime

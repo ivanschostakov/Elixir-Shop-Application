@@ -50,6 +50,7 @@ import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 import { parsePositiveRouteId } from "@/utils/route-params"
 
 type PaymentMethod = "later" | "sbp"
+type RewardMode = "cashback" | "promo"
 type PaymentPhase = "select" | "processing" | "sbp" | "pending" | "success" | "failure"
 type SummarySection = "contact" | "items"
 
@@ -176,12 +177,14 @@ export default function PaymentScreen() {
         paymentMethod?: string | string[]
         orderId?: string | string[]
         useBonus?: string | string[]
+        rewardMode?: string | string[]
     }>()
     const draftId = parseDraftId(params.draftId)
     const routePaymentMethod = parsePaymentMethod(params.paymentMethod)
     const routeOrderId = parsePositiveRouteId(params.orderId)
     const routePromoCode = parseRouteString(params.code)
     const useBonusRubles = parseRouteString(params.useBonus) === "1"
+    const rewardMode: RewardMode = parseRouteString(params.rewardMode) === "promo" ? "promo" : "cashback"
     const isBasketCheckout = draftId === null
     const { basket, loading: basketLoading } = useBasket()
     const { orderDraft: savedOrderDraft, error: savedDraftError, loading: savedDraftLoading } = useOrderDraft(draftId)
@@ -468,6 +471,7 @@ export default function PaymentScreen() {
                         ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
                         ...(routePromoCode ? { code: routePromoCode } : {}),
                         ...(useBonusRubles ? { use_bonus_rubles: true } : {}),
+                        reward_mode: rewardMode,
                         payment_method: effectiveMethod,
                     })
                     if (isBasketCheckout) {
@@ -547,7 +551,7 @@ export default function PaymentScreen() {
         } finally {
             setSubmitting(false)
         }
-    }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, routePromoCode, selectedMethod, t, useBonusRubles])
+    }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t, useBonusRubles])
 
     const handleRetryPayment = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [

@@ -241,12 +241,8 @@ def _initialize_test_reward_program(
     *,
     access_token: str,
 ) -> None:
-    response = client.post(
-        "/api/v1/users/me/referral-profile/program",
-        headers={"Authorization": f"Bearer {access_token}"},
-        json={"program": "bonus"},
-    )
-    assert response.status_code == 200, response.text
+    # The cumulative program is created automatically as the default.
+    del client, access_token
 
 
 @pytest.fixture()
@@ -340,7 +336,7 @@ def stub_amocrm(monkeypatch):
     yield calls
 
 
-def test_create_final_order_automatically_enables_unified_reward_program(
+def test_create_final_order_automatically_enables_default_bonus_program(
     client: TestClient,
     register_verified_user,
     variant_factory,
@@ -375,7 +371,7 @@ def test_create_final_order_automatically_enables_unified_reward_program(
                 .filter(ReferralProfile.user_id == user_id)
                 .one()
             )
-            assert profile.reward_program == "combined"
+            assert profile.reward_program == "bonus"
     finally:
         _delete_user(user_id)
 
@@ -432,6 +428,7 @@ def test_create_final_order_persists_snapshot_and_amocrm_link(client: TestClient
     assert payload["checkout_snapshot"]["contact_info"]["email"] == "ivan.petrov@example.com"
     assert payload["checkout_snapshot"]["checkout_data"]["items"][0]["featureId"] == catalog["variant_id"]
     assert payload["checkout_snapshot"]["payment_method"] == "sbp"
+    assert payload["checkout_snapshot"]["benefits"]["reward_mode"] == "cashback"
 
     stored_order = _get_order(payload["id"])
     assert stored_order.amocrm_lead_id == 67890

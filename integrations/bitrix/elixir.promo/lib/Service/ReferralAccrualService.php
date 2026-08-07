@@ -11,7 +11,6 @@ final class ReferralAccrualService
     private const MODULE_ID = 'elixir.promo';
     private const PURCHASE_TABLE = 'b_elixir_referral_app_purchase';
     private const ACCRUAL_TABLE = 'b_elixir_referral_partner_accrual';
-    private const NETWORK_MONTHLY_TABLE = 'b_elixir_partner_network_monthly';
 
     public static function finalizePreviousMonthAgent(): string
     {
@@ -68,7 +67,12 @@ final class ReferralAccrualService
 
             $referrerProfile = $siteContext->getProgramProfile($referrerUserId);
             $superReferrerUserId = (int)($referrerProfile['referrer_user_id'] ?? 0);
-            if ($superReferrerUserId > 0 && $superReferrerUserId !== (int)$buyer['user_id']) {
+            if (
+                $superReferrerUserId > 0
+                && $superReferrerUserId !== (int)$buyer['user_id']
+                && $buyerDiscount < 20.0
+                && !$this->hasDirectReferrals((int)$buyer['user_id'])
+            ) {
                 $accruals[] = $this->buildAccrual(
                     $siteContext,
                     $superReferrerUserId,
@@ -140,7 +144,7 @@ final class ReferralAccrualService
                     ('app', '" . $externalOrderSql . "', " . (int)$buyer['user_id'] . ",
                      NULL, '" . $promoSql . "', "
                     . number_format((float)$order['amount'], 2, '.', '') . ", '" . $currencySql . "', '"
-                    . $paidAtSql . "', '" . $periodSql . "', 'combined', 'posted', NOW(), NOW())"
+                    . $paidAtSql . "', '" . $periodSql . "', 'partner', 'posted', NOW(), NOW())"
             );
             $purchaseId = (int)$connection->getInsertedId();
             if ($purchaseId <= 0) {
@@ -209,7 +213,7 @@ final class ReferralAccrualService
             $connection->queryExecute(
                 "UPDATE " . self::PURCHASE_TABLE . "
                  SET REFERRER_USER_ID=" . ($referrerUserId > 0 ? $referrerUserId : 'NULL') . ",
-                     PROGRAM='" . ($participatesInProgram ? 'combined' : 'none') . "',
+                     PROGRAM='" . ($participatesInProgram ? 'partner' : 'none') . "',
                      UPDATED_AT=NOW()
                  WHERE ID=" . $purchaseId
             );
@@ -247,10 +251,6 @@ final class ReferralAccrualService
                     (int)$buyer['user_id'],
                     $order['currency']
                 );
-            $this->refreshAffectedNetworkMonthlyBonuses(
-                (int)$buyer['user_id'],
-                (string)$order['period']
-            );
             $connection->commitTransaction();
         } catch (\Throwable $exception) {
             $connection->rollbackTransaction();
@@ -305,7 +305,7 @@ final class ReferralAccrualService
                 $couponReversal = $this->decrementCouponUseCount($couponId);
             }
             $siteContext = new SiteDiscountContext();
-            $purchaseProgress = (string)($purchase['PROGRAM'] ?? '') === 'combined'
+            $purchaseProgress = (string)($purchase['PROGRAM'] ?? '') === 'partner'
                 ? $siteContext->subtractPaidPurchase(
                     (int)$purchase['USER_ID'],
                     (float)$purchase['AMOUNT'],
@@ -328,10 +328,6 @@ final class ReferralAccrualService
                 "UPDATE " . self::PURCHASE_TABLE . "
                  SET STATUS='reversed', REFUNDED_AT=NOW(), UPDATED_AT=NOW()
                  WHERE ID=" . (int)$purchase['ID']
-            );
-            $this->refreshAffectedNetworkMonthlyBonuses(
-                (int)$purchase['USER_ID'],
-                (string)$purchase['PERIOD']
             );
             $connection->commitTransaction();
         } catch (\Throwable $exception) {
@@ -413,6 +409,9 @@ final class ReferralAccrualService
         $period = preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $requestedPeriod)
             ? $requestedPeriod
             : (new \DateTimeImmutable())->format('Y-m');
+        $currentStart = new \DateTimeImmutable($period . '-01 00:00:00');
+        $previousStart = $currentStart->modify('-1 month');
+        $periodEnd = $currentStart->modify('+1 month');
 
         return [
             'user_id' => $userId,
@@ -426,7 +425,13 @@ final class ReferralAccrualService
                 (float)($profile['stored_discount_percent'] ?? 0)
             ),
             'app_partner_accruals' => $summary,
-            'network_monthly_bonus' => $this->calculateNetworkMonthlyBonus($userId, $period, false),
+            'current_month_purchases' => $this->monthlyOwnPurchases($userId, $currentStart, $periodEnd),
+            'previous_month_purchases' => $this->monthlyOwnPurchases($userId, $previousStart, $currentStart),
+            'monthly_eligibility' => $this->eligibilityForPeriod(
+                new SiteDiscountContext(),
+                $userId,
+                $period
+            ),
             'site_partner_balance' => $this->sitePartnerBalance($userId),
         ];
     }
@@ -478,21 +483,12 @@ final class ReferralAccrualService
                 $userIds[] = (int)$row['USER_ID'];
             }
         }
-        $partnerRows = $connection->query(
-            "SELECT VALUE_ID AS USER_ID
-             FROM b_uts_user
-             WHERE CAST(SUBSTRING_INDEX(COALESCE(UF_ORDER_SUMM, '0'), '|', 1) AS DECIMAL(18,2))>=200000"
-        );
-        while ($row = $partnerRows->fetch()) {
-            $userIds[] = (int)$row['USER_ID'];
-        }
         $userIds = array_values(array_unique(array_filter($userIds)));
 
         $siteContext = new SiteDiscountContext();
         foreach ($userIds as $userId) {
             $eligibility = $this->eligibilityForPeriod($siteContext, $userId, $period);
             $this->updateAccrualStatuses($userId, $period, $eligibility);
-            $this->calculateNetworkMonthlyBonus($userId, $period, true);
         }
     }
 
@@ -691,10 +687,12 @@ final class ReferralAccrualService
         $isClosed = $periodEnd <= new \DateTimeImmutable('first day of this month 00:00:00');
         $lifetimeTotal = $this->lifetimeProgramTotal($siteContext, $userId);
         $monthlyOwnPurchases = $this->monthlyOwnPurchases($userId, $periodStart, $periodEnd);
-        $eligible = $lifetimeTotal >= 100000.0;
+        $eligible = $lifetimeTotal >= 100000.0 && $monthlyOwnPurchases >= 10000.0;
         $reason = null;
         if ($isClosed && !$eligible) {
-            $reason = 'lifetime_purchase_minimum_not_met';
+            $reason = $lifetimeTotal < 100000.0
+                ? 'lifetime_purchase_minimum_not_met'
+                : 'monthly_purchase_minimum_not_met';
         }
 
         return [
@@ -707,7 +705,7 @@ final class ReferralAccrualService
             'lifetime_purchase_total' => $lifetimeTotal,
             'monthly_own_purchase_total' => $monthlyOwnPurchases,
             'lifetime_minimum' => 100000.0,
-            'monthly_minimum' => 0.0,
+            'monthly_minimum' => 10000.0,
             'currency' => (string)Option::get(self::MODULE_ID, 'currency', 'RUB'),
         ];
     }
@@ -803,7 +801,7 @@ final class ReferralAccrualService
              WHERE USER_ID=" . $userId . "
                AND PAID_AT>='" . $fromSql . "'
                AND PAID_AT<'" . $toSql . "'
-               AND PROGRAM='combined'
+               AND PROGRAM='partner'
                AND STATUS='posted'"
         )->fetch();
 
@@ -813,236 +811,20 @@ final class ReferralAccrualService
         );
     }
 
-    private function calculateNetworkMonthlyBonus(
-        int $userId,
-        string $period,
-        bool $persist
-    ): array
+    private function hasDirectReferrals(int $userId): bool
     {
-        $periodStart = new \DateTimeImmutable($period . '-01 00:00:00');
-        $periodEnd = $periodStart->modify('+1 month');
-        $isClosed = $periodEnd <= new \DateTimeImmutable('first day of this month 00:00:00');
-        $siteContext = new SiteDiscountContext();
-        $lifetimeTotal = $this->lifetimeProgramTotal($siteContext, $userId);
-        $monthlyOwnPurchases = $this->monthlyOwnPurchases($userId, $periodStart, $periodEnd);
-        $levelOneIds = $this->userIdsAtMinimumDiscount(
-            $siteContext,
-            $this->directReferralIds([$userId]),
-            20.0
-        );
-        $levelTwoIds = $this->directReferralIds($levelOneIds);
-        $levelOneTurnover = $this->networkPurchaseTotal($levelOneIds, $periodStart, $periodEnd);
-        $levelTwoTurnover = $this->networkPurchaseTotal($levelTwoIds, $periodStart, $periodEnd);
-        $networkTurnover = round($levelOneTurnover + $levelTwoTurnover, 2);
-
-        $rate = 0.0;
-        if ($networkTurnover > 0) {
-            $rate = $networkTurnover > 1000000.0
-                ? 5.0
-                : ($networkTurnover > 500000.0 ? 4.0 : 3.0);
-        }
-        $eligible = $lifetimeTotal >= 200000.0
-            && $monthlyOwnPurchases >= 10000.0
-            && $networkTurnover > 0;
-        $status = $isClosed ? ($eligible ? 'approved' : 'rejected') : 'pending';
-        $reason = null;
-        if ($isClosed && !$eligible) {
-            if ($lifetimeTotal < 200000.0) {
-                $reason = 'lifetime_purchase_minimum_not_met';
-            } elseif ($monthlyOwnPurchases < 10000.0) {
-                $reason = 'monthly_purchase_minimum_not_met';
-            } else {
-                $reason = 'network_turnover_missing';
-            }
+        if ($userId <= 0) {
+            return false;
         }
 
-        $result = [
-            'user_id' => $userId,
-            'period' => $period,
-            'period_closed' => $isClosed,
-            'status' => $status,
-            'eligible' => $isClosed ? $eligible : null,
-            'reason' => $reason,
-            'lifetime_purchase_total' => $lifetimeTotal,
-            'lifetime_minimum' => 200000.0,
-            'monthly_own_purchase_total' => $monthlyOwnPurchases,
-            'monthly_minimum' => 10000.0,
-            'level_one_turnover' => $levelOneTurnover,
-            'level_two_turnover' => $levelTwoTurnover,
-            'network_turnover' => $networkTurnover,
-            'rate_percent' => $rate,
-            'amount' => round($networkTurnover * $rate / 100, 2),
-            'currency' => (string)Option::get(self::MODULE_ID, 'currency', 'RUB'),
-            'calculation_mode' => 'additional_network_rate_on_full_eligible_turnover',
-        ];
-        if ($persist) {
-            $this->storeNetworkMonthlyBonus($result);
-        }
-
-        return $result;
-    }
-
-    private function directReferralIds(array $parentIds): array
-    {
-        $parentIds = array_values(array_unique(array_filter(
-            array_map('intval', $parentIds),
-            static fn(int $id): bool => $id > 0
-        )));
-        if ($parentIds === []) {
-            return [];
-        }
-
-        $ids = [];
-        $rows = Application::getConnection()->query(
-            "SELECT u.ID
-             FROM b_user u
-             INNER JOIN b_uts_user uts ON uts.VALUE_ID=u.ID
-             WHERE u.ACTIVE='Y'
-               AND uts.UF_PARENT_ID IN (" . implode(',', $parentIds) . ")"
-        );
-        while ($row = $rows->fetch()) {
-            $ids[] = (int)$row['ID'];
-        }
-
-        return array_values(array_unique(array_filter($ids)));
-    }
-
-    private function userIdsAtMinimumDiscount(
-        SiteDiscountContext $siteContext,
-        array $userIds,
-        float $minimumPercent
-    ): array {
-        $eligible = [];
-        foreach ($userIds as $userId) {
-            $userId = (int)$userId;
-            if (
-                $userId > 0
-                && $this->userDiscountPercent($siteContext, $userId, false) >= $minimumPercent
-            ) {
-                $eligible[] = $userId;
-            }
-        }
-
-        return array_values(array_unique($eligible));
-    }
-
-    private function refreshAffectedNetworkMonthlyBonuses(int $buyerUserId, string $period): void
-    {
-        if ($buyerUserId <= 0 || !preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $period)) {
-            return;
-        }
-
-        $beneficiaryIds = [$buyerUserId];
-        $siteContext = new SiteDiscountContext();
-        $buyerProfile = $siteContext->getProgramProfile($buyerUserId);
-        $parentUserId = (int)($buyerProfile['referrer_user_id'] ?? 0);
-        if ($parentUserId > 0) {
-            $beneficiaryIds[] = $parentUserId;
-            $parentProfile = $siteContext->getProgramProfile($parentUserId);
-            $superReferrerUserId = (int)($parentProfile['referrer_user_id'] ?? 0);
-            if ($superReferrerUserId > 0) {
-                $beneficiaryIds[] = $superReferrerUserId;
-            }
-        }
-
-        foreach (array_values(array_unique($beneficiaryIds)) as $beneficiaryId) {
-            $this->calculateNetworkMonthlyBonus((int)$beneficiaryId, $period, true);
-        }
-    }
-
-    private function networkPurchaseTotal(
-        array $userIds,
-        \DateTimeImmutable $periodStart,
-        \DateTimeImmutable $periodEnd
-    ): float {
-        $userIds = array_values(array_unique(array_filter(
-            array_map('intval', $userIds),
-            static fn(int $id): bool => $id > 0
-        )));
-        if ($userIds === []) {
-            return 0.0;
-        }
-
-        $connection = Application::getConnection();
-        $sqlHelper = $connection->getSqlHelper();
-        $fromSql = $sqlHelper->forSql($periodStart->format('Y-m-d H:i:s'), 19);
-        $toSql = $sqlHelper->forSql($periodEnd->format('Y-m-d H:i:s'), 19);
-        $idsSql = implode(',', $userIds);
-        $websiteRow = $connection->query(
-            "SELECT COALESCE(SUM(GREATEST(PRICE - COALESCE(PRICE_DELIVERY, 0), 0)), 0) AS TOTAL
-             FROM b_sale_order
-             WHERE USER_ID IN (" . $idsSql . ")
-               AND PAYED='Y'
-               AND CANCELED='N'
-               AND DATE_PAYED>='" . $fromSql . "'
-               AND DATE_PAYED<'" . $toSql . "'"
-        )->fetch();
-        $appRow = $connection->query(
-            "SELECT COALESCE(SUM(AMOUNT), 0) AS TOTAL
-             FROM " . self::PURCHASE_TABLE . "
-             WHERE USER_ID IN (" . $idsSql . ")
-               AND PAID_AT>='" . $fromSql . "'
-               AND PAID_AT<'" . $toSql . "'
-               AND PROGRAM='combined'
-               AND STATUS='posted'"
+        $row = Application::getConnection()->query(
+            "SELECT VALUE_ID
+             FROM b_uts_user
+             WHERE UF_PARENT_ID=" . $userId . "
+             LIMIT 1"
         )->fetch();
 
-        return round(
-            (float)($websiteRow['TOTAL'] ?? 0) + (float)($appRow['TOTAL'] ?? 0),
-            2
-        );
-    }
-
-    private function storeNetworkMonthlyBonus(array $calculation): void
-    {
-        $connection = Application::getConnection();
-        if (!$connection->isTableExists(self::NETWORK_MONTHLY_TABLE)) {
-            return;
-        }
-
-        $sqlHelper = $connection->getSqlHelper();
-        $periodSql = $sqlHelper->forSql((string)$calculation['period'], 7);
-        $currencySql = $sqlHelper->forSql((string)$calculation['currency'], 3);
-        $statusSql = $sqlHelper->forSql((string)$calculation['status'], 20);
-        $reason = trim((string)($calculation['reason'] ?? ''));
-        $reasonSql = $sqlHelper->forSql($reason, 100);
-        $json = json_encode($calculation, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $jsonSql = $sqlHelper->forSql(is_string($json) ? $json : '{}');
-        $finalizedSql = (string)$calculation['status'] === 'pending' ? 'NULL' : 'NOW()';
-
-        $connection->queryExecute(
-            "INSERT INTO " . self::NETWORK_MONTHLY_TABLE . "
-                (BENEFICIARY_USER_ID, PERIOD, LEVEL_ONE_TURNOVER, LEVEL_TWO_TURNOVER,
-                 NETWORK_TURNOVER, OWN_MONTHLY_PURCHASES, LIFETIME_PURCHASES,
-                 RATE_PERCENT, AMOUNT, CURRENCY, STATUS, REASON, CALCULATION_JSON,
-                 FINALIZED_AT, CREATED_AT, UPDATED_AT)
-             VALUES
-                (" . (int)$calculation['user_id'] . ", '" . $periodSql . "', "
-                . number_format((float)$calculation['level_one_turnover'], 2, '.', '') . ", "
-                . number_format((float)$calculation['level_two_turnover'], 2, '.', '') . ", "
-                . number_format((float)$calculation['network_turnover'], 2, '.', '') . ", "
-                . number_format((float)$calculation['monthly_own_purchase_total'], 2, '.', '') . ", "
-                . number_format((float)$calculation['lifetime_purchase_total'], 2, '.', '') . ", "
-                . number_format((float)$calculation['rate_percent'], 2, '.', '') . ", "
-                . number_format((float)$calculation['amount'], 2, '.', '') . ", '"
-                . $currencySql . "', '" . $statusSql . "', "
-                . ($reason !== '' ? "'" . $reasonSql . "'" : 'NULL') . ", '"
-                . $jsonSql . "', " . $finalizedSql . ", NOW(), NOW())
-             ON DUPLICATE KEY UPDATE
-                LEVEL_ONE_TURNOVER=VALUES(LEVEL_ONE_TURNOVER),
-                LEVEL_TWO_TURNOVER=VALUES(LEVEL_TWO_TURNOVER),
-                NETWORK_TURNOVER=VALUES(NETWORK_TURNOVER),
-                OWN_MONTHLY_PURCHASES=VALUES(OWN_MONTHLY_PURCHASES),
-                LIFETIME_PURCHASES=VALUES(LIFETIME_PURCHASES),
-                RATE_PERCENT=VALUES(RATE_PERCENT),
-                AMOUNT=VALUES(AMOUNT),
-                CURRENCY=VALUES(CURRENCY),
-                STATUS=VALUES(STATUS),
-                REASON=VALUES(REASON),
-                CALCULATION_JSON=VALUES(CALCULATION_JSON),
-                FINALIZED_AT=VALUES(FINALIZED_AT),
-                UPDATED_AT=NOW()"
-        );
+        return is_array($row);
     }
 
     private function purchaseResult(int $purchaseId, string $outcome): array
@@ -1093,7 +875,7 @@ final class ReferralAccrualService
                 'currency' => (string)$purchase['CURRENCY'],
                 'paid_at' => (string)$purchase['PAID_AT'],
                 'period' => (string)$purchase['PERIOD'],
-                'program' => (string)($purchase['PROGRAM'] ?? 'combined'),
+                'program' => (string)($purchase['PROGRAM'] ?? 'partner'),
                 'coupon_id' => (int)($purchase['COUPON_ID'] ?? 0) > 0
                     ? (int)$purchase['COUPON_ID']
                     : null,

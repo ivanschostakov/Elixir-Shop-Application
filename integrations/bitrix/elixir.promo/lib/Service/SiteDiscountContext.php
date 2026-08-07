@@ -156,6 +156,30 @@ final class SiteDiscountContext
         return $this->applyPurchaseTotal($userId, $previousTotal, $newTotal, $currency);
     }
 
+    public function setOpeningPurchaseBalance(
+        int $userId,
+        float $amount,
+        string $currency = 'RUB'
+    ): array {
+        if ($userId <= 0 || $amount < 0 || $amount > 999999999999.99) {
+            throw new \InvalidArgumentException('invalid_opening_balance');
+        }
+        $profile = $this->getProgramProfile($userId);
+        $previousTotal = round((float)($profile['order_sum']['amount'] ?? 0), 2);
+        $newTotal = round($amount, 2);
+        $result = $this->applyPurchaseTotal(
+            $userId,
+            $previousTotal,
+            $newTotal,
+            strtoupper(trim($currency)) ?: 'RUB'
+        );
+        if ($newTotal >= 100000.0) {
+            $this->ensureOwnPromoForEligibleUser($userId);
+        }
+
+        return ['source' => 'admin_opening_balance'] + $result;
+    }
+
     private function applyPurchaseTotal(
         int $userId,
         float $previousTotal,

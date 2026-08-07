@@ -51,7 +51,7 @@ def _set_user_promo_code(user_id: int, code: str | None) -> None:
         session.commit()
 
 
-def _set_unified_program(
+def _set_partner_program(
     user_id: int,
     purchase_total: str = "30000.00",
     *,
@@ -69,7 +69,8 @@ def _set_unified_program(
         if profile is None:
             profile = ReferralProfile(user_id=user_id)
             session.add(profile)
-        profile.reward_program = "combined"
+        profile.reward_program = "partner"
+        profile.reward_program_selection_source = "user"
         profile.referral_discount_base_total = Decimal(purchase_total)
         profile.current_discount_percent = Decimal("3.00")
         session.commit()
@@ -105,21 +106,22 @@ def disable_bitrix_promo_for_local_benefit_tests(monkeypatch):
     )
 
 
-def test_benefit_check_returns_unified_personal_discount(client: TestClient, registered_user):
-    _set_unified_program(registered_user["user_id"])
+def test_benefit_check_returns_referral_personal_discount(client: TestClient, registered_user):
+    _set_partner_program(registered_user["user_id"])
 
     response = client.post(
         "/api/v1/users/me/benefits/check",
         headers=registered_user["headers"],
-        json={"subtotal": "200.00", "currency": "RUB"},
+        json={"subtotal": "200.00", "currency": "RUB", "reward_mode": "promo"},
     )
 
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["subtotal_source"] == "request"
     assert _decimal(payload["basket_subtotal"]) == Decimal("200.00")
-    assert payload["reward_program"] == "combined"
+    assert payload["reward_program"] == "partner"
     assert payload["program_selection_required"] is False
+    assert payload["reward_mode"] == "promo"
     assert payload["entered_code"] is None
     assert payload["unresolved_code_reason"] is None
     assert payload["entered_code_matches"] == []
@@ -137,7 +139,7 @@ def test_benefit_check_does_not_offer_personal_discount_without_promo(
     client: TestClient,
     registered_user,
 ):
-    _set_unified_program(
+    _set_partner_program(
         registered_user["user_id"],
         purchase_total="200000.00",
         promo_code=None,
@@ -152,22 +154,25 @@ def test_benefit_check_does_not_offer_personal_discount_without_promo(
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["personal_discount"] is None
+    assert payload["reward_mode"] == "promo"
+    assert payload["cashback_earned_points"] == 0
     assert payload["available_discount_options"] == []
     assert payload["stacked_discount_amount"] == "0.00"
 
 
 def test_benefit_check_applies_personal_discount_to_discountable_subtotal_only(client: TestClient, registered_user):
-    _set_unified_program(registered_user["user_id"])
+    _set_partner_program(registered_user["user_id"])
 
     response = client.post(
         "/api/v1/users/me/benefits/check",
         headers=registered_user["headers"],
-        json={"subtotal": "200.00", "discountable_subtotal": "100.00", "currency": "RUB"},
+        json={"subtotal": "200.00", "discountable_subtotal": "100.00", "currency": "RUB", "reward_mode": "promo"},
     )
 
     assert response.status_code == 200, response.text
     payload = response.json()
     assert payload["entered_code_matches"] == []
+    assert payload["reward_mode"] == "promo"
     assert _decimal(payload["stacked_discount_amount"]) == Decimal("3.00")
     assert _decimal(payload["total_after_discounts"]) == Decimal("197.00")
 
@@ -184,5 +189,7 @@ def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(clie
     assert payload["entered_code"] == "Огонь26"
     assert payload["entered_code_matches"] == []
     assert payload["unresolved_code_reason"] == "Промокод не найден или неактивен / Promo code was not found or is not active"
+    assert payload["reward_mode"] == "cashback"
+    assert payload["cashback_earned_points"] == 10
     assert _decimal(payload["stacked_discount_amount"]) == Decimal("0.00")
     assert _decimal(payload["total_after_discounts"]) == Decimal("200.00")

@@ -296,6 +296,31 @@ final class PromoService
         ];
     }
 
+    public function setOpeningBalance(
+        float $amount,
+        string $currency = 'RUB',
+        int $userId = 0,
+        ?string $userEmail = null
+    ): array {
+        $userContext = $this->resolveUserContext($userId, $userEmail);
+        $resolvedUserId = (int)$userContext['user_id'];
+        if ($resolvedUserId <= 0) {
+            throw new \DomainException('user_not_found');
+        }
+        if (!preg_match('/^[A-Z]{3}$/', strtoupper(trim($currency)))) {
+            throw new \InvalidArgumentException('invalid_currency');
+        }
+
+        return [
+            'user_id' => $resolvedUserId,
+            'user_context' => $userContext['status'],
+        ] + (new SiteDiscountContext())->setOpeningPurchaseBalance(
+            $resolvedUserId,
+            $amount,
+            $currency
+        );
+    }
+
     public function detachReferrer(
         int $userId = 0,
         ?string $userEmail = null

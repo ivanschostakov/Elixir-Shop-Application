@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import case, func, select
@@ -10,16 +11,17 @@ from src.app.services.referrals.calculations import (
     PARTNER_UNLOCK_SPEND,
     quantize_money,
 )
+from src.app.services.referrals.program import normalize_reward_program
 from src.database.crud.referrals import list_referral_profiles as list_referral_profile_rows
 from src.database.models import AppReferralAccrual, AppReferralPurchase, ReferralProfile
 
 
-def _profile_row(profile: ReferralProfile) -> dict[str, Any]:
+def profile_row(profile: ReferralProfile) -> dict[str, Any]:
     total = quantize_money(profile.referral_discount_base_total)
     return {
         "id": profile.id,
         "user_id": profile.user_id,
-        "reward_program": "combined",
+        "reward_program": normalize_reward_program(profile.reward_program) or "bonus",
         "reward_program_selected_at": profile.reward_program_selected_at,
         "reward_program_selection_source": profile.reward_program_selection_source,
         "bitrix_user_id": profile.bitrix_user_id,
@@ -42,7 +44,7 @@ def _profile_row(profile: ReferralProfile) -> dict[str, Any]:
 
 async def list_profiles(db: AsyncSession, *, limit: int, offset: int) -> list[dict[str, Any]]:
     profiles = await list_referral_profile_rows(db, limit=limit, offset=offset)
-    return [_profile_row(profile) for profile in profiles]
+    return [profile_row(profile) for profile in profiles]
 
 
 def _accrual_row(accrual: AppReferralAccrual) -> dict[str, Any]:
@@ -73,6 +75,10 @@ def _accrual_row(accrual: AppReferralAccrual) -> dict[str, Any]:
         "bonus_rubles_credited": accrual.bonus_rubles_credited,
         "wallet_synced_at": accrual.wallet_synced_at,
         "wallet_sync_error": accrual.wallet_sync_error,
+        "settlement_method": accrual.settlement_method,
+        "settlement_reference": accrual.settlement_reference,
+        "settled_at": accrual.settled_at,
+        "settled_by_admin_user_id": accrual.settled_by_admin_user_id,
         "wallet_reversed_at": accrual.wallet_reversed_at,
         "bitrix_sync_status": purchase.bitrix_sync_status,
         "paid_at": purchase.paid_at,
@@ -105,6 +111,155 @@ async def list_accruals(
         )
     rows = list((await db.execute(stmt)).scalars().unique().all())
     return [_accrual_row(row) for row in rows]
+
+
+async def list_settlements(
+    db: AsyncSession,
+    *,
+    limit: int,
+    offset: int,
+    period: str | None,
+) -> list[dict[str, Any]]:
+    period_column = func.to_char(AppReferralPurchase.period_start, "YYYY-MM")
+    deposited_case = case(
+        (
+            AppReferralAccrual.wallet_sync_status == "credited",
+            AppReferralAccrual.commission_amount,
+        ),
+        else_=0,
+    )
+    transferred_case = case(
+        (
+            AppReferralAccrual.wallet_sync_status == "transferred",
+            AppReferralAccrual.commission_amount,
+        ),
+        else_=0,
+    )
+    stmt = (
+        select(
+            AppReferralAccrual.beneficiary_user_id,
+            AppReferralAccrual.beneficiary_bitrix_user_id,
+            AppReferralAccrual.beneficiary_email,
+            AppReferralAccrual.beneficiary_name,
+            period_column.label("period"),
+            AppReferralAccrual.currency,
+            func.count(AppReferralAccrual.id),
+            func.coalesce(func.sum(AppReferralAccrual.commission_amount), 0),
+            func.coalesce(func.sum(deposited_case), 0),
+            func.coalesce(func.sum(transferred_case), 0),
+        )
+        .join(AppReferralPurchase)
+        .where(AppReferralAccrual.status == "approved")
+        .group_by(
+            AppReferralAccrual.beneficiary_user_id,
+            AppReferralAccrual.beneficiary_bitrix_user_id,
+            AppReferralAccrual.beneficiary_email,
+            AppReferralAccrual.beneficiary_name,
+            period_column,
+            AppReferralAccrual.currency,
+        )
+        .order_by(period_column.desc(), AppReferralAccrual.beneficiary_bitrix_user_id.asc())
+        .limit(limit)
+        .offset(offset)
+    )
+    if period:
+        stmt = stmt.where(period_column == period)
+    rows = (await db.execute(stmt)).all()
+    result: list[dict[str, Any]] = []
+    for row in rows:
+        approved = quantize_money(row[7])
+        deposited = quantize_money(row[8])
+        transferred = quantize_money(row[9])
+        awaiting = quantize_money(
+            max(0, approved - deposited - transferred)
+        )
+        result.append({
+            "beneficiary_user_id": row[0],
+            "beneficiary_bitrix_user_id": row[1],
+            "beneficiary_email": row[2],
+            "beneficiary_name": row[3],
+            "period": row[4],
+            "currency": row[5],
+            "accruals_count": int(row[6] or 0),
+            "approved_amount": approved,
+            "deposited_amount": deposited,
+            "transferred_amount": transferred,
+            "awaiting_deposit_amount": awaiting,
+            "awaiting_settlement_amount": awaiting,
+        })
+    return result
+
+
+async def mark_settlement_transferred(
+    db: AsyncSession,
+    *,
+    beneficiary_bitrix_user_id: int,
+    period: str,
+    currency: str,
+    reference: str,
+    admin_user_id: int,
+) -> dict[str, Any] | None:
+    normalized_currency = currency.strip().upper()
+    base_conditions = (
+        AppReferralAccrual.status == "approved",
+        AppReferralAccrual.beneficiary_bitrix_user_id == beneficiary_bitrix_user_id,
+        func.to_char(AppReferralPurchase.period_start, "YYYY-MM") == period,
+        func.upper(AppReferralAccrual.currency) == normalized_currency,
+    )
+    candidates = list(
+        (
+            await db.execute(
+                select(AppReferralAccrual)
+                .join(AppReferralPurchase)
+                .where(
+                    *base_conditions,
+                    AppReferralAccrual.wallet_sync_status.in_(
+                        ("pending", "waiting_for_wallet", "failed")
+                    ),
+                )
+                .order_by(AppReferralAccrual.id)
+                .with_for_update()
+            )
+        ).scalars().all()
+    )
+    if not candidates:
+        candidates = list(
+            (
+                await db.execute(
+                    select(AppReferralAccrual)
+                    .join(AppReferralPurchase)
+                    .where(
+                        *base_conditions,
+                        AppReferralAccrual.wallet_sync_status == "transferred",
+                        AppReferralAccrual.settlement_reference == reference,
+                    )
+                    .order_by(AppReferralAccrual.id)
+                )
+            ).scalars().all()
+        )
+        if not candidates:
+            return None
+
+    settled_at = candidates[0].settled_at or datetime.now(timezone.utc)
+    for accrual in candidates:
+        accrual.settlement_method = "transfer"
+        accrual.settlement_reference = reference
+        accrual.settled_at = settled_at
+        accrual.settled_by_admin_user_id = admin_user_id
+        accrual.wallet_sync_status = "transferred"
+        accrual.wallet_sync_error = None
+
+    return {
+        "beneficiary_bitrix_user_id": beneficiary_bitrix_user_id,
+        "period": period,
+        "currency": normalized_currency,
+        "reference": reference,
+        "accruals_count": len(candidates),
+        "transferred_amount": quantize_money(
+            sum((row.commission_amount for row in candidates), start=0)
+        ),
+        "settled_at": settled_at,
+    }
 
 
 async def referral_summary(db: AsyncSession) -> dict[str, Any]:

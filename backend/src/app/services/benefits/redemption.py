@@ -11,6 +11,7 @@ from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
 from src.normalize import coerce_uuid, optional_str
 
 from .money import quantize_money
+from .loyalty import allocate_bonus_spend_to_credits
 
 BONUS_SOURCE_KIND = "moysklad_bonus"
 logger = logging.getLogger(__name__)
@@ -116,6 +117,11 @@ async def redeem_order_bonus_safe(
         calculation_snapshot["moysklad_bonus_transaction_id"] = transaction_id
         calculation_snapshot["moysklad_bonus_transaction_type"] = "SPENDING"
         application.calculation_snapshot = calculation_snapshot
+        await allocate_bonus_spend_to_credits(
+            session,
+            user_id=user.id,
+            points=points,
+        )
         await session.commit()
         return True
     except Exception as exc:

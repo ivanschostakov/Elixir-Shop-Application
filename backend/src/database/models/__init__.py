@@ -51,6 +51,7 @@ from .community import (
 from .customer_intelligence import CustomerAttribution, CustomerConsent, CustomerMarketingProfile, UserDevice, UserEvent
 from .crm import CrmAssignmentHistory, CrmConversation, CrmLead, CrmLeadNote, CrmLeadStageHistory, CrmMessage, CrmMessageAttachment
 from .benefits.order_benefit_application import OrderBenefitApplication
+from .benefits.loyalty_bonus_credit import LoyaltyBonusCredit
 from .catalog.product import Product
 from .catalog.product_certificate import ProductCertificate
 from .catalog.product_question import ProductQuestion
@@ -160,6 +161,7 @@ __all__ = [
     "Requisite",
     "NotificationDispatch",
     "OrderBenefitApplication",
+    "LoyaltyBonusCredit",
     "Product",
     "ProductCertificate",
     "ProductQuestion",

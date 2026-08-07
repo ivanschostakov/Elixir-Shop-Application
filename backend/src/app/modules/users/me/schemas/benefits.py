@@ -18,6 +18,7 @@ class BenefitCheckPayload(BaseModel):
     discountable_subtotal: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     currency: str | None = Field(default=None, max_length=CURRENCY_CODE_MAX_LENGTH)
     use_bonus_rubles: bool = False
+    reward_mode: Literal["cashback", "promo"] | None = None
 
 
 class BenefitOptionRead(BaseModel):
@@ -51,8 +52,9 @@ class BenefitCheckRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     referral_profile_id: int | None = Field(default=None, ge=1)
-    reward_program: Literal["combined"] = "combined"
+    reward_program: Literal["bonus", "partner"] = "bonus"
     program_selection_required: bool = False
+    reward_mode: Literal["cashback", "promo"] = "cashback"
     subtotal_source: str = Field(max_length=SOURCE_KIND_MAX_LENGTH)
     basket_subtotal: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     currency: str | None = Field(default=None, max_length=CURRENCY_CODE_MAX_LENGTH)
@@ -68,8 +70,13 @@ class BenefitCheckRead(BaseModel):
     bonus_option: BenefitOptionRead | None = None
     bonus_balance_points: int = Field(default=0, ge=0)
     bonus_balance_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    bonus_pending_points: int = Field(default=0, ge=0)
+    bonus_pending_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
     bonus_program_name: str | None = Field(default=None, max_length=BUSINESS_NAME_MAX_LENGTH)
     bonus_max_paid_rate_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=7, decimal_places=2)
     use_bonus_rubles: bool = False
     bonus_applied_points: int = Field(default=0, ge=0)
     bonus_applied_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    cashback_percent: Decimal = Field(default=Decimal("5.00"), ge=0, le=100, max_digits=7, decimal_places=2)
+    cashback_earned_points: int = Field(default=0, ge=0)
+    cashback_expires_in_days: int = Field(default=60, ge=1)

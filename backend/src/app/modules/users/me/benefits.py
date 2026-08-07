@@ -21,6 +21,7 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
         discountable_subtotal=payload.discountable_subtotal,
         currency=payload.currency,
         use_bonus_rubles=payload.use_bonus_rubles,
+        reward_mode=payload.reward_mode,
     )
     await db.commit()
     return BenefitCheckRead.model_validate(resolved)

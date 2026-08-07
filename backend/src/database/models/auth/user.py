@@ -47,6 +47,7 @@ class User(Base, IdPkMixin, TimestampMixin):
     contact_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
     moysklad_counterparty_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     promo_code: Mapped[str | None] = mapped_column(String(length=PROMO_CODE_MAX_LENGTH), nullable=True, index=True)
+    welcome_bonus_granted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     sessions: Mapped[list["UserSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     email_verification_codes: Mapped[list["EmailVerificationCode"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)

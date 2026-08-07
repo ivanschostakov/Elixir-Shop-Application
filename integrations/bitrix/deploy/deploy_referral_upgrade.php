@@ -101,7 +101,6 @@ $connection = Application::getConnection();
 foreach ([
     'b_elixir_referral_app_purchase',
     'b_elixir_referral_partner_accrual',
-    'b_elixir_partner_network_monthly',
 ] as $tableName) {
     if (!$connection->isTableExists($tableName)) {
         throw new RuntimeException('Missing referral table: ' . $tableName);
@@ -122,6 +121,5 @@ echo json_encode([
     'tables' => [
         'b_elixir_referral_app_purchase',
         'b_elixir_referral_partner_accrual',
-        'b_elixir_partner_network_monthly',
     ],
 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . PHP_EOL;

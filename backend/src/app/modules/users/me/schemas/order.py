@@ -13,6 +13,7 @@ class CreateOrderPayload(BaseModel):
     payment_method: PaymentMethod
     code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
     use_bonus_rubles: bool = False
+    reward_mode: Literal["cashback", "promo"] | None = None
 
 
 class CreatePaymentPayload(BaseModel):

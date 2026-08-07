@@ -1,7 +1,8 @@
 import * as SecureStore from "expo-secure-store"
 import { Platform } from "react-native"
-import { AUTH_TOKENS_STORAGE_KEY } from "@/services/auth/session.constants"
+import { AUTH_TOKENS_STORAGE_KEY, AUTH_USER_STORAGE_KEY } from "@/services/auth/session.constants"
 import type { AuthTokens, RefreshHandler, SessionListener } from "@/services/auth/session.types"
+import type { AuthUser } from "@/services/auth/auth.types"
 
 export type { AuthTokens } from "@/services/auth/session.types"
 
@@ -35,6 +36,54 @@ function readWebStoredAuthTokens(): AuthTokens | null {
     }
 
     return parseStoredAuthTokens(window.localStorage.getItem(AUTH_TOKENS_STORAGE_KEY))
+}
+
+function parseStoredAuthUser(rawUser: string | null): AuthUser | null {
+    if (!rawUser) return null
+    try {
+        const user = JSON.parse(rawUser)
+        return typeof user === "object" && user !== null && typeof user.id === "number"
+            ? user as AuthUser
+            : null
+    } catch {
+        return null
+    }
+}
+
+export async function readCachedAuthUser(): Promise<AuthUser | null> {
+    try {
+        if (Platform.OS === "web") {
+            return typeof window !== "undefined" && window.localStorage
+                ? parseStoredAuthUser(window.localStorage.getItem(AUTH_USER_STORAGE_KEY))
+                : null
+        }
+        return parseStoredAuthUser(await SecureStore.getItemAsync(AUTH_USER_STORAGE_KEY))
+    } catch {
+        return null
+    }
+}
+
+async function persistNativeAuthUser(user: AuthUser | null) {
+    try {
+        if (user) await SecureStore.setItemAsync(AUTH_USER_STORAGE_KEY, JSON.stringify(user))
+        else await SecureStore.deleteItemAsync(AUTH_USER_STORAGE_KEY)
+    } catch {
+        // The live session remains usable even if the display cache is unavailable.
+    }
+}
+
+export function cacheAuthUser(user: AuthUser | null) {
+    if (Platform.OS === "web") {
+        try {
+            if (typeof window === "undefined" || !window.localStorage) return
+            if (user) window.localStorage.setItem(AUTH_USER_STORAGE_KEY, JSON.stringify(user))
+            else window.localStorage.removeItem(AUTH_USER_STORAGE_KEY)
+        } catch {
+            // The live session remains usable even if the display cache is unavailable.
+        }
+        return
+    }
+    void persistNativeAuthUser(user)
 }
 
 async function readStoredAuthTokens(): Promise<AuthTokens | null> {
@@ -117,6 +166,7 @@ export function setAuthTokens(tokens: AuthTokens | null) {
 
 export function clearAuthTokens() {
     setAuthTokens(null)
+    cacheAuthUser(null)
 }
 
 export function subscribeAuthSession(listener: SessionListener) {

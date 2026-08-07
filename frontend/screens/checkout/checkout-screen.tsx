@@ -105,6 +105,8 @@ function formatBenefitTitle(option: BenefitOptionResponse) {
     return "Скидка"
 }
 
+type RewardMode = "cashback" | "promo"
+
 export default function CheckoutScreen() {
     const contentStyles = useThemeStyles(createContentStyles)
     const checkoutScreenStyles = useThemeStyles(createCheckoutScreenStyles)
@@ -202,6 +204,7 @@ export default function CheckoutScreen() {
     const [promoCode, setPromoCode] = useState(routePromoCode ?? "")
     const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(routePromoCode ?? null)
     const [benefitCheck, setBenefitCheck] = useState<BenefitCheckResponse | null>(null)
+    const rewardMode: RewardMode = referralProfile?.reward_program === "partner" ? "promo" : "cashback"
     const [useBonusRubles, setUseBonusRubles] = useState(false)
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const appliedRoutePromoCodeRef = useRef<string | null>(routePromoCode ?? null)
@@ -268,9 +271,10 @@ export default function CheckoutScreen() {
     const attachedPromoCode = referralProfile?.promo_code ?? null
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
-    const activeEnteredPromoCode = !hasAttachedPromoCode ? appliedPromoCode : null
-    const loadBenefitCheck = useCallback(async (code: string | null) => {
+    const hasUnappliedPromoCode = Boolean(rewardMode === "promo" && isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const isPromoRewardReady = rewardMode !== "promo" || hasAttachedPromoCode || Boolean(appliedPromoCode)
+    const activeEnteredPromoCode = rewardMode === "promo" && !hasAttachedPromoCode ? appliedPromoCode : null
+    const loadBenefitCheck = useCallback(async (code: string | null, mode: RewardMode = rewardMode) => {
         if (!orderDraft || !isAuthenticated) {
             setBenefitCheck(null)
             return null
@@ -282,13 +286,14 @@ export default function CheckoutScreen() {
                 currency: orderDraft.currency,
                 subtotal: orderDraft.basket_subtotal,
                 use_bonus_rubles: useBonusRubles,
+                reward_mode: mode,
             })
             setBenefitCheck(nextBenefitCheck)
             return nextBenefitCheck
         } catch {
             return null
         }
-    }, [isAuthenticated, orderDraft, useBonusRubles])
+    }, [isAuthenticated, orderDraft, rewardMode, useBonusRubles])
 
     useEffect(() => {
         if (!routePromoCode || appliedRoutePromoCodeRef.current === routePromoCode) {
@@ -373,8 +378,10 @@ export default function CheckoutScreen() {
         ? t("checkout.promoCodeChecking")
         : hasUnappliedPromoCode
             ? t("checkout.applyPromoCode")
-            : paymentFooterCtaLabel
-    const isCheckoutFooterCtaDisabled = isCheckingPromoCode || (!hasUnappliedPromoCode && (!hasDeliveryAddress || !hasRecipient))
+            : !isPromoRewardReady
+                ? t("checkout.enterPromoCode")
+                : paymentFooterCtaLabel
+    const isCheckoutFooterCtaDisabled = isCheckingPromoCode || !isPromoRewardReady || (!hasUnappliedPromoCode && (!hasDeliveryAddress || !hasRecipient))
     const [isUpdatingPositions, setIsUpdatingPositions] = useState(false)
     const isPositionsBusy = isRestoringDraft || isUpdatingPositions
     const isAddProductsBusy = isRestoringDraft
@@ -384,9 +391,8 @@ export default function CheckoutScreen() {
         }
 
         setIsCheckingPromoCode(true)
-
         try {
-            const nextBenefitCheck = await loadBenefitCheck(normalizedPromoCode)
+            const nextBenefitCheck = await loadBenefitCheck(normalizedPromoCode, "promo")
 
             if (!nextBenefitCheck) {
                 setAppliedPromoCode(null)
@@ -409,11 +415,11 @@ export default function CheckoutScreen() {
                     setReferralProfile(nextReferralProfile)
                     setPromoCode("")
                     setAppliedPromoCode(null)
-                    await loadBenefitCheck(null)
+                    await loadBenefitCheck(null, "promo")
                     Alert.alert(t("checkout.promoCodeAppliedTitle"), t("checkout.promoCodeAppliedMessage"))
                 } catch {
                     setAppliedPromoCode(null)
-                    await loadBenefitCheck(activeEnteredPromoCode)
+                    await loadBenefitCheck(activeEnteredPromoCode, "promo")
                     Alert.alert(t("checkout.promoCodeNotFound"), t("checkout.promoCodeNotFoundMessage"))
                 }
                 return
@@ -421,7 +427,7 @@ export default function CheckoutScreen() {
 
             if (!isApplicable || !hasDiscount) {
                 setAppliedPromoCode(null)
-                await loadBenefitCheck(activeEnteredPromoCode)
+                await loadBenefitCheck(activeEnteredPromoCode, "promo")
                 Alert.alert(t("checkout.promoCodeUnavailable"), t("checkout.promoCodeUnavailableMessage"))
                 return
             }
@@ -460,9 +466,10 @@ export default function CheckoutScreen() {
                 ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
                 ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
                 ...(useBonusRubles ? { useBonus: "1" } : {}),
+                rewardMode,
             },
         })
-    }, [activeEnteredPromoCode, isBasketCheckout, orderDraft, useBonusRubles])
+    }, [activeEnteredPromoCode, isBasketCheckout, orderDraft, rewardMode, useBonusRubles])
 
     const handlePressPay = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
@@ -1185,35 +1192,52 @@ export default function CheckoutScreen() {
 
                         {isAuthenticated ? (
                             <>
-                                <>
-                                    <View style={checkoutScreenStyles.detailsSheetDivider} />
-                                    <View style={checkoutScreenStyles.detailsSheetRow}>
-                                            <Text numberOfLines={1} style={checkoutScreenStyles.detailsSheetLabel}>
-                                                {t("checkout.promoCodeTitle")}
-                                            </Text>
-                                            <View style={checkoutScreenStyles.detailsSheetTrailing}>
-                                                <View style={checkoutScreenStyles.detailsSheetTextBlock}>
-                                                    <TextInput
-                                                        autoCapitalize="characters"
-                                                        autoCorrect={false}
-                                                        editable={!hasAttachedPromoCode}
-                                                        onChangeText={handlePromoCodeChange}
-                                                        placeholder={t("checkout.promoCodePlaceholder")}
-                                                        placeholderTextColor="#94A3B8"
-                                                        style={checkoutScreenStyles.detailsSheetInput}
-                                                        value={displayedPromoCode}
-                                                    />
+                                <View style={checkoutScreenStyles.detailsSheetDivider} />
+                                <View style={checkoutScreenStyles.rewardModeSection}>
+                                    <Text style={checkoutScreenStyles.rewardModeTitle}>
+                                        {rewardMode === "cashback"
+                                            ? t("checkout.rewardCashbackTitle")
+                                            : t("checkout.rewardPromoTitle")}
+                                    </Text>
+                                    <Text style={checkoutScreenStyles.rewardModeOptionHint}>
+                                        {rewardMode === "cashback" && benefitCheck
+                                            ? t("checkout.rewardCashbackPreview").replace("{points}", String(benefitCheck.cashback_earned_points))
+                                            : rewardMode === "cashback"
+                                                ? t("checkout.rewardCashbackHint")
+                                                : t("checkout.rewardPromoHint")}
+                                    </Text>
+                                </View>
+                                {rewardMode === "promo" ? (
+                                    <>
+                                        <View style={checkoutScreenStyles.detailsSheetDivider} />
+                                        <View style={checkoutScreenStyles.detailsSheetRow}>
+                                                <Text numberOfLines={1} style={checkoutScreenStyles.detailsSheetLabel}>
+                                                    {t("checkout.promoCodeTitle")}
+                                                </Text>
+                                                <View style={checkoutScreenStyles.detailsSheetTrailing}>
+                                                    <View style={checkoutScreenStyles.detailsSheetTextBlock}>
+                                                        <TextInput
+                                                            autoCapitalize="characters"
+                                                            autoCorrect={false}
+                                                            editable={!hasAttachedPromoCode}
+                                                            onChangeText={handlePromoCodeChange}
+                                                            placeholder={t("checkout.promoCodePlaceholder")}
+                                                            placeholderTextColor="#94A3B8"
+                                                            style={checkoutScreenStyles.detailsSheetInput}
+                                                            value={displayedPromoCode}
+                                                        />
+                                                    </View>
                                                 </View>
-                                            </View>
-                                    </View>
-                                    {hasAttachedPromoCode ? (
-                                        <View style={checkoutScreenStyles.detailsSheetHintRow}>
-                                            <Text style={[checkoutScreenStyles.detailsSheetHintText, checkoutScreenStyles.detailsSheetHintTextSuccess]}>
-                                                {t("checkout.promoCodeAlreadyApplied")}
-                                            </Text>
                                         </View>
-                                    ) : null}
-                                </>
+                                        {hasAttachedPromoCode ? (
+                                            <View style={checkoutScreenStyles.detailsSheetHintRow}>
+                                                <Text style={[checkoutScreenStyles.detailsSheetHintText, checkoutScreenStyles.detailsSheetHintTextSuccess]}>
+                                                    {t("checkout.promoCodeAlreadyApplied")}
+                                                </Text>
+                                            </View>
+                                        ) : null}
+                                    </>
+                                ) : null}
                                 {Number(benefitCheck?.bonus_balance_rubles ?? 0) > 0 ? (
                                     <>
                                         <View style={checkoutScreenStyles.detailsSheetDivider} />

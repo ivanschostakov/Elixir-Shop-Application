@@ -7,9 +7,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from config import NOTIFICATION_ABANDONED_CART_AFTER_HOURS, NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS, NOTIFICATION_BATCH_SIZE, NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS, NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS, NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS, ufa_now
+from config import LOYALTY_EXPIRY_WARNING_DAYS, NOTIFICATION_ABANDONED_CART_AFTER_HOURS, NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS, NOTIFICATION_BATCH_SIZE, NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS, NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS, NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS, ufa_now
 from src.app.services.push_notifications import send_push_to_user, send_push_to_users
-from src.database.models import AdminMarketingAutomation, Basket, BasketItem, CommunityMessage, CommunityNotificationEvent, NotificationDispatch, Order, OrderItem, Review, StockNotificationSubscription, UserPushToken, Variant
+from src.database.models import AdminMarketingAutomation, Basket, BasketItem, CommunityMessage, CommunityNotificationEvent, LoyaltyBonusCredit, NotificationDispatch, Order, OrderItem, Review, StockNotificationSubscription, UserPushToken, Variant
 
 log = logging.getLogger(__name__)
 
@@ -17,6 +17,7 @@ DISPATCH_TYPE_RESTOCK = "restock"
 DISPATCH_TYPE_INACTIVE_CUSTOMER = "inactive_customer"
 DISPATCH_TYPE_ABANDONED_CART = "abandoned_cart"
 DISPATCH_TYPE_REVIEW_REMINDER = "review_reminder"
+DISPATCH_TYPE_BONUS_EXPIRY = "bonus_expiry"
 DISPATCH_TYPE_AI_REPLY = "ai_reply"
 DISPATCH_TYPE_COMMUNITY_MESSAGE = "community_message"
 
@@ -70,8 +71,8 @@ DEFAULT_AUTOMATION_SETTINGS: dict[str, dict[str, Any]] = {
         "cooldown_hours": NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS,
     },
     "review_reminder": {
-        "title": "Поделитесь отзывом",
-        "body": "Прошел месяц после заказа. Оцените препарат и оставьте отзыв.",
+        "title": "Оставьте отзыв — получите бонусы",
+        "body": "Расскажите о покупке: 100 бонусов за текстовый отзыв или 200 бонусов за отзыв с фото.",
         "deep_link": None,
         "after_days": NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS,
     },
@@ -244,18 +245,85 @@ async def process_review_reminders(session: AsyncSession, *, now: datetime | Non
     normalized = normalize_marketing_automation_settings("review_reminder", settings)
     review_cutoff = current_time - timedelta(days=normalized["after_days"])
 
-    rows = (await session.execute(select(Order.user_id, OrderItem.product_id, func.max(Order.payment_paid_at).label("last_paid_at")).join(OrderItem, OrderItem.order_id == Order.id).where(Order.is_paid.is_(True), Order.is_canceled.is_(False), Order.payment_paid_at.is_not(None), Order.payment_paid_at <= review_cutoff).group_by(Order.user_id, OrderItem.product_id).order_by(func.max(Order.payment_paid_at).asc()).limit(NOTIFICATION_BATCH_SIZE))).all()
+    rows = (await session.execute(select(Order.id, Order.user_id, Order.payment_paid_at).where(Order.is_paid.is_(True), Order.is_canceled.is_(False), Order.payment_paid_at.is_not(None), Order.payment_paid_at <= review_cutoff).order_by(Order.payment_paid_at.asc()).limit(NOTIFICATION_BATCH_SIZE))).all()
     sent_count = 0
-    for user_id, product_id, _ in rows:
-        has_review = (await session.execute(select(Review.id).where(Review.user_id == int(user_id), Review.product_id == int(product_id)).limit(1))).scalar_one_or_none() is not None
-        if has_review: continue
+    for order_id, user_id, _ in rows:
+        reviewed_product = select(Review.id).where(
+            Review.user_id == int(user_id),
+            Review.product_id == OrderItem.product_id,
+        ).exists()
+        product_id = (await session.execute(
+            select(OrderItem.product_id)
+            .where(OrderItem.order_id == int(order_id), ~reviewed_product)
+            .order_by(OrderItem.id.asc())
+            .limit(1)
+        )).scalar_one_or_none()
+        if product_id is None:
+            continue
 
-        already_sent = await _was_notification_sent_ever(session, user_id=int(user_id), dispatch_type=DISPATCH_TYPE_REVIEW_REMINDER, dedupe_key=f"product:{int(product_id)}")
+        already_sent = await _was_notification_sent_ever(session, user_id=int(user_id), dispatch_type=DISPATCH_TYPE_REVIEW_REMINDER, dedupe_key=f"order:{int(order_id)}")
         if already_sent:continue
 
-        sent = await _send_and_record(session, user_id=int(user_id), title=normalized["title"], body=normalized["body"], data=_automation_data({"type": "review_reminder", "product_id": int(product_id), }, normalized), dispatch_type=DISPATCH_TYPE_REVIEW_REMINDER, dedupe_key=f"product:{int(product_id)}", sent_at=current_time)
+        sent = await _send_and_record(session, user_id=int(user_id), title=normalized["title"], body=normalized["body"], data=_automation_data({"type": "review_reminder", "order_id": int(order_id), "product_id": int(product_id), }, normalized), dispatch_type=DISPATCH_TYPE_REVIEW_REMINDER, dedupe_key=f"order:{int(order_id)}", sent_at=current_time)
         if sent: sent_count += 1
 
+    await session.commit()
+    return sent_count
+
+
+async def process_bonus_expiry_notifications(
+    session: AsyncSession,
+    *,
+    now: datetime | None = None,
+) -> int:
+    current_time = now or ufa_now()
+    warning_days = max(1, int(LOYALTY_EXPIRY_WARNING_DAYS))
+    cutoff = current_time + timedelta(days=warning_days)
+    rows = list(
+        (
+            await session.execute(
+                select(LoyaltyBonusCredit)
+                .where(
+                    LoyaltyBonusCredit.status.in_(("applied", "pending", "failed")),
+                    LoyaltyBonusCredit.expires_at > current_time,
+                    LoyaltyBonusCredit.expires_at <= cutoff,
+                    LoyaltyBonusCredit.spent_points < LoyaltyBonusCredit.points,
+                )
+                .order_by(LoyaltyBonusCredit.expires_at.asc(), LoyaltyBonusCredit.id.asc())
+                .limit(NOTIFICATION_BATCH_SIZE)
+            )
+        ).scalars().all()
+    )
+    sent_count = 0
+    for credit in rows:
+        dedupe_key = f"credit:{credit.id}"
+        if await _was_notification_sent_ever(
+            session,
+            user_id=credit.user_id,
+            dispatch_type=DISPATCH_TYPE_BONUS_EXPIRY,
+            dedupe_key=dedupe_key,
+        ):
+            continue
+        points = max(0, credit.points - credit.spent_points)
+        expires_on = credit.expires_at.strftime("%d.%m.%Y")
+        sent = await _send_and_record(
+            session,
+            user_id=credit.user_id,
+            title="Бонусы скоро сгорят",
+            body=f"{points} бонусов сгорят {expires_on}. Успейте использовать их на оплату товаров.",
+            data={
+                "type": DISPATCH_TYPE_BONUS_EXPIRY,
+                "credit_id": credit.id,
+                "points": points,
+                "expires_at": credit.expires_at.isoformat(),
+                "deep_link": "/profile/discounts",
+            },
+            dispatch_type=DISPATCH_TYPE_BONUS_EXPIRY,
+            dedupe_key=dedupe_key,
+            sent_at=current_time,
+        )
+        if sent:
+            sent_count += 1
     await session.commit()
     return sent_count
 

@@ -3,14 +3,14 @@ from datetime import datetime, timedelta
 from sqlalchemy import BigInteger, DateTime, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from config import REFRESH_TOKEN_LIFETIME_DAYS, ufa_now
+from config import USER_REFRESH_TOKEN_LIFETIME_DAYS, ufa_now
 from src.database import Base
 from src.database.limits import IP_ADDRESS_MAX_LENGTH, REFRESH_TOKEN_HASH_MAX_LENGTH, USER_AGENT_MAX_LENGTH
 from src.database.mixins import IdPkMixin, TimestampMixin
 
 
 def session_expires_at() -> datetime:
-    return ufa_now() + timedelta(days=REFRESH_TOKEN_LIFETIME_DAYS)
+    return ufa_now() + timedelta(days=USER_REFRESH_TOKEN_LIFETIME_DAYS)
 
 
 class UserSession(Base, IdPkMixin, TimestampMixin):

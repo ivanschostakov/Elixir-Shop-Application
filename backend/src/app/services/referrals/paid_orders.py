@@ -4,6 +4,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,11 +23,12 @@ from src.integrations.bitrix_promo import (
     bitrix_promo_configured,
 )
 from src.normalize import optional_str
+from src.app.services.benefits.loyalty import grant_order_cashback_safe, reverse_order_cashback_safe
 
 from .bitrix_sync import refresh_program_profile_from_bitrix
 from .calculations import PARTNER_UNLOCK_SPEND, quantize_money
-from .profile import refresh_profile_discount
-from .program import ensure_unified_reward_program
+from .profile import get_or_create_referral_profile, refresh_profile_discount
+from .program import ensure_default_reward_program, normalize_reward_program
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +125,7 @@ def _local_calculation(
     return {
         "storage": "app",
         "bitrix_writes": False,
-        "program": "combined",
+        "program": "partner",
         "promo": promo,
         "promo_mode": "unresolved" if promo else "none",
         "participates_in_program": participates_in_program,
@@ -155,7 +157,7 @@ async def _increment_local_purchase_progress(
     if legacy_purchase is not None:
         return
 
-    await ensure_unified_reward_program(db, user=user)
+    await ensure_default_reward_program(db, user=user)
     profile = (
         await db.execute(
             select(ReferralProfile)
@@ -501,7 +503,7 @@ async def _sync_purchase_progress_to_bitrix(
     if bitrix_purchase.get("program") is not None:
         calculation_snapshot = dict(purchase.calculation_snapshot or {})
         calculation_snapshot["participates_in_program"] = (
-            str(bitrix_purchase["program"]) == "combined"
+            str(bitrix_purchase["program"]) == "partner"
         )
         purchase.calculation_snapshot = calculation_snapshot
 
@@ -659,6 +661,67 @@ async def _sync_partner_reversal_to_bitrix(
     return result
 
 
+async def _record_bonus_program_purchase(
+    db: AsyncSession,
+    *,
+    order: Order,
+    user: User,
+    amount: Decimal,
+    paid_at: datetime,
+) -> dict[str, Any]:
+    await ensure_default_reward_program(db, user=user)
+    profile = (
+        await db.execute(
+            select(ReferralProfile)
+            .where(ReferralProfile.user_id == user.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
+    if normalize_reward_program(profile.reward_program) != "bonus":
+        return {"outcome": "program_changed"}
+
+    snapshot = {
+        "program": "bonus",
+        "external_order_id": order.order_code or str(order.id),
+        "amount": str(amount),
+        "currency": order.currency,
+        "paid_at": paid_at.isoformat(),
+        "cashback_percent": 5,
+        "bitrix_written": False,
+    }
+    statement = (
+        insert(BonusProgramPurchase)
+        .values(
+            order_id=order.id,
+            user_id=user.id,
+            external_order_id=order.order_code or str(order.id),
+            amount=amount,
+            currency=order.currency,
+            paid_at=paid_at,
+            status="posted",
+            calculation_snapshot=snapshot,
+        )
+        .on_conflict_do_nothing(index_elements=[BonusProgramPurchase.order_id])
+        .returning(BonusProgramPurchase.id)
+    )
+    purchase_id = (await db.execute(statement)).scalar_one_or_none()
+    if purchase_id is None:
+        await db.commit()
+        return {"outcome": "already_recorded"}
+
+    profile.referral_discount_base_total = quantize_money(
+        profile.referral_discount_base_total + amount
+    )
+    refresh_profile_discount(profile, has_promo_code=False)
+    await db.commit()
+    return {
+        "outcome": "recorded",
+        "purchase_id": purchase_id,
+        "purchase_total": str(profile.referral_discount_base_total),
+    }
+
+
 async def _reverse_bonus_program_purchase(
     db: AsyncSession,
     *,
@@ -681,7 +744,7 @@ async def _reverse_bonus_program_purchase(
                 profile.referral_discount_base_total - purchase.amount,
             )
         )
-        refresh_profile_discount(profile)
+        refresh_profile_discount(profile, has_promo_code=False)
     purchase.status = "reversed"
     purchase.reversed_at = datetime.now(timezone.utc)
     await db.commit()
@@ -693,6 +756,14 @@ async def reverse_paid_order_reward(
     *,
     order: Order,
 ) -> dict[str, Any] | None:
+    order_id = order.id
+    try:
+        cashback_result = await reverse_order_cashback_safe(db, order=order)
+    except Exception:
+        await db.rollback()
+        await db.refresh(order)
+        cashback_result = {"outcome": "reversal_failed"}
+        logger.exception("Could not reverse order cashback order_id=%s", order_id)
     legacy_result: dict[str, Any] | None = None
     bonus_purchase = (
         await db.execute(
@@ -709,11 +780,17 @@ async def reverse_paid_order_reward(
 
     purchase = await _purchase_for_order(db, order.id)
     if purchase is None:
-        if legacy_result is None:
+        if legacy_result is None and cashback_result is None:
             return None
+        if legacy_result is None:
+            return {
+                "storage": "moysklad_bonus",
+                "cashback": cashback_result,
+            }
         return {
             "storage": "legacy_app_bonus",
             "bitrix_written": False,
+            "cashback": cashback_result,
             **legacy_result,
         }
     if purchase.status == "reversed":
@@ -721,6 +798,7 @@ async def reverse_paid_order_reward(
             "storage": "app_mirror_and_bitrix",
             "outcome": "already_reversed",
             "purchase_id": purchase.id,
+            "cashback": cashback_result,
         }
     purchase.status = "reversal_pending"
     purchase.bitrix_sync_status = "pending"
@@ -762,6 +840,7 @@ async def reverse_paid_order_reward(
             "outcome": "reversed_locally",
             "purchase_id": purchase.id,
             "bitrix_written": False,
+            "cashback": cashback_result,
         }
 
     result = await _sync_partner_reversal_to_bitrix(
@@ -774,6 +853,7 @@ async def reverse_paid_order_reward(
         "storage": "app_mirror_and_bitrix",
         "outcome": str(result.get("outcome") or "reversed"),
         "purchase_id": purchase.id,
+        "cashback": cashback_result,
         "bitrix": result,
     }
 
@@ -790,8 +870,7 @@ async def sync_paid_order_referral_to_app(
         return None
 
     user = await db.get(User, order.user_id)
-    if user is None or not user.email:
-        logger.warning("Skipping app referral calculation without customer email order_id=%s", order.id)
+    if user is None:
         return None
 
     amount = _rewardable_order_amount(order)
@@ -799,9 +878,44 @@ async def sync_paid_order_referral_to_app(
         logger.info("Skipping zero-value reward progress order_id=%s", order.id)
         return None
 
-    await ensure_unified_reward_program(db, user=user)
+    profile = await ensure_default_reward_program(db, user=user)
+    reward_program = normalize_reward_program(profile.reward_program) or "bonus"
     promo = _paid_order_promo(order)
     paid_at = order.payment_paid_at or order.updated_at or datetime.now(timezone.utc)
+
+    if reward_program == "bonus":
+        result = await _record_bonus_program_purchase(
+            db,
+            order=order,
+            user=user,
+            amount=amount,
+            paid_at=paid_at,
+        )
+        try:
+            await grant_order_cashback_safe(db, order=order, user=user)
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Could not grant order cashback order_id=%s user_id=%s",
+                order.id,
+                user.id,
+            )
+        return {
+            "storage": "app_bonus_only",
+            "bitrix_written": False,
+            **result,
+        }
+
+    if not promo:
+        logger.info(
+            "Skipping referral progress without an applied referrer promo order_id=%s",
+            order.id,
+        )
+        return {"storage": "none", "outcome": "promo_required"}
+    if not user.email:
+        logger.warning("Skipping app referral calculation without customer email order_id=%s", order.id)
+        return None
+
     client = BitrixPromoClient() if bitrix_promo_configured() else None
     purchase = await _ensure_app_calculation(
         db,
@@ -945,6 +1059,10 @@ async def backfill_missing_paid_order_rewards(
                     AppReferralPurchase,
                     AppReferralPurchase.order_id == Order.id,
                 )
+                .outerjoin(
+                    BonusProgramPurchase,
+                    BonusProgramPurchase.order_id == Order.id,
+                )
                 .where(
                     Order.is_paid.is_(True),
                     Order.is_canceled.is_(False),
@@ -952,6 +1070,7 @@ async def backfill_missing_paid_order_rewards(
                         ("refunded", "canceled", "error")
                     ),
                     AppReferralPurchase.id.is_(None),
+                    BonusProgramPurchase.id.is_(None),
                 )
                 .order_by(Order.id)
                 .limit(max(1, min(limit, 500)))

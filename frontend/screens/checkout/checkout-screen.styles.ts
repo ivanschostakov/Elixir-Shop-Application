@@ -140,6 +140,22 @@ export const createCheckoutScreenStyles = (colors: ThemePalette) => StyleSheet.c
         fontSize: 12,
         lineHeight: 16,
     },
+    rewardModeSection: {
+        gap: spacing.sm,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
+    },
+    rewardModeTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: "800",
+        lineHeight: 18,
+    },
+    rewardModeOptionHint: {
+        color: colors.mutedText,
+        fontSize: 11,
+        lineHeight: 15,
+    },
     detailsSheetSecondary: {
         color: colors.text,
         fontSize: 14,

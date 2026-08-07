@@ -100,7 +100,7 @@ def test_personal_discount_requires_program_promo():
     assert calculate_personal_discount_percent("999999.00", has_promo_code=True) == Decimal("20.00")
 
 
-def test_referrer_code_is_available_without_program_selection(
+def test_referrer_code_requires_referral_program(
     client: TestClient,
     registered_user_factory,
 ):
@@ -112,18 +112,14 @@ def test_referrer_code_is_available_without_program_selection(
         headers=buyer["headers"],
         json={"code": f"  {code.lower()}  "},
     )
-    assert check_response.status_code == 200, check_response.text
-    check_payload = check_response.json()
-    assert check_payload["code"] == code
-    assert check_payload["is_valid"] is False
-    assert check_payload["status"] == "not_configured"
+    assert check_response.status_code == 409, check_response.text
 
     attach_response = client.post(
         "/api/v1/users/me/referral-profile/referrer-code",
         headers=buyer["headers"],
         json={"code": code},
     )
-    assert attach_response.status_code == 400, attach_response.text
+    assert attach_response.status_code == 409, attach_response.text
     assert _user_promo_code(buyer["user_id"]) is None
 
 
@@ -137,9 +133,9 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
     assert first_response.status_code == 200, first_response.text
     first_payload = first_response.json()
     assert _decimal(first_payload["current_discount_percent"]) == Decimal("0.00")
-    assert first_payload["reward_program"] == "combined"
+    assert first_payload["reward_program"] == "bonus"
     assert first_payload["program_selection_required"] is False
-    assert first_payload["bonus_program_enabled"] is False
+    assert first_payload["bonus_program_enabled"] is True
     assert first_payload["partner_program_status"] == "locked"
 
     second_response = client.get(
@@ -153,30 +149,38 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
         assert profile_count == 1
 
 
-def test_legacy_program_selection_endpoint_maps_every_choice_to_unified_program(
+def test_program_selection_becomes_available_after_30000_and_is_locked(
     client: TestClient,
     registered_user_factory,
 ):
     buyer = registered_user_factory(email_prefix="unified-program")
 
-    selected = client.post(
-        "/api/v1/users/me/referral-profile/program",
-        headers=buyer["headers"],
-        json={"program": "bonus"},
-    )
-    assert selected.status_code == 200, selected.text
-    payload = selected.json()
-    assert payload["reward_program"] == "combined"
-    assert payload["program_selection_required"] is False
-    assert payload["promo_code"] is None
-
-    repeated = client.post(
+    before_threshold = client.post(
         "/api/v1/users/me/referral-profile/program",
         headers=buyer["headers"],
         json={"program": "partner"},
     )
-    assert repeated.status_code == 200, repeated.text
-    assert repeated.json()["reward_program"] == "combined"
+    assert before_threshold.status_code == 409, before_threshold.text
+
+    with Session(sync_engine) as session:
+        profile = session.query(ReferralProfile).filter(ReferralProfile.user_id == buyer["user_id"]).one()
+        profile.referral_discount_base_total = Decimal("30000.00")
+        session.commit()
+
+    selected = client.post(
+        "/api/v1/users/me/referral-profile/program",
+        headers=buyer["headers"],
+        json={"program": "partner"},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["reward_program"] == "partner"
+
+    repeated = client.post(
+        "/api/v1/users/me/referral-profile/program",
+        headers=buyer["headers"],
+        json={"program": "bonus"},
+    )
+    assert repeated.status_code == 409, repeated.text
 
     with Session(sync_engine) as session:
         events = (
@@ -184,4 +188,5 @@ def test_legacy_program_selection_endpoint_maps_every_choice_to_unified_program(
             .filter(RewardProgramSelectionEvent.user_id == buyer["user_id"])
             .all()
         )
-        assert events == []
+        assert len(events) == 1
+        assert events[0].selected_program == "partner"

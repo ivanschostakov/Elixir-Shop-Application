@@ -1,9 +1,10 @@
 import { ENDPOINTS } from "@/services/api/constants"
-import { apiDelete, apiGet, apiPatch, apiPost } from "@/services/api/client"
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from "@/services/api/client"
 import {
     clearAuthTokens,
     getAuthTokens,
     setAuthTokens,
+    cacheAuthUser,
 } from "@/services/auth/session"
 import type { AuthTokens } from "@/services/auth/session.types"
 import type {
@@ -96,15 +97,19 @@ export async function authenticate(credentials: LoginCredentials): Promise<Login
     }
 
     setAuthTokens(mapTokens(response))
+    const user = mapUser(response.user)
+    cacheAuthUser(user)
     return {
         verificationRequired: false,
-        user: mapUser(response.user),
+        user,
     }
 }
 
 export function applyAuthTokensWithUser(response: AuthTokensWithUserResponse): AuthUser {
     setAuthTokens(mapTokens(response))
-    return mapUser(response.user)
+    const user = mapUser(response.user)
+    cacheAuthUser(user)
+    return user
 }
 
 export async function verifyLogin(payload: LoginVerifyPayload): Promise<AuthUser> {
@@ -115,7 +120,9 @@ export async function verifyLogin(payload: LoginVerifyPayload): Promise<AuthUser
     )
 
     setAuthTokens(mapTokens(response))
-    return mapUser(response.user)
+    const user = mapUser(response.user)
+    cacheAuthUser(user)
+    return user
 }
 
 export async function resendLoginCode(payload: LoginCredentials): Promise<LoginVerificationRequiredResponse> {
@@ -142,7 +149,9 @@ export async function verifyRegistration(payload: RegistrationVerifyPayload): Pr
     )
 
     setAuthTokens(mapTokens(response))
-    return mapUser(response.user)
+    const user = mapUser(response.user)
+    cacheAuthUser(user)
+    return user
 }
 
 export async function resendRegistrationCode(payload: RegistrationCodeResendPayload): Promise<RegistrationCodeSentResponse> {
@@ -181,9 +190,12 @@ export async function refreshSession(): Promise<AuthTokens | null> {
         const nextTokens = mapTokens(response)
         setAuthTokens(nextTokens)
         return nextTokens
-    } catch {
-        clearAuthTokens()
-        return null
+    } catch (error) {
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+            clearAuthTokens()
+            return null
+        }
+        throw error
     }
 }
 
@@ -210,7 +222,9 @@ export async function deleteAccount() {
 
 export async function getCurrentUser(): Promise<AuthUser> {
     const response = await apiGet<BackendAuthUser>(authPath("/me"))
-    return mapUser(response)
+    const user = mapUser(response)
+    cacheAuthUser(user)
+    return user
 }
 
 export async function updateCurrentUserPersonalData(payload: PersonalDataUpdatePayload): Promise<AuthUser> {
@@ -218,5 +232,7 @@ export async function updateCurrentUserPersonalData(payload: PersonalDataUpdateP
         usersPath("/me/profile/personal-data"),
         payload,
     )
-    return mapUser(response)
+    const user = mapUser(response)
+    cacheAuthUser(user)
+    return user
 }

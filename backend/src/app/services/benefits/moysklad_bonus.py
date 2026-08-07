@@ -76,10 +76,10 @@ def bonus_wallet_from_counterparty(counterparty: dict[str, Any] | None) -> MoySk
     program_id = _uuid_from_entity(program)
     balance_points = _nonnegative_int(counterparty.get("bonusPoints"))
     spend_rate = max(1, _nonnegative_int(program.get("spendRatePointsToRouble"), default=1))
-    max_paid_rate = min(
-        Decimal("100.00"),
-        _nonnegative_decimal(program.get("maxPaidRatePercents")),
-    )
+    # The app's loyalty terms allow paying the full merchandise total with
+    # accumulated points. MoySklad remains the balance ledger, while checkout
+    # owns this redemption cap.
+    max_paid_rate = Decimal("100.00") if program_id is not None else Decimal("0.00")
     if program.get("active") is False:
         max_paid_rate = Decimal("0.00")
     sales_amount_minor = _nonnegative_decimal(counterparty.get("salesAmount"))

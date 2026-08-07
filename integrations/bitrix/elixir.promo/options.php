@@ -66,11 +66,6 @@ $appPartnerSummary = [
     'approved_amount' => 0.0,
     'rejected_amount' => 0.0,
 ];
-$networkMonthlySummary = [
-    'participants' => 0,
-    'turnover' => 0.0,
-    'amount' => 0.0,
-];
 $connection = Application::getConnection();
 if ($connection->isTableExists('b_elixir_referral_app_purchase')) {
     $summaryRow = $connection->query(
@@ -127,23 +122,6 @@ if ($connection->isTableExists('b_elixir_referral_partner_accrual')) {
             'pending_amount' => (float)$partnerRow['PENDING_AMOUNT'],
             'approved_amount' => (float)$partnerRow['APPROVED_AMOUNT'],
             'rejected_amount' => (float)$partnerRow['REJECTED_AMOUNT'],
-        ];
-    }
-}
-if ($connection->isTableExists('b_elixir_partner_network_monthly')) {
-    $networkRow = $connection->query(
-        "SELECT
-            COUNT(*) AS PARTICIPANTS,
-            COALESCE(SUM(NETWORK_TURNOVER), 0) AS TURNOVER,
-            COALESCE(SUM(AMOUNT), 0) AS AMOUNT
-         FROM b_elixir_partner_network_monthly
-         WHERE PERIOD='" . $connection->getSqlHelper()->forSql(date('Y-m'), 7) . "'"
-    )->fetch();
-    if (is_array($networkRow)) {
-        $networkMonthlySummary = [
-            'participants' => (int)$networkRow['PARTICIPANTS'],
-            'turnover' => (float)$networkRow['TURNOVER'],
-            'amount' => (float)$networkRow['AMOUNT'],
         ];
     }
 }
@@ -214,12 +192,6 @@ if ($connection->isTableExists('b_elixir_partner_network_monthly')) {
                 Это журнал партнёрских начислений первого и второго уровней.
                 После подтверждения backend приложения зачисляет сумму в единый
                 баланс «Бонусные рубли» в МойСклад.
-            </p>
-            <p>
-                Дополнительные 3–5% за <?= htmlspecialcharsbx(date('m.Y')) ?>:
-                участников — <strong><?= $networkMonthlySummary['participants'] ?></strong>
-                · оборот сети — <strong><?= number_format($networkMonthlySummary['turnover'], 2, ',', ' ') ?> ₽</strong>
-                · расчётное начисление — <strong><?= number_format($networkMonthlySummary['amount'], 2, ',', ' ') ?> ₽</strong>
             </p>
             <h3>Применения партнёрских промокодов</h3>
             <?php if ($appPromoStats === []): ?>

@@ -17,6 +17,11 @@ from src.app.services.referrals.paid_orders import (
 from src.app.services.referrals.wallet_sync import (
     sync_approved_referral_accruals_to_bonus_wallet,
 )
+from src.app.services.benefits.loyalty import (
+    expire_loyalty_bonus_credits,
+    sync_pending_loyalty_bonus_credits,
+)
+from src.app.services.notifications.core import process_bonus_expiry_notifications
 from src.database import get_session
 
 
@@ -34,6 +39,9 @@ async def _run_once() -> None:
         referral_wallet_sync = (
             await sync_approved_referral_accruals_to_bonus_wallet(session)
         )
+        loyalty_credit_sync = await sync_pending_loyalty_bonus_credits(session)
+        loyalty_expiry_notifications = await process_bonus_expiry_notifications(session)
+        loyalty_expiration = await expire_loyalty_bonus_credits(session)
     if (
         results["executed"]
         or results["failed"]
@@ -44,15 +52,21 @@ async def _run_once() -> None:
         or referral_accruals["failed"]
         or referral_wallet_sync["processed"]
         or referral_wallet_sync["failed"]
+        or loyalty_credit_sync["processed"]
+        or loyalty_expiry_notifications
+        or loyalty_expiration["processed"]
     ):
         log.info(
-            "automation tick completed rules=%s sla_breaches=%s referral_purchase_backfill=%s referral_purchase_sync=%s referral_accruals=%s referral_wallet_sync=%s",
+            "automation tick completed rules=%s sla_breaches=%s referral_purchase_backfill=%s referral_purchase_sync=%s referral_accruals=%s referral_wallet_sync=%s loyalty_credit_sync=%s loyalty_expiry_notifications=%s loyalty_expiration=%s",
             results,
             sla_breaches,
             referral_purchase_backfill,
             referral_purchase_sync,
             referral_accruals,
             referral_wallet_sync,
+            loyalty_credit_sync,
+            loyalty_expiry_notifications,
+            loyalty_expiration,
         )
 
 

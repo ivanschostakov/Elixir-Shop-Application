@@ -201,20 +201,20 @@ def test_abandoned_cart_processor_respects_cooldown(monkeypatch: pytest.MonkeyPa
     assert first_session.added[0].type == notifications_service.DISPATCH_TYPE_ABANDONED_CART
 
 
-def test_review_reminder_processor_sends_once_per_product(monkeypatch: pytest.MonkeyPatch):
+def test_review_reminder_processor_sends_once_per_order(monkeypatch: pytest.MonkeyPatch):
     now = notifications_service.ufa_now()
 
     send_session = _FakeSession(
         [
-            _FakeScalarResult(rows=[(91, 501, now - timedelta(days=40))]),
-            _FakeScalarResult(scalar_value=None),
+            _FakeScalarResult(rows=[(701, 91, now - timedelta(days=3))]),
+            _FakeScalarResult(scalar_value=501),
             _FakeScalarResult(scalar_value=None),
         ]
     )
     skip_session = _FakeSession(
         [
-            _FakeScalarResult(rows=[(91, 501, now - timedelta(days=40))]),
-            _FakeScalarResult(scalar_value=999),
+            _FakeScalarResult(rows=[(701, 91, now - timedelta(days=3))]),
+            _FakeScalarResult(scalar_value=None),
         ]
     )
 
@@ -230,6 +230,41 @@ def test_review_reminder_processor_sends_once_per_product(monkeypatch: pytest.Mo
     assert skipped == 0
     assert len(send_session.added) == 1
     assert send_session.added[0].type == notifications_service.DISPATCH_TYPE_REVIEW_REMINDER
+    assert send_session.added[0].dedupe_key == "order:701"
+
+
+def test_bonus_expiry_processor_warns_once_fourteen_days_before(monkeypatch: pytest.MonkeyPatch):
+    now = notifications_service.ufa_now()
+    credit = SimpleNamespace(
+        id=501,
+        user_id=91,
+        points=500,
+        spent_points=125,
+        expires_at=now + timedelta(days=14),
+    )
+    session = _FakeSession(
+        [
+            _FakeScalarResult(rows=[credit]),
+            _FakeScalarResult(scalar_value=None),
+        ]
+    )
+    captured: dict[str, object] = {}
+
+    async def fake_send_push_to_user(*args, **kwargs):
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(notifications_service, "send_push_to_user", fake_send_push_to_user)
+
+    sent = asyncio.run(
+        notifications_service.process_bonus_expiry_notifications(session, now=now)
+    )
+
+    assert sent == 1
+    assert "375 бонусов" in str(captured["body"])
+    assert captured["data"]["expires_at"] == credit.expires_at.isoformat()
+    assert len(session.added) == 1
+    assert session.added[0].type == notifications_service.DISPATCH_TYPE_BONUS_EXPIRY
 
 
 def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyPatch):

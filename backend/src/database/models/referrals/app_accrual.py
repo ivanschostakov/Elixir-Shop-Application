@@ -200,6 +200,25 @@ class AppReferralAccrual(Base, IdPkMixin, TimestampMixin):
         String(length=500),
         nullable=True,
     )
+    settlement_method: Mapped[str] = mapped_column(
+        String(length=STATUS_MAX_LENGTH),
+        nullable=False,
+        default="deposit",
+        server_default=text("'deposit'"),
+        index=True,
+    )
+    settlement_reference: Mapped[str | None] = mapped_column(
+        String(length=255),
+        nullable=True,
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    settled_by_admin_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+    )
     wallet_reversal_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,

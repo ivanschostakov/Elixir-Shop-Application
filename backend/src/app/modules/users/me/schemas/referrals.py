@@ -11,10 +11,11 @@ class ReferralProfileRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     user_id: int = Field(ge=1)
-    reward_program: Literal["combined"] = "combined"
+    reward_program: Literal["bonus", "partner"] = "bonus"
     reward_program_selected_at: datetime | None = None
     reward_program_selection_source: str | None = Field(default=None, max_length=32)
     program_selection_required: bool = False
+    program_selection_available: bool = False
     bonus_program_enabled: bool = False
     partner_program_unlocked: bool = False
     partner_program_status: Literal["locked", "eligible", "active"] = "locked"
@@ -47,6 +48,8 @@ class ReferralProfileRead(BaseModel):
     bitrix_synced_at: datetime | None = None
     bitrix_user_id: int | None = Field(default=None, ge=1)
     total_purchases: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    current_month_purchases: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    previous_month_purchases: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
     referral_discount_base_total: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     current_discount_percent: Decimal = Field(ge=0, max_digits=7, decimal_places=2)
     promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
@@ -59,10 +62,16 @@ class ReferralProfileRead(BaseModel):
     bonus_program_name: str | None = None
     bonus_spend_rate_points_to_ruble: int = Field(default=1, ge=1)
     bonus_max_paid_rate_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=7, decimal_places=2)
+    bonus_next_expiration_at: datetime | None = None
+    bonus_expiring_points: int = Field(default=0, ge=0)
+    bonus_expiring_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    bonus_expiry_warning_days: int = Field(default=14, ge=1)
     partner_pending_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
     partner_approved_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
     partner_rejected_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
     partner_site_balance_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    partner_monthly_minimum: Decimal = Field(default=Decimal("10000.00"), ge=0, max_digits=14, decimal_places=2)
+    partner_monthly_eligible: bool = False
     partner_network_period: str | None = Field(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
     partner_network_status: str | None = Field(default=None, max_length=STATUS_MAX_LENGTH)
     partner_network_turnover: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
@@ -73,7 +82,7 @@ class ReferralProfileRead(BaseModel):
 
 
 class RewardProgramSelectPayload(BaseModel):
-    program: Literal["bonus", "partner", "combined"]
+    program: Literal["bonus", "partner"]
 
 
 class ReferrerCodeCheckPayload(BaseModel):

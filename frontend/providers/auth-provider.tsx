@@ -44,9 +44,11 @@ import {
     hydrateAuthTokens,
     setRefreshHandler,
     subscribeAuthSession,
+    readCachedAuthUser,
 } from "@/services/auth/session"
 import { syncCustomerIntelligenceSession } from "@/services/customer-intelligence"
 import { heartbeatMyPresence } from "@/services/api/users"
+import { ApiError } from "@/services/api/client"
 
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 60_000
 
@@ -208,18 +210,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 return
             }
 
+            const cachedUser = await readCachedAuthUser()
             try {
                 const nextUser = await getCurrentUser()
 
                 if (isMounted) {
                     setUser(nextUser)
                 }
-            } catch {
-                clearAuthTokens()
-                clearBasketSnapshot()
-
-                if (isMounted) {
-                    setUser(null)
+            } catch (error) {
+                // A temporary offline/backend failure must not turn into a
+                // logout. refreshSession clears tokens only for a definitive
+                // authentication rejection, so a cached profile is safe here.
+                const isAuthenticationRejection = error instanceof ApiError && (error.status === 401 || error.status === 403)
+                if (!isAuthenticationRejection && getAuthTokens()) {
+                    if (isMounted) setUser(cachedUser)
+                } else {
+                    clearAuthTokens()
+                    clearBasketSnapshot()
+                    if (isMounted) setUser(null)
                 }
             } finally {
                 if (isMounted) {

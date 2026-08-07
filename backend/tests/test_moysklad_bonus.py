@@ -33,11 +33,11 @@ def test_bonus_wallet_converts_points_and_sales_amount_from_moysklad():
     assert wallet.balance_rubles == Decimal("35.00")
     assert wallet.sales_amount_rubles == Decimal("1234.56")
     assert wallet.spend_rate_points_to_ruble == 2
-    assert wallet.max_paid_rate_percent == Decimal("30")
+    assert wallet.max_paid_rate_percent == Decimal("100")
     assert wallet.is_available is True
 
 
-def test_bonus_spend_respects_program_percentage_and_whole_points():
+def test_bonus_spend_allows_full_payment_and_whole_points():
     wallet = bonus_wallet_from_counterparty(
         {
             "id": COUNTERPARTY_ID,
@@ -53,9 +53,9 @@ def test_bonus_spend_respects_program_percentage_and_whole_points():
 
     points, rubles = bonus_spend_for_subtotal(wallet, Decimal("199.95"))
 
-    assert points == 149
-    assert rubles == Decimal("49.67")
-    assert rubles <= Decimal("50.00")
+    assert points == 599
+    assert rubles == Decimal("199.67")
+    assert rubles <= Decimal("199.95")
 
 
 def test_inactive_bonus_program_cannot_be_spent():

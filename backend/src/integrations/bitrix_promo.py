@@ -90,6 +90,25 @@ class BitrixPromoClient:
             user_email=user_email,
         )
 
+    async def set_opening_balance(
+        self,
+        *,
+        amount: str,
+        currency: str = "RUB",
+        bitrix_user_id: int | None = None,
+        user_email: str | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "action": "set_opening_balance",
+            "amount": amount,
+            "currency": currency.upper(),
+        }
+        if bitrix_user_id is not None and bitrix_user_id > 0:
+            payload["user_id"] = bitrix_user_id
+        if user_email:
+            payload["user_email"] = user_email
+        return await self._request(payload)
+
     async def attach_referrer(
         self,
         *,

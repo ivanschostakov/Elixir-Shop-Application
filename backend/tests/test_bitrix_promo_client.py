@@ -242,7 +242,7 @@ def test_profile_refresh_updates_or_clears_local_referrer_promo(
         lambda: True,
     )
     monkeypatch.setattr(
-        "src.app.services.referrals.bitrix_sync.ensure_unified_reward_program",
+        "src.app.services.referrals.bitrix_sync.ensure_default_reward_program",
         ensure_unified,
     )
 
@@ -296,7 +296,7 @@ def test_profile_refresh_preserves_configured_firm_promo(monkeypatch):
         lambda: True,
     )
     monkeypatch.setattr(
-        "src.app.services.referrals.bitrix_sync.ensure_unified_reward_program",
+        "src.app.services.referrals.bitrix_sync.ensure_default_reward_program",
         ensure_unified,
     )
 

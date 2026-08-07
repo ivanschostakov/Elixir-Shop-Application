@@ -156,7 +156,7 @@ class elixir_promo extends CModule
                 CURRENCY CHAR(3) NOT NULL,
                 PAID_AT DATETIME NOT NULL,
                 PERIOD CHAR(7) NOT NULL,
-                PROGRAM VARCHAR(20) NOT NULL DEFAULT 'combined',
+                PROGRAM VARCHAR(20) NOT NULL DEFAULT 'partner',
                 COUPON_ID INT NULL,
                 DISCOUNT_ID INT NULL,
                 COUPON_USE_COUNT_BEFORE INT NULL,
@@ -179,7 +179,7 @@ class elixir_promo extends CModule
             $purchaseColumns[strtoupper((string)$purchaseColumn['Field'])] = true;
         }
         $requiredPurchaseColumns = [
-            'PROGRAM' => "VARCHAR(20) NOT NULL DEFAULT 'combined' AFTER PERIOD",
+            'PROGRAM' => "VARCHAR(20) NOT NULL DEFAULT 'partner' AFTER PERIOD",
             'COUPON_ID' => 'INT NULL AFTER PROGRAM',
             'DISCOUNT_ID' => 'INT NULL AFTER COUPON_ID',
             'COUPON_USE_COUNT_BEFORE' => 'INT NULL AFTER DISCOUNT_ID',
@@ -198,8 +198,8 @@ class elixir_promo extends CModule
         }
         $connection->queryExecute(
             "UPDATE b_elixir_referral_app_purchase
-             SET PROGRAM='combined'
-             WHERE PROGRAM IN ('bonus', 'partner')"
+             SET PROGRAM='partner'
+             WHERE PROGRAM='combined'"
         );
         $connection->queryExecute(
             "CREATE TABLE IF NOT EXISTS b_elixir_referral_partner_accrual (
@@ -229,30 +229,6 @@ class elixir_promo extends CModule
                 KEY IX_ELIXIR_PARTNER_PURCHASE (PURCHASE_ID),
                 KEY IX_ELIXIR_PARTNER_BENEFICIARY (BENEFICIARY_USER_ID, PERIOD, STATUS),
                 KEY IX_ELIXIR_PARTNER_REFERRAL (REFERRAL_USER_ID, PERIOD)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
-        );
-        $connection->queryExecute(
-            "CREATE TABLE IF NOT EXISTS b_elixir_partner_network_monthly (
-                ID BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                BENEFICIARY_USER_ID INT NOT NULL,
-                PERIOD CHAR(7) NOT NULL,
-                LEVEL_ONE_TURNOVER DECIMAL(18,2) NOT NULL DEFAULT 0,
-                LEVEL_TWO_TURNOVER DECIMAL(18,2) NOT NULL DEFAULT 0,
-                NETWORK_TURNOVER DECIMAL(18,2) NOT NULL DEFAULT 0,
-                OWN_MONTHLY_PURCHASES DECIMAL(18,2) NOT NULL DEFAULT 0,
-                LIFETIME_PURCHASES DECIMAL(18,2) NOT NULL DEFAULT 0,
-                RATE_PERCENT DECIMAL(7,2) NOT NULL DEFAULT 0,
-                AMOUNT DECIMAL(18,2) NOT NULL DEFAULT 0,
-                CURRENCY CHAR(3) NOT NULL,
-                STATUS VARCHAR(20) NOT NULL DEFAULT 'pending',
-                REASON VARCHAR(100) NULL,
-                CALCULATION_JSON LONGTEXT NULL,
-                FINALIZED_AT DATETIME NULL,
-                CREATED_AT DATETIME NOT NULL,
-                UPDATED_AT DATETIME NOT NULL,
-                PRIMARY KEY (ID),
-                UNIQUE KEY UX_ELIXIR_NETWORK_MONTH (BENEFICIARY_USER_ID, PERIOD),
-                KEY IX_ELIXIR_NETWORK_PERIOD_STATUS (PERIOD, STATUS)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
         );
         return true;

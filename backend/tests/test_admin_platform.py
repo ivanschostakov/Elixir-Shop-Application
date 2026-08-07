@@ -361,7 +361,7 @@ def test_trigger_campaign_settings_keep_defaults_and_validate_intervals():
     assert defaults["cooldown_hours"] == 24
     custom = normalize_marketing_automation_settings("review_reminder", {"after_days": 14})
     assert custom["after_days"] == 14
-    assert custom["title"] == "Поделитесь отзывом"
+    assert custom["title"] == "Оставьте отзыв — получите бонусы"
     with pytest.raises(ValidationError):
         normalize_marketing_automation_settings("review_reminder", {"after_days": 0})
 
