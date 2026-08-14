@@ -162,6 +162,9 @@ export const createProfileScreenStyles = (colors: ThemePalette) => StyleSheet.cr
         boxShadow: "0px 6px 12px rgba(11, 31, 51, 0.04)",
         elevation: 1,
     },
+    metricCardCompact: {
+        minHeight: 96,
+    },
     metricLabel: {
         color: colors.mutedText,
         fontSize: 13,

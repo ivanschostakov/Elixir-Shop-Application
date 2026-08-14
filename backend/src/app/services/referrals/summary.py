@@ -7,7 +7,7 @@ import httpx
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import ufa_now
+from config import LOYALTY_ORDER_CASHBACK_PERCENT, ufa_now
 from src.app.services.benefits.loyalty import (
     loyalty_bonus_expiration_summary,
     pending_loyalty_bonus_points,
@@ -257,6 +257,9 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         "updated_at": profile.updated_at,
         "bonus_points": bonus_wallet.balance_points + pending_bonus_points,
         "bonus_rubles": bonus_wallet.balance_rubles + pending_bonus_rubles,
+        "bonus_cashback_percent": Decimal(
+            max(0, min(100, int(LOYALTY_ORDER_CASHBACK_PERCENT)))
+        ),
         "bonus_wallet_available": bonus_wallet.is_loaded or pending_bonus_points > 0,
         "bonus_program_name": "Бонусные рубли",
         "bonus_spend_rate_points_to_ruble": bonus_wallet.spend_rate_points_to_ruble,

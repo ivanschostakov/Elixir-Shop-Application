@@ -24,6 +24,7 @@ RewardProgram = Literal["bonus", "partner"]
 DEFAULT_REWARD_PROGRAM: RewardProgram = "bonus"
 REWARD_PROGRAMS = frozenset(("bonus", "partner"))
 LEGACY_REWARD_PROGRAMS = frozenset(("combined",))
+LOCKED_REWARD_PROGRAM_SOURCES = frozenset(("user", "admin", "system_existing_promo"))
 
 
 def normalize_reward_program(value: str | None) -> RewardProgram | None:
@@ -40,7 +41,7 @@ def reward_program_selection_available(profile: ReferralProfile) -> bool:
 def reward_program_selection_required(profile: ReferralProfile) -> bool:
     return (
         reward_program_selection_available(profile)
-        and profile.reward_program_selection_source not in {"user", "admin"}
+        and profile.reward_program_selection_source not in LOCKED_REWARD_PROGRAM_SOURCES
     )
 
 
@@ -49,18 +50,38 @@ async def ensure_default_reward_program(
     *,
     user: User,
 ) -> ReferralProfile:
-    """Keep the cumulative program as the default until the customer chooses."""
+    """Default to bonuses while preserving an existing website promo relationship."""
     profile = await get_or_create_referral_profile(db, user=user)
+    existing_promo = optional_str(user.promo_code)
     if normalize_reward_program(profile.reward_program) is None:
         previous_value = optional_str(profile.reward_program)
-        profile.reward_program = DEFAULT_REWARD_PROGRAM
-        profile.reward_program_selected_at = None
-        profile.reward_program_selection_source = "system_default"
+        profile.reward_program = "partner" if existing_promo else DEFAULT_REWARD_PROGRAM
+        profile.reward_program_selected_at = (
+            datetime.now(timezone.utc) if existing_promo else None
+        )
+        profile.reward_program_selection_source = (
+            "system_existing_promo" if existing_promo else "system_default"
+        )
         if previous_value in LEGACY_REWARD_PROGRAMS:
             profile.reward_program_snapshot = {
                 **dict(profile.reward_program_snapshot or {}),
                 "migrated_from": previous_value,
             }
+    elif (
+        profile.reward_program == DEFAULT_REWARD_PROGRAM
+        and profile.reward_program_selection_source == "system_default"
+        and existing_promo
+    ):
+        # The website is authoritative for an existing referrer relationship.
+        # Preserve that active program when repairing profiles that the split-
+        # program migration temporarily classified as the bonus default.
+        profile.reward_program = "partner"
+        profile.reward_program_selected_at = datetime.now(timezone.utc)
+        profile.reward_program_selection_source = "system_existing_promo"
+        profile.reward_program_snapshot = {
+            **dict(profile.reward_program_snapshot or {}),
+            "recovered_existing_promo": existing_promo,
+        }
     await db.flush()
     return profile
 
@@ -122,7 +143,7 @@ async def select_reward_program(
 
     profile = await ensure_default_reward_program(db, user=user)
     previous_program = normalize_reward_program(profile.reward_program)
-    explicit_selection = profile.reward_program_selection_source in {"user", "admin"}
+    explicit_selection = profile.reward_program_selection_source in LOCKED_REWARD_PROGRAM_SOURCES
     if not force and not reward_program_selection_available(profile):
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

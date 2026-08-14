@@ -141,6 +141,7 @@ export type ReferralProfileResponse = {
     referrer_promo_code: string | null
     bonus_points: number
     bonus_rubles: string
+    bonus_cashback_percent: string
     bonus_wallet_available: boolean
     bonus_program_name: string | null
     bonus_spend_rate_points_to_ruble: number

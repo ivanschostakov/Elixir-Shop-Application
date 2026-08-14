@@ -58,6 +58,9 @@ class ReferralProfileRead(BaseModel):
     referrer_promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
     bonus_points: int = Field(default=0, ge=0)
     bonus_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
+    bonus_cashback_percent: Decimal = Field(
+        default=Decimal("5.00"), ge=0, le=100, max_digits=7, decimal_places=2
+    )
     bonus_wallet_available: bool = False
     bonus_program_name: str | None = None
     bonus_spend_rate_points_to_ruble: int = Field(default=1, ge=1)

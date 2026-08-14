@@ -76,7 +76,13 @@ export default function ProfileDiscountsScreen() {
     const normalizedProfilePromoCode = useMemo(() => profilePromoCode.trim(), [profilePromoCode])
     const isPartnerProgram = referralProfile?.reward_program === "partner"
     const isBonusProgram = referralProfile?.reward_program === "bonus"
-    const hasCurrentPromoCode = Boolean(isPartnerProgram && referralProfile?.promo_code)
+    const currentPromoCode = referralProfile?.referrer_promo_code ?? referralProfile?.promo_code
+    const hasCurrentPromoCode = Boolean(isPartnerProgram && currentPromoCode)
+    const hasPartnerEarnings = Boolean(
+        referralProfile?.own_promo_code
+        || Number(referralProfile?.partner_pending_rubles ?? 0) > 0
+        || Number(referralProfile?.partner_approved_rubles ?? 0) > 0,
+    )
 
     useFocusEffect(
         useCallback(() => {
@@ -277,41 +283,31 @@ export default function ProfileDiscountsScreen() {
                 </View>
             ) : null}
 
-            {referralProfile ? (
-                <View style={profileStyles.sectionCard}>
-                    <Text style={profileStyles.sectionTitle}>{t("profile.referral.totalPurchases")}</Text>
-                    <View style={profileStyles.metricsGrid}>
-                        <View style={[profileStyles.metricCard, { flexBasis: "100%", flexGrow: 1 }]}>
-                            <Text style={profileStyles.metricLabel}>{t("profile.referral.totalPurchases")}</Text>
-                            <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.total_purchases)}</Text>
-                        </View>
-                        <View style={[profileStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
-                            <Text style={profileStyles.metricLabel}>{t("profile.referral.currentMonthPurchases")}</Text>
-                            <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.current_month_purchases)}</Text>
-                        </View>
-                        <View style={[profileStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
-                            <Text style={profileStyles.metricLabel}>{t("profile.referral.previousMonthPurchases")}</Text>
-                            <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.previous_month_purchases)}</Text>
-                        </View>
-                    </View>
-                </View>
-            ) : referralLoading ? <ActivityIndicator color={accentPalette.primary} /> : null}
+            {!referralProfile && referralLoading ? <ActivityIndicator color={accentPalette.primary} /> : null}
 
-            {isBonusProgram && referralProfile ? (
+            {isBonusProgram && referralProfile && !referralProfile.program_selection_required ? (
                 <View style={profileStyles.sectionCard}>
                     <Text style={profileStyles.sectionTitle}>{t("profile.referral.bonusProgramTitle")}</Text>
                     <Text style={profileStyles.sectionDescription}>{t("profile.referral.bonusProgramHint")}</Text>
                     <View style={profileStyles.metricsGrid}>
-                        <View style={[profileStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
-                            <Text style={profileStyles.metricLabel}>{t("profile.referral.bonusRubles")}</Text>
-                            <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.bonus_rubles)}</Text>
+                        <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
+                            <Text style={profileStyles.metricLabel}>{t("profile.referral.bonusCashbackPercent")}</Text>
+                            <Text style={profileStyles.metricValue}>{formatProfilePercent(referralProfile.bonus_cashback_percent ?? "5")}</Text>
                         </View>
-                        <View style={[profileStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
+                        <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
+                            <Text style={profileStyles.metricLabel}>{t("profile.referral.availableToSpend")}</Text>
+                            <Text style={profileStyles.metricValue}>
+                                {referralProfile.bonus_wallet_available
+                                    ? formatProfileMoney(referralProfile.bonus_rubles)
+                                    : t("profile.referral.bonusUnavailable")}
+                            </Text>
+                        </View>
+                        <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "100%", flexGrow: 1 }]}>
                             <Text style={profileStyles.metricLabel}>{t("profile.referral.bonusExpiresAt")}</Text>
                             <Text style={profileStyles.metricValue}>{formatProfileDate(referralProfile.bonus_next_expiration_at)}</Text>
                         </View>
                         {referralProfile.bonus_expiring_points > 0 ? (
-                            <View style={[profileStyles.metricCard, { flexBasis: "100%", flexGrow: 1 }]}>
+                            <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "100%", flexGrow: 1 }]}>
                                 <Text style={profileStyles.metricLabel}>{t("profile.referral.bonusExpiringSoon")}</Text>
                                 <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.bonus_expiring_rubles)}</Text>
                             </View>
@@ -320,40 +316,20 @@ export default function ProfileDiscountsScreen() {
                 </View>
             ) : null}
 
-            {isPartnerProgram && referralProfile ? (
+            {isPartnerProgram && referralProfile && !referralProfile.program_selection_required ? (
                 <>
                     <View style={profileStyles.sectionCard}>
                         <Text style={profileStyles.sectionTitle}>{t("profile.referral.partnerProgramTitle")}</Text>
-                        <Text style={profileStyles.sectionDescription}>{t("profile.referral.programLockedHint")}</Text>
                         <View style={profileStyles.metricsGrid}>
-                            <View style={[profileStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
+                            <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
                                 <Text style={profileStyles.metricLabel}>{t("profile.referral.currentDiscount")}</Text>
                                 <Text style={profileStyles.metricValue}>{formatProfilePercent(referralProfile.current_discount_percent)}</Text>
                             </View>
-                            <View style={[profileStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
-                                <Text style={profileStyles.metricLabel}>{t("profile.referral.monthlyEligibility")}</Text>
-                                <Text style={profileStyles.metricValue}>{referralProfile.partner_monthly_eligible ? "✓" : formatProfileMoney(referralProfile.partner_monthly_minimum)}</Text>
-                            </View>
-                            <View style={[profileStyles.metricCard, { flexBasis: "100%", flexGrow: 1 }]}>
-                                <Text style={profileStyles.metricLabel}>{t("profile.referral.ownPromo")}</Text>
-                                <Text style={[profileStyles.metricValue, profileStyles.metricValueCompact]}>{referralProfile.own_promo_code ?? "—"}</Text>
-                            </View>
-                            <View style={[profileStyles.metricCard, { flexBasis: "100%", flexGrow: 1 }]}>
+                            <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
                                 <Text style={profileStyles.metricLabel}>{t("profile.referral.attachedPromo")}</Text>
-                                <Text style={[profileStyles.metricValue, profileStyles.metricValueCompact]}>{referralProfile.referrer_promo_code ?? "—"}</Text>
-                            </View>
-                            <View style={[profileStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
-                                <Text style={profileStyles.metricLabel}>{t("profile.referral.partnerPending")}</Text>
-                                <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.partner_pending_rubles)}</Text>
-                            </View>
-                            <View style={[profileStyles.metricCard, { flexBasis: "47%", flexGrow: 1 }]}>
-                                <Text style={profileStyles.metricLabel}>{t("profile.referral.partnerApproved")}</Text>
-                                <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.partner_approved_rubles)}</Text>
+                                <Text style={[profileStyles.metricValue, profileStyles.metricValueCompact]}>{currentPromoCode ?? "—"}</Text>
                             </View>
                         </View>
-                    </View>
-                    <View style={profileStyles.sectionCard}>
-                        <Text style={profileStyles.sectionTitle}>{t("profile.referral.attachCodeLabel")}</Text>
                         {hasCurrentPromoCode ? (
                             <View style={profileStyles.detailStack}>
                                 <Text style={profileStyles.sectionDescription}>{t("profile.referral.attachedHint")}</Text>
@@ -372,6 +348,7 @@ export default function ProfileDiscountsScreen() {
                             </View>
                         ) : (
                             <>
+                                <Text style={profileStyles.sectionTitle}>{t("profile.referral.attachCodeLabel")}</Text>
                                 <Text style={profileStyles.sectionDescription}>{t("profile.referral.attachHint")}</Text>
                                 <View style={profileStyles.formGroup}>
                                     <TextInput
@@ -400,59 +377,90 @@ export default function ProfileDiscountsScreen() {
                             </>
                         )}
                     </View>
+                    <View style={profileStyles.sectionCard}>
+                        <Text style={profileStyles.sectionTitle}>{t("profile.referral.totalPurchases")}</Text>
+                        <View style={profileStyles.metricsGrid}>
+                            <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "100%", flexGrow: 1 }]}>
+                                <Text style={profileStyles.metricLabel}>{t("profile.referral.totalPurchases")}</Text>
+                                <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.total_purchases)}</Text>
+                            </View>
+                            <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
+                                <Text style={profileStyles.metricLabel}>{t("profile.referral.currentMonthPurchases")}</Text>
+                                <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.current_month_purchases)}</Text>
+                            </View>
+                            <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
+                                <Text style={profileStyles.metricLabel}>{t("profile.referral.previousMonthPurchases")}</Text>
+                                <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.previous_month_purchases)}</Text>
+                            </View>
+                        </View>
+                    </View>
+                    {hasPartnerEarnings ? (
+                        <View style={profileStyles.sectionCard}>
+                            <Text style={profileStyles.sectionTitle}>{t("profile.referral.partnerEarningsTitle")}</Text>
+                            <View style={profileStyles.metricsGrid}>
+                                {referralProfile.own_promo_code ? (
+                                    <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "100%", flexGrow: 1 }]}>
+                                        <Text style={profileStyles.metricLabel}>{t("profile.referral.ownPromo")}</Text>
+                                        <Text style={[profileStyles.metricValue, profileStyles.metricValueCompact]}>{referralProfile.own_promo_code}</Text>
+                                    </View>
+                                ) : null}
+                                <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
+                                    <Text style={profileStyles.metricLabel}>{t("profile.referral.partnerPending")}</Text>
+                                    <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.partner_pending_rubles)}</Text>
+                                </View>
+                                <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
+                                    <Text style={profileStyles.metricLabel}>{t("profile.referral.partnerApproved")}</Text>
+                                    <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.partner_approved_rubles)}</Text>
+                                </View>
+                                <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "100%", flexGrow: 1 }]}>
+                                    <Text style={profileStyles.metricLabel}>{t("profile.referral.availableToSpend")}</Text>
+                                    <Text style={profileStyles.metricValue}>
+                                        {referralProfile.bonus_wallet_available
+                                            ? formatProfileMoney(referralProfile.bonus_rubles)
+                                            : t("profile.referral.bonusUnavailable")}
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+                    ) : null}
                 </>
             ) : null}
 
-            <View style={profileStyles.sectionCard}>
-                <Text style={profileStyles.sectionTitle}>{t("profile.referral.paymentBonusTitle")}</Text>
-                <Text style={profileStyles.sectionDescription}>{t("profile.referral.paymentBonusHint")}</Text>
-                <View style={profileStyles.metricsGrid}>
-                    <View style={[profileStyles.metricCard, { flexBasis: "100%", flexGrow: 1 }]}>
-                        <Text style={profileStyles.metricLabel}>{t("profile.referral.bonusRubles")}</Text>
-                        <Text style={profileStyles.metricValue}>
-                            {referralProfile?.bonus_wallet_available
-                                ? formatProfileMoney(referralProfile.bonus_rubles)
-                                : t("profile.referral.bonusUnavailable")}
-                        </Text>
+            {promotionsLoading || promotions.length ? (
+                <View style={[profileStyles.sectionCard, profileStyles.sectionCardBottom]}>
+                    <View style={profileStyles.sectionHeader}>
+                        <View style={profileStyles.sectionHeaderCopy}>
+                            <Text style={profileStyles.sectionTitle}>{t("profile.discounts.offersTitle")}</Text>
+                            <Text style={profileStyles.sectionDescription}>{t("profile.discounts.subtitle")}</Text>
+                        </View>
+                        {promotionsLoading ? <ActivityIndicator color={accentPalette.primary} /> : null}
                     </View>
+                    {promotions.length ? (
+                        <View style={profileStyles.discountStack}>
+                            {promotions.map((promotion) => (
+                                <Pressable
+                                    accessibilityRole="button"
+                                    key={getProfilePromotionKey(promotion)}
+                                    onPress={() => handleOpenPromotion(promotion)}
+                                    style={({ pressed }) => [profileStyles.discountRow, pressed && profileStyles.discountRowPressed]}
+                                >
+                                    <Image resizeMode="cover" source={{ uri: promotion.image_url }} style={profileStyles.discountImage} />
+                                    <View style={profileStyles.discountCopy}>
+                                        <Text style={profileStyles.discountTitle}>{promotion.title}</Text>
+                                        <Text numberOfLines={2} style={profileStyles.discountCode}>
+                                            {promotion.kind === "category" ? t("profile.discounts.category") : t("profile.discounts.product")}
+                                        </Text>
+                                    </View>
+                                    <View style={profileStyles.discountBadge}>
+                                        <Text style={profileStyles.discountValue}>−{formatProfilePercent(promotion.discount_percent)}</Text>
+                                    </View>
+                                    <Text style={profileStyles.discountArrow}>{">"}</Text>
+                                </Pressable>
+                            ))}
+                        </View>
+                    ) : null}
                 </View>
-            </View>
-
-            <View style={[profileStyles.sectionCard, profileStyles.sectionCardBottom]}>
-                <View style={profileStyles.sectionHeader}>
-                    <View style={profileStyles.sectionHeaderCopy}>
-                        <Text style={profileStyles.sectionTitle}>{t("profile.discounts.offersTitle")}</Text>
-                        <Text style={profileStyles.sectionDescription}>{t("profile.discounts.subtitle")}</Text>
-                    </View>
-                    {promotionsLoading ? <ActivityIndicator color={accentPalette.primary} /> : null}
-                </View>
-                {promotions.length ? (
-                    <View style={profileStyles.discountStack}>
-                        {promotions.map((promotion) => (
-                            <Pressable
-                                accessibilityRole="button"
-                                key={getProfilePromotionKey(promotion)}
-                                onPress={() => handleOpenPromotion(promotion)}
-                                style={({ pressed }) => [profileStyles.discountRow, pressed && profileStyles.discountRowPressed]}
-                            >
-                                <Image resizeMode="cover" source={{ uri: promotion.image_url }} style={profileStyles.discountImage} />
-                                <View style={profileStyles.discountCopy}>
-                                    <Text style={profileStyles.discountTitle}>{promotion.title}</Text>
-                                    <Text numberOfLines={2} style={profileStyles.discountCode}>
-                                        {promotion.kind === "category" ? t("profile.discounts.category") : t("profile.discounts.product")}
-                                    </Text>
-                                </View>
-                                <View style={profileStyles.discountBadge}>
-                                    <Text style={profileStyles.discountValue}>−{formatProfilePercent(promotion.discount_percent)}</Text>
-                                </View>
-                                <Text style={profileStyles.discountArrow}>{">"}</Text>
-                            </Pressable>
-                        ))}
-                    </View>
-                ) : promotionsLoading ? null : (
-                    <Text style={profileStyles.sectionDescription}>{t("profile.discounts.empty")}</Text>
-                )}
-            </View>
+            ) : null}
         </FeedTemplate>
     )
 }

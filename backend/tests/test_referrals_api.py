@@ -49,6 +49,14 @@ def _user_promo_code(user_id: int) -> str | None:
         return user.promo_code if user is not None else None
 
 
+def _set_user_promo_code(user_id: int, promo_code: str | None) -> None:
+    with Session(sync_engine) as session:
+        user = session.get(User, user_id)
+        assert user is not None
+        user.promo_code = promo_code
+        session.commit()
+
+
 @pytest.fixture(autouse=True)
 def disable_bitrix_promo_for_local_referral_tests(monkeypatch):
     monkeypatch.setattr(
@@ -136,6 +144,7 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
     assert first_payload["reward_program"] == "bonus"
     assert first_payload["program_selection_required"] is False
     assert first_payload["bonus_program_enabled"] is True
+    assert _decimal(first_payload["bonus_cashback_percent"]) == Decimal("5.00")
     assert first_payload["partner_program_status"] == "locked"
 
     second_response = client.get(
@@ -147,6 +156,39 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
     with Session(sync_engine) as session:
         profile_count = session.query(ReferralProfile).filter(ReferralProfile.user_id == buyer["user_id"]).count()
         assert profile_count == 1
+
+
+def test_existing_website_promo_restores_partner_program_and_can_be_detached(
+    client: TestClient,
+    registered_user_factory,
+):
+    buyer = registered_user_factory(email_prefix="existing-promo")
+
+    initial = client.get(
+        "/api/v1/users/me/referral-profile",
+        headers=buyer["headers"],
+    )
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["reward_program"] == "bonus"
+
+    _set_user_promo_code(buyer["user_id"], "EXISTING-PROMO")
+
+    restored = client.get(
+        "/api/v1/users/me/referral-profile",
+        headers=buyer["headers"],
+    )
+    assert restored.status_code == 200, restored.text
+    restored_payload = restored.json()
+    assert restored_payload["reward_program"] == "partner"
+    assert restored_payload["promo_code"] == "EXISTING-PROMO"
+    assert restored_payload["program_selection_required"] is False
+
+    detached = client.delete(
+        "/api/v1/users/me/referral-profile/referrer-code",
+        headers=buyer["headers"],
+    )
+    assert detached.status_code == 200, detached.text
+    assert detached.json()["promo_code"] is None
 
 
 def test_program_selection_becomes_available_after_30000_and_is_locked(

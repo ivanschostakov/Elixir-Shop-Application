@@ -1,5 +1,9 @@
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
+import pytest
+
+import src.app.services.referrals.program as reward_program_service
 from src.app.services.benefits.loyalty import (
     REWARD_MODE_CASHBACK,
     REWARD_MODE_PROMO,
@@ -8,6 +12,7 @@ from src.app.services.benefits.loyalty import (
 )
 from config import LOYALTY_BONUS_LIFETIME_DAYS, LOYALTY_EXPIRY_WARNING_DAYS
 from src.app.services.referrals.program import (
+    ensure_default_reward_program,
     reward_program_selection_available,
     reward_program_selection_required,
 )
@@ -48,3 +53,30 @@ def test_program_choice_is_offered_at_30000_until_explicitly_selected():
     assert reward_program_selection_required(profile) is True
     profile.reward_program_selection_source = "user"
     assert reward_program_selection_required(profile) is False
+    profile.reward_program_selection_source = "system_existing_promo"
+    assert reward_program_selection_required(profile) is False
+
+
+@pytest.mark.anyio
+async def test_system_default_profile_with_existing_promo_is_restored_to_partner(monkeypatch):
+    profile = SimpleNamespace(
+        reward_program="bonus",
+        reward_program_selected_at=None,
+        reward_program_selection_source="system_default",
+        reward_program_snapshot={"migrated_from": "combined"},
+    )
+    user = SimpleNamespace(promo_code="EXISTING-PROMO")
+    db = SimpleNamespace(flush=AsyncMock())
+    monkeypatch.setattr(
+        reward_program_service,
+        "get_or_create_referral_profile",
+        AsyncMock(return_value=profile),
+    )
+
+    restored = await ensure_default_reward_program(db, user=user)
+
+    assert restored.reward_program == "partner"
+    assert restored.reward_program_selection_source == "system_existing_promo"
+    assert restored.reward_program_selected_at is not None
+    assert restored.reward_program_snapshot["recovered_existing_promo"] == "EXISTING-PROMO"
+    db.flush.assert_awaited_once()
