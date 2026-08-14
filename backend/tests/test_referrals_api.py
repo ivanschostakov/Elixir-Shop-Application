@@ -158,7 +158,7 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
         assert profile_count == 1
 
 
-def test_existing_website_promo_restores_partner_program_and_can_be_detached(
+def test_existing_website_promo_stays_dormant_until_partner_program_is_selected(
     client: TestClient,
     registered_user_factory,
 ):
@@ -173,15 +173,37 @@ def test_existing_website_promo_restores_partner_program_and_can_be_detached(
 
     _set_user_promo_code(buyer["user_id"], "EXISTING-PROMO")
 
-    restored = client.get(
+    deferred = client.get(
         "/api/v1/users/me/referral-profile",
         headers=buyer["headers"],
     )
-    assert restored.status_code == 200, restored.text
-    restored_payload = restored.json()
-    assert restored_payload["reward_program"] == "partner"
-    assert restored_payload["promo_code"] == "EXISTING-PROMO"
-    assert restored_payload["program_selection_required"] is False
+    assert deferred.status_code == 200, deferred.text
+    deferred_payload = deferred.json()
+    assert deferred_payload["reward_program"] == "bonus"
+    assert deferred_payload["promo_code"] is None
+    assert deferred_payload["program_selection_required"] is False
+    assert _user_promo_code(buyer["user_id"]) == "EXISTING-PROMO"
+
+    blocked = client.post(
+        "/api/v1/users/me/referral-profile/referrer-code",
+        headers=buyer["headers"],
+        json={"code": "ANOTHER-PROMO", "confirmed": True},
+    )
+    assert blocked.status_code == 409, blocked.text
+
+    with Session(sync_engine) as session:
+        profile = session.query(ReferralProfile).filter(ReferralProfile.user_id == buyer["user_id"]).one()
+        profile.referral_discount_base_total = Decimal("30000.00")
+        session.commit()
+
+    selected = client.post(
+        "/api/v1/users/me/referral-profile/program",
+        headers=buyer["headers"],
+        json={"program": "partner"},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["reward_program"] == "partner"
+    assert selected.json()["promo_code"] == "EXISTING-PROMO"
 
     detached = client.delete(
         "/api/v1/users/me/referral-profile/referrer-code",
@@ -189,6 +211,35 @@ def test_existing_website_promo_restores_partner_program_and_can_be_detached(
     )
     assert detached.status_code == 200, detached.text
     assert detached.json()["promo_code"] is None
+
+
+def test_selecting_bonus_keeps_existing_website_promo_dormant(
+    client: TestClient,
+    registered_user_factory,
+):
+    buyer = registered_user_factory(email_prefix="existing-promo-bonus")
+    _set_user_promo_code(buyer["user_id"], "EXISTING-PROMO")
+
+    client.get(
+        "/api/v1/users/me/referral-profile",
+        headers=buyer["headers"],
+    )
+    with Session(sync_engine) as session:
+        profile = session.query(ReferralProfile).filter(ReferralProfile.user_id == buyer["user_id"]).one()
+        profile.referral_discount_base_total = Decimal("30000.00")
+        session.commit()
+
+    selected = client.post(
+        "/api/v1/users/me/referral-profile/program",
+        headers=buyer["headers"],
+        json={"program": "bonus"},
+    )
+
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["reward_program"] == "bonus"
+    assert selected.json()["promo_code"] is None
+    assert selected.json()["program_selection_required"] is False
+    assert _user_promo_code(buyer["user_id"]) == "EXISTING-PROMO"
 
 
 def test_program_selection_becomes_available_after_30000_and_is_locked(

@@ -78,6 +78,11 @@ export default function ProfileDiscountsScreen() {
     const isBonusProgram = referralProfile?.reward_program === "bonus"
     const currentPromoCode = referralProfile?.referrer_promo_code ?? referralProfile?.promo_code
     const hasCurrentPromoCode = Boolean(isPartnerProgram && currentPromoCode)
+    const isChangingPromoCode = Boolean(
+        hasCurrentPromoCode
+        && normalizedProfilePromoCode
+        && normalizedProfilePromoCode.toUpperCase() !== currentPromoCode?.trim().toUpperCase(),
+    )
     const hasPartnerEarnings = Boolean(
         referralProfile?.own_promo_code
         || Number(referralProfile?.partner_pending_rubles ?? 0) > 0
@@ -119,7 +124,7 @@ export default function ProfileDiscountsScreen() {
         )
     }, [setReferralProfile, t])
 
-    const handleApplyProfilePromo = useCallback(async () => {
+    const applyProfilePromo = useCallback(async () => {
         if (!normalizedProfilePromoCode || isApplyingProfilePromo || !isPartnerProgram) {
             return
         }
@@ -141,6 +146,39 @@ export default function ProfileDiscountsScreen() {
             setIsApplyingProfilePromo(false)
         }
     }, [isApplyingProfilePromo, isPartnerProgram, normalizedProfilePromoCode, setReferralProfile, t])
+
+    const handleApplyProfilePromo = useCallback(() => {
+        if (!normalizedProfilePromoCode || isApplyingProfilePromo || !isPartnerProgram) {
+            return
+        }
+        if (hasCurrentPromoCode && !isChangingPromoCode) {
+            return
+        }
+        if (!hasCurrentPromoCode) {
+            void applyProfilePromo()
+            return
+        }
+        Alert.alert(
+            t("profile.referral.changeWarningTitle"),
+            t("profile.referral.changeWarningMessage"),
+            [
+                { text: t("common.cancel"), style: "cancel" },
+                {
+                    text: t("profile.referral.changeAction"),
+                    style: "destructive",
+                    onPress: () => void applyProfilePromo(),
+                },
+            ],
+        )
+    }, [
+        applyProfilePromo,
+        hasCurrentPromoCode,
+        isApplyingProfilePromo,
+        isChangingPromoCode,
+        isPartnerProgram,
+        normalizedProfilePromoCode,
+        t,
+    ])
 
     const detachProfilePromo = useCallback(async () => {
         if (isDetachingProfilePromo || !isPartnerProgram) {
@@ -189,12 +227,16 @@ export default function ProfileDiscountsScreen() {
     }, [])
 
     const discountsChromeTemplate = useMemo(() => {
-        if (!isPartnerProgram || !normalizedProfilePromoCode || hasCurrentPromoCode) {
+        if (
+            !isPartnerProgram
+            || !normalizedProfilePromoCode
+            || (hasCurrentPromoCode && !isChangingPromoCode)
+        ) {
             return null
         }
         const footerCtaLabel = isApplyingProfilePromo
             ? t("profile.referral.attachLoading")
-            : t("profile.referral.attachAction")
+            : t(hasCurrentPromoCode ? "profile.referral.changeAction" : "profile.referral.attachAction")
         return {
             footer: "nav+customAction" as const,
             slots: {
@@ -227,6 +269,7 @@ export default function ProfileDiscountsScreen() {
         handleApplyProfilePromo,
         hasCurrentPromoCode,
         isApplyingProfilePromo,
+        isChangingPromoCode,
         isPartnerProgram,
         normalizedProfilePromoCode,
         stickyFooterStyles,
@@ -333,6 +376,19 @@ export default function ProfileDiscountsScreen() {
                         {hasCurrentPromoCode ? (
                             <View style={profileStyles.detailStack}>
                                 <Text style={profileStyles.sectionDescription}>{t("profile.referral.attachedHint")}</Text>
+                                <Text style={profileStyles.sectionTitle}>{t("profile.referral.changeCodeLabel")}</Text>
+                                <Text style={profileStyles.sectionDescription}>{t("profile.referral.changeCodeHint")}</Text>
+                                <View style={profileStyles.formGroup}>
+                                    <TextInput
+                                        autoCapitalize="characters"
+                                        autoCorrect={false}
+                                        onChangeText={setProfilePromoCode}
+                                        placeholder={t("profile.referral.attachCodePlaceholder")}
+                                        placeholderTextColor="#94A3B8"
+                                        style={profileStyles.formInput}
+                                        value={profilePromoCode}
+                                    />
+                                </View>
                                 <Pressable
                                     disabled={isDetachingProfilePromo}
                                     onPress={handleDetachProfilePromo}

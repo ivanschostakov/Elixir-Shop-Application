@@ -69,12 +69,22 @@ def apply_bitrix_program_profile(
         and current_local_promo.casefold() in normalized_firm_promo_codes
     ):
         effective_promo = current_local_promo
-    purchase_total = (
+    reward_program = str(getattr(profile, "reward_program", "partner") or "partner")
+    is_partner_program = reward_program == "partner"
+    participating_purchase_total = (
         remote_purchase_total if effective_promo is not None else Decimal("0.00")
     )
+    purchase_total = participating_purchase_total
+    if not is_partner_program:
+        # Existing website promo relationships are remembered but remain
+        # inactive while the customer is in the default 5% bonus program.
+        purchase_total = max(
+            quantize_money(profile.referral_discount_base_total),
+            remote_purchase_total,
+        )
     effective_discount_percent = (
         quantize_percent(max(Decimal("3.00"), discount_percent))
-        if effective_promo is not None
+        if is_partner_program and effective_promo is not None
         else Decimal("0.00")
     )
     now = datetime.now(timezone.utc)
@@ -93,10 +103,13 @@ def apply_bitrix_program_profile(
     snapshot = dict(profile.reward_program_snapshot or {})
     snapshot.update(
         {
-            "mode": "partner",
+            "mode": reward_program,
             "bitrix_user_id": profile.bitrix_user_id,
             "bitrix_purchase_total": str(remote_purchase_total),
-            "participating_purchase_total": str(purchase_total),
+            "personal_purchase_total": str(purchase_total),
+            "participating_purchase_total": str(
+                participating_purchase_total if is_partner_program else Decimal("0.00")
+            ),
             "bitrix_discount_percent": str(discount_percent),
             "effective_discount_percent": str(effective_discount_percent),
             "bitrix_own_promo": own_promo,
@@ -105,6 +118,8 @@ def apply_bitrix_program_profile(
             "bitrix_synced_at": now.isoformat(),
         }
     )
+    if not is_partner_program and effective_promo:
+        snapshot["deferred_existing_promo"] = effective_promo
     profile.reward_program_snapshot = snapshot
 
 

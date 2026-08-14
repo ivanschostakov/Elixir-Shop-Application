@@ -54,11 +54,11 @@ def test_program_choice_is_offered_at_30000_until_explicitly_selected():
     profile.reward_program_selection_source = "user"
     assert reward_program_selection_required(profile) is False
     profile.reward_program_selection_source = "system_existing_promo"
-    assert reward_program_selection_required(profile) is False
+    assert reward_program_selection_required(profile) is True
 
 
 @pytest.mark.anyio
-async def test_system_default_profile_with_existing_promo_is_restored_to_partner(monkeypatch):
+async def test_system_default_profile_with_existing_promo_stays_bonus_until_selection(monkeypatch):
     profile = SimpleNamespace(
         reward_program="bonus",
         reward_program_selected_at=None,
@@ -75,8 +75,33 @@ async def test_system_default_profile_with_existing_promo_is_restored_to_partner
 
     restored = await ensure_default_reward_program(db, user=user)
 
-    assert restored.reward_program == "partner"
-    assert restored.reward_program_selection_source == "system_existing_promo"
-    assert restored.reward_program_selected_at is not None
-    assert restored.reward_program_snapshot["recovered_existing_promo"] == "EXISTING-PROMO"
+    assert restored.reward_program == "bonus"
+    assert restored.reward_program_selection_source == "system_default"
+    assert restored.reward_program_selected_at is None
+    assert restored.reward_program_snapshot["deferred_existing_promo"] == "EXISTING-PROMO"
     db.flush.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_inferred_existing_promo_partner_is_repaired_to_bonus_default(monkeypatch):
+    profile = SimpleNamespace(
+        reward_program="partner",
+        reward_program_selected_at=object(),
+        reward_program_selection_source="system_existing_promo",
+        reward_program_snapshot={"recovered_existing_promo": "slim101"},
+    )
+    user = SimpleNamespace(promo_code="slim101")
+    db = SimpleNamespace(flush=AsyncMock())
+    monkeypatch.setattr(
+        reward_program_service,
+        "get_or_create_referral_profile",
+        AsyncMock(return_value=profile),
+    )
+
+    repaired = await ensure_default_reward_program(db, user=user)
+
+    assert repaired.reward_program == "bonus"
+    assert repaired.reward_program_selected_at is None
+    assert repaired.reward_program_selection_source == "system_default"
+    assert repaired.reward_program_snapshot["deferred_existing_promo"] == "slim101"
+    assert "recovered_existing_promo" not in repaired.reward_program_snapshot

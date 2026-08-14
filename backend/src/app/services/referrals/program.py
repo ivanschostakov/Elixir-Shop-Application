@@ -24,7 +24,7 @@ RewardProgram = Literal["bonus", "partner"]
 DEFAULT_REWARD_PROGRAM: RewardProgram = "bonus"
 REWARD_PROGRAMS = frozenset(("bonus", "partner"))
 LEGACY_REWARD_PROGRAMS = frozenset(("combined",))
-LOCKED_REWARD_PROGRAM_SOURCES = frozenset(("user", "admin", "system_existing_promo"))
+LOCKED_REWARD_PROGRAM_SOURCES = frozenset(("user", "admin"))
 
 
 def normalize_reward_program(value: str | None) -> RewardProgram | None:
@@ -50,38 +50,41 @@ async def ensure_default_reward_program(
     *,
     user: User,
 ) -> ReferralProfile:
-    """Default to bonuses while preserving an existing website promo relationship."""
+    """Default to bonuses and keep an existing website promo dormant until selection."""
     profile = await get_or_create_referral_profile(db, user=user)
     existing_promo = optional_str(user.promo_code)
     if normalize_reward_program(profile.reward_program) is None:
         previous_value = optional_str(profile.reward_program)
-        profile.reward_program = "partner" if existing_promo else DEFAULT_REWARD_PROGRAM
-        profile.reward_program_selected_at = (
-            datetime.now(timezone.utc) if existing_promo else None
-        )
-        profile.reward_program_selection_source = (
-            "system_existing_promo" if existing_promo else "system_default"
-        )
+        profile.reward_program = DEFAULT_REWARD_PROGRAM
+        profile.reward_program_selected_at = None
+        profile.reward_program_selection_source = "system_default"
+        snapshot = dict(profile.reward_program_snapshot or {})
         if previous_value in LEGACY_REWARD_PROGRAMS:
-            profile.reward_program_snapshot = {
-                **dict(profile.reward_program_snapshot or {}),
-                "migrated_from": previous_value,
-            }
+            snapshot["migrated_from"] = previous_value
+        if existing_promo:
+            snapshot["deferred_existing_promo"] = existing_promo
+        profile.reward_program_snapshot = snapshot
+    elif profile.reward_program_selection_source == "system_existing_promo":
+        # A previous migration incorrectly treated the mere presence of a
+        # website promo as the customer's one-time program choice. Restore the
+        # approved default while retaining the website relationship for later.
+        profile.reward_program = DEFAULT_REWARD_PROGRAM
+        profile.reward_program_selected_at = None
+        profile.reward_program_selection_source = "system_default"
+        snapshot = dict(profile.reward_program_snapshot or {})
+        snapshot.pop("recovered_existing_promo", None)
+        if existing_promo:
+            snapshot["deferred_existing_promo"] = existing_promo
+        profile.reward_program_snapshot = snapshot
     elif (
         profile.reward_program == DEFAULT_REWARD_PROGRAM
         and profile.reward_program_selection_source == "system_default"
         and existing_promo
     ):
-        # The website is authoritative for an existing referrer relationship.
-        # Preserve that active program when repairing profiles that the split-
-        # program migration temporarily classified as the bonus default.
-        profile.reward_program = "partner"
-        profile.reward_program_selected_at = datetime.now(timezone.utc)
-        profile.reward_program_selection_source = "system_existing_promo"
-        profile.reward_program_snapshot = {
-            **dict(profile.reward_program_snapshot or {}),
-            "recovered_existing_promo": existing_promo,
-        }
+        snapshot = dict(profile.reward_program_snapshot or {})
+        if snapshot.get("deferred_existing_promo") != existing_promo:
+            snapshot["deferred_existing_promo"] = existing_promo
+            profile.reward_program_snapshot = snapshot
     await db.flush()
     return profile
 
@@ -210,7 +213,11 @@ async def select_reward_program(
             user.promo_code = optional_str(bitrix_profile.get("referrer_promo"))
 
     if normalized_program == "bonus":
-        user.promo_code = None
+        deferred_promo = optional_str(user.promo_code)
+        if bitrix_profile is not None:
+            deferred_promo = optional_str(bitrix_profile.get("referrer_promo")) or deferred_promo
+        if deferred_promo:
+            snapshot["deferred_existing_promo"] = deferred_promo
         refresh_profile_discount(profile, has_promo_code=False)
     elif not optional_str(user.promo_code):
         # The referral program is selected first; the customer can then attach
