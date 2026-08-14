@@ -171,6 +171,11 @@ final class PromoService
             'user_context' => $userContext['status'],
             'coupon_accepted' => (bool)$couponAccepted,
             'promo_mode' => (string)$discountContext['mode'],
+            'is_referral_promo' => (
+                (int)($discountContext['referral_owner_id'] ?? 0) > 0
+                || !empty($discountContext['is_firm_promo'])
+            ),
+            'is_firm_promo' => !empty($discountContext['is_firm_promo']),
             'runtime_user_groups' => (array)$discountContext['runtime_user_groups'],
             'effective_discount_percent' => $discountContext['effective_discount_percent'],
             'is_applicable' => (

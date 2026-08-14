@@ -12,7 +12,11 @@ from starlette import status
 from src.database.models import ReferralProfile, User
 from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
 from src.normalize import optional_str
-from .calculations import calculate_personal_discount_percent, quantize_money
+from .calculations import (
+    MIN_PARTICIPANT_DISCOUNT_PERCENT,
+    calculate_personal_discount_percent,
+    quantize_money,
+)
 
 MOYSKLAD_MONEY_MINOR_UNITS = Decimal("100.00")
 logger = logging.getLogger(__name__)
@@ -32,6 +36,12 @@ def user_has_promo_code(user: User) -> bool:
 
 
 def refresh_profile_discount(profile: ReferralProfile, *, has_promo_code: bool | None = None) -> None:
+    if has_promo_code and getattr(profile, "reward_program", None) == "bonus":
+        # The promo is active immediately, including while the default 5%
+        # cashback program is active. Its growth beyond 3% starts only after
+        # the customer explicitly chooses the partner program at 30,000 RUB.
+        profile.current_discount_percent = MIN_PARTICIPANT_DISCOUNT_PERCENT
+        return
     profile.current_discount_percent = calculate_personal_discount_percent(
         profile.referral_discount_base_total,
         has_promo_code=has_promo_code,

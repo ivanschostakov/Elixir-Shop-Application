@@ -188,6 +188,7 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
 
     return {
         "entered_code": resolved_benefits.get("entered_code"),
+        "reward_program": resolved_benefits.get("reward_program"),
         "reward_mode": resolved_benefits.get("reward_mode"),
         "basket_subtotal": _json_money(resolved_benefits.get("basket_subtotal")),
         "stacked_discount_amount": _json_money(resolved_benefits.get("stacked_discount_amount")),

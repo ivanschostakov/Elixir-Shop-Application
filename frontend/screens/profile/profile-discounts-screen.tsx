@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react"
 import { ActivityIndicator, Alert, Image, Pressable, Text, TextInput, View } from "react-native"
 import { router, useFocusEffect } from "expo-router"
+import { LinearGradient } from "expo-linear-gradient"
 
 import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { FeedTemplate } from "@/components/templates/feed-template"
@@ -77,7 +78,7 @@ export default function ProfileDiscountsScreen() {
     const isPartnerProgram = referralProfile?.reward_program === "partner"
     const isBonusProgram = referralProfile?.reward_program === "bonus"
     const currentPromoCode = referralProfile?.referrer_promo_code ?? referralProfile?.promo_code
-    const hasCurrentPromoCode = Boolean(isPartnerProgram && currentPromoCode)
+    const hasCurrentPromoCode = Boolean(currentPromoCode)
     const isChangingPromoCode = Boolean(
         hasCurrentPromoCode
         && normalizedProfilePromoCode
@@ -88,6 +89,9 @@ export default function ProfileDiscountsScreen() {
         || Number(referralProfile?.partner_pending_rubles ?? 0) > 0
         || Number(referralProfile?.partner_approved_rubles ?? 0) > 0,
     )
+    const totalPurchases = Number(referralProfile?.total_purchases ?? 0)
+    const choiceProgress = Math.max(0, Math.min(1, totalPurchases / 30000))
+    const partnerProgress = Math.max(0, Math.min(1, totalPurchases / 100000))
 
     useFocusEffect(
         useCallback(() => {
@@ -125,7 +129,7 @@ export default function ProfileDiscountsScreen() {
     }, [setReferralProfile, t])
 
     const applyProfilePromo = useCallback(async () => {
-        if (!normalizedProfilePromoCode || isApplyingProfilePromo || !isPartnerProgram) {
+        if (!normalizedProfilePromoCode || isApplyingProfilePromo) {
             return
         }
         setIsApplyingProfilePromo(true)
@@ -145,10 +149,10 @@ export default function ProfileDiscountsScreen() {
         } finally {
             setIsApplyingProfilePromo(false)
         }
-    }, [isApplyingProfilePromo, isPartnerProgram, normalizedProfilePromoCode, setReferralProfile, t])
+    }, [isApplyingProfilePromo, normalizedProfilePromoCode, setReferralProfile, t])
 
     const handleApplyProfilePromo = useCallback(() => {
-        if (!normalizedProfilePromoCode || isApplyingProfilePromo || !isPartnerProgram) {
+        if (!normalizedProfilePromoCode || isApplyingProfilePromo) {
             return
         }
         if (hasCurrentPromoCode && !isChangingPromoCode) {
@@ -175,13 +179,12 @@ export default function ProfileDiscountsScreen() {
         hasCurrentPromoCode,
         isApplyingProfilePromo,
         isChangingPromoCode,
-        isPartnerProgram,
         normalizedProfilePromoCode,
         t,
     ])
 
     const detachProfilePromo = useCallback(async () => {
-        if (isDetachingProfilePromo || !isPartnerProgram) {
+        if (isDetachingProfilePromo) {
             return
         }
         setIsDetachingProfilePromo(true)
@@ -198,7 +201,7 @@ export default function ProfileDiscountsScreen() {
         } finally {
             setIsDetachingProfilePromo(false)
         }
-    }, [isDetachingProfilePromo, isPartnerProgram, setReferralProfile, t])
+    }, [isDetachingProfilePromo, setReferralProfile, t])
 
     const handleDetachProfilePromo = useCallback(() => {
         Alert.alert(
@@ -228,8 +231,7 @@ export default function ProfileDiscountsScreen() {
 
     const discountsChromeTemplate = useMemo(() => {
         if (
-            !isPartnerProgram
-            || !normalizedProfilePromoCode
+            !normalizedProfilePromoCode
             || (hasCurrentPromoCode && !isChangingPromoCode)
         ) {
             return null
@@ -270,7 +272,6 @@ export default function ProfileDiscountsScreen() {
         hasCurrentPromoCode,
         isApplyingProfilePromo,
         isChangingPromoCode,
-        isPartnerProgram,
         normalizedProfilePromoCode,
         stickyFooterStyles,
         t,
@@ -283,14 +284,59 @@ export default function ProfileDiscountsScreen() {
             scrollViewStyle={profileStyles.container}
             style={profileStyles.screen}
         >
+            {referralProfile ? (
+                <LinearGradient
+                    colors={[accentPalette.primary, accentPalette.primaryPressed]}
+                    end={{ x: 1, y: 1 }}
+                    start={{ x: 0, y: 0 }}
+                    style={profileStyles.benefitsHero}
+                >
+                    <View style={profileStyles.benefitsHeroGlow} />
+                    <Text style={profileStyles.benefitsHeroEyebrow}>{t("profile.discounts.heroEyebrow")}</Text>
+                    <Text style={profileStyles.benefitsHeroTitle}>{t("profile.discounts.heroTitle")}</Text>
+                    <Text style={profileStyles.benefitsHeroDescription}>{t("profile.discounts.heroDescription")}</Text>
+                    <View style={profileStyles.benefitsHeroMetrics}>
+                        <View style={profileStyles.benefitsHeroMetric}>
+                            <Text style={profileStyles.benefitsHeroMetricLabel}>{t("profile.referral.currentDiscount")}</Text>
+                            <Text style={profileStyles.benefitsHeroMetricValue}>
+                                {formatProfilePercent(referralProfile.current_discount_percent)}
+                            </Text>
+                        </View>
+                        <View style={profileStyles.benefitsHeroMetric}>
+                            <Text style={profileStyles.benefitsHeroMetricLabel}>{t("profile.referral.bonusRubles")}</Text>
+                            <Text style={profileStyles.benefitsHeroMetricValue}>
+                                {referralProfile.bonus_wallet_available
+                                    ? formatProfileMoney(referralProfile.bonus_rubles)
+                                    : "—"}
+                            </Text>
+                        </View>
+                    </View>
+                    <View style={profileStyles.benefitsStatusPill}>
+                        <Text style={profileStyles.benefitsStatusPillText}>
+                            {t(isPartnerProgram
+                                ? "profile.discounts.statusPartner"
+                                : "profile.discounts.statusCashback")}
+                        </Text>
+                    </View>
+                </LinearGradient>
+            ) : null}
+
             {referralProfile?.program_selection_required ? (
                 <View style={profileStyles.sectionCard}>
-                    <Text style={profileStyles.sectionTitle}>{t("profile.referral.chooseProgramTitle")}</Text>
-                    <Text style={profileStyles.sectionDescription}>{t("profile.referral.chooseProgramHint")}</Text>
+                    <View style={profileStyles.benefitsSectionHeading}>
+                        <View style={profileStyles.benefitsNumberBadge}>
+                            <Text style={profileStyles.benefitsNumberBadgeText}>30K</Text>
+                        </View>
+                        <View style={profileStyles.sectionHeaderCopy}>
+                            <Text style={profileStyles.sectionTitle}>{t("profile.discounts.choiceUnlockedTitle")}</Text>
+                            <Text style={profileStyles.sectionDescription}>{t("profile.discounts.choiceUnlockedHint")}</Text>
+                        </View>
+                    </View>
                     <View style={profileStyles.detailStack}>
-                        <View style={profileStyles.metricCard}>
-                            <Text style={profileStyles.metricValue}>{t("profile.referral.bonusProgramTitle")}</Text>
-                            <Text style={profileStyles.sectionDescription}>{t("profile.referral.bonusProgramHint")}</Text>
+                        <View style={profileStyles.benefitsChoiceCard}>
+                            <Text style={profileStyles.benefitsChoiceKicker}>{t("profile.discounts.choiceCashbackKicker")}</Text>
+                            <Text style={profileStyles.metricValue}>{t("profile.discounts.choiceCashbackTitle")}</Text>
+                            <Text style={profileStyles.sectionDescription}>{t("profile.discounts.choiceCashbackHint")}</Text>
                             <Pressable
                                 disabled={selectingProgram !== null}
                                 onPress={() => chooseProgram("bonus")}
@@ -305,9 +351,10 @@ export default function ProfileDiscountsScreen() {
                                 </Text>
                             </Pressable>
                         </View>
-                        <View style={profileStyles.metricCard}>
-                            <Text style={profileStyles.metricValue}>{t("profile.referral.partnerProgramTitle")}</Text>
-                            <Text style={profileStyles.sectionDescription}>{t("profile.referral.partnerProgramHint")}</Text>
+                        <View style={profileStyles.benefitsChoiceCard}>
+                            <Text style={profileStyles.benefitsChoiceKicker}>{t("profile.discounts.choicePartnerKicker")}</Text>
+                            <Text style={profileStyles.metricValue}>{t("profile.discounts.choicePartnerTitle")}</Text>
+                            <Text style={profileStyles.sectionDescription}>{t("profile.discounts.choicePartnerHint")}</Text>
                             <Pressable
                                 disabled={selectingProgram !== null}
                                 onPress={() => chooseProgram("partner")}
@@ -328,7 +375,161 @@ export default function ProfileDiscountsScreen() {
 
             {!referralProfile && referralLoading ? <ActivityIndicator color={accentPalette.primary} /> : null}
 
-            {isBonusProgram && referralProfile && !referralProfile.program_selection_required ? (
+            {referralProfile ? (
+                <View style={profileStyles.sectionCard}>
+                    <View style={profileStyles.benefitsSectionHeading}>
+                        <View style={profileStyles.benefitsNumberBadge}>
+                            <Text style={profileStyles.benefitsNumberBadgeText}>01</Text>
+                        </View>
+                        <View style={profileStyles.sectionHeaderCopy}>
+                            <Text style={profileStyles.sectionTitle}>{t("profile.discounts.promoTitle")}</Text>
+                            <Text style={profileStyles.sectionDescription}>{t("profile.discounts.promoDescription")}</Text>
+                        </View>
+                    </View>
+                    {hasCurrentPromoCode ? (
+                        <View style={profileStyles.benefitsActivePromo}>
+                            <View style={profileStyles.benefitsActivePromoCopy}>
+                                <Text style={profileStyles.benefitsChoiceKicker}>{t("profile.discounts.promoActive")}</Text>
+                                <Text style={profileStyles.benefitsPromoCode}>{currentPromoCode}</Text>
+                            </View>
+                            <View style={profileStyles.benefitsDiscountPill}>
+                                <Text style={profileStyles.benefitsDiscountPillText}>
+                                    −{formatProfilePercent(referralProfile.current_discount_percent)}
+                                </Text>
+                            </View>
+                        </View>
+                    ) : (
+                        <View style={profileStyles.benefitsInfoStrip}>
+                            <Text style={profileStyles.benefitsInfoStripText}>{t("profile.discounts.promoEmptyHint")}</Text>
+                        </View>
+                    )}
+                    <View style={profileStyles.formGroup}>
+                        <Text style={profileStyles.formLabel}>
+                            {t(hasCurrentPromoCode
+                                ? "profile.referral.changeCodeLabel"
+                                : "profile.referral.attachCodeLabel")}
+                        </Text>
+                        <TextInput
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                            onChangeText={setProfilePromoCode}
+                            placeholder={t("profile.referral.attachCodePlaceholder")}
+                            placeholderTextColor="#94A3B8"
+                            style={profileStyles.formInput}
+                            value={profilePromoCode}
+                        />
+                        <Text style={profileStyles.formHint}>
+                            {t(hasCurrentPromoCode
+                                ? "profile.referral.changeCodeHint"
+                                : "profile.discounts.promoInputHint")}
+                        </Text>
+                    </View>
+                    {!hasCurrentPromoCode && referralProfile.suggested_promo_code ? (
+                        <Pressable
+                            onPress={() => setProfilePromoCode(referralProfile.suggested_promo_code ?? "")}
+                            style={({ pressed }) => [
+                                profileStyles.benefitsSoftAction,
+                                pressed && profileStyles.secondaryInlineButtonPressed,
+                            ]}
+                        >
+                            <Text style={profileStyles.benefitsSoftActionText}>
+                                {t("profile.referral.useFirmPromo")}: {referralProfile.suggested_promo_code}
+                            </Text>
+                        </Pressable>
+                    ) : null}
+                    {hasCurrentPromoCode ? (
+                        <Pressable
+                            disabled={isDetachingProfilePromo}
+                            onPress={handleDetachProfilePromo}
+                            style={({ pressed }) => [
+                                profileStyles.secondaryInlineButton,
+                                pressed && profileStyles.secondaryInlineButtonPressed,
+                            ]}
+                        >
+                            <Text style={profileStyles.secondaryInlineButtonText}>
+                                {isDetachingProfilePromo
+                                    ? t("profile.referral.detachLoading")
+                                    : t("profile.referral.detachAction")}
+                            </Text>
+                        </Pressable>
+                    ) : null}
+                </View>
+            ) : null}
+
+            {referralProfile ? (
+                <View style={profileStyles.sectionCard}>
+                    <Text style={profileStyles.sectionTitle}>{t("profile.discounts.howItWorksTitle")}</Text>
+                    <Text style={profileStyles.sectionDescription}>{t("profile.discounts.howItWorksSubtitle")}</Text>
+                    <View style={profileStyles.benefitsGuideStack}>
+                        <View style={profileStyles.benefitsGuideCard}>
+                            <View style={profileStyles.benefitsGuideHeader}>
+                                <View style={profileStyles.benefitsGuideIndex}><Text style={profileStyles.benefitsGuideIndexText}>1</Text></View>
+                                <View style={profileStyles.sectionHeaderCopy}>
+                                    <Text style={profileStyles.subsectionTitle}>{t("profile.discounts.guideCashbackTitle")}</Text>
+                                    <Text style={profileStyles.sectionDescription}>{t("profile.discounts.guideCashbackText")}</Text>
+                                </View>
+                            </View>
+                            <Text style={profileStyles.benefitsRuleText}>{t("profile.discounts.guideCashbackRules")}</Text>
+                        </View>
+                        <View style={profileStyles.benefitsGuideCard}>
+                            <View style={profileStyles.benefitsGuideHeader}>
+                                <View style={profileStyles.benefitsGuideIndex}><Text style={profileStyles.benefitsGuideIndexText}>2</Text></View>
+                                <View style={profileStyles.sectionHeaderCopy}>
+                                    <Text style={profileStyles.subsectionTitle}>{t("profile.discounts.guidePromoTitle")}</Text>
+                                    <Text style={profileStyles.sectionDescription}>{t("profile.discounts.guidePromoText")}</Text>
+                                </View>
+                            </View>
+                            <View style={profileStyles.benefitsScaleRow}>
+                                {[["0–30K", "3%"], ["40K", "4%"], ["100K", "10%"], ["200K", "20%"]].map(([amount, percent]) => (
+                                    <View key={amount} style={profileStyles.benefitsScaleItem}>
+                                        <Text style={profileStyles.benefitsScalePercent}>{percent}</Text>
+                                        <Text style={profileStyles.benefitsScaleAmount}>{amount}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </View>
+                        <View style={profileStyles.benefitsGuideCard}>
+                            <View style={profileStyles.benefitsGuideHeader}>
+                                <View style={profileStyles.benefitsGuideIndex}><Text style={profileStyles.benefitsGuideIndexText}>3</Text></View>
+                                <View style={profileStyles.sectionHeaderCopy}>
+                                    <Text style={profileStyles.subsectionTitle}>{t("profile.discounts.guidePartnerTitle")}</Text>
+                                    <Text style={profileStyles.sectionDescription}>{t("profile.discounts.guidePartnerText")}</Text>
+                                </View>
+                            </View>
+                            <Text style={profileStyles.benefitsRuleText}>{t("profile.discounts.guidePartnerRules")}</Text>
+                        </View>
+                    </View>
+                </View>
+            ) : null}
+
+            {referralProfile ? (
+                <View style={profileStyles.sectionCard}>
+                    <View style={profileStyles.benefitsProgressHeader}>
+                        <View>
+                            <Text style={profileStyles.metricLabel}>{t("profile.discounts.progressTitle")}</Text>
+                            <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.total_purchases)}</Text>
+                        </View>
+                        <Text style={profileStyles.benefitsProgressTarget}>
+                            {formatProfileMoney(totalPurchases < 30000 ? "30000" : "100000")}
+                        </Text>
+                    </View>
+                    <View style={profileStyles.benefitsProgressTrack}>
+                        <View
+                            style={[
+                                profileStyles.benefitsProgressFill,
+                                { width: `${Math.round((totalPurchases < 30000 ? choiceProgress : partnerProgress) * 100)}%` },
+                            ]}
+                        />
+                    </View>
+                    <Text style={profileStyles.sectionDescription}>
+                        {t(totalPurchases < 30000
+                            ? "profile.discounts.progressChoiceHint"
+                            : "profile.discounts.progressOwnPromoHint")}
+                    </Text>
+                </View>
+            ) : null}
+
+            {isBonusProgram && referralProfile ? (
                 <View style={profileStyles.sectionCard}>
                     <Text style={profileStyles.sectionTitle}>{t("profile.referral.bonusProgramTitle")}</Text>
                     <Text style={profileStyles.sectionDescription}>{t("profile.referral.bonusProgramHint")}</Text>
@@ -359,7 +560,7 @@ export default function ProfileDiscountsScreen() {
                 </View>
             ) : null}
 
-            {isPartnerProgram && referralProfile && !referralProfile.program_selection_required ? (
+            {isPartnerProgram && referralProfile ? (
                 <>
                     <View style={profileStyles.sectionCard}>
                         <Text style={profileStyles.sectionTitle}>{t("profile.referral.partnerProgramTitle")}</Text>
@@ -373,65 +574,7 @@ export default function ProfileDiscountsScreen() {
                                 <Text style={[profileStyles.metricValue, profileStyles.metricValueCompact]}>{currentPromoCode ?? "—"}</Text>
                             </View>
                         </View>
-                        {hasCurrentPromoCode ? (
-                            <View style={profileStyles.detailStack}>
-                                <Text style={profileStyles.sectionDescription}>{t("profile.referral.attachedHint")}</Text>
-                                <Text style={profileStyles.sectionTitle}>{t("profile.referral.changeCodeLabel")}</Text>
-                                <Text style={profileStyles.sectionDescription}>{t("profile.referral.changeCodeHint")}</Text>
-                                <View style={profileStyles.formGroup}>
-                                    <TextInput
-                                        autoCapitalize="characters"
-                                        autoCorrect={false}
-                                        onChangeText={setProfilePromoCode}
-                                        placeholder={t("profile.referral.attachCodePlaceholder")}
-                                        placeholderTextColor="#94A3B8"
-                                        style={profileStyles.formInput}
-                                        value={profilePromoCode}
-                                    />
-                                </View>
-                                <Pressable
-                                    disabled={isDetachingProfilePromo}
-                                    onPress={handleDetachProfilePromo}
-                                    style={({ pressed }) => [
-                                        profileStyles.secondaryInlineButton,
-                                        pressed && profileStyles.secondaryInlineButtonPressed,
-                                    ]}
-                                >
-                                    <Text style={profileStyles.secondaryInlineButtonText}>
-                                        {isDetachingProfilePromo ? t("profile.referral.detachLoading") : t("profile.referral.detachAction")}
-                                    </Text>
-                                </Pressable>
-                            </View>
-                        ) : (
-                            <>
-                                <Text style={profileStyles.sectionTitle}>{t("profile.referral.attachCodeLabel")}</Text>
-                                <Text style={profileStyles.sectionDescription}>{t("profile.referral.attachHint")}</Text>
-                                <View style={profileStyles.formGroup}>
-                                    <TextInput
-                                        autoCapitalize="characters"
-                                        autoCorrect={false}
-                                        onChangeText={setProfilePromoCode}
-                                        placeholder={t("profile.referral.attachCodePlaceholder")}
-                                        placeholderTextColor="#94A3B8"
-                                        style={profileStyles.formInput}
-                                        value={profilePromoCode}
-                                    />
-                                </View>
-                                {referralProfile.suggested_promo_code ? (
-                                    <Pressable
-                                        onPress={() => setProfilePromoCode(referralProfile.suggested_promo_code ?? "")}
-                                        style={({ pressed }) => [
-                                            profileStyles.secondaryInlineButton,
-                                            pressed && profileStyles.secondaryInlineButtonPressed,
-                                        ]}
-                                    >
-                                        <Text style={profileStyles.secondaryInlineButtonText}>
-                                            {t("profile.referral.useFirmPromo")}: {referralProfile.suggested_promo_code}
-                                        </Text>
-                                    </Pressable>
-                                ) : null}
-                            </>
-                        )}
+                        <Text style={profileStyles.sectionDescription}>{t("profile.discounts.partnerGrowthActive")}</Text>
                     </View>
                     <View style={profileStyles.sectionCard}>
                         <Text style={profileStyles.sectionTitle}>{t("profile.referral.totalPurchases")}</Text>

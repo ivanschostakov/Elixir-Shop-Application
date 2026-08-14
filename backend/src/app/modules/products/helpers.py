@@ -51,7 +51,6 @@ async def get_user_product_discount_percent(db: AsyncSession, user: User | None)
     if not user_has_promo_code(user): return Decimal("0.00")
     profile = await get_referral_profile_by_user_id(db, user.id)
     if profile is None: return Decimal("0.00")
-    if profile.reward_program != "partner": return Decimal("0.00")
     return quantize_percent(profile.current_discount_percent)
 
 

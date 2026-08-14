@@ -45,7 +45,9 @@ final class ReferralAccrualService
 
         $siteContext = new SiteDiscountContext();
         $discountContext = $siteContext->resolve($order['promo'], (int)$buyer['user_id']);
-        $buyerDiscount = $this->userDiscountPercent($siteContext, (int)$buyer['user_id'], true);
+        $buyerDiscount = $order['buyer_discount_percent'] !== null
+            ? (float)$order['buyer_discount_percent']
+            : $this->userDiscountPercent($siteContext, (int)$buyer['user_id'], true);
         $referrerUserId = $this->referrerForAppliedPromo($discountContext, (int)$buyer['user_id']);
         $participatesInProgram = $referrerUserId > 0
             || !empty($discountContext['is_firm_promo']);
@@ -499,6 +501,10 @@ final class ReferralAccrualService
         $promo = trim((string)($payload['promo'] ?? ''));
         $currency = strtoupper(trim((string)($payload['currency'] ?? 'RUB')));
         $amount = round((float)($payload['amount'] ?? 0), 2);
+        $buyerDiscountPercent = isset($payload['buyer_discount_percent'])
+            && is_numeric($payload['buyer_discount_percent'])
+            ? round((float)$payload['buyer_discount_percent'], 2)
+            : null;
         $paidAt = $this->parsePaidAt($payload['paid_at'] ?? null);
         if (
             $externalOrderId === ''
@@ -508,6 +514,7 @@ final class ReferralAccrualService
             || strlen($promo) > 100
             || $amount <= 0
             || $amount > 999999999999.99
+            || ($buyerDiscountPercent !== null && ($buyerDiscountPercent < 0 || $buyerDiscountPercent > 100))
             || !preg_match('/^[A-Z]{3}$/', $currency)
         ) {
             throw new \InvalidArgumentException('invalid_paid_order');
@@ -518,6 +525,7 @@ final class ReferralAccrualService
             'user_email' => $userEmail,
             'promo' => $promo,
             'amount' => $amount,
+            'buyer_discount_percent' => $buyerDiscountPercent,
             'currency' => $currency,
             'paid_at' => $paidAt,
             'period' => $paidAt->format('Y-m'),

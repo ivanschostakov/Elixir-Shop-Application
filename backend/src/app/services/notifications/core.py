@@ -20,6 +20,7 @@ DISPATCH_TYPE_REVIEW_REMINDER = "review_reminder"
 DISPATCH_TYPE_BONUS_EXPIRY = "bonus_expiry"
 DISPATCH_TYPE_AI_REPLY = "ai_reply"
 DISPATCH_TYPE_COMMUNITY_MESSAGE = "community_message"
+DISPATCH_TYPE_REWARD_PROGRAM_CHOICE = "reward_program_choice"
 
 
 class _MessageSettings(BaseModel):
@@ -437,3 +438,43 @@ async def send_ai_reply_notification(session: AsyncSession, *, user_id: int, cha
     except Exception:
         await session.rollback()
         log.exception("Failed to send AI reply notification for user_id=%s message_id=%s", user_id, message_id)
+
+
+async def send_reward_program_choice_notification(
+    session: AsyncSession,
+    *,
+    user_id: int,
+) -> None:
+    """Notify once when the customer reaches the 30,000 RUB choice point."""
+    try:
+        dedupe_key = "purchase-total:30000"
+        if await _was_notification_sent_ever(
+            session,
+            user_id=user_id,
+            dispatch_type=DISPATCH_TYPE_REWARD_PROGRAM_CHOICE,
+            dedupe_key=dedupe_key,
+        ):
+            return
+        await _send_and_record(
+            session,
+            user_id=user_id,
+            title="Выберите, как получать больше выгоды",
+            body=(
+                "Ваши покупки достигли 30 000 ₽. Оставьте 5% бонусами или "
+                "выберите рост скидки по промокоду до 20%."
+            ),
+            data={
+                "type": DISPATCH_TYPE_REWARD_PROGRAM_CHOICE,
+                "deep_link": "/profile-discounts",
+            },
+            dispatch_type=DISPATCH_TYPE_REWARD_PROGRAM_CHOICE,
+            dedupe_key=dedupe_key,
+            sent_at=ufa_now(),
+        )
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        log.exception(
+            "Failed to send reward program choice notification for user_id=%s",
+            user_id,
+        )

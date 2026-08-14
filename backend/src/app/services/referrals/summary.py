@@ -141,21 +141,18 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
 
     own_promo_code = None
     suggested_promo_code = None
-    referrer_promo_code = user.promo_code if reward_program == "partner" else None
+    referrer_promo_code = user.promo_code
     partner_pending, partner_approved, partner_rejected = (
         await _local_partner_totals(db, user_id=user.id)
     )
 
-    if reward_program == "partner":
-        program_profile = await refresh_assigned_referrer_promo(db, user=user)
-        if program_profile is not None:
-            own_promo_code = program_profile.get("own_promo")
-            suggested_promo_code = program_profile.get("suggested_promo")
-            referrer_promo_code = program_profile.get("referrer_promo") or user.promo_code
-        else:
-            refresh_profile_discount(profile, has_promo_code=bool(referrer_promo_code))
+    program_profile = await refresh_assigned_referrer_promo(db, user=user)
+    if program_profile is not None:
+        own_promo_code = program_profile.get("own_promo")
+        suggested_promo_code = program_profile.get("suggested_promo")
+        referrer_promo_code = program_profile.get("referrer_promo") or user.promo_code
     else:
-        refresh_profile_discount(profile, has_promo_code=False)
+        refresh_profile_discount(profile, has_promo_code=bool(referrer_promo_code))
 
     remote_monthly_eligible: bool | None = None
     if bitrix_promo_configured() and user.email:
@@ -207,6 +204,11 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
                             and current_month_purchases >= Decimal("10000.00")
                         )
                     )
+            else:
+                own_promo_code = partner_summary.get("own_promo") or own_promo_code
+                suggested_promo_code = partner_summary.get("suggested_promo") or suggested_promo_code
+                referrer_promo_code = partner_summary.get("referrer_promo") or referrer_promo_code
+                refresh_profile_discount(profile, has_promo_code=bool(referrer_promo_code))
             profile.bitrix_sync_status = "synced"
             profile.bitrix_synced_at = datetime.now(timezone.utc)
             profile.bitrix_sync_error = None

@@ -14,7 +14,7 @@ from src.app.services.referrals import (
     reward_program_selection_required,
 )
 from src.app.services.referrals.bitrix_sync import refresh_program_profile_from_bitrix
-from src.app.services.referrals.calculations import calculate_personal_discount_percent
+from src.app.services.referrals.calculations import MIN_PARTICIPANT_DISCOUNT_PERCENT
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User
 from src.integrations.bitrix_promo import (
@@ -75,10 +75,7 @@ def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal
     attached_promo = optional_str(user.promo_code)
     if not attached_promo:
         return None
-    discount_percent = calculate_personal_discount_percent(
-        profile.referral_discount_base_total,
-        has_promo_code=True,
-    )
+    discount_percent = profile.current_discount_percent
     if discount_percent <= Decimal("0.00"):
         return None
 
@@ -127,6 +124,9 @@ def _build_bitrix_promo_option(
     code: str,
     lookup: dict,
     quote: dict | None,
+    subtotal: Decimal,
+    discountable_subtotal: Decimal,
+    fixed_discount_percent: Decimal | None = None,
 ) -> ResolvedDiscountOption:
     discount_percent = quantize_money(
         quote.get("effective_discount_percent")
@@ -135,6 +135,29 @@ def _build_bitrix_promo_option(
     )
     discount_amount = quantize_money(quote.get("discount_amount")) if quote is not None else None
     is_applicable = bool(quote and quote.get("is_applicable") and discount_amount and discount_amount > 0)
+    calculation_mode = "fixed_amount"
+    estimated_total_after = (
+        quantize_money(quote.get("final_total"))
+        if quote is not None
+        else None
+    )
+    if fixed_discount_percent is not None:
+        discount_percent = fixed_discount_percent
+        calculation_mode = "percent"
+        discount_amount = None
+        estimated_discount_amount = estimate_discount_amount(
+            subtotal=discountable_subtotal,
+            calculation_mode="percent",
+            discount_percent=fixed_discount_percent,
+            discount_amount=None,
+        ) if is_applicable else None
+        estimated_total_after = (
+            max(Decimal("0.00"), subtotal - estimated_discount_amount)
+            if estimated_discount_amount is not None
+            else None
+        )
+    else:
+        estimated_discount_amount = discount_amount
     status = "available" if is_applicable else ("requires_cart" if quote is None else "not_applicable")
     reason = None
     if quote is None:
@@ -151,16 +174,12 @@ def _build_bitrix_promo_option(
         is_applicable=is_applicable,
         is_personal=True,
         is_stackable=False,
-        calculation_mode="fixed_amount",
+        calculation_mode=calculation_mode,
         discount_percent=discount_percent,
         discount_amount=discount_amount,
         currency=str(quote.get("currency")) if quote and quote.get("currency") else None,
-        estimated_discount_amount=discount_amount,
-        estimated_total_after=(
-            quantize_money(quote.get("final_total"))
-            if quote is not None
-            else None
-        ),
+        estimated_discount_amount=estimated_discount_amount,
+        estimated_total_after=estimated_total_after,
         reason=reason,
     )
 
@@ -222,7 +241,7 @@ async def resolve_benefits_for_user(
     )
     referral_profile = await ensure_default_reward_program(db, user=user)
     reward_program = normalize_reward_program(referral_profile.reward_program) or "bonus"
-    if reward_program == "partner":
+    if optional_str(user.promo_code) or reward_program == "partner":
         remote_program_profile = await refresh_program_profile_from_bitrix(
             db,
             user=user,
@@ -233,19 +252,16 @@ async def resolve_benefits_for_user(
                 has_promo_code=bool(optional_str(user.promo_code)),
             )
     else:
-        refresh_profile_discount(referral_profile, has_promo_code=False)
+        refresh_profile_discount(
+            referral_profile,
+            has_promo_code=bool(optional_str(user.promo_code)),
+        )
     bonus_wallet = await get_user_moysklad_bonus_wallet(user)
     # reward_mode is accepted for compatibility with already installed app
-    # builds. The selected program is authoritative.
+    # builds. Promo availability and the selected program are authoritative.
     del reward_mode
-    resolved_reward_mode = (
-        REWARD_MODE_PROMO if reward_program == "partner" else REWARD_MODE_CASHBACK
-    )
-    effective_code = (
-        trimmed_code or optional_str(user.promo_code)
-        if resolved_reward_mode == REWARD_MODE_PROMO
-        else None
-    )
+    effective_code = trimmed_code or optional_str(user.promo_code)
+    resolved_reward_mode = REWARD_MODE_PROMO if effective_code else REWARD_MODE_CASHBACK
     bitrix_option = None
     app_referral_option = (
         _build_app_referral_option(
@@ -254,7 +270,7 @@ async def resolve_benefits_for_user(
             subtotal=effective_subtotal,
             discountable_subtotal=effective_discountable_subtotal,
         )
-        if resolved_reward_mode == REWARD_MODE_PROMO
+        if effective_code
         else None
     )
     if bitrix_promo_configured() and effective_code:
@@ -273,10 +289,27 @@ async def resolve_benefits_for_user(
                 if resolved_quote_items
                 else None
             )
+            attached_code = lower_optional_str(user.promo_code)
+            is_assigned_referral_code = bool(
+                attached_code
+                and attached_code == lower_optional_str(effective_code)
+            )
+            is_referral_code = bool(
+                quote
+                and quote.get("is_referral_promo")
+            )
             bitrix_option = _build_bitrix_promo_option(
                 code=effective_code,
                 lookup=lookup,
                 quote=quote,
+                subtotal=effective_subtotal,
+                discountable_subtotal=effective_discountable_subtotal,
+                fixed_discount_percent=(
+                    MIN_PARTICIPANT_DISCOUNT_PERCENT
+                    if reward_program == "bonus"
+                    and (is_assigned_referral_code or is_referral_code)
+                    else None
+                ),
             )
         except BitrixPromoError as error:
             if error.status_code >= 500:
@@ -352,7 +385,7 @@ async def resolve_benefits_for_user(
         )
     cashback_earned_points = (
         cashback_points_for_amount(total_after_discounts)
-        if resolved_reward_mode == REWARD_MODE_CASHBACK
+        if reward_program == "bonus"
         else 0
     )
     pending_bonus_points = await pending_loyalty_bonus_points(db, user_id=user.id)

@@ -76,6 +76,31 @@ def _set_partner_program(
         session.commit()
 
 
+def _set_bonus_program_with_promo(
+    user_id: int,
+    *,
+    purchase_total: str = "0.00",
+    promo_code: str = "REFERRER",
+) -> None:
+    with Session(sync_engine) as session:
+        user = session.get(User, user_id)
+        assert user is not None
+        user.promo_code = promo_code
+        profile = (
+            session.query(ReferralProfile)
+            .filter(ReferralProfile.user_id == user_id)
+            .one_or_none()
+        )
+        if profile is None:
+            profile = ReferralProfile(user_id=user_id)
+            session.add(profile)
+        profile.reward_program = "bonus"
+        profile.reward_program_selection_source = "system_default"
+        profile.referral_discount_base_total = Decimal(purchase_total)
+        profile.current_discount_percent = Decimal("3.00")
+        session.commit()
+
+
 @pytest.fixture()
 def registered_user(register_verified_user):
     token = uuid.uuid4().hex[:12]
@@ -135,6 +160,31 @@ def test_benefit_check_returns_referral_personal_discount(client: TestClient, re
     assert [option["source_kind"] for option in payload["stacked_discount_options"]] == ["app_referral"]
 
 
+def test_bonus_program_stacks_fixed_promo_discount_with_cashback(
+    client: TestClient,
+    registered_user,
+):
+    _set_bonus_program_with_promo(
+        registered_user["user_id"],
+        purchase_total="75000.00",
+    )
+
+    response = client.post(
+        "/api/v1/users/me/benefits/check",
+        headers=registered_user["headers"],
+        json={"subtotal": "200.00", "currency": "RUB"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["reward_program"] == "bonus"
+    assert payload["reward_mode"] == "promo"
+    assert _decimal(payload["personal_discount"]["discount_percent"]) == Decimal("3.00")
+    assert _decimal(payload["stacked_discount_amount"]) == Decimal("6.00")
+    assert _decimal(payload["total_after_discounts"]) == Decimal("194.00")
+    assert payload["cashback_earned_points"] == 9
+
+
 def test_benefit_check_does_not_offer_personal_discount_without_promo(
     client: TestClient,
     registered_user,
@@ -189,7 +239,7 @@ def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(clie
     assert payload["entered_code"] == "Огонь26"
     assert payload["entered_code_matches"] == []
     assert payload["unresolved_code_reason"] == "Промокод не найден или неактивен / Promo code was not found or is not active"
-    assert payload["reward_mode"] == "cashback"
+    assert payload["reward_mode"] == "promo"
     assert payload["cashback_earned_points"] == 10
     assert _decimal(payload["stacked_discount_amount"]) == Decimal("0.00")
     assert _decimal(payload["total_after_discounts"]) == Decimal("200.00")

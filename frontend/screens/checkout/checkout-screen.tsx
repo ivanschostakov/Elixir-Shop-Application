@@ -204,7 +204,7 @@ export default function CheckoutScreen() {
     const [promoCode, setPromoCode] = useState(routePromoCode ?? "")
     const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(routePromoCode ?? null)
     const [benefitCheck, setBenefitCheck] = useState<BenefitCheckResponse | null>(null)
-    const rewardMode: RewardMode = referralProfile?.reward_program === "partner" ? "promo" : "cashback"
+    const rewardMode: RewardMode = referralProfile?.promo_code || appliedPromoCode ? "promo" : "cashback"
     const [useBonusRubles, setUseBonusRubles] = useState(false)
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const appliedRoutePromoCodeRef = useRef<string | null>(routePromoCode ?? null)
@@ -271,9 +271,9 @@ export default function CheckoutScreen() {
     const attachedPromoCode = referralProfile?.promo_code ?? null
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(rewardMode === "promo" && isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
-    const isPromoRewardReady = rewardMode !== "promo" || hasAttachedPromoCode || Boolean(appliedPromoCode)
-    const activeEnteredPromoCode = rewardMode === "promo" && !hasAttachedPromoCode ? appliedPromoCode : null
+    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const isPromoRewardReady = !normalizedPromoCode || hasAttachedPromoCode || Boolean(appliedPromoCode)
+    const activeEnteredPromoCode = !hasAttachedPromoCode ? appliedPromoCode : null
     const loadBenefitCheck = useCallback(async (code: string | null, mode: RewardMode = rewardMode) => {
         if (!orderDraft || !isAuthenticated) {
             setBenefitCheck(null)
@@ -1207,7 +1207,7 @@ export default function CheckoutScreen() {
                                                 : t("checkout.rewardPromoHint")}
                                     </Text>
                                 </View>
-                                {rewardMode === "promo" ? (
+                                {isAuthenticated ? (
                                     <>
                                         <View style={checkoutScreenStyles.detailsSheetDivider} />
                                         <View style={checkoutScreenStyles.detailsSheetRow}>

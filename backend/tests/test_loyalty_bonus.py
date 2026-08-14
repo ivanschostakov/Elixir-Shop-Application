@@ -5,10 +5,12 @@ import pytest
 
 import src.app.services.referrals.program as reward_program_service
 import src.app.modules.products.helpers as product_helpers
+import src.app.services.benefits.loyalty as loyalty_service
 from src.app.services.benefits.loyalty import (
     REWARD_MODE_CASHBACK,
     REWARD_MODE_PROMO,
     cashback_points_for_amount,
+    grant_order_cashback_safe,
     normalize_reward_mode,
 )
 from config import LOYALTY_BONUS_LIFETIME_DAYS, LOYALTY_EXPIRY_WARNING_DAYS
@@ -42,6 +44,44 @@ def test_bonus_expiry_terms_match_approved_rules():
     assert LOYALTY_EXPIRY_WARNING_DAYS == 14
 
 
+@pytest.mark.anyio
+async def test_bonus_program_still_grants_cashback_when_a_promo_was_applied(monkeypatch):
+    expected_credit = object()
+    create_credit = AsyncMock(return_value=expected_credit)
+    monkeypatch.setattr(
+        loyalty_service,
+        "create_loyalty_bonus_credit",
+        create_credit,
+    )
+    order = SimpleNamespace(
+        id=84,
+        is_paid=True,
+        is_canceled=False,
+        grand_total=Decimal("194.00"),
+        delivery_total=Decimal("0.00"),
+        payment_paid_at=None,
+        checkout_snapshot={
+            "benefits": {
+                "reward_program": "bonus",
+                "reward_mode": "promo",
+                "entered_code": "REFERRER",
+                "total_after_discounts": 194,
+                "cashback_earned_points": 9,
+            }
+        },
+    )
+    user = SimpleNamespace(id=18)
+
+    credit = await grant_order_cashback_safe(
+        SimpleNamespace(),
+        order=order,
+        user=user,
+    )
+
+    assert credit is expected_credit
+    assert create_credit.await_args.kwargs["points"] == 9
+
+
 def test_program_choice_is_offered_at_30000_until_explicitly_selected():
     profile = SimpleNamespace(
         referral_discount_base_total=Decimal("29999.99"),
@@ -59,7 +99,7 @@ def test_program_choice_is_offered_at_30000_until_explicitly_selected():
 
 
 @pytest.mark.anyio
-async def test_system_default_profile_with_existing_promo_stays_bonus_until_selection(monkeypatch):
+async def test_system_default_profile_with_existing_promo_gets_base_discount(monkeypatch):
     profile = SimpleNamespace(
         reward_program="bonus",
         reward_program_selected_at=None,
@@ -81,13 +121,13 @@ async def test_system_default_profile_with_existing_promo_stays_bonus_until_sele
     assert restored.reward_program == "bonus"
     assert restored.reward_program_selection_source == "system_default"
     assert restored.reward_program_selected_at is None
-    assert restored.reward_program_snapshot["deferred_existing_promo"] == "EXISTING-PROMO"
-    assert restored.current_discount_percent == Decimal("0.00")
+    assert restored.reward_program_snapshot["active_base_promo"] == "EXISTING-PROMO"
+    assert restored.current_discount_percent == Decimal("3.00")
     db.flush.assert_awaited_once()
 
 
 @pytest.mark.anyio
-async def test_inferred_existing_promo_partner_is_repaired_to_bonus_default(monkeypatch):
+async def test_inferred_existing_promo_partner_is_repaired_with_base_discount(monkeypatch):
     profile = SimpleNamespace(
         reward_program="partner",
         reward_program_selected_at=object(),
@@ -109,13 +149,13 @@ async def test_inferred_existing_promo_partner_is_repaired_to_bonus_default(monk
     assert repaired.reward_program == "bonus"
     assert repaired.reward_program_selected_at is None
     assert repaired.reward_program_selection_source == "system_default"
-    assert repaired.reward_program_snapshot["deferred_existing_promo"] == "slim101"
+    assert repaired.reward_program_snapshot["active_base_promo"] == "slim101"
     assert "recovered_existing_promo" not in repaired.reward_program_snapshot
-    assert repaired.current_discount_percent == Decimal("0.00")
+    assert repaired.current_discount_percent == Decimal("3.00")
 
 
 @pytest.mark.anyio
-async def test_dormant_promo_does_not_discount_products_in_bonus_program(monkeypatch):
+async def test_base_promo_discounts_products_in_bonus_program(monkeypatch):
     user = SimpleNamespace(id=18, promo_code="slim101")
     profile = SimpleNamespace(
         reward_program="bonus",
@@ -132,4 +172,4 @@ async def test_dormant_promo_does_not_discount_products_in_bonus_program(monkeyp
         user,
     )
 
-    assert discount == Decimal("0.00")
+    assert discount == Decimal("3.00")

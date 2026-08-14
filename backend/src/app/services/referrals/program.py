@@ -50,7 +50,7 @@ async def ensure_default_reward_program(
     *,
     user: User,
 ) -> ReferralProfile:
-    """Default to bonuses and keep an existing website promo dormant until selection."""
+    """Default to bonuses while keeping an assigned promo active at the base 3%."""
     profile = await get_or_create_referral_profile(db, user=user)
     existing_promo = optional_str(user.promo_code)
     if normalize_reward_program(profile.reward_program) is None:
@@ -62,7 +62,8 @@ async def ensure_default_reward_program(
         if previous_value in LEGACY_REWARD_PROGRAMS:
             snapshot["migrated_from"] = previous_value
         if existing_promo:
-            snapshot["deferred_existing_promo"] = existing_promo
+            snapshot.pop("deferred_existing_promo", None)
+            snapshot["active_base_promo"] = existing_promo
         profile.reward_program_snapshot = snapshot
     elif profile.reward_program_selection_source == "system_existing_promo":
         # A previous migration incorrectly treated the mere presence of a
@@ -74,7 +75,8 @@ async def ensure_default_reward_program(
         snapshot = dict(profile.reward_program_snapshot or {})
         snapshot.pop("recovered_existing_promo", None)
         if existing_promo:
-            snapshot["deferred_existing_promo"] = existing_promo
+            snapshot.pop("deferred_existing_promo", None)
+            snapshot["active_base_promo"] = existing_promo
         profile.reward_program_snapshot = snapshot
     elif (
         profile.reward_program == DEFAULT_REWARD_PROGRAM
@@ -82,13 +84,12 @@ async def ensure_default_reward_program(
         and existing_promo
     ):
         snapshot = dict(profile.reward_program_snapshot or {})
-        if snapshot.get("deferred_existing_promo") != existing_promo:
-            snapshot["deferred_existing_promo"] = existing_promo
+        if snapshot.get("active_base_promo") != existing_promo:
+            snapshot.pop("deferred_existing_promo", None)
+            snapshot["active_base_promo"] = existing_promo
             profile.reward_program_snapshot = snapshot
     if normalize_reward_program(profile.reward_program) == DEFAULT_REWARD_PROGRAM:
-        # A stored website promo is dormant while the customer remains in the
-        # bonus program, so no referral discount may leak from cached state.
-        refresh_profile_discount(profile, has_promo_code=False)
+        refresh_profile_discount(profile, has_promo_code=bool(existing_promo))
     await db.flush()
     return profile
 
@@ -216,19 +217,27 @@ async def select_reward_program(
             )
             user.promo_code = optional_str(bitrix_profile.get("referrer_promo"))
 
-    if normalized_program == "bonus":
-        deferred_promo = optional_str(user.promo_code)
-        if bitrix_profile is not None:
-            deferred_promo = optional_str(bitrix_profile.get("referrer_promo")) or deferred_promo
-        if deferred_promo:
-            snapshot["deferred_existing_promo"] = deferred_promo
-        refresh_profile_discount(profile, has_promo_code=False)
-    elif not optional_str(user.promo_code):
-        # The referral program is selected first; the customer can then attach
-        # an external promo (with the firm promo offered as a fallback).
-        refresh_profile_discount(profile, has_promo_code=False)
-
     profile.reward_program = normalized_program
+    if normalized_program == "bonus":
+        active_promo = optional_str(user.promo_code)
+        if bitrix_profile is not None:
+            active_promo = optional_str(bitrix_profile.get("referrer_promo")) or active_promo
+        if active_promo:
+            snapshot["active_base_promo"] = active_promo
+        refresh_profile_discount(profile, has_promo_code=bool(active_promo))
+    else:
+        # Once the partner path is selected, the same assigned promo starts
+        # using the accumulated purchase total instead of the fixed base 3%.
+        remote_discount_percent = profile.current_discount_percent
+        refresh_profile_discount(
+            profile,
+            has_promo_code=bool(optional_str(user.promo_code)),
+        )
+        if bitrix_profile is not None and optional_str(user.promo_code):
+            profile.current_discount_percent = quantize_percent(
+                max(profile.current_discount_percent, remote_discount_percent)
+            )
+
     profile.reward_program_selected_at = selected_at
     profile.reward_program_selection_source = source
     profile.reward_program_snapshot = snapshot

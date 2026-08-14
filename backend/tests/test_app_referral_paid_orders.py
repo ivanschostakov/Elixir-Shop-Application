@@ -8,6 +8,7 @@ from decimal import Decimal
 from src.app.services.referrals.paid_orders import (
     _create_local_accrual_from_bitrix,
     _paid_order_promo,
+    _paid_order_promo_discount_percent,
     _period_bounds,
     _rewardable_order_amount,
     _sync_partner_reversal_to_bitrix,
@@ -44,6 +45,26 @@ def test_paid_order_promo_ignores_unapplied_entered_code() -> None:
     )
 
     assert _paid_order_promo(order) is None
+
+
+def test_paid_order_uses_the_discount_percent_actually_applied_by_the_app() -> None:
+    order = SimpleNamespace(
+        checkout_snapshot={
+            "benefits": {
+                "applications": [
+                    {
+                        "code": "REFERRER",
+                        "discount_percent": "3.00",
+                    }
+                ],
+            }
+        }
+    )
+
+    assert _paid_order_promo_discount_percent(
+        order,
+        promo="referrer",
+    ) == Decimal("3.00")
 
 
 def test_period_bounds_handle_year_boundary() -> None:

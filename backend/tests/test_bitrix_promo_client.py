@@ -313,7 +313,7 @@ def test_profile_refresh_preserves_configured_firm_promo(monkeypatch):
     assert profile.bitrix_user_id == 77
 
 
-def test_bonus_program_refresh_keeps_website_promo_dormant(monkeypatch):
+def test_bonus_program_refresh_activates_website_promo_at_three_percent(monkeypatch):
     class FakeDb:
         async def flush(self):
             return None
@@ -367,8 +367,8 @@ def test_bonus_program_refresh_keeps_website_promo_dormant(monkeypatch):
 
     assert user.promo_code == "SLIM101"
     assert profile.referral_discount_base_total == Decimal("30000.00")
-    assert profile.current_discount_percent == Decimal("0.00")
-    assert profile.reward_program_snapshot["deferred_existing_promo"] == "SLIM101"
+    assert profile.current_discount_percent == Decimal("3.00")
+    assert profile.reward_program_snapshot["active_base_promo"] == "SLIM101"
 
 
 @pytest.mark.parametrize(
@@ -401,6 +401,7 @@ def test_paid_order_actions_send_idempotent_order_identity(
             "amount": "12500.00",
             "currency": "RUB",
             "paid_at": "2026-07-28T12:00:00+00:00",
+            "buyer_discount_percent": "3.00",
         }
         return httpx.Response(
             200,
@@ -423,6 +424,7 @@ def test_paid_order_actions_send_idempotent_order_identity(
             amount="12500.00",
             currency="RUB",
             paid_at="2026-07-28T12:00:00+00:00",
+            buyer_discount_percent="3.00",
         )
     )
     assert result == response_data

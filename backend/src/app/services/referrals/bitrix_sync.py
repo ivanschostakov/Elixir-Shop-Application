@@ -15,6 +15,7 @@ from src.integrations.bitrix_promo import (
 from src.normalize import optional_str
 
 from .calculations import PARTNER_UNLOCK_SPEND, quantize_money, quantize_percent
+from .profile import refresh_profile_discount
 from .program import ensure_default_reward_program
 
 logger = logging.getLogger(__name__)
@@ -76,23 +77,23 @@ def apply_bitrix_program_profile(
     )
     purchase_total = participating_purchase_total
     if not is_partner_program:
-        # Existing website promo relationships are remembered but remain
-        # inactive while the customer is in the default 5% bonus program.
+        # The website relationship remains active at the app's fixed base 3%
+        # while the customer keeps the default 5% bonus program.
         purchase_total = max(
             quantize_money(profile.referral_discount_base_total),
             remote_purchase_total,
         )
-    effective_discount_percent = (
-        quantize_percent(max(Decimal("3.00"), discount_percent))
-        if is_partner_program and effective_promo is not None
-        else Decimal("0.00")
-    )
     now = datetime.now(timezone.utc)
 
     if bitrix_user_id and bitrix_user_id > 0:
         profile.bitrix_user_id = bitrix_user_id
     profile.referral_discount_base_total = purchase_total
-    profile.current_discount_percent = effective_discount_percent
+    refresh_profile_discount(profile, has_promo_code=effective_promo is not None)
+    if is_partner_program and effective_promo is not None:
+        profile.current_discount_percent = quantize_percent(
+            max(profile.current_discount_percent, discount_percent)
+        )
+    effective_discount_percent = profile.current_discount_percent
     profile.bitrix_sync_status = "synced"
     profile.bitrix_synced_at = now
     profile.bitrix_sync_error = None
@@ -107,9 +108,7 @@ def apply_bitrix_program_profile(
             "bitrix_user_id": profile.bitrix_user_id,
             "bitrix_purchase_total": str(remote_purchase_total),
             "personal_purchase_total": str(purchase_total),
-            "participating_purchase_total": str(
-                participating_purchase_total if is_partner_program else Decimal("0.00")
-            ),
+            "participating_purchase_total": str(participating_purchase_total),
             "bitrix_discount_percent": str(discount_percent),
             "effective_discount_percent": str(effective_discount_percent),
             "bitrix_own_promo": own_promo,
@@ -119,7 +118,7 @@ def apply_bitrix_program_profile(
         }
     )
     if not is_partner_program and effective_promo:
-        snapshot["deferred_existing_promo"] = effective_promo
+        snapshot["active_base_promo"] = effective_promo
     profile.reward_program_snapshot = snapshot
 
 

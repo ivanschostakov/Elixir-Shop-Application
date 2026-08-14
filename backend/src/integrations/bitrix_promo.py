@@ -144,18 +144,20 @@ class BitrixPromoClient:
         amount: str,
         currency: str,
         paid_at: str,
+        buyer_discount_percent: str | None = None,
     ) -> dict[str, Any]:
-        return await self._request(
-            {
-                "action": "quote_referral_accrual",
-                "external_order_id": external_order_id,
-                "user_email": user_email,
-                "promo": promo,
-                "amount": amount,
-                "currency": currency,
-                "paid_at": paid_at,
-            }
-        )
+        payload = {
+            "action": "quote_referral_accrual",
+            "external_order_id": external_order_id,
+            "user_email": user_email,
+            "promo": promo,
+            "amount": amount,
+            "currency": currency,
+            "paid_at": paid_at,
+        }
+        if buyer_discount_percent is not None:
+            payload["buyer_discount_percent"] = buyer_discount_percent
+        return await self._request(payload)
 
     async def record_paid_purchase(
         self,
@@ -166,6 +168,7 @@ class BitrixPromoClient:
         amount: str,
         currency: str,
         paid_at: str,
+        buyer_discount_percent: str | None = None,
     ) -> dict[str, Any]:
         payload = {
             "action": "record_paid_purchase",
@@ -177,6 +180,8 @@ class BitrixPromoClient:
         }
         if promo:
             payload["promo"] = promo
+        if buyer_discount_percent is not None:
+            payload["buyer_discount_percent"] = buyer_discount_percent
         return await self._request(payload)
 
     async def reverse_paid_purchase(

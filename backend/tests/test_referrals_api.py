@@ -108,7 +108,7 @@ def test_personal_discount_requires_program_promo():
     assert calculate_personal_discount_percent("999999.00", has_promo_code=True) == Decimal("20.00")
 
 
-def test_referrer_code_requires_referral_program(
+def test_referrer_code_endpoint_is_available_before_program_selection(
     client: TestClient,
     registered_user_factory,
 ):
@@ -120,14 +120,15 @@ def test_referrer_code_requires_referral_program(
         headers=buyer["headers"],
         json={"code": f"  {code.lower()}  "},
     )
-    assert check_response.status_code == 409, check_response.text
+    assert check_response.status_code == 200, check_response.text
+    assert check_response.json()["status"] == "not_configured"
 
     attach_response = client.post(
         "/api/v1/users/me/referral-profile/referrer-code",
         headers=buyer["headers"],
         json={"code": code},
     )
-    assert attach_response.status_code == 409, attach_response.text
+    assert attach_response.status_code == 400, attach_response.text
     assert _user_promo_code(buyer["user_id"]) is None
 
 
@@ -158,7 +159,7 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
         assert profile_count == 1
 
 
-def test_existing_website_promo_stays_dormant_until_partner_program_is_selected(
+def test_existing_website_promo_is_active_before_partner_program_is_selected(
     client: TestClient,
     registered_user_factory,
 ):
@@ -180,7 +181,8 @@ def test_existing_website_promo_stays_dormant_until_partner_program_is_selected(
     assert deferred.status_code == 200, deferred.text
     deferred_payload = deferred.json()
     assert deferred_payload["reward_program"] == "bonus"
-    assert deferred_payload["promo_code"] is None
+    assert deferred_payload["promo_code"] == "EXISTING-PROMO"
+    assert _decimal(deferred_payload["current_discount_percent"]) == Decimal("3.00")
     assert deferred_payload["program_selection_required"] is False
     assert _user_promo_code(buyer["user_id"]) == "EXISTING-PROMO"
 
@@ -189,7 +191,7 @@ def test_existing_website_promo_stays_dormant_until_partner_program_is_selected(
         headers=buyer["headers"],
         json={"code": "ANOTHER-PROMO", "confirmed": True},
     )
-    assert blocked.status_code == 409, blocked.text
+    assert blocked.status_code == 400, blocked.text
 
     with Session(sync_engine) as session:
         profile = session.query(ReferralProfile).filter(ReferralProfile.user_id == buyer["user_id"]).one()
@@ -213,7 +215,7 @@ def test_existing_website_promo_stays_dormant_until_partner_program_is_selected(
     assert detached.json()["promo_code"] is None
 
 
-def test_selecting_bonus_keeps_existing_website_promo_dormant(
+def test_selecting_bonus_keeps_existing_website_promo_at_three_percent(
     client: TestClient,
     registered_user_factory,
 ):
@@ -237,7 +239,8 @@ def test_selecting_bonus_keeps_existing_website_promo_dormant(
 
     assert selected.status_code == 200, selected.text
     assert selected.json()["reward_program"] == "bonus"
-    assert selected.json()["promo_code"] is None
+    assert selected.json()["promo_code"] == "EXISTING-PROMO"
+    assert _decimal(selected.json()["current_discount_percent"]) == Decimal("3.00")
     assert selected.json()["program_selection_required"] is False
     assert _user_promo_code(buyer["user_id"]) == "EXISTING-PROMO"
 

@@ -130,10 +130,9 @@ export default function CartScreen() {
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
     const attachedPromoCode = referralProfile?.promo_code ?? null
-    const isPartnerProgram = referralProfile?.reward_program === "partner"
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(isPartnerProgram && isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
     const activeEnteredPromoCode = !hasAttachedPromoCode ? appliedPromoCode : null
 
     useFocusEffect(
@@ -389,7 +388,7 @@ export default function CartScreen() {
         : null
     const grandTotalLabel = grandTotalAmount !== null ? formatProductPrice(grandTotalAmount) : null
     const handleApplyPromoCode = useCallback(async () => {
-        if (!isPartnerProgram || !isAuthenticated || !normalizedPromoCode || !basket || isCheckingPromoCode || hasAttachedPromoCode) {
+        if (!isAuthenticated || !normalizedPromoCode || !basket || isCheckingPromoCode || hasAttachedPromoCode) {
             return
         }
 
@@ -448,7 +447,6 @@ export default function CartScreen() {
         basket,
         hasAttachedPromoCode,
         isAuthenticated,
-        isPartnerProgram,
         isCheckingPromoCode,
         loadCartBenefitCheck,
         normalizedPromoCode,
@@ -705,7 +703,7 @@ export default function CartScreen() {
             >
                 <View style={cartScreenStyles.contentSurface}>
                     <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
-                        {isAuthenticated && isPartnerProgram ? (
+                        {isAuthenticated ? (
                             <View style={cartScreenStyles.summaryCard}>
                                 <View style={cartScreenStyles.promoInputShell}>
                                     <TextInput

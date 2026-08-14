@@ -94,6 +94,7 @@ def _resolve_notification_redirect_path(data: dict[str, Any]) -> str | None:
 
     if notification_type == "inactive_customer": return "/discover"
     if notification_type == "abandoned_cart": return "/basket"
+    if notification_type == "reward_program_choice": return "/profile-discounts"
     if notification_type == "ai_reply": return "/chat"
     if notification_type == "community_message":
         topic_id = _as_positive_int(data.get("topic_id"))
