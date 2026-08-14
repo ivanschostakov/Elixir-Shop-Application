@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 import src.app.services.referrals.program as reward_program_service
+import src.app.modules.products.helpers as product_helpers
 from src.app.services.benefits.loyalty import (
     REWARD_MODE_CASHBACK,
     REWARD_MODE_PROMO,
@@ -64,6 +65,8 @@ async def test_system_default_profile_with_existing_promo_stays_bonus_until_sele
         reward_program_selected_at=None,
         reward_program_selection_source="system_default",
         reward_program_snapshot={"migrated_from": "combined"},
+        referral_discount_base_total=Decimal("6840.18"),
+        current_discount_percent=Decimal("3.00"),
     )
     user = SimpleNamespace(promo_code="EXISTING-PROMO")
     db = SimpleNamespace(flush=AsyncMock())
@@ -79,6 +82,7 @@ async def test_system_default_profile_with_existing_promo_stays_bonus_until_sele
     assert restored.reward_program_selection_source == "system_default"
     assert restored.reward_program_selected_at is None
     assert restored.reward_program_snapshot["deferred_existing_promo"] == "EXISTING-PROMO"
+    assert restored.current_discount_percent == Decimal("0.00")
     db.flush.assert_awaited_once()
 
 
@@ -89,6 +93,8 @@ async def test_inferred_existing_promo_partner_is_repaired_to_bonus_default(monk
         reward_program_selected_at=object(),
         reward_program_selection_source="system_existing_promo",
         reward_program_snapshot={"recovered_existing_promo": "slim101"},
+        referral_discount_base_total=Decimal("30000.00"),
+        current_discount_percent=Decimal("3.00"),
     )
     user = SimpleNamespace(promo_code="slim101")
     db = SimpleNamespace(flush=AsyncMock())
@@ -105,3 +111,25 @@ async def test_inferred_existing_promo_partner_is_repaired_to_bonus_default(monk
     assert repaired.reward_program_selection_source == "system_default"
     assert repaired.reward_program_snapshot["deferred_existing_promo"] == "slim101"
     assert "recovered_existing_promo" not in repaired.reward_program_snapshot
+    assert repaired.current_discount_percent == Decimal("0.00")
+
+
+@pytest.mark.anyio
+async def test_dormant_promo_does_not_discount_products_in_bonus_program(monkeypatch):
+    user = SimpleNamespace(id=18, promo_code="slim101")
+    profile = SimpleNamespace(
+        reward_program="bonus",
+        current_discount_percent=Decimal("3.00"),
+    )
+    monkeypatch.setattr(
+        product_helpers,
+        "get_referral_profile_by_user_id",
+        AsyncMock(return_value=profile),
+    )
+
+    discount = await product_helpers.get_user_product_discount_percent(
+        SimpleNamespace(),
+        user,
+    )
+
+    assert discount == Decimal("0.00")

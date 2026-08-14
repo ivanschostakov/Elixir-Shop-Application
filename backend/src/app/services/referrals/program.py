@@ -85,6 +85,10 @@ async def ensure_default_reward_program(
         if snapshot.get("deferred_existing_promo") != existing_promo:
             snapshot["deferred_existing_promo"] = existing_promo
             profile.reward_program_snapshot = snapshot
+    if normalize_reward_program(profile.reward_program) == DEFAULT_REWARD_PROGRAM:
+        # A stored website promo is dormant while the customer remains in the
+        # bonus program, so no referral discount may leak from cached state.
+        refresh_profile_discount(profile, has_promo_code=False)
     await db.flush()
     return profile
 
