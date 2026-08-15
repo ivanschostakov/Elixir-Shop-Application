@@ -40,6 +40,27 @@ function getProfilePromotionKey(promotion: ProfilePromotionResponse) {
     return `${promotion.kind}-${promotion.category_id ?? promotion.product_id}`
 }
 
+const REFERRAL_DISCOUNT_GOALS = [
+    { target: 30000, percent: 3 },
+    { target: 40000, percent: 4 },
+    { target: 50000, percent: 5 },
+    { target: 60000, percent: 6 },
+    { target: 70000, percent: 7 },
+    { target: 80000, percent: 8 },
+    { target: 90000, percent: 9 },
+    { target: 100000, percent: 10 },
+    { target: 110000, percent: 11 },
+    { target: 120000, percent: 12 },
+    { target: 130000, percent: 13 },
+    { target: 140000, percent: 14 },
+    { target: 150000, percent: 15 },
+    { target: 160000, percent: 16 },
+    { target: 170000, percent: 17 },
+    { target: 180000, percent: 18 },
+    { target: 190000, percent: 19 },
+    { target: 200000, percent: 20 },
+] as const
+
 export default function ProfileDiscountsScreen() {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const profileStyles = useThemeStyles(createProfileScreenStyles)
@@ -83,8 +104,8 @@ export default function ProfileDiscountsScreen() {
         || Number(referralProfile?.partner_approved_rubles ?? 0) > 0,
     )
     const totalPurchases = Number(referralProfile?.total_purchases ?? 0)
-    const choiceProgress = Math.max(0, Math.min(1, totalPurchases / 30000))
-    const partnerProgress = Math.max(0, Math.min(1, totalPurchases / 100000))
+    const goalsTarget = hasCurrentPromoCode ? 200000 : 100000
+    const goalsProgress = Math.max(0, Math.min(1, totalPurchases / goalsTarget))
 
     useFocusEffect(
         useCallback(() => {
@@ -392,22 +413,40 @@ export default function ProfileDiscountsScreen() {
 
             {referralProfile ? (
                 <View style={profileStyles.sectionCard}>
+                    <Text style={profileStyles.sectionTitle}>{t("profile.discounts.goalsTitle")}</Text>
                     <View style={profileStyles.benefitsProgressHeader}>
                         <View>
                             <Text style={profileStyles.metricLabel}>{t("profile.discounts.progressTitle")}</Text>
                             <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.total_purchases)}</Text>
                         </View>
                         <Text style={profileStyles.benefitsProgressTarget}>
-                            {formatProfileMoney(hasCurrentPromoCode ? "100000" : "30000")}
+                            {formatProfileMoney(String(goalsTarget))}
                         </Text>
                     </View>
                     <View style={profileStyles.benefitsProgressTrack}>
                         <View
                             style={[
                                 profileStyles.benefitsProgressFill,
-                                { width: `${Math.round((hasCurrentPromoCode ? partnerProgress : choiceProgress) * 100)}%` },
+                                { width: `${Math.round(goalsProgress * 100)}%` },
                             ]}
                         />
+                    </View>
+                    <View style={profileStyles.benefitsScaleRow}>
+                        {hasCurrentPromoCode ? REFERRAL_DISCOUNT_GOALS.map(({ target, percent }) => (
+                            <View key={target} style={profileStyles.benefitsScaleItem}>
+                                <Text style={profileStyles.benefitsScalePercent}>{percent}%</Text>
+                                <Text style={profileStyles.benefitsScaleAmount}>
+                                    {target === 30000
+                                        ? `0–${formatProfileMoney(String(target))}`
+                                        : formatProfileMoney(String(target))}
+                                </Text>
+                            </View>
+                        )) : (
+                            <View style={profileStyles.benefitsScaleItem}>
+                                <Text style={profileStyles.benefitsScalePercent}>{formatProfileMoney("100000")}</Text>
+                                <Text style={profileStyles.benefitsScaleAmount}>{t("profile.referral.ownPromo")}</Text>
+                            </View>
+                        )}
                     </View>
                     <Text style={profileStyles.sectionDescription}>
                         {t(hasCurrentPromoCode
@@ -450,20 +489,6 @@ export default function ProfileDiscountsScreen() {
 
             {isPartnerProgram && referralProfile ? (
                 <>
-                    <View style={profileStyles.sectionCard}>
-                        <Text style={profileStyles.sectionTitle}>{t("profile.referral.partnerProgramTitle")}</Text>
-                        <View style={profileStyles.metricsGrid}>
-                            <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
-                                <Text style={profileStyles.metricLabel}>{t("profile.referral.currentDiscount")}</Text>
-                                <Text style={profileStyles.metricValue}>{formatProfilePercent(referralProfile.current_discount_percent)}</Text>
-                            </View>
-                            <View style={[profileStyles.metricCard, profileStyles.metricCardCompact, { flexBasis: "47%", flexGrow: 1 }]}>
-                                <Text style={profileStyles.metricLabel}>{t("profile.referral.attachedPromo")}</Text>
-                                <Text style={[profileStyles.metricValue, profileStyles.metricValueCompact]}>{currentPromoCode ?? "—"}</Text>
-                            </View>
-                        </View>
-                        <Text style={profileStyles.sectionDescription}>{t("profile.discounts.partnerGrowthActive")}</Text>
-                    </View>
                     <View style={profileStyles.sectionCard}>
                         <Text style={profileStyles.sectionTitle}>{t("profile.referral.totalPurchases")}</Text>
                         <View style={profileStyles.metricsGrid}>

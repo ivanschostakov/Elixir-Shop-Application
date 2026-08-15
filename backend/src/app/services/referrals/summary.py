@@ -192,9 +192,23 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
                 suggested_promo_code = partner_summary.get("suggested_promo") or suggested_promo_code
                 referrer_promo_code = partner_summary.get("referrer_promo") or referrer_promo_code
                 if partner_summary.get("personal_discount_percent") is not None:
-                    profile.current_discount_percent = quantize_percent(
+                    remote_discount_percent = quantize_percent(
                         partner_summary.get("personal_discount_percent")
-                    ) if referrer_promo_code else Decimal("0.00")
+                    )
+                    refresh_profile_discount(
+                        profile,
+                        has_promo_code=bool(referrer_promo_code),
+                    )
+                    profile.current_discount_percent = (
+                        quantize_percent(
+                            max(
+                                profile.current_discount_percent,
+                                remote_discount_percent,
+                            )
+                        )
+                        if referrer_promo_code
+                        else Decimal("0.00")
+                    )
                 eligibility = partner_summary.get("monthly_eligibility")
                 if isinstance(eligibility, dict):
                     remote_monthly_eligible = (
