@@ -39,10 +39,10 @@ def reward_program_selection_available(profile: ReferralProfile) -> bool:
 
 
 def reward_program_selection_required(profile: ReferralProfile) -> bool:
-    return (
-        reward_program_selection_available(profile)
-        and profile.reward_program_selection_source not in LOCKED_REWARD_PROGRAM_SOURCES
-    )
+    # The active program is selected by promo presence, not by a separate
+    # one-time choice: no promo means cashback, an assigned promo means the
+    # referral discount program.
+    return False
 
 
 async def ensure_default_reward_program(
@@ -50,46 +50,29 @@ async def ensure_default_reward_program(
     *,
     user: User,
 ) -> ReferralProfile:
-    """Default to bonuses while keeping an assigned promo active at the base 3%."""
+    """Keep the active program aligned with whether a promo is assigned."""
     profile = await get_or_create_referral_profile(db, user=user)
     existing_promo = optional_str(user.promo_code)
-    if normalize_reward_program(profile.reward_program) is None:
-        previous_value = optional_str(profile.reward_program)
-        profile.reward_program = DEFAULT_REWARD_PROGRAM
-        profile.reward_program_selected_at = None
-        profile.reward_program_selection_source = "system_default"
+    desired_program: RewardProgram = "partner" if existing_promo else DEFAULT_REWARD_PROGRAM
+    desired_source = "promo_attached" if existing_promo else "system_default"
+    previous_value = optional_str(profile.reward_program)
+    if (
+        normalize_reward_program(profile.reward_program) != desired_program
+        or profile.reward_program_selection_source != desired_source
+    ):
+        profile.reward_program = desired_program
+        profile.reward_program_selected_at = (
+            datetime.now(timezone.utc) if existing_promo else None
+        )
+        profile.reward_program_selection_source = desired_source
         snapshot = dict(profile.reward_program_snapshot or {})
         if previous_value in LEGACY_REWARD_PROGRAMS:
             snapshot["migrated_from"] = previous_value
-        if existing_promo:
-            snapshot.pop("deferred_existing_promo", None)
-            snapshot["active_base_promo"] = existing_promo
+        snapshot["activation_rule"] = "promo_presence"
+        snapshot["active_promo"] = existing_promo
+        snapshot["previous_program"] = previous_value
         profile.reward_program_snapshot = snapshot
-    elif profile.reward_program_selection_source == "system_existing_promo":
-        # A previous migration incorrectly treated the mere presence of a
-        # website promo as the customer's one-time program choice. Restore the
-        # approved default while retaining the website relationship for later.
-        profile.reward_program = DEFAULT_REWARD_PROGRAM
-        profile.reward_program_selected_at = None
-        profile.reward_program_selection_source = "system_default"
-        snapshot = dict(profile.reward_program_snapshot or {})
-        snapshot.pop("recovered_existing_promo", None)
-        if existing_promo:
-            snapshot.pop("deferred_existing_promo", None)
-            snapshot["active_base_promo"] = existing_promo
-        profile.reward_program_snapshot = snapshot
-    elif (
-        profile.reward_program == DEFAULT_REWARD_PROGRAM
-        and profile.reward_program_selection_source == "system_default"
-        and existing_promo
-    ):
-        snapshot = dict(profile.reward_program_snapshot or {})
-        if snapshot.get("active_base_promo") != existing_promo:
-            snapshot.pop("deferred_existing_promo", None)
-            snapshot["active_base_promo"] = existing_promo
-            profile.reward_program_snapshot = snapshot
-    if normalize_reward_program(profile.reward_program) == DEFAULT_REWARD_PROGRAM:
-        refresh_profile_discount(profile, has_promo_code=bool(existing_promo))
+    refresh_profile_discount(profile, has_promo_code=bool(existing_promo))
     await db.flush()
     return profile
 
@@ -150,6 +133,19 @@ async def select_reward_program(
         )
 
     profile = await ensure_default_reward_program(db, user=user)
+    if not force:
+        expected_program: RewardProgram = "partner" if optional_str(user.promo_code) else "bonus"
+        if normalized_program != expected_program:
+            detail = (
+                "Чтобы включить скидку по промокоду, сначала привяжите промокод / "
+                "Assign a promo code to enable the promo discount"
+                if normalized_program == "partner"
+                else
+                "Чтобы вернуться к 5% бонусами, сначала отвяжите промокод / "
+                "Unlink the promo code to return to 5% cashback"
+            )
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+        return profile
     previous_program = normalize_reward_program(profile.reward_program)
     explicit_selection = profile.reward_program_selection_source in LOCKED_REWARD_PROGRAM_SOURCES
     if not force and not reward_program_selection_available(profile):

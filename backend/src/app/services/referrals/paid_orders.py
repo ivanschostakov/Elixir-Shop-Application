@@ -961,7 +961,7 @@ async def sync_paid_order_referral_to_app(
     paid_at = order.payment_paid_at or order.updated_at or datetime.now(timezone.utc)
 
     bonus_result: dict[str, Any] | None = None
-    if reward_program == "bonus":
+    if reward_program == "bonus" and not promo:
         bonus_result = await _record_bonus_program_purchase(
             db,
             order=order,
@@ -980,12 +980,11 @@ async def sync_paid_order_referral_to_app(
             )
         if bonus_result.get("selection_unlocked"):
             await send_reward_program_choice_notification(db, user_id=user.id)
-        if not promo:
-            return {
-                "storage": "app_bonus_only",
-                "bitrix_written": False,
-                **bonus_result,
-            }
+        return {
+            "storage": "app_bonus_only",
+            "bitrix_written": False,
+            **bonus_result,
+        }
 
     if not promo:
         logger.info(

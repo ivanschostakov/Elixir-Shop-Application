@@ -445,7 +445,7 @@ async def send_reward_program_choice_notification(
     *,
     user_id: int,
 ) -> None:
-    """Notify once when the customer reaches the 30,000 RUB choice point."""
+    """Notify once when a cashback customer reaches the promo growth point."""
     try:
         dedupe_key = "purchase-total:30000"
         if await _was_notification_sent_ever(
@@ -458,10 +458,10 @@ async def send_reward_program_choice_notification(
         await _send_and_record(
             session,
             user_id=user_id,
-            title="Выберите, как получать больше выгоды",
+            title="Вам доступна растущая скидка",
             body=(
-                "Ваши покупки достигли 30 000 ₽. Оставьте 5% бонусами или "
-                "выберите рост скидки по промокоду до 20%."
+                "Ваши покупки достигли 30 000 ₽. Пока промокода нет, вы получаете 5% бонусами. "
+                "Привяжите промокод, чтобы перейти на скидку, которая растёт до 20%."
             ),
             data={
                 "type": DISPATCH_TYPE_REWARD_PROGRAM_CHOICE,

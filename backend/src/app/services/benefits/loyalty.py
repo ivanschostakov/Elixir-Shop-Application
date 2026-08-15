@@ -219,12 +219,14 @@ async def grant_order_cashback_safe(db: AsyncSession, *, order: Order, user: Use
         return None
     benefits = _order_benefits(order)
     reward_program = benefits.get("reward_program")
-    if reward_program != "bonus" and (
-        reward_program is not None
-        or normalize_reward_mode(
-            benefits.get("reward_mode"),
-            has_entered_code=bool(benefits.get("entered_code")),
-        ) != REWARD_MODE_CASHBACK
+    reward_mode = normalize_reward_mode(
+        benefits.get("reward_mode"),
+        has_entered_code=bool(benefits.get("entered_code")),
+    )
+    if (
+        reward_program == "partner"
+        or bool(benefits.get("entered_code"))
+        or reward_mode != REWARD_MODE_CASHBACK
     ):
         return None
     points = int(benefits.get("cashback_earned_points") or 0)

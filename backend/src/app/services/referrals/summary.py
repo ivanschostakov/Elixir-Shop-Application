@@ -153,6 +153,9 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         referrer_promo_code = program_profile.get("referrer_promo") or user.promo_code
     else:
         refresh_profile_discount(profile, has_promo_code=bool(referrer_promo_code))
+    reward_program = normalize_reward_program(profile.reward_program) or (
+        "partner" if referrer_promo_code else "bonus"
+    )
 
     remote_monthly_eligible: bool | None = None
     if bitrix_promo_configured() and user.email:

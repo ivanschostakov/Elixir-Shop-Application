@@ -14,7 +14,6 @@ from src.app.services.referrals import (
     reward_program_selection_required,
 )
 from src.app.services.referrals.bitrix_sync import refresh_program_profile_from_bitrix
-from src.app.services.referrals.calculations import MIN_PARTICIPANT_DISCOUNT_PERCENT
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User
 from src.integrations.bitrix_promo import (
@@ -261,6 +260,7 @@ async def resolve_benefits_for_user(
     # builds. Promo availability and the selected program are authoritative.
     del reward_mode
     effective_code = trimmed_code or optional_str(user.promo_code)
+    active_reward_program = "partner" if effective_code else "bonus"
     resolved_reward_mode = REWARD_MODE_PROMO if effective_code else REWARD_MODE_CASHBACK
     bitrix_option = None
     app_referral_option = (
@@ -289,27 +289,13 @@ async def resolve_benefits_for_user(
                 if resolved_quote_items
                 else None
             )
-            attached_code = lower_optional_str(user.promo_code)
-            is_assigned_referral_code = bool(
-                attached_code
-                and attached_code == lower_optional_str(effective_code)
-            )
-            is_referral_code = bool(
-                quote
-                and quote.get("is_referral_promo")
-            )
             bitrix_option = _build_bitrix_promo_option(
                 code=effective_code,
                 lookup=lookup,
                 quote=quote,
                 subtotal=effective_subtotal,
                 discountable_subtotal=effective_discountable_subtotal,
-                fixed_discount_percent=(
-                    MIN_PARTICIPANT_DISCOUNT_PERCENT
-                    if reward_program == "bonus"
-                    and (is_assigned_referral_code or is_referral_code)
-                    else None
-                ),
+                fixed_discount_percent=None,
             )
         except BitrixPromoError as error:
             if error.status_code >= 500:
@@ -385,7 +371,7 @@ async def resolve_benefits_for_user(
         )
     cashback_earned_points = (
         cashback_points_for_amount(total_after_discounts)
-        if reward_program == "bonus"
+        if active_reward_program == "bonus"
         else 0
     )
     pending_bonus_points = await pending_loyalty_bonus_points(db, user_id=user.id)
@@ -405,7 +391,7 @@ async def resolve_benefits_for_user(
 
     return {
         "referral_profile_id": referral_profile.id,
-        "reward_program": reward_program,
+        "reward_program": active_reward_program,
         "program_selection_required": reward_program_selection_required(referral_profile),
         "reward_mode": resolved_reward_mode,
         "subtotal_source": subtotal_source,

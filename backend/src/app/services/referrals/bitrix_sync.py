@@ -70,20 +70,28 @@ def apply_bitrix_program_profile(
         and current_local_promo.casefold() in normalized_firm_promo_codes
     ):
         effective_promo = current_local_promo
-    reward_program = str(getattr(profile, "reward_program", "partner") or "partner")
-    is_partner_program = reward_program == "partner"
+    now = datetime.now(timezone.utc)
+    reward_program = "partner" if effective_promo else "bonus"
+    previous_reward_program = str(getattr(profile, "reward_program", "") or "")
+    profile.reward_program = reward_program
+    if effective_promo:
+        if previous_reward_program != "partner" or profile.reward_program_selected_at is None:
+            profile.reward_program_selected_at = now
+    else:
+        profile.reward_program_selected_at = None
+    profile.reward_program_selection_source = (
+        "promo_attached" if effective_promo else "system_default"
+    )
+    is_partner_program = effective_promo is not None
     participating_purchase_total = (
         remote_purchase_total if effective_promo is not None else Decimal("0.00")
     )
     purchase_total = participating_purchase_total
     if not is_partner_program:
-        # The website relationship remains active at the app's fixed base 3%
-        # while the customer keeps the default 5% bonus program.
         purchase_total = max(
             quantize_money(profile.referral_discount_base_total),
             remote_purchase_total,
         )
-    now = datetime.now(timezone.utc)
 
     if bitrix_user_id and bitrix_user_id > 0:
         profile.bitrix_user_id = bitrix_user_id
@@ -117,8 +125,6 @@ def apply_bitrix_program_profile(
             "bitrix_synced_at": now.isoformat(),
         }
     )
-    if not is_partner_program and effective_promo:
-        snapshot["active_base_promo"] = effective_promo
     profile.reward_program_snapshot = snapshot
 
 

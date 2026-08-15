@@ -159,7 +159,7 @@ def test_referral_profile_get_is_idempotent(client: TestClient, registered_user_
         assert profile_count == 1
 
 
-def test_existing_website_promo_is_active_before_partner_program_is_selected(
+def test_existing_website_promo_activates_partner_program_automatically(
     client: TestClient,
     registered_user_factory,
 ):
@@ -180,10 +180,11 @@ def test_existing_website_promo_is_active_before_partner_program_is_selected(
     )
     assert deferred.status_code == 200, deferred.text
     deferred_payload = deferred.json()
-    assert deferred_payload["reward_program"] == "bonus"
+    assert deferred_payload["reward_program"] == "partner"
     assert deferred_payload["promo_code"] == "EXISTING-PROMO"
     assert _decimal(deferred_payload["current_discount_percent"]) == Decimal("3.00")
     assert deferred_payload["program_selection_required"] is False
+    assert deferred_payload["bonus_program_enabled"] is False
     assert _user_promo_code(buyer["user_id"]) == "EXISTING-PROMO"
 
     blocked = client.post(
@@ -191,7 +192,9 @@ def test_existing_website_promo_is_active_before_partner_program_is_selected(
         headers=buyer["headers"],
         json={"code": "ANOTHER-PROMO", "confirmed": True},
     )
-    assert blocked.status_code == 400, blocked.text
+    assert blocked.status_code == 409, blocked.text
+    assert "Сначала отвяжите текущий промокод" in blocked.json()["detail"]
+    assert _user_promo_code(buyer["user_id"]) == "EXISTING-PROMO"
 
     with Session(sync_engine) as session:
         profile = session.query(ReferralProfile).filter(ReferralProfile.user_id == buyer["user_id"]).one()
@@ -213,9 +216,11 @@ def test_existing_website_promo_is_active_before_partner_program_is_selected(
     )
     assert detached.status_code == 200, detached.text
     assert detached.json()["promo_code"] is None
+    assert detached.json()["reward_program"] == "bonus"
+    assert detached.json()["bonus_program_enabled"] is True
 
 
-def test_selecting_bonus_keeps_existing_website_promo_at_three_percent(
+def test_bonus_program_requires_unlinking_existing_promo(
     client: TestClient,
     registered_user_factory,
 ):
@@ -237,15 +242,12 @@ def test_selecting_bonus_keeps_existing_website_promo_at_three_percent(
         json={"program": "bonus"},
     )
 
-    assert selected.status_code == 200, selected.text
-    assert selected.json()["reward_program"] == "bonus"
-    assert selected.json()["promo_code"] == "EXISTING-PROMO"
-    assert _decimal(selected.json()["current_discount_percent"]) == Decimal("3.00")
-    assert selected.json()["program_selection_required"] is False
+    assert selected.status_code == 409, selected.text
+    assert "сначала отвяжите промокод" in selected.json()["detail"]
     assert _user_promo_code(buyer["user_id"]) == "EXISTING-PROMO"
 
 
-def test_program_selection_becomes_available_after_30000_and_is_locked(
+def test_partner_program_requires_promo_even_after_30000(
     client: TestClient,
     registered_user_factory,
 ):
@@ -263,20 +265,20 @@ def test_program_selection_becomes_available_after_30000_and_is_locked(
         profile.referral_discount_base_total = Decimal("30000.00")
         session.commit()
 
-    selected = client.post(
+    still_blocked = client.post(
         "/api/v1/users/me/referral-profile/program",
         headers=buyer["headers"],
         json={"program": "partner"},
     )
-    assert selected.status_code == 200, selected.text
-    assert selected.json()["reward_program"] == "partner"
+    assert still_blocked.status_code == 409, still_blocked.text
 
-    repeated = client.post(
+    cashback = client.post(
         "/api/v1/users/me/referral-profile/program",
         headers=buyer["headers"],
         json={"program": "bonus"},
     )
-    assert repeated.status_code == 409, repeated.text
+    assert cashback.status_code == 200, cashback.text
+    assert cashback.json()["reward_program"] == "bonus"
 
     with Session(sync_engine) as session:
         events = (
@@ -284,5 +286,4 @@ def test_program_selection_becomes_available_after_30000_and_is_locked(
             .filter(RewardProgramSelectionEvent.user_id == buyer["user_id"])
             .all()
         )
-        assert len(events) == 1
-        assert events[0].selected_program == "partner"
+        assert events == []

@@ -2,8 +2,10 @@ from decimal import Decimal
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 
 import src.app.services.referrals.program as reward_program_service
+import src.app.services.referrals.promo as referral_promo_service
 import src.app.modules.products.helpers as product_helpers
 import src.app.services.benefits.loyalty as loyalty_service
 from src.app.services.benefits.loyalty import (
@@ -45,9 +47,8 @@ def test_bonus_expiry_terms_match_approved_rules():
 
 
 @pytest.mark.anyio
-async def test_bonus_program_still_grants_cashback_when_a_promo_was_applied(monkeypatch):
-    expected_credit = object()
-    create_credit = AsyncMock(return_value=expected_credit)
+async def test_promo_order_does_not_grant_cashback(monkeypatch):
+    create_credit = AsyncMock()
     monkeypatch.setattr(
         loyalty_service,
         "create_loyalty_bonus_credit",
@@ -78,11 +79,69 @@ async def test_bonus_program_still_grants_cashback_when_a_promo_was_applied(monk
         user=user,
     )
 
+    assert credit is None
+    create_credit.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_order_without_promo_still_grants_five_percent_cashback(monkeypatch):
+    expected_credit = object()
+    create_credit = AsyncMock(return_value=expected_credit)
+    monkeypatch.setattr(
+        loyalty_service,
+        "create_loyalty_bonus_credit",
+        create_credit,
+    )
+    order = SimpleNamespace(
+        id=85,
+        is_paid=True,
+        is_canceled=False,
+        grand_total=Decimal("200.00"),
+        delivery_total=Decimal("0.00"),
+        payment_paid_at=None,
+        checkout_snapshot={
+            "benefits": {
+                "reward_program": "bonus",
+                "reward_mode": "cashback",
+                "entered_code": None,
+                "total_after_discounts": 200,
+                "cashback_earned_points": 10,
+            }
+        },
+    )
+
+    credit = await grant_order_cashback_safe(
+        SimpleNamespace(),
+        order=order,
+        user=SimpleNamespace(id=19),
+    )
+
     assert credit is expected_credit
-    assert create_credit.await_args.kwargs["points"] == 9
+    assert create_credit.await_args.kwargs["points"] == 10
 
 
-def test_program_choice_is_offered_at_30000_until_explicitly_selected():
+@pytest.mark.anyio
+async def test_attached_promo_must_be_unlinked_before_another_can_be_used(monkeypatch):
+    profile = SimpleNamespace()
+    monkeypatch.setattr(
+        referral_promo_service,
+        "_get_program_profile",
+        AsyncMock(return_value=profile),
+    )
+    user = SimpleNamespace(promo_code="CURRENT")
+
+    with pytest.raises(HTTPException) as error:
+        await referral_promo_service.attach_referrer_code(
+            SimpleNamespace(),
+            user=user,
+            code="NEW-CODE",
+        )
+
+    assert error.value.status_code == 409
+    assert "Сначала отвяжите текущий промокод" in error.value.detail
+
+
+def test_program_choice_is_not_required_at_30000():
     profile = SimpleNamespace(
         referral_discount_base_total=Decimal("29999.99"),
         reward_program_selection_source="system_default",
@@ -91,11 +150,11 @@ def test_program_choice_is_offered_at_30000_until_explicitly_selected():
     assert reward_program_selection_required(profile) is False
     profile.referral_discount_base_total = Decimal("30000.00")
     assert reward_program_selection_available(profile) is True
-    assert reward_program_selection_required(profile) is True
+    assert reward_program_selection_required(profile) is False
     profile.reward_program_selection_source = "user"
     assert reward_program_selection_required(profile) is False
     profile.reward_program_selection_source = "system_existing_promo"
-    assert reward_program_selection_required(profile) is True
+    assert reward_program_selection_required(profile) is False
 
 
 @pytest.mark.anyio
@@ -118,16 +177,16 @@ async def test_system_default_profile_with_existing_promo_gets_base_discount(mon
 
     restored = await ensure_default_reward_program(db, user=user)
 
-    assert restored.reward_program == "bonus"
-    assert restored.reward_program_selection_source == "system_default"
-    assert restored.reward_program_selected_at is None
-    assert restored.reward_program_snapshot["active_base_promo"] == "EXISTING-PROMO"
+    assert restored.reward_program == "partner"
+    assert restored.reward_program_selection_source == "promo_attached"
+    assert restored.reward_program_selected_at is not None
+    assert restored.reward_program_snapshot["active_promo"] == "EXISTING-PROMO"
     assert restored.current_discount_percent == Decimal("3.00")
     db.flush.assert_awaited_once()
 
 
 @pytest.mark.anyio
-async def test_inferred_existing_promo_partner_is_repaired_with_base_discount(monkeypatch):
+async def test_inferred_existing_promo_partner_is_normalized_to_promo_activation(monkeypatch):
     profile = SimpleNamespace(
         reward_program="partner",
         reward_program_selected_at=object(),
@@ -146,11 +205,10 @@ async def test_inferred_existing_promo_partner_is_repaired_with_base_discount(mo
 
     repaired = await ensure_default_reward_program(db, user=user)
 
-    assert repaired.reward_program == "bonus"
-    assert repaired.reward_program_selected_at is None
-    assert repaired.reward_program_selection_source == "system_default"
-    assert repaired.reward_program_snapshot["active_base_promo"] == "slim101"
-    assert "recovered_existing_promo" not in repaired.reward_program_snapshot
+    assert repaired.reward_program == "partner"
+    assert repaired.reward_program_selected_at is not None
+    assert repaired.reward_program_selection_source == "promo_attached"
+    assert repaired.reward_program_snapshot["active_promo"] == "slim101"
     assert repaired.current_discount_percent == Decimal("3.00")
 
 

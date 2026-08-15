@@ -17,7 +17,6 @@ import {
     detachMyReferrerCode,
     getMyPromotions,
     getMyReferralProfile,
-    selectMyRewardProgram,
 } from "@/services/api/users"
 import type { ProfilePromotionResponse, ReferralProfileResponse } from "@/services/api/users.types"
 import { formatMoney } from "@/utils/formatting"
@@ -73,17 +72,11 @@ export default function ProfileDiscountsScreen() {
     const [profilePromoCode, setProfilePromoCode] = useState("")
     const [isApplyingProfilePromo, setIsApplyingProfilePromo] = useState(false)
     const [isDetachingProfilePromo, setIsDetachingProfilePromo] = useState(false)
-    const [selectingProgram, setSelectingProgram] = useState<"bonus" | "partner" | null>(null)
     const normalizedProfilePromoCode = useMemo(() => profilePromoCode.trim(), [profilePromoCode])
-    const isPartnerProgram = referralProfile?.reward_program === "partner"
-    const isBonusProgram = referralProfile?.reward_program === "bonus"
     const currentPromoCode = referralProfile?.referrer_promo_code ?? referralProfile?.promo_code
     const hasCurrentPromoCode = Boolean(currentPromoCode)
-    const isChangingPromoCode = Boolean(
-        hasCurrentPromoCode
-        && normalizedProfilePromoCode
-        && normalizedProfilePromoCode.toUpperCase() !== currentPromoCode?.trim().toUpperCase(),
-    )
+    const isPartnerProgram = hasCurrentPromoCode
+    const isBonusProgram = Boolean(referralProfile) && !hasCurrentPromoCode
     const hasPartnerEarnings = Boolean(
         referralProfile?.own_promo_code
         || Number(referralProfile?.partner_pending_rubles ?? 0) > 0
@@ -102,32 +95,6 @@ export default function ProfileDiscountsScreen() {
         }, [reloadPromotions, reloadReferralProfile, user?.id]),
     )
 
-    const chooseProgram = useCallback((program: "bonus" | "partner") => {
-        const programName = program === "bonus"
-            ? t("profile.referral.bonusProgramTitle")
-            : t("profile.referral.partnerProgramTitle")
-        Alert.alert(
-            t("profile.referral.confirmProgramTitle"),
-            `${programName}. ${t("profile.referral.confirmProgramMessage")}`,
-            [
-                { text: t("common.cancel"), style: "cancel" },
-                {
-                    text: t("profile.referral.chooseProgramAction"),
-                    onPress: () => {
-                        setSelectingProgram(program)
-                        void selectMyRewardProgram({ program })
-                            .then(setReferralProfile)
-                            .catch((error) => Alert.alert(
-                                t("profile.referral.programSelectionFailed"),
-                                error instanceof Error ? error.message : undefined,
-                            ))
-                            .finally(() => setSelectingProgram(null))
-                    },
-                },
-            ],
-        )
-    }, [setReferralProfile, t])
-
     const applyProfilePromo = useCallback(async () => {
         if (!normalizedProfilePromoCode || isApplyingProfilePromo) {
             return
@@ -136,7 +103,6 @@ export default function ProfileDiscountsScreen() {
         try {
             const nextReferralProfile = await attachMyReferrerCode({
                 code: normalizedProfilePromoCode,
-                confirmed: true,
             })
             setReferralProfile(nextReferralProfile)
             setProfilePromoCode("")
@@ -152,35 +118,15 @@ export default function ProfileDiscountsScreen() {
     }, [isApplyingProfilePromo, normalizedProfilePromoCode, setReferralProfile, t])
 
     const handleApplyProfilePromo = useCallback(() => {
-        if (!normalizedProfilePromoCode || isApplyingProfilePromo) {
+        if (!normalizedProfilePromoCode || isApplyingProfilePromo || hasCurrentPromoCode) {
             return
         }
-        if (hasCurrentPromoCode && !isChangingPromoCode) {
-            return
-        }
-        if (!hasCurrentPromoCode) {
-            void applyProfilePromo()
-            return
-        }
-        Alert.alert(
-            t("profile.referral.changeWarningTitle"),
-            t("profile.referral.changeWarningMessage"),
-            [
-                { text: t("common.cancel"), style: "cancel" },
-                {
-                    text: t("profile.referral.changeAction"),
-                    style: "destructive",
-                    onPress: () => void applyProfilePromo(),
-                },
-            ],
-        )
+        void applyProfilePromo()
     }, [
         applyProfilePromo,
         hasCurrentPromoCode,
         isApplyingProfilePromo,
-        isChangingPromoCode,
         normalizedProfilePromoCode,
-        t,
     ])
 
     const detachProfilePromo = useCallback(async () => {
@@ -231,14 +177,15 @@ export default function ProfileDiscountsScreen() {
 
     const discountsChromeTemplate = useMemo(() => {
         if (
+            hasCurrentPromoCode
+            ||
             !normalizedProfilePromoCode
-            || (hasCurrentPromoCode && !isChangingPromoCode)
         ) {
             return null
         }
         const footerCtaLabel = isApplyingProfilePromo
             ? t("profile.referral.attachLoading")
-            : t(hasCurrentPromoCode ? "profile.referral.changeAction" : "profile.referral.attachAction")
+            : t("profile.referral.attachAction")
         return {
             footer: "nav+customAction" as const,
             slots: {
@@ -271,7 +218,6 @@ export default function ProfileDiscountsScreen() {
         handleApplyProfilePromo,
         hasCurrentPromoCode,
         isApplyingProfilePromo,
-        isChangingPromoCode,
         normalizedProfilePromoCode,
         stickyFooterStyles,
         t,
@@ -313,64 +259,12 @@ export default function ProfileDiscountsScreen() {
                     </View>
                     <View style={profileStyles.benefitsStatusPill}>
                         <Text style={profileStyles.benefitsStatusPillText}>
-                            {t(isPartnerProgram
+                            {t(hasCurrentPromoCode
                                 ? "profile.discounts.statusPartner"
                                 : "profile.discounts.statusCashback")}
                         </Text>
                     </View>
                 </LinearGradient>
-            ) : null}
-
-            {referralProfile?.program_selection_required ? (
-                <View style={profileStyles.sectionCard}>
-                    <View style={profileStyles.benefitsSectionHeading}>
-                        <View style={profileStyles.benefitsNumberBadge}>
-                            <Text style={profileStyles.benefitsNumberBadgeText}>30K</Text>
-                        </View>
-                        <View style={profileStyles.sectionHeaderCopy}>
-                            <Text style={profileStyles.sectionTitle}>{t("profile.discounts.choiceUnlockedTitle")}</Text>
-                            <Text style={profileStyles.sectionDescription}>{t("profile.discounts.choiceUnlockedHint")}</Text>
-                        </View>
-                    </View>
-                    <View style={profileStyles.detailStack}>
-                        <View style={profileStyles.benefitsChoiceCard}>
-                            <Text style={profileStyles.benefitsChoiceKicker}>{t("profile.discounts.choiceCashbackKicker")}</Text>
-                            <Text style={profileStyles.metricValue}>{t("profile.discounts.choiceCashbackTitle")}</Text>
-                            <Text style={profileStyles.sectionDescription}>{t("profile.discounts.choiceCashbackHint")}</Text>
-                            <Pressable
-                                disabled={selectingProgram !== null}
-                                onPress={() => chooseProgram("bonus")}
-                                style={({ pressed }) => [
-                                    profileStyles.primaryActionButton,
-                                    selectingProgram !== null && profileStyles.primaryActionButtonDisabled,
-                                    pressed && profileStyles.primaryActionButtonPressed,
-                                ]}
-                            >
-                                <Text style={profileStyles.primaryActionButtonText}>
-                                    {selectingProgram === "bonus" ? t("profile.referral.chooseProgramLoading") : t("profile.referral.chooseProgramAction")}
-                                </Text>
-                            </Pressable>
-                        </View>
-                        <View style={profileStyles.benefitsChoiceCard}>
-                            <Text style={profileStyles.benefitsChoiceKicker}>{t("profile.discounts.choicePartnerKicker")}</Text>
-                            <Text style={profileStyles.metricValue}>{t("profile.discounts.choicePartnerTitle")}</Text>
-                            <Text style={profileStyles.sectionDescription}>{t("profile.discounts.choicePartnerHint")}</Text>
-                            <Pressable
-                                disabled={selectingProgram !== null}
-                                onPress={() => chooseProgram("partner")}
-                                style={({ pressed }) => [
-                                    profileStyles.primaryActionButton,
-                                    selectingProgram !== null && profileStyles.primaryActionButtonDisabled,
-                                    pressed && profileStyles.primaryActionButtonPressed,
-                                ]}
-                            >
-                                <Text style={profileStyles.primaryActionButtonText}>
-                                    {selectingProgram === "partner" ? t("profile.referral.chooseProgramLoading") : t("profile.referral.chooseProgramAction")}
-                                </Text>
-                            </Pressable>
-                        </View>
-                    </View>
-                </View>
             ) : null}
 
             {!referralProfile && referralLoading ? <ActivityIndicator color={accentPalette.primary} /> : null}
@@ -403,27 +297,21 @@ export default function ProfileDiscountsScreen() {
                             <Text style={profileStyles.benefitsInfoStripText}>{t("profile.discounts.promoEmptyHint")}</Text>
                         </View>
                     )}
-                    <View style={profileStyles.formGroup}>
-                        <Text style={profileStyles.formLabel}>
-                            {t(hasCurrentPromoCode
-                                ? "profile.referral.changeCodeLabel"
-                                : "profile.referral.attachCodeLabel")}
-                        </Text>
-                        <TextInput
-                            autoCapitalize="characters"
-                            autoCorrect={false}
-                            onChangeText={setProfilePromoCode}
-                            placeholder={t("profile.referral.attachCodePlaceholder")}
-                            placeholderTextColor="#94A3B8"
-                            style={profileStyles.formInput}
-                            value={profilePromoCode}
-                        />
-                        <Text style={profileStyles.formHint}>
-                            {t(hasCurrentPromoCode
-                                ? "profile.referral.changeCodeHint"
-                                : "profile.discounts.promoInputHint")}
-                        </Text>
-                    </View>
+                    {!hasCurrentPromoCode ? (
+                        <View style={profileStyles.formGroup}>
+                            <Text style={profileStyles.formLabel}>{t("profile.referral.attachCodeLabel")}</Text>
+                            <TextInput
+                                autoCapitalize="characters"
+                                autoCorrect={false}
+                                onChangeText={setProfilePromoCode}
+                                placeholder={t("profile.referral.attachCodePlaceholder")}
+                                placeholderTextColor="#94A3B8"
+                                style={profileStyles.formInput}
+                                value={profilePromoCode}
+                            />
+                            <Text style={profileStyles.formHint}>{t("profile.discounts.promoInputHint")}</Text>
+                        </View>
+                    ) : null}
                     {!hasCurrentPromoCode && referralProfile.suggested_promo_code ? (
                         <Pressable
                             onPress={() => setProfilePromoCode(referralProfile.suggested_promo_code ?? "")}
@@ -510,21 +398,21 @@ export default function ProfileDiscountsScreen() {
                             <Text style={profileStyles.metricValue}>{formatProfileMoney(referralProfile.total_purchases)}</Text>
                         </View>
                         <Text style={profileStyles.benefitsProgressTarget}>
-                            {formatProfileMoney(totalPurchases < 30000 ? "30000" : "100000")}
+                            {formatProfileMoney(hasCurrentPromoCode ? "100000" : "30000")}
                         </Text>
                     </View>
                     <View style={profileStyles.benefitsProgressTrack}>
                         <View
                             style={[
                                 profileStyles.benefitsProgressFill,
-                                { width: `${Math.round((totalPurchases < 30000 ? choiceProgress : partnerProgress) * 100)}%` },
+                                { width: `${Math.round((hasCurrentPromoCode ? partnerProgress : choiceProgress) * 100)}%` },
                             ]}
                         />
                     </View>
                     <Text style={profileStyles.sectionDescription}>
-                        {t(totalPurchases < 30000
-                            ? "profile.discounts.progressChoiceHint"
-                            : "profile.discounts.progressOwnPromoHint")}
+                        {t(hasCurrentPromoCode
+                            ? "profile.discounts.progressOwnPromoHint"
+                            : "profile.discounts.progressChoiceHint")}
                     </Text>
                 </View>
             ) : null}

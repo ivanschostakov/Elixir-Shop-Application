@@ -23,6 +23,32 @@ async def _get_program_profile(db: AsyncSession, *, user: User) -> ReferralProfi
 async def check_referrer_code(db: AsyncSession, *, user: User, code: str) -> dict[str, Any]:
     await _get_program_profile(db, user=user)
     normalized_code = normalize_referral_code(code)
+    current_code = normalize_referral_code(user.promo_code)
+    if current_code and normalized_code == current_code:
+        return {
+            "code": current_code,
+            "is_valid": True,
+            "status": "already_attached",
+            "reason": None,
+            "warning": None,
+            "requires_confirmation": False,
+            "referrer_user_id": None,
+            "depth": None,
+        }
+    if current_code and normalized_code:
+        return {
+            "code": normalized_code,
+            "is_valid": False,
+            "status": "detach_required",
+            "reason": (
+                "Сначала отвяжите текущий промокод, затем введите новый / "
+                "Unlink the current promo code before entering a new one"
+            ),
+            "warning": None,
+            "requires_confirmation": False,
+            "referrer_user_id": None,
+            "depth": None,
+        }
     if normalized_code and bitrix_promo_configured():
         try:
             promo = await BitrixPromoClient().lookup(normalized_code)
@@ -43,20 +69,13 @@ async def check_referrer_code(db: AsyncSession, *, user: User, code: str) -> dic
                 detail="Проверка промокода временно недоступна / Promo validation is temporarily unavailable",
             ) from error
 
-        current_code = normalize_referral_code(user.promo_code)
-        is_change = bool(current_code and current_code != normalized_code)
         return {
             "code": str(promo.get("promo") or normalized_code),
             "is_valid": True,
             "status": "active",
             "reason": None,
-            "warning": (
-                "Смена закреплённого промокода сбросит накопленную личную скидку и сумму покупок / "
-                "Changing the assigned promo code resets the accumulated personal discount and purchase total"
-                if is_change
-                else None
-            ),
-            "requires_confirmation": is_change,
+            "warning": None,
+            "requires_confirmation": False,
             "referrer_user_id": None,
             "depth": None,
         }
@@ -82,6 +101,18 @@ async def attach_referrer_code(
     moysklad_client: MoySkladClient | None = None,
 ) -> ReferralProfile:
     profile = await _get_program_profile(db, user=user)
+    normalized_requested_code = normalize_referral_code(code)
+    current_code = normalize_referral_code(user.promo_code)
+    if current_code:
+        if normalized_requested_code == current_code:
+            return profile
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Сначала отвяжите текущий промокод, затем введите новый / "
+                "Unlink the current promo code before entering a new one"
+            ),
+        )
     check = await check_referrer_code(db, user=user, code=code)
     if not check["is_valid"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=check["reason"] or "Invalid promo code")
@@ -120,32 +151,14 @@ async def attach_referrer_code(
                     "A regular discount coupon is applied in the cart and is not assigned to the profile"
                 ),
             )
-        current_code = normalize_referral_code(user.promo_code)
-        if (
-            outcome == "firm_promo"
-            and current_code
-            and current_code != normalized_code
-        ):
-            try:
-                await client.detach_referrer(user_email=user.email)
-            except BitrixPromoError as error:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail=(
-                        "Не удалось сменить закреплённый промокод на сайте / "
-                        "Could not change the assigned promo code on the website"
-                    ),
-                ) from error
-            remote_result = dict(remote_result)
-            remote_result["progress_reset"] = True
-            remote_result["previous_promo"] = current_code
     else:
         remote_result = None
 
     user.promo_code = normalized_code
-    if remote_result is not None and remote_result.get("progress_reset"):
-        profile.referral_discount_base_total = 0
-        profile.current_discount_percent = 0
+    # Purchases made in the 5% cashback program do not grow the referral
+    # discount. A newly assigned relationship starts from the base 3% tier.
+    profile.referral_discount_base_total = 0
+    profile = await ensure_default_reward_program(db, user=user)
     if remote_result is not None:
         await refresh_program_profile_from_bitrix(db, user=user)
     else:
@@ -166,6 +179,7 @@ async def detach_referrer_code(db: AsyncSession, *, user: User) -> ReferralProfi
                     detail="Не удалось отвязать промокод на сайте / Could not unlink the promo code on the website",
                 ) from error
     user.promo_code = None
+    profile = await ensure_default_reward_program(db, user=user)
     profile.referral_discount_base_total = 0
     refresh_profile_discount(profile, has_promo_code=False)
     if bitrix_promo_configured():

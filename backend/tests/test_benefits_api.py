@@ -160,7 +160,7 @@ def test_benefit_check_returns_referral_personal_discount(client: TestClient, re
     assert [option["source_kind"] for option in payload["stacked_discount_options"]] == ["app_referral"]
 
 
-def test_bonus_program_stacks_fixed_promo_discount_with_cashback(
+def test_entering_promo_replaces_cashback_with_growing_discount(
     client: TestClient,
     registered_user,
 ):
@@ -177,12 +177,12 @@ def test_bonus_program_stacks_fixed_promo_discount_with_cashback(
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["reward_program"] == "bonus"
+    assert payload["reward_program"] == "partner"
     assert payload["reward_mode"] == "promo"
-    assert _decimal(payload["personal_discount"]["discount_percent"]) == Decimal("3.00")
-    assert _decimal(payload["stacked_discount_amount"]) == Decimal("6.00")
-    assert _decimal(payload["total_after_discounts"]) == Decimal("194.00")
-    assert payload["cashback_earned_points"] == 9
+    assert _decimal(payload["personal_discount"]["discount_percent"]) == Decimal("7.00")
+    assert _decimal(payload["stacked_discount_amount"]) == Decimal("14.00")
+    assert _decimal(payload["total_after_discounts"]) == Decimal("186.00")
+    assert payload["cashback_earned_points"] == 0
 
 
 def test_benefit_check_does_not_offer_personal_discount_without_promo(
