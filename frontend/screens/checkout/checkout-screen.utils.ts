@@ -255,12 +255,14 @@ export function buildDraftPayloadFromOrderDraft(orderDraft: OrderDraftRead): Cre
 
 export async function calculateDeliveryForSavedAddress(
     deliveryAddress: DeliveryAddressRead,
+    draftId: number | null = null,
 ): Promise<CdekDeliveryCalculation> {
     if (deliveryAddress.provider === "CDEK") {
         return calculateCdekDelivery({
             latitude: deliveryAddress.latitude,
             longitude: deliveryAddress.longitude,
             mode: deliveryAddress.mode === "pickup" ? "office" : "door",
+            draftId,
             countryCode: deliveryAddress.country_code,
             postalCode: deliveryAddress.postal_code,
             address: deliveryAddress.full_address,

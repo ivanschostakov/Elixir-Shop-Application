@@ -381,7 +381,9 @@ export default function CheckoutScreen() {
             : !isPromoRewardReady
                 ? t("checkout.enterPromoCode")
                 : paymentFooterCtaLabel
-    const isCheckoutFooterCtaDisabled = isCheckingPromoCode || !isPromoRewardReady || (!hasUnappliedPromoCode && (!hasDeliveryAddress || !hasRecipient))
+    const isCheckoutFooterCtaDisabled =
+        isCheckingPromoCode
+        || (!hasUnappliedPromoCode && (!isPromoRewardReady || !hasDeliveryAddress || !hasRecipient))
     const [isUpdatingPositions, setIsUpdatingPositions] = useState(false)
     const isPositionsBusy = isRestoringDraft || isUpdatingPositions
     const isAddProductsBusy = isRestoringDraft
@@ -1117,7 +1119,10 @@ export default function CheckoutScreen() {
                 throw new Error(t("checkout.saveDraftMetaFailed"))
             }
 
-            const deliveryCalculation = await calculateDeliveryForSavedAddress(selectedAddress)
+            const deliveryCalculation = await calculateDeliveryForSavedAddress(
+                selectedAddress,
+                isBasketCheckout ? null : orderDraft.id,
+            )
             await updateCheckoutMeta({
                 new_delivery_address: buildAddressUpdatePayloadWithCalculation(
                     selectedAddress,

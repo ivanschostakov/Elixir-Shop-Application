@@ -7,7 +7,7 @@ from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.cache import build_cache_key, get_cache_service
 from src.app.services.delivery_quotes import calculate_authoritative_cdek_quote
 from src.database import get_db
-from src.database.crud import get_basket_by_user_id
+from src.database.crud import get_basket_by_user_id, get_order_draft_by_id
 from src.database.models import User
 from src.integrations.delivery.cdek import get_cdek_client, AsyncCDEKClient, CDEKCalculatedDelivery
 from src.integrations.delivery.schemas import CountryCode, DeliveryPointMarker, DeliveryPoint, CdekDeliveryMode
@@ -49,13 +49,27 @@ async def cdek_delivery_calculate(
     address: str | None = Query(None, alias="address"),
     city: str | None = Query(None, alias="city"),
     delivery_point_code: str | None = Query(None, alias="delivery_point_code"),
+    draft_id: int | None = Query(None, alias="draft_id", ge=1),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     cdek: AsyncCDEKClient = Depends(get_cdek_client),
 ):
-    basket = await get_basket_by_user_id(db, current_user.id)
-    if basket is None or not basket.items:
-        raise HTTPException(status_code=409, detail="Корзина пуста. Добавьте товар перед расчётом доставки.")
+    if draft_id is not None:
+        draft = await get_order_draft_by_id(db, draft_id, user_id=current_user.id)
+        if draft is None:
+            raise HTTPException(status_code=404, detail="Черновик заказа не найден.")
+        items = draft.items
+    else:
+        basket = await get_basket_by_user_id(db, current_user.id)
+        items = basket.items if basket is not None else []
+
+    if not items:
+        detail = (
+            "Черновик заказа пуст. Добавьте товар перед расчётом доставки."
+            if draft_id is not None
+            else "Корзина пуста. Добавьте товар перед расчётом доставки."
+        )
+        raise HTTPException(status_code=409, detail=detail)
 
     result = await calculate_authoritative_cdek_quote(
         db,
@@ -71,7 +85,7 @@ async def cdek_delivery_calculate(
             "longitude": longitude,
             "provider_reference": delivery_point_code,
         },
-        items=basket.items,
+        items=items,
         cdek=cdek,
     )
     return CDEKCalculatedDelivery.model_validate(result)

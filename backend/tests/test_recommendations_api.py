@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import types
 import uuid
@@ -26,12 +27,14 @@ if "PIL" not in sys.modules:
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER, ufa_now
 from src.integrations.amocrm import amocrm_client
+from src.app.modules.users.me import recommendations as recommendations_module
 from src.database.models import (
     FavouredProduct,
     Product,
     ProductByCategory,
     ProductCategory,
     ReferralProfile,
+    Review,
     UserCategoryRecommendationSignal,
     User,
     UserProductRecommendationSignal,
@@ -80,6 +83,29 @@ def _create_category(name_prefix: str) -> int:
         session.commit()
         session.refresh(category)
         return int(category.id)
+
+
+def _delete_review(review_id: int) -> None:
+    with Session(sync_engine) as session:
+        review = session.get(Review, review_id)
+        if review is None:
+            return
+        session.delete(review)
+        session.commit()
+
+
+def _create_review(*, product_id: int, value: int, moderated: bool) -> int:
+    with Session(sync_engine) as session:
+        review = Review(
+            product_id=product_id,
+            value=value,
+            text=None,
+            moderated=moderated,
+        )
+        session.add(review)
+        session.commit()
+        session.refresh(review)
+        return int(review.id)
 
 
 def _create_product_variant(
@@ -323,6 +349,22 @@ def product_factory():
     finally:
         for product_id in reversed(created_product_ids):
             _delete_product(product_id)
+
+
+@pytest.fixture()
+def review_factory(product_factory):
+    created_review_ids: list[int] = []
+
+    def _factory(*, product_id: int, value: int, moderated: bool = True) -> int:
+        review_id = _create_review(product_id=product_id, value=value, moderated=moderated)
+        created_review_ids.append(review_id)
+        return review_id
+
+    try:
+        yield _factory
+    finally:
+        for review_id in reversed(created_review_ids):
+            _delete_review(review_id)
 
 
 @pytest.fixture()
@@ -914,6 +956,95 @@ def test_home_recommendations_fall_back_to_newest_products_without_affinity(
         newest_product["product_id"],
         newer_product["product_id"],
     ]
+
+
+def test_home_recommendations_include_published_review_rating(
+    client: TestClient,
+    registered_user,
+    category_factory,
+    product_factory,
+    review_factory,
+):
+    category_id = category_factory("home-rating")
+    product = product_factory(category_ids=[category_id])
+    review_factory(product_id=product["product_id"], value=5)
+    review_factory(product_id=product["product_id"], value=3)
+    review_factory(product_id=product["product_id"], value=1, moderated=False)
+
+    category_response = client.post(
+        "/api/v1/users/me/recommendations/categories/views",
+        headers=registered_user["headers"],
+        json={"category_id": category_id},
+    )
+    assert category_response.status_code == 204, category_response.text
+
+    response = client.get(
+        "/api/v1/users/me/recommendations",
+        headers=registered_user["headers"],
+        params={"surface": "home", "limit": 1},
+    )
+    assert response.status_code == 200, response.text
+
+    payload = response.json()
+    assert len(payload) == 1
+    assert payload[0]["id"] == product["product_id"]
+    assert payload[0]["rating_avg"] == 4.0
+    assert payload[0]["rating_count"] == 2
+
+
+def test_recommendations_pass_review_stats_to_product_serializer(monkeypatch: pytest.MonkeyPatch):
+    product = types.SimpleNamespace(id=321)
+    db = object()
+    current_user = types.SimpleNamespace(id=654)
+    discount_context = object()
+    stock_policy = object()
+    review_stats = {321: (4.5, 2)}
+    captured: dict[str, object] = {}
+
+    async def fake_get_recommended_products(*args, **kwargs):
+        return [product]
+
+    async def fake_get_review_stats(session, *, product_ids):
+        assert session is db
+        assert product_ids == [321]
+        return review_stats
+
+    async def fake_get_discount_context(session, user):
+        assert session is db
+        assert user is current_user
+        return discount_context
+
+    async def fake_get_stock_policy(session):
+        assert session is db
+        return stock_policy
+
+    def fake_serialize_products(request, products, **kwargs):
+        captured.update(kwargs)
+        return products
+
+    monkeypatch.setattr(recommendations_module, "get_recommended_products_for_user", fake_get_recommended_products)
+    monkeypatch.setattr(recommendations_module, "get_product_review_stats", fake_get_review_stats)
+    monkeypatch.setattr(recommendations_module, "get_user_product_price_discount_context", fake_get_discount_context)
+    monkeypatch.setattr(recommendations_module, "get_stock_visibility_policy", fake_get_stock_policy)
+    monkeypatch.setattr(recommendations_module, "serialize_products_with_variants", fake_serialize_products)
+
+    result = asyncio.run(recommendations_module.list_my_recommendations(
+        request=types.SimpleNamespace(),
+        surface="home",
+        product_id=None,
+        draft_id=None,
+        limit=8,
+        offset=0,
+        db=db,
+        current_user=current_user,
+    ))
+
+    assert result == [product]
+    assert captured == {
+        "review_stats_by_product_id": review_stats,
+        "discount_context": discount_context,
+        "stock_policy": stock_policy,
+    }
 
 
 def test_home_recommendations_continue_with_remaining_catalog_after_ranked_products(

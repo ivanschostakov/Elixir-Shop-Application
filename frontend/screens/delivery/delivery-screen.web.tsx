@@ -305,7 +305,7 @@ export default function DeliveryScreen() {
             let deliveryCalculationErrorMessage: string | null = null
 
             try {
-                nextDraft.deliveryCalculation = await calculateDoorDelivery(nextDraft)
+                nextDraft.deliveryCalculation = await calculateDoorDelivery(nextDraft, checkoutDraftId)
             } catch (deliveryCalculationError) {
                 showBackendErrorAlert(deliveryCalculationError)
                 deliveryCalculationErrorMessage = getDeliveryCalculationErrorMessage(deliveryCalculationError)
@@ -326,7 +326,7 @@ export default function DeliveryScreen() {
             setMapZoom(PICKUP_POINT_FOCUS_ZOOM)
             return true
         },
-        [activeCountryCode, clearResults],
+        [activeCountryCode, checkoutDraftId, clearResults],
     )
 
     const resolveDoorDeliveryPoint = useCallback(
@@ -506,12 +506,13 @@ export default function DeliveryScreen() {
 
             if (provider === "cdek") {
                 try {
-                    nextDraft.deliveryCalculation = await calculateCdekDelivery(
-                        buildCdekPickupCalculationRequest(
+                    nextDraft.deliveryCalculation = await calculateCdekDelivery({
+                        ...buildCdekPickupCalculationRequest(
                             nextDraft,
                             activeCountryCode,
                         ),
-                    )
+                        draftId: checkoutDraftId,
+                    })
                 } catch (deliveryCalculationError) {
                     showBackendErrorAlert(deliveryCalculationError)
                     setPickupPointError(getDeliveryCalculationErrorMessage(deliveryCalculationError))
@@ -554,7 +555,7 @@ export default function DeliveryScreen() {
         } finally {
             setIsResolvingPickupPoint(false)
         }
-    }, [activeCountryCode, clearResults, pickupPointDraft, shouldShowPickupFooterExtension])
+    }, [activeCountryCode, checkoutDraftId, clearResults, pickupPointDraft, shouldShowPickupFooterExtension])
 
     const handlePressResult = async (result: DeliveryGeoSuggestResult) => {
         try {
@@ -611,12 +612,13 @@ export default function DeliveryScreen() {
                 const deliveryCalculation =
                     pickupPointDraft.provider === "cdek"
                         ? pickupPointDraft.deliveryCalculation
-                          ?? await calculateCdekDelivery(
-                              buildCdekPickupCalculationRequest(
+                          ?? await calculateCdekDelivery({
+                              ...buildCdekPickupCalculationRequest(
                                   pickupPointDraft,
                                   activeCountryCode,
                               ),
-                          )
+                              draftId: checkoutDraftId,
+                          })
                         : pickupPointDraft.provider === "yandex"
                           ? pickupPointDraft.deliveryCalculation
                             ?? await calculateYandexDelivery(pickupPointDraft.code)
@@ -710,7 +712,7 @@ export default function DeliveryScreen() {
                 }
                 const deliveryCalculation =
                     doorDeliveryDraft.deliveryCalculation
-                    ?? await calculateDoorDelivery(nextDoorDeliveryDraft)
+                    ?? await calculateDoorDelivery(nextDoorDeliveryDraft, checkoutDraftId)
 
                 const orderDraftPayload = buildDoorOrderDraftPayload(
                     nextDoorDeliveryDraft,

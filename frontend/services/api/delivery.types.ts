@@ -43,6 +43,7 @@ export type CdekDeliveryCalculationRequest = {
     latitude: number
     longitude: number
     mode: CdekDeliveryMode
+    draftId?: number | null
     countryCode?: DeliveryCountryCode | null
     postalCode?: string | null
     address?: string | null

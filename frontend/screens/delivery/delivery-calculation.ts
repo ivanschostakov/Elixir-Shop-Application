@@ -62,11 +62,12 @@ export function calculateDoorDelivery({
     latitude,
     longitude,
     postalCode,
-}: DoorDeliveryCalculationInput): Promise<CdekDeliveryCalculation> {
+}: DoorDeliveryCalculationInput, draftId: number | null = null): Promise<CdekDeliveryCalculation> {
     return calculateCdekDelivery({
         latitude,
         longitude,
         mode: "door",
+        draftId,
         countryCode,
         postalCode,
         address,
