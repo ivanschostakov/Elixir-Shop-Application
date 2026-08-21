@@ -13,6 +13,7 @@ from src.database.limits import (
 
 
 class BenefitCheckPayload(BaseModel):
+    draft_id: int | None = Field(default=None, ge=1)
     code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
     subtotal: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     discountable_subtotal: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)

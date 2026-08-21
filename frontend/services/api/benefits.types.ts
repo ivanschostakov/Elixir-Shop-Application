@@ -1,4 +1,5 @@
 export type BenefitCheckPayload = {
+    draft_id?: number | null
     code?: string | null
     subtotal?: string | null
     discountable_subtotal?: string | null

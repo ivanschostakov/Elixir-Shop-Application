@@ -282,6 +282,7 @@ export default function CheckoutScreen() {
 
         try {
             const nextBenefitCheck = await checkMyBenefits({
+                draft_id: isBasketCheckout ? null : orderDraft.id,
                 code,
                 currency: orderDraft.currency,
                 subtotal: orderDraft.basket_subtotal,
@@ -293,7 +294,7 @@ export default function CheckoutScreen() {
         } catch {
             return null
         }
-    }, [isAuthenticated, orderDraft, rewardMode, useBonusRubles])
+    }, [isAuthenticated, isBasketCheckout, orderDraft, rewardMode, useBonusRubles])
 
     useEffect(() => {
         if (!routePromoCode || appliedRoutePromoCodeRef.current === routePromoCode) {

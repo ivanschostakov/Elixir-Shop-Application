@@ -1,8 +1,10 @@
+import asyncio
 import sys
 import types
 import uuid
 from decimal import Decimal
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,6 +25,8 @@ if "PIL" not in sys.modules:
     sys.modules["PIL"] = pil_module
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
+from src.app.modules.users.me import benefits as benefits_module
+from src.app.modules.users.me.schemas.benefits import BenefitCheckPayload
 from src.database.models import ReferralProfile, User
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
@@ -243,3 +247,86 @@ def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(clie
     assert payload["cashback_earned_points"] == 10
     assert _decimal(payload["stacked_discount_amount"]) == Decimal("0.00")
     assert _decimal(payload["total_after_discounts"]) == Decimal("200.00")
+
+
+def test_benefit_check_uses_owned_order_draft_context(monkeypatch):
+    draft_items = [
+        SimpleNamespace(
+            product_id=11,
+            variant_id=17,
+            quantity=2,
+            line_total=Decimal("200.00"),
+        )
+    ]
+    draft = SimpleNamespace(
+        basket_subtotal=Decimal("200.00"),
+        currency="RUB",
+        items=draft_items,
+    )
+    quote_items = [
+        {
+            "product_system_id": "product-system-id",
+            "variant_system_id": "variant-system-id",
+            "quantity": 2,
+        }
+    ]
+    captured: dict = {}
+
+    async def fake_get_order_draft(_db, draft_id: int, *, user_id: int):
+        assert draft_id == 42
+        assert user_id == 7
+        return draft
+
+    async def fake_discountable_subtotal(_db, lines):
+        assert list(lines) == [(11, Decimal("200.00"))]
+        return Decimal("200.00")
+
+    async def fake_build_quote_items(_db, items):
+        assert items is draft_items
+        return quote_items
+
+    async def fake_resolve(_db, **kwargs):
+        captured.update(kwargs)
+        return {
+            "subtotal_source": "request",
+            "basket_subtotal": kwargs["subtotal"],
+            "currency": kwargs["currency"],
+            "stacked_discount_amount": Decimal("6.00"),
+            "total_after_discounts": Decimal("194.00"),
+        }
+
+    class FakeDB:
+        committed = False
+
+        async def commit(self):
+            self.committed = True
+
+    monkeypatch.setattr(benefits_module, "get_order_draft_by_id", fake_get_order_draft)
+    monkeypatch.setattr(benefits_module, "discountable_subtotal_for_lines", fake_discountable_subtotal)
+    monkeypatch.setattr(benefits_module, "build_bitrix_delivery_items", fake_build_quote_items)
+    monkeypatch.setattr(benefits_module, "resolve_benefits_for_user", fake_resolve)
+
+    db = FakeDB()
+    result = asyncio.run(
+        benefits_module.check_my_benefits(
+            payload=BenefitCheckPayload(
+                draft_id=42,
+                code="ROMANI",
+                subtotal=Decimal("1.00"),
+                discountable_subtotal=Decimal("1.00"),
+                currency="USD",
+            ),
+            db=db,
+            current_user=SimpleNamespace(id=7),
+        )
+    )
+
+    assert result.basket_subtotal == Decimal("200.00")
+    assert result.currency == "RUB"
+    assert result.stacked_discount_amount == Decimal("6.00")
+    assert captured["entered_code"] == "ROMANI"
+    assert captured["subtotal"] == Decimal("200.00")
+    assert captured["discountable_subtotal"] == Decimal("200.00")
+    assert captured["currency"] == "RUB"
+    assert captured["quote_items"] is quote_items
+    assert db.committed is True
