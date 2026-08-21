@@ -14,6 +14,7 @@ from src.app.modules.users.me.schemas import (
 )
 from src.app.services.app_integrity import require_app_integrity
 from src.app.services.ai.chat import get_or_create_user_chat, perform_user_ai_chat_action, send_user_chat_message
+from src.app.services.ai.security import ensure_app_ai_access, record_app_ai_activity
 from src.app.services.basket import _get_serialized_basket
 from src.app.services.upload_limits import read_upload_file_limited
 from src.database import get_db
@@ -36,6 +37,14 @@ async def get_my_ai_chat(db: AsyncSession = Depends(get_db), current_user: User 
 async def send_my_ai_chat_message(request: Request, text: str = Form(...), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:send"))) -> AIChatResponse:
     normalized_text = text.strip()
     if not normalized_text: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="text must not be empty")
+    await ensure_app_ai_access(db, request=request, user=current_user)
+    await record_app_ai_activity(
+        db,
+        request=request,
+        user=current_user,
+        event_type="message_requested",
+        details={"message_length": len(normalized_text), "attachments_count": len(attachments or [])},
+    )
     result = await send_user_chat_message(db, user=current_user, text=normalized_text, attachments=attachments, professor_client=professor_client)
     basket = await _get_serialized_basket(request, db, current_user.id) if result.basket_updated else None
     return AIChatResponse(chat=result.chat, last_turn=AIChatTurnMetaRead(**result.turn_meta), basket=basket)
@@ -43,13 +52,23 @@ async def send_my_ai_chat_message(request: Request, text: str = Form(...), attac
 
 @ai_chat_router.post("/actions", response_model=AIChatActionResponse, status_code=status.HTTP_200_OK)
 async def perform_my_ai_chat_action(payload: AIChatActionPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("ai-chat:action"))) -> AIChatActionResponse:
+    await ensure_app_ai_access(db, request=request, user=current_user)
+    await record_app_ai_activity(
+        db,
+        request=request,
+        user=current_user,
+        event_type="action_requested",
+        details={"message_id": payload.message_id, "action_id": payload.action_id},
+    )
     result = await perform_user_ai_chat_action(db, user=current_user, message_id=payload.message_id, action_id=payload.action_id, action_token=payload.action_token, quantity=payload.quantity)
     basket = await _get_serialized_basket(request, db, current_user.id) if result.basket_updated else None
     return AIChatActionResponse(chat=result.chat, last_turn=None, basket=basket, basket_item_id=result.basket_item_id)
 
 
 @ai_chat_router.post("/transcribe", response_model=AIChatTranscriptionResponse, status_code=status.HTTP_200_OK)
-async def transcribe_my_ai_chat_voice_message(audio: UploadFile = File(...), _current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:transcribe"))) -> AIChatTranscriptionResponse:
+async def transcribe_my_ai_chat_voice_message(request: Request, audio: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:transcribe"))) -> AIChatTranscriptionResponse:
+    await ensure_app_ai_access(db, request=request, user=current_user)
+    await record_app_ai_activity(db, request=request, user=current_user, event_type="transcription_requested")
     content = await read_upload_file_limited(audio, max_bytes=AI_CHAT_MAX_AUDIO_BYTES, label="Audio upload")
     if not content: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="audio must not be empty")
 

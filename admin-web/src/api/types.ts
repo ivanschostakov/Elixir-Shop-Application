@@ -1157,6 +1157,57 @@ export type AIChatDetail = {
   updated_at: string
 }
 
+export type AIChatSecuritySource = "app" | "bitrix"
+
+export type AIChatSecuritySourceSummary = {
+  source: AIChatSecuritySource
+  configured: boolean
+  window_hours: number
+  events: number
+  messages: number
+  suspicious: number
+  active_bans: number
+  error: string | null
+}
+
+export type AIChatSecurityOverview = {
+  app: AIChatSecuritySourceSummary
+  bitrix: AIChatSecuritySourceSummary
+}
+
+export type AIChatSecurityEvent = {
+  id: number
+  source: AIChatSecuritySource
+  event_type: string
+  outcome: string
+  account_id: string
+  email_address: string | null
+  display_name: string | null
+  ip_address: string | null
+  session_id: number | null
+  message_id: number | null
+  risk_score: number
+  is_suspicious: boolean
+  risk_reasons: string[]
+  details: Record<string, unknown>
+  created_at: string
+}
+
+export type AIChatBan = {
+  id: number
+  source: AIChatSecuritySource
+  ban_type: "account" | "ip"
+  subject: string
+  reason: string
+  is_active: boolean
+  created_by: string | null
+  expires_at: string | null
+  revoked_at: string | null
+  revoked_by: string | null
+  created_at: string
+  updated_at: string
+}
+
 export type LeadStatus = "new" | "contacted" | "interested" | "waiting" | "converted" | "lost"
 
 export type CrmLead = {

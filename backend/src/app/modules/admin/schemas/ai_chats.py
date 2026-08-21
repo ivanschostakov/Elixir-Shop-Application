@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -54,3 +54,74 @@ class AdminAIChatDetail(BaseModel):
     actions: list[AdminAIChatActionRead]
     created_at: datetime
     updated_at: datetime
+
+
+class AdminAIChatSecuritySourceSummary(BaseModel):
+    source: Literal["app", "bitrix"]
+    configured: bool = True
+    window_hours: int = 24
+    events: int = 0
+    messages: int = 0
+    suspicious: int = 0
+    active_bans: int = 0
+    error: str | None = None
+
+
+class AdminAIChatSecurityOverview(BaseModel):
+    app: AdminAIChatSecuritySourceSummary
+    bitrix: AdminAIChatSecuritySourceSummary
+
+
+class AdminAIChatSecurityEventRead(BaseModel):
+    id: int
+    source: Literal["app", "bitrix"]
+    event_type: str
+    outcome: str
+    account_id: str
+    email_address: str | None
+    display_name: str | None
+    ip_address: str | None
+    session_id: int | None = None
+    message_id: int | None = None
+    risk_score: int
+    is_suspicious: bool
+    risk_reasons: list[str]
+    details: dict[str, Any]
+    created_at: datetime
+
+
+class AdminAIChatSecurityEventPage(BaseModel):
+    items: list[AdminAIChatSecurityEventRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminAIChatBanRead(BaseModel):
+    id: int
+    source: Literal["app", "bitrix"]
+    ban_type: Literal["account", "ip"]
+    subject: str
+    reason: str
+    is_active: bool
+    created_by: str | None = None
+    expires_at: datetime | None = None
+    revoked_at: datetime | None = None
+    revoked_by: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminAIChatBanPage(BaseModel):
+    items: list[AdminAIChatBanRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class AdminAIChatBanCreate(BaseModel):
+    source: Literal["app", "bitrix"]
+    ban_type: Literal["account", "ip"]
+    subject: str
+    reason: str
+    expires_at: datetime | None = None

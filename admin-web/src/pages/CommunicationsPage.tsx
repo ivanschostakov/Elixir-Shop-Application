@@ -38,7 +38,11 @@ import { Link, useSearchParams } from "react-router-dom"
 import { apiDownload, apiRequest, queryString } from "../api/client"
 import type {
   AIChatDetail,
+  AIChatBan,
   AIChatListItem,
+  AIChatSecurityEvent,
+  AIChatSecurityOverview,
+  AIChatSecuritySource,
   AssigneeOption,
   Page,
   SupportConversation,
@@ -539,9 +543,14 @@ function extractInteractive(context: Record<string, unknown>) {
 function AIChatsTab() {
   const { locale } = useLanguage()
   const { hasPermission, principal } = useAuth()
+  const queryClient = useQueryClient()
   const [params, setParams] = useSearchParams()
   const search = params.get("ai_q") || ""
   const selectedId = Number(params.get("ai_chat_id") || 0) || null
+  const [securitySource, setSecuritySource] = useState<AIChatSecuritySource>("app")
+  const [suspiciousOnly, setSuspiciousOnly] = useState(false)
+  const [banOpen, setBanOpen] = useState(false)
+  const [banForm] = Form.useForm<{ ban_type: "account" | "ip"; subject: string; reason: string }>()
   const copy = locale === "ru"
     ? { title: "AI Chat", search: "Клиент или сообщение", select: "Выберите AI-диалог", noItems: "AI-диалогов пока нет", messages: "сообщений", tokens: "токенов", createLead: "Создать лид", leadCreated: "Лид создан", model: "Модель", actions: "Фактические действия пользователя", noActions: "Действий пока нет", completed: "выполнено", eventMessage: "Отправил сообщение", eventShown: "Получил рекомендацию", eventClicked: "Нажал действие", eventCompleted: "Выполнил действие", product: "товар", variant: "вариант" }
     : { title: "AI Chat", search: "Customer or message", select: "Select an AI conversation", noItems: "No AI conversations yet", messages: "messages", tokens: "tokens", createLead: "Create lead", leadCreated: "Lead created", model: "Model", actions: "Actual user actions", noActions: "No actions yet", completed: "completed", eventMessage: "Sent a message", eventShown: "Received a recommendation", eventClicked: "Clicked an action", eventCompleted: "Completed an action", product: "product", variant: "variant" }
@@ -566,6 +575,40 @@ function AIChatsTab() {
     queryFn: () => apiRequest<AIChatDetail>(`/ai-chats/${selectedId}`),
     enabled: Boolean(selectedId),
   })
+  const securityOverview = useQuery({
+    queryKey: ["ai-security", "overview"],
+    queryFn: () => apiRequest<AIChatSecurityOverview>("/ai-chats/security/overview"),
+    refetchInterval: 30_000,
+  })
+  const securityEvents = useQuery({
+    queryKey: ["ai-security", "activity", securitySource, suspiciousOnly],
+    queryFn: () => apiRequest<Page<AIChatSecurityEvent>>(`/ai-chats/security/activity${queryString({ source: securitySource, suspicious_only: suspiciousOnly, limit: 100 })}`),
+  })
+  const securityBans = useQuery({
+    queryKey: ["ai-security", "bans", securitySource],
+    queryFn: () => apiRequest<Page<AIChatBan>>(`/ai-chats/security/bans${queryString({ source: securitySource })}`),
+  })
+  const createBan = useMutation({
+    mutationFn: (values: { ban_type: "account" | "ip"; subject: string; reason: string }) => apiRequest<AIChatBan>("/ai-chats/security/bans", {
+      method: "POST",
+      body: JSON.stringify({ source: securitySource, ...values }),
+    }),
+    onSuccess: () => {
+      setBanOpen(false)
+      banForm.resetFields()
+      void queryClient.invalidateQueries({ queryKey: ["ai-security"] })
+      void message.success(locale === "ru" ? "Блокировка включена" : "Ban enabled")
+    },
+    onError: (error: Error) => void message.error(error.message),
+  })
+  const revokeBan = useMutation({
+    mutationFn: (ban: AIChatBan) => apiRequest<AIChatBan>(`/ai-chats/security/bans/${ban.source}/${ban.id}/revoke`, { method: "POST" }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["ai-security"] })
+      void message.success(locale === "ru" ? "Блокировка снята" : "Ban revoked")
+    },
+    onError: (error: Error) => void message.error(error.message),
+  })
   const createLead = useMutation({
     mutationFn: () => apiRequest("/leads", {
       method: "POST",
@@ -583,7 +626,104 @@ function AIChatsTab() {
     onError: (error: Error) => void message.error(error.message),
   })
 
-  return (
+  const securityCopy = locale === "ru"
+    ? { title: "Активность и защита AI-чатов", app: "Приложение", bitrix: "Bitrix-сайт", messages24: "Сообщений за 24 часа", suspicious: "Подозрительных", activeBans: "Активных блокировок", onlySuspicious: "Только подозрительные", activity: "Последняя активность", bans: "Блокировки", noActivity: "Активности пока нет", noBans: "Активных блокировок нет", ban: "Заблокировать", unban: "Снять", account: "Аккаунт", ip: "IP-адрес", reason: "Причина", subject: "ID аккаунта или IP", unavailable: "Источник не подключён или временно недоступен" }
+    : { title: "AI chat activity and security", app: "Application", bitrix: "Bitrix website", messages24: "Messages in 24 hours", suspicious: "Suspicious", activeBans: "Active bans", onlySuspicious: "Suspicious only", activity: "Recent activity", bans: "Bans", noActivity: "No activity yet", noBans: "No active bans", ban: "Ban", unban: "Revoke", account: "Account", ip: "IP address", reason: "Reason", subject: "Account ID or IP", unavailable: "Source is not configured or temporarily unavailable" }
+  const riskLabel = (reason: string) => ({
+    high_message_rate_minute: locale === "ru" ? "частые сообщения за минуту" : "high message rate per minute",
+    high_message_rate_hour: locale === "ru" ? "частые сообщения за час" : "high message rate per hour",
+    many_accounts_same_ip: locale === "ru" ? "много аккаунтов с одного IP" : "many accounts from one IP",
+    active_account_ban: locale === "ru" ? "блокировка аккаунта" : "account ban",
+    active_ip_ban: locale === "ru" ? "блокировка IP" : "IP ban",
+  }[reason] || reason)
+  const openBan = (banType: "account" | "ip", subject?: string | null) => {
+    banForm.setFieldsValue({ ban_type: banType, subject: subject || "", reason: "" })
+    setBanOpen(true)
+  }
+
+  return (<>
+    <Card title={<Space><RobotOutlined />{securityCopy.title}</Space>} style={{ marginBottom: 16 }}>
+      <Row gutter={[12, 12]}>
+        {(["app", "bitrix"] as const).map((source) => {
+          const item = securityOverview.data?.[source]
+          return (
+            <Col xs={24} md={12} key={source}>
+              <Card size="small" type="inner" title={source === "app" ? securityCopy.app : securityCopy.bitrix}>
+                {item?.error || item?.configured === false ? <Typography.Text type="danger">{securityCopy.unavailable}</Typography.Text> : (
+                  <Space wrap>
+                    <Tag color="blue">{securityCopy.messages24}: {item?.messages ?? "—"}</Tag>
+                    <Tag color={(item?.suspicious || 0) > 0 ? "red" : "green"}>{securityCopy.suspicious}: {item?.suspicious ?? "—"}</Tag>
+                    <Tag color={(item?.active_bans || 0) > 0 ? "orange" : "default"}>{securityCopy.activeBans}: {item?.active_bans ?? "—"}</Tag>
+                  </Space>
+                )}
+              </Card>
+            </Col>
+          )
+        })}
+      </Row>
+      <Space wrap style={{ margin: "16px 0" }}>
+        <Select<AIChatSecuritySource>
+          value={securitySource}
+          onChange={setSecuritySource}
+          options={[{ value: "app", label: securityCopy.app }, { value: "bitrix", label: securityCopy.bitrix }]}
+          style={{ width: 180 }}
+        />
+        <Switch checked={suspiciousOnly} onChange={setSuspiciousOnly} />
+        <Typography.Text>{securityCopy.onlySuspicious}</Typography.Text>
+        {hasPermission("ai_chats.manage") ? <Button danger onClick={() => openBan("account")}>{securityCopy.ban}</Button> : null}
+      </Space>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={16}>
+          <Card size="small" title={securityCopy.activity}>
+            <List
+              loading={securityEvents.isLoading}
+              locale={{ emptyText: securityCopy.noActivity }}
+              dataSource={securityEvents.data?.items || []}
+              renderItem={(item) => (
+                <List.Item actions={hasPermission("ai_chats.manage") ? [
+                  <Button key="account" size="small" danger onClick={() => openBan("account", item.account_id)}>{securityCopy.account}</Button>,
+                  <Button key="ip" size="small" danger disabled={!item.ip_address} onClick={() => openBan("ip", item.ip_address)}>{securityCopy.ip}</Button>,
+                ] : undefined}>
+                  <List.Item.Meta
+                    avatar={<Badge status={item.is_suspicious ? "error" : "success"} />}
+                    title={<Space wrap><Typography.Text strong>{item.display_name || item.email_address || `#${item.account_id}`}</Typography.Text><Tag>{item.event_type}</Tag>{item.is_suspicious ? <Tag color="red">Risk {item.risk_score}</Tag> : null}</Space>}
+                    description={<div className="table-primary"><span>{item.ip_address || "—"} · {dateTime(item.created_at, locale)}</span>{item.risk_reasons.length ? <small>{item.risk_reasons.map(riskLabel).join(", ")}</small> : null}</div>}
+                  />
+                </List.Item>
+              )}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} xl={8}>
+          <Card size="small" title={securityCopy.bans}>
+            <List
+              loading={securityBans.isLoading}
+              locale={{ emptyText: securityCopy.noBans }}
+              dataSource={securityBans.data?.items || []}
+              renderItem={(item) => (
+                <List.Item actions={hasPermission("ai_chats.manage") ? [<Button key="revoke" size="small" onClick={() => revokeBan.mutate(item)}>{securityCopy.unban}</Button>] : undefined}>
+                  <List.Item.Meta title={<Space><Tag color="red">{item.ban_type === "ip" ? securityCopy.ip : securityCopy.account}</Tag>{item.subject}</Space>} description={item.reason} />
+                </List.Item>
+              )}
+            />
+          </Card>
+        </Col>
+      </Row>
+    </Card>
+    <Modal
+      title={securityCopy.ban}
+      open={banOpen}
+      okText={securityCopy.ban}
+      okButtonProps={{ danger: true, loading: createBan.isPending }}
+      onCancel={() => setBanOpen(false)}
+      onOk={() => void banForm.validateFields().then((values) => createBan.mutate(values))}
+    >
+      <Form form={banForm} layout="vertical" requiredMark={false}>
+        <Form.Item name="ban_type" label={locale === "ru" ? "Тип" : "Type"} rules={[{ required: true }]}><Select options={[{ value: "account", label: securityCopy.account }, { value: "ip", label: securityCopy.ip }]} /></Form.Item>
+        <Form.Item name="subject" label={securityCopy.subject} rules={[{ required: true, min: 1, max: 254 }]}><Input /></Form.Item>
+        <Form.Item name="reason" label={securityCopy.reason} rules={[{ required: true, min: 3, max: 2000 }]}><Input.TextArea rows={3} /></Form.Item>
+      </Form>
+    </Modal>
     <Row gutter={16} className="communications-grid">
       <Col xs={24} lg={8} xl={7}>
         <Card title={<Space><RobotOutlined />{copy.title}</Space>} className="communications-list-card">
@@ -675,7 +815,7 @@ function AIChatsTab() {
         )}
       </Col>
     </Row>
-  )
+  </>)
 }
 
 export function CommunicationsPage() {

@@ -2,6 +2,7 @@ from .ai.attachment import Attachment
 from .ai.chat import AIChat
 from .ai.message import AIMessage
 from .ai.usage import AIMessageUsage
+from .ai.security import AIChatAccessBan, AIChatSecurityEvent
 from .auth.admin import Admin, AdminRoleAssignment
 from .auth.admin_identity import AdminIdentity
 from .auth.admin_session import AdminSession
@@ -116,6 +117,8 @@ __all__ = [
     "AdminSlaPolicy",
     "AdminTask",
     "AIChat",
+    "AIChatAccessBan",
+    "AIChatSecurityEvent",
     "AIMessage",
     "AIMessageUsage",
     "AppAttestKey",

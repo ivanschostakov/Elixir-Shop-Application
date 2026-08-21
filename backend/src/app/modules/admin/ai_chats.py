@@ -1,24 +1,36 @@
 from copy import deepcopy
+from datetime import timedelta
+import ipaddress
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import FileResponse
 from starlette import status
 
 from src.app.modules.admin.schemas import (
     AdminAIChatActionRead,
+    AdminAIChatBanCreate,
+    AdminAIChatBanPage,
+    AdminAIChatBanRead,
     AdminAIChatDetail,
     AdminAIChatListItem,
     AdminAIChatMessageRead,
+    AdminAIChatSecurityEventPage,
+    AdminAIChatSecurityEventRead,
+    AdminAIChatSecurityOverview,
+    AdminAIChatSecuritySourceSummary,
     AdminPage,
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
+from src.app.services.admin.alerts import raise_admin_alert, resolve_admin_alert
+from src.app.services.ai.bitrix_admin import BitrixAIAdminError, bitrix_ai_admin_client, bitrix_ai_admin_configured
+from config import ufa_now
 from src.database import get_db
 from src.database.crud.ai.chat import get_ai_chat_by_id
-from src.database.models import AIChat, AIMessage, Attachment, User, UserEvent
+from src.database.models import AIChat, AIChatAccessBan, AIChatSecurityEvent, AIMessage, Attachment, User, UserEvent
 from src.integrations.ai.enums import MessageSender
 
 admin_ai_chats_router = APIRouter(prefix="/ai-chats", tags=["admin_ai_chats"])
@@ -131,6 +143,265 @@ async def list_ai_chats(
         limit=limit,
         offset=offset,
     )
+
+
+def _app_security_event_read(row: AIChatSecurityEvent, user: User) -> AdminAIChatSecurityEventRead:
+    return AdminAIChatSecurityEventRead(
+        id=row.id,
+        source="app",
+        event_type=row.event_type,
+        outcome=row.outcome,
+        account_id=str(row.user_id),
+        email_address=user.email,
+        display_name=f"{user.name} {user.surname}".strip() or None,
+        ip_address=row.ip_address,
+        risk_score=row.risk_score,
+        is_suspicious=row.is_suspicious,
+        risk_reasons=row.risk_reasons or [],
+        details=row.details_json or {},
+        created_at=row.created_at,
+    )
+
+
+def _app_ban_read(row: AIChatAccessBan) -> AdminAIChatBanRead:
+    return AdminAIChatBanRead(
+        id=row.id,
+        source="app",
+        ban_type=row.ban_type,
+        subject=row.subject,
+        reason=row.reason,
+        is_active=row.is_active,
+        created_by=str(row.created_by_user_id) if row.created_by_user_id else None,
+        expires_at=row.expires_at,
+        revoked_at=row.revoked_at,
+        revoked_by=str(row.revoked_by_user_id) if row.revoked_by_user_id else None,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+async def _app_security_summary(db: AsyncSession) -> AdminAIChatSecuritySourceSummary:
+    since = ufa_now() - timedelta(hours=24)
+    events, messages, suspicious = (await db.execute(select(
+        func.count(AIChatSecurityEvent.id),
+        func.count(AIChatSecurityEvent.id).filter(AIChatSecurityEvent.event_type == "message_requested"),
+        func.count(AIChatSecurityEvent.id).filter(AIChatSecurityEvent.is_suspicious.is_(True)),
+    ).where(AIChatSecurityEvent.created_at >= since))).one()
+    active_bans = int((await db.execute(select(func.count(AIChatAccessBan.id)).where(
+        AIChatAccessBan.is_active.is_(True),
+        or_(AIChatAccessBan.expires_at.is_(None), AIChatAccessBan.expires_at > ufa_now()),
+    ))).scalar_one())
+    return AdminAIChatSecuritySourceSummary(
+        source="app",
+        events=int(events or 0),
+        messages=int(messages or 0),
+        suspicious=int(suspicious or 0),
+        active_bans=active_bans,
+    )
+
+
+@admin_ai_chats_router.get("/security/overview", response_model=AdminAIChatSecurityOverview)
+async def ai_chat_security_overview(
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("ai_chats.read")),
+) -> AdminAIChatSecurityOverview:
+    app_summary = await _app_security_summary(db)
+    bitrix_summary = AdminAIChatSecuritySourceSummary(source="bitrix", configured=bitrix_ai_admin_configured())
+    if bitrix_ai_admin_configured():
+        try:
+            bitrix_summary = AdminAIChatSecuritySourceSummary.model_validate(
+                await bitrix_ai_admin_client.request("GET", "/summary")
+            )
+            if bitrix_summary.suspicious:
+                await raise_admin_alert(
+                    db,
+                    severity="warning",
+                    source="ai_security",
+                    code="suspicious_bitrix_ai_chat_activity",
+                    title_ru="Подозрительная активность в Bitrix AI-чате",
+                    title_en="Suspicious Bitrix AI chat activity",
+                    message=f"За последние 24 часа обнаружено подозрительных событий: {bitrix_summary.suspicious}.",
+                    fingerprint="ai-security:bitrix:aggregate",
+                    entity_type="ai_chat_source",
+                    entity_id="bitrix",
+                    path="/communications?tab=ai&security=1",
+                )
+            else:
+                await resolve_admin_alert(db, fingerprint="ai-security:bitrix:aggregate")
+            await db.commit()
+        except BitrixAIAdminError as exc:
+            bitrix_summary = AdminAIChatSecuritySourceSummary(
+                source="bitrix",
+                configured=True,
+                error=str(exc),
+            )
+    return AdminAIChatSecurityOverview(app=app_summary, bitrix=bitrix_summary)
+
+
+@admin_ai_chats_router.get("/security/activity", response_model=AdminAIChatSecurityEventPage)
+async def ai_chat_security_activity(
+    source: str = Query(default="app", pattern="^(app|bitrix)$"),
+    suspicious_only: bool = False,
+    q: str | None = Query(default=None, max_length=190),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("ai_chats.read")),
+) -> AdminAIChatSecurityEventPage:
+    if source == "bitrix":
+        try:
+            return AdminAIChatSecurityEventPage.model_validate(await bitrix_ai_admin_client.request(
+                "GET",
+                "/activity",
+                params={"suspicious_only": suspicious_only, "q": q, "limit": limit, "offset": offset},
+            ))
+        except BitrixAIAdminError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    filters = []
+    if suspicious_only:
+        filters.append(AIChatSecurityEvent.is_suspicious.is_(True))
+    if q:
+        pattern = f"%{q.strip()}%"
+        filters.append(or_(
+            User.email.ilike(pattern),
+            User.name.ilike(pattern),
+            User.surname.ilike(pattern),
+            AIChatSecurityEvent.ip_address.ilike(pattern),
+        ))
+    total = int((await db.execute(select(func.count(AIChatSecurityEvent.id)).join(
+        User, User.id == AIChatSecurityEvent.user_id
+    ).where(*filters))).scalar_one())
+    rows = (await db.execute(select(AIChatSecurityEvent, User).join(
+        User, User.id == AIChatSecurityEvent.user_id
+    ).where(*filters).order_by(
+        AIChatSecurityEvent.created_at.desc(), AIChatSecurityEvent.id.desc()
+    ).offset(offset).limit(limit))).all()
+    return AdminAIChatSecurityEventPage(
+        items=[_app_security_event_read(row, user) for row, user in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@admin_ai_chats_router.get("/security/bans", response_model=AdminAIChatBanPage)
+async def ai_chat_security_bans(
+    source: str = Query(default="app", pattern="^(app|bitrix)$"),
+    include_inactive: bool = False,
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("ai_chats.read")),
+) -> AdminAIChatBanPage:
+    if source == "bitrix":
+        try:
+            return AdminAIChatBanPage.model_validate(await bitrix_ai_admin_client.request(
+                "GET", "/bans", params={"include_inactive": include_inactive}
+            ))
+        except BitrixAIAdminError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+    filters = [] if include_inactive else [AIChatAccessBan.is_active.is_(True)]
+    rows = list((await db.execute(select(AIChatAccessBan).where(*filters).order_by(
+        AIChatAccessBan.created_at.desc(), AIChatAccessBan.id.desc()
+    ))).scalars().all())
+    return AdminAIChatBanPage(items=[_app_ban_read(row) for row in rows], total=len(rows), limit=len(rows), offset=0)
+
+
+@admin_ai_chats_router.post("/security/bans", response_model=AdminAIChatBanRead)
+async def create_ai_chat_ban(
+    payload: AdminAIChatBanCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("ai_chats.manage", write=True)),
+) -> AdminAIChatBanRead:
+    if payload.expires_at and payload.expires_at <= ufa_now():
+        raise HTTPException(status_code=422, detail="expires_at must be in the future")
+    if payload.source == "bitrix":
+        try:
+            result = AdminAIChatBanRead.model_validate(await bitrix_ai_admin_client.request(
+                "POST",
+                "/bans",
+                json={
+                    "ban_type": payload.ban_type,
+                    "subject": payload.subject,
+                    "reason": payload.reason,
+                    "created_by": context.user.email,
+                    "expires_at": payload.expires_at.isoformat() if payload.expires_at else None,
+                },
+            ))
+        except BitrixAIAdminError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        await add_admin_audit(db, request, context, action="ai_chat.ban.create", entity_type="bitrix_ai_ban", entity_id=result.id, after=result.model_dump(mode="json"))
+        await db.commit()
+        return result
+
+    subject = payload.subject.strip()
+    if payload.ban_type == "ip":
+        try:
+            subject = str(ipaddress.ip_address(subject))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Invalid IP address") from exc
+    else:
+        if not subject.isdigit() or int(subject) <= 0:
+            raise HTTPException(status_code=422, detail="Account subject must be a positive user ID")
+        if await db.get(User, int(subject)) is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+    row = (await db.execute(select(AIChatAccessBan).where(
+        AIChatAccessBan.ban_type == payload.ban_type,
+        AIChatAccessBan.subject == subject,
+        AIChatAccessBan.is_active.is_(True),
+    ))).scalar_one_or_none()
+    if row is None:
+        row = AIChatAccessBan(
+            ban_type=payload.ban_type,
+            subject=subject,
+            reason=payload.reason,
+            created_by_user_id=context.user.id,
+            expires_at=payload.expires_at,
+        )
+        db.add(row)
+    else:
+        row.reason = payload.reason
+        row.created_by_user_id = context.user.id
+        row.expires_at = payload.expires_at
+    await db.flush()
+    await add_admin_audit(db, request, context, action="ai_chat.ban.create", entity_type="ai_chat_ban", entity_id=row.id, after={"ban_type": row.ban_type, "subject": row.subject, "reason": row.reason})
+    await db.commit()
+    await db.refresh(row)
+    return _app_ban_read(row)
+
+
+@admin_ai_chats_router.post("/security/bans/{source}/{ban_id}/revoke", response_model=AdminAIChatBanRead)
+async def revoke_ai_chat_ban(
+    source: str,
+    ban_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("ai_chats.manage", write=True)),
+) -> AdminAIChatBanRead:
+    if source == "bitrix":
+        try:
+            result = AdminAIChatBanRead.model_validate(await bitrix_ai_admin_client.request(
+                "POST", f"/bans/{ban_id}/revoke", json={"revoked_by": context.user.email}
+            ))
+        except BitrixAIAdminError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        await add_admin_audit(db, request, context, action="ai_chat.ban.revoke", entity_type="bitrix_ai_ban", entity_id=ban_id)
+        await db.commit()
+        return result
+    if source != "app":
+        raise HTTPException(status_code=422, detail="Invalid source")
+    row = await db.get(AIChatAccessBan, ban_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Ban not found")
+    if row.is_active:
+        row.is_active = False
+        row.revoked_at = ufa_now()
+        row.revoked_by_user_id = context.user.id
+    await add_admin_audit(db, request, context, action="ai_chat.ban.revoke", entity_type="ai_chat_ban", entity_id=ban_id)
+    await db.commit()
+    await db.refresh(row)
+    return _app_ban_read(row)
 
 
 @admin_ai_chats_router.get("/attachments/{attachment_id}")

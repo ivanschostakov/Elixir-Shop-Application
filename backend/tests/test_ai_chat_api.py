@@ -22,6 +22,18 @@ from src.app.services.ai.chat import _attachment_storage_filename, _load_uploads
 from src.app.services.orders.drafts import _normalize_ai_draft_items
 
 
+@pytest.fixture(autouse=True)
+def stub_ai_chat_security(monkeypatch: pytest.MonkeyPatch):
+    async def allow(*_args, **_kwargs):
+        return "127.0.0.1"
+
+    async def record(*_args, **_kwargs):
+        return SimpleNamespace(id=1, is_suspicious=False)
+
+    monkeypatch.setattr(ai_chat_router_module, "ensure_app_ai_access", allow)
+    monkeypatch.setattr(ai_chat_router_module, "record_app_ai_activity", record)
+
+
 def _fake_user() -> User:
     return User(
         id=123,
