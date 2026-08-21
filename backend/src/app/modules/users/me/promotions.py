@@ -70,6 +70,7 @@ async def list_my_promotions(
                 )
                 .where(
                     ProductCategory.archived.is_(False),
+                    ProductCategory.is_visible_in_app.is_(True),
                     ProductCategory.discount_percent > Decimal("0.00"),
                 )
                 .order_by(

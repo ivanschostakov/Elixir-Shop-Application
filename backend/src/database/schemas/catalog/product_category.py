@@ -10,6 +10,8 @@ class ProductCategoryBase(BaseModel):
     name: str = Field(min_length=1, max_length=PRODUCT_CATEGORY_NAME_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=PRODUCT_CATEGORY_DESCRIPTION_MAX_LENGTH)
     archived: bool = False
+    is_visible_in_app: bool = True
+    app_display_order: int = Field(default=10_000, ge=0)
     discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=5, decimal_places=2)
 
 
@@ -21,6 +23,8 @@ class ProductCategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=PRODUCT_CATEGORY_NAME_MAX_LENGTH)
     description: str | None = Field(default=None, max_length=PRODUCT_CATEGORY_DESCRIPTION_MAX_LENGTH)
     archived: bool | None = None
+    is_visible_in_app: bool | None = None
+    app_display_order: int | None = Field(default=None, ge=0)
     discount_percent: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
 
 

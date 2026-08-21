@@ -25,19 +25,21 @@ async def get_product_category_by_name(session: AsyncSession, name: str, *, incl
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_product_categories(session: AsyncSession, *, q: str | None = None, name: str | None = None, offset: int = 0, limit: int = 100, sort: str | None = None, include_archived: bool = False) -> list[ProductCategory]:
+async def get_product_categories(session: AsyncSession, *, q: str | None = None, name: str | None = None, offset: int = 0, limit: int = 100, sort: str | None = None, include_archived: bool = False, include_hidden: bool = False) -> list[ProductCategory]:
     stmt = select(ProductCategory)
     if not include_archived: stmt = stmt.where(ProductCategory.archived.is_(False))
+    if not include_hidden: stmt = stmt.where(ProductCategory.is_visible_in_app.is_(True))
     if name is not None: stmt = stmt.where(ProductCategory.name == name)
     if q: stmt = stmt.where(or_(ProductCategory.name.ilike(f"%{q}%"), ProductCategory.description.ilike(f"%{q}%")))
 
     sort_map = {
+        "app_order": (ProductCategory.app_display_order.asc(), func.lower(ProductCategory.name).asc(), ProductCategory.id.asc()),
         "newest": (ProductCategory.created_at.desc(), ProductCategory.id.desc()),
         "name_asc": (func.lower(ProductCategory.name).asc(), ProductCategory.id.asc()),
         "name_desc": (func.lower(ProductCategory.name).desc(), ProductCategory.id.asc()),
     }
     if sort in sort_map: stmt = stmt.order_by(*sort_map[sort])
-    else: stmt = stmt.order_by(func.lower(ProductCategory.name).asc(), ProductCategory.id.asc())
+    else: stmt = stmt.order_by(ProductCategory.app_display_order.asc(), func.lower(ProductCategory.name).asc(), ProductCategory.id.asc())
     stmt = stmt.offset(offset).limit(limit)
     return list((await session.execute(stmt)).scalars().all())
 

@@ -43,6 +43,7 @@ def test_product_categories_endpoint_uses_cache(monkeypatch: pytest.MonkeyPatch)
 
     async def fake_get_product_categories(*args, **kwargs):
         calls["count"] += 1
+        assert kwargs["sort"] == "app_order"
         return [_category(1, "Category A"), _category(2, "Category B")]
 
     app.dependency_overrides[get_db] = fake_get_db
@@ -57,6 +58,34 @@ def test_product_categories_endpoint_uses_cache(monkeypatch: pytest.MonkeyPatch)
         assert first.status_code == 200, first.text
         assert second.status_code == 200, second.text
         assert first.json() == second.json()
+        assert [item["name"] for item in first.json()] == ["Category A", "Category B"]
+        assert all(item["is_visible_in_app"] is True for item in first.json())
         assert calls["count"] == 1
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_legacy_name_sort_uses_admin_controlled_app_order(monkeypatch: pytest.MonkeyPatch):
+    received_sort = None
+    fake_cache = FakeCache()
+
+    async def fake_get_db():
+        yield object()
+
+    async def fake_get_product_categories(*args, **kwargs):
+        nonlocal received_sort
+        received_sort = kwargs["sort"]
+        return []
+
+    app.dependency_overrides[get_db] = fake_get_db
+    monkeypatch.setattr(product_categories_router_module, "get_product_categories", fake_get_product_categories)
+    monkeypatch.setattr(product_categories_router_module, "get_cache_service", lambda: fake_cache)
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.get("/api/v1/product-categories?sort=name_asc")
+
+        assert response.status_code == 200, response.text
+        assert received_sort == "app_order"
     finally:
         app.dependency_overrides.pop(get_db, None)

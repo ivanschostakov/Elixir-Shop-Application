@@ -265,6 +265,8 @@ def serialize_category(category: ProductCategory) -> AdminCategoryRead:
         name=category.name,
         description=category.description,
         archived=category.archived,
+        is_visible_in_app=category.is_visible_in_app,
+        app_display_order=category.app_display_order,
         discount_percent=category.discount_percent,
         created_at=category.created_at,
         updated_at=category.updated_at,

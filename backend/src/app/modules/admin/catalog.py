@@ -350,7 +350,7 @@ async def list_categories(
     if archived is not None:
         filters.append(ProductCategory.archived.is_(archived))
     total = int((await db.execute(select(func.count(ProductCategory.id)).where(*filters))).scalar_one())
-    rows = list((await db.execute(select(ProductCategory).where(*filters).order_by(func.lower(ProductCategory.name), ProductCategory.id).offset(offset).limit(limit))).scalars().all())
+    rows = list((await db.execute(select(ProductCategory).where(*filters).order_by(ProductCategory.app_display_order, func.lower(ProductCategory.name), ProductCategory.id).offset(offset).limit(limit))).scalars().all())
     return AdminPage(items=[serialize_category(row) for row in rows], total=total, limit=limit, offset=offset)
 
 
@@ -365,6 +365,8 @@ async def create_category(
         name=payload.name.strip(),
         description=payload.description,
         archived=payload.archived,
+        is_visible_in_app=payload.is_visible_in_app,
+        app_display_order=payload.app_display_order,
         discount_percent=payload.discount_percent,
     )
     db.add(category)
@@ -395,6 +397,8 @@ async def update_category(
     category.name = payload.name.strip()
     category.description = payload.description
     category.archived = payload.archived
+    category.is_visible_in_app = payload.is_visible_in_app
+    category.app_display_order = payload.app_display_order
     category.discount_percent = payload.discount_percent
     try:
         await db.flush()

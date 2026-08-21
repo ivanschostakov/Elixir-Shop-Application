@@ -15,6 +15,10 @@ class ProductCategory(Base, IdPkMixin, TimestampMixin):
             "discount_percent >= 0 AND discount_percent <= 100",
             name="ck_product_categories_discount_percent_range",
         ),
+        CheckConstraint(
+            "app_display_order >= 0",
+            name="ck_product_categories_app_display_order_nonnegative",
+        ),
     )
 
     name: Mapped[str] = mapped_column(String(length=PRODUCT_CATEGORY_NAME_MAX_LENGTH), nullable=False, unique=True)
@@ -26,6 +30,19 @@ class ProductCategory(Base, IdPkMixin, TimestampMixin):
     )
     description: Mapped[str | None] = mapped_column(String(length=PRODUCT_CATEGORY_DESCRIPTION_MAX_LENGTH), nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_visible_in_app: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+        index=True,
+    )
+    app_display_order: Mapped[int] = mapped_column(
+        nullable=False,
+        default=10_000,
+        server_default=text("10000"),
+        index=True,
+    )
     discount_percent: Mapped[Decimal] = mapped_column(
         Numeric(5, 2),
         nullable=False,

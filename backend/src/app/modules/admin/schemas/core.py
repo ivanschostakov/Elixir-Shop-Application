@@ -347,6 +347,8 @@ class AdminCategoryPayload(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=1000)
     archived: bool = False
+    is_visible_in_app: bool = True
+    app_display_order: int = Field(default=10_000, ge=0)
     discount_percent: Decimal = Field(default=Decimal("0.00"), ge=0, le=100, max_digits=5, decimal_places=2)
 
 
