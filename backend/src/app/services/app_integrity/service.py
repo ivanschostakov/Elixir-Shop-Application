@@ -74,7 +74,7 @@ async def _decode_android_integrity_token(token: str) -> dict[str, Any]:
 
     if response.status_code >= 500: raise AppIntegrityVerifierUnavailable("google play integrity service unavailable")
     if response.status_code >= 400:
-        log.warning("Google Play Integrity rejected token status=%s body=%s", response.status_code, response.text[:500])
+        log.warning("Google Play Integrity rejected token status=%s", response.status_code)
         return {}
 
     return response.json()

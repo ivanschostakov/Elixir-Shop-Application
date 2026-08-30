@@ -28,6 +28,5 @@ with httpx.Client(timeout=30, proxy=proxy) as client:
 
 print("status:", response.status_code)
 print("content-type:", response.headers.get("content-type"))
-print(response.text[:2000])
 
 raise SystemExit(0 if response.is_success else 1)

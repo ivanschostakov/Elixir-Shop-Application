@@ -54,6 +54,8 @@ def test_public_product_payload_exposes_reduced_stock_only():
         in_stock=True,
         archived=False,
         priority=0,
+        is_new_manual=False,
+        discount_percent=Decimal("0.00"),
         stock_reduction_override=None,
         created_at=now,
         updated_at=now,

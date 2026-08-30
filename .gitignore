@@ -8,5 +8,35 @@
 .env.*
 !.env.example
 !.env.docker.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node, Expo, and generated builds
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+.expo/
+
+# Runtime and generated deliverables
+logs/
+*.log
+media/
+output/
+integrations/bitrix/dist/
+*.zip
+*.sqlite*
+
 /docs/product-image-audit-2026-05-06-after-fix.md
 /docs/product-image-audit-2026-05-06.md

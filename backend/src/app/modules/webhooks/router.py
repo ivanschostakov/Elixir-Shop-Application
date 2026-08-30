@@ -39,7 +39,11 @@ async def amocrm_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     await enforce_rate_limit(request, scope="webhooks:amocrm", limit=WEBHOOK_RATE_LIMIT_MAX_REQUESTS, window_seconds=WEBHOOK_RATE_LIMIT_WINDOW_SECONDS)
     body = await request.body()
     raw_text = body.decode("utf-8", "replace")
-    log.info("amoCRM webhook inbound headers=%s body=%s", dict(request.headers), raw_text)
+    log.info(
+        "amoCRM webhook inbound body_bytes=%s source_ip=%s",
+        len(body),
+        _request_client_ip(request),
+    )
     payload = parse_qs(raw_text, keep_blank_values=True)
     if not _amocrm_webhook_verified(request, payload):
         log.warning("amoCRM webhook rejected verification account_id=%s subdomain=%s source_ip=%s",_first_payload_value(payload, "account[id]"), _first_payload_value(payload, "account[subdomain]"), _request_client_ip(request))

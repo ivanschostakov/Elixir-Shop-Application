@@ -7,7 +7,6 @@ from integrations.delivery.cdek import cdek_client
 url = "https://api.cdek.ru/v2/calculator/tariff"
 asyncio.run(cdek_client.get_access_token())
 token = cdek_client._access_token
-print(token)
 
 payload = {
     "type": 1,
@@ -32,5 +31,5 @@ headers = {
 
 with httpx.Client(timeout=30) as client:
     resp = client.post(url, json=payload, headers=headers)
-    print(resp.status_code)
-    print(resp.json())
+    resp.raise_for_status()
+    print("CDEK tariff request succeeded")

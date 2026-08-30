@@ -1,3 +1,4 @@
+import os
 import sys
 import types
 from pathlib import Path
@@ -8,6 +9,30 @@ from fastapi.testclient import TestClient
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+
+TEST_ENV = {
+    "POSTGRES_DB": "test",
+    "POSTGRES_USER": "test",
+    "POSTGRES_HOST": "localhost",
+    "POSTGRES_PASSWORD": "test",
+    "JWT_ACCESS_SECRET_KEY": "test-only-secret-key",
+    "OPENAI_API_KEY": "test-only-openai-key",
+    "API_BASE_URL": "https://example.test",
+    "PUBLIC_API_BASE_URL": "https://example.test",
+    "AMOCRM_ACCOUNT_ID": "",
+    "AMOCRM_WEBHOOK_ALLOWED_ACCOUNT_IDS": "",
+    "AMOCRM_WEBHOOK_ALLOWED_SUBDOMAINS": "",
+    "AMOCRM_WEBHOOK_ALLOWED_IPS": "",
+    "CDEK_ACCOUNT": "test",
+    "CDEK_SECURE_PASSWORD": "test",
+    "CDEK_API_URL": "https://example.invalid",
+    "YANDEX_DELIVERY_BASE_URL": "https://example.invalid",
+    "YANDEX_DELIVERY_TOKEN": "test",
+    "YANDEX_DELIVERY_WAREHOUSE_ID": "00000000-0000-0000-0000-000000000001",
+}
+for name, value in TEST_ENV.items():
+    os.environ.setdefault(name, value)
+
 if "PIL" not in sys.modules:
     pil_module = types.ModuleType("PIL")
     pil_module.Image = types.SimpleNamespace(open=None)
@@ -23,6 +48,15 @@ from src.app import main as app_main
 app = app_main.app
 
 TEST_EMAIL_VERIFICATION_CODE = "123456"
+
+
+@pytest.fixture(autouse=True)
+def isolate_dependency_overrides():
+    app.dependency_overrides.clear()
+    try:
+        yield
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="session")
@@ -76,7 +110,12 @@ def stub_authoritative_bitrix_delivery(monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture()
 def register_verified_user(client: TestClient):
     def _register(payload: dict) -> dict:
-        payload = {key: value for key, value in payload.items() if key in {"email", "password", "name", "surname"}}
+        phone_number = payload.get("phone_number")
+        payload = {
+            key: value
+            for key, value in payload.items()
+            if key in {"email", "password", "name", "surname"}
+        }
         response = client.post("/api/v1/auth/register", json=payload)
         assert response.status_code == 201, response.text
 
@@ -85,6 +124,15 @@ def register_verified_user(client: TestClient):
             json={"email": payload["email"], "code": TEST_EMAIL_VERIFICATION_CODE},
         )
         assert verify_response.status_code == 200, verify_response.text
-        return verify_response.json()
+        verified_payload = verify_response.json()
+        if phone_number:
+            profile_response = client.patch(
+                "/api/v1/users/me/profile/personal-data",
+                headers={"Authorization": f"Bearer {verified_payload['access_token']}"},
+                json={"phone_number": phone_number},
+            )
+            assert profile_response.status_code == 200, profile_response.text
+            verified_payload["user"] = profile_response.json()
+        return verified_payload
 
     return _register

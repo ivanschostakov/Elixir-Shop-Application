@@ -774,9 +774,13 @@ def test_send_user_chat_message_keeps_user_message_when_ai_call_fails(monkeypatc
         message_counter["value"] += 1
         return user_message
 
+    async def fake_record_customer_event_safe(*args, **kwargs):
+        return None
+
     monkeypatch.setattr(ai_chat_service, "get_or_create_user_chat", fake_get_or_create_user_chat)
     monkeypatch.setattr(ai_chat_service, "resolve_user_bot_model", fake_resolve_user_bot_model)
     monkeypatch.setattr(ai_chat_service, "create_ai_message", fake_create_ai_message)
+    monkeypatch.setattr(ai_chat_service, "record_customer_event_safe", fake_record_customer_event_safe)
 
     db = _FakeDb()
     with pytest.raises(RuntimeError, match="ai provider unavailable"):

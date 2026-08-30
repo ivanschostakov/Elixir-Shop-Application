@@ -1,9 +1,10 @@
 import asyncio
 import json
+import os
 
 import httpx
 
-API_KEY = "3b6327b3-c213-47a9-a3ab-a05ca097353a"
+API_KEY = os.getenv("GEOSUGGEST_API_KEY", "").strip()
 YANDEX_GEOSUGGEST_URL = "https://suggest-maps.yandex.ru/suggest-geo"
 
 TEST_CASES = [
@@ -21,6 +22,8 @@ TEST_CASES = [
 
 
 async def geosuggest(text: str) -> str:
+    if not API_KEY:
+        raise RuntimeError("GEOSUGGEST_API_KEY must be set before running this integration check")
     params = {
         "apikey": API_KEY,
         "text": text,
@@ -50,12 +53,15 @@ if __name__ == "__main__":
 
     url = "https://geocode-maps.yandex.ru/v1/"
     params = {
-        "apikey": "0bae58c9-3bc0-4095-b148-033b5f60d379",
+        "apikey": os.getenv("GEOCODE_API_KEY", "").strip(),
         "geocode": "Санкт-Петербург, Приморский проспект, 72",
         "format": "json",
         "lang": "ru_RU",
         "results": 5,
     }
+
+    if not params["apikey"]:
+        raise RuntimeError("GEOCODE_API_KEY must be set before running this integration check")
 
     with httpx.Client(timeout=10.0) as client:
         r = client.get(url, params=params)
