@@ -5,6 +5,7 @@ import hmac
 import secrets
 import time
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -27,6 +28,7 @@ from src.app.modules.admin.schemas import (
 )
 from src.database.models import AIMessage, AIMessageUsage, User, UserEvent
 from src.integrations.ai.enums import MessageSender
+from .pricing import calculate_openai_text_cost
 
 
 class AIBotUsageError(RuntimeError):
@@ -94,6 +96,42 @@ async def app_ai_usage(db: AsyncSession, *, days: int) -> AdminAIUsageSourceRead
         AIMessage.created_at >= start_at,
     ).group_by(func.date(AIMessage.created_at)).order_by(func.date(AIMessage.created_at)))).all()
 
+    cost_rows = (await db.execute(select(
+        AIMessageUsage.openai_model,
+        AIMessageUsage.input_tokens,
+        AIMessageUsage.cached_input_tokens,
+        AIMessageUsage.output_tokens,
+        AIMessage.created_at,
+        AIMessage.user_id,
+    ).join(AIMessage, AIMessage.id == AIMessageUsage.message_id).where(
+        AIMessage.created_at >= start_at,
+    ))).all()
+    cost_total = Decimal("0")
+    cost_by_day: dict[date, Decimal] = {}
+    cost_by_model: dict[str, Decimal] = {}
+    cost_by_user: dict[int, Decimal] = {}
+    unsupported_models: set[str] = set()
+    unsupported_days: set[date] = set()
+    unsupported_users: set[int] = set()
+    for model, row_input, row_cached, row_output, created_at, user_id in cost_rows:
+        calculated = calculate_openai_text_cost(
+            model=str(model),
+            input_tokens=int(row_input or 0),
+            cached_input_tokens=int(row_cached or 0),
+            output_tokens=int(row_output or 0),
+            occurred_at=created_at,
+        )
+        usage_day = _date_value(created_at)
+        if calculated is None:
+            unsupported_models.add(str(model))
+            unsupported_days.add(usage_day)
+            unsupported_users.add(int(user_id))
+            continue
+        cost_total += calculated.cost_usd
+        cost_by_day[usage_day] = cost_by_day.get(usage_day, Decimal("0")) + calculated.cost_usd
+        cost_by_model[str(model)] = cost_by_model.get(str(model), Decimal("0")) + calculated.cost_usd
+        cost_by_user[int(user_id)] = cost_by_user.get(int(user_id), Decimal("0")) + calculated.cost_usd
+
     daily: dict[date, AdminAIUsageDailyPoint] = {}
     for raw_day, day_users, day_requests, _day_answers in message_rows:
         day = _date_value(raw_day)
@@ -111,6 +149,7 @@ async def app_ai_usage(db: AsyncSession, *, days: int) -> AdminAIUsageSourceRead
         point.cached_input_tokens = int(day_cached or 0)
         point.output_tokens = int(day_output or 0)
         point.total_tokens = point.input_tokens + point.output_tokens
+        point.cost_usd = None if day in unsupported_days else float(cost_by_day.get(day, Decimal("0")))
     for point in daily.values():
         if point.failed_requests is None:
             point.failed_requests = max(point.requests - point.successful_requests, 0)
@@ -140,6 +179,7 @@ async def app_ai_usage(db: AsyncSession, *, days: int) -> AdminAIUsageSourceRead
             cached_input_tokens=int(row_cached or 0),
             output_tokens=int(row_output or 0),
             total_tokens=int(row_input or 0) + int(row_output or 0),
+            cost_usd=None if str(model) in unsupported_models else float(cost_by_model.get(str(model), Decimal("0"))),
         )
         for model, requests, users, row_input, row_cached, row_output in model_rows
     ]
@@ -164,6 +204,7 @@ async def app_ai_usage(db: AsyncSession, *, days: int) -> AdminAIUsageSourceRead
             contact=email,
             requests=int(requests or 0),
             total_tokens=int(tokens or 0),
+            cost_usd=None if int(user_id) in unsupported_users else float(cost_by_user.get(int(user_id), Decimal("0"))),
             last_activity_at=last_activity,
         )
         for user_id, name, surname, email, requests, tokens, last_activity in top_user_rows
@@ -212,12 +253,14 @@ async def app_ai_usage(db: AsyncSession, *, days: int) -> AdminAIUsageSourceRead
         total_tokens=total_tokens,
         cache_percent=_percent(cached_tokens, input_tokens),
         average_tokens_per_request=round(total_tokens / successful, 2) if successful else 0.0,
+        cost_usd=None if unsupported_models else float(cost_total),
         current_model=breakdown[0].model if len(breakdown) == 1 else None,
         daily=[daily[key] for key in sorted(daily)],
         breakdown=breakdown,
         funnel=funnel,
         top_users=top_users,
-        notes=["app_cost_not_persisted", "app_failed_requests_inferred"],
+        notes=["app_actual_cost_from_exact_usage", "app_failed_requests_inferred"]
+        + (["app_cost_has_unsupported_models"] if unsupported_models else []),
     )
 
 

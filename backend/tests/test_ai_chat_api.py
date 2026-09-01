@@ -620,8 +620,26 @@ def test_ai_client_function_tool_round_feeds_outputs(monkeypatch: pytest.MonkeyP
         name = "search_catalog_products"
         arguments = '{"query":"peptide"}'
 
-    first_response = SimpleNamespace(output=[FakeFunctionCall()])
-    final_response = SimpleNamespace(output=[], output_text="ok")
+    class FakeFileSearchCall:
+        type = "file_search_call"
+
+    first_response = SimpleNamespace(
+        output=[FakeFunctionCall(), FakeFileSearchCall()],
+        usage=SimpleNamespace(
+            input_tokens=100,
+            input_tokens_details=SimpleNamespace(cached_tokens=40),
+            output_tokens=10,
+        ),
+    )
+    final_response = SimpleNamespace(
+        output=[],
+        output_text="ok",
+        usage=SimpleNamespace(
+            input_tokens=120,
+            input_tokens_details=SimpleNamespace(cached_tokens=80),
+            output_tokens=15,
+        ),
+    )
 
     async def fake_create_v2_response(**kwargs):
         captured["input_payload"] = kwargs["input_payload"]
@@ -634,7 +652,7 @@ def test_ai_client_function_tool_round_feeds_outputs(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(client, "_create_v2_response", fake_create_v2_response)
 
-    response, rounds, calls = asyncio.run(
+    response, rounds, calls, usage_totals, file_search_calls = asyncio.run(
         client._run_function_tool_rounds(
             response=first_response,
             model=BotModel.FREE,
@@ -651,6 +669,8 @@ def test_ai_client_function_tool_round_feeds_outputs(monkeypatch: pytest.MonkeyP
     assert response is final_response
     assert rounds == 1
     assert calls == 1
+    assert usage_totals == (220, 120, 25)
+    assert file_search_calls == 1
     assert captured["tool_name"] == "search_catalog_products"
     assert captured["arguments"] == {"query": "peptide"}
     tool_output = captured["input_payload"][0]

@@ -106,7 +106,9 @@ function AIUsageAnalyticsCard() {
     tokens: "Всего токенов",
     success: "Успешно",
     failures: "Ошибки",
-    knownCost: "Учтённая стоимость",
+    actualCost: "Фактическая стоимость",
+    recordedCost: "Учтённая стоимость",
+    totalCost: "Общая стоимость",
     source: "Источник",
     conversations: "Диалоги",
     userMessages: "Сообщения пользователей",
@@ -138,7 +140,9 @@ function AIUsageAnalyticsCard() {
     tokens: "Total tokens",
     success: "Successful",
     failures: "Failures",
-    knownCost: "Recorded cost",
+    actualCost: "Actual cost",
+    recordedCost: "Recorded cost",
+    totalCost: "Total cost",
     source: "Source",
     conversations: "Conversations",
     userMessages: "User messages",
@@ -183,18 +187,22 @@ function AIUsageAnalyticsCard() {
     action_requested: locale === "ru" ? "Действия запрошены" : "Actions requested",
   }[key] || domainLabel(key, locale))
   const noteLabel = (note: string) => ({
-    app_cost_not_persisted: locale === "ru" ? "Стоимость запросов приложения исторически не сохраняется; токены показаны точно." : "Historical app request cost is not persisted; token counts are exact.",
+    app_actual_cost_from_exact_usage: locale === "ru" ? "Фактическая стоимость рассчитана по точным токенам, сохранённой модели и официальному тарифу OpenAI на дату запроса." : "Actual cost is calculated from exact tokens, the stored model, and the official OpenAI rate effective on the request date.",
+    app_cost_has_unsupported_models: locale === "ru" ? "В периоде есть модель без известного официального тарифа; итоговая стоимость для неё не включена." : "The period contains a model without a known official rate; its cost is excluded.",
     app_failed_requests_inferred: locale === "ru" ? "Ошибки приложения определяются как сообщения пользователя без сохранённого AI-ответа." : "Application failures are inferred from user messages without a stored AI response.",
-    bitrix_cost_not_persisted: locale === "ru" ? "Bitrix сохраняет токены, но не историческую стоимость запросов." : "Bitrix stores tokens but not historical request cost.",
-    bitrix_model_is_current_configuration: locale === "ru" ? "Для Bitrix указана текущая модель; историческая модель не сохранялась у каждого ответа." : "Bitrix shows the current configured model; the historical model was not stored per response.",
+    bitrix_actual_cost_from_exact_usage: locale === "ru" ? "Фактическая стоимость рассчитана по точным токенам и официальному тарифу сохранённой модели на дату запроса." : "Actual cost is calculated from exact tokens and the official rate for the stored model on the request date.",
+    bitrix_legacy_model_backfilled: locale === "ru" ? "Для прежних ответов модель восстановлена из подтверждённой конфигурации сервиса; новые ответы сохраняют модель и тарифный снимок." : "For earlier responses, the model was restored from the verified service configuration; new responses store the model and pricing snapshot.",
+    bitrix_cost_has_unsupported_models: locale === "ru" ? "В периоде есть модель без известного официального тарифа; итоговая стоимость для неё не включена." : "The period contains a model without a known official rate; its cost is excluded.",
     telegram_failures_not_persisted: locale === "ru" ? "Telegram-хранилище учитывает успешные AI-запросы; ошибки отдельно не сохраняются." : "Telegram storage records successful AI requests; failures are not persisted separately.",
     telegram_cost_is_estimated: locale === "ru" ? "Стоимость Telegram рассчитана по сохранённым токенам и тарифам моделей." : "Telegram cost is calculated from stored tokens and model rates.",
     bitrix_integration_not_configured: locale === "ru" ? "Интеграция статистики Bitrix не настроена." : "Bitrix analytics integration is not configured.",
     telegram_integration_not_configured: locale === "ru" ? "Интеграция статистики Telegram не настроена." : "Telegram analytics integration is not configured.",
   }[note] || note)
   const number = (value: number) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", { maximumFractionDigits: 2 }).format(value)
+  const money = (value: number) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value)
   const tabs = (analytics.data?.sources || []).map((source) => {
     const maxRequests = Math.max(1, ...source.daily.map((point) => point.requests))
+    const sourceCostLabel = source.source === "app" || source.source === "bitrix" ? copy.actualCost : copy.recordedCost
     return {
       key: source.source,
       label: <Space>{sourceLabel(source.source)}{source.error || !source.configured ? <Badge status="error" /> : <Badge status="success" />}</Space>,
@@ -216,7 +224,7 @@ function AIUsageAnalyticsCard() {
             <Descriptions.Item label={copy.cache}>{number(source.cache_percent)}%</Descriptions.Item>
             <Descriptions.Item label={copy.average}>{number(source.average_tokens_per_request)}</Descriptions.Item>
             <Descriptions.Item label={copy.latency}>{source.average_latency_ms === null ? "—" : `${number(source.average_latency_ms / 1000)} s`}</Descriptions.Item>
-            <Descriptions.Item label={copy.knownCost}>{source.cost_usd === null ? "—" : `$${number(source.cost_usd)}`}</Descriptions.Item>
+            <Descriptions.Item label={sourceCostLabel}>{source.cost_usd === null ? "—" : `$${money(source.cost_usd)}`}</Descriptions.Item>
           </Descriptions>
           <Row gutter={[16, 16]}>
             <Col xs={24} xl={source.funnel.length ? 16 : 24}>
@@ -243,13 +251,13 @@ function AIUsageAnalyticsCard() {
             { title: copy.input, dataIndex: "input_tokens", align: "right", render: number },
             { title: copy.cached, dataIndex: "cached_input_tokens", align: "right", render: number },
             { title: copy.output, dataIndex: "output_tokens", align: "right", render: number },
-            { title: copy.knownCost, dataIndex: "cost_usd", align: "right", render: (value: number | null) => value === null ? "—" : `$${number(value)}` },
+            { title: sourceCostLabel, dataIndex: "cost_usd", align: "right", render: (value: number | null) => value === null ? "—" : `$${money(value)}` },
           ]} /></Card> : null}
           {source.top_users.length ? <Card size="small" title={copy.topUsers}><Table rowKey="account_id" size="small" pagination={source.top_users.length > 10 ? { pageSize: 10, showSizeChanger: false } : false} scroll={{ x: 760 }} dataSource={source.top_users} columns={[
             { title: copy.customer, fixed: "left", render: (_: unknown, row) => <div className="table-primary">{source.source === "app" && hasPermission("customers.read") ? <Link to={`/customers/${row.account_id}`}><strong>{row.label || `#${row.account_id}`}</strong></Link> : <strong>{row.label || `#${row.account_id}`}</strong>}<small>{row.contact || `ID ${row.account_id}`}</small></div> },
             { title: copy.requests, dataIndex: "requests", align: "right" },
             { title: copy.tokens, dataIndex: "total_tokens", align: "right", render: number },
-            { title: copy.knownCost, dataIndex: "cost_usd", align: "right", render: (value: number | null) => value === null ? "—" : `$${number(value)}` },
+            { title: sourceCostLabel, dataIndex: "cost_usd", align: "right", render: (value: number | null) => value === null ? "—" : `$${money(value)}` },
             { title: copy.lastActivity, dataIndex: "last_activity_at", render: (value: string | null) => value ? dateTime(value, locale) : "—" },
           ]} /></Card> : null}
           {source.notes.length ? <Alert type="info" showIcon message={source.notes.map(noteLabel).join(" ")} /> : null}
@@ -272,7 +280,7 @@ function AIUsageAnalyticsCard() {
           <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.failures} value={analytics.data.failed_requests} /></Card></Col>
           <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.usersSum} value={analytics.data.unique_users_sum} /></Card></Col>
           <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.tokens} value={analytics.data.total_tokens} formatter={(value) => number(Number(value))} /></Card></Col>
-          <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.knownCost} value={analytics.data.cost_usd === null ? "—" : `$${number(analytics.data.cost_usd)}`} /></Card></Col>
+          <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.totalCost} value={analytics.data.cost_usd === null ? "—" : `$${money(analytics.data.cost_usd)}`} /></Card></Col>
         </Row>
         <Typography.Text type="secondary" className="ai-usage-unique-note">{copy.uniqueNote}</Typography.Text>
         <Tabs items={tabs} />

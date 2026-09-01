@@ -29,6 +29,7 @@ from .chat_interactive import (
     verify_ai_action_token,
 )
 from .chat_tools import SHOP_AI_FUNCTION_TOOLS, ShopAIToolExecutor
+from .pricing import calculate_openai_text_cost
 from src.app.services.basket import add_variant_to_basket_for_user
 from src.app.services.notifications.core import send_ai_reply_notification
 from src.app.services.upload_limits import format_upload_size_limit, read_upload_file_limited
@@ -317,6 +318,17 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         reply_text = str(ai_result.get("text") or "").strip()
         interactive_payload = None
         assistant_context = _ai_message_context(tool_executor=tool_executor, ai_result=ai_result)
+        resolved_openai_model = openai_model or professor_client._resolve_model_name(selected_model)
+        usage_cost = calculate_openai_text_cost(
+            model=resolved_openai_model,
+            input_tokens=input_tokens,
+            cached_input_tokens=cached_input_tokens,
+            output_tokens=output_tokens,
+            file_search_calls=int(ai_result.get("file_search_calls") or 0),
+            occurred_at=ufa_now(),
+        )
+        if usage_cost is not None:
+            assistant_context["usage_pricing"] = usage_cost.as_snapshot()
         if structured_output is not None:
             reply_text = structured_output.assistant_text.strip() or reply_text
             assistant_context["structured_output"] = structured_output.model_dump(mode="json", exclude_none=True)
@@ -352,7 +364,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
 
         ai_message = await create_ai_message(db, AIMessageCreate(user_id=user.id, chat_id=chat.id, text=reply_text or AI_CHAT_EMPTY_REPLY, sender=MessageSender.AI, context_json=assistant_context), commit=False)
         ai_message_id = ai_message.id
-        await create_ai_message_usage(db, AIMessageUsageCreate( message_id=ai_message.id, input_tokens=input_tokens, cached_input_tokens=cached_input_tokens, output_tokens=output_tokens, bot_model=selected_model, openai_model=openai_model or ProfessorClient._resolve_model_name(selected_model)), commit=False)
+        await create_ai_message_usage(db, AIMessageUsageCreate( message_id=ai_message.id, input_tokens=input_tokens, cached_input_tokens=cached_input_tokens, output_tokens=output_tokens, bot_model=selected_model, openai_model=resolved_openai_model), commit=False)
         interactive_payload = attach_ai_action_tokens(interactive_payload, user_id=user.id, chat_id=chat.id, message_id=ai_message.id)
         if interactive_payload is not None:
             assistant_context["interactive"] = interactive_payload.model_dump(mode="json", exclude_none=True)

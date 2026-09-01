@@ -252,18 +252,24 @@ class ProfessorClient(AsyncClient):
         return calls
 
     @staticmethod
+    def _count_output_items(response: Response, item_type: str) -> int:
+        return sum(1 for item in (getattr(response, "output", []) or []) if getattr(item, "type", None) == item_type)
+
+    @staticmethod
     def _extract_v2_structured_output(response_text: str) -> Any:
         try: return json.loads(response_text)
         except json.JSONDecodeError: return None
 
-    async def _run_function_tool_rounds(self, *, response: Response, model: BotModel, conversation_id: str, tools: list[Any], include: list[str] | None, text_config: dict[str, Any] | None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None, max_tool_rounds: int, trace_id: str | None) -> tuple[Response, int, int]:
-        if function_tool_executor is None: return response, 0, 0
+    async def _run_function_tool_rounds(self, *, response: Response, model: BotModel, conversation_id: str, tools: list[Any], include: list[str] | None, text_config: dict[str, Any] | None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None, max_tool_rounds: int, trace_id: str | None) -> tuple[Response, int, int, tuple[int, int, int], int]:
+        total_input, total_cached, total_output = self._extract_v2_usage(response)
+        file_search_calls = self._count_output_items(response, "file_search_call")
+        if function_tool_executor is None: return response, 0, 0, (total_input, total_cached, total_output), file_search_calls
         current_response = response
         tool_rounds = 0
         tool_calls_count = 0
         while True:
             function_calls = self._extract_function_calls(current_response)
-            if not function_calls: return current_response, tool_rounds, tool_calls_count
+            if not function_calls: return current_response, tool_rounds, tool_calls_count, (total_input, total_cached, total_output), file_search_calls
             if tool_rounds >= max_tool_rounds: raise RuntimeError("Maximum AI tool rounds exceeded")
 
             tool_rounds += 1
@@ -283,6 +289,11 @@ class ProfessorClient(AsyncClient):
 
             self.__logger.info("AI client tool round | trace=%s | conversation_id=%s | round=%d | calls=%d", trace_id, conversation_id, tool_rounds, len(function_calls))
             current_response = await self._create_v2_response(model=model, conversation_id=conversation_id, input_payload=tool_outputs, tools=tools, include=include, text_config=text_config)
+            row_input, row_cached, row_output = self._extract_v2_usage(current_response)
+            total_input += row_input
+            total_cached += row_cached
+            total_output += row_output
+            file_search_calls += self._count_output_items(current_response, "file_search_call")
 
     async def send_message_v2(self, *, input_text: str, conversation_id: str | None, bot_model: BotModel, known_input_tokens: int = 0, file_contents: list[tuple[str, bytes]] | None = None, image_contents: list[tuple[str, bytes]] | None = None, user_id: int | None = None, trace_id: str | None = None, function_tools: list[dict[str, Any]] | None = None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None, max_tool_rounds: int = 4, output_schema: dict[str, Any] | None = None, output_schema_name: str = "ai_chat_output") -> dict[str, Any]:
         started_at = int(time.time())
@@ -317,11 +328,11 @@ class ProfessorClient(AsyncClient):
             active_conversation_id = await self.create_conversation(user_id=user_id)
             response = await self._create_v2_response(model=bot_model, conversation_id=active_conversation_id, input_payload=input_payload, tools=tools, include=include, text_config=text_config)
 
-        response, tool_rounds, tool_calls = await self._run_function_tool_rounds( response=response, model=bot_model, conversation_id=active_conversation_id, tools=tools, include=include, text_config=text_config, function_tool_executor=function_tool_executor, max_tool_rounds=max_tool_rounds, trace_id=trace_id)
+        response, tool_rounds, tool_calls, usage_totals, file_search_calls = await self._run_function_tool_rounds( response=response, model=bot_model, conversation_id=active_conversation_id, tools=tools, include=include, text_config=text_config, function_tool_executor=function_tool_executor, max_tool_rounds=max_tool_rounds, trace_id=trace_id)
         response_text = self._extract_v2_text(response)
         structured_output = self._extract_v2_structured_output(response_text) if text_config is not None else None
         response_files = await self._extract_v2_files(response, started_at)
-        input_tokens, cached_input_tokens, output_tokens = self._extract_v2_usage(response)
+        input_tokens, cached_input_tokens, output_tokens = usage_totals
         openai_model = str(getattr(response, "model", None) or self._resolve_model_name(bot_model))
         final_conversation_id = getattr(getattr(response, "conversation", None), "id", None) or active_conversation_id
 
@@ -346,6 +357,7 @@ class ProfessorClient(AsyncClient):
             "structured_output": structured_output,
             "tool_rounds": tool_rounds,
             "tool_calls": tool_calls,
+            "file_search_calls": file_search_calls,
         }
 
 
