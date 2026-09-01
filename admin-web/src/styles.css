@@ -111,6 +111,18 @@ button, input, textarea, select { font: inherit; }
 .analytics-bar { width: 16px; border-radius: 999px 999px 4px 4px; background: linear-gradient(180deg, #14b8a6 0%, #0f766e 100%); }
 .analytics-device-grid > .ant-col { display: flex; }
 .analytics-device-grid > .ant-col > .ant-card { width: 100%; height: 100%; }
+.ai-usage-card > .ant-card-head { align-items: center; }
+.ai-usage-loading { min-height: 220px; display: grid; place-items: center; }
+.ai-usage-summary { margin-bottom: 10px; }
+.ai-usage-summary > .ant-col { display: flex; }
+.ai-usage-summary .ant-card { width: 100%; height: 100%; background: linear-gradient(145deg, #fbfdfd 0%, #f4f9f8 100%); border-color: #e0ebe9; }
+.ai-usage-summary .ant-statistic-content { font-size: 22px; font-weight: 700; }
+.ai-usage-unique-note { display: block; margin: 0 0 12px; }
+.ai-usage-bars { min-height: 205px; display: flex; align-items: flex-end; gap: 7px; overflow-x: auto; padding: 20px 4px 4px; }
+.ai-usage-bar-column { min-width: 30px; flex: 1 0 30px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; color: #667085; font-size: 10px; }
+.ai-usage-bar-column > span { font-size: 10px; color: #475467; }
+.ai-usage-bar-column > small { white-space: nowrap; font-size: 9px; }
+.ai-usage-bar { width: min(22px, 76%); min-height: 6px; border-radius: 7px 7px 3px 3px; background: linear-gradient(180deg, #2dd4bf 0%, #0f766e 100%); box-shadow: 0 5px 12px rgb(15 118 110 / 14%); }
 .banner-thumb img, .banner-preview-card img { object-fit: cover; border-radius: 10px; }
 .banner-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 18px; }
 .banner-form-grid > div { min-width: 0; }

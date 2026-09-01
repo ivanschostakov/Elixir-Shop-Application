@@ -1,5 +1,6 @@
 import {
   ClockCircleOutlined,
+  BarChartOutlined,
   CustomerServiceOutlined,
   DownloadOutlined,
   MessageOutlined,
@@ -12,6 +13,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Avatar,
+  Alert,
   Badge,
   Button,
   Card,
@@ -23,12 +25,15 @@ import {
   List,
   Modal,
   Row,
+  Segmented,
   Select,
   Space,
   Spin,
+  Statistic,
   Switch,
   Tabs,
   Tag,
+  Table,
   Timeline,
   Typography,
   message,
@@ -50,6 +55,7 @@ import type {
   SupportConversationStatus,
   SupportCustomer,
 } from "../api/types"
+import type { AIUsageOverview, AIUsageSource } from "../api/aiUsageTypes"
 import { PageHeader } from "../components/PageHeader"
 import { useAuth } from "../auth/AuthProvider"
 import { useLanguage } from "../i18n/LanguageProvider"
@@ -80,6 +86,200 @@ function downloadBlob(blob: Blob, fileName: string) {
   anchor.download = fileName
   anchor.click()
   URL.revokeObjectURL(url)
+}
+
+function AIUsageAnalyticsCard() {
+  const { locale } = useLanguage()
+  const { hasPermission } = useAuth()
+  const [days, setDays] = useState(30)
+  const analytics = useQuery({
+    queryKey: ["ai-usage-analytics", days],
+    queryFn: () => apiRequest<AIUsageOverview>(`/ai-chats/analytics${queryString({ days })}`),
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+  })
+  const copy = locale === "ru" ? {
+    title: "Использование AI по всем каналам",
+    requests: "Запросы",
+    users: "Пользователи",
+    usersSum: "Пользователи по источникам",
+    tokens: "Всего токенов",
+    success: "Успешно",
+    failures: "Ошибки",
+    knownCost: "Учтённая стоимость",
+    source: "Источник",
+    conversations: "Диалоги",
+    userMessages: "Сообщения пользователей",
+    aiMessages: "Ответы AI",
+    input: "Входящие токены",
+    cached: "Из них кэшировано",
+    output: "Исходящие токены",
+    cache: "Доля кэша",
+    average: "Токенов на ответ",
+    latency: "Среднее время ответа",
+    model: "Текущая модель",
+    trend: "Динамика запросов",
+    breakdown: "Разрез по моделям и ботам",
+    topUsers: "Самые активные пользователи",
+    customer: "Пользователь",
+    lastActivity: "Последняя активность",
+    funnel: "Действия пользователей",
+    period: "Период",
+    unavailable: "Источник не подключён или временно недоступен",
+    noData: "За выбранный период данных нет",
+    events: "События",
+    updated: "Обновлено",
+    uniqueNote: "Один человек может присутствовать в нескольких источниках, поэтому это сумма, а не число уникальных людей между системами.",
+  } : {
+    title: "AI usage across all channels",
+    requests: "Requests",
+    users: "Users",
+    usersSum: "Users by source",
+    tokens: "Total tokens",
+    success: "Successful",
+    failures: "Failures",
+    knownCost: "Recorded cost",
+    source: "Source",
+    conversations: "Conversations",
+    userMessages: "User messages",
+    aiMessages: "AI responses",
+    input: "Input tokens",
+    cached: "Cached input",
+    output: "Output tokens",
+    cache: "Cache share",
+    average: "Tokens per response",
+    latency: "Average response time",
+    model: "Current model",
+    trend: "Request trend",
+    breakdown: "Model and bot breakdown",
+    topUsers: "Most active users",
+    customer: "User",
+    lastActivity: "Last activity",
+    funnel: "User actions",
+    period: "Period",
+    unavailable: "Source is not configured or temporarily unavailable",
+    noData: "No data for the selected period",
+    events: "Events",
+    updated: "Updated",
+    uniqueNote: "The same person can use several sources, so this is a sum rather than a cross-system unique-user count.",
+  }
+  const sourceLabel = (source: AIUsageSource["source"]) => ({
+    app: locale === "ru" ? "Приложение" : "Application",
+    bitrix: locale === "ru" ? "Сайт Bitrix" : "Bitrix website",
+    telegram: locale === "ru" ? "Telegram AI-боты" : "Telegram AI bots",
+  }[source])
+  const breakdownLabel = (item: { key: string; label: string }) => ({
+    professor: locale === "ru" ? "Профессор пептидов" : "Peptide professor",
+    dose: locale === "ru" ? "Расчёт дозировок" : "Dose calculator",
+    new: locale === "ru" ? "Премиум AI-бот" : "Premium AI bot",
+  }[item.key] || item.label)
+  const funnelLabel = (key: string) => ({
+    ai_chat_message_sent: locale === "ru" ? "Сообщения отправлены" : "Messages sent",
+    ai_recommendation_shown: locale === "ru" ? "Рекомендации показаны" : "Recommendations shown",
+    ai_action_clicked: locale === "ru" ? "Действия нажаты" : "Actions clicked",
+    ai_action_completed: locale === "ru" ? "Действия выполнены" : "Actions completed",
+    message_requested: locale === "ru" ? "Запросы отправлены" : "Requests sent",
+    response_completed: locale === "ru" ? "Ответы получены" : "Responses completed",
+    action_requested: locale === "ru" ? "Действия запрошены" : "Actions requested",
+  }[key] || domainLabel(key, locale))
+  const noteLabel = (note: string) => ({
+    app_cost_not_persisted: locale === "ru" ? "Стоимость запросов приложения исторически не сохраняется; токены показаны точно." : "Historical app request cost is not persisted; token counts are exact.",
+    app_failed_requests_inferred: locale === "ru" ? "Ошибки приложения определяются как сообщения пользователя без сохранённого AI-ответа." : "Application failures are inferred from user messages without a stored AI response.",
+    bitrix_cost_not_persisted: locale === "ru" ? "Bitrix сохраняет токены, но не историческую стоимость запросов." : "Bitrix stores tokens but not historical request cost.",
+    bitrix_model_is_current_configuration: locale === "ru" ? "Для Bitrix указана текущая модель; историческая модель не сохранялась у каждого ответа." : "Bitrix shows the current configured model; the historical model was not stored per response.",
+    telegram_failures_not_persisted: locale === "ru" ? "Telegram-хранилище учитывает успешные AI-запросы; ошибки отдельно не сохраняются." : "Telegram storage records successful AI requests; failures are not persisted separately.",
+    telegram_cost_is_estimated: locale === "ru" ? "Стоимость Telegram рассчитана по сохранённым токенам и тарифам моделей." : "Telegram cost is calculated from stored tokens and model rates.",
+    bitrix_integration_not_configured: locale === "ru" ? "Интеграция статистики Bitrix не настроена." : "Bitrix analytics integration is not configured.",
+    telegram_integration_not_configured: locale === "ru" ? "Интеграция статистики Telegram не настроена." : "Telegram analytics integration is not configured.",
+  }[note] || note)
+  const number = (value: number) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", { maximumFractionDigits: 2 }).format(value)
+  const tabs = (analytics.data?.sources || []).map((source) => {
+    const maxRequests = Math.max(1, ...source.daily.map((point) => point.requests))
+    return {
+      key: source.source,
+      label: <Space>{sourceLabel(source.source)}{source.error || !source.configured ? <Badge status="error" /> : <Badge status="success" />}</Space>,
+      children: source.error || !source.configured ? <Alert type="warning" showIcon message={copy.unavailable} description={source.error || source.notes.map(noteLabel).join(" ")} /> : (
+        <Space direction="vertical" size={16} style={{ width: "100%" }}>
+          <Descriptions bordered size="small" column={{ xs: 1, sm: 2, xl: 4 }}>
+            <Descriptions.Item label={copy.requests}>{number(source.requests)}</Descriptions.Item>
+            <Descriptions.Item label={copy.success}>{number(source.successful_requests)}</Descriptions.Item>
+            <Descriptions.Item label={copy.failures}>{source.failed_requests === null ? "—" : number(source.failed_requests)}</Descriptions.Item>
+            <Descriptions.Item label={copy.users}>{number(source.unique_users)}</Descriptions.Item>
+            <Descriptions.Item label={copy.conversations}>{source.conversations === null ? "—" : number(source.conversations)}</Descriptions.Item>
+            <Descriptions.Item label={copy.userMessages}>{source.user_messages === null ? "—" : number(source.user_messages)}</Descriptions.Item>
+            <Descriptions.Item label={copy.aiMessages}>{source.assistant_messages === null ? "—" : number(source.assistant_messages)}</Descriptions.Item>
+            <Descriptions.Item label={copy.model}>{source.current_model || "—"}</Descriptions.Item>
+            <Descriptions.Item label={copy.input}>{number(source.input_tokens)}</Descriptions.Item>
+            <Descriptions.Item label={copy.cached}>{number(source.cached_input_tokens)}</Descriptions.Item>
+            <Descriptions.Item label={copy.output}>{number(source.output_tokens)}</Descriptions.Item>
+            <Descriptions.Item label={copy.tokens}>{number(source.total_tokens)}</Descriptions.Item>
+            <Descriptions.Item label={copy.cache}>{number(source.cache_percent)}%</Descriptions.Item>
+            <Descriptions.Item label={copy.average}>{number(source.average_tokens_per_request)}</Descriptions.Item>
+            <Descriptions.Item label={copy.latency}>{source.average_latency_ms === null ? "—" : `${number(source.average_latency_ms / 1000)} s`}</Descriptions.Item>
+            <Descriptions.Item label={copy.knownCost}>{source.cost_usd === null ? "—" : `$${number(source.cost_usd)}`}</Descriptions.Item>
+          </Descriptions>
+          <Row gutter={[16, 16]}>
+            <Col xs={24} xl={source.funnel.length ? 16 : 24}>
+              <Card size="small" title={copy.trend}>
+                {source.daily.some((point) => point.requests > 0) ? <div className="ai-usage-bars">{source.daily.map((point) => (
+                  <div className="ai-usage-bar-column" key={`${point.period}-${point.period_end || ""}`} title={`${point.period}${point.period_end ? ` — ${point.period_end}` : ""}: ${point.requests} · ${number(point.total_tokens)} ${copy.tokens.toLowerCase()}`}>
+                    <span>{point.requests}</span>
+                    <div className="ai-usage-bar" style={{ height: `${Math.max(6, point.requests / maxRequests * 150)}px` }} />
+                    <small>{point.period.slice(5)}{point.period_end ? `–${point.period_end.slice(5)}` : ""}</small>
+                  </div>
+                ))}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={copy.noData} />}
+              </Card>
+            </Col>
+            {source.funnel.length ? <Col xs={24} xl={8}><Card size="small" title={copy.funnel}><Table rowKey="key" size="small" pagination={false} dataSource={source.funnel} columns={[
+              { title: copy.events, render: (_: unknown, row) => funnelLabel(row.key) },
+              { title: copy.events, dataIndex: "events", align: "right" },
+              { title: copy.users, dataIndex: "unique_users", align: "right" },
+            ]} /></Card></Col> : null}
+          </Row>
+          {source.breakdown.length ? <Card size="small" title={copy.breakdown}><Table rowKey="key" size="small" pagination={false} scroll={{ x: 900 }} dataSource={source.breakdown} columns={[
+            { title: copy.source, fixed: "left", render: (_: unknown, row) => <div className="table-primary"><strong>{breakdownLabel(row)}</strong>{row.model && row.model !== row.label ? <small>{row.model}</small> : null}</div> },
+            { title: copy.requests, dataIndex: "requests", align: "right" },
+            { title: copy.users, dataIndex: "unique_users", align: "right" },
+            { title: copy.input, dataIndex: "input_tokens", align: "right", render: number },
+            { title: copy.cached, dataIndex: "cached_input_tokens", align: "right", render: number },
+            { title: copy.output, dataIndex: "output_tokens", align: "right", render: number },
+            { title: copy.knownCost, dataIndex: "cost_usd", align: "right", render: (value: number | null) => value === null ? "—" : `$${number(value)}` },
+          ]} /></Card> : null}
+          {source.top_users.length ? <Card size="small" title={copy.topUsers}><Table rowKey="account_id" size="small" pagination={source.top_users.length > 10 ? { pageSize: 10, showSizeChanger: false } : false} scroll={{ x: 760 }} dataSource={source.top_users} columns={[
+            { title: copy.customer, fixed: "left", render: (_: unknown, row) => <div className="table-primary">{source.source === "app" && hasPermission("customers.read") ? <Link to={`/customers/${row.account_id}`}><strong>{row.label || `#${row.account_id}`}</strong></Link> : <strong>{row.label || `#${row.account_id}`}</strong>}<small>{row.contact || `ID ${row.account_id}`}</small></div> },
+            { title: copy.requests, dataIndex: "requests", align: "right" },
+            { title: copy.tokens, dataIndex: "total_tokens", align: "right", render: number },
+            { title: copy.knownCost, dataIndex: "cost_usd", align: "right", render: (value: number | null) => value === null ? "—" : `$${number(value)}` },
+            { title: copy.lastActivity, dataIndex: "last_activity_at", render: (value: string | null) => value ? dateTime(value, locale) : "—" },
+          ]} /></Card> : null}
+          {source.notes.length ? <Alert type="info" showIcon message={source.notes.map(noteLabel).join(" ")} /> : null}
+        </Space>
+      ),
+    }
+  })
+
+  return (
+    <Card
+      className="ai-usage-card"
+      title={<Space><BarChartOutlined />{copy.title}</Space>}
+      extra={<Segmented value={days} onChange={(value) => setDays(Number(value))} options={[7, 30, 90, 365].map((value) => ({ label: `${value}${locale === "ru" ? "д" : "d"}`, value }))} />}
+      style={{ marginBottom: 16 }}
+    >
+      {analytics.isLoading ? <div className="ai-usage-loading"><Spin /></div> : analytics.isError || !analytics.data ? <Alert type="error" showIcon message={copy.unavailable} description={analytics.error?.message} /> : <>
+        <Row gutter={[12, 12]} className="ai-usage-summary">
+          <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.requests} value={analytics.data.requests} /></Card></Col>
+          <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.success} value={analytics.data.successful_requests} /></Card></Col>
+          <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.failures} value={analytics.data.failed_requests} /></Card></Col>
+          <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.usersSum} value={analytics.data.unique_users_sum} /></Card></Col>
+          <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.tokens} value={analytics.data.total_tokens} formatter={(value) => number(Number(value))} /></Card></Col>
+          <Col xs={12} md={8} xl={4}><Card size="small"><Statistic title={copy.knownCost} value={analytics.data.cost_usd === null ? "—" : `$${number(analytics.data.cost_usd)}`} /></Card></Col>
+        </Row>
+        <Typography.Text type="secondary" className="ai-usage-unique-note">{copy.uniqueNote}</Typography.Text>
+        <Tabs items={tabs} />
+        <Typography.Text type="secondary">{copy.updated}: {dateTime(analytics.data.generated_at, locale)}</Typography.Text>
+      </>}
+    </Card>
+  )
 }
 
 function SupportInboxTab() {
@@ -642,6 +842,7 @@ function AIChatsTab() {
   }
 
   return (<>
+    <AIUsageAnalyticsCard />
     <Card title={<Space><RobotOutlined />{securityCopy.title}</Space>} style={{ marginBottom: 16 }}>
       <Row gutter={[12, 12]}>
         {(["app", "bitrix"] as const).map((source) => {

@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AdminAIChatListItem(BaseModel):
@@ -70,6 +70,96 @@ class AdminAIChatSecuritySourceSummary(BaseModel):
 class AdminAIChatSecurityOverview(BaseModel):
     app: AdminAIChatSecuritySourceSummary
     bitrix: AdminAIChatSecuritySourceSummary
+
+
+class AdminAIUsageDailyPoint(BaseModel):
+    period: date
+    period_end: date | None = None
+    requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int | None = None
+    unique_users: int = 0
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float | None = None
+
+
+class AdminAIUsageBreakdownItem(BaseModel):
+    key: str
+    label: str
+    model: str | None = None
+    requests: int = 0
+    unique_users: int = 0
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float | None = None
+
+
+class AdminAIUsageFunnelItem(BaseModel):
+    key: str
+    label: str
+    events: int = 0
+    unique_users: int = 0
+
+
+class AdminAIUsageTopUser(BaseModel):
+    account_id: str
+    label: str | None = None
+    contact: str | None = None
+    requests: int = 0
+    total_tokens: int = 0
+    cost_usd: float | None = None
+    last_activity_at: datetime | None = None
+
+
+class AdminAIUsageSourceRead(BaseModel):
+    source: Literal["app", "bitrix", "telegram"]
+    label: str
+    configured: bool = True
+    start_date: date
+    end_date: date
+    trend_granularity: Literal["daily", "weekly", "monthly"] = "daily"
+    requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int | None = None
+    unique_users: int = 0
+    conversations: int | None = None
+    user_messages: int | None = None
+    assistant_messages: int | None = None
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cache_percent: float = 0.0
+    average_tokens_per_request: float = 0.0
+    average_latency_ms: float | None = None
+    cost_usd: float | None = None
+    current_model: str | None = None
+    daily: list[AdminAIUsageDailyPoint] = Field(default_factory=list)
+    breakdown: list[AdminAIUsageBreakdownItem] = Field(default_factory=list)
+    funnel: list[AdminAIUsageFunnelItem] = Field(default_factory=list)
+    top_users: list[AdminAIUsageTopUser] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
+class AdminAIUsageOverview(BaseModel):
+    days: int
+    generated_at: datetime
+    requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    unique_users_sum: int = 0
+    input_tokens: int = 0
+    cached_input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    cost_usd: float | None = None
+    sources: list[AdminAIUsageSourceRead]
 
 
 class AdminAIChatSecurityEventRead(BaseModel):

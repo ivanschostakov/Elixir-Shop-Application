@@ -1,8 +1,9 @@
 from copy import deepcopy
+import asyncio
 from datetime import timedelta
 import ipaddress
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import case, distinct, func, or_, select
@@ -22,11 +23,14 @@ from src.app.modules.admin.schemas import (
     AdminAIChatSecurityEventRead,
     AdminAIChatSecurityOverview,
     AdminAIChatSecuritySourceSummary,
+    AdminAIUsageOverview,
+    AdminAIUsageSourceRead,
     AdminPage,
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
 from src.app.services.admin.alerts import raise_admin_alert, resolve_admin_alert
 from src.app.services.ai.bitrix_admin import BitrixAIAdminError, bitrix_ai_admin_client, bitrix_ai_admin_configured
+from src.app.services.ai.usage_analytics import app_ai_usage, telegram_ai_usage
 from config import ufa_now
 from src.database import get_db
 from src.database.crud.ai.chat import get_ai_chat_by_id
@@ -40,6 +44,71 @@ AI_CHAT_EVENT_NAMES = (
     "ai_action_clicked",
     "ai_action_completed",
 )
+
+
+def _unavailable_usage_source(source: Literal["bitrix", "telegram"], *, days: int, configured: bool, error: str | None = None) -> AdminAIUsageSourceRead:
+    end_date = ufa_now().date()
+    labels = {"bitrix": "AI-чат сайта Bitrix", "telegram": "Telegram AI-боты"}
+    return AdminAIUsageSourceRead(
+        source=source,
+        label=labels[source],
+        configured=configured,
+        start_date=end_date - timedelta(days=days - 1),
+        end_date=end_date,
+        notes=[f"{source}_integration_not_configured"] if not configured else [],
+        error=error,
+    )
+
+
+async def _bitrix_ai_usage(*, days: int) -> AdminAIUsageSourceRead:
+    if not bitrix_ai_admin_configured():
+        return _unavailable_usage_source("bitrix", days=days, configured=False)
+    try:
+        return AdminAIUsageSourceRead.model_validate(
+            await bitrix_ai_admin_client.request("GET", "/analytics", params={"days": days})
+        )
+    except BitrixAIAdminError as exc:
+        return _unavailable_usage_source("bitrix", days=days, configured=True, error=str(exc))
+
+
+@admin_ai_chats_router.get("/analytics", response_model=AdminAIUsageOverview)
+async def ai_usage_analytics(
+    days: int = Query(default=30, ge=1, le=365),
+    db: AsyncSession = Depends(get_db),
+    _: AdminContext = Depends(require_permission("ai_chats.read")),
+) -> AdminAIUsageOverview:
+    app_source = await app_ai_usage(db, days=days)
+    bitrix_result, telegram_result = await asyncio.gather(
+        _bitrix_ai_usage(days=days),
+        telegram_ai_usage(days=days),
+        return_exceptions=True,
+    )
+    bitrix_source = (
+        bitrix_result
+        if isinstance(bitrix_result, AdminAIUsageSourceRead)
+        else _unavailable_usage_source("bitrix", days=days, configured=bitrix_ai_admin_configured(), error="Bitrix AI usage backend is unavailable")
+    )
+    telegram_source = (
+        telegram_result
+        if isinstance(telegram_result, AdminAIUsageSourceRead)
+        else _unavailable_usage_source("telegram", days=days, configured=True, error="Telegram AI usage backend is unavailable")
+    )
+    sources = [app_source, bitrix_source, telegram_source]
+    costs = [source.cost_usd for source in sources if source.cost_usd is not None and not source.error]
+    return AdminAIUsageOverview(
+        days=days,
+        generated_at=ufa_now(),
+        requests=sum(source.requests for source in sources if not source.error),
+        successful_requests=sum(source.successful_requests for source in sources if not source.error),
+        failed_requests=sum((source.failed_requests or 0) for source in sources if not source.error),
+        unique_users_sum=sum(source.unique_users for source in sources if not source.error),
+        input_tokens=sum(source.input_tokens for source in sources if not source.error),
+        cached_input_tokens=sum(source.cached_input_tokens for source in sources if not source.error),
+        output_tokens=sum(source.output_tokens for source in sources if not source.error),
+        total_tokens=sum(source.total_tokens for source in sources if not source.error),
+        cost_usd=round(sum(costs), 4) if costs else None,
+        sources=sources,
+    )
 
 
 def _safe_ai_context(value: dict[str, Any] | None) -> dict[str, Any]:
