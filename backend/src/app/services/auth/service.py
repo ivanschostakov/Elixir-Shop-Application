@@ -14,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from config import (
+    AUTH_APP_REVIEW_EMAIL,
+    AUTH_APP_REVIEW_USER_ID,
     AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA,
     AUTH_LOGIN_WEBSITE_FIRST_ENABLED,
     AUTH_RATE_LIMIT_MAX_REQUESTS,
@@ -452,6 +454,16 @@ async def _sync_user_from_website_identity(
     return user
 
 
+def _is_app_review_identity(user: User | None) -> bool:
+    return bool(
+        user is not None
+        and AUTH_APP_REVIEW_USER_ID > 0
+        and user.id == AUTH_APP_REVIEW_USER_ID
+        and normalize_email(AUTH_APP_REVIEW_EMAIL)
+        and normalize_email(user.email) == normalize_email(AUTH_APP_REVIEW_EMAIL)
+    )
+
+
 async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
     requested_login = str(payload.login).strip()
     requested_email = normalize_email(requested_login)
@@ -465,6 +477,14 @@ async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
         and user.is_active
         and verify_password(payload.password, user.password_hash)
     )
+
+    # The dedicated review customer authenticates locally, never against a
+    # website identity with the same email. Password and account state still
+    # apply; this exception grants no administrative or device-integrity rights.
+    if _is_app_review_identity(user):
+        if local_authenticated and user.is_verified:
+            return user
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     website_login_enabled = (
         AUTH_LOGIN_WEBSITE_FIRST_ENABLED
@@ -598,6 +618,10 @@ async def resend_registration_verification_code(request: Request, payload: UserV
 async def login_user(request: Request, payload: UserLoginPayload, db: AsyncSession) -> AuthTokensWithUserResponse | AuthVerificationRequiredResponse:
     await _apply_auth_rate_limit(request, scope="auth:login", principal=payload.login)
     user = await _get_login_user(payload, db)
+
+    if _is_app_review_identity(user) and user.is_active and user.is_verified:
+        logger.info("App Review customer password login user_id=%s", user.id)
+        return await _build_auth_tokens_response(user, db)
 
     if AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA and await is_admin_user(db, user.id):
         return await _build_auth_tokens_response(user, db)
