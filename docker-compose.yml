@@ -29,6 +29,7 @@ services:
       GOOGLE_APPLICATION_CREDENTIALS: /app/backend/.secrets/application_default_credentials.json
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "elixirpeptide.com:${BITRIX_ORIGIN_IP:-94.198.55.106}"
     depends_on:
       redis:
         condition: service_healthy
@@ -128,6 +129,7 @@ services:
       POSTGRES_HOST: 172.18.0.1
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "elixirpeptide.com:${BITRIX_ORIGIN_IP:-94.198.55.106}"
     user: "0:0"
     command:
       - /bin/sh
@@ -153,6 +155,7 @@ services:
       POSTGRES_HOST: 172.18.0.1
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "elixirpeptide.com:${BITRIX_ORIGIN_IP:-94.198.55.106}"
     depends_on:
       redis:
         condition: service_healthy
@@ -181,6 +184,7 @@ services:
       POSTGRES_HOST: 172.18.0.1
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "elixirpeptide.com:${BITRIX_ORIGIN_IP:-94.198.55.106}"
     depends_on:
       redis:
         condition: service_healthy
@@ -210,6 +214,7 @@ services:
       POSTGRES_HOST: 172.18.0.1
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "elixirpeptide.com:${BITRIX_ORIGIN_IP:-94.198.55.106}"
     depends_on:
       redis:
         condition: service_healthy
