@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from "expo-router"
 
 import ProductScreen from "@/screens/product/product-screen"
+import { CatalogRoute } from "@/components/navigation/route-guard"
 
 export default function ProductRoute() {
     const { id, variantId } = useLocalSearchParams<{ id: string, variantId?: string }>()
@@ -8,5 +9,5 @@ export default function ProductRoute() {
     const parsedVariantId = variantId ? Number(variantId) : Number.NaN
     const preferredVariantId = Number.isInteger(parsedVariantId) && parsedVariantId > 0 ? parsedVariantId : undefined
 
-    return <ProductScreen productId={productId} preferredVariantId={preferredVariantId} />
+    return <CatalogRoute><ProductScreen productId={productId} preferredVariantId={preferredVariantId} /></CatalogRoute>
 }

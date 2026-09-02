@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import {
     DEFAULT_DELIVERY_COUNTRY_CODE,
@@ -28,6 +28,8 @@ export function useDeliveryPointMarkers(
     const [deliveryPointMarkers, setDeliveryPointMarkers] = useState<DeliveryPointMarkerWithProvider[]>([])
     const [isLoading, setIsLoading] = useState(Boolean(enabled && countryCode))
     const [error, setError] = useState<string | null>(null)
+    const [attempt, setAttempt] = useState(0)
+    const retry = useCallback(() => setAttempt((value) => value + 1), [])
 
     useEffect(() => {
         let isMounted = true
@@ -67,6 +69,9 @@ export function useDeliveryPointMarkers(
 
             return request
                 .then((markers) => {
+                    // Show each provider as soon as it answers; a slower provider
+                    // must not hold back points already downloaded successfully.
+                    if (isMounted) setDeliveryPointMarkers((current) => [...current, ...markers])
                     logDeliveryFlow("pickup marker provider request finished", {
                         countryCode,
                         durationMs: Date.now() - providerStartedAt,
@@ -212,11 +217,12 @@ export function useDeliveryPointMarkers(
         return () => {
             isMounted = false
         }
-    }, [countryCode, enabled])
+    }, [countryCode, enabled, attempt])
 
     return {
         deliveryPointMarkers,
         isLoading,
         error,
+        retry,
     }
 }

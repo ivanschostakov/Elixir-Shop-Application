@@ -2,12 +2,14 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from starlette.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 from uvicorn import Config, Server
 
 from config import CORS_ALLOWED_ORIGINS
 from src.app.services.cache import get_cache_service
+from src.app.services.platform_availability import is_commerce_blocked
 from .router import api_router
 from ..integrations.ai import get_professor_client
 from ..integrations.delivery.geo import get_geo_client
@@ -45,7 +47,14 @@ app.include_router(api_router)
 
 @app.middleware("http")
 async def media_cache_control(request: Request, call_next):
+    if request.method != "OPTIONS" and is_commerce_blocked(request.headers, request.url.path, request.method):
+        return JSONResponse(status_code=403, content={"detail": {
+            "code": "ios_catalog_unavailable",
+            "message": "Catalog and purchases are unavailable on iOS.",
+        }}, headers={"Cache-Control": "no-store", "Vary": "X-App-Platform, User-Agent"})
     response = await call_next(request)
+    if request.url.path == "/api/v1/app-version":
+        response.headers["Cache-Control"] = "no-store"
     if not request.url.path.startswith("/media/"):
         return response
 

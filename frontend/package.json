@@ -13,7 +13,8 @@
     "postinstall": "node scripts/patch-react-native-yamap.cjs",
     "prebuild:clean": "node scripts/expo-cli.cjs prebuild --clean",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:regressions": "node --test tests/*.test.cjs"
   },
   "dependencies": {
     "@expo/app-integrity": "0.1.10",

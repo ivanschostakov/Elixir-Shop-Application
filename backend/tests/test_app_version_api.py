@@ -19,7 +19,9 @@ def test_app_version_policy_returns_defaults(client: TestClient, monkeypatch):
 
     assert response.status_code == 200, response.text
     payload = response.json()
+    import config
     assert payload == {
+        "apple_dev_mode": config.APPLE_DEV_MODE,
         "ios": {
             "minimumBuild": 1,
             "latestBuild": 1,

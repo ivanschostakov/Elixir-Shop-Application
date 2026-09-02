@@ -2,6 +2,8 @@ import { API_BASE_URL } from "@/services/api/constants"
 import type { QueryParams, RequestOptions } from "@/services/api/client.types"
 import { getAppIntegrityHeaders, resetAppIntegrityState } from "@/services/app-integrity"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
+import { Platform } from "react-native"
+import { fetchTextWithDeadline, RequestDeadlineError } from "@/services/api/request-deadline"
 
 export class ApiError extends Error {
     status: number
@@ -18,7 +20,6 @@ export class ApiError extends Error {
 const SERVICE_UNAVAILABLE_MESSAGE = "Service is temporarily unavailable. Please try again later."
 const INVALID_RESPONSE_MESSAGE = "Unexpected response from server."
 const REQUEST_TIMEOUT_MESSAGE = "The request timed out. Please try again."
-const DEFAULT_REQUEST_TIMEOUT_MS = 20000
 
 function isLikelyHtmlResponse(payload: string) {
     const trimmedPayload = payload.trim().toLowerCase()
@@ -51,6 +52,7 @@ function buildUrl(baseUrl: string, path: string, query?: QueryParams): string {
 
 async function buildHeaders(init?: RequestInit, auth = true, options?: RequestOptions): Promise<Headers> {
     const headers = new Headers(init?.headers ?? {})
+    headers.set("X-App-Platform", Platform.OS)
     const tokens = getAuthTokens()
     const isFormDataBody =
         typeof FormData !== "undefined" &&
@@ -72,46 +74,7 @@ async function buildHeaders(init?: RequestInit, auth = true, options?: RequestOp
     return headers
 }
 
-function createRequestSignal(init?: RequestInit, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS) {
-    if (typeof AbortController === "undefined") {
-        return {
-            cleanup: () => undefined,
-            signal: init?.signal,
-        }
-    }
-
-    const controller = new AbortController()
-    const parentSignal = init?.signal
-    const abortRequest = () => controller.abort()
-    let timeoutId: ReturnType<typeof setTimeout> | null = null
-    let removeParentAbortListener: () => void = () => undefined
-
-    if (parentSignal) {
-        if (parentSignal.aborted) {
-            controller.abort()
-        } else {
-            parentSignal.addEventListener("abort", abortRequest)
-            removeParentAbortListener = () => parentSignal.removeEventListener("abort", abortRequest)
-        }
-    }
-
-    if (timeoutMs > 0) {
-        timeoutId = setTimeout(abortRequest, timeoutMs)
-    }
-
-    return {
-        cleanup: () => {
-            if (timeoutId) {
-                clearTimeout(timeoutId)
-            }
-            removeParentAbortListener()
-        },
-        signal: controller.signal,
-    }
-}
-
-async function buildApiError(response: Response): Promise<ApiError> {
-    const raw = await response.text().catch(() => "")
+function buildApiError(response: Response, raw: string): ApiError {
     let body: unknown = raw
     let message = raw || `HTTP ${response.status}`
 
@@ -172,21 +135,20 @@ async function request<T>(
     const auth = options?.auth ?? true
     const retryOnUnauthorized = options?.retryOnUnauthorized ?? auth
     let response: Response
-    const requestSignal = createRequestSignal(init, options?.timeoutMs)
+    let rawResponse: string
 
     try {
-        response = await fetch(buildUrl(baseUrl, path, query), {
+        const result = await fetchTextWithDeadline(buildUrl(baseUrl, path, query), {
             ...init,
             headers: await buildHeaders(init, auth, options),
-            signal: requestSignal.signal,
-        })
-    } catch {
+        }, options?.timeoutMs)
+        response = result.response
+        rawResponse = result.text
+    } catch (error) {
         throw new ApiError(
             503,
-            requestSignal.signal?.aborted ? REQUEST_TIMEOUT_MESSAGE : SERVICE_UNAVAILABLE_MESSAGE,
+            error instanceof RequestDeadlineError ? REQUEST_TIMEOUT_MESSAGE : SERVICE_UNAVAILABLE_MESSAGE,
         )
-    } finally {
-        requestSignal.cleanup()
     }
 
     if (
@@ -204,7 +166,7 @@ async function request<T>(
     }
 
     if (!response.ok) {
-        const apiError = await buildApiError(response)
+        const apiError = buildApiError(response, rawResponse)
 
         if (
             response.status === 403 &&
@@ -220,8 +182,6 @@ async function request<T>(
     }
 
     if (response.status === 204) return undefined as T
-
-    const rawResponse = await response.text()
 
     if (!rawResponse) {
         return undefined as T

@@ -5,6 +5,7 @@ import { Platform } from "react-native"
 
 import { getProductRoute, ROUTES } from "@/constants/routes"
 import { deleteMyPushToken, registerMyPushToken } from "@/services/api/users"
+import { isCatalogAvailable } from "@/services/app-features"
 
 const DEFAULT_ANDROID_CHANNEL_ID = "default"
 const COMMUNITY_ANDROID_CHANNEL_ID = "community_messages"
@@ -55,12 +56,11 @@ function ensureNotificationsConfigured() {
     }
 
     Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-            shouldShowBanner: true,
-            shouldShowList: true,
-            shouldPlaySound: true,
-            shouldSetBadge: false,
-        }),
+        handleNotification: async (notification) => {
+            const type = notification.request.content.data?.type
+            const visible = isCatalogAvailable() || type === "order_status_changed" || type === "support_reply"
+            return { shouldShowBanner: visible, shouldShowList: visible, shouldPlaySound: visible, shouldSetBadge: false }
+        },
     })
 
     notificationsConfigured = true

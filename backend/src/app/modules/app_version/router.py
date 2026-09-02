@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from starlette import status
 
+import config
 from config import (
     ANDROID_LATEST_JS_BUNDLE_VERSION,
     ANDROID_LATEST_VERSION_CODE,
@@ -21,6 +22,7 @@ app_version_router = APIRouter(prefix="/app-version", tags=["app_version"])
 @app_version_router.get("", response_model=AppVersionPolicyRead, status_code=status.HTTP_200_OK)
 async def get_app_version_policy() -> AppVersionPolicyRead:
     return AppVersionPolicyRead(
+        apple_dev_mode=config.APPLE_DEV_MODE,
         ios={
             "minimumBuild": IOS_MINIMUM_BUILD,
             "latestBuild": IOS_LATEST_BUILD,

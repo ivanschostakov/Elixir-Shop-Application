@@ -15,6 +15,7 @@ export type AndroidAppVersionPolicy = {
 }
 
 export type AppVersionPolicy = {
+    apple_dev_mode?: boolean
     ios: IosAppVersionPolicy
     android: AndroidAppVersionPolicy
 }

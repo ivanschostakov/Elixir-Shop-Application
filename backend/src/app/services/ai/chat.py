@@ -251,7 +251,7 @@ async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_cli
     return created
 
 
-async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient") -> AIChatSendResult:
+async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True) -> AIChatSendResult:
     chat = await get_or_create_user_chat(db, user=user, professor_client=professor_client)
     loaded_uploads = await _load_uploads(attachments)
     selected_model = await resolve_user_bot_model(db, user_id=user.id)
@@ -296,15 +296,20 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         tool_executor = ShopAIToolExecutor(db, user_id=user.id)
 
         ai_result = await professor_client.send_message_v2(
-            input_text=_build_commerce_ai_input(text),
+            input_text=_build_commerce_ai_input(text) if allow_commerce else (
+                "В этой версии приложения каталог и покупки недоступны. Не рекламируй товары, "
+                "не предлагай покупку, скидки или переход в магазин. Не выполняй действия с корзиной. "
+                "Отвечай на вопрос без коммерческих рекомендаций. product_refs=[], basket_addition=null.\n\n"
+                + text
+            ),
             conversation_id=chat.conversation_id,
             bot_model=selected_model,
             known_input_tokens=chat.current_tokens,
             file_contents=file_contents,
             image_contents=image_contents,
             user_id=user.id,
-            function_tools=SHOP_AI_FUNCTION_TOOLS,
-            function_tool_executor=tool_executor.execute,
+            function_tools=SHOP_AI_FUNCTION_TOOLS if allow_commerce else [],
+            function_tool_executor=tool_executor.execute if allow_commerce else None,
             output_schema=build_ai_chat_output_schema(),
             output_schema_name="ai_chat_output",
         )
@@ -330,9 +335,12 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         if usage_cost is not None:
             assistant_context["usage_pricing"] = usage_cost.as_snapshot()
         if structured_output is not None:
+            if not allow_commerce:
+                # Enforce this even if a generated reply ignores the prompt.
+                structured_output = structured_output.model_copy(update={"product_refs": [], "basket_addition": None})
             reply_text = structured_output.assistant_text.strip() or reply_text
             assistant_context["structured_output"] = structured_output.model_dump(mode="json", exclude_none=True)
-            interactive_payload = await build_ai_interactive_payload(db, structured_output)
+            interactive_payload = await build_ai_interactive_payload(db, structured_output) if allow_commerce else None
             if interactive_payload is not None:assistant_context["interactive"] = interactive_payload.model_dump(mode="json", exclude_none=True)
             if structured_output.basket_addition is not None:
                 applied_items: list[dict[str, int]] = []

@@ -87,7 +87,7 @@ export const DEFAULT_DELIVERY_POINT: Point = {
 export const DOOR_DELIVERY_PROVIDER: DeliveryPointProvider = "cdek"
 export const DEFAULT_DELIVERY_ZOOM = 12
 export const PICKUP_POINT_FOCUS_ZOOM = 17
-export const MAX_NATIVE_PICKUP_MARKERS = 80000
+export const MAX_NATIVE_PICKUP_MARKERS = 1500
 export const DOOR_DELIVERY_LOOKUP_DELAY_MS = 420
 export const DELIVERY_CAMERA_DURATIONS = {
     country: 0.7,

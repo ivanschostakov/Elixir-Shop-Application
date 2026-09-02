@@ -26,8 +26,11 @@ import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { setTelegramChromeColors } from "@/services/telegram/telegram-web-app"
 import { darkColors, lightColors } from "@/theme/colors"
 import { motion } from "@/theme/motion"
+import { isCatalogRoute, useCatalogAvailable } from "@/services/app-features"
 
 function AppShellContent() {
+    const catalogAvailable = useCatalogAvailable()
+    const primaryRoutes = PRIMARY_APP_ROUTES.filter((route) => catalogAvailable || !isCatalogRoute(route))
     const appShellStyles = useThemeStyles(createAppShellStyles)
     const pathname = usePathname()
     const router = useRouter()
@@ -71,7 +74,7 @@ function AppShellContent() {
             : null
     const shouldShowBrandOverlay = Platform.OS === "ios"
     const brandLabelTop = Math.max(2, topInset - 44)
-    const currentPrimaryRouteIndex = PRIMARY_APP_ROUTES.findIndex((route) => route === pathname)
+    const currentPrimaryRouteIndex = primaryRoutes.findIndex((route) => route === pathname)
     const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
 
     useEffect(() => {
@@ -100,7 +103,7 @@ function AppShellContent() {
         }
 
         const nextRouteIndex = isSwipeLeft
-            ? Math.min(currentPrimaryRouteIndex + 1, PRIMARY_APP_ROUTES.length - 1)
+            ? Math.min(currentPrimaryRouteIndex + 1, primaryRoutes.length - 1)
             : Math.max(currentPrimaryRouteIndex - 1, 0)
 
         if (nextRouteIndex === currentPrimaryRouteIndex) {
@@ -109,7 +112,7 @@ function AppShellContent() {
 
         setRouteAnimation(isSwipeLeft ? "slide_from_right" : "slide_from_left")
         requestAnimationFrame(() => {
-            router.replace(PRIMARY_APP_ROUTES[nextRouteIndex])
+            router.replace(primaryRoutes[nextRouteIndex])
         })
     }
 

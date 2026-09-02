@@ -12,8 +12,10 @@ import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styl
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { getProfileInitials } from "@/utils/profile/get-profile-initials"
 import { themeAccentPalettes, type ThemeAccentName } from "@/theme/colors"
+import { useCatalogAvailable } from "@/services/app-features"
 
 export default function ProfileScreen() {
+    const catalogAvailable = useCatalogAvailable()
     const ProfileScreenStyles = useThemeStyles(createProfileScreenStyles)
     const { user } = useAuth()
     const { language, setLanguage, t } = useLanguage()
@@ -167,7 +169,7 @@ export default function ProfileScreen() {
                 </View>
             </View>
 
-            <Pressable
+            {catalogAvailable ? <Pressable
                 accessibilityLabel={t("nav.favorites")}
                 accessibilityRole="button"
                 onPress={() => router.push(ROUTES.favorites)}
@@ -188,9 +190,9 @@ export default function ProfileScreen() {
                         </Text>
                     </View>
                 </View>
-            </Pressable>
+            </Pressable> : null}
 
-            <Pressable
+            {catalogAvailable ? <Pressable
                 accessibilityLabel={t("profile.discounts.open")}
                 accessibilityRole="button"
                 onPress={() => router.push(ROUTES.profileDiscounts)}
@@ -211,7 +213,7 @@ export default function ProfileScreen() {
                         </Text>
                     </View>
                 </View>
-            </Pressable>
+            </Pressable> : null}
 
             <Pressable
                 accessibilityLabel={t("profile.history.open")}
@@ -236,7 +238,7 @@ export default function ProfileScreen() {
                 </View>
             </Pressable>
 
-            <Pressable
+            {catalogAvailable ? <Pressable
                 accessibilityLabel={t("profile.drafts.open")}
                 accessibilityRole="button"
                 onPress={() => router.push(ROUTES.profileDrafts)}
@@ -257,7 +259,7 @@ export default function ProfileScreen() {
                         </Text>
                     </View>
                 </View>
-            </Pressable>
+            </Pressable> : null}
 
             <View style={ProfileScreenStyles.sectionCard}>
                 <Text style={ProfileScreenStyles.sectionDescription}>

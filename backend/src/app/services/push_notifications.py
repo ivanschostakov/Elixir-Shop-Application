@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import EXPO_PUSH_API_URL, EXPO_PUSH_TIMEOUT_SECONDS
 from src.database.crud import delete_user_push_token, get_user_push_tokens
 from src.database.models import Order, UserPushToken
+from src.app.services.platform_availability import allow_push_for_platform
 from src.database.models.orders.history import get_order_history_bucket, get_order_status_code, normalize_order_status
 
 log = logging.getLogger(__name__)
@@ -116,7 +117,7 @@ def _build_push_messages(push_tokens, *, title: str, body: str, data: dict[str, 
         "data": data,
         "sound": "default",
         "channelId": channel_id,
-    } for push_token in push_tokens]
+    } for push_token in push_tokens if allow_push_for_platform(getattr(push_token, "platform", None), data)]
 
 
 async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> ExpoPushBatchResult:

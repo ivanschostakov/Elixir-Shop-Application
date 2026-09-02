@@ -16,6 +16,7 @@ import RenderHtml from "react-native-render-html"
 import Svg, { Path } from "react-native-svg"
 
 import { motion } from "@/theme/motion"
+import { useCatalogAvailable } from "@/services/app-features"
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useTheme } from "@/providers/theme-provider"
@@ -330,7 +331,8 @@ export function AIInteractiveContent({
 }) {
     const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const hasContent = payload.cards.length > 0
-    if (!hasContent) {
+    const catalogAvailable = useCatalogAvailable()
+    if (!catalogAvailable || !hasContent) {
         return null
     }
 

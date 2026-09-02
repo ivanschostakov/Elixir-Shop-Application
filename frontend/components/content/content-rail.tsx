@@ -8,6 +8,7 @@ import { ProductCard } from "@/components/content/product-card"
 import { SectionHeader } from "@/components/content/section-header"
 import type { ContentRailProps } from "@/components/content/content-rail.types"
 import type { ProductWithVariantsRead } from "@/types/product"
+import { useCatalogAvailable } from "@/services/app-features"
 
 export function ContentRail({
     title,
@@ -24,7 +25,8 @@ export function ContentRail({
 }: ContentRailProps) {
     const contentStyles = useThemeStyles(createContentStyles)
     const { palette } = useTheme()
-    if (!products.length) {
+    const catalogAvailable = useCatalogAvailable()
+    if (!catalogAvailable || !products.length) {
         return null
     }
 

@@ -27,6 +27,9 @@ function getInvalidVerificationCodeMessage() {
 function normalizeMessage(message: string, fallback: string) {
     const trimmedMessage = message.trim()
     const loweredMessage = trimmedMessage.toLowerCase()
+    if (loweredMessage === "catalog and purchases are unavailable on ios.") {
+        return translate("catalog.unavailableIos")
+    }
 
     if (!trimmedMessage) {
         return fallback

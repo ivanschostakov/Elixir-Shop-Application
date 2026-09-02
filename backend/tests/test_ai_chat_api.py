@@ -679,7 +679,8 @@ def test_ai_client_function_tool_round_feeds_outputs(monkeypatch: pytest.MonkeyP
     assert '"product_id": 10' in tool_output["output"]
 
 
-def test_send_user_chat_message_triggers_ai_reply_notification(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("allow_commerce", [True, False])
+def test_send_user_chat_message_triggers_ai_reply_notification(monkeypatch: pytest.MonkeyPatch, allow_commerce):
     class _FakeDb:
         async def commit(self):
             return None
@@ -689,6 +690,8 @@ def test_send_user_chat_message_triggers_ai_reply_notification(monkeypatch: pyte
 
     class _FakeProfessorClient:
         async def send_message_v2(self, **_kwargs):
+            assert bool(_kwargs["function_tools"]) is allow_commerce
+            assert (_kwargs["function_tool_executor"] is not None) is allow_commerce
             return {
                 "text": "AI reply",
                 "conversation_id": "conv_999",
@@ -750,6 +753,7 @@ def test_send_user_chat_message_triggers_ai_reply_notification(monkeypatch: pyte
             text="hello",
             attachments=None,
             professor_client=_FakeProfessorClient(),
+            allow_commerce=allow_commerce,
         )
     )
 

@@ -14,6 +14,7 @@ import {
 } from "react-native"
 import * as Clipboard from "expo-clipboard"
 import { router, useLocalSearchParams } from "expo-router"
+import { useCatalogAvailable } from "@/services/app-features"
 import LottieView from "lottie-react-native"
 
 import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
@@ -167,6 +168,7 @@ function buildGuestOrderPayload(orderDraft: OrderDraftRead, paymentMethod: Payme
 }
 
 export default function PaymentScreen() {
+    const catalogAvailable = useCatalogAvailable()
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const paymentScreenStyles = useThemeStyles(createPaymentScreenStyles)
     const { acceptSession, isAuthenticated, user } = useAuth()
@@ -354,7 +356,7 @@ export default function PaymentScreen() {
     const canRetry = Boolean(orderDraft || order?.id || payment?.order_id) && (payment ? payment.can_retry : true)
     const missingStateMessage = orderLoadError ?? t("payment.orderMissingMessage")
     const shouldShowFooter = hasResolvedOrderInfo || loading || loadingOrder || phase === "processing" || submitting
-    const isRepeatableOrder = order?.history_bucket === "completed"
+    const isRepeatableOrder = catalogAvailable && order?.history_bucket === "completed"
     const recipientLabel = formatRecipientName(resolvedRecipient)
     const deliveryLabel = [
         order?.selected_delivery_service ?? orderDraft?.delivery_address?.provider,

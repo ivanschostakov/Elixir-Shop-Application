@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from config import AI_CHAT_MAX_AUDIO_BYTES
+from src.app.services.platform_availability import is_commerce_blocked
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.users.me.schemas import (
     AIChatActionPayload,
@@ -45,7 +46,10 @@ async def send_my_ai_chat_message(request: Request, text: str = Form(...), attac
         event_type="message_requested",
         details={"message_length": len(normalized_text), "attachments_count": len(attachments or [])},
     )
-    result = await send_user_chat_message(db, user=current_user, text=normalized_text, attachments=attachments, professor_client=professor_client)
+    result = await send_user_chat_message(
+        db, user=current_user, text=normalized_text, attachments=attachments, professor_client=professor_client,
+        allow_commerce=not is_commerce_blocked(request.headers, "/api/v1/products", "GET"),
+    )
     basket = await _get_serialized_basket(request, db, current_user.id) if result.basket_updated else None
     return AIChatResponse(chat=result.chat, last_turn=AIChatTurnMetaRead(**result.turn_meta), basket=basket)
 

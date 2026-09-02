@@ -4,4 +4,5 @@ export type UseDeliveryPointMarkersState = {
     deliveryPointMarkers: DeliveryPointMarkerWithProvider[]
     isLoading: boolean
     error: string | null
+    retry: () => void
 }

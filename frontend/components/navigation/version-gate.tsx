@@ -5,6 +5,7 @@ import { ActivityIndicator, AppState, Linking, Platform, Pressable, Text, View, 
 
 import { APP_JS_VERSION } from "@/config/env"
 import { getAppVersionPolicy } from "@/services/api/app-version"
+import { applyAppFeaturePolicy } from "@/services/app-features"
 import type { AppVersionPolicy } from "@/services/api/app-version.types"
 import { useTheme } from "@/providers/theme-provider"
 import { darkColors, lightColors } from "@/theme/colors"
@@ -82,9 +83,11 @@ export function VersionGate({ children }: VersionGateProps) {
 
         try {
             const policy = await getAppVersionPolicy()
+            applyAppFeaturePolicy(policy.apple_dev_mode)
             setBlock(resolveVersionBlock(policy))
             setUpdateError(null)
         } catch {
+            applyAppFeaturePolicy(true)
             setBlock(null)
         } finally {
             setIsChecking(false)
@@ -107,9 +110,13 @@ export function VersionGate({ children }: VersionGateProps) {
             }
             previousAppState = nextAppState
         })
+        const refreshTimer = setInterval(() => {
+            if (AppState.currentState === "active") void checkVersionPolicy()
+        }, 60000)
 
         return () => {
             subscription.remove()
+            clearInterval(refreshTimer)
         }
     }, [checkVersionPolicy])
 

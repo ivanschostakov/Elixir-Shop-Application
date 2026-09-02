@@ -1,4 +1,5 @@
 import { BlurView } from "expo-blur"
+import { selectVisibleMarkers } from "@/utils/delivery/visible-markers"
 import * as Clipboard from "expo-clipboard"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
@@ -7,7 +8,6 @@ import {
     Animated,
     AppState,
     Easing,
-    InteractionManager,
     Keyboard,
     KeyboardAvoidingView,
     Linking,
@@ -142,7 +142,6 @@ export default function DeliveryScreen() {
     const mapRef = useRef<ClusteredYamap | null>(null)
     const pendingDeliveryPointCodeRef = useRef<string | null>(null)
     const pendingDoorResolutionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const nativeMapMountInteractionRef = useRef<{ cancel: () => void } | null>(null)
     const nativeMapMountTokenRef = useRef(0)
     const lastFollowedUserPointRef = useRef<Point | null>(null)
     const cameraPositionRef = useRef<CameraPosition | null>(null)
@@ -155,7 +154,10 @@ export default function DeliveryScreen() {
     const [mapKitStatus, setMapKitStatus] = useState<MapKitStatus>("loading")
     const [shouldRenderNativeMap, setShouldRenderNativeMap] = useState(false)
     const [hasNativeMapLoaded, setHasNativeMapLoaded] = useState(false)
-    const [shouldLoadPickupMarkers, setShouldLoadPickupMarkers] = useState(false)
+    const [mapAttempt, setMapAttempt] = useState(0)
+    const [mapLoadTimedOut, setMapLoadTimedOut] = useState(false)
+    // Provider data and map tiles are independent network requests.
+    const shouldLoadPickupMarkers = true
     const {
         hasUserLocation,
         requestUserLocation,
@@ -218,6 +220,7 @@ export default function DeliveryScreen() {
         deliveryPointMarkers,
         error: deliveryPointsError,
         isLoading: isDeliveryPointsLoading,
+        retry: retryPickupMarkers,
     } = useDeliveryPointMarkers(activeCountryCode, {
         enabled: shouldLoadPickupMarkers,
     })
@@ -257,6 +260,7 @@ export default function DeliveryScreen() {
 
         return DEFAULT_DELIVERY_REGION
     }, [hasUserLocation, selectedDeliveryCountry, userPoint])
+    const [markerViewport, setMarkerViewport] = useState(initialMapRegion)
 
     const pickupMarkers = useMemo<DeliveryMapMarker[]>(
         () =>
@@ -284,11 +288,8 @@ export default function DeliveryScreen() {
         [deliveryPointMarkers, removedDeliveryPointKeys],
     )
     const mapMarkers = useMemo(
-        () =>
-            pickupMarkers.length > MAX_NATIVE_PICKUP_MARKERS
-                ? pickupMarkers.slice(0, MAX_NATIVE_PICKUP_MARKERS)
-                : pickupMarkers,
-        [pickupMarkers],
+        () => selectVisibleMarkers(pickupMarkers, markerViewport, MAX_NATIVE_PICKUP_MARKERS),
+        [pickupMarkers, markerViewport],
     )
     const handleDeliveryMapLoaded = useCallback((event: NativeSyntheticEvent<MapLoaded>) => {
         logDeliveryFlow("delivery map loaded", {
@@ -395,7 +396,9 @@ export default function DeliveryScreen() {
 
     useEffect(() => {
         let isMounted = true
-
+        const startupTimeout = setTimeout(() => {
+            if (isMounted) setMapKitStatus("error")
+        }, 15000)
         logDeliveryFlow("mapkit initialization started")
         initializeYandexMapKit()
             .then(() => {
@@ -418,21 +421,22 @@ export default function DeliveryScreen() {
                     setMapKitStatus("error")
                 }
             })
+            .finally(() => clearTimeout(startupTimeout))
 
         return () => {
             isMounted = false
+            clearTimeout(startupTimeout)
         }
-    }, [])
+    }, [mapAttempt])
 
     useEffect(() => {
         nativeMapMountTokenRef.current += 1
         const mountToken = nativeMapMountTokenRef.current
         const countryCodeAtMount = activeCountryCodeRef.current
 
-        nativeMapMountInteractionRef.current?.cancel()
-        nativeMapMountInteractionRef.current = null
         setShouldRenderNativeMap(false)
         setHasNativeMapLoaded(false)
+        setMapLoadTimedOut(false)
 
         if (!isMapKitReady) {
             logDeliveryFlow("delivery native map mount waiting for mapkit", {
@@ -449,29 +453,10 @@ export default function DeliveryScreen() {
         })
 
         const mountTimeout = setTimeout(() => {
-            logDeliveryFlow("delivery native map mount waiting for interactions", {
-                countryCode: countryCodeAtMount,
-                token: mountToken,
-            })
-
-            nativeMapMountInteractionRef.current = InteractionManager.runAfterInteractions(() => {
-                nativeMapMountInteractionRef.current = null
-
-                if (nativeMapMountTokenRef.current !== mountToken) {
-                    logDeliveryFlow("delivery native map mount skipped stale", {
-                        countryCode: countryCodeAtMount,
-                        latestToken: nativeMapMountTokenRef.current,
-                        token: mountToken,
-                    })
-                    return
-                }
-
-                logDeliveryFlow("delivery native map mount enabled", {
-                    countryCode: countryCodeAtMount,
-                    token: mountToken,
-                })
+            // A looping animation elsewhere can hold InteractionManager forever.
+            if (nativeMapMountTokenRef.current === mountToken) {
                 setShouldRenderNativeMap(true)
-            })
+            }
         }, delayMs)
 
         return () => {
@@ -480,10 +465,8 @@ export default function DeliveryScreen() {
                 token: mountToken,
             })
             clearTimeout(mountTimeout)
-            nativeMapMountInteractionRef.current?.cancel()
-            nativeMapMountInteractionRef.current = null
         }
-    }, [isMapKitReady, mapKitStatus])
+    }, [isMapKitReady, mapKitStatus, mapAttempt])
 
     useEffect(() => {
         setRemovedDeliveryPointKeys(new Set())
@@ -494,7 +477,7 @@ export default function DeliveryScreen() {
             return
         }
 
-        const fallbackDelayMs = 4500
+        const fallbackDelayMs = 15000
         logDeliveryFlow("delivery native map load fallback scheduled", {
             countryCode: activeCountryCode,
             fallbackDelayMs,
@@ -505,7 +488,7 @@ export default function DeliveryScreen() {
                 countryCode: activeCountryCode,
                 fallbackDelayMs,
             })
-            setHasNativeMapLoaded(true)
+            setMapLoadTimedOut(true)
         }, fallbackDelayMs)
 
         return () => {
@@ -515,64 +498,6 @@ export default function DeliveryScreen() {
             clearTimeout(fallbackTimeout)
         }
     }, [activeCountryCode, hasNativeMapLoaded, shouldRenderNativeMap])
-
-    useEffect(() => {
-        logDeliveryFlow("pickup marker gate reset", {
-            countryCode: activeCountryCode,
-            hasNativeMapLoaded,
-            mapKitStatus,
-            shouldRenderNativeMap,
-        })
-        setShouldLoadPickupMarkers(false)
-
-        if (!isMapKitReady) {
-            logDeliveryFlow("pickup marker gate waiting for mapkit", {
-                countryCode: activeCountryCode,
-                mapKitStatus,
-            })
-            return
-        }
-
-        if (!shouldRenderNativeMap) {
-            logDeliveryFlow("pickup marker gate waiting for native map mount", {
-                countryCode: activeCountryCode,
-                mapKitStatus,
-            })
-            return
-        }
-
-        if (!hasNativeMapLoaded) {
-            logDeliveryFlow("pickup marker gate waiting for native map loaded", {
-                countryCode: activeCountryCode,
-                mapKitStatus,
-            })
-            return
-        }
-
-        logDeliveryFlow("pickup marker load scheduled", {
-            countryCode: activeCountryCode,
-            delayMs: 250,
-        })
-        const markerLoadTimeout = setTimeout(() => {
-            logDeliveryFlow("pickup marker load enabled", {
-                countryCode: activeCountryCode,
-            })
-            setShouldLoadPickupMarkers(true)
-        }, 250)
-
-        return () => {
-            logDeliveryFlow("pickup marker load schedule cancelled", {
-                countryCode: activeCountryCode,
-            })
-            clearTimeout(markerLoadTimeout)
-        }
-    }, [
-        activeCountryCode,
-        hasNativeMapLoaded,
-        isMapKitReady,
-        mapKitStatus,
-        shouldRenderNativeMap,
-    ])
 
     useEffect(() => {
         const providerCounts = pickupMarkers.reduce<Record<string, number>>((counts, marker) => {
@@ -1452,7 +1377,7 @@ export default function DeliveryScreen() {
                     <ClusteredYamap
                         ref={mapRef}
                         clusterColor={CDEK_PICKUP_MARKER_OUTER_COLOR}
-                        clusteredMarkers={mapMarkers}
+                        clusteredMarkers={hasNativeMapLoaded ? mapMarkers : []}
                         initialRegion={initialMapRegion}
                         markerSize={42}
                         markerIcons={DELIVERY_CLUSTER_MARKER_ICONS}
@@ -1503,6 +1428,7 @@ export default function DeliveryScreen() {
                         }}
                         onCameraPositionChangeEnd={({ nativeEvent }) => {
                             cameraPositionRef.current = nativeEvent
+                            setMarkerViewport({ ...nativeEvent.point, zoom: nativeEvent.zoom })
                             logDeliveryFlow("delivery map camera movement ended", {
                                 countryCode: activeCountryCode,
                                 isResolvingDoorAddress,
@@ -1584,24 +1510,30 @@ export default function DeliveryScreen() {
                     position="bottom"
                 />
 
-                {shouldBlockPickupMarkers ? (
-                    <View style={deliveryScreenStyles.pickupMarkersLoadingOverlay}>
-                        <BlurView
-                            intensity={34}
-                            pointerEvents="none"
-                            style={deliveryScreenStyles.pickupMarkersBlur}
-                            tint="light"
-                            {...(Platform.OS === "android"
-                                ? { experimentalBlurMethod: "dimezisBlurView" as const }
-                                : {})}
-                        />
+                {mapKitStatus === "error" || (mapLoadTimedOut && !hasNativeMapLoaded) || deliveryPointsError ? (
+                    <View pointerEvents="box-none" style={deliveryScreenStyles.pickupMarkersLoadingOverlay}>
+                        <Pressable
+                            accessibilityRole="button"
+                            onPress={() => {
+                                setMapAttempt((value) => value + 1)
+                                retryPickupMarkers()
+                            }}
+                            style={[deliveryScreenStyles.loadingCard, deliveryScreenStyles.mapRetryCard]}
+                        >
+                            <Text style={deliveryScreenStyles.mapFallbackText}>
+                                {translate(deliveryPointsError ? "delivery.pointsRetry" : "delivery.mapRetry")}
+                            </Text>
+                        </Pressable>
+                    </View>
+                ) : shouldBlockPickupMarkers || !hasNativeMapLoaded ? (
+                    <View pointerEvents="none" style={deliveryScreenStyles.pickupMarkersLoadingOverlay}>
                         <View style={[
                             deliveryScreenStyles.loadingCard,
                             deliveryScreenStyles.pickupMarkersLoadingCard,
                         ]}>
                             <ActivityIndicator color={palette.primary} size="large" />
                             <Text style={deliveryScreenStyles.loadingText}>
-                                {translate("delivery.loadingPickupPoints")}
+                                {translate(hasNativeMapLoaded ? "delivery.loadingPickupPoints" : "delivery.loadingMap")}
                             </Text>
                         </View>
                     </View>

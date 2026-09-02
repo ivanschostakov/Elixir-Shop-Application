@@ -12,6 +12,7 @@ import {
 } from "react-native"
 import type { StyleProp, TextStyle, ViewStyle } from "react-native"
 import { router } from "expo-router"
+import { useCatalogAvailable } from "@/services/app-features"
 import { Picker } from "@react-native-picker/picker"
 import LottieView from "lottie-react-native"
 import { CalendarList, LocaleConfig } from "react-native-calendars"
@@ -570,6 +571,7 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
 }
 
 export default function ProfileHistoryScreen() {
+    const catalogAvailable = useCatalogAvailable()
     const contentStyles = useThemeStyles(createContentStyles)
     const profileHistoryScreenStyles = useThemeStyles(createProfileHistoryScreenStyles)
     const { palette } = useTheme()
@@ -727,7 +729,7 @@ export default function ProfileHistoryScreen() {
                                 {emptyStateDescription}
                             </Text>
 
-                            <Pressable
+                            {catalogAvailable ? <Pressable
                                 accessibilityRole="button"
                                 onPress={() => {
                                     router.push(ROUTES.discover)
@@ -737,7 +739,7 @@ export default function ProfileHistoryScreen() {
                                 <Text style={profileHistoryScreenStyles.searchEmptyLink}>
                                     {t("profile.history.searchOpenCatalog")}
                                 </Text>
-                            </Pressable>
+                            </Pressable> : null}
                         </View>
                     )
                 }

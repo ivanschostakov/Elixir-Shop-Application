@@ -30,6 +30,11 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         lineHeight: 20,
         textAlign: "center",
     },
+    mapRetryCard: {
+        maxWidth: "90%",
+        flexDirection: "column",
+        padding: spacing.md,
+    },
     doorDeliveryMarkerOverlay: {
         ...StyleSheet.absoluteFillObject,
         alignItems: "center",
