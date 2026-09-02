@@ -18,10 +18,8 @@ import { useBasket } from "@/hooks/basket/use-basket"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
-import { isCatalogRoute, useCatalogAvailable } from "@/services/app-features"
 
 export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
-    const catalogAvailable = useCatalogAvailable()
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const { isAuthenticated } = useAuth()
     const { basket } = useBasket()
@@ -77,7 +75,7 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
 
     return (
         <View style={stickyFooterStyles.navRow}>
-            {footerItems.filter((item) => catalogAvailable || !isCatalogRoute(item.key)).map((item) => (
+            {footerItems.map((item) => (
                 <View key={item.key} style={stickyFooterStyles.footerItem}>
                     <Pressable
                         accessibilityLabel={item.accessibilityLabel}

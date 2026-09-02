@@ -12,6 +12,7 @@ from src.app.modules.guest.schemas import (
     GuestOrderResponse,
 )
 from src.app.services.guest_checkout import create_guest_order, quote_guest_basket
+from src.app.services.platform_availability import empty_basket_payload, is_commerce_blocked
 from src.app.services.orders.serialization import serialize_order
 from src.app.services.rate_limit import client_ip_from_request, enforce_rate_limit
 from src.app.services.security import create_access_token
@@ -32,6 +33,8 @@ async def _guest_rate_limit(request: Request, *, scope: str, principal: str | No
 @guest_router.post("/basket/quote", response_model=GuestBasketQuoteRead, status_code=status.HTTP_200_OK)
 async def quote_guest_basket_route(payload: GuestBasketQuotePayload, request: Request, db: AsyncSession = Depends(get_db)) -> GuestBasketQuoteRead:
     await _guest_rate_limit(request, scope="guest:basket_quote")
+    if is_commerce_blocked(request.headers, request.url.path, request.method):
+        return GuestBasketQuoteRead.model_validate(empty_basket_payload(user_id=0, basket_id=-1))
     return await quote_guest_basket(db, request, payload.items)
 
 

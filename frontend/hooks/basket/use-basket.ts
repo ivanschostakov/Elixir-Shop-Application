@@ -7,7 +7,6 @@ import { useAuth } from "@/providers/auth-provider.context"
 import { getBasket } from "@/services/api/basket"
 import { getGuestBasket } from "@/services/guest-cart"
 import type { BasketRead } from "@/types/basket"
-import { useCatalogAvailable } from "@/services/app-features"
 
 let basketLoadRequest: { isAuthenticated: boolean; promise: Promise<BasketRead> } | null = null
 
@@ -28,11 +27,10 @@ async function loadBasketSnapshot(isAuthenticated: boolean) {
 }
 
 export function useBasket(): UseBasketResult {
-    const catalogAvailable = useCatalogAvailable()
     const { isAuthenticated, isReady } = useAuth()
     const { data: basket, error, loading, reload, setData } = useAsyncData({
         deps: [isAuthenticated],
-        enabled: isReady && catalogAvailable,
+        enabled: isReady,
         fetcher: () => loadBasketSnapshot(isAuthenticated),
         initialData: getBasketSnapshot(),
     })
@@ -40,7 +38,7 @@ export function useBasket(): UseBasketResult {
     useEffect(() => subscribeBasketSnapshot(setData), [setData])
 
     return {
-        basket: catalogAvailable ? basket : null,
+        basket,
         error,
         loading,
         reload,

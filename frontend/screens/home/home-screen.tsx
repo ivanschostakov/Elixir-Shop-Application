@@ -46,7 +46,6 @@ import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { lightColors, type ThemeAccentName } from "@/theme/colors"
 import type { Banner } from "@/types/banner"
 import { formatMoney } from "@/utils/formatting"
-import { useCatalogAvailable } from "@/services/app-features"
 
 function getMediaBaseUrl(): string {
     const trimmedApiBaseUrl = API_BASE_URL.replace(/\/+$/, "")
@@ -230,7 +229,6 @@ function resolveInternalBannerHref(link: string | null | undefined): Href | null
 }
 
 export default function HomeScreen() {
-    const catalogAvailable = useCatalogAvailable()
     const homeScreenStyles = useThemeStyles(createHomeScreenStyles)
     const router = useRouter()
     const topInset = useAppSafeAreaInsets().top
@@ -239,16 +237,16 @@ export default function HomeScreen() {
     const { accentName, accentPalette, palette, themeName, toggleTheme } = useTheme()
     const homeHeaderMenuStyles = getHeaderStyles(topInset, windowHeight, palette)
     const { isAuthenticated, signOut } = useAuth()
-    const { banners, reload: reloadBanners } = useBanners(catalogAvailable)
-    const { categories, reload: reloadCategories } = useProductCategories(catalogAvailable)
-    const { loading: isSearchLoading, products: searchedProducts, query, reload: reloadSearchResults, setQuery } = useProductSearch(catalogAvailable)
+    const { banners, reload: reloadBanners } = useBanners(true)
+    const { categories, reload: reloadCategories } = useProductCategories(true)
+    const { loading: isSearchLoading, products: searchedProducts, query, reload: reloadSearchResults, setQuery } = useProductSearch(true)
     const {
         hasMore: hasMoreRecommendations,
         loadMore: loadMoreRecommendations,
         products: recommendedProducts,
         loadingMore: recommendationsLoadingMore,
         reload: reloadRecommendations,
-    } = useRecommendations({ surface: "home", enabled: catalogAvailable })
+    } = useRecommendations({ surface: "home" })
     const {
         hasMore: hasMoreGuestCatalog,
         loadMore: loadMoreGuestCatalog,
@@ -256,7 +254,7 @@ export default function HomeScreen() {
         loadingMore: guestCatalogLoadingMore,
         reload: reloadGuestCatalog,
     } = useInfiniteProductCatalog({
-        enabled: !isAuthenticated && catalogAvailable,
+        enabled: !isAuthenticated,
         pageSize: 8,
         sort: "newest",
     })
@@ -299,7 +297,7 @@ export default function HomeScreen() {
     const hasMoreRecommendationRail = isAuthenticated ? hasMoreRecommendations : hasMoreGuestCatalog
     const loadMoreRecommendationRail = isAuthenticated ? loadMoreRecommendations : loadMoreGuestCatalog
     const shouldShowActiveOrdersSection = isLoadingActiveOrders || activeOrders.length > 0
-    const shouldShowDraftsSection = catalogAvailable && (isLoadingOrderDrafts || orderDrafts.length > 0)
+    const shouldShowDraftsSection = isLoadingOrderDrafts || orderDrafts.length > 0
     const shouldShowOrdersBlock = isAuthenticated && (shouldShowActiveOrdersSection || shouldShowDraftsSection)
     const isDraftDeleting = useCallback((draftId: number) => deletingDraftIds.includes(draftId), [deletingDraftIds])
     const activeOrderCardToneStyle = isDarkMode
@@ -371,10 +369,10 @@ export default function HomeScreen() {
     const handleHomeScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
         const distanceFromBottom = contentSize.height - (layoutMeasurement.height + contentOffset.y)
-        if (catalogAvailable && distanceFromBottom < 360 && hasMoreRecommendationRail && !recommendationRailLoadingMore) {
+        if (distanceFromBottom < 360 && hasMoreRecommendationRail && !recommendationRailLoadingMore) {
             void loadMoreRecommendationRail()
         }
-    }, [catalogAvailable, hasMoreRecommendationRail, loadMoreRecommendationRail, recommendationRailLoadingMore])
+    }, [hasMoreRecommendationRail, loadMoreRecommendationRail, recommendationRailLoadingMore])
 
     const handleBannerLayout = useCallback((event: LayoutChangeEvent) => {
         const nextWidth = Math.round(event.nativeEvent.layout.width)
@@ -394,7 +392,7 @@ export default function HomeScreen() {
     )
 
     const refreshOrderDrafts = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
-        if (!isAuthenticated || !catalogAvailable) {
+        if (!isAuthenticated) {
             setOrderDrafts([])
             setIsLoadingOrderDrafts(false)
             return []
@@ -416,7 +414,7 @@ export default function HomeScreen() {
                 setIsLoadingOrderDrafts(false)
             }
         }
-    }, [isAuthenticated, catalogAvailable])
+    }, [isAuthenticated])
 
     const refreshActiveOrders = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
         if (!isAuthenticated) {
@@ -451,10 +449,6 @@ export default function HomeScreen() {
         setIsRefreshing(true)
 
         try {
-            if (!catalogAvailable) {
-                await refreshActiveOrders({ showLoading: false })
-                return
-            }
             await Promise.allSettled([
                 reloadBanners({ showLoading: false }),
                 reloadCategories({ showLoading: false }),
@@ -469,7 +463,6 @@ export default function HomeScreen() {
             setIsRefreshing(false)
         }
     }, [
-        catalogAvailable,
         hasSearchQuery,
         isAuthenticated,
         isRefreshing,
@@ -531,13 +524,13 @@ export default function HomeScreen() {
     }, [bannerCount, bannerWidth])
 
     useEffect(() => {
-        const banner = catalogAvailable ? visibleBanners[activeBannerIndex] : null
+        const banner = visibleBanners[activeBannerIndex]
         if (!banner || recordedBannerImpressionsRef.current.has(banner.id)) return
         recordedBannerImpressionsRef.current.add(banner.id)
         void recordBannerImpression(banner.id).catch(() => {
             recordedBannerImpressionsRef.current.delete(banner.id)
         })
-    }, [activeBannerIndex, visibleBanners, catalogAvailable])
+    }, [activeBannerIndex, visibleBanners])
 
     const handleBannerPress = (banner: Banner) => {
         const targetUrl = banner.inner_link || banner.outer_link
@@ -592,15 +585,15 @@ export default function HomeScreen() {
                     >
                         <View style={[homeScreenStyles.topGradientContent, { paddingTop: topInset + 14 }]}>
                             <View style={[homeScreenStyles.searchInputWrap, { backgroundColor: searchFieldBackgroundColor }]}>
-                                {catalogAvailable ? <View style={homeScreenStyles.searchIconWrap}>
+                                <View style={homeScreenStyles.searchIconWrap}>
                                     <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
                                         <Path
                                             d="M11 4a7 7 0 1 0 4.47 12.39l4.07 4.08 1.42-1.42-4.08-4.07A7 7 0 0 0 11 4Zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"
                                             fill={searchPlaceholderColor}
                                         />
                                     </Svg>
-                                </View> : null}
-                                {catalogAvailable ? <TextInput
+                                </View>
+                                <TextInput
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     onChangeText={setQuery}
@@ -609,7 +602,7 @@ export default function HomeScreen() {
                                     returnKeyType="search"
                                     style={[homeScreenStyles.searchInput, { color: searchTextColor }]}
                                     value={query}
-                                /> : <Text style={[homeScreenStyles.searchInput, { color: searchTextColor }]}>{t("app.name")}</Text>}
+                                />
                                 <View style={homeScreenStyles.searchInputActions}>
                                     {isSearchLoading ? <ActivityIndicator color={accentPalette.primary} size="small" /> : null}
                                     <HeaderMenu
@@ -646,7 +639,7 @@ export default function HomeScreen() {
                                 </View>
                             </View>
 
-                            {catalogAvailable && hasSearchQuery && searchPreviewProducts.length ? (
+                            {hasSearchQuery && searchPreviewProducts.length ? (
                                 <ScrollView
                                     horizontal
                                     contentContainerStyle={homeScreenStyles.searchPreviewRow}
@@ -718,7 +711,7 @@ export default function HomeScreen() {
                         />
                     ) : null}
                 </View>
-                {catalogAvailable ? <View style={homeScreenStyles.promoBannerSection}>
+                <View style={homeScreenStyles.promoBannerSection}>
                     <View style={homeScreenStyles.promoBanner}>
                         {bannerCount > 0 ? (
                             <View style={homeScreenStyles.promoBannerViewport} onLayout={handleBannerLayout}>
@@ -836,9 +829,7 @@ export default function HomeScreen() {
                             </ScrollView>
                         </View>
                     </View>
-                </View> : <View style={homeScreenStyles.recommendationsSection}>
-                    <Text style={{ color: palette.mutedText }}>{t("catalog.unavailableIos")}</Text>
-                </View>}
+                </View>
 
                 {shouldShowOrdersBlock ? (
                     <View style={homeScreenStyles.ordersBlock}>
@@ -1027,7 +1018,7 @@ export default function HomeScreen() {
                     </View>
                 ) : null}
 
-                {catalogAvailable && recommendationRailProducts.length ? (
+                {recommendationRailProducts.length ? (
                     <View style={homeScreenStyles.recommendationsSection}>
                         <ContentRail
                             title={t("recommendations.title")}

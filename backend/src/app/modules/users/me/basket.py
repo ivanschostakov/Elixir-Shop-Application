@@ -8,6 +8,7 @@ from src.app.services.recommendations import record_cart_add
 from src.app.services.customer_intelligence import record_customer_event_safe
 from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.app.services.catalog_merchandising import catalog_unit_price
+from src.app.services.platform_availability import empty_basket_payload, is_commerce_blocked
 from src.app.modules.users.me.schemas import UpdateOrderDraftPayload
 from src.app.services.basket import (
     _ensure_basket,
@@ -19,7 +20,7 @@ from src.app.services.basket import (
     update_basket_checkout_for_user,
 )
 from src.database import get_db
-from src.database.crud import clear_basket, create_basket_item, delete_basket_item, get_basket_item_by_id, update_basket_item
+from src.database.crud import clear_basket, create_basket_item, delete_basket_item, get_basket_by_user_id, get_basket_item_by_id, update_basket_item
 from src.database.crud.basket.basket_item import get_basket_item_by_basket_and_variant
 from src.database.models import Product, User
 from src.database.schemas import BasketItemCreate, BasketItemUpdate, BasketRead, OrderDraftCheckoutOptionsRead
@@ -27,8 +28,20 @@ from src.database.schemas import BasketItemCreate, BasketItemUpdate, BasketRead,
 my_basket_router = APIRouter(prefix="/basket", tags=["my_basket"])
 
 
+async def _empty_basket_view(db: AsyncSession, user_id: int) -> BasketRead:
+    basket = await get_basket_by_user_id(db, user_id)
+    return BasketRead.model_validate(empty_basket_payload(
+        user_id=user_id,
+        basket_id=basket.id if basket else 0,
+        created_at=basket.created_at if basket else None,
+        updated_at=basket.updated_at if basket else None,
+    ))
+
+
 @my_basket_router.get("", response_model=BasketRead, status_code=status.HTTP_200_OK)
 async def get_my_basket(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead:
+    if is_commerce_blocked(request.headers, request.url.path, request.method):
+        return await _empty_basket_view(db, current_user.id)
     await refresh_assigned_referrer_promo(db, user=current_user)
     await db.commit()
     return await _get_serialized_basket(request, db, current_user.id)
@@ -36,6 +49,8 @@ async def get_my_basket(request: Request, db: AsyncSession = Depends(get_db), cu
 
 @my_basket_router.post("", response_model=BasketRead, status_code=status.HTTP_200_OK)
 async def create_my_basket(request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead:
+    if is_commerce_blocked(request.headers, request.url.path, request.method):
+        return await _empty_basket_view(db, current_user.id)
     await refresh_assigned_referrer_promo(db, user=current_user)
     await db.commit()
     return await _get_serialized_basket(request, db, current_user.id)
