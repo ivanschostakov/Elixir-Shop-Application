@@ -1,12 +1,13 @@
 import { DownloadOutlined, LineChartOutlined } from "@ant-design/icons"
 import { useQuery } from "@tanstack/react-query"
 import { Button, Card, Col, Progress, Row, Segmented, Space, Statistic, Table, Tabs, Tag, Typography, message } from "antd"
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { apiDownload, apiRequest } from "../api/client"
 import type { AnalyticsSnapshot } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
 import { LinkedCard } from "../components/LinkedCard"
+import { MetricLineChart } from "../components/MetricLineChart"
 import { PageHeader } from "../components/PageHeader"
 import { QueryState } from "../components/QueryState"
 import { useLanguage } from "../i18n/LanguageProvider"
@@ -40,11 +41,9 @@ export function AnalyticsPage() {
   const query = useQuery({ queryKey: ["analytics", days], queryFn: () => apiRequest<AnalyticsSnapshot>(`/analytics?days=${days}`), refetchInterval: 60_000 })
   const data = query.data
   const copy = locale === "ru"
-    ? { title: "Аналитика", description: "Продажи, клиенты, товары, скидки и маркетинг", period: "Период", export: "CSV", sales: "Продажи", customers: "Клиенты", products: "Товары", discounts: "Скидки", marketing: "Маркетинг", revenue: "Выручка", paidOrders: "Оплаченные заказы", averageOrder: "Средний чек", units: "Единиц", repeat: "Повторные", trend: "Динамика", status: "Статус", count: "Кол-во", newCustomers: "Новые", active: "Активные", inactive: "Неактивные", abandoned: "Брошенные корзины", ltv: "LTV", orders: "Заказы", stock: "Остаток", lowStock: "Низкие остатки", source: "Источник", applications: "Применений", totalDiscount: "Сумма скидок", campaigns: "Кампании", delivery: "Доставка", clicks: "Клики", failures: "Ошибки", generated: "Обновлено", appOpens: "Открытия приложения", uniqueCustomers: "Уникальные клиенты", averageOpens: "Открытий на клиента", daily: "По дням", monthly: "По месяцам", views: "Просмотры", viewers: "Смотрели", conversion: "Конверсия в покупку", buyers: "Покупатели", referralProfiles: "Реферальные профили" }
-    : { title: "Analytics", description: "Sales, customers, products, discounts and marketing", period: "Period", export: "CSV", sales: "Sales", customers: "Customers", products: "Products", discounts: "Discounts", marketing: "Marketing", revenue: "Revenue", paidOrders: "Paid orders", averageOrder: "Average order", units: "Units", repeat: "Repeat", trend: "Trend", status: "Status", count: "Count", newCustomers: "New", active: "Active", inactive: "Inactive", abandoned: "Abandoned carts", ltv: "LTV", orders: "Orders", stock: "Stock", lowStock: "Low stock", source: "Source", applications: "Applications", totalDiscount: "Discount total", campaigns: "Campaigns", delivery: "Delivery", clicks: "Clicks", failures: "Failures", generated: "Updated", appOpens: "App opens", uniqueCustomers: "Unique customers", averageOpens: "Opens per customer", daily: "Daily", monthly: "Monthly", views: "Views", viewers: "Viewers", conversion: "Purchase conversion", buyers: "Buyers", referralProfiles: "Referral profiles" }
-  const maxRevenue = useMemo(() => Math.max(...(data?.sales.trend.map((point) => Number(point.revenue)) || [1]), 1), [data])
+    ? { title: "Аналитика", description: "Продажи, клиенты, товары, скидки и маркетинг", period: "Период", export: "CSV", sales: "Продажи", customers: "Клиенты", products: "Товары", discounts: "Скидки", marketing: "Маркетинг", revenue: "Выручка", paidOrders: "Оплаченные заказы", averageOrder: "Средний чек", units: "Единиц", repeat: "Повторные", trend: "Динамика", salesTrendExplanation: "Выручка — сумма оплаченных заказов за период. Оплаченные заказы — их количество; наведите на дату для точных значений.", status: "Статус", count: "Кол-во", newCustomers: "Новые", active: "Активные", inactive: "Неактивные", abandoned: "Брошенные корзины", ltv: "LTV", orders: "Заказы", stock: "Остаток", lowStock: "Низкие остатки", source: "Источник", applications: "Применений", totalDiscount: "Сумма скидок", campaigns: "Кампании", delivery: "Доставка", clicks: "Клики", failures: "Ошибки", generated: "Обновлено", appOpens: "Открытия приложения", uniqueCustomers: "Уникальные клиенты", averageOpens: "Открытий на клиента", opensExplanation: "Открытия — все зафиксированные запуски приложения. Уникальные клиенты — число разных авторизованных пользователей, открывавших приложение в периоде.", noOpens: "За выбранный период открытий нет", daily: "По дням", monthly: "По месяцам", views: "Просмотры", viewers: "Смотрели", conversion: "Конверсия в покупку", buyers: "Покупатели", referralProfiles: "Реферальные профили" }
+    : { title: "Analytics", description: "Sales, customers, products, discounts and marketing", period: "Period", export: "CSV", sales: "Sales", customers: "Customers", products: "Products", discounts: "Discounts", marketing: "Marketing", revenue: "Revenue", paidOrders: "Paid orders", averageOrder: "Average order", units: "Units", repeat: "Repeat", trend: "Trend", salesTrendExplanation: "Revenue is the value of paid orders in the period. Paid orders is their count; hover a date for exact values.", status: "Status", count: "Count", newCustomers: "New", active: "Active", inactive: "Inactive", abandoned: "Abandoned carts", ltv: "LTV", orders: "Orders", stock: "Stock", lowStock: "Low stock", source: "Source", applications: "Applications", totalDiscount: "Discount total", campaigns: "Campaigns", delivery: "Delivery", clicks: "Clicks", failures: "Failures", generated: "Updated", appOpens: "App opens", uniqueCustomers: "Unique customers", averageOpens: "Opens per customer", opensExplanation: "Opens is every recorded app launch. Unique customers is the number of distinct signed-in users who opened the app in the period.", noOpens: "No app opens in this period", daily: "Daily", monthly: "Monthly", views: "Views", viewers: "Viewers", conversion: "Purchase conversion", buyers: "Buyers", referralProfiles: "Referral profiles" }
   const openTrend = data?.customers.app_opens[openGranularity] || []
-  const maxOpens = useMemo(() => Math.max(...openTrend.map((point) => point.opens), 1), [openTrend])
   const exportCsv = async (section: AnalyticsSection) => {
     try {
       const result = await apiDownload(analyticsCsvPath(section, days))
@@ -87,7 +86,17 @@ export function AnalyticsPage() {
             <Col xs={24} md={6}><Card><Statistic title={copy.repeat} value={`${data.sales.summary.repeat_rate}%`} /></Card></Col>
           </Row>
           <Card title={<Space><LineChartOutlined />{copy.trend}</Space>}>
-            <div className="analytics-bars">{data.sales.trend.map((point) => <div key={point.date} className="analytics-bar-column" title={`${point.date}: ${money(point.revenue, "RUB", locale)}`}><div className="analytics-bar" style={{ height: `${Math.max(8, Number(point.revenue) / maxRevenue * 160)}px` }} /><small>{String(point.date).slice(5)}</small></div>)}</div>
+            <MetricLineChart
+              ariaLabel={`${copy.sales}: ${copy.trend}`}
+              emptyText={locale === "ru" ? "За выбранный период продаж нет" : "No sales in this period"}
+              description={copy.salesTrendExplanation}
+              data={data.sales.trend.map((point) => ({ key: point.date, label: point.date.slice(5), tooltipLabel: point.date, values: { revenue: Number(point.revenue), orders: point.orders } }))}
+              series={[
+                { key: "revenue", label: copy.revenue, color: "#0f766e", formatValue: (value) => money(value, "RUB", locale) },
+                { key: "orders", label: copy.paidOrders, color: "#6366f1", axis: "right", formatValue: (value) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US").format(value) },
+              ]}
+              leftAxisFormatter={(value) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value)}
+            />
           </Card>
           <Table rowKey="status" dataSource={data.sales.payment_statuses} pagination={false} columns={[{ title: copy.status, dataIndex: "status", render: (value: string) => paymentOrdersPath(value) ? <Link to={paymentOrdersPath(value)!}><Tag className="navigation-tag">{domainLabel(value, locale)}</Tag></Link> : <Tag>{domainLabel(value, locale)}</Tag> }, { title: copy.count, dataIndex: "count", align: "right", render: (value: number, row) => paymentOrdersPath(row.status) ? <Link className="table-value-link" to={paymentOrdersPath(row.status)!}>{value}</Link> : value }]} />
         </> : null}
@@ -108,7 +117,16 @@ export function AnalyticsPage() {
             title={<Space><LineChartOutlined />{copy.appOpens}</Space>}
             extra={<Segmented size="small" value={openGranularity} onChange={setOpenGranularity} options={[{ label: copy.daily, value: "daily" }, { label: copy.monthly, value: "monthly" }]} />}
           >
-            {openTrend.length ? <div className="analytics-bars">{openTrend.map((point) => <div key={point.period} className="analytics-bar-column" title={`${String(point.period).slice(0, 10)}: ${point.opens} · ${copy.uniqueCustomers}: ${point.customers}`}><div className="analytics-bar" style={{ height: `${Math.max(8, point.opens / maxOpens * 160)}px` }} /><small>{openGranularity === "daily" ? String(point.period).slice(5, 10) : String(point.period).slice(0, 7)}</small></div>)}</div> : <Typography.Text type="secondary">{locale === "ru" ? "За выбранный период открытий нет" : "No app opens in this period"}</Typography.Text>}
+            <MetricLineChart
+              ariaLabel={copy.appOpens}
+              emptyText={copy.noOpens}
+              description={copy.opensExplanation}
+              data={openTrend.map((point) => ({ key: point.period, label: openGranularity === "daily" ? point.period.slice(5, 10) : point.period.slice(0, 7), tooltipLabel: point.period.slice(0, 10), values: { opens: point.opens, customers: point.customers } }))}
+              series={[
+                { key: "opens", label: copy.appOpens, color: "#6366f1" },
+                { key: "customers", label: copy.uniqueCustomers, color: "#0f766e" },
+              ]}
+            />
           </Card>
           <Table rowKey="user_id" dataSource={data.customers.top_customers} pagination={{ pageSize: 10 }} columns={[{ title: copy.customers, render: (_: unknown, row) => <div className="table-primary">{hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.name}</strong></Link> : <strong>{row.name}</strong>}<small>{row.email || `#${row.user_id}`}</small></div> }, { title: copy.orders, dataIndex: "orders", align: "right" }, { title: copy.ltv, dataIndex: "ltv", render: (value: string) => money(value, "RUB", locale) }]} />
           <Row gutter={[16, 16]} className="analytics-device-grid">

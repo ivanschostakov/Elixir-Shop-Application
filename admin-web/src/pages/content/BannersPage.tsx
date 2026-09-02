@@ -1,10 +1,11 @@
 import { BarChartOutlined, EditOutlined, PlusOutlined, UploadOutlined } from "@ant-design/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Alert, Button, Card, Col, Descriptions, Form, Image, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tag, Typography, Upload, message } from "antd"
+import { Alert, Button, Card, Col, Descriptions, Form, Image, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tag, Upload, message } from "antd"
 import { useEffect, useState } from "react"
 import { apiRequest } from "../../api/client"
 import type { Banner, BannerStats, BannerUpload, Page } from "../../api/types"
 import { InternalLinkGuide } from "../../components/InternalLinkGuide"
+import { MetricLineChart } from "../../components/MetricLineChart"
 import { PageHeader } from "../../components/PageHeader"
 import { useLanguage } from "../../i18n/LanguageProvider"
 import { internalAppLinkValidator } from "../../utils/internalLinks"
@@ -85,7 +86,7 @@ export function BannersPage() {
       priority: "Приоритет", state: "Статус", updated: "Обновлено", edit: "Редактировать", save: "Сохранить", schedule: "Расписание", starts: "Старт", ends: "Финиш",
       audience: "Правила аудитории (JSON)", clicks: "Клики", impressions: "Показы", preview: "Предпросмотр", all: "Все статусы", saved: "Баннер сохранён", draft: "Черновик",
       scheduled: "Запланирован", published: "Опубликован", archived: "Архив",
-      guideTitle: "Как задавать внутренние ссылки", guide: "Используйте путь внутри приложения, начиная с одного символа /. Укажите только одну ссылку: внутреннюю или внешнюю.", carouselHint: "Для свайпа и автопрокрутки нужно минимум 2 опубликованных баннера с действующим расписанием. В приложении используется изображение для телефона, а на широком экране — изображение для компьютера.", statistics: "Статистика", ctr: "CTR", noStats: "За выбранный период событий нет", invalidAudience: "Правила аудитории должны быть объектом JSON",
+      guideTitle: "Как задавать внутренние ссылки", guide: "Используйте путь внутри приложения, начиная с одного символа /. Укажите только одну ссылку: внутреннюю или внешнюю.", carouselHint: "Для свайпа и автопрокрутки нужно минимум 2 опубликованных баннера с действующим расписанием. В приложении используется изображение для телефона, а на широком экране — изображение для компьютера.", statistics: "Статистика", ctr: "CTR", statsExplanation: "Показы — сколько раз баннер появился на экране. Клики — переходы по баннеру. CTR — доля кликов от показов.", noStats: "За выбранный период событий нет", invalidAudience: "Правила аудитории должны быть объектом JSON",
     }
     : {
       title: "Banners", description: "Minimal storefront promos: draft state, scheduling, preview and click tracking.", add: "Add", image: "Main image",
@@ -93,7 +94,7 @@ export function BannersPage() {
       priority: "Priority", state: "Status", updated: "Updated", edit: "Edit", save: "Save", schedule: "Schedule", starts: "Start", ends: "End",
       audience: "Audience JSON", clicks: "Clicks", impressions: "Impressions", preview: "Preview", all: "All statuses", saved: "Banner saved", draft: "Draft",
       scheduled: "Scheduled", published: "Published", archived: "Archived",
-      guideTitle: "Internal link guide", guide: "Use an in-app path beginning with a single /. Set either an internal or an external link, not both.", carouselHint: "Swipe and autoplay require at least 2 published banners within their active schedule. The app uses Mobile image; wide screens use Desktop.", statistics: "Statistics", ctr: "CTR", noStats: "No events in this period", invalidAudience: "Audience rules must be a JSON object",
+      guideTitle: "Internal link guide", guide: "Use an in-app path beginning with a single /. Set either an internal or an external link, not both.", carouselHint: "Swipe and autoplay require at least 2 published banners within their active schedule. The app uses Mobile image; wide screens use Desktop.", statistics: "Statistics", ctr: "CTR", statsExplanation: "Impressions is how often the banner appeared on screen. Clicks is banner navigation. CTR is clicks as a share of impressions.", noStats: "No events in this period", invalidAudience: "Audience rules must be a JSON object",
     }
 
   const query = useQuery({ queryKey: ["banners"], queryFn: () => apiRequest<Page<Banner>>("/banners?limit=100"), refetchInterval: 30_000 })
@@ -179,7 +180,6 @@ export function BannersPage() {
   const filteredBannerItems = statusFilter
     ? bannerItems.filter((banner) => banner.status === statusFilter)
     : bannerItems
-  const maxImpressions = Math.max(...(stats.data?.daily.map((point) => point.impressions) || [1]), 1)
 
   return <div className="page-stack">
     <PageHeader title={copy.title} description={copy.description} actions={<Button type="primary" icon={<PlusOutlined />} onClick={() => setEditing("new")}>{copy.add}</Button>} />
@@ -258,17 +258,18 @@ export function BannersPage() {
           <Col span={8}><Statistic title={copy.ctr} value={stats.data.ctr_percent} suffix="%" /></Col>
         </Row>
         <Card size="small" style={{ marginTop: 16 }}>
-          {stats.data.daily.some((point) => point.impressions || point.clicks) ? (
-            <div className="analytics-bars">
-              {stats.data.daily.map((point) => (
-                <div key={point.day} className="analytics-bar-column" title={`${point.day}: ${point.impressions} / ${point.clicks}`}>
-                  <strong>{point.clicks || ""}</strong>
-                  <div className="analytics-bar" style={{ height: `${Math.max(4, point.impressions / maxImpressions * 150)}px` }} />
-                  <small>{point.day.slice(5)}</small>
-                </div>
-              ))}
-            </div>
-          ) : <Typography.Text type="secondary">{copy.noStats}</Typography.Text>}
+          <MetricLineChart
+            ariaLabel={`${copy.statistics}: ${copy.impressions}, ${copy.clicks}, ${copy.ctr}`}
+            emptyText={copy.noStats}
+            description={copy.statsExplanation}
+            data={stats.data.daily.some((point) => point.impressions || point.clicks) ? stats.data.daily.map((point) => ({ key: point.day, label: point.day.slice(5), tooltipLabel: point.day, values: { impressions: point.impressions, clicks: point.clicks, ctr: Number(point.ctr_percent) } })) : []}
+            series={[
+              { key: "impressions", label: copy.impressions, color: "#6366f1" },
+              { key: "clicks", label: copy.clicks, color: "#0f766e" },
+              { key: "ctr", label: copy.ctr, color: "#d97706", axis: "right", formatValue: (value) => `${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-US", { maximumFractionDigits: 2 })}%` },
+            ]}
+            rightAxisFormatter={(value) => `${value.toLocaleString(locale === "ru" ? "ru-RU" : "en-US", { maximumFractionDigits: 1 })}%`}
+          />
         </Card>
         <Descriptions style={{ marginTop: 16 }} column={1}>
           <Descriptions.Item label={copy.guideTitle}>{statsBanner?.inner_link || statsBanner?.outer_link || "—"}</Descriptions.Item>

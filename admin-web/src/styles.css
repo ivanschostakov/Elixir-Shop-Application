@@ -61,10 +61,31 @@ button, input, textarea, select { font: inherit; }
 .metric-note { display: inline-block; margin-top: 8px; font-size: 12px; }
 .metric-note.positive { color: #15803d; }
 .chart-card, .attention-card { min-height: 310px; }
-.bar-chart { height: 220px; display: flex; align-items: flex-end; gap: 8px; overflow-x: auto; padding: 18px 4px 0; }
-.bar-column { flex: 1 0 28px; min-width: 28px; display: flex; align-items: center; flex-direction: column; justify-content: flex-end; gap: 5px; color: #7a8495; font-size: 10px; }
-.bar { width: min(28px, 78%); min-height: 8px; border-radius: 6px 6px 2px 2px; background: linear-gradient(180deg, #14b8a6, #0f766e); }
-.bar-value { font-size: 10px; color: #4b5565; }
+.metric-line-chart { min-width: 0; outline: none; }
+.metric-line-chart:focus-visible { border-radius: 10px; box-shadow: 0 0 0 3px rgb(15 118 110 / 18%); }
+.metric-line-chart-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 8px; color: #475467; font-size: 12px; }
+.metric-line-chart-legend span, .metric-line-chart-tooltip span { display: inline-flex; align-items: center; gap: 7px; }
+.metric-line-chart-legend i, .metric-line-chart-tooltip i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+.metric-line-chart-canvas { position: relative; width: 100%; min-height: 230px; }
+.metric-line-chart-canvas svg { display: block; width: 100%; height: 260px; touch-action: pan-y; overflow: visible; }
+.metric-line-chart-grid { stroke: #e6eaf0; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.metric-line-chart-axis { fill: #7a8495; font-size: 10px; }
+.metric-line-chart-x-axis { font-size: 9px; }
+.metric-line-chart-path { fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.metric-line-chart-cursor { stroke: #98a2b3; stroke-width: 1; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.metric-line-chart-point, .metric-line-chart-single-point { stroke: #fff; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.metric-line-chart-tooltip { position: absolute; z-index: 4; top: 8px; width: max-content; min-width: 230px; max-width: min(360px, calc(100vw - 48px)); padding: 13px 15px; border-radius: 12px; color: #f8fafc; background: #1f2937; box-shadow: 0 16px 40px rgb(15 23 42 / 24%); pointer-events: none; }
+.metric-line-chart-tooltip::after { content: ""; position: absolute; bottom: -7px; left: 50%; width: 14px; height: 14px; background: #1f2937; transform: translateX(-50%) rotate(45deg); }
+.metric-line-chart-tooltip-center { transform: translateX(-50%); }
+.metric-line-chart-tooltip-start { transform: translateX(-8%); }
+.metric-line-chart-tooltip-start::after { left: 16%; }
+.metric-line-chart-tooltip-end { transform: translateX(-92%); }
+.metric-line-chart-tooltip-end::after { left: 84%; }
+.metric-line-chart-tooltip > strong { display: block; margin-bottom: 9px; color: #d0d5dd; font-size: 12px; }
+.metric-line-chart-tooltip > div { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 3px 0; font-size: 13px; }
+.metric-line-chart-tooltip b { color: #fff; font-variant-numeric: tabular-nums; }
+.metric-line-chart-description { margin: 3px 0 0; color: #667085; font-size: 12px; line-height: 1.5; }
+.metric-line-chart-empty { min-height: 220px; display: grid; place-items: center; color: #7a8495; }
 .attention-icon { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: #f4f6f8; }
 .table-primary { min-width: 0; display: flex; flex-direction: column; }
 .table-primary small { color: #7a8495; font-size: 12px; }
@@ -106,9 +127,6 @@ button, input, textarea, select { font: inherit; }
 .phone-preview { margin-bottom: 16px; padding: 16px; border-radius: 18px; background: linear-gradient(180deg, #f8fbfb 0%, #eef5f4 100%); border: 1px solid #dfe8e6; }
 .phone-preview .ant-typography { margin-bottom: 6px !important; }
 .campaign-message-card { margin: 14px 0; }
-.analytics-bars { display: flex; align-items: flex-end; gap: 8px; min-height: 190px; overflow-x: auto; padding: 12px 4px 0; }
-.analytics-bar-column { display: flex; min-width: 26px; flex-direction: column; align-items: center; justify-content: flex-end; gap: 7px; color: #667085; }
-.analytics-bar { width: 16px; border-radius: 999px 999px 4px 4px; background: linear-gradient(180deg, #14b8a6 0%, #0f766e 100%); }
 .analytics-device-grid > .ant-col { display: flex; }
 .analytics-device-grid > .ant-col > .ant-card { width: 100%; height: 100%; }
 .ai-usage-card > .ant-card-head { align-items: center; }
@@ -118,11 +136,6 @@ button, input, textarea, select { font: inherit; }
 .ai-usage-summary .ant-card { width: 100%; height: 100%; background: linear-gradient(145deg, #fbfdfd 0%, #f4f9f8 100%); border-color: #e0ebe9; }
 .ai-usage-summary .ant-statistic-content { font-size: 22px; font-weight: 700; }
 .ai-usage-unique-note { display: block; margin: 0 0 12px; }
-.ai-usage-bars { min-height: 205px; display: flex; align-items: flex-end; gap: 7px; overflow-x: auto; padding: 20px 4px 4px; }
-.ai-usage-bar-column { min-width: 30px; flex: 1 0 30px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; color: #667085; font-size: 10px; }
-.ai-usage-bar-column > span { font-size: 10px; color: #475467; }
-.ai-usage-bar-column > small { white-space: nowrap; font-size: 9px; }
-.ai-usage-bar { width: min(22px, 76%); min-height: 6px; border-radius: 7px 7px 3px 3px; background: linear-gradient(180deg, #2dd4bf 0%, #0f766e 100%); box-shadow: 0 5px 12px rgb(15 118 110 / 14%); }
 .banner-thumb img, .banner-preview-card img { object-fit: cover; border-radius: 10px; }
 .banner-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 18px; }
 .banner-form-grid > div { min-width: 0; }
@@ -229,4 +242,6 @@ button, input, textarea, select { font: inherit; }
   .login-page { padding: 20px; }
   .invite-page { padding: 14px; }
   .invite-name-grid, .role-catalog-grid { grid-template-columns: 1fr; }
+  .metric-line-chart-tooltip { min-width: 205px; padding: 11px 12px; }
+  .metric-line-chart-tooltip > div { gap: 14px; }
 }

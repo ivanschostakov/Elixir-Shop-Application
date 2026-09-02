@@ -18,6 +18,7 @@ import { apiRequest } from "../api/client"
 import type { Dashboard, DashboardPreference } from "../api/types"
 import { useAuth } from "../auth/AuthProvider"
 import { LinkedCard } from "../components/LinkedCard"
+import { MetricLineChart } from "../components/MetricLineChart"
 import { PageHeader } from "../components/PageHeader"
 import { QueryState } from "../components/QueryState"
 import { useLanguage } from "../i18n/LanguageProvider"
@@ -33,8 +34,8 @@ export function DashboardPage() {
   const preferences = useQuery({ queryKey: ["dashboard-preferences"], queryFn: () => apiRequest<DashboardPreference>("/dashboard/preferences") })
   const data = query.data
   const copy = locale === "ru"
-    ? { title: "Главная", description: "Состояние магазина за последние 30 дней", revenue: "Выручка", paid: "Оплаченные заказы", average: "Средний чек", customers: "Новые клиенты", online: "Онлайн в приложении", attention: "Требует внимания", trend: "Динамика выручки", payment: "Ошибки оплаты", reviews: "Отзывы на модерации", stock: "Низкие остатки", baskets: "Брошенные корзины", integrations: "Ошибки интеграций", tasks: "Просроченные задачи", sla: "SLA команды", compliance: "Соблюдение SLA", breached: "Нарушенные задачи", customize: "Настроить", widgets: "Виджеты", save: "Сохранить" }
-    : { title: "Dashboard", description: "Store performance for the last 30 days", revenue: "Revenue", paid: "Paid orders", average: "Average order", customers: "New customers", online: "Online in app", attention: "Needs attention", trend: "Revenue trend", payment: "Payment errors", reviews: "Reviews to moderate", stock: "Low stock", baskets: "Abandoned baskets", integrations: "Integration errors", tasks: "Overdue tasks", sla: "Team SLA", compliance: "SLA compliance", breached: "Breached tasks", customize: "Customize", widgets: "Widgets", save: "Save" }
+    ? { title: "Главная", description: "Состояние магазина за последние 30 дней", revenue: "Выручка", paid: "Оплаченные заказы", average: "Средний чек", customers: "Новые клиенты", online: "Онлайн в приложении", attention: "Требует внимания", trend: "Динамика выручки", trendExplanation: "Выручка — сумма оплаченных заказов за день. Заказы — количество оплаченных заказов за тот же день.", noSales: "За этот период продаж нет", payment: "Ошибки оплаты", reviews: "Отзывы на модерации", stock: "Низкие остатки", baskets: "Брошенные корзины", integrations: "Ошибки интеграций", tasks: "Просроченные задачи", sla: "SLA команды", compliance: "Соблюдение SLA", breached: "Нарушенные задачи", customize: "Настроить", widgets: "Виджеты", save: "Сохранить" }
+    : { title: "Dashboard", description: "Store performance for the last 30 days", revenue: "Revenue", paid: "Paid orders", average: "Average order", customers: "New customers", online: "Online in app", attention: "Needs attention", trend: "Revenue trend", trendExplanation: "Revenue is the value of paid orders per day. Orders is the number of paid orders on the same day.", noSales: "No sales in this period", payment: "Payment errors", reviews: "Reviews to moderate", stock: "Low stock", baskets: "Abandoned baskets", integrations: "Integration errors", tasks: "Overdue tasks", sla: "Team SLA", compliance: "SLA compliance", breached: "Breached tasks", customize: "Customize", widgets: "Widgets", save: "Save" }
   const widgets = preferences.data?.widgets || ["revenue", "paid_orders", "average_order", "new_customers", "revenue_trend", "attention", "sla"]
   const visible = (code: string) => widgets.includes(code)
   const widgetOptions = [
@@ -44,7 +45,6 @@ export function DashboardPage() {
     mutationFn: () => apiRequest<DashboardPreference>("/dashboard/preferences", { method: "PUT", body: JSON.stringify({ widgets: draftWidgets, expected_updated_at: preferences.data?.updated_at || null }) }),
     onSuccess: () => { setCustomizeOpen(false); void queryClient.invalidateQueries({ queryKey: ["dashboard-preferences"] }) },
   })
-  const maxTrend = Math.max(...(data?.revenue_trend.map((point) => Number(point.revenue)) || [1]), 1)
   const attention = data ? [
     { label: copy.payment, value: data.metrics.failed_payments, icon: <WarningOutlined />, color: "#dc2626", path: hasPermission("orders.read") ? "/sales/orders?payment_status=failed" : null },
     { label: copy.reviews, value: data.metrics.pending_reviews, icon: <CommentOutlined />, color: "#d97706", path: hasPermission("reviews.read") ? "/content/reviews?status=pending" : null },
@@ -72,17 +72,17 @@ export function DashboardPage() {
           <Row gutter={[16, 16]}>
             {visible("revenue_trend") ? <Col xs={24} xl={visible("attention") ? 16 : 24}>
               <Card title={salesAnalyticsPath ? <Link className="section-navigation-link" to={salesAnalyticsPath}>{copy.trend}</Link> : copy.trend} className="chart-card">
-                {data.revenue_trend.length ? (
-                  <div className="bar-chart">
-                    {data.revenue_trend.map((point) => (
-                      <div className="bar-column" key={point.day} title={`${point.day}: ${money(point.revenue, "RUB", locale)}`}>
-                        <div className="bar-value">{point.orders}</div>
-                        <div className="bar" style={{ height: `${Math.max(8, (Number(point.revenue) / maxTrend) * 150)}px` }} />
-                        <span>{point.day.slice(5)}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : <Typography.Text type="secondary">{locale === "ru" ? "За этот период продаж нет" : "No sales in this period"}</Typography.Text>}
+                <MetricLineChart
+                  ariaLabel={copy.trend}
+                  emptyText={copy.noSales}
+                  description={copy.trendExplanation}
+                  data={data.revenue_trend.map((point) => ({ key: point.day, label: point.day.slice(5), tooltipLabel: point.day, values: { revenue: Number(point.revenue), orders: point.orders } }))}
+                  series={[
+                    { key: "revenue", label: copy.revenue, color: "#0f766e", formatValue: (value) => money(value, "RUB", locale) },
+                    { key: "orders", label: copy.paid, color: "#6366f1", axis: "right", formatValue: (value) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US").format(value) },
+                  ]}
+                  leftAxisFormatter={(value) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", { notation: "compact", maximumFractionDigits: 1 }).format(value)}
+                />
               </Card>
             </Col> : null}
             {visible("attention") ? <Col xs={24} xl={visible("revenue_trend") ? 8 : 24}>

@@ -57,6 +57,7 @@ import type {
 } from "../api/types"
 import type { AIUsageOverview, AIUsageSource } from "../api/aiUsageTypes"
 import { PageHeader } from "../components/PageHeader"
+import { MetricLineChart } from "../components/MetricLineChart"
 import { useAuth } from "../auth/AuthProvider"
 import { useLanguage } from "../i18n/LanguageProvider"
 import { domainLabel } from "../i18n/domain"
@@ -121,6 +122,7 @@ function AIUsageAnalyticsCard() {
     latency: "Среднее время ответа",
     model: "Текущая модель",
     trend: "Динамика запросов",
+    trendExplanation: "Запросы — все обращения к AI. Успешно — ответы без ошибки. Пользователи — уникальные аккаунты периода. Токены — полный объём входящих и исходящих токенов.",
     breakdown: "Разрез по моделям и ботам",
     topUsers: "Самые активные пользователи",
     customer: "Пользователь",
@@ -155,6 +157,7 @@ function AIUsageAnalyticsCard() {
     latency: "Average response time",
     model: "Current model",
     trend: "Request trend",
+    trendExplanation: "Requests is every AI request. Successful is responses without an error. Users is distinct accounts in the period. Tokens is total input and output usage.",
     breakdown: "Model and bot breakdown",
     topUsers: "Most active users",
     customer: "User",
@@ -201,7 +204,6 @@ function AIUsageAnalyticsCard() {
   const number = (value: number) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", { maximumFractionDigits: 2 }).format(value)
   const money = (value: number) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 }).format(value)
   const tabs = (analytics.data?.sources || []).map((source) => {
-    const maxRequests = Math.max(1, ...source.daily.map((point) => point.requests))
     const sourceCostLabel = source.source === "app" || source.source === "bitrix" ? copy.actualCost : copy.recordedCost
     return {
       key: source.source,
@@ -229,13 +231,30 @@ function AIUsageAnalyticsCard() {
           <Row gutter={[16, 16]}>
             <Col xs={24} xl={source.funnel.length ? 16 : 24}>
               <Card size="small" title={copy.trend}>
-                {source.daily.some((point) => point.requests > 0) ? <div className="ai-usage-bars">{source.daily.map((point) => (
-                  <div className="ai-usage-bar-column" key={`${point.period}-${point.period_end || ""}`} title={`${point.period}${point.period_end ? ` — ${point.period_end}` : ""}: ${point.requests} · ${number(point.total_tokens)} ${copy.tokens.toLowerCase()}`}>
-                    <span>{point.requests}</span>
-                    <div className="ai-usage-bar" style={{ height: `${Math.max(6, point.requests / maxRequests * 150)}px` }} />
-                    <small>{point.period.slice(5)}{point.period_end ? `–${point.period_end.slice(5)}` : ""}</small>
-                  </div>
-                ))}</div> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={copy.noData} />}
+                <MetricLineChart
+                  ariaLabel={`${sourceLabel(source.source)}: ${copy.trend}`}
+                  emptyText={copy.noData}
+                  description={copy.trendExplanation}
+                  data={source.daily.some((point) => point.requests > 0) ? source.daily.map((point) => ({
+                    key: `${point.period}-${point.period_end || ""}`,
+                    label: `${point.period.slice(5)}${point.period_end ? `–${point.period_end.slice(5)}` : ""}`,
+                    tooltipLabel: `${point.period}${point.period_end ? ` — ${point.period_end}` : ""}`,
+                    values: {
+                      requests: point.requests,
+                      successful: point.successful_requests,
+                      failed: point.failed_requests,
+                      users: point.unique_users,
+                      tokens: point.total_tokens,
+                    },
+                  })) : []}
+                  series={[
+                    { key: "requests", label: copy.requests, color: "#6366f1", formatValue: number },
+                    { key: "successful", label: copy.success, color: "#0f766e", formatValue: number },
+                    { key: "failed", label: copy.failures, color: "#dc2626", formatValue: number },
+                    { key: "users", label: copy.users, color: "#2563eb", formatValue: number },
+                    { key: "tokens", label: copy.tokens, color: "#d97706", axis: "right", formatValue: number },
+                  ]}
+                />
               </Card>
             </Col>
             {source.funnel.length ? <Col xs={24} xl={8}><Card size="small" title={copy.funnel}><Table rowKey="key" size="small" pagination={false} dataSource={source.funnel} columns={[
