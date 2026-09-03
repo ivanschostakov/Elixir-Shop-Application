@@ -28,6 +28,18 @@ if TYPE_CHECKING:
 ai_chat_router = APIRouter(prefix="/ai-chat", tags=["ai_chat"])
 
 
+@ai_chat_router.get("/attachments/{attachment_id}")
+async def download_private_attachment(attachment_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    from sqlalchemy import select
+    from src.database.models import Attachment, AIMessage
+    attachment = (await db.execute(select(Attachment).join(AIMessage).where(Attachment.id == attachment_id, AIMessage.user_id == current_user.id))).scalar_one_or_none()
+    if attachment is None or not Path(attachment.path).is_file():
+        raise HTTPException(404, "Вложение не найдено")
+    return FileResponse(attachment.path, media_type=attachment.mime_type or "application/octet-stream", filename=attachment.original_filename or attachment.filename, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+
+
 @ai_chat_router.get("", response_model=AIChatResponse, status_code=status.HTTP_200_OK)
 async def get_my_ai_chat(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:read"))) -> AIChatResponse:
     chat = await get_or_create_user_chat(db, user=current_user, professor_client=professor_client)
@@ -36,6 +48,12 @@ async def get_my_ai_chat(db: AsyncSession = Depends(get_db), current_user: User 
 
 @ai_chat_router.post("", response_model=AIChatResponse, status_code=status.HTTP_200_OK)
 async def send_my_ai_chat_message(request: Request, text: str = Form(...), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:send"))) -> AIChatResponse:
+    import config
+    if config.AI_COMPANION_ENABLED:
+        from src.app.services.ai.companion.service import profile_for
+        profile = await profile_for(db, current_user.id)
+        if profile and profile.enabled:
+            raise HTTPException(409, "Используйте режим сопровождения в обновлённом мобильном приложении")
     normalized_text = text.strip()
     if not normalized_text: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="text must not be empty")
     await ensure_app_ai_access(db, request=request, user=current_user)

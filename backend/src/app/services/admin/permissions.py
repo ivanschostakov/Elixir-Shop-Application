@@ -51,6 +51,7 @@ ALL_PERMISSIONS: tuple[str, ...] = (
     "notifications.manage",
     "community.read",
     "ai_chats.read",
+    "ai_companion.read_sensitive",
     "ai_chats.manage",
     "support.read",
     "support.reply",

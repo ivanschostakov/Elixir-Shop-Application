@@ -4,6 +4,7 @@ import { useIsFocused } from "@react-navigation/native"
 import { setBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { getMyAiChat, performAiChatAction, sendMyAiChatMessage } from "@/services/api/ai-chat"
+import { requestKey } from "@/services/api/companion"
 import type {
     AIAttachmentRead,
     AIChatActionPayload,
@@ -36,7 +37,7 @@ type UseAiChatResult = {
 const AI_REPLY_POLL_INTERVAL_MS = 1500
 const AI_REPLY_POLL_MAX_ATTEMPTS = 30
 
-export function useAiChat(): UseAiChatResult {
+export function useAiChat(companionEnabled = false): UseAiChatResult {
     const isFocused = useIsFocused()
     const [refreshing, setRefreshing] = useState(false)
     const [sending, setSending] = useState(false)
@@ -154,7 +155,7 @@ export function useAiChat(): UseAiChatResult {
         setSending(true)
 
         try {
-            const nextChat = await sendMyAiChatMessage(text, attachments)
+            const nextChat = await sendMyAiChatMessage(text, attachments, companionEnabled ? requestKey() : undefined)
             if (nextChat.basket) {
                 setBasketSnapshot(nextChat.basket)
             }

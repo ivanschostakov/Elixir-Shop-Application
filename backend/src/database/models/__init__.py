@@ -3,6 +3,7 @@ from .ai.chat import AIChat
 from .ai.message import AIMessage
 from .ai.usage import AIMessageUsage
 from .ai.security import AIChatAccessBan, AIChatSecurityEvent
+from .ai.companion import AICompanionProfile, AICompanionPlan, AICompanionEvent, AICompanionEntry, AICompanionReminder, AIProviderResource, AICompanionOperation
 from .auth.admin import Admin, AdminRoleAssignment
 from .auth.admin_identity import AdminIdentity
 from .auth.admin_session import AdminSession
@@ -92,6 +93,8 @@ from .referrals import (
 from .webhooks.webhook_delivery import WebhookDelivery
 
 __all__ = [
+    "AICompanionProfile", "AICompanionPlan", "AICompanionEvent", "AICompanionEntry",
+    "AICompanionReminder", "AIProviderResource", "AICompanionOperation",
     "Admin",
     "AdminIdentity",
     "AdminAlert",

@@ -15,6 +15,7 @@ class AIAttachmentBase(BaseModel):
 
 class AIAttachmentCreate(AIAttachmentBase):
     message_id: int = Field(ge=1)
+    is_private: bool = False
     filename: str | None = Field(default=None, min_length=1, max_length=255)
 
 
@@ -28,6 +29,9 @@ class AIAttachmentUpdate(BaseModel):
 
 class AIAttachmentRead(AIAttachmentBase):
     model_config = ConfigDict(from_attributes=True)
+
+    is_private: bool = False
+    download_path: str | None = None
 
     id: int
     message_id: int

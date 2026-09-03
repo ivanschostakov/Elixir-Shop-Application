@@ -99,4 +99,4 @@ def allow_push_for_platform(platform: str | None, data: dict) -> bool:
     if not config.APPLE_DEV_MODE or (platform or "").lower() != "ios":
         return True
     # A custom campaign must not evade the restriction by omitting its type.
-    return data.get("type") in {"order_status_changed", "support_reply"}
+    return data.get("type") in {"order_status_changed", "support_reply", "ai_companion"}

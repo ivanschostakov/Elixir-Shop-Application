@@ -53,6 +53,8 @@ export type AIInteractivePayload = {
 }
 
 export type AIAttachmentRead = {
+    is_private?: boolean
+    download_path?: string | null
     id: number
     message_id: number
     type: AttachmentType
@@ -66,6 +68,7 @@ export type AIAttachmentRead = {
 }
 
 export type AIMessageRead = {
+    companion_cards?: import("@/services/api/companion").CompanionCard[]
     id: number
     user_id: number
     chat_id: number

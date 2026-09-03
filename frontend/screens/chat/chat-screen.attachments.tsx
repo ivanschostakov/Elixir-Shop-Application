@@ -1,3 +1,4 @@
+import { getAuthTokens } from "@/services/auth/session"
 import { useEffect, useState, type ReactNode } from "react"
 import {
     Image,
@@ -336,6 +337,7 @@ function MessageImageAttachment({
     useEffect(() => {
         let isMounted = true
 
+        if (attachment.is_private) return () => { isMounted = false }
         Image.getSize(
             uri,
             (imageWidth, imageHeight) => {
@@ -349,7 +351,7 @@ function MessageImageAttachment({
         return () => {
             isMounted = false
         }
-    }, [uri])
+    }, [uri, attachment.is_private])
 
     return (
         <Image
@@ -358,7 +360,7 @@ function MessageImageAttachment({
                 setAspectRatio(normalizeImageAspectRatio(source.width, source.height))
             }}
             resizeMode="cover"
-            source={{ uri }}
+            source={{ uri, ...(attachment.is_private ? { headers: { Authorization: `Bearer ${getAuthTokens()?.accessToken ?? ""}` }, cache: "reload" as const } : {}) }}
             style={[
                 chatScreenStyles.messageImageAttachment,
                 {

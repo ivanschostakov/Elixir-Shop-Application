@@ -12,9 +12,10 @@ export function getMyAiChat(): Promise<AIChatResponse> {
     return apiGet<AIChatResponse>(aiChatEndpoint, undefined, { appIntegrityAction: "ai-chat:read" })
 }
 
-export function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = []): Promise<AIChatResponse> {
+export function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = [], companionRequestId?: string): Promise<AIChatResponse> {
     const formData = new FormData()
     formData.append("text", text)
+    if (companionRequestId) formData.append("client_request_id", companionRequestId)
 
     for (const attachment of attachments) {
         formData.append(
@@ -27,7 +28,7 @@ export function sendMyAiChatMessage(text: string, attachments: UploadableChatAtt
         )
     }
 
-    return apiPostMultipart<AIChatResponse>(aiChatEndpoint, formData, { appIntegrityAction: "ai-chat:send" })
+    return apiPostMultipart<AIChatResponse>(companionRequestId ? `${aiChatEndpoint}/companion/messages` : aiChatEndpoint, formData, { appIntegrityAction: companionRequestId ? "ai-companion" : "ai-chat:send", ...(companionRequestId ? { timeoutMs: 550000 } : {}) })
 }
 
 export function performAiChatAction(payload: AIChatActionPayload): Promise<AIChatActionResponse> {

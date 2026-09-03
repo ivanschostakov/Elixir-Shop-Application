@@ -143,9 +143,11 @@ async def list_ai_chats(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: AdminContext = Depends(require_permission("ai_chats.read")),
+    context: AdminContext = Depends(require_permission("ai_chats.read")),
 ) -> AdminPage[AdminAIChatListItem]:
     filters = []
+    if not context.has_permission("ai_companion.read_sensitive"):
+        filters.append(~AIChat.messages.any(AIMessage.is_sensitive.is_(True)))
     if q:
         pattern = f"%{q.strip()}%"
         filters.append(or_(
@@ -476,15 +478,19 @@ async def revoke_ai_chat_ban(
 @admin_ai_chats_router.get("/attachments/{attachment_id}")
 async def download_ai_chat_attachment(
     attachment_id: int,
+    request: Request,
     db: AsyncSession = Depends(get_db),
-    _: AdminContext = Depends(require_permission("ai_chats.read")),
+    context: AdminContext = Depends(require_permission("ai_chats.read")),
 ) -> FileResponse:
     attachment = await db.get(Attachment, attachment_id)
-    if attachment is None:
+    if attachment is None or (attachment.is_private and not context.has_permission("ai_companion.read_sensitive")):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI chat attachment not found")
     path = Path(attachment.path)
     if not path.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI chat attachment file not found")
+    if attachment.is_private:
+        await add_admin_audit(db, request, context, action="ai_companion.attachment.read", entity_type="ai_attachment", entity_id=attachment_id)
+        await db.commit()
     return FileResponse(
         path,
         media_type=attachment.mime_type or "application/octet-stream",
@@ -502,6 +508,8 @@ async def get_ai_chat_detail(
 ) -> AdminAIChatDetail:
     chat = await get_ai_chat_by_id(db, chat_id)
     if chat is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI chat not found")
+    if any(message.is_sensitive for message in chat.messages) and not context.has_permission("ai_companion.read_sensitive"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI chat not found")
     user = await db.get(User, chat.user_id)
     if user is None:

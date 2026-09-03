@@ -208,8 +208,8 @@ async def _verify_with_remote_service(request: Request, *, action: str, token: s
         return is_truthy_verdict(response.json())
 
 
-async def verify_app_integrity_request(request: Request, *, action: str, db: AsyncSession | None = None, current_user: User | None = None) -> None:
-    app_integrity_mode = mode()
+async def verify_app_integrity_request(request: Request, *, action: str, db: AsyncSession | None = None, current_user: User | None = None, force_enforce: bool = False) -> None:
+    app_integrity_mode = "enforce" if force_enforce else mode()
     if app_integrity_mode == "off": return
 
     token = (request.headers.get(APP_INTEGRITY_TOKEN_HEADER) or "").strip()

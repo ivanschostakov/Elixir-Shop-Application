@@ -82,11 +82,12 @@ services:
       - /bin/sh
       - -lc
       - |
-        mkdir -p /app/backend/media /app/backend/logs \
-        && chown -R 10001:10001 /app/backend/media /app/backend/logs \
+        mkdir -p /app/backend/media /app/backend/private_media /app/backend/logs \
+        && chown -R 10001:10001 /app/backend/media /app/backend/private_media /app/backend/logs \
         && exec su -s /bin/sh app -c "python -m src.workers.notifications"
     volumes:
       - ./backend/media:/app/backend/media
+      - ./backend/private_media:/app/backend/private_media
       - ./backend/logs:/app/backend/logs
 
   worker-moysklad-sync:

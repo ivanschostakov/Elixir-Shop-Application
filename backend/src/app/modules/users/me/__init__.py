@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from .ai_chat import ai_chat_router
+from .companion import companion_router
 from .avatar import avatar_router
 from .basket import my_basket_router
 from .benefits import my_benefits_router
@@ -19,6 +20,7 @@ from .support import support_router
 
 me_router = APIRouter(prefix="/me", tags=["me"])
 me_router.include_router(ai_chat_router)
+me_router.include_router(companion_router)
 me_router.include_router(avatar_router)
 me_router.include_router(my_basket_router)
 me_router.include_router(my_benefits_router)

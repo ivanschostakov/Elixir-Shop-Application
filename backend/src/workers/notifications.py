@@ -50,7 +50,19 @@ async def run_forever() -> None:
             try: await asyncio.wait_for(stop_event.wait(), timeout=community_interval_seconds)
             except TimeoutError: continue
 
-    await asyncio.gather(_run_marketing_loop(), _run_community_loop())
+    async def _run_companion_loop() -> None:
+        from src.app.services.ai.companion.jobs import run_once
+        while not stop_event.is_set():
+            try:
+                await run_once()
+            except Exception:
+                log.exception("companion notification tick failed")
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=60)
+            except TimeoutError:
+                continue
+
+    await asyncio.gather(_run_marketing_loop(), _run_community_loop(), _run_companion_loop())
 
 
 if __name__ == "__main__":

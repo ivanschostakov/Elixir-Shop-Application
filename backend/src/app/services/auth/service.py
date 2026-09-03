@@ -1046,6 +1046,10 @@ async def logout_user_session(request: Request, payload: UserLogoutPayload, db: 
 async def delete_user_account(request: Request, current_user: User, db: AsyncSession) -> AuthLogoutResponse:
     await _apply_auth_rate_limit(request, scope="auth:delete_account", principal=str(current_user.id), verify=True)
 
+    from src.app.services.ai.companion.service import erase_companion, profile_for
+    if await profile_for(db, current_user.id) is not None:
+        await erase_companion(db, current_user.id)
+
     now = ufa_now()
     current_user.email = None
     current_user.name = "Deleted"

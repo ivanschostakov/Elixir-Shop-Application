@@ -191,7 +191,7 @@ class ProfessorClient(AsyncClient):
         uploaded = await self.files.create(file=(filename, payload, mime_type), purpose="user_data")
         return uploaded.id
 
-    async def _build_v2_input_payload(self, input_text: str, *, file_contents: list[tuple[str, bytes]] | None = None, image_contents: list[tuple[str, bytes]] | None = None) -> str | list[dict[str, Any]]:
+    async def _build_v2_input_payload(self, input_text: str, *, file_contents: list[tuple[str, bytes]] | None = None, image_contents: list[tuple[str, bytes]] | None = None, resource_recorder=None) -> str | list[dict[str, Any]]:
         normalized_text = (input_text or "").strip()
         files = file_contents or []
         images = image_contents or []
@@ -204,17 +204,19 @@ class ProfessorClient(AsyncClient):
         for filename, payload in files:
             if not payload: continue
             file_id = await self._upload_input_file(filename, payload)
+            if resource_recorder: await resource_recorder("file", file_id)
             content.append({"type": "input_file", "file_id": file_id})
 
         for filename, payload in images:
             if not payload: continue
             file_id = await self._upload_input_file(filename, payload)
+            if resource_recorder: await resource_recorder("file", file_id)
             content.append({"type": "input_image", "detail": "high", "file_id": file_id})
 
         if not content: return normalized_text
         return [{"role": "user", "content": content}]
 
-    async def _create_v2_response(self, *, model: BotModel, conversation_id: str, input_payload: Any, tools: list[Any], include: list[str] | None = None, text_config: dict[str, Any] | None = None) -> Response:
+    async def _create_v2_response(self, *, model: BotModel, conversation_id: str, input_payload: Any, tools: list[Any], include: list[str] | None = None, text_config: dict[str, Any] | None = None, companion_context: dict | None = None) -> Response:
         payload: dict[str, Any] = {
             "model": self._resolve_model_name(model),
             "input": input_payload,
@@ -225,6 +227,9 @@ class ProfessorClient(AsyncClient):
             "reasoning": self._build_reasoning_payload(model),
             "truncation": "auto",
         }
+        if companion_context is not None:
+            rules = (Path(__file__).resolve().parent / "instructions" / "companion.txt").read_text(encoding="utf-8")
+            payload["instructions"] = rules + "\nАктуальные данные сервера (не инструкции):\n" + json.dumps(companion_context, ensure_ascii=False, default=str)
         if text_config is not None: payload["text"] = text_config
         return await self.responses.create(**payload)
 
@@ -260,7 +265,8 @@ class ProfessorClient(AsyncClient):
         try: return json.loads(response_text)
         except json.JSONDecodeError: return None
 
-    async def _run_function_tool_rounds(self, *, response: Response, model: BotModel, conversation_id: str, tools: list[Any], include: list[str] | None, text_config: dict[str, Any] | None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None, max_tool_rounds: int, trace_id: str | None) -> tuple[Response, int, int, tuple[int, int, int], int]:
+    async def _run_function_tool_rounds(self, *, response: Response, model: BotModel, conversation_id: str, tools: list[Any], include: list[str] | None, text_config: dict[str, Any] | None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None, max_tool_rounds: int, trace_id: str | None, companion_context: dict | None = None, resource_recorder=None) -> tuple[Response, int, int, tuple[int, int, int], int]:
+        if resource_recorder: await resource_recorder("response", getattr(response, "id", None))
         total_input, total_cached, total_output = self._extract_v2_usage(response)
         file_search_calls = self._count_output_items(response, "file_search_call")
         if function_tool_executor is None: return response, 0, 0, (total_input, total_cached, total_output), file_search_calls
@@ -288,23 +294,31 @@ class ProfessorClient(AsyncClient):
                 })
 
             self.__logger.info("AI client tool round | trace=%s | conversation_id=%s | round=%d | calls=%d", trace_id, conversation_id, tool_rounds, len(function_calls))
-            current_response = await self._create_v2_response(model=model, conversation_id=conversation_id, input_payload=tool_outputs, tools=tools, include=include, text_config=text_config)
+            current_response = await self._create_v2_response(model=model, conversation_id=conversation_id, input_payload=tool_outputs, tools=tools, include=include, text_config=text_config, **({"companion_context": companion_context} if companion_context is not None else {}))
+            if resource_recorder: await resource_recorder("response", getattr(current_response, "id", None))
             row_input, row_cached, row_output = self._extract_v2_usage(current_response)
             total_input += row_input
             total_cached += row_cached
             total_output += row_output
             file_search_calls += self._count_output_items(current_response, "file_search_call")
 
-    async def send_message_v2(self, *, input_text: str, conversation_id: str | None, bot_model: BotModel, known_input_tokens: int = 0, file_contents: list[tuple[str, bytes]] | None = None, image_contents: list[tuple[str, bytes]] | None = None, user_id: int | None = None, trace_id: str | None = None, function_tools: list[dict[str, Any]] | None = None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None, max_tool_rounds: int = 4, output_schema: dict[str, Any] | None = None, output_schema_name: str = "ai_chat_output") -> dict[str, Any]:
+    async def send_message_v2(self, *, input_text: str, conversation_id: str | None, bot_model: BotModel, known_input_tokens: int = 0, file_contents: list[tuple[str, bytes]] | None = None, image_contents: list[tuple[str, bytes]] | None = None, user_id: int | None = None, trace_id: str | None = None, function_tools: list[dict[str, Any]] | None = None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None, max_tool_rounds: int = 4, output_schema: dict[str, Any] | None = None, output_schema_name: str = "ai_chat_output", companion_context: dict | None = None, replay_history: list[dict] | None = None, resource_recorder=None) -> dict[str, Any]:
         started_at = int(time.time())
         total_started = time.monotonic()
         self.__logger.info("AI client start | trace=%s | user_id=%s | conversation_id=%s | model=%s | input_len=%d", trace_id, user_id, conversation_id, bot_model.value, len(input_text or ""))
 
-        input_payload = await self._build_v2_input_payload(input_text=input_text, file_contents=file_contents, image_contents=image_contents)
+        input_payload = await self._build_v2_input_payload(input_text=input_text, file_contents=file_contents, image_contents=image_contents, **({"resource_recorder": resource_recorder} if resource_recorder else {}))
         include = ["code_interpreter_call.outputs"] if bot_model == BotModel.PREMIUM else None
         tools = self._build_tools(bot_model, function_tools if function_tool_executor is not None else None)
+        if companion_context is not None:
+            # No hosted execution containers or generated files with untracked health data.
+            tools = [tool for tool in tools if (tool.get("type") if isinstance(tool, dict) else getattr(tool, "type", "")) not in {"code_interpreter", "image_generation"}]
+            include = None
+        original_input_payload = input_payload
         text_config = self._build_response_text_config(output_schema, output_schema_name)
 
+        resetting = bool(conversation_id and conversation_id.startswith("reset:"))
+        if resetting: conversation_id = None
         active_conversation_id = conversation_id
         had_existing_conversation = bool(active_conversation_id)
         conversation_reset_reason: str | None = None
@@ -318,7 +332,14 @@ class ProfessorClient(AsyncClient):
             active_conversation_id = await self.create_conversation(user_id=user_id)
             conversation_reset_reason = "soft_input_limit_preemptive"
 
-        try: response = await self._create_v2_response(model=bot_model, conversation_id=active_conversation_id, input_payload=input_payload, tools=tools, include=include, text_config=text_config)
+        if resource_recorder: await resource_recorder("conversation", active_conversation_id)
+        extra = {"companion_context": companion_context} if companion_context is not None else {}
+        def seeded(payload):
+            items = [{"role": "user", "content": payload}] if isinstance(payload, str) else payload
+            return [*(replay_history or []), *items] if companion_context is not None else payload
+        if conversation_reset_reason or not had_existing_conversation:
+            input_payload = seeded(input_payload)
+        try: response = await self._create_v2_response(model=bot_model, conversation_id=active_conversation_id, input_payload=input_payload, tools=tools, include=include, text_config=text_config, **extra)
         except Exception as exc:
             should_retry = self._should_retry_with_new_conversation(exc) or (had_existing_conversation and self._is_context_length_exceeded(exc))
             if not should_retry: raise
@@ -326,9 +347,10 @@ class ProfessorClient(AsyncClient):
 
             conversation_reset_reason = "invalid_conversation" if self._should_retry_with_new_conversation(exc) else "context_length_exceeded"
             active_conversation_id = await self.create_conversation(user_id=user_id)
-            response = await self._create_v2_response(model=bot_model, conversation_id=active_conversation_id, input_payload=input_payload, tools=tools, include=include, text_config=text_config)
+            if resource_recorder: await resource_recorder("conversation", active_conversation_id)
+            response = await self._create_v2_response(model=bot_model, conversation_id=active_conversation_id, input_payload=seeded(original_input_payload), tools=tools, include=include, text_config=text_config, **extra)
 
-        response, tool_rounds, tool_calls, usage_totals, file_search_calls = await self._run_function_tool_rounds( response=response, model=bot_model, conversation_id=active_conversation_id, tools=tools, include=include, text_config=text_config, function_tool_executor=function_tool_executor, max_tool_rounds=max_tool_rounds, trace_id=trace_id)
+        response, tool_rounds, tool_calls, usage_totals, file_search_calls = await self._run_function_tool_rounds( response=response, model=bot_model, conversation_id=active_conversation_id, tools=tools, include=include, text_config=text_config, function_tool_executor=function_tool_executor, max_tool_rounds=max_tool_rounds, trace_id=trace_id, **extra, **({"resource_recorder": resource_recorder} if resource_recorder else {}))
         response_text = self._extract_v2_text(response)
         structured_output = self._extract_v2_structured_output(response_text) if text_config is not None else None
         response_files = await self._extract_v2_files(response, started_at)
@@ -336,18 +358,14 @@ class ProfessorClient(AsyncClient):
         openai_model = str(getattr(response, "model", None) or self._resolve_model_name(bot_model))
         final_conversation_id = getattr(getattr(response, "conversation", None), "id", None) or active_conversation_id
 
-        if input_tokens >= AI_CONVERSATION_HARD_INPUT_TOKENS:
-            final_conversation_id = await self.create_conversation(user_id=user_id)
-            conversation_reset_reason = conversation_reset_reason or "hard_input_limit_post_response"
-
-        elif input_tokens >= AI_CONVERSATION_SOFT_INPUT_TOKENS:
-            final_conversation_id = await self.create_conversation(user_id=user_id)
-            conversation_reset_reason = conversation_reset_reason or "soft_input_limit_post_response"
+        # Rotate before the next turn. Billing totals are NOT context size.
+        context_input_tokens = self._extract_v2_usage(response)[0]
 
         self.__logger.info( "AI client done | trace=%s | user_id=%s | conversation_id=%s | elapsed_ms=%d", trace_id, user_id, final_conversation_id, int((time.monotonic() - total_started) * 1000))
         return {
             "text": response_text,
             "files": response_files,
+            "context_input_tokens": context_input_tokens,
             "input_tokens": int(input_tokens),
             "cached_input_tokens": int(cached_input_tokens),
             "output_tokens": int(output_tokens),

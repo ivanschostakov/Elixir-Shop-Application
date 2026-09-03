@@ -120,10 +120,12 @@ async function persistChatMode(mode: ChatMode) {
     }
 }
 
+import { CompanionPanel, CompanionCards, useCompanion } from "@/screens/chat/companion"
+
 export default function ChatScreen() {
     const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const router = useRouter()
-    const routeParams = useLocalSearchParams<{ mode?: string | string[]; topicId?: string | string[]; conversationId?: string | string[] }>()
+    const routeParams = useLocalSearchParams<{ mode?: string | string[]; topicId?: string | string[]; conversationId?: string | string[]; companion?: string }>()
     const { t } = useLanguage()
     const { isDark, palette, themeName } = useTheme()
     const { width: screenWidth } = useWindowDimensions()
@@ -131,7 +133,8 @@ export default function ChatScreen() {
     const [cameraPermission, requestCameraPermission] = useCameraPermissions()
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
-    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat()
+    const companion = useCompanion()
+    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.enabled)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [activeActionId, setActiveActionId] = useState<string | null>(null)
@@ -814,6 +817,7 @@ export default function ChatScreen() {
                             )}
                             style={chatScreenStyles.messagesScroll}
                         >
+                            <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} />
                             {messages.length ? (
                                 <View style={chatScreenStyles.messageList}>
                                     {messages.map((message, messageIndex) => {
@@ -890,6 +894,7 @@ export default function ChatScreen() {
                                                             {getMessageMeta(message)}
                                                         </Text>
                                                     </Pressable>
+                                                    {!isUserMessage ? <CompanionCards controller={companion} message={message} onChanged={refresh} /> : null}
                                                     {!isUserMessage && message.interactive ? (
                                                         <AIInteractiveContent
                                                             activeActionId={activeActionId}

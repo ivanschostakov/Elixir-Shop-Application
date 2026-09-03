@@ -43,6 +43,11 @@ export function isImageAttachment(attachment: AIAttachmentRead) {
 }
 
 export function getReadAttachmentUri(attachment: AIAttachmentRead) {
+    if (attachment.is_private) {
+        return attachment.download_path?.startsWith("/api/v1/users/me/ai-chat/attachments/")
+            ? `${getApiMediaBaseUrl()}${attachment.download_path}`
+            : ""
+    }
     const rawPath = String(attachment.relative_path || "")
 
     if (DIRECT_ATTACHMENT_URI_PATTERN.test(rawPath)) {

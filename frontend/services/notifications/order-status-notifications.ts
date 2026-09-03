@@ -268,6 +268,9 @@ function resolvePushTarget(data: PushNotificationData): Href | null {
         }
         case "ai_reply":
             return ROUTES.chat
+        case "ai_companion":
+        case "ai_companion_supply":
+            return { pathname: ROUTES.chat, params: { mode: "ai", companion: "1" } }
         case "support_reply": {
             const conversationId = asPositiveInt(data.conversation_id)
             return {

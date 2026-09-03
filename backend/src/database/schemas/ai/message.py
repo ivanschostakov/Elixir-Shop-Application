@@ -37,6 +37,8 @@ class AIMessageBase(BaseModel):
 
 class AIMessageCreate(AIMessageBase):
     context_json: dict[str, Any] | None = None
+    client_request_id: str | None = Field(default=None, max_length=64)
+    is_sensitive: bool = False
 
 
 class AIMessageUpdate(BaseModel):
@@ -50,6 +52,7 @@ class AIMessageRead(AIMessageBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    companion_cards: list[dict[str, Any]] = Field(default_factory=list)
     attachments: list[AIAttachmentRead] = Field(default_factory=list)
     interactive: AIInteractivePayload | None = None
     usage: AIMessageUsageRead | None = None
