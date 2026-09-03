@@ -35,6 +35,10 @@ def _normalize_openai_json_schema(node: Any) -> Any:
             for key, value in node.items()
             if key not in {"default", "title"}
         }
+        # Pydantic Decimal emits a negative lookahead unsupported by OpenAI.
+        # Keep decimal strings (no float precision loss); domain bounds still run server-side.
+        if normalized.get("type") == "string" and str(normalized.get("pattern", "")).startswith("^(?!^[-+.]*$)"):
+            normalized["pattern"] = r"^[+-]?([0-9]+([.][0-9]*)?|[.][0-9]+)$"
         properties = normalized.get("properties")
         if isinstance(properties, dict):
             normalized["type"] = "object"

@@ -164,6 +164,8 @@ def test_strict_schema_and_ordinary_chat_isolation():
     schema = build_ai_chat_output_schema(include_companion=True)
     def visit(node):
         if isinstance(node, dict):
+            pattern = node.get("pattern", "")
+            assert not any(token in pattern for token in ("(?=", "(?!", "(?<=", "(?<!"))
             if "properties" in node:
                 assert node["additionalProperties"] is False
                 assert set(node["required"]) == set(node["properties"])
@@ -173,6 +175,12 @@ def test_strict_schema_and_ordinary_chat_isolation():
             for value in node:
                 visit(value)
     visit(schema)
+    import re
+    decimal_pattern = schema["$defs"]["Nutrition"]["properties"]["kcal"]["anyOf"][1]["pattern"]
+    assert re.fullmatch(decimal_pattern, "1918.5")
+    assert re.fullmatch(decimal_pattern, "0.000001")
+    assert not re.fullmatch(decimal_pattern, "not a number")
+    assert not re.fullmatch(decimal_pattern, ".")
 
 
 def test_erasure_deletes_items_before_conversation_and_response():
