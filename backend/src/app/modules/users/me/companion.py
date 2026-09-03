@@ -35,6 +35,8 @@ async def availability(user: User = Depends(get_current_user)):
 
 @companion_router.get("")
 async def state(user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    await service.ensure_default_profile(db, user.id)
+    await db.commit()
     return await service.get_state(db, user.id)
 
 
@@ -105,10 +107,11 @@ async def message(request: Request, text: str = Form(...), client_request_id: st
         raise HTTPException(422, "Сообщение слишком длинное")
     if not text.strip():
         raise HTTPException(422, "Сообщение пустое")
-    profile = await service.profile_for(db, user.id)
+    profile = await service.ensure_default_profile(db, user.id)
+    await db.commit()
     if profile is None or not profile.enabled:
         raise HTTPException(403, "Сопровождение отключено")
-    await service.require_consent(db, user.id)
+    await service.require_chat_consent(db, user.id, profile)
     cache = get_cache_service().client
     if cache is None:
         raise HTTPException(503, "Чат временно недоступен; ручные записи работают")

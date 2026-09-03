@@ -58,6 +58,67 @@ async def enable(db, user):
     return await service.profile_for(db, user.id)
 
 
+def test_default_profile_for_existing_customer_never_fabricates_consent(monkeypatch):
+    monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
+    async def run():
+        async with database() as (db, user):
+            db.add(AIChat(user_id=user.id, conversation_id="existing-customer-chat", current_tokens=0, total_tokens=0))
+            await db.commit()
+            profile = await service.ensure_default_profile(db, user.id)
+            await db.commit()
+            assert profile.enabled and profile.version == 1 and profile.data == {}
+            assert not profile.settings["course_reminders"] and not profile.settings["nutrition_auto_eligible"]
+            assert await service.consent_for(db, user.id) is None
+            assert (await service.ensure_default_profile(db, user.id)).id == profile.id
+            assert (await service.get_state(db, user.id))["consent_required"]
+            assert await service.assert_session_active(db, user.id, profile.id) is profile
+            context = await service.context_for(db, user.id)
+            assert context["storage_consent_required"] and context["profile"] == {} and context["today"] is None
+            with pytest.raises(HTTPException) as missing_consent:
+                await act(db, user, "entry", entry=EntryData(kind="weight", weight_kg=80, occurred_at=datetime.now(timezone.utc)))
+            assert missing_consent.value.status_code == 409
+            assert not list((await db.execute(select(AICompanionEntry))).scalars())
+            assert await service.consent_for(db, user.id) is None
+            await act(db, user, "entry", entry=EntryData(kind="weight", weight_kg=80, occurred_at=datetime.now(timezone.utc)), consent_version=config.AI_COMPANION_CONSENT_VERSION, adult_confirmed=True)
+            assert service.consent_is_current(await service.consent_for(db, user.id))
+            assert len(list((await db.execute(select(AICompanionEntry))).scalars())) == 1
+    asyncio.run(run())
+
+
+def test_auto_start_preserves_data_and_explicit_opt_out_even_after_erasure(monkeypatch):
+    monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
+    async def run():
+        async with database() as (db, user):
+            profile = await service.ensure_default_profile(db, user.id)
+            await db.commit()
+            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(age=30, goal="course"), consent_version=config.AI_COMPANION_CONSENT_VERSION, adult_confirmed=True)
+            fields = ("id", "version", "enabled", "data", "settings", "target_history")
+            original = {field: getattr(profile, field) for field in fields}
+            reloaded = await service.ensure_default_profile(db, user.id)
+            assert {field: getattr(reloaded, field) for field in fields} == original
+            await act(db, user, "disable", expected_version=profile.version)
+            assert not (await service.ensure_default_profile(db, user.id)).enabled
+            await service.erase_companion(db, user.id)
+            await db.commit()
+            assert await service.profile_for(db, user.id) is None
+            assert not (await service.ensure_default_profile(db, user.id)).enabled
+    asyncio.run(run())
+
+
+def test_opt_out_before_any_consent_is_remembered(monkeypatch):
+    monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
+    async def run():
+        async with database() as (db, user):
+            await service.ensure_default_profile(db, user.id)
+            await db.commit()
+            await service.erase_companion(db, user.id)
+            await db.commit()
+            consent = await service.consent_for(db, user.id)
+            assert not consent.is_granted and consent.granted_at is None
+            assert not (await service.ensure_default_profile(db, user.id)).enabled
+    asyncio.run(run())
+
+
 def test_nutrition_eligibility_confirmation_history_and_stale_draft(monkeypatch):
     monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
     monkeypatch.setattr(config, "AI_COMPANION_NUTRITION_RULES_JSON", "")
@@ -218,7 +279,8 @@ def test_recurring_is_deduplicated_and_available_without_push(monkeypatch):
     asyncio.run(run())
 
 
-def test_companion_turn_persists_draft_private_upload_and_deduplicates(monkeypatch, tmp_path):
+@pytest.mark.parametrize("has_consent", [True, False])
+def test_companion_turn_persists_draft_private_upload_and_deduplicates(monkeypatch, tmp_path, has_consent):
     from io import BytesIO
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
@@ -232,7 +294,8 @@ def test_companion_turn_persists_draft_private_upload_and_deduplicates(monkeypat
     monkeypatch.setattr(chat_service, "record_customer_event_safe", AsyncMock())
     async def run():
         async with database() as (db, user):
-            profile = await enable(db, user)
+            profile = await enable(db, user) if has_consent else await service.ensure_default_profile(db, user.id)
+            await db.commit()
             entry = EntryData(kind="weight", occurred_at=datetime.now(timezone.utc), weight_kg=80)
             seen = {}
             async def respond(**kwargs):
@@ -250,10 +313,19 @@ def test_companion_turn_persists_draft_private_upload_and_deduplicates(monkeypat
             assert attachment.is_private and "/attachments/" in attachment.download_path
             assert seen["input_text"] == "Вес 80 кг"
             assert "companion_context" in seen and not seen["companion_context"]["commerce_allowed"]
+            if not has_consent:
+                assert seen["companion_context"]["storage_consent_required"]
+                assert seen["companion_context"]["profile"] == {}
+                assert await service.consent_for(db, user.id) is None
             assert "calculate_course_supply" not in {t["name"] for t in seen["function_tools"]}
             repeat = await chat_service.send_user_chat_message(db, user=user, text="Вес 80 кг", attachments=None, professor_client=professor, allow_commerce=False, companion_profile=profile, client_request_id="request-turn-001")
             assert len(repeat.chat.messages) == 2
             professor.send_message_v2.assert_awaited_once()
+            if not has_consent:
+                card = read.messages[-1].companion_cards[0]
+                await act(db, user, "confirm", message_id=read.messages[-1].id, action_id=card["id"], action_token=card["action_token"], consent_version=config.AI_COMPANION_CONSENT_VERSION, adult_confirmed=True)
+                assert service.consent_is_current(await service.consent_for(db, user.id))
+                assert len(list((await db.execute(select(AICompanionEntry))).scalars())) == 1
     asyncio.run(run())
 
 

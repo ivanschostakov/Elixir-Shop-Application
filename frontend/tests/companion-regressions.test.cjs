@@ -2,6 +2,22 @@ const { test } = require("node:test")
 const assert = require("node:assert/strict")
 const loadTs = require("./load-ts.cjs")
 
+test("first save asks once; opening chat never grants consent and cancellation saves nothing", async () => {
+    const { withStorageConsent, CompanionActionCancelled } = loadTs("screens/chat/companion-consent.ts")
+    const state = { consent_required: true, consent_version: "companion-v1" }
+    const action = { kind: "confirm", message_id: 42, action_id: "card", action_token: "token" }
+    let prompts = 0
+    await assert.rejects(withStorageConsent(state, action, async () => { prompts++; return false }), CompanionActionCancelled)
+    const approved = await withStorageConsent(state, action, async version => { prompts++; assert.equal(version, "companion-v1"); return true })
+    assert.deepEqual(approved, { ...action, adult_confirmed: true, consent_version: "companion-v1" })
+    assert.equal(action.adult_confirmed, undefined)
+    assert.equal(await withStorageConsent({ ...state, consent_required: false }, action, async () => { throw Error("must not prompt") }), action)
+    for (const kind of ["disable", "cancel", "delete_entry"]) {
+        assert.deepEqual(await withStorageConsent(state, { kind }, async () => { throw Error("must not prompt") }), { kind })
+    }
+    assert.equal(prompts, 2)
+})
+
 test("companion OTA handles an older backend without masking authentication or server errors", async () => {
     class ApiError extends Error { constructor(status) { super(String(status)); this.status = status } }
     let failure = new ApiError(404)

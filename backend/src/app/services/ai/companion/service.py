@@ -31,10 +31,65 @@ async def profile_for(db: AsyncSession, user_id: int):
     return (await db.execute(select(AICompanionProfile).where(AICompanionProfile.user_id == user_id).execution_options(populate_existing=True))).scalar_one_or_none()
 
 
+async def consent_for(db, user_id):
+    return (await db.execute(select(CustomerConsent).where(CustomerConsent.user_id == user_id, CustomerConsent.purpose == "ai_companion", CustomerConsent.channel == "app"))).scalar_one_or_none()
+
+
+def consent_is_current(consent):
+    return bool(consent and consent.is_granted and consent.policy_version == config.AI_COMPANION_CONSENT_VERSION)
+
+
+async def ensure_default_profile(db, user_id):
+    """All native customers start in companion mode, without granting consent for them."""
+    profile = await profile_for(db, user_id)
+    if profile is not None:
+        return profile  # Preserve an explicit opt-out and all existing data/settings.
+    await db.execute(select(User.id).where(User.id == user_id).with_for_update())
+    profile = await profile_for(db, user_id)
+    if profile is None:
+        consent = await consent_for(db, user_id)
+        profile = AICompanionProfile(user_id=user_id, enabled=consent is None or consent.is_granted, data={}, settings=Settings().model_dump(mode="json"), target_history=[])
+        db.add(profile)
+        await db.flush()
+    return profile
+
+
 async def require_consent(db, user_id):
-    consent = (await db.execute(select(CustomerConsent).where(CustomerConsent.user_id == user_id, CustomerConsent.purpose == "ai_companion", CustomerConsent.channel == "app"))).scalar_one_or_none()
+    consent = await consent_for(db, user_id)
+    if not consent_is_current(consent):
+        raise HTTPException(409, "Подтвердите согласие при сохранении личных данных")
+
+
+async def grant_consent(db, user_id, action):
+    if action.consent_version != config.AI_COMPANION_CONSENT_VERSION or not action.adult_confirmed:
+        raise HTTPException(422, "Необходимо подтвердить совершеннолетие и актуальное согласие")
+    consent = await consent_for(db, user_id)
+    if consent is None:
+        consent = CustomerConsent(user_id=user_id, purpose="ai_companion", channel="app", source="app")
+        db.add(consent)
+    consent.is_granted, consent.policy_version, consent.granted_at, consent.revoked_at = True, action.consent_version, now_utc(), None
+    consent.last_changed_at = now_utc()
+    await db.flush()
+
+
+async def revoke_consent(db, user_id):
+    # Also remember opt-outs made before the first saved personal record.
+    consent = await consent_for(db, user_id)
+    if consent is None:
+        consent = CustomerConsent(user_id=user_id, purpose="ai_companion", channel="app", source="app", policy_version=config.AI_COMPANION_CONSENT_VERSION)
+        db.add(consent)
+    consent.is_granted, consent.revoked_at, consent.last_changed_at = False, now_utc(), now_utc()
+    await db.flush()
+
+
+async def require_chat_consent(db, user_id, profile):
+    consent = await consent_for(db, user_id)
+    # An empty default profile can chat and propose drafts immediately. Never
+    # reuse previously saved personal state after consent expires or is revoked.
+    if consent is None and not profile.data and not profile.target_history:
+        return
     if not consent or not consent.is_granted or consent.policy_version != config.AI_COMPANION_CONSENT_VERSION:
-        raise HTTPException(409, "Подтвердите актуальное согласие на сопровождение")
+        await require_consent(db, user_id)
 
 
 async def assert_session_active(db, user_id, profile_id):
@@ -42,7 +97,7 @@ async def assert_session_active(db, user_id, profile_id):
     profile = await profile_for(db, user_id)
     if profile is None or profile.id != profile_id or not profile.enabled:
         raise HTTPException(409, "Сопровождение отключено или его данные удалены")
-    await require_consent(db, user_id)
+    await require_chat_consent(db, user_id, profile)
     return profile
 
 
@@ -77,9 +132,8 @@ async def get_state(db, user_id):
         return base
     profile = await profile_for(db, user_id)
     if profile is None:
-        return {**base, "profile": None, "plan": None, "events": [], "entries": []}
-    consent = (await db.execute(select(CustomerConsent).where(CustomerConsent.user_id == user_id, CustomerConsent.purpose == "ai_companion", CustomerConsent.channel == "app"))).scalar_one_or_none()
-    base["consent_required"] = not consent or not consent.is_granted or consent.policy_version != config.AI_COMPANION_CONSENT_VERSION
+        return {**base, "consent_required": True, "profile": None, "plan": None, "events": [], "entries": []}
+    base["consent_required"] = not consent_is_current(await consent_for(db, user_id))
     settings = Settings.model_validate(profile.settings)
     now = now_utc()
     local = now.astimezone(ZoneInfo(settings.timezone))
@@ -94,6 +148,8 @@ async def context_for(db, user_id):
     if not state.get("profile") or not state["profile"]["enabled"]:
         return None
     profile = state["profile"]
+    if state["consent_required"]:
+        return {"as_of": now_utc().isoformat(), "profile": {}, "profile_version": profile["version"], "timezone": profile["settings"].get("timezone", "Europe/Moscow"), "active_plan": None, "today": None, "latest_weight": None, "upcoming_events": [], "pending_confirmations": [], "storage_consent_required": True}
     pending_messages = list((await db.execute(select(AIMessage).where(AIMessage.user_id == user_id, AIMessage.is_sensitive.is_(True), AIMessage.sender == "ai").order_by(AIMessage.id.desc()).limit(5))).scalars().all())
     pending = [card for message in pending_messages for card in (message.context_json or {}).get("companion_cards", []) if card.get("state") == "pending"][:3]
     weights = (await db.execute(select(AICompanionEntry).where(AICompanionEntry.user_id == user_id, AICompanionEntry.kind == "weight").order_by(AICompanionEntry.occurred_at.desc(), AICompanionEntry.id.desc()).limit(1))).scalar_one_or_none()
@@ -196,32 +252,28 @@ async def apply_action(db: AsyncSession, user_id: int, action: Action):
         return receipt.result
     profile = await profile_for(db, user_id)
     if action.kind == "enable":
-        if action.consent_version != config.AI_COMPANION_CONSENT_VERSION or not action.adult_confirmed:
-            raise HTTPException(422, "Необходимо подтвердить совершеннолетие и актуальное согласие")
+        await grant_consent(db, user_id, action)
         if profile is None:
             profile = AICompanionProfile(user_id=user_id, data={}, settings=(action.settings or Settings()).model_dump(mode="json"), target_history=[])
             db.add(profile)
             await db.flush()
         profile.enabled = True
-        consent = (await db.execute(select(CustomerConsent).where(CustomerConsent.user_id == user_id, CustomerConsent.purpose == "ai_companion", CustomerConsent.channel == "app"))).scalar_one_or_none()
-        if consent is None:
-            consent = CustomerConsent(user_id=user_id, purpose="ai_companion", channel="app", source="app")
-            db.add(consent)
-        consent.is_granted, consent.policy_version, consent.granted_at, consent.revoked_at = True, action.consent_version, now_utc(), None
-        consent.last_changed_at = now_utc()
     elif profile is None:
         raise HTTPException(409, "Сначала включите сопровождение")
     elif action.kind == "disable":
         require_version(profile.version, action.expected_version)
         profile.enabled = False
         await cancel_reminders(db, user_id)
-        await db.execute(update(CustomerConsent).where(CustomerConsent.user_id == user_id, CustomerConsent.purpose == "ai_companion").values(is_granted=False, revoked_at=now_utc(), last_changed_at=now_utc()))
+        await revoke_consent(db, user_id)
         # The next ordinary chat must not inherit medical context from this session.
         await invalidate_conversation(db, user_id)
     elif not profile.enabled:
         raise HTTPException(403, "Сопровождение отключено")
     else:
-        await require_consent(db, user_id)
+        if action.kind not in {"cancel", "delete_entry"}:
+            if action.consent_version is not None:
+                await grant_consent(db, user_id, action)
+            await require_consent(db, user_id)
         if action.kind in {"confirm", "cancel"}:
             await apply_card(db, user_id, profile, action)
         else:
@@ -404,4 +456,4 @@ async def erase_companion(db, user_id):
     # Provider cleanup waits out the maximum in-flight turn (540 s); local records vanish now.
     # Remove actual sensitive message content too, otherwise it can rehydrate memory.
     await db.execute(delete(AIMessage).where(AIMessage.user_id == user_id, AIMessage.is_sensitive.is_(True)))
-    await db.execute(update(CustomerConsent).where(CustomerConsent.user_id == user_id, CustomerConsent.purpose == "ai_companion").values(is_granted=False, revoked_at=now_utc(), last_changed_at=now_utc()))
+    await revoke_consent(db, user_id)

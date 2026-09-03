@@ -7,6 +7,7 @@ import { getErrorMessage } from "@/utils/errors"
 import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, getCompanionEntries, getCompanionEvents, getCompanionSummary, getCompanionSupply, getNutritionSuggestion } from "@/services/api/companion"
 import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
 import type { AIMessageRead } from "@/services/api/ai-chat.types"
+import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
 
 type Page = "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
 type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry }
@@ -37,26 +38,44 @@ export function useCompanion() {
             const availability = await getCompanionAvailability()
             if (availability.available) {
                 setState(previous => previous ?? availability)
-                setState(await getCompanion())
+                const next = await getCompanion()
+                setState(next)
+                setError("")
+                return next
             }
-            else setState(availability)
+            setState(availability)
             setError("")
+            return availability
         } catch (e) { setError(getErrorMessage(e)) }
     }, [])
     useEffect(() => { if (focused) void refresh() }, [focused, refresh])
+    const resolveEnabled = async () => {
+        if (Platform.OS === "web") return false
+        if (state?.profile) return state.profile.enabled
+        if (state?.available === false) return false
+        const next = await refresh()
+        if (!next) throw new Error("Не удалось загрузить чат. Попробуйте ещё раз.")
+        return !!next.profile?.enabled
+    }
     const perform = async (action: CompanionAction) => {
         if (busyRef.current) throw new Error("Дождитесь завершения предыдущего действия")
         busyRef.current = true; setBusy(true); setError("")
         try {
-            const result = await actCompanion(action)
+            const payload = await withStorageConsent(state, action, version => new Promise(resolve => {
+                Alert.alert("Сохранить личные данные?", "Приложение сохранит профиль, курс и дневник; нужный контекст будет передаваться OpenAI для ответов. Данные можно удалить в настройках. Нажимая кнопку ниже, вы подтверждаете возраст 18+ и согласие на обработку этих данных (" + version + ").", [
+                    { text: "Не сохранять", style: "cancel", onPress: () => resolve(false) },
+                    { text: "Мне есть 18 — сохранить", onPress: () => resolve(true) },
+                ], { cancelable: true, onDismiss: () => resolve(false) })
+            }))
+            const result = await actCompanion(payload)
             setState(result.state)
             return result.state
         } finally { busyRef.current = false; setBusy(false) }
     }
     const attempt = async (operation: () => Promise<unknown>) => {
-        try { await operation() } catch (e) { setError(getErrorMessage(e)) }
+        try { await operation() } catch (e) { if (!(e instanceof CompanionActionCancelled)) setError(getErrorMessage(e)) }
     }
-    return { state, setState, enabled: !!state?.profile?.enabled, busy, error, setError, editor, setEditor, refresh, perform, attempt }
+    return { state, setState, enabled: !!state?.profile?.enabled, resolveEnabled, busy, error, setError, editor, setEditor, refresh, perform, attempt }
 }
 
 function Copy({ children }: { children: React.ReactNode }) {
@@ -127,12 +146,11 @@ export function CompanionCards({ controller: c, message, onChanged }: { controll
 
 export function CompanionPanel({ controller: c, onChanged, openRequested }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean }) {
     const { palette } = useTheme()
-    useEffect(() => { if (openRequested && c.state?.available) c.setEditor({ page: c.enabled ? "home" : "consent" }) }, [openRequested, c.state?.available]) // Open a push deep link once availability is known.
+    useEffect(() => { if (openRequested && c.state?.profile) c.setEditor({ page: "home" }) }, [openRequested, !!c.state?.profile]) // Wait for the profile, not just availability.
     if (Platform.OS === "web" || !c.state?.available) return null
     const changed = async () => { await c.refresh(); await onChanged() }
     return <View style={[styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-        <Button label={c.enabled ? "Мой курс · дневник · прогресс" : "Включить сопровождение"} onPress={() => c.setEditor({ page: c.enabled && !c.state?.consent_required ? "home" : "consent" })} />
-        {c.state.profile && !c.enabled ? <Button label="Мои сохранённые данные" onPress={() => c.setEditor({ page: "home" })} /> : null}
+        <Button label="Мой курс · дневник · прогресс" disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} />
         {c.error ? <><Copy>{c.error}</Copy><Button label="Обновить" onPress={() => void changed()} /></> : null}
         <Modal visible={!!c.editor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => c.setEditor(null)}>
             <KeyboardAvoidingView style={{ flex: 1, backgroundColor: palette.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -158,6 +176,7 @@ function CompanionContent({ controller: c, onChanged }: { controller: Controller
     if (page === "summary" || page === "journal" || page === "events" || page === "supply") return <ReviewPanel controller={c} onChanged={onChanged} />
     return <>
         <Copy>Сопровождение {profile?.enabled ? "включено" : "выключено"}. Данные сохраняются после подтверждения; AI не назначает препараты и не меняет дозировки.</Copy>
+        {!profile?.enabled ? <Button label="Возобновить сопровождение" onPress={() => open("consent")} /> : null}
         <View style={styles.row}>{(["profile", "plan", "meal", "weight", "wellbeing", "journal", "summary", "supply", "settings", "events"] as Page[]).map((p, i) => <Button key={p} label={["Профиль", "Мой курс", "Записать еду", "Вес", "Самочувствие", "Дневник", "Итоги", "Запас", "Настройки", "История событий"][i]} onPress={() => open(p)} />)}</View>
         {state.today ? <><Copy>Сегодня записано: {state.today.meals_logged} приёмов пищи</Copy><NutritionCopy value={state.today.nutrition} /></> : null}
         {profile?.data.nutrition ? <><Copy>Ваш ориентир на день:</Copy><NutritionCopy value={profile.data.nutrition} /></> : null}
@@ -339,7 +358,7 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
 }
 
 const styles = StyleSheet.create({
-    panel: { borderWidth: 1, borderRadius: 16, padding: 12, marginBottom: 16, gap: 8 },
+    panel: { borderWidth: 1, borderRadius: 16, padding: 4, gap: 8 },
     row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     button: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, alignSelf: "flex-start", minHeight: 44 },
     card: { padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "#8191a333", gap: 10, marginVertical: 5 },

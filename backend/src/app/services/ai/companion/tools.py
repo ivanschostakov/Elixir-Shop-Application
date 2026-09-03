@@ -20,7 +20,7 @@ COMPANION_TOOLS = [
     function("get_entries", "Read confirmed diary entries, newest first, up to 200.", {**DATES, "kind": {"type": "string", "enum": ["meal", "weight", "wellbeing"]}}),
     function("get_progress_summary", "Get complete server-calculated totals for the period; do not sum a paginated diary.", DATES),
     function("calculate_course_supply", "Calculate package needs from the existing confirmed plan. This does not prescribe or buy anything.", {"days": {"type": "integer", "minimum": 1, "maximum": 90}}),
-    function("calculate_nutrition_targets", "Get an optional server-calculated nutrition target. Returns unavailable without approved rules. User confirmation is still required."),
+    function("calculate_nutrition_targets", "Get an optional server-calculated nutrition target. Requires a complete confirmed adult profile, recent weight and nutrition eligibility. User confirmation is still required."),
 ]
 
 
@@ -43,6 +43,8 @@ class CompanionToolExecutor:
         profile = await service.profile_for(self.db, self.user_id)
         if profile is None or not profile.enabled:
             return {"ok": False, "error": "companion_disabled"}
+        if not service.consent_is_current(await service.consent_for(self.db, self.user_id)):
+            return {"ok": False, "error": "personal_data_not_confirmed", "message": "Чат уже работает. Предложите карточку по данным пользователя; согласие запрашивается только при первом сохранении. Сохранённый профиль и дневник пока недоступны."}
         try:
             if name == "get_active_plan":
                 result = service.dump(await service.current_plan(self.db, self.user_id))

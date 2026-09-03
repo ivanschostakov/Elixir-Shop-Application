@@ -252,9 +252,11 @@ def test_sensitive_admin_chat_requires_explicit_permission(monkeypatch):
 
 
 def test_companion_tools_are_user_scoped_and_commerce_is_enforced(monkeypatch):
+    import config
     from src.app.services.ai.companion import service
     from src.app.services.ai.companion.tools import CompanionToolExecutor
     monkeypatch.setattr(service, "profile_for", AsyncMock(return_value=SimpleNamespace(enabled=True, settings={})))
+    monkeypatch.setattr(service, "consent_for", AsyncMock(return_value=SimpleNamespace(is_granted=True, policy_version=config.AI_COMPANION_CONSENT_VERSION)))
     read = AsyncMock(return_value=None)
     monkeypatch.setattr(service, "current_plan", read)
     async def run():
@@ -264,4 +266,18 @@ def test_companion_tools_are_user_scoped_and_commerce_is_enforced(monkeypatch):
         read.assert_awaited_once_with(None, 123)
         assert not (await executor.execute("calculate_course_supply", {"days": 1}))["ok"]
         assert not (await executor.execute("get_entries", {"from_date": "2026-01-01", "to_date": "2027-01-01", "kind": "meal"}))["ok"]
+    asyncio.run(run())
+
+
+def test_default_chat_cannot_read_personal_tools_before_first_save(monkeypatch):
+    from src.app.services.ai.companion import service
+    from src.app.services.ai.companion.tools import CompanionToolExecutor
+    monkeypatch.setattr(service, "profile_for", AsyncMock(return_value=SimpleNamespace(enabled=True)))
+    monkeypatch.setattr(service, "consent_for", AsyncMock(return_value=None))
+    read = AsyncMock()
+    monkeypatch.setattr(service, "current_plan", read)
+    async def run():
+        result = await CompanionToolExecutor(None, 123).execute("get_active_plan")
+        assert result["error"] == "personal_data_not_confirmed"
+        read.assert_not_awaited()
     asyncio.run(run())

@@ -134,7 +134,8 @@ export default function ChatScreen() {
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
     const companion = useCompanion()
-    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.enabled)
+    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.resolveEnabled)
+    const [companionPanelHeight, setCompanionPanelHeight] = useState(0)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [activeActionId, setActiveActionId] = useState<string | null>(null)
@@ -766,6 +767,9 @@ export default function ChatScreen() {
                     </Pressable>
                     <ChatModeSwitcher mode={chatMode} onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />
                 </View>
+                <View pointerEvents="box-none" onLayout={event => setCompanionPanelHeight(event.nativeEvent.layout.height)} style={{ position: "absolute", top: topBarOffset + 56, left: spacing.md, right: spacing.md, zIndex: 11 }}>
+                    <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} />
+                </View>
 
                 {loading && !chat && chatMode === "ai" ? (
                     <View style={chatScreenStyles.initialStateOverlay}>
@@ -797,7 +801,7 @@ export default function ChatScreen() {
                             contentContainerStyle={[
                                 chatScreenStyles.messagesContent,
                                 {
-                                    paddingTop: topBarOffset + 56,
+                                    paddingTop: topBarOffset + 56 + companionPanelHeight + (companionPanelHeight ? 8 : 0),
                                     paddingBottom: composerOffset,
                                 },
                             ]}
@@ -817,7 +821,6 @@ export default function ChatScreen() {
                             )}
                             style={chatScreenStyles.messagesScroll}
                         >
-                            <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} />
                             {messages.length ? (
                                 <View style={chatScreenStyles.messageList}>
                                     {messages.map((message, messageIndex) => {

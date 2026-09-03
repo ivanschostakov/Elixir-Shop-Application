@@ -37,7 +37,7 @@ type UseAiChatResult = {
 const AI_REPLY_POLL_INTERVAL_MS = 1500
 const AI_REPLY_POLL_MAX_ATTEMPTS = 30
 
-export function useAiChat(companionEnabled = false): UseAiChatResult {
+export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false): UseAiChatResult {
     const isFocused = useIsFocused()
     const [refreshing, setRefreshing] = useState(false)
     const [sending, setSending] = useState(false)
@@ -155,7 +155,8 @@ export function useAiChat(companionEnabled = false): UseAiChatResult {
         setSending(true)
 
         try {
-            const nextChat = await sendMyAiChatMessage(text, attachments, companionEnabled ? requestKey() : undefined)
+            const useCompanion = typeof companionEnabled === "function" ? await companionEnabled() : companionEnabled
+            const nextChat = await sendMyAiChatMessage(text, attachments, useCompanion ? requestKey() : undefined)
             if (nextChat.basket) {
                 setBasketSnapshot(nextChat.basket)
             }
