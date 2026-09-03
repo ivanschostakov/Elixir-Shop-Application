@@ -3,7 +3,6 @@ import json
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy import delete, select, update
@@ -15,6 +14,7 @@ from src.database.models import AIChat, AIMessage, Attachment, CustomerConsent, 
 from src.database.models.ai.companion import AICompanionEntry, AICompanionEvent, AICompanionOperation, AICompanionPlan, AICompanionProfile, AICompanionReminder, AIProviderResource
 from .domain import calculate_nutrition, convert_amount, package_count, parse_package, schedule_events
 from .schemas import Action, EntryData, Nutrition, PlanData, ProfileData, Proposal, Settings
+from .timezones import normalize_timezone, timezone_info
 
 
 def now_utc():
@@ -39,7 +39,7 @@ def consent_is_current(consent):
     return bool(consent and consent.is_granted and consent.policy_version == config.AI_COMPANION_CONSENT_VERSION)
 
 
-async def ensure_default_profile(db, user_id):
+async def ensure_default_profile(db, user_id, device_timezone=None):
     """All native customers start in companion mode, without granting consent for them."""
     profile = await profile_for(db, user_id)
     if profile is not None:
@@ -48,10 +48,34 @@ async def ensure_default_profile(db, user_id):
     profile = await profile_for(db, user_id)
     if profile is None:
         consent = await consent_for(db, user_id)
-        profile = AICompanionProfile(user_id=user_id, enabled=consent is None or consent.is_granted, data={}, settings=Settings().model_dump(mode="json"), target_history=[])
+        settings = Settings(timezone=device_timezone) if device_timezone else Settings()
+        profile = AICompanionProfile(user_id=user_id, enabled=consent is None or consent.is_granted, data={}, settings=settings.model_dump(mode="json"), target_history=[])
         db.add(profile)
         await db.flush()
     return profile
+
+
+async def sync_device_timezone(db, user_id, value):
+    """Technical device setting only: never rewrite history, consent or course instants."""
+    zone = normalize_timezone(value)
+    await db.execute(select(User.id).where(User.id == user_id).with_for_update())
+    profile = await profile_for(db, user_id)
+    if profile is None or profile.settings.get("timezone") == zone:
+        return False
+    profile.settings = {**profile.settings, "timezone": zone}
+    # Do not increment the personal-data version: travel does not invalidate
+    # pending profile/plan cards. The same user lock serializes settings writes.
+    await db.execute(update(AICompanionReminder).where(
+        AICompanionReminder.user_id == user_id, AICompanionReminder.kind != "course",
+        AICompanionReminder.status == "pending", AICompanionReminder.message_id.is_(None),
+        AICompanionReminder.attempts == 0,
+    ).values(status="cancelled"))
+    await db.flush()
+    if profile.enabled and consent_is_current(await consent_for(db, user_id)):
+        from .jobs import schedule_recurring
+        await schedule_recurring(db, profile, now_utc())
+        await db.flush()
+    return True
 
 
 async def require_consent(db, user_id):
@@ -122,7 +146,7 @@ async def summary_for(db, user_id, start, end):
     totals = {key: str(sum((Decimal(str(e.data["nutrition"][key])) for e in meals), Decimal(0))) for key in ("kcal", "protein", "fat", "carbs")}
     events = list((await db.execute(select(AICompanionEvent).where(AICompanionEvent.user_id == user_id, AICompanionEvent.scheduled_at >= start, AICompanionEvent.scheduled_at < end, AICompanionEvent.status != "cancelled"))).scalars().all())
     profile = await profile_for(db, user_id)
-    zone = ZoneInfo(Settings.model_validate(profile.settings if profile else {}).timezone)
+    zone = timezone_info(Settings.model_validate(profile.settings if profile else {}).timezone)
     return {"from": start.isoformat(), "to": end.isoformat(), "nutrition": totals, "meals_logged": len(meals), "days_with_meals": len({e.occurred_at.astimezone(zone).date() for e in meals}), "weight_measurements": len(weights), "weight_change_kg": str(Decimal(weights[-1].data["weight_kg"]) - Decimal(weights[0].data["weight_kg"])) if len(weights) > 1 else None, "events": {status: sum(e.status == status for e in events) for status in ("done", "skipped", "pending")}, "coverage_note": "Итоги только по внесённым записям; отсутствие записи не означает отсутствие еды или выполненного действия."}
 
 
@@ -136,7 +160,7 @@ async def get_state(db, user_id):
     base["consent_required"] = not consent_is_current(await consent_for(db, user_id))
     settings = Settings.model_validate(profile.settings)
     now = now_utc()
-    local = now.astimezone(ZoneInfo(settings.timezone))
+    local = now.astimezone(timezone_info(settings.timezone))
     today = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     tomorrow = (local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).astimezone(timezone.utc)
     events = list((await db.execute(select(AICompanionEvent).where(AICompanionEvent.user_id == user_id, AICompanionEvent.scheduled_at >= today, AICompanionEvent.scheduled_at < now + timedelta(days=7), AICompanionEvent.status != "cancelled").order_by(AICompanionEvent.scheduled_at).limit(100))).scalars().all())

@@ -58,6 +58,76 @@ async def enable(db, user):
     return await service.profile_for(db, user.id)
 
 
+def test_device_timezone_changes_local_days_not_history_or_course_instants(monkeypatch):
+    from src.app.modules.users.me.companion import bounds
+    from datetime import date
+    import copy
+    now = datetime(2030, 1, 2, 10, tzinfo=timezone.utc)
+    monkeypatch.setattr(service, "now_utc", lambda: now)
+    monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
+    async def run():
+        async with database() as (db, user):
+            profile = await enable(db, user)
+            await act(db, user, "settings", expected_version=profile.version, settings=Settings(timezone="Europe/Moscow", daily_time="18:00", course_reminders=True))
+            await act(db, user, "entry", entry=EntryData(kind="meal", name="Test", occurred_at=datetime(2030, 1, 2, 0, 30, tzinfo=timezone.utc), nutrition=Nutrition(kcal=100, protein=10, fat=0, carbs=15)))
+            plan = PlanData.model_validate({"name": "Unchanged course", "timezone": "Europe/Moscow", "items": [{"name": "Example", "stages": [{"start_date": "2030-01-03", "end_date": "2030-01-04", "amount": 1, "unit": "mg", "times": ["12:00"]}]}]})
+            await act(db, user, "plan", expected_version=profile.version, plan=plan)
+            await schedule_recurring(db, profile, now)
+            await db.commit()
+            assert (await service.get_state(db, user.id))["today"]["meals_logged"] == 1
+            entry = (await db.execute(select(AICompanionEntry))).scalar_one()
+            before_entry = copy.deepcopy(service.dump(entry))
+            before_plan = copy.deepcopy(service.dump(await service.current_plan(db, user.id)))
+            before_events = [copy.deepcopy(service.dump(e)) for e in (await db.execute(select(AICompanionEvent).order_by(AICompanionEvent.id))).scalars()]
+            before_course = [copy.deepcopy(service.dump(e)) for e in (await db.execute(select(AICompanionReminder).where(AICompanionReminder.kind == "course").order_by(AICompanionReminder.id))).scalars()]
+            version = profile.version
+            assert await service.sync_device_timezone(db, user.id, "America/Chicago")
+            await db.commit()
+            assert profile.version == version
+            assert profile.settings["course_reminders"]
+            assert service.dump(entry) == before_entry
+            assert service.dump(await service.current_plan(db, user.id)) == before_plan
+            assert [service.dump(e) for e in (await db.execute(select(AICompanionEvent).order_by(AICompanionEvent.id))).scalars()] == before_events
+            assert [service.dump(e) for e in (await db.execute(select(AICompanionReminder).where(AICompanionReminder.kind == "course").order_by(AICompanionReminder.id))).scalars()] == before_course
+            assert (await service.get_state(db, user.id))["today"]["meals_logged"] == 0
+            start, end = await bounds(db, user.id, date(2030, 1, 1), date(2030, 1, 2))
+            assert (await service.summary_for(db, user.id, start, end))["meals_logged"] == 1
+            daily = (await db.execute(select(AICompanionReminder).where(AICompanionReminder.kind == "daily"))).scalar_one()
+            assert daily.status == "pending" and daily.due_at == datetime(2030, 1, 3, 0, tzinfo=timezone.utc)
+            daily.status = "sent"
+            await db.commit()
+            assert not await service.sync_device_timezone(db, user.id, "America/Chicago")
+            await service.sync_device_timezone(db, user.id, "Europe/Moscow")
+            await db.commit()
+            assert daily.status == "sent"  # Travel back cannot send the same day's reminder again.
+    asyncio.run(run())
+
+
+def test_device_timezone_sync_is_scoped_and_never_enables_or_grants_consent(monkeypatch):
+    monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
+    async def run():
+        async with database() as (db, user):
+            assert not await service.sync_device_timezone(db, user.id, "Asia/Kathmandu")
+            assert await service.profile_for(db, user.id) is None
+            profile = await service.ensure_default_profile(db, user.id, "Asia/Kathmandu")
+            await db.commit()
+            assert profile.settings["timezone"] == "Asia/Kathmandu"
+            assert await service.consent_for(db, user.id) is None
+            await act(db, user, "disable", expected_version=profile.version)
+            version = profile.version
+            other = User(name="Other", surname="Test", password_hash="not-a-password")
+            db.add(other); await db.flush()
+            other_profile = await service.ensure_default_profile(db, other.id, "Europe/Moscow")
+            await db.commit()
+            await service.sync_device_timezone(db, user.id, "UTC+05:30")
+            await db.commit()
+            assert not profile.enabled and profile.version == version
+            assert not service.consent_is_current(await service.consent_for(db, user.id))
+            assert other_profile.settings["timezone"] == "Europe/Moscow"
+            assert not list((await db.execute(select(AICompanionReminder))).scalars())
+    asyncio.run(run())
+
+
 def test_default_profile_for_existing_customer_never_fabricates_consent(monkeypatch):
     monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
     async def run():

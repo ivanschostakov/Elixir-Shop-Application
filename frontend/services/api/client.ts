@@ -4,6 +4,7 @@ import { getAppIntegrityHeaders, resetAppIntegrityState } from "@/services/app-i
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 import { Platform } from "react-native"
 import { fetchTextWithDeadline, RequestDeadlineError } from "@/services/api/request-deadline"
+import { deviceCompanionTimezone } from "@/screens/chat/companion-timezones"
 
 export class ApiError extends Error {
     status: number
@@ -53,6 +54,7 @@ function buildUrl(baseUrl: string, path: string, query?: QueryParams): string {
 async function buildHeaders(init?: RequestInit, auth = true, options?: RequestOptions): Promise<Headers> {
     const headers = new Headers(init?.headers ?? {})
     headers.set("X-App-Platform", Platform.OS)
+    if (Platform.OS !== "web") headers.set("X-Device-Timezone", deviceCompanionTimezone())
     const tokens = getAuthTokens()
     const isFormDataBody =
         typeof FormData !== "undefined" &&

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useIsFocused } from "@react-navigation/native"
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
 import { useTheme } from "@/providers/theme-provider"
@@ -8,38 +8,36 @@ import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, g
 import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
 import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
-import { companionTimezoneChoices, DEFAULT_COMPANION_TIMEZONE, deviceCompanionTimezone } from "@/screens/chat/companion-timezones"
+import { calendarDate, deviceCompanionTimezone, formatCompanionDate as dateLabel, localDateTime, localEntryTimestamp } from "@/screens/chat/companion-timezones"
+import { useDeviceClock } from "@/hooks/chat/use-device-clock"
 
 type Page = "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
 type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry }
 type Controller = ReturnType<typeof useCompanion>
 const unitLabels: Record<Unit, string> = { mg: "мг", mcg: "мкг", g: "г", ml: "мл", capsule: "капсул", tablet: "таблеток", IU: "МЕ" }
-const settingsDefault: CompanionSettings = { timezone: "Europe/Moscow", nutrition_auto_eligible: false, course_reminders: false, daily_time: null, weight_time: null, weekly_time: null, weekly_day: 6, supply_reminders: false, supply_days: 7 }
+const settingsDefault: CompanionSettings = { timezone: "UTC", nutrition_auto_eligible: false, course_reminders: false, daily_time: null, weight_time: null, weekly_time: null, weekly_day: 6, supply_reminders: false, supply_days: 7 }
 const emptyNutrition = (): Nutrition => ({ kcal: "", protein: "", fat: "", carbs: "" })
-const dateLabel = (date: string, zone?: string) => new Date(date).toLocaleString("ru-RU", zone ? { timeZone: zone } : undefined)
 const numberOrNull = (value: string) => value.trim() ? Number(value.replace(",", ".")) : null
-function calendarDate(zone: string, days = 0) {
-    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date())
-    const part = (type: string) => parts.find(p => p.type === type)?.value ?? ""
-    const date = new Date(part("year") + "-" + part("month") + "-" + part("day") + "T12:00:00Z")
-    date.setUTCDate(date.getUTCDate() + days)
-    return date.toISOString().slice(0, 10)
-}
 
 export function useCompanion() {
     const focused = useIsFocused()
+    const clock = useDeviceClock()
     const [state, setState] = useState<CompanionState | null>(null)
     const [busy, setBusy] = useState(false)
     const busyRef = useRef(false)
     const [error, setError] = useState("")
     const [editor, setEditor] = useState<Editor | null>(null)
+    const refreshSequence = useRef(0)
     const refresh = useCallback(async () => {
         if (Platform.OS === "web") return
+        const sequence = ++refreshSequence.current
         try {
             const availability = await getCompanionAvailability()
+            if (sequence !== refreshSequence.current) return
             if (availability.available) {
                 setState(previous => previous ?? availability)
                 const next = await getCompanion()
+                if (sequence !== refreshSequence.current) return
                 setState(next)
                 setError("")
                 return next
@@ -47,9 +45,10 @@ export function useCompanion() {
             setState(availability)
             setError("")
             return availability
-        } catch (e) { setError(getErrorMessage(e)) }
+        } catch (e) { if (sequence === refreshSequence.current) setError(getErrorMessage(e)) }
     }, [])
-    useEffect(() => { if (focused) void refresh() }, [focused, refresh])
+    useEffect(() => { if (focused) void refresh() }, [focused, refresh, clock])
+    useEffect(() => () => { refreshSequence.current++ }, [])
     const resolveEnabled = async () => {
         if (Platform.OS === "web") return false
         if (state?.profile) return state.profile.enabled
@@ -68,7 +67,7 @@ export function useCompanion() {
                     { text: "Мне есть 18 — сохранить", onPress: () => resolve(true) },
                 ], { cancelable: true, onDismiss: () => resolve(false) })
             }))
-            const result = await actCompanion(payload)
+            const result = await actCompanion({ ...payload, ...(payload.settings ? { settings: { ...payload.settings, timezone: deviceCompanionTimezone() } } : {}) })
             setState(result.state)
             return result.state
         } finally { busyRef.current = false; setBusy(false) }
@@ -76,7 +75,7 @@ export function useCompanion() {
     const attempt = async (operation: () => Promise<unknown>) => {
         try { await operation() } catch (e) { if (!(e instanceof CompanionActionCancelled)) setError(getErrorMessage(e)) }
     }
-    return { state, setState, enabled: !!state?.profile?.enabled, resolveEnabled, busy, error, setError, editor, setEditor, refresh, perform, attempt }
+    return { state, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, busy, error, setError, editor, setEditor, refresh, perform, attempt }
 }
 
 function Copy({ children }: { children: React.ReactNode }) {
@@ -94,25 +93,6 @@ function Field({ label, value, onChange, numeric = false, multiline = false, dis
 function Toggle({ label, value, onChange, disabled = false }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
     return <View style={styles.toggle}><View style={{ flex: 1 }}><Copy>{label}</Copy></View><Switch accessibilityLabel={label} disabled={disabled} value={value} onValueChange={onChange} /></View>
 }
-function TimezoneField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-    const [expanded, setExpanded] = useState(false)
-    const [query, setQuery] = useState("")
-    const options = useMemo(() => companionTimezoneChoices(value), [value])
-    const selected = options.find(option => option.value === value)
-    const matching = options.filter(option => `${option.label} ${option.value}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
-    return <View style={styles.field}>
-        <Copy>{label}</Copy>
-        <Button label={(selected?.label ?? "Выберите часовой пояс") + (expanded ? " ▴" : " ▾")} onPress={() => { setExpanded(!expanded); setQuery("") }} />
-        {expanded ? <>
-            <Field label="Поиск города или часового пояса" value={query} onChange={setQuery} />
-            <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={{ maxHeight: 220 }}>
-                {matching.slice(0, 40).map(option => <Button key={option.value} label={(option.value === value ? "✓ " : "") + option.label} onPress={() => { onChange(option.value); setExpanded(false); setQuery("") }} />)}
-                {!matching.length ? <Copy>Город не найден. Попробуйте название латиницей.</Copy> : null}
-                {matching.length > 40 ? <Copy>Уточните поиск, чтобы увидеть остальные города.</Copy> : null}
-            </ScrollView>
-        </> : null}
-    </View>
-}
 function Choices<T extends string>({ options, value, onChange }: { options: Record<T, string>; value?: string | null; onChange: (value: T) => void }) {
     return <View style={styles.row}>{(Object.keys(options) as T[]).map(key => <Button key={key} label={(value === key ? "✓ " : "") + options[key]} onPress={() => onChange(key)} />)}</View>
 }
@@ -122,7 +102,7 @@ function NutritionFields({ value, onChange, disabled = false }: { value: Nutriti
 }
 function NutritionCopy({ value }: { value: Nutrition }) { return <Copy>{value.kcal} ккал · Б {value.protein} · Ж {value.fat} · У {value.carbs} г</Copy> }
 
-function ProposalCopy({ proposal }: { proposal: Proposal }) {
+function ProposalCopy({ proposal, clock }: { proposal: Proposal; clock: string }) {
     if (proposal.plan) return <><Copy>Курс: {proposal.plan.name} · {proposal.plan.timezone}</Copy>{proposal.plan.items.map((item, i) => <View key={i} style={styles.card}>
         <Copy>{item.name}{item.variant_id ? " · вариант #" + item.variant_id : ""}</Copy>
         {item.stages.map((stage, j) => <Copy key={j}>{stage.start_date} — {stage.end_date}: {stage.amount} {unitLabels[stage.unit]}, {stage.times.join(", ")}; {stage.weekdays.length ? "дни недели: " + stage.weekdays.map(d => ["пн", "вт", "ср", "чт", "пт", "сб", "вс"][d]).join(", ") : "каждые " + stage.interval_days + " дн."}</Copy>)}
@@ -131,7 +111,7 @@ function ProposalCopy({ proposal }: { proposal: Proposal }) {
     </View>)}<Copy>Это ваша готовая схема, а не назначение AI. Проверьте каждый этап и остаток перед подтверждением.</Copy></>
     if (proposal.entry) {
         const entry = proposal.entry
-        return <><Copy>{dateLabel(entry.occurred_at)} · {entry.kind === "meal" ? entry.name : entry.kind === "weight" ? String(entry.weight_kg) + " кг" : "Самочувствие"}</Copy>
+        return <><Copy>{dateLabel(entry.occurred_at, clock)} · {entry.kind === "meal" ? entry.name : entry.kind === "weight" ? String(entry.weight_kg) + " кг" : "Самочувствие"}</Copy>
             {entry.portion_g ? <Copy>Порция: {entry.portion_g} г</Copy> : null}
             {entry.nutrition ? <NutritionCopy value={entry.nutrition} /> : null}
             {entry.estimated ? <Copy>Приблизительная оценка: {entry.assumptions || "проверьте состав и размер порции"}</Copy> : null}
@@ -155,7 +135,7 @@ export function CompanionCards({ controller: c, message, onChanged }: { controll
     }
     return <>{message.companion_cards?.map(card => <View key={card.id} style={styles.card}>
         <Copy>{card.state === "confirmed" ? "✓ Сохранено" : card.state === "cancelled" ? "Отменено" : "Черновик — проверьте данные"}</Copy>
-        <Copy>{card.summary}</Copy><ProposalCopy proposal={card.proposal} />
+        <Copy>{card.summary}</Copy><ProposalCopy proposal={card.proposal} clock={c.clock} />
         {card.state === "pending" ? <View style={styles.row}>
             <Button label="Подтвердить" disabled={c.busy} onPress={() => void c.attempt(() => action(card, "confirm"))} />
             <Button label="Исправить" disabled={c.busy} onPress={() => void c.attempt(() => action(card, "cancel", true))} />
@@ -166,7 +146,9 @@ export function CompanionCards({ controller: c, message, onChanged }: { controll
 
 export function CompanionPanel({ controller: c, onChanged, openRequested }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean }) {
     const { palette } = useTheme()
-    useEffect(() => { if (openRequested && c.state?.profile) c.setEditor({ page: "home" }) }, [openRequested, !!c.state?.profile]) // Wait for the profile, not just availability.
+    const hasProfile = !!c.state?.profile
+    const setEditor = c.setEditor
+    useEffect(() => { if (openRequested && hasProfile) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor])
     if (Platform.OS === "web" || !c.state?.available) return null
     const changed = async () => { await c.refresh(); await onChanged() }
     return <View style={[styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }]}>
@@ -203,16 +185,16 @@ function CompanionContent({ controller: c, onChanged }: { controller: Controller
         <Button label="КБЖУ: вручную или рассчитать" onPress={() => open("nutrition")} />
         {state.plan ? <>
             <Copy>Курс: {state.plan.data.name} · версия {state.plan.version} · {({ active: "активен", paused: "на паузе", completed: "завершён" } as Record<string, string>)[state.plan.status]}</Copy>
-            <ProposalCopy proposal={{ kind: "plan", summary: "", plan: state.plan.data }} />
+            <ProposalCopy proposal={{ kind: "plan", summary: "", plan: state.plan.data }} clock={c.clock} />
             <View style={styles.row}>
                 {state.plan.status === "active" ? <Button label="Пауза" disabled={c.busy} onPress={() => void c.attempt(() => save({ kind: "plan_status", expected_version: version, status: "paused" }))} /> : null}
                 {state.plan.status === "paused" ? <Button label="Обновить и возобновить" onPress={() => open("plan")} /> : null}
                 {state.plan.status !== "completed" ? <Button label="Завершить курс" disabled={c.busy} onPress={() => Alert.alert("Завершить курс?", "Будущие напоминания будут отменены, история останется.", [{ text: "Отмена" }, { text: "Завершить", onPress: () => void c.attempt(() => save({ kind: "plan_status", expected_version: version, status: "completed" })) }])} /> : null}
             </View>
         </> : <Copy>Пришлите свою готовую схему в чат или заполните «Мой курс». Бот подготовит карточку для проверки.</Copy>}
-        <Copy>События сегодня и на ближайшие 7 дней · {profile?.settings.timezone}</Copy>
+        <Copy>События сегодня и на ближайшие 7 дней · время телефона</Copy>
         {state.events?.map(event => <View key={event.id} style={styles.card}>
-            <Copy>{dateLabel(event.scheduled_at, profile?.settings.timezone)} · {event.data.name} · {event.data.amount} {unitLabels[event.data.unit]}</Copy>
+            <Copy>{dateLabel(event.scheduled_at, c.clock)} · {event.data.name} · {event.data.amount} {unitLabels[event.data.unit]}</Copy>
             <Copy>{event.status === "pending" ? "Нет отметки" : event.status === "done" ? "Выполнено" : "Пропущено"}</Copy>
             <View style={styles.row}>{(["done", "skipped", "pending"] as const).filter(status => status !== event.status).map(status => <Button key={status} label={status === "done" ? "Выполнено" : status === "skipped" ? "Пропущено" : "Снять отметку"} disabled={c.busy || status === "done" && Date.parse(event.scheduled_at) > Date.now()} onPress={() => void c.attempt(() => save({ kind: "event", resource_id: event.id, expected_version: event.version, status }))} />)}</View>
         </View>)}
@@ -222,14 +204,12 @@ function CompanionContent({ controller: c, onChanged }: { controller: Controller
 function ConsentForm({ controller: c, onSave }: { controller: Controller; onSave: (action: CompanionAction) => Promise<void> }) {
     const [adult, setAdult] = useState(false)
     const [accepted, setAccepted] = useState(false)
-    const [timezone, setTimezone] = useState(c.state?.profile?.settings.timezone ?? deviceCompanionTimezone() ?? DEFAULT_COMPANION_TIMEZONE)
     return <>
         <Copy>Чат поможет вести вашу готовую схему, питание, вес и самочувствие. Он не заменяет врача, не назначает пептиды и не корректирует дозировки. При ухудшении состояния обратитесь за медицинской помощью.</Copy>
         <Copy>По вашему согласию приложение хранит профиль, курс, дневник и сообщения сопровождения. Для ответов нужный контекст и отправленные вами вложения передаются OpenAI. Напоминания по умолчанию выключены; данные можно удалить в настройках. Не отправляйте чужие медицинские документы.</Copy>
         <Toggle label="Мне исполнилось 18 лет" value={adult} onChange={setAdult} />
         <Toggle label={"Согласен на обработку указанных данных и передачу контекста OpenAI для сопровождения (" + c.state?.consent_version + ")"} value={accepted} onChange={setAccepted} />
-        <TimezoneField label="Часовой пояс" value={timezone} onChange={setTimezone} />
-        <Button label="Включить" disabled={!adult || !accepted || c.busy} onPress={() => void c.attempt(() => onSave({ kind: "enable", adult_confirmed: adult, consent_version: c.state!.consent_version, settings: { ...settingsDefault, timezone } }))} />
+        <Button label="Включить" disabled={!adult || !accepted || c.busy} onPress={() => void c.attempt(() => onSave({ kind: "enable", adult_confirmed: adult, consent_version: c.state!.consent_version, settings: { ...settingsDefault, timezone: deviceCompanionTimezone() } }))} />
     </>
 }
 
@@ -240,13 +220,20 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
     const [person, setPerson] = useState<ProfileData>(editor.proposal?.profile ?? profile.data)
     const [nutrition, setNutrition] = useState<Nutrition>(editor.proposal?.nutrition ?? profile.data.nutrition ?? emptyNutrition())
     const [entry, setEntry] = useState<EntryData>(editor.entry?.data ?? editor.proposal?.entry ?? { kind: page as EntryData["kind"], occurred_at: new Date().toISOString(), ...(page === "meal" ? { nutrition: emptyNutrition() } : {}) })
-    const [plan, setPlan] = useState<PlanData>(editor.proposal?.plan ?? c.state!.plan?.data ?? { name: "", timezone: profile.settings.timezone, items: [] })
+    const [entryDateText, setEntryDateText] = useState(() => localDateTime(entry.occurred_at))
+    const [plan, setPlan] = useState<PlanData>(editor.proposal?.plan ?? c.state!.plan?.data ?? { name: "", timezone: deviceCompanionTimezone(), items: [] })
     const [settings, setSettings] = useState<CompanionSettings>({ ...settingsDefault, ...profile.settings })
     const [suggestionNote, setSuggestionNote] = useState("")
     const [ruleVersion, setRuleVersion] = useState<string | undefined>()
     const [calculating, setCalculating] = useState(false)
     const calculationRef = useRef(false)
     const version = profile.version
+    const convertOpenEditor = useRef(() => {})
+    convertOpenEditor.current = () => {
+        setEntryDateText(localDateTime(entry.occurred_at))
+        if (!editor.proposal?.plan && !c.state?.plan) setPlan(previous => ({ ...previous, timezone: deviceCompanionTimezone() }))
+    }
+    useEffect(() => { convertOpenEditor.current() }, [c.clock]) // Only clock changes, not typing, reset the local-time input.
     const save = (action: CompanionAction) => void c.attempt(() => onSave({ expected_version: version, ...action }))
     return <>
         {page === "profile" ? <>
@@ -284,18 +271,20 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             <Button label="Подтвердить КБЖУ" disabled={c.busy || calculating} onPress={() => save({ kind: "nutrition", nutrition, nutrition_rule_version: ruleVersion })} />
         </> : null}
         {["meal", "weight", "wellbeing"].includes(page) ? <>
-            <Field label="Дата и время с часовым поясом (например, 2026-09-02T12:30:00+03:00)" value={entry.occurred_at} onChange={occurred_at => setEntry({ ...entry, occurred_at })} />
+            <Field label="Дата и время телефона, ГГГГ-ММ-ДД ЧЧ:ММ" value={entryDateText} onChange={value => {
+                setEntryDateText(value)
+                try { setEntry({ ...entry, occurred_at: localEntryTimestamp(value, entry.occurred_at) }) } catch { /* Allow incomplete input while typing. */ }
+            }} />
             {page === "meal" ? <><Field label="Что съели" value={entry.name} onChange={name => setEntry({ ...entry, name })} /><Field label="Порция, г (если известна)" value={entry.portion_g} numeric onChange={text => setEntry({ ...entry, portion_g: numberOrNull(text) })} /><NutritionFields value={entry.nutrition ?? emptyNutrition()} onChange={nutrition => setEntry({ ...entry, nutrition })} /><Toggle label="Приблизительная оценка" value={!!entry.estimated} onChange={estimated => setEntry({ ...entry, estimated })} />{entry.estimated ? <Field label="Допущения оценки" value={entry.assumptions} onChange={assumptions => setEntry({ ...entry, assumptions })} /> : null}<Copy>Можно отправить фото еды в чат — AI предложит оценку для подтверждения.</Copy></> : null}
             {page === "weight" ? <Field label="Вес, кг" value={entry.weight_kg} numeric onChange={text => setEntry({ ...entry, weight_kg: numberOrNull(text) })} /> : null}
             {page === "wellbeing" ? <>{(["wellbeing", "appetite", "energy", "sleep_hours"] as const).map((key, i) => <Field key={key} label={["Самочувствие, 1–5", "Аппетит, 1–5", "Энергия, 1–5", "Сон, часов"][i]} value={entry[key]} numeric onChange={text => setEntry({ ...entry, [key]: numberOrNull(text) })} />)}</> : null}
             <Field label="Комментарий" multiline value={entry.note} onChange={note => setEntry({ ...entry, note })} />
-            <Button label={editor.entry ? "Сохранить исправление" : "Подтвердить запись"} disabled={c.busy} onPress={() => save({ kind: "entry", entry, resource_id: editor.entry?.id, expected_version: editor.entry?.version })} />
+            <Button label={editor.entry ? "Сохранить исправление" : "Подтвердить запись"} disabled={c.busy} onPress={() => void c.attempt(() => onSave({ kind: "entry", entry: { ...entry, occurred_at: localEntryTimestamp(entryDateText, entry.occurred_at) }, resource_id: editor.entry?.id, expected_version: editor.entry?.version }))} />
         </> : null}
-        {page === "plan" ? <><Copy>Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.</Copy><Field label="Название курса" value={plan.name} onChange={name => setPlan({ ...plan, name })} /><TimezoneField label="Часовой пояс расписания" value={plan.timezone} onChange={timezone => setPlan({ ...plan, timezone })} /><PlanFields plan={plan} onChange={setPlan} /><Button label="Подтвердить и сохранить курс" disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
+        {page === "plan" ? <><Copy>Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.</Copy><Field label="Название курса" value={plan.name} onChange={name => setPlan({ ...plan, name })} /><Copy>{plan.timezone === deviceCompanionTimezone() ? "Время определяется по телефону автоматически." : `Исходная схема записана в ${plan.timezone}. Её время не сдвигается при поездке; события в дневнике показаны по времени телефона.`}</Copy><PlanFields plan={plan} onChange={setPlan} /><Button label="Подтвердить и сохранить курс" disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
         {page === "settings" ? <>
             <Copy>Push включается в настройках уведомлений приложения. Здесь задаётся, о чём и когда напоминать. Пустое время выключает напоминание.</Copy>
-            <TimezoneField label="Часовой пояс дневника и напоминаний" value={settings.timezone} onChange={timezone => setSettings({ ...settings, timezone })} />
-            <Copy>Смена этого пояса не меняет расписание курса — его пояс редактируется в «Мой курс».</Copy>
+            <Copy>Дневник и ежедневные напоминания используют время телефона автоматически. При поездке старые записи отображаются в новом местном времени; подтверждённые события курса не переносятся.</Copy>
             <Toggle label="Напоминать о событиях курса" value={settings.course_reminders} onChange={course_reminders => setSettings({ ...settings, course_reminders })} />
             {(["daily_time", "weight_time", "weekly_time"] as const).map((key, i) => <Field key={key} label={["Итоги дня, ЧЧ:ММ", "Напомнить внести вес, ЧЧ:ММ", "Итоги недели, ЧЧ:ММ"][i]} value={settings[key]} onChange={text => setSettings({ ...settings, [key]: text || null })} />)}
             <Field label="День недельной сводки: 0 пн … 6 вс" value={settings.weekly_day} numeric onChange={text => setSettings({ ...settings, weekly_day: Number(text) })} />
@@ -339,9 +328,8 @@ function PlanFields({ plan, onChange }: { plan: PlanData; onChange: (plan: PlanD
 
 function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onChanged: () => Promise<void> }) {
     const page = c.editor!.page
-    const zone = c.state!.profile!.settings.timezone
-    const [from, setFrom] = useState(calendarDate(zone, -6))
-    const [to, setTo] = useState(calendarDate(zone, 1))
+    const [from, setFrom] = useState(calendarDate(-6))
+    const [to, setTo] = useState(calendarDate(1))
     const [entries, setEntries] = useState(c.state!.entries ?? [])
     const [events, setEvents] = useState(c.state!.events ?? [])
     const [summary, setSummary] = useState<Summary | null>(null)
@@ -350,16 +338,24 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
     const [loading, setLoading] = useState(false)
     const [added, setAdded] = useState<number[]>([])
     const basket = useBasketMutations()
+    const loadSequence = useRef(0)
     const load = async () => {
+        const sequence = ++loadSequence.current
         setLoading(true)
         try {
-            if (page === "supply") { setSupply(await getCompanionSupply(Number(days))); setAdded([]) }
-            else if (page === "events") setEvents((await getCompanionEvents(from, to)).events)
-            else if (page === "summary") setSummary(await getCompanionSummary(from, to))
-            else setEntries((await getCompanionEntries(from, to)).entries)
-        } finally { setLoading(false) }
+            if (page === "supply") { const result = await getCompanionSupply(Number(days)); if (sequence === loadSequence.current) { setSupply(result); setAdded([]) } }
+            else if (page === "events") { const result = await getCompanionEvents(from, to); if (sequence === loadSequence.current) setEvents(result.events) }
+            else if (page === "summary") { const result = await getCompanionSummary(from, to); if (sequence === loadSequence.current) setSummary(result) }
+            else { const result = await getCompanionEntries(from, to); if (sequence === loadSequence.current) setEntries(result.entries) }
+        } finally { if (sequence === loadSequence.current) setLoading(false) }
     }
-    useEffect(() => { void c.attempt(load) }, []) // Load the initial view; subsequent date changes use the explicit button.
+    const reloadForClock = useRef(() => {})
+    reloadForClock.current = () => { void c.attempt(load) }
+    const invalidateLoads = useCallback(() => { loadSequence.current++ }, [])
+    useEffect(() => {
+        reloadForClock.current()
+        return invalidateLoads
+    }, [c.clock, invalidateLoads]) // Requery on travel/DST; ignore responses from the previous zone.
     return <>
         <Button label="Назад к плану" onPress={() => c.setEditor({ page: "home" })} />
         {page === "supply" ? <><Field label="Период прогноза, 1–90 дней" value={days} numeric onChange={setDays} /><Copy>Расчёт не меняет схему. Покупка только по отдельному нажатию; добавление в корзину не увеличивает домашний запас.</Copy></> : <><Field label="С даты включительно, ГГГГ-ММ-ДД" value={from} onChange={setFrom} /><Field label="До даты не включительно, ГГГГ-ММ-ДД (до 90 дней)" value={to} onChange={setTo} /></>}
@@ -367,13 +363,13 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
         {loading ? <ActivityIndicator /> : null}
         {page === "summary" && summary ? <><NutritionCopy value={summary.nutrition} /><Copy>Приёмов пищи: {summary.meals_logged}, дней с записями: {summary.days_with_meals}. Измерений веса: {summary.weight_measurements}; изменение: {summary.weight_change_kg == null ? "недостаточно данных" : summary.weight_change_kg + " кг"}.</Copy><Copy>События: выполнено {summary.events.done}, пропущено {summary.events.skipped}, без отметки {summary.events.pending}.</Copy><Copy>{summary.coverage_note}</Copy></> : null}
         {page === "events" ? <>{!events.length ? <Copy>Нет событий в выбранном периоде.</Copy> : null}{events.map(event => <View key={event.id} style={styles.card}>
-            <Copy>{dateLabel(event.scheduled_at, zone)} · {event.data.name} · {event.data.amount} {unitLabels[event.data.unit]} · {event.status === "pending" ? "без отметки" : event.status === "done" ? "выполнено" : "пропущено"}</Copy>
+            <Copy>{dateLabel(event.scheduled_at, c.clock)} · {event.data.name} · {event.data.amount} {unitLabels[event.data.unit]} · {event.status === "pending" ? "без отметки" : event.status === "done" ? "выполнено" : "пропущено"}</Copy>
             <View style={styles.row}>{(["done", "skipped", "pending"] as const).filter(status => status !== event.status).map(status => <Button key={status} label={status === "done" ? "Выполнено" : status === "skipped" ? "Пропущено" : "Снять отметку"} disabled={c.busy || status === "done" && Date.parse(event.scheduled_at) > Date.now()} onPress={() => void c.attempt(async () => { await c.perform({ kind: "event", resource_id: event.id, expected_version: event.version, status }); await load() })} />)}</View>
         </View>)}{events.length >= 200 ? <Copy>Показаны 200 событий. Сузьте период для остальных.</Copy> : null}</> : null}
-        {page === "journal" ? <>{!entries.length ? <Copy>В этом периоде нет записей.</Copy> : null}{entries.map(entry => <View key={entry.id} style={styles.card}><ProposalCopy proposal={{ kind: "entry", summary: "", entry: entry.data }} /><View style={styles.row}><Button label="Исправить" onPress={() => c.setEditor({ page: entry.kind, entry })} /><Button label="Удалить" disabled={c.busy} onPress={() => Alert.alert("Удалить запись?", "Она исчезнет из дневника и итогов.", [{ text: "Отмена" }, { text: "Удалить", style: "destructive", onPress: () => void c.attempt(async () => { await c.perform({ kind: "delete_entry", resource_id: entry.id, expected_version: entry.version }); await load(); await onChanged() }) }])} /></View></View>)}{entries.length >= 200 ? <Copy>Показаны последние 200 записей. Сузьте период для просмотра остальных; сводка считает весь выбранный период.</Copy> : null}</> : null}
+        {page === "journal" ? <>{!entries.length ? <Copy>В этом периоде нет записей.</Copy> : null}{entries.map(entry => <View key={entry.id} style={styles.card}><ProposalCopy proposal={{ kind: "entry", summary: "", entry: entry.data }} clock={c.clock} /><View style={styles.row}><Button label="Исправить" onPress={() => c.setEditor({ page: entry.kind, entry })} /><Button label="Удалить" disabled={c.busy} onPress={() => Alert.alert("Удалить запись?", "Она исчезнет из дневника и итогов.", [{ text: "Отмена" }, { text: "Удалить", style: "destructive", onPress: () => void c.attempt(async () => { await c.perform({ kind: "delete_entry", resource_id: entry.id, expected_version: entry.version }); await load(); await onChanged() }) }])} /></View></View>)}{entries.length >= 200 ? <Copy>Показаны последние 200 записей. Сузьте период для просмотра остальных; сводка считает весь выбранный период.</Copy> : null}</> : null}
         {page === "supply" && supply ? <>{supply.reason ? <Copy>{supply.reason}</Copy> : null}{supply.items?.map((item, i) => <View key={i} style={styles.card}>
             <Copy>{item.name}</Copy>
-            {item.available ? <>{item.projected_shortage_at ? <Copy>По прогнозу не хватит к: {dateLabel(item.projected_shortage_at, zone)}</Copy> : null}<Copy>Нужно: {item.required} {item.unit ? unitLabels[item.unit] : ""}; остаток по журналу: {item.home_remaining}. Докупить: {item.packages} уп. Цена: {item.price ?? "неизвестна"} ₽, сумма: {item.estimated_cost ?? "неизвестна"} ₽. На складе: {item.stock ?? "неизвестно"}.</Copy>
+            {item.available ? <>{item.projected_shortage_at ? <Copy>По прогнозу не хватит к: {dateLabel(item.projected_shortage_at, c.clock)}</Copy> : null}<Copy>Нужно: {item.required} {item.unit ? unitLabels[item.unit] : ""}; остаток по журналу: {item.home_remaining}. Докупить: {item.packages} уп. Цена: {item.price ?? "неизвестна"} ₽, сумма: {item.estimated_cost ?? "неизвестна"} ₽. На складе: {item.stock ?? "неизвестно"}.</Copy>
                 {item.variant_id && !!item.packages && item.stock != null && item.stock >= item.packages ? <Button label={added.includes(i) ? "✓ Добавлено в корзину" : "Добавить " + item.packages + " уп. в корзину"} disabled={basket.updating || added.includes(i)} onPress={() => Alert.alert("Добавить в корзину?", item.name + ": " + item.packages + " уп. Фактическая стоимость проверяется в корзине.", [{ text: "Отмена" }, { text: "Добавить", onPress: () => void c.attempt(async () => { await basket.addItem(item.variant_id!, item.packages!); setAdded(values => [...values, i]) }) }])} /> : null}</> : <Copy>{item.reason}</Copy>}
         </View>)}<Copy>{supply.note}</Copy></> : null}
     </>

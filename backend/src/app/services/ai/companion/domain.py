@@ -2,10 +2,10 @@
 import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING
-from zoneinfo import ZoneInfo
 
 from .schemas import PlanData
 from .nutrition import calculate_nutrition
+from .timezones import timezone_info
 
 UNITS = {"мг": "mg", "mg": "mg", "мкг": "mcg", "mcg": "mcg", "µg": "mcg", "г": "g", "g": "g", "мл": "ml", "ml": "ml", "ме": "IU", "iu": "IU", "капсул": "capsule", "капсулы": "capsule", "капсула": "capsule", "capsules": "capsule", "capsule": "capsule", "таблеток": "tablet", "таблетки": "tablet", "tablets": "tablet", "tablet": "tablet"}
 AMOUNT = re.compile(r"(?<![\w.,])(\d+(?:[.,]\d+)?)\s*(мкг|mcg|µg|мг|mg|мл|ml|капсулы|капсула|капсул|capsules?|таблеток|таблетки|tablets?|ме|iu|г|g)(?!\w)", re.I)
@@ -46,7 +46,7 @@ def package_count(required: Decimal, home: Decimal, capacity: Decimal) -> int:
 
 
 def schedule_events(plan: PlanData) -> list[dict]:
-    zone = ZoneInfo(plan.timezone)
+    zone = timezone_info(plan.timezone)
     events = []
     for item_index, item in enumerate(plan.items):
         for stage_index, stage in enumerate(item.stages):
@@ -64,4 +64,3 @@ def schedule_events(plan: PlanData) -> list[dict]:
                             raise ValueError("Слишком много событий; сократите период курса.")
                 day += timedelta(days=1)
     return sorted(events, key=lambda e: e["scheduled_at"])
-

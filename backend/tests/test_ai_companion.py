@@ -210,7 +210,7 @@ def test_native_guard_cannot_be_bypassed_by_platform_header(monkeypatch):
         with pytest.raises(HTTPException) as error:
             await module.native_access(request, db=None, user=user)
         assert error.value.status_code == 403
-        native = Request({"type": "http", "headers": [(b"x-app-integrity-platform", b"ios")]})
+        native = Request({"type": "http", "method": "GET", "headers": [(b"x-app-integrity-platform", b"ios")]})
         await module.native_access(native, db=None, user=user)
         assert verify.await_args.kwargs["force_enforce"] is True
     asyncio.run(run())

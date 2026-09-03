@@ -1,11 +1,11 @@
 from datetime import date, datetime, time, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from src.database.models.ai.companion import AICompanionEvent
 from . import service
 from .schemas import Settings
+from .timezones import timezone_info
 
 
 def function(name, description, properties=None):
@@ -59,7 +59,7 @@ class CompanionToolExecutor:
                 start_date, end_date = date.fromisoformat(args["from_date"]), date.fromisoformat(args["to_date"])
                 if not 0 < (end_date - start_date).days <= 90:
                     raise ValueError("Period must be 1–90 days")
-                zone = ZoneInfo(Settings.model_validate(profile.settings).timezone)
+                zone = timezone_info(Settings.model_validate(profile.settings).timezone)
                 start, end = (datetime.combine(d, time.min, zone).astimezone(timezone.utc) for d in (start_date, end_date))
                 if name == "get_progress_summary":
                     result = await service.summary_for(self.db, self.user_id, start, end)

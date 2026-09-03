@@ -39,20 +39,59 @@ test("course header owns its own space outside the scroll and keyboard area", ()
     assert.equal(styles.chatBody.overflow, "hidden")
 })
 
-test("timezone choices handle iPhone aliases and fixed offsets without reversing time", () => {
+test("automatic timezone handles iPhone aliases and exact fractional offsets", () => {
     for (const [input, expected] of [[" Europe/Moscow ", "Europe/Moscow"], ["МСК", "Europe/Moscow"], ["GMT+03:00", "Etc/GMT-3"], ["UTC-05:00", "Etc/GMT+5"], ["GMT", "UTC"], ["Europe/Kiev", "Europe/Kiev"], ["Asia/Calcutta", "Asia/Calcutta"], ["US/Central", "US/Central"]]) {
         assert.equal(timezones.normalizeCompanionTimezone(input), expected)
     }
-    for (const input of [null, "", "Unknown/City", "UTC+99", "+05:30"]) assert.equal(timezones.normalizeCompanionTimezone(input), null)
-    const options = timezones.companionTimezoneChoices("America/Chicago")
-    assert.ok(options.some(option => option.value === "America/Chicago"))
-    assert.ok(options.some(option => option.value === "Europe/Moscow"))
-    assert.equal(new Set(options.map(option => option.value)).size, options.length)
+    for (const input of [null, "", "Unknown/City", "UTC+99", "UTC+14:30", "UTC+05:99"]) assert.equal(timezones.normalizeCompanionTimezone(input), null)
+    assert.equal(timezones.normalizeCompanionTimezone("+05:30"), "UTC+05:30")
+    assert.equal(timezones.normalizeCompanionTimezone("GMT+05:45"), "UTC+05:45")
+    assert.equal(timezones.normalizeCompanionTimezone("UTC-03:30"), "UTC-03:30")
 })
 
-test("timezone choices still work when an older iPhone cannot enumerate all zones", t => {
-    t.mock.method(Intl, "supportedValuesOf", () => { throw new Error("unsupported") })
-    const options = timezones.companionTimezoneChoices("Asia/Yerevan")
-    assert.ok(options.some(option => option.value === "Asia/Yerevan"))
-    assert.ok(options.some(option => option.value === "Europe/Moscow"))
+test("missing IANA information falls back to the phone offset, not Moscow", t => {
+    t.mock.method(Intl, "DateTimeFormat", () => { throw new Error("unsupported") })
+    t.mock.method(Date.prototype, "getTimezoneOffset", () => -345)
+    assert.equal(timezones.deviceCompanionTimezone(), "UTC+05:45")
+})
+
+test("history and editing follow device timezone without mutating saved instants", t => {
+    const previous = process.env.TZ
+    t.after(() => { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous })
+    const original = "2026-09-02T21:30:42.123Z"
+    process.env.TZ = "Europe/Moscow"
+    assert.equal(timezones.localDateTime(original), "2026-09-03 00:30")
+    const oldClock = timezones.deviceClockKey()
+    process.env.TZ = "America/Chicago"
+    assert.equal(timezones.localDateTime(original), "2026-09-02 16:30")
+    assert.notEqual(timezones.deviceClockKey(), oldClock)
+    assert.equal(timezones.deviceCompanionTimezone(), "America/Chicago")
+    assert.equal(timezones.localEntryTimestamp("2026-09-02 16:30", original), original)
+    assert.equal(timezones.localEntryTimestamp("2026-09-02 17:30", original), "2026-09-02T22:30:00.000Z")
+    assert.throws(() => timezones.localEntryTimestamp("2026-02-30 17:30", original))
+    assert.throws(() => timezones.localEntryTimestamp("2026-03-08 02:30", original)) // DST gap
+    const secondAutumnHour = "2026-11-01T07:30:17Z"
+    assert.equal(timezones.localEntryTimestamp("2026-11-01 01:30", secondAutumnHour), secondAutumnHour)
+    process.env.TZ = "Asia/Kathmandu"
+    assert.equal(timezones.localDateTime(original), "2026-09-03 03:15")
+    assert.equal(timezones.localEntryTimestamp("2026-09-03 03:15", original), original)
+})
+
+test("no timezone selector, raw offset entry or server-zone display remains", () => {
+    const source = fs.readFileSync(path.join(__dirname, "../screens/chat/companion.tsx"), "utf8")
+    assert.doesNotMatch(source, /TimezoneField|setTimezone|Выберите часовой пояс|Поиск города|Дата и время с часовым поясом/)
+    assert.match(source, /useDeviceClock\(\)/)
+    assert.match(source, /localEntryTimestamp\(entryDateText, entry.occurred_at\)/)
+    assert.match(source, /\[focused, refresh, clock\]/)
+    assert.match(source, /\[c.clock\]/)
+    assert.doesNotMatch(source, /dateLabel\([^)]*settings|timeZone: profile|calendarDate\(zone/)
+    assert.match(source, /dateLabel\(entry.occurred_at, clock\)/)
+    assert.match(source, /clock=\{c.clock\}/)
+})
+
+test("memoized date labels explicitly depend on the current phone clock", () => {
+    const instant = "2026-09-02T21:30:42Z"
+    assert.match(timezones.formatCompanionDate(instant, "Europe/Moscow|-180|2026-09-03"), /03\.09\.2026.*00:30/)
+    assert.match(timezones.formatCompanionDate(instant, "America/Chicago|300|2026-09-02"), /02\.09\.2026.*16:30/)
+    assert.match(timezones.formatCompanionDate(instant, "UTC+05:45|-345|2026-09-03"), /03\.09\.2026.*03:15/)
 })

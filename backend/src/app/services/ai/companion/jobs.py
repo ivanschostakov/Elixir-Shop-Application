@@ -3,7 +3,6 @@ import logging
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
 
@@ -14,6 +13,7 @@ from src.database.models.ai.companion import AICompanionEvent, AICompanionProfil
 from src.integrations.ai.enums import MessageSender
 from . import service
 from .schemas import Settings
+from .timezones import timezone_info
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def local_due(day, value, zone):
 
 async def schedule_recurring(db, profile, now):
     settings = Settings.model_validate(profile.settings)
-    zone = ZoneInfo(settings.timezone)
+    zone = timezone_info(settings.timezone)
     today = now.astimezone(zone).date()
     kinds = [("daily", settings.daily_time), ("weight", settings.weight_time)]
     if today.weekday() == settings.weekly_day:
@@ -41,9 +41,13 @@ async def schedule_recurring(db, profile, now):
         if due is None or due < profile.created_at:
             continue
         key = f"{kind}:{today.isoformat()}"
-        exists = (await db.execute(select(AICompanionReminder.id).where(AICompanionReminder.user_id == profile.user_id, AICompanionReminder.dedupe_key == key))).scalar_one_or_none()
+        exists = (await db.execute(select(AICompanionReminder).where(AICompanionReminder.user_id == profile.user_id, AICompanionReminder.dedupe_key == key))).scalar_one_or_none()
         if exists is None:
             db.add(AICompanionReminder(user_id=profile.user_id, kind=kind, dedupe_key=key, due_at=due))
+        elif exists.status == "cancelled" and exists.message_id is None and exists.attempts == 0 and due >= now:
+            # Reuse an unsent local-day slot after timezone/settings changes.
+            # Sent/attempted messages are never replayed on a clock change.
+            exists.status, exists.due_at, exists.next_attempt_at = "pending", due, None
 
 
 async def reminder_text(db, row, profile):
@@ -65,7 +69,7 @@ async def reminder_text(db, row, profile):
         return "По подтверждённому плану и внесённому остатку запаса может не хватить на выбранный период. Проверьте фактический остаток в разделе «Запас»."
     if row.kind == "daily" and not settings.daily_time or row.kind == "weekly" and not settings.weekly_time:
         return None
-    zone = ZoneInfo(settings.timezone)
+    zone = timezone_info(settings.timezone)
     midnight = row.due_at.astimezone(zone).replace(hour=0, minute=0, second=0, microsecond=0)
     start = midnight - timedelta(days=7) if row.kind == "weekly" else midnight
     end = midnight if row.kind == "weekly" else row.due_at

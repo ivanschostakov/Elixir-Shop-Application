@@ -1,5 +1,4 @@
 from datetime import date, datetime, time, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import ValidationError
@@ -9,12 +8,25 @@ import config
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.ai.companion import service
 from src.app.services.ai.companion.schemas import Action, Settings
+from src.app.services.ai.companion.timezones import normalize_timezone, timezone_info
 from src.app.services.ai.security import ensure_app_ai_access
 from src.app.services.app_integrity.service import verify_app_integrity_request
 from src.database import get_db
 from src.database.models import User
 
 companion_router = APIRouter(prefix="/ai-chat/companion", tags=["ai_companion"])
+
+
+def device_timezone(request):
+    value = request.headers.get("x-device-timezone")
+    if value is None:
+        return None  # Backward-compatible with already-installed clients.
+    try:
+        if len(value) > 100:
+            raise ValueError("Invalid device timezone")
+        return normalize_timezone(value)
+    except ValueError as error:
+        raise HTTPException(422, "Не удалось определить часовой пояс устройства") from error
 
 
 async def native_access(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -25,6 +37,9 @@ async def native_access(request: Request, db: AsyncSession = Depends(get_db), us
         raise HTTPException(403, "Сопровождение доступно только в мобильном приложении")
     await verify_app_integrity_request(request, action="ai-companion", db=db, current_user=user, force_enforce=True)
     await ensure_app_ai_access(db, request=request, user=user)
+    if request.method != "DELETE" and (zone := device_timezone(request)) is not None:
+        await service.sync_device_timezone(db, user.id, zone)
+        await db.commit()
     return user
 
 
@@ -34,15 +49,24 @@ async def availability(user: User = Depends(get_current_user)):
 
 
 @companion_router.get("")
-async def state(user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
-    await service.ensure_default_profile(db, user.id)
+async def state(request: Request, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    await service.ensure_default_profile(db, user.id, device_timezone(request))
     await db.commit()
     return await service.get_state(db, user.id)
 
 
+@companion_router.post("/timezone")
+async def sync_timezone(user: User = Depends(native_access)):
+    # native_access updates an existing profile only. Do not enable a feature,
+    # create health records or grant consent just because the app was opened.
+    return {"ok": True}
+
+
 @companion_router.post("/actions")
-async def action(payload: Action, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+async def action(payload: Action, request: Request, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
     try:
+        if payload.settings is not None and (zone := device_timezone(request)) is not None:
+            payload.settings.timezone = zone  # A stale open form cannot undo travel.
         result = await service.apply_action(db, user.id, payload)
         await db.commit()
     except (ValidationError, ValueError) as error:
@@ -60,7 +84,7 @@ async def bounds(db, user_id, from_date, to_date):
     profile = await service.profile_for(db, user_id)
     if profile is None:
         raise HTTPException(404, "Сопровождение не включено")
-    zone = ZoneInfo(Settings.model_validate(profile.settings).timezone)
+    zone = timezone_info(Settings.model_validate(profile.settings).timezone)
     return tuple(datetime.combine(d, time.min, zone).astimezone(timezone.utc) for d in (from_date, to_date))
 
 
@@ -107,7 +131,7 @@ async def message(request: Request, text: str = Form(...), client_request_id: st
         raise HTTPException(422, "Сообщение слишком длинное")
     if not text.strip():
         raise HTTPException(422, "Сообщение пустое")
-    profile = await service.ensure_default_profile(db, user.id)
+    profile = await service.ensure_default_profile(db, user.id, device_timezone(request))
     await db.commit()
     if profile is None or not profile.enabled:
         raise HTTPException(403, "Сопровождение отключено")

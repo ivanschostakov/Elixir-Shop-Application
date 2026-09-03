@@ -57,6 +57,7 @@ export async function getCompanionAvailability(): Promise<CompanionState> {
     }
 }
 export const getCompanion = () => apiGet<CompanionState>(endpoint, undefined, proof)
+export const syncCompanionTimezone = () => apiPost<{ ok: boolean }, Record<string, never>>(`${endpoint}/timezone`, {}, proof)
 export const actCompanion = (payload: CompanionAction) => apiPost<{ state: CompanionState }, CompanionAction>(`${endpoint}/actions`, { ...payload, request_key: payload.request_key ?? requestKey() }, proof)
 export const eraseCompanion = () => apiDelete(`${endpoint}?confirm=true`, proof)
 export const getCompanionSummary = (from: string, to: string) => apiGet<Summary>(`${endpoint}/summary`, { from_date: from, to_date: to }, proof)

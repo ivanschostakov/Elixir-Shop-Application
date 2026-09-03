@@ -1,52 +1,65 @@
-export const DEFAULT_COMPANION_TIMEZONE = "Europe/Moscow"
-
-const cityNames: Record<string, string> = {
-    "Europe/Kaliningrad": "Калининград",
-    "Europe/Moscow": "Москва, Санкт-Петербург",
-    "Europe/Samara": "Самара",
-    "Asia/Yekaterinburg": "Екатеринбург, Уфа",
-    "Asia/Omsk": "Омск",
-    "Asia/Krasnoyarsk": "Красноярск",
-    "Asia/Irkutsk": "Иркутск",
-    "Asia/Yakutsk": "Якутск",
-    "Asia/Vladivostok": "Владивосток",
-    "Asia/Magadan": "Магадан",
-    "Asia/Kamchatka": "Камчатка",
-    "UTC": "Всемирное время (UTC)",
-}
+// Device metadata, never a user preference. Do not infer cities/DST from offsets.
+const pad = (value: number) => String(value).padStart(2, "0")
 
 export function normalizeCompanionTimezone(value: string | null | undefined): string | null {
     let zone = value?.trim()
     if (!zone) return null
-    if (/^(UTC|GMT|Z)$/i.test(zone)) zone = "UTC"
-    else if (/^(МСК|MSK|Москва|Moscow)$/i.test(zone)) zone = DEFAULT_COMPANION_TIMEZONE
-    else {
-        const offset = /^(?:UTC|GMT)?([+-])(\d{1,2})(?::?00)?$/i.exec(zone)
-        if (offset && Number(offset[2]) <= 14) {
-            const hours = Number(offset[2])
-            zone = hours ? `Etc/GMT${offset[1] === "+" ? "-" : "+"}${hours}` : "UTC"
-        }
+    if (/^(UTC|GMT|Z)$/i.test(zone)) return "UTC"
+    if (/^(МСК|MSK|Москва|Moscow)$/i.test(zone)) zone = "Europe/Moscow"
+    const offset = /^(?:UTC|GMT)?([+-])(\d{1,2})(?::?(\d{2}))?$/i.exec(zone)
+    if (offset) {
+        const hours = Number(offset[2]), minutes = Number(offset[3] ?? 0)
+        if (hours > 14 || minutes > 59 || hours === 14 && minutes !== 0) return null
+        if (!minutes) return hours ? `Etc/GMT${offset[1] === "+" ? "-" : "+"}${hours}` : "UTC"
+        return `UTC${offset[1]}${pad(hours)}:${pad(minutes)}`
     }
-    // Some Intl versions accept fractional offset strings; the server requires
-    // a named zone. Do not guess a city (and its DST rules) from an offset.
-    if (/^(?:(?:UTC|GMT)?[+-])/i.test(zone)) return null
     try { new Intl.DateTimeFormat("en", { timeZone: zone }).format(0); return zone }
     catch { return null }
 }
 
-export function deviceCompanionTimezone(): string | null {
-    try { return normalizeCompanionTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone) }
-    catch { return null }
+export function deviceCompanionTimezone(): string {
+    try {
+        const zone = normalizeCompanionTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone)
+        if (zone) return zone
+    } catch { /* Fall back to the phone's exact offset, never a default city. */ }
+    const offset = -new Date().getTimezoneOffset()
+    return normalizeCompanionTimezone(`UTC${offset < 0 ? "-" : "+"}${pad(Math.floor(Math.abs(offset) / 60))}:${pad(Math.abs(offset) % 60)}`)!
 }
 
-export function companionTimezoneChoices(current?: string) {
-    const device = deviceCompanionTimezone()
-    let supported: string[] = []
-    try {
-        const intl = Intl as typeof Intl & { supportedValuesOf?: (key: "timeZone") => string[] }
-        supported = intl.supportedValuesOf?.("timeZone") ?? []
-    } catch { /* Older Hermes still gets regional, current and device choices. */ }
-    const selected = normalizeCompanionTimezone(current)
-    const zones = [...new Set([selected, device, ...Object.keys(cityNames), ...supported].filter((zone): zone is string => !!zone))]
-    return zones.map(value => ({ value, label: `${cityNames[value] ?? value.replace(/_/g, " ")}${value === device ? " · на устройстве" : ""}` }))
+export function localDateTime(value: string | Date): string {
+    const date = typeof value === "string" ? new Date(value) : value
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+export function localEntryTimestamp(value: string, original: string): string {
+    // Keep seconds and the exact occurrence of an ambiguous autumn hour unless edited.
+    if (value === localDateTime(original)) return original
+    const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/.exec(value.trim())
+    if (!match) throw new Error("Укажите дату и время в формате ГГГГ-ММ-ДД ЧЧ:ММ")
+    const [, y, m, d, h, minute] = match.map(Number)
+    const date = new Date(y, m - 1, d, h, minute)
+    if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d || date.getHours() !== h || date.getMinutes() !== minute) {
+        throw new Error("Такой даты или времени нет на телефоне. Проверьте введённое время.")
+    }
+    return date.toISOString()
+}
+
+export function calendarDate(days = 0): string {
+    const date = new Date()
+    date.setDate(date.getDate() + days)
+    return localDateTime(date).slice(0, 10)
+}
+
+export function deviceClockKey(): string {
+    return `${deviceCompanionTimezone()}|${new Date().getTimezoneOffset()}|${calendarDate()}`
+}
+
+export function formatCompanionDate(value: string, clock: string): string {
+    const zone = clock.split("|")[0]
+    const fixed = /^UTC([+-])(\d{2}):(\d{2})$/.exec(zone)
+    if (fixed) {
+        const minutes = (Number(fixed[2]) * 60 + Number(fixed[3])) * (fixed[1] === "+" ? 1 : -1)
+        return new Date(Date.parse(value) + minutes * 60_000).toLocaleString("ru-RU", { timeZone: "UTC" })
+    }
+    return new Date(value).toLocaleString("ru-RU", { timeZone: zone })
 }

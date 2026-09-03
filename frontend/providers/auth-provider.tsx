@@ -49,6 +49,7 @@ import {
 import { syncCustomerIntelligenceSession } from "@/services/customer-intelligence"
 import { heartbeatMyPresence } from "@/services/api/users"
 import { ApiError } from "@/services/api/client"
+import { startCompanionTimezoneSync } from "@/services/companion-timezone-sync"
 
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 60_000
 
@@ -97,6 +98,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [user, setUser] = useState<AuthUser | null>(null)
     const [isReady, setIsReady] = useState(false)
     const pathname = usePathname()
+    const timezoneUserId = user?.id
+
+    useEffect(() => {
+        if (timezoneUserId != null) return startCompanionTimezoneSync()
+    }, [timezoneUserId])
 
     useEffect(() => {
         return subscribeAuthSession((tokens) => {
