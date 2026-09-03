@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useIsFocused } from "@react-navigation/native"
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
 import { useTheme } from "@/providers/theme-provider"
@@ -8,6 +8,7 @@ import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, g
 import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
 import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
+import { companionTimezoneChoices, DEFAULT_COMPANION_TIMEZONE, deviceCompanionTimezone } from "@/screens/chat/companion-timezones"
 
 type Page = "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
 type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry }
@@ -92,6 +93,25 @@ function Field({ label, value, onChange, numeric = false, multiline = false, dis
 }
 function Toggle({ label, value, onChange, disabled = false }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
     return <View style={styles.toggle}><View style={{ flex: 1 }}><Copy>{label}</Copy></View><Switch accessibilityLabel={label} disabled={disabled} value={value} onValueChange={onChange} /></View>
+}
+function TimezoneField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+    const [expanded, setExpanded] = useState(false)
+    const [query, setQuery] = useState("")
+    const options = useMemo(() => companionTimezoneChoices(value), [value])
+    const selected = options.find(option => option.value === value)
+    const matching = options.filter(option => `${option.label} ${option.value}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
+    return <View style={styles.field}>
+        <Copy>{label}</Copy>
+        <Button label={(selected?.label ?? "Выберите часовой пояс") + (expanded ? " ▴" : " ▾")} onPress={() => { setExpanded(!expanded); setQuery("") }} />
+        {expanded ? <>
+            <Field label="Поиск города или часового пояса" value={query} onChange={setQuery} />
+            <ScrollView nestedScrollEnabled keyboardShouldPersistTaps="handled" style={{ maxHeight: 220 }}>
+                {matching.slice(0, 40).map(option => <Button key={option.value} label={(option.value === value ? "✓ " : "") + option.label} onPress={() => { onChange(option.value); setExpanded(false); setQuery("") }} />)}
+                {!matching.length ? <Copy>Город не найден. Попробуйте название латиницей.</Copy> : null}
+                {matching.length > 40 ? <Copy>Уточните поиск, чтобы увидеть остальные города.</Copy> : null}
+            </ScrollView>
+        </> : null}
+    </View>
 }
 function Choices<T extends string>({ options, value, onChange }: { options: Record<T, string>; value?: string | null; onChange: (value: T) => void }) {
     return <View style={styles.row}>{(Object.keys(options) as T[]).map(key => <Button key={key} label={(value === key ? "✓ " : "") + options[key]} onPress={() => onChange(key)} />)}</View>
@@ -202,12 +222,14 @@ function CompanionContent({ controller: c, onChanged }: { controller: Controller
 function ConsentForm({ controller: c, onSave }: { controller: Controller; onSave: (action: CompanionAction) => Promise<void> }) {
     const [adult, setAdult] = useState(false)
     const [accepted, setAccepted] = useState(false)
+    const [timezone, setTimezone] = useState(c.state?.profile?.settings.timezone ?? deviceCompanionTimezone() ?? DEFAULT_COMPANION_TIMEZONE)
     return <>
         <Copy>Чат поможет вести вашу готовую схему, питание, вес и самочувствие. Он не заменяет врача, не назначает пептиды и не корректирует дозировки. При ухудшении состояния обратитесь за медицинской помощью.</Copy>
         <Copy>По вашему согласию приложение хранит профиль, курс, дневник и сообщения сопровождения. Для ответов нужный контекст и отправленные вами вложения передаются OpenAI. Напоминания по умолчанию выключены; данные можно удалить в настройках. Не отправляйте чужие медицинские документы.</Copy>
         <Toggle label="Мне исполнилось 18 лет" value={adult} onChange={setAdult} />
         <Toggle label={"Согласен на обработку указанных данных и передачу контекста OpenAI для сопровождения (" + c.state?.consent_version + ")"} value={accepted} onChange={setAccepted} />
-        <Button label="Включить" disabled={!adult || !accepted || c.busy} onPress={() => void c.attempt(() => onSave({ kind: "enable", adult_confirmed: adult, consent_version: c.state!.consent_version, settings: { ...settingsDefault, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Moscow" } }))} />
+        <TimezoneField label="Часовой пояс" value={timezone} onChange={setTimezone} />
+        <Button label="Включить" disabled={!adult || !accepted || c.busy} onPress={() => void c.attempt(() => onSave({ kind: "enable", adult_confirmed: adult, consent_version: c.state!.consent_version, settings: { ...settingsDefault, timezone } }))} />
     </>
 }
 
@@ -269,10 +291,10 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             <Field label="Комментарий" multiline value={entry.note} onChange={note => setEntry({ ...entry, note })} />
             <Button label={editor.entry ? "Сохранить исправление" : "Подтвердить запись"} disabled={c.busy} onPress={() => save({ kind: "entry", entry, resource_id: editor.entry?.id, expected_version: editor.entry?.version })} />
         </> : null}
-        {page === "plan" ? <><Copy>Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.</Copy><Field label="Название курса" value={plan.name} onChange={name => setPlan({ ...plan, name })} /><Field label="Часовой пояс расписания (IANA)" value={plan.timezone} onChange={timezone => setPlan({ ...plan, timezone })} /><PlanFields plan={plan} onChange={setPlan} /><Button label="Подтвердить и сохранить курс" disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
+        {page === "plan" ? <><Copy>Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.</Copy><Field label="Название курса" value={plan.name} onChange={name => setPlan({ ...plan, name })} /><TimezoneField label="Часовой пояс расписания" value={plan.timezone} onChange={timezone => setPlan({ ...plan, timezone })} /><PlanFields plan={plan} onChange={setPlan} /><Button label="Подтвердить и сохранить курс" disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
         {page === "settings" ? <>
             <Copy>Push включается в настройках уведомлений приложения. Здесь задаётся, о чём и когда напоминать. Пустое время выключает напоминание.</Copy>
-            <Field label="Часовой пояс дневника и напоминаний (IANA)" value={settings.timezone} onChange={timezone => setSettings({ ...settings, timezone })} />
+            <TimezoneField label="Часовой пояс дневника и напоминаний" value={settings.timezone} onChange={timezone => setSettings({ ...settings, timezone })} />
             <Copy>Смена этого пояса не меняет расписание курса — его пояс редактируется в «Мой курс».</Copy>
             <Toggle label="Напоминать о событиях курса" value={settings.course_reminders} onChange={course_reminders => setSettings({ ...settings, course_reminders })} />
             {(["daily_time", "weight_time", "weekly_time"] as const).map((key, i) => <Field key={key} label={["Итоги дня, ЧЧ:ММ", "Напомнить внести вес, ЧЧ:ММ", "Итоги недели, ЧЧ:ММ"][i]} value={settings[key]} onChange={text => setSettings({ ...settings, [key]: text || null })} />)}

@@ -34,6 +34,21 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
     keyboardLayer: {
         flex: 1,
     },
+    fixedHeader: {
+        flexShrink: 0,
+        paddingHorizontal: spacing.md,
+        paddingBottom: spacing.sm,
+        gap: spacing.sm,
+        backgroundColor: colors.surfaceSoft,
+        zIndex: 12,
+    },
+    chatBody: {
+        flex: 1,
+        minHeight: 0,
+        // KeyboardAvoidingView may translate content on iOS. Clip it below
+        // the non-scrolling header rather than letting messages cover it.
+        overflow: "hidden",
+    },
     content: {
         flex: 1,
         position: "relative",
@@ -98,10 +113,6 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         backgroundColor: "rgba(9,16,24,0.5)",
     },
     topBarRow: {
-        position: "absolute",
-        left: spacing.md,
-        right: spacing.md,
-        zIndex: 12,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "flex-start",

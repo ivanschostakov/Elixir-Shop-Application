@@ -135,7 +135,7 @@ export default function ChatScreen() {
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
     const companion = useCompanion()
     const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.resolveEnabled)
-    const [companionPanelHeight, setCompanionPanelHeight] = useState(0)
+    const [chatHeaderHeight, setChatHeaderHeight] = useState(0)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [activeActionId, setActiveActionId] = useState<string | null>(null)
@@ -748,7 +748,8 @@ export default function ChatScreen() {
                     zIndex={6}
                 />
 
-                <View style={[chatScreenStyles.topBarRow, { top: topBarOffset }]}>
+                <View testID="ai-chat-fixed-header" onLayout={event => setChatHeaderHeight(event.nativeEvent.layout.height)} style={[chatScreenStyles.fixedHeader, { paddingTop: topBarOffset }]}>
+                <View style={chatScreenStyles.topBarRow}>
                     <Pressable
                         onPress={() => {
                             router.push(ROUTES.discover)
@@ -767,10 +768,10 @@ export default function ChatScreen() {
                     </Pressable>
                     <ChatModeSwitcher mode={chatMode} onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />
                 </View>
-                <View pointerEvents="box-none" onLayout={event => setCompanionPanelHeight(event.nativeEvent.layout.height)} style={{ position: "absolute", top: topBarOffset + 56, left: spacing.md, right: spacing.md, zIndex: 11 }}>
                     <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} />
                 </View>
 
+                <View testID="ai-chat-scroll-body" style={chatScreenStyles.chatBody}>
                 {loading && !chat && chatMode === "ai" ? (
                     <View style={chatScreenStyles.initialStateOverlay}>
                         <ActivityIndicator color={palette.primary} />
@@ -793,7 +794,7 @@ export default function ChatScreen() {
                 <KeyboardAvoidingView
                     behavior={Platform.OS === "ios" ? "position" : "height"}
                     contentContainerStyle={chatScreenStyles.keyboardContent}
-                    keyboardVerticalOffset={0}
+                    keyboardVerticalOffset={chatHeaderHeight}
                     style={chatScreenStyles.keyboardLayer}
                 >
                     <View style={chatScreenStyles.keyboardContent}>
@@ -801,7 +802,7 @@ export default function ChatScreen() {
                             contentContainerStyle={[
                                 chatScreenStyles.messagesContent,
                                 {
-                                    paddingTop: topBarOffset + 56 + companionPanelHeight + (companionPanelHeight ? 8 : 0),
+                                    paddingTop: spacing.sm,
                                     paddingBottom: composerOffset,
                                 },
                             ]}
@@ -1015,6 +1016,7 @@ export default function ChatScreen() {
                         </View>
                     </View>
                 </KeyboardAvoidingView>
+                </View>
                 <AttachmentSheet
                     activeMode={attachmentMode}
                     bottomInset={bottomInset}

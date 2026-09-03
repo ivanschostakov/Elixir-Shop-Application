@@ -1,9 +1,10 @@
 from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Literal
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from .timezones import normalize_timezone
 
 
 class StrictModel(BaseModel):
@@ -52,11 +53,7 @@ class Settings(StrictModel):
     @field_validator("timezone")
     @classmethod
     def valid_timezone(cls, value):
-        try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError):
-            raise ValueError("Use an IANA timezone")
-        return value
+        return normalize_timezone(value)
 
 
 Unit = Literal["mg", "mcg", "g", "ml", "capsule", "tablet", "IU"]
