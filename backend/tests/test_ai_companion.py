@@ -57,8 +57,9 @@ def test_calendar_interval_and_timezone():
     assert events[0]["scheduled_at"] == datetime(2030, 1, 1, 7, tzinfo=timezone.utc)
     assert len({event["event_key"] for event in events}) == 2
     assert len(schedule_events(plan_data(weekdays=[1]))) == 1  # Tuesday
-    with pytest.raises(ValidationError):
-        plan_data(interval_days=2, weekdays=[1])
+    normalized = plan_data(interval_days=2, weekdays=[1])
+    assert normalized.items[0].stages[0].interval_days == 1
+    assert len(schedule_events(normalized)) == 1
     with pytest.raises(ValidationError):
         plan_data(times=["10:00", "10:00"])
     with pytest.raises(ValidationError):

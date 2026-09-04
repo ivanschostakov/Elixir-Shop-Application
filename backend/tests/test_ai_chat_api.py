@@ -600,6 +600,27 @@ def test_parse_structured_ai_chat_output_accepts_catalog_payload():
     assert parsed.product_refs[0].variant_id == 20
 
 
+def test_validate_structured_ai_chat_output_returns_safe_error_details():
+    parsed, errors = ai_chat_interactive.validate_structured_ai_chat_output(
+        {
+            "assistant_text": "",
+            "product_refs": [],
+            "basket_addition": None,
+            "companion_proposals": [],
+            "companion_dialogue": None,
+        }
+    )
+
+    assert parsed is None
+    assert errors == [
+        {
+            "location": "assistant_text",
+            "type": "string_too_short",
+            "message": "String should have at least 1 character",
+        }
+    ]
+
+
 def test_normalize_ai_draft_items_merges_duplicates():
     normalized = _normalize_ai_draft_items([
         {"variant_id": 20, "quantity": 1},

@@ -335,6 +335,94 @@ def test_v2_provider_roundtrip_retry_and_no_commerce_tools(monkeypatch):
 
 
 @db_test
+def test_invalid_provider_structure_is_corrected_once(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from src.app.services.ai import chat as chat_service
+    from src.database.schemas.ai.chat import AIChatWithMessagesRead
+    monkeypatch.setattr(chat_service, "send_ai_reply_notification", AsyncMock())
+    monkeypatch.setattr(chat_service, "record_customer_event_safe", AsyncMock())
+
+    async def run():
+        async with database() as (db, user):
+            profile = await enable(db, user)
+            invalid = {
+                "text": "",
+                "structured_output": {
+                    "assistant_text": "",
+                    "product_refs": [],
+                    "basket_addition": None,
+                    "companion_proposals": [],
+                    "companion_dialogue": None,
+                },
+                "openai_model": "mock",
+                "input_tokens": 100,
+                "cached_input_tokens": 20,
+                "output_tokens": 10,
+                "context_input_tokens": 100,
+                "file_search_calls": 1,
+                "tool_rounds": 1,
+                "tool_calls": 1,
+                "conversation_id": "conv_mock",
+                "files": [],
+            }
+            corrected = {
+                "text": "Запись проверена.",
+                "structured_output": {
+                    "assistant_text": "Запись проверена.",
+                    "product_refs": [],
+                    "basket_addition": None,
+                    "companion_proposals": [],
+                    "companion_dialogue": DialogueTurn(operations=[weight()]).model_dump(mode="json"),
+                },
+                "openai_model": "mock",
+                "input_tokens": 120,
+                "cached_input_tokens": 60,
+                "output_tokens": 15,
+                "context_input_tokens": 120,
+                "file_search_calls": 0,
+                "tool_rounds": 0,
+                "tool_calls": 0,
+                "conversation_id": "conv_mock",
+                "files": [],
+            }
+            professor = SimpleNamespace(
+                create_conversation=AsyncMock(return_value="conv_mock"),
+                send_message_v2=AsyncMock(side_effect=[invalid, corrected]),
+                _resolve_model_name=lambda _: "mock",
+            )
+
+            result = await chat_service.send_user_chat_message(
+                db,
+                user=user,
+                text="вес 84",
+                attachments=None,
+                professor_client=professor,
+                allow_commerce=False,
+                companion_profile=profile,
+                client_request_id="dialogue-validation-retry-001",
+                dialogue_protocol=2,
+            )
+
+            read = AIChatWithMessagesRead.model_validate(result.chat)
+            assert len(read.messages) == 2
+            assert read.messages[-1].text == "Запись проверена."
+            assert read.messages[-1].dialogue_cards[0]["state"] == "saved"
+            assert result.turn_meta["input_tokens"] == 220
+            assert result.turn_meta["cached_input_tokens"] == 80
+            assert result.turn_meta["output_tokens"] == 25
+            assert professor.send_message_v2.await_count == 2
+            retry_call = professor.send_message_v2.await_args_list[1].kwargs
+            assert "не прошёл серверную валидацию" in retry_call["input_text"]
+            assert retry_call["conversation_id"] == "conv_mock"
+            assert retry_call["function_tools"] == []
+            assert retry_call["file_contents"] == []
+            assert retry_call["image_contents"] == []
+
+    asyncio.run(run())
+
+
+@db_test
 def test_deleted_entry_can_be_restored_and_old_snapshot_is_not_exposed():
     async def run():
         async with database() as (db, user):

@@ -74,14 +74,32 @@ def build_ai_chat_output_schema(*, include_companion: bool = False, dialogue: bo
     return _normalize_openai_json_schema(schema)
 
 
-def parse_structured_ai_chat_output(payload: Any) -> StructuredAIChatOutput | None:
-    if payload is None: return None
+def validate_structured_ai_chat_output(payload: Any) -> tuple[StructuredAIChatOutput | None, list[dict[str, str]]]:
+    if payload is None:
+        return None, [{"location": "response", "type": "missing", "message": "Structured response is missing"}]
     try:
-        if isinstance(payload, StructuredAIChatOutput): return payload
-        if isinstance(payload, str): return StructuredAIChatOutput.model_validate_json(payload)
-        if isinstance(payload, dict): return StructuredAIChatOutput.model_validate(payload)
-    except ValidationError: return None
-    return None
+        if isinstance(payload, StructuredAIChatOutput):
+            return payload, []
+        if isinstance(payload, str):
+            return StructuredAIChatOutput.model_validate_json(payload), []
+        if isinstance(payload, dict):
+            return StructuredAIChatOutput.model_validate(payload), []
+    except ValidationError as exc:
+        errors = [
+            {
+                "location": ".".join(str(part) for part in error.get("loc", ())) or "response",
+                "type": str(error.get("type") or "validation_error"),
+                "message": str(error.get("msg") or "Invalid value"),
+            }
+            for error in exc.errors(include_url=False, include_input=False)
+        ]
+        return None, errors
+    return None, [{"location": "response", "type": "type_error", "message": "Structured response must be an object or JSON string"}]
+
+
+def parse_structured_ai_chat_output(payload: Any) -> StructuredAIChatOutput | None:
+    parsed, _ = validate_structured_ai_chat_output(payload)
+    return parsed
 
 
 def load_ai_interactive_payload(context_json: dict[str, Any] | None) -> AIInteractivePayload | None:

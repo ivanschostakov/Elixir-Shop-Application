@@ -26,7 +26,7 @@ from .chat_interactive import (
     build_ai_interactive_payload,
     find_ai_interactive_action,
     load_ai_interactive_payload,
-    parse_structured_ai_chat_output,
+    validate_structured_ai_chat_output,
     verify_ai_action_token,
 )
 from .chat_tools import SHOP_AI_FUNCTION_TOOLS, ShopAIToolExecutor
@@ -101,6 +101,28 @@ def _ai_message_context(*, tool_executor: ShopAIToolExecutor, ai_result: dict[st
         "tool_calls": tool_executor.calls,
         "tool_rounds": ai_result.get("tool_rounds") or 0,
     }
+
+
+def _structured_output_retry_input(errors: list[dict[str, str]]) -> str:
+    details = "; ".join(
+        f"{error['location']}: {error['message']}"
+        for error in errors[:12]
+    )
+    return (
+        "Техническая коррекция предыдущего ответа: он не прошёл серверную валидацию. "
+        "Это не новое сообщение пользователя. Сохрани смысл и намерение предыдущего ответа, "
+        "исправь только неверные поля и верни полный структурированный объект заново. "
+        f"Ошибки валидации: {details or 'неизвестная ошибка структуры'}."
+    )
+
+
+def _combine_ai_results(initial: dict[str, object], retry: dict[str, object]) -> dict[str, object]:
+    combined = dict(retry)
+    for field in ("input_tokens", "cached_input_tokens", "output_tokens", "file_search_calls", "tool_rounds", "tool_calls"):
+        combined[field] = int(initial.get(field) or 0) + int(retry.get(field) or 0)
+    combined["files"] = [*(initial.get("files") or []), *(retry.get("files") or [])]
+    combined["conversation_reset_reason"] = retry.get("conversation_reset_reason") or initial.get("conversation_reset_reason")
+    return combined
 
 
 def _month_bounds(now: datetime) -> tuple[datetime, datetime]:
@@ -363,6 +385,10 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 await db.commit()
             companion_kwargs = {"companion_context": snapshot, "replay_history": replay, "resource_recorder": record_resource}
 
+        output_schema = build_ai_chat_output_schema(
+            include_companion=companion_profile is not None,
+            dialogue=companion_profile is not None and dialogue_protocol == 2,
+        )
         ai_result = await professor_client.send_message_v2(
             input_text=text if companion_profile is not None else _build_commerce_ai_input(text) if allow_commerce else (
                 "В этой версии приложения каталог и покупки недоступны. Не рекламируй товары, "
@@ -378,7 +404,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             user_id=user.id,
             function_tools=function_tools,
             function_tool_executor=tool_executor.execute if function_tools else None,
-            output_schema=build_ai_chat_output_schema(include_companion=companion_profile is not None, dialogue=companion_profile is not None and dialogue_protocol == 2),
+            output_schema=output_schema,
             output_schema_name="ai_chat_output",
             **companion_kwargs,
         )
@@ -389,17 +415,49 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             if current_conversation != starting_conversation_id:
                 raise HTTPException(409, "Контекст сопровождения изменился. Отправьте запрос заново.")
             proposal_version = snapshot["profile_version"]
+        structured_output, initial_validation_errors = validate_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
+        structured_retry: dict[str, Any] | None = None
+        if companion_profile is not None and structured_output is None:
+            first_result = ai_result
+            retry_result = await professor_client.send_message_v2(
+                input_text=_structured_output_retry_input(initial_validation_errors),
+                conversation_id=str(first_result.get("conversation_id") or chat.conversation_id),
+                bot_model=selected_model,
+                known_input_tokens=int(first_result.get("context_input_tokens") or first_result.get("input_tokens") or 0),
+                file_contents=[],
+                image_contents=[],
+                user_id=user.id,
+                function_tools=[],
+                function_tool_executor=None,
+                output_schema=output_schema,
+                output_schema_name="ai_chat_output",
+                **companion_kwargs,
+            )
+            ai_result = _combine_ai_results(first_result, retry_result)
+            companion_profile = await companion_service.assert_session_active(db, user.id, companion_profile_id)
+            current_conversation = (await db.execute(select(AIChat.conversation_id).where(AIChat.id == chat.id))).scalar_one()
+            if current_conversation != starting_conversation_id:
+                raise HTTPException(409, "Контекст сопровождения изменился. Отправьте запрос заново.")
+            structured_output, final_validation_errors = validate_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
+            structured_retry = {
+                "attempted": True,
+                "recovered": structured_output is not None,
+                "initial_errors": initial_validation_errors,
+            }
+            if final_validation_errors:
+                structured_retry["final_errors"] = final_validation_errors
         input_tokens = int(ai_result.get("input_tokens") or 0)
         cached_input_tokens = int(ai_result.get("cached_input_tokens") or 0)
         output_tokens = int(ai_result.get("output_tokens") or 0)
         openai_model = str(ai_result.get("openai_model") or "")
         final_conversation_id = str(ai_result.get("conversation_id") or chat.conversation_id)
-        structured_output = parse_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
         reply_text = str(ai_result.get("text") or "").strip()
         if companion_profile is not None and structured_output is None:
-            reply_text = "Не удалось обработать запись. Данные не изменены. Уточните запрос или попробуйте ещё раз."
+            reply_text = "Не удалось подготовить корректную запись после повторной проверки. Данные не изменены. Отправьте последнее уточнение ещё раз."
         interactive_payload = None
         assistant_context = _ai_message_context(tool_executor=tool_executor, ai_result=ai_result)
+        if structured_retry is not None:
+            assistant_context["structured_validation_retry"] = structured_retry
         resolved_openai_model = openai_model or professor_client._resolve_model_name(selected_model)
         usage_cost = calculate_openai_text_cost(
             model=resolved_openai_model,

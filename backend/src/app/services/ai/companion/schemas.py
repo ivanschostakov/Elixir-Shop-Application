@@ -76,8 +76,11 @@ class Stage(StrictModel):
             raise ValueError("Stage must span 0–730 days")
         if len(set(self.weekdays)) != len(self.weekdays) or any(v < 0 or v > 6 for v in self.weekdays):
             raise ValueError("Weekdays must be unique integers from 0 to 6")
-        if self.weekdays and self.interval_days != 1:
-            raise ValueError("Choose weekdays OR a day interval")
+        # Weekdays are the effective schedule whenever they are present. The
+        # interval is ignored by the scheduler, so canonicalize model output
+        # instead of rejecting an otherwise unambiguous course.
+        if self.weekdays:
+            self.interval_days = 1
         if len(set(self.times)) != len(self.times) or any(t.tzinfo is not None for t in self.times):
             raise ValueError("Times must be unique local times without offset")
         return self
