@@ -248,6 +248,8 @@ async def attach_turn(db, user_id, message, turn, user_message, *, allow_commerc
             card["changes"] = [{"parameter": key, "before": before.get(key), "after": value} for key, value in after.items() if value != before.get(key) and key != "timezone"]
         if op and op.plan:
             try:
+                if op.plan.source == "ai_recommended_plan":
+                    card["summary"] = "Рекомендация ИИ — не медицинское назначение. " + card["summary"]
                 current = await service.current_plan(db, user_id)
                 if op.remind_course is None:
                     op.remind_course = bool(profile.settings.get("course_reminders")) if current and current.status in {"active", "paused"} else True

@@ -19,7 +19,7 @@ export type CourseItem = {
     name: string; variant_id?: number | null; stages: Stage[]; package_amount?: Numeric | null
     package_unit?: Unit | null; home_amount: Numeric | null; package_source_name?: string | null
 }
-export type PlanData = { name: string; timezone: string; items: CourseItem[]; source?: "user_supplied_plan" }
+export type PlanData = { name: string; timezone: string; items: CourseItem[]; source?: "user_supplied_plan" | "ai_recommended_plan" }
 export type EntryData = {
     kind: "meal" | "weight" | "wellbeing"; occurred_at: string; name?: string | null; portion_g?: Numeric | null
     nutrition?: Nutrition | null; weight_kg?: Numeric | null; wellbeing?: number | null; appetite?: number | null

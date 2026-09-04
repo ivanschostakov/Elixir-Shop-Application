@@ -98,6 +98,7 @@ function Details({ card, clock }: { card: DialogueCard; clock: string }) {
     if (op.operations) return <>{op.operations.map((operation, index) => <Details key={index} card={{ ...card, changes: undefined, operation }} clock={clock} />)}</>
     if (card.changes?.length) return <>{card.changes.map(change => <Copy key={change.parameter}>{parameterLabels[change.parameter] ?? change.parameter}: {displayValue(change.before)} → {displayValue(change.after)}</Copy>)}</>
     if (op.plan) return <>
+        {op.plan.source === "ai_recommended_plan" ? <Copy>Рекомендация ИИ, а не медицинское назначение. Сначала проверьте схему.</Copy> : null}
         <Copy>{op.plan.name}</Copy>
         {op.plan.items.map((item, index) => <View key={index}>
             <Copy>{item.name}{item.package_source_name ? ` · ${item.package_source_name}` : ""}</Copy>

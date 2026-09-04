@@ -70,6 +70,30 @@ def test_immediate_save_policy_and_strict_payloads():
     verify(schema)
 
 
+def test_ai_recommended_course_is_supported_and_prompt_is_advisory():
+    from pathlib import Path
+    plan = PlanData.model_validate({"name": "Рекомендация", "source": "ai_recommended_plan", "items": [{"name": "Example", "stages": [{"start_date": "2030-01-01", "end_date": "2030-01-03", "amount": 1, "unit": "mg", "times": ["10:00"]}]}]})
+    assert plan.source == "ai_recommended_plan"
+    prompt = (Path(__file__).parents[1] / "src/integrations/ai/instructions/companion-dialogue.txt").read_text()
+    assert "предложить конкретную дозировку, частоту, длительность" in prompt
+    assert "source=ai_recommended_plan" in prompt
+    assert "Не назначай препараты или дозировки" not in prompt
+
+
+@db_test
+def test_ai_recommended_course_has_server_disclosure():
+    async def run():
+        async with database() as (db, user):
+            await enable(db, user)
+            plan = PlanData.model_validate({"name": "Рекомендация", "source": "ai_recommended_plan", "items": [{"name": "Example", "stages": [{"start_date": "2030-01-01", "end_date": "2030-01-03", "amount": 1, "unit": "mg", "times": ["10:00"]}]}]})
+            reply = await turn(db, user, "составь курс", [DialogueOperation(kind="plan", summary="Курс Example", evidence="составь курс", plan=plan)])
+            card = reply.dialogue_cards[0]
+            assert card["state"] == "pending"
+            assert card["summary"].startswith("Рекомендация ИИ — не медицинское назначение.")
+            assert await service.current_plan(db, user.id) is None
+    asyncio.run(run())
+
+
 @db_test
 def test_auto_save_undo_and_idempotent_action():
     async def run():

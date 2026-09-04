@@ -49,3 +49,10 @@ test("new companion controls stay in chat and reuse operation keys on retry", ()
     assert.ok(source.includes("formatCompanionDate(i.occurred_at, clock)"))
     assert.ok(source.includes("i.local_date"))
 })
+
+test("AI-recommended courses are visibly distinguished from user-supplied plans", () => {
+    const api = readFileSync(join(__dirname, "../services/api/companion.ts"), "utf8")
+    const dialogue = readFileSync(join(__dirname, "../screens/chat/companion-dialogue.tsx"), "utf8")
+    assert.match(api, /"ai_recommended_plan"/)
+    assert.match(dialogue, /Рекомендация ИИ, а не медицинское назначение/)
+})

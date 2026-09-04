@@ -106,7 +106,7 @@ class PlanData(StrictModel):
     name: str = Field(min_length=1, max_length=200)
     timezone: str = "Europe/Moscow"
     items: list[CourseItem] = Field(min_length=1, max_length=12)
-    source: Literal["user_supplied_plan"] = "user_supplied_plan"
+    source: Literal["user_supplied_plan", "ai_recommended_plan"] = "user_supplied_plan"
     _zone = field_validator("timezone")(Settings.valid_timezone.__func__)
 
 
