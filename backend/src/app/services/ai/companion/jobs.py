@@ -9,7 +9,7 @@ from sqlalchemy import or_, select
 import config
 from src.database import get_session
 from src.database.models import AIChat, AIMessage, User, UserPushToken
-from src.database.models.ai.companion import AICompanionEvent, AICompanionProfile, AICompanionReminder, AIProviderResource
+from src.database.models.ai.companion import AICompanionEntry, AICompanionEvent, AICompanionProfile, AICompanionReminder, AIProviderResource
 from src.integrations.ai.enums import MessageSender
 from . import service
 from .schemas import Settings
@@ -30,6 +30,8 @@ async def schedule_recurring(db, profile, now):
     zone = timezone_info(settings.timezone)
     today = now.astimezone(zone).date()
     kinds = [("daily", settings.daily_time), ("weight", settings.weight_time)]
+    if config.AI_COMPANION_DIALOGUE_ENABLED and settings.daily_time is None and settings.checkin_topics:
+        kinds.append(("checkin", settings.checkin_time))
     if today.weekday() == settings.weekly_day:
         kinds.append(("weekly", settings.weekly_time))
     if settings.supply_reminders:
@@ -52,20 +54,45 @@ async def schedule_recurring(db, profile, now):
 
 async def reminder_text(db, row, profile):
     settings = Settings.model_validate(profile.settings)
+    if row.kind == "checkin":
+        if not config.AI_COMPANION_DIALOGUE_ENABLED or settings.checkin_time is None or settings.daily_time is not None or not settings.checkin_topics:
+            return None
+        zone = timezone_info(settings.timezone)
+        start = row.due_at.astimezone(zone).replace(hour=0, minute=0, second=0, microsecond=0)
+        summary = await service.summary_for(db, row.user_id, start, row.due_at)
+        entries = await service.entries_for(db, row.user_id, start, row.due_at)
+        kinds = {entry.kind for entry in entries}
+        tracked = set((await db.execute(select(AICompanionEntry.kind).where(AICompanionEntry.user_id == row.user_id).distinct())).scalars())
+        nutrition_goal = profile.data.get("goal") in {"weight_loss", "maintain"}
+        questions = []
+        topics = settings.checkin_topics
+        if "course" in topics and summary["events"]["pending"]:
+            questions.append("В расписании есть события без отметки. Что удалось выполнить, а что пропустили?")
+        if "nutrition" in topics and (nutrition_goal or "meal" in tracked) and not summary["meals_logged"]:
+            questions.append("Что сегодня ели? Можно описать или прислать фото.")
+        if "weight" in topics and (nutrition_goal or "weight" in tracked) and "weight" not in kinds:
+            questions.append("Если сегодня измеряли вес, напишите результат.")
+        if "wellbeing" in topics and "wellbeing" not in kinds:
+            questions.append("Как самочувствие сегодня?")
+        if questions:
+            return "Давайте коротко подведём итоги дня.\n" + "\n".join(questions[:2]) + "\nОтвечайте здесь, в чате. Время и темы можно изменить сообщением; «не напоминай» отключит уведомления."
+        return f"Спасибо за записи. Сегодня внесено приёмов пищи: {summary['meals_logged']}, измерений веса: {summary['weight_measurements']}. " + summary["coverage_note"]
     if row.kind == "course":
         plan = await service.current_plan(db, row.user_id)
         event = await db.get(AICompanionEvent, row.event_id)
         if not settings.course_reminders or not plan or plan.status != "active" or not event or event.plan_id != plan.id or event.status != "pending":
             return None
-        return "В вашем подтверждённом расписании есть событие. Откройте план и отметьте фактическое выполнение или пропуск. Бот не меняет назначение."
+        return f"В вашем подтверждённом расписании есть событие: {event.data['name']}. Если уже выполнили или пропустили, напишите об этом здесь. Это напоминание о вашем расписании, не новое назначение."
     if row.kind == "weight":
-        return "Хотите внести вес? Запишите фактическое измерение в дневник." if settings.weight_time else None
+        return "Если измеряли вес, напишите результат здесь — помогу внести в дневник." if settings.weight_time else None
     if row.kind == "supply":
         if not settings.supply_reminders:
             return None
         result = await service.supply_for(db, row.user_id, settings.supply_days)
         if not any(item.get("available") and item.get("packages", 0) > 0 for item in result.get("items", [])):
             return None
+        if config.AI_COMPANION_DIALOGUE_ENABLED:
+            return "По подтверждённому плану и внесённому остатку запаса может не хватить на выбранный период. Напишите здесь фактический остаток — помогу сверить учёт."
         return "По подтверждённому плану и внесённому остатку запаса может не хватить на выбранный период. Проверьте фактический остаток в разделе «Запас»."
     if row.kind == "daily" and not settings.daily_time or row.kind == "weekly" and not settings.weekly_time:
         return None
@@ -85,7 +112,7 @@ async def deliver_reminder(db, row, profile, now):
     from src.app.services.push_notifications import _build_push_messages, _send_expo_push_messages, _delete_invalid_push_tokens
     body = await reminder_text(db, row, profile)
     # Do not send an overdue injection reminder after a long worker outage.
-    grace = timedelta(minutes=30) if row.kind == "course" else timedelta(hours=12)
+    grace = timedelta(minutes=30) if row.kind == "course" else timedelta(hours=1) if row.kind == "checkin" else timedelta(hours=12)
     if not body or now - row.due_at > grace:
         row.status = "cancelled"
         return

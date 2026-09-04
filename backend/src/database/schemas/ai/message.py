@@ -53,6 +53,7 @@ class AIMessageRead(AIMessageBase):
 
     id: int
     companion_cards: list[dict[str, Any]] = Field(default_factory=list)
+    dialogue_cards: list[dict[str, Any]] = Field(default_factory=list)
     attachments: list[AIAttachmentRead] = Field(default_factory=list)
     interactive: AIInteractivePayload | None = None
     usage: AIMessageUsageRead | None = None

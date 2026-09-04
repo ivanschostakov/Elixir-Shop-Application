@@ -11,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 import config
 from src.database.models import AIChat, AIMessage, Attachment, CustomerConsent, User
-from src.database.models.ai.companion import AICompanionEntry, AICompanionEvent, AICompanionOperation, AICompanionPlan, AICompanionProfile, AICompanionReminder, AIProviderResource
+from src.database.models.ai.companion import AICompanionDialogue, AICompanionEntry, AICompanionEvent, AICompanionOperation, AICompanionPlan, AICompanionProfile, AICompanionReminder, AIProviderResource
 from .domain import calculate_nutrition, convert_amount, package_count, parse_package, schedule_events
 from .schemas import Action, EntryData, Nutrition, PlanData, ProfileData, Proposal, Settings
 from .timezones import normalize_timezone, timezone_info
@@ -151,7 +151,7 @@ async def summary_for(db, user_id, start, end):
 
 
 async def get_state(db, user_id):
-    base = {"available": config.AI_COMPANION_ENABLED, "consent_version": config.AI_COMPANION_CONSENT_VERSION}
+    base = {"available": config.AI_COMPANION_ENABLED, "consent_version": config.AI_COMPANION_CONSENT_VERSION, "dialogue_protocol": 2 if config.AI_COMPANION_DIALOGUE_ENABLED else 1}
     if not base["available"]:
         return base
     profile = await profile_for(db, user_id)
@@ -192,14 +192,18 @@ async def nutrition_suggestion(db, user_id):
         return {"available": False, "reason": "Правила питания недоступны. Используйте ручной ввод."}
 
 
-async def prepare_plan(db, plan):
+async def prepare_plan(db, plan, existing=None):
     from src.database.models import Variant
     value = plan.model_copy(deep=True)
+    previous = {item.get("variant_id"): item for item in existing.data["items"]} if existing else {}
     for item in value.items:
         if item.variant_id:
             variant = (await db.execute(select(Variant).options(selectinload(Variant.product)).where(Variant.id == item.variant_id, Variant.archived.is_(False)))).scalar_one_or_none()
-            if variant is None:
-                raise HTTPException(422, "Вариант товара не найден")
+            if variant is None or variant.product.archived:
+                if item.variant_id in previous:
+                    item.package_source_name = previous[item.variant_id].get("package_source_name")
+                    continue  # Archived catalog rows must not destroy a user's course history.
+                raise HTTPException(422, "Вариант товара не найден; сохраните позицию без привязки")
             parsed = parse_package(variant.product.name, variant.name)
             if item.package_amount is None and parsed["known"]:
                 item.package_amount, item.package_unit = Decimal(parsed["amount"]), parsed["unit"]
@@ -265,10 +269,12 @@ async def sync_course_reminders(db, profile):
         db.add(AICompanionReminder(user_id=profile.user_id, event_id=event.id, kind="course", dedupe_key=f"course:{event.id}:settings:{profile.version}", due_at=event.scheduled_at))
 
 
-async def apply_action(db: AsyncSession, user_id: int, action: Action):
+async def apply_action(db: AsyncSession, user_id: int, action: Action, *, allow_commerce=True):
     # Serialize short mutations for this user; do not hold this lock during AI calls.
     await db.execute(select(User.id).where(User.id == user_id).with_for_update())
-    fingerprint = hashlib.sha256(action.model_dump_json().encode()).hexdigest()
+    # Consent metadata can disappear after a successful but timed-out first save.
+    # It is not a different v2 operation on a retry with the same request key.
+    fingerprint = hashlib.sha256(action.model_dump_json(exclude={"consent_version", "adult_confirmed"} if action.kind.startswith("dialogue_") else None).encode()).hexdigest()
     receipt = (await db.execute(select(AICompanionOperation).where(AICompanionOperation.user_id == user_id, AICompanionOperation.request_key == action.request_key))).scalar_one_or_none()
     if receipt:
         if receipt.fingerprint != fingerprint:
@@ -294,11 +300,14 @@ async def apply_action(db: AsyncSession, user_id: int, action: Action):
     elif not profile.enabled:
         raise HTTPException(403, "Сопровождение отключено")
     else:
-        if action.kind not in {"cancel", "delete_entry"}:
+        if action.kind not in {"cancel", "delete_entry", "dialogue_cancel", "dialogue_edit"}:
             if action.consent_version is not None:
                 await grant_consent(db, user_id, action)
             await require_consent(db, user_id)
-        if action.kind in {"confirm", "cancel"}:
+        if action.kind.startswith("dialogue_"):
+            from .dialogue import apply_card as apply_dialogue_card
+            await apply_dialogue_card(db, user_id, action, allow_commerce=allow_commerce)
+        elif action.kind in {"confirm", "cancel"}:
             await apply_card(db, user_id, profile, action)
         else:
             await apply_payload(db, user_id, profile, action)
@@ -343,9 +352,9 @@ async def apply_payload(db, user_id, profile, action, source_message_id=None):
     elif action.kind == "plan":
         if action.plan is None:
             raise HTTPException(422, "Нет плана")
-        plan = await prepare_plan(db, action.plan)
-        events = schedule_events(plan)
         previous = await current_plan(db, user_id)
+        plan = await prepare_plan(db, action.plan, previous)
+        events = schedule_events(plan)
         if previous:
             previous.is_current = False
             await db.execute(update(AICompanionEvent).where(AICompanionEvent.plan_id == previous.id, AICompanionEvent.status == "pending", AICompanionEvent.scheduled_at >= now_utc()).values(status="cancelled"))
@@ -475,7 +484,7 @@ async def erase_companion(db, user_id):
     for attachment in files:
         await register_resource(db, user_id, "local_file", str(attachment.relative_path))
     await db.execute(update(AIProviderResource).where(AIProviderResource.user_id == user_id).values(status="pending_delete", next_attempt_at=now_utc() + timedelta(minutes=10)))
-    for model in (AICompanionReminder, AICompanionEvent, AICompanionEntry, AICompanionPlan, AICompanionOperation, AICompanionProfile):
+    for model in (AICompanionDialogue, AICompanionReminder, AICompanionEvent, AICompanionEntry, AICompanionPlan, AICompanionOperation, AICompanionProfile):
         await db.execute(delete(model).where(model.user_id == user_id))
     # Provider cleanup waits out the maximum in-flight turn (540 s); local records vanish now.
     # Remove actual sensitive message content too, otherwise it can rehydrate memory.

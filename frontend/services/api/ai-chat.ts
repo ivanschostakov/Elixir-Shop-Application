@@ -12,10 +12,11 @@ export function getMyAiChat(): Promise<AIChatResponse> {
     return apiGet<AIChatResponse>(aiChatEndpoint, undefined, { appIntegrityAction: "ai-chat:read" })
 }
 
-export function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = [], companionRequestId?: string): Promise<AIChatResponse> {
+export function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = [], companionRequestId?: string, dialogueProtocol: 1 | 2 = 1): Promise<AIChatResponse> {
     const formData = new FormData()
     formData.append("text", text)
     if (companionRequestId) formData.append("client_request_id", companionRequestId)
+    if (companionRequestId) formData.append("dialogue_protocol", String(dialogueProtocol))
 
     for (const attachment of attachments) {
         formData.append(

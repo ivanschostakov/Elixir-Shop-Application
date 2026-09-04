@@ -10,6 +10,7 @@ import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
 import { calendarDate, deviceCompanionTimezone, formatCompanionDate as dateLabel, localDateTime, localEntryTimestamp } from "@/screens/chat/companion-timezones"
 import { useDeviceClock } from "@/hooks/chat/use-device-clock"
+import { DialogueCards, DialoguePanel } from "@/screens/chat/companion-dialogue"
 
 type Page = "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
 type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry }
@@ -28,6 +29,7 @@ export function useCompanion() {
     const [error, setError] = useState("")
     const [editor, setEditor] = useState<Editor | null>(null)
     const refreshSequence = useRef(0)
+    const protocolRef = useRef<1 | 2>(1)
     const refresh = useCallback(async () => {
         if (Platform.OS === "web") return
         const sequence = ++refreshSequence.current
@@ -39,6 +41,7 @@ export function useCompanion() {
                 const next = await getCompanion()
                 if (sequence !== refreshSequence.current) return
                 setState(next)
+                protocolRef.current = next.dialogue_protocol ?? 1
                 setError("")
                 return next
             }
@@ -75,7 +78,7 @@ export function useCompanion() {
     const attempt = async (operation: () => Promise<unknown>) => {
         try { await operation() } catch (e) { if (!(e instanceof CompanionActionCancelled)) setError(getErrorMessage(e)) }
     }
-    return { state, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, busy, error, setError, editor, setEditor, refresh, perform, attempt }
+    return { state, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => protocolRef.current, busy, error, setError, editor, setEditor, refresh, perform, attempt }
 }
 
 function Copy({ children }: { children: React.ReactNode }) {
@@ -129,11 +132,16 @@ function ProposalCopy({ proposal, clock }: { proposal: Proposal; clock: string }
 export function CompanionCards({ controller: c, message, onChanged }: { controller: Controller; message: AIMessageRead; onChanged: () => Promise<void> }) {
     if (!c.enabled || Platform.OS === "web") return null
     const action = async (card: CompanionCard, kind: "confirm" | "cancel", edit = false) => {
+        if (edit && c.state?.dialogue_protocol === 2) {
+            await c.perform({ kind: "dialogue_edit", message_id: message.id, action_id: card.id, action_token: card.action_token ?? "" })
+            await onChanged()
+            return
+        }
         await c.perform({ kind, message_id: message.id, action_id: card.id, action_token: card.action_token ?? "" })
         await onChanged()
         if (edit) c.setEditor({ page: card.kind === "entry" ? card.proposal.entry?.kind ?? "meal" : card.kind, proposal: card.proposal })
     }
-    return <>{message.companion_cards?.map(card => <View key={card.id} style={styles.card}>
+    return <><DialogueCards controller={c} message={message} onChanged={onChanged} />{message.companion_cards?.map(card => <View key={card.id} style={styles.card}>
         <Copy>{card.state === "confirmed" ? "✓ Сохранено" : card.state === "cancelled" ? "Отменено" : "Черновик — проверьте данные"}</Copy>
         <Copy>{card.summary}</Copy><ProposalCopy proposal={card.proposal} clock={c.clock} />
         {card.state === "pending" ? <View style={styles.row}>
@@ -144,12 +152,13 @@ export function CompanionCards({ controller: c, message, onChanged }: { controll
     </View>)}</>
 }
 
-export function CompanionPanel({ controller: c, onChanged, openRequested }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean }) {
+export function CompanionPanel({ controller: c, onChanged, openRequested, onPrompt, sending }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean; onPrompt?: (text: string) => Promise<unknown>; sending?: boolean }) {
     const { palette } = useTheme()
     const hasProfile = !!c.state?.profile
     const setEditor = c.setEditor
     useEffect(() => { if (openRequested && hasProfile) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor])
     if (Platform.OS === "web" || !c.state?.available) return null
+    if (c.state.dialogue_protocol === 2 && onPrompt) return <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt} sending={sending} />
     const changed = async () => { await c.refresh(); await onChanged() }
     return <View style={[styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }]}>
         <Button label="Мой курс · дневник · прогресс" disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} />

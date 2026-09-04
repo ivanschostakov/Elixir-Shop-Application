@@ -68,6 +68,7 @@ export type AIAttachmentRead = {
 }
 
 export type AIMessageRead = {
+    dialogue_cards?: import("@/services/api/companion").DialogueCard[]
     companion_cards?: import("@/services/api/companion").CompanionCard[]
     id: number
     user_id: number

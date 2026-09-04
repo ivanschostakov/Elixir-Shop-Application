@@ -1,6 +1,7 @@
 from pydantic import Field, BaseModel, ConfigDict
 from typing import Literal
 from ..companion.schemas import Proposal
+from ..companion.dialogue_schemas import DialogueTurn
 
 ProductRequestedAction = Literal["open_product", "compare", "alternatives", "checkout"]
 ProductRefIntent = Literal["recommend", "compare", "alternative"]
@@ -37,6 +38,7 @@ class StructuredAIChatOutput(BaseModel):
     product_refs: list[StructuredProductRef] = Field(default_factory=list, max_length=6)
     basket_addition: StructuredBasketAddition | None = None
     companion_proposals: list[Proposal] = Field(default_factory=list, max_length=3)
+    companion_dialogue: DialogueTurn | None = None
 
 
 class AIActionTokenPayload(BaseModel):

@@ -1,5 +1,6 @@
 import aiofiles
 import mimetypes
+import hashlib
 
 from datetime import datetime
 from decimal import Decimal
@@ -251,19 +252,22 @@ async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_cli
     return created
 
 
-async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None) -> AIChatSendResult:
+async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1) -> AIChatSendResult:
     chat = await get_or_create_user_chat(db, user=user, professor_client=professor_client)
     companion_profile_id = companion_profile.id if companion_profile is not None else None
     starting_conversation_id = chat.conversation_id
+    loaded_uploads = await _load_uploads(attachments)
+    input_fingerprint = hashlib.sha256((text + "\n" + "\n".join(hashlib.sha256(u.content).hexdigest() for u in loaded_uploads)).encode()).hexdigest()
+    duplicate = None
     if client_request_id:
         duplicate = (await db.execute(select(AIMessage).where(AIMessage.user_id == user.id, AIMessage.client_request_id == client_request_id))).scalar_one_or_none()
         if duplicate is not None:
-            if duplicate.text != text:
+            if duplicate.text != text or (dialogue_protocol == 2 and (duplicate.context_json or {}).get("input_fingerprint", input_fingerprint) != input_fingerprint):
                 raise HTTPException(409, "Ключ сообщения уже использован")
-            if (duplicate.context_json or {}).get("generation_status") != "completed":
+            if (duplicate.context_json or {}).get("generation_status") == "completed":
+                return AIChatSendResult(chat=await get_ai_chat_by_id(db, chat.id, user_id=user.id), turn_meta={}, basket_updated=False)
+            if dialogue_protocol != 2:
                 raise HTTPException(409, "Сообщение сохранено, но ответ не завершён. Обновите чат; при необходимости отправьте новый запрос.")
-            return AIChatSendResult(chat=await get_ai_chat_by_id(db, chat.id, user_id=user.id), turn_meta={}, basket_updated=False)
-    loaded_uploads = await _load_uploads(attachments)
     selected_model = await resolve_user_bot_model(db, user_id=user.id)
     user_attachment_paths: list[Path] = []
     ai_attachment_paths: list[Path] = []
@@ -278,11 +282,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         from .companion import service as companion_service
         companion_profile = await companion_service.assert_session_active(db, user.id, companion_profile_id)
 
-    user_message = await create_ai_message(db, AIMessageCreate( user_id=user.id, chat_id=chat.id, text=text, sender=MessageSender.USER, client_request_id=client_request_id, is_sensitive=companion_profile is not None), commit=False)
+    user_message = duplicate or await create_ai_message(db, AIMessageCreate( user_id=user.id, chat_id=chat.id, text=text, sender=MessageSender.USER, client_request_id=client_request_id, is_sensitive=companion_profile is not None, context_json={"input_fingerprint": input_fingerprint} if companion_profile is not None else None), commit=False)
 
     # Persist user message first so it is durable even if AI generation request is interrupted.
     try:
-        for item in loaded_uploads:
+        for item in ([] if duplicate is not None else loaded_uploads):
             saved_path = await _create_attachment_with_file(db, message_id=user_message.id, attachment_type=item.kind, content=item.content, original_filename=item.filename, mime_type=item.mime_type, is_private=companion_profile is not None)
             user_attachment_paths.append(saved_path)
 
@@ -306,6 +310,18 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         )
 
     try:
+        if companion_profile is not None and dialogue_protocol == 2 and not loaded_uploads:
+            from .companion import dialogue
+            from .companion.schemas import Action
+            direct = await dialogue.direct_reply(db, user.id, user_message)
+            if direct is not None:
+                if isinstance(direct, tuple):
+                    source, card, kind = direct
+                    await companion_service.apply_action(db, user.id, Action(request_key=f"text-message-{user_message.id}", kind=kind, message_id=source.id, action_id=card["id"], action_token=card["action_token"]), allow_commerce=allow_commerce)
+                    await dialogue.say(db, user.id, "Подтверждено и сохранено." if kind == "dialogue_confirm" else "Черновик отменён.")
+                user_message.context_json = {**(user_message.context_json or {}), "generation_status": "completed"}
+                await db.commit()
+                return AIChatSendResult(chat=await get_ai_chat_by_id(db, chat.id, user_id=user.id), turn_meta={}, basket_updated=False)
         file_contents = [(item.ai_filename, item.ai_content) for item in loaded_uploads if item.kind == AttachmentType.DOCUMENT]
         image_contents = [(item.ai_filename, item.ai_content) for item in loaded_uploads if item.kind == AttachmentType.IMAGE]
         tool_executor = ShopAIToolExecutor(db, user_id=user.id)
@@ -317,8 +333,17 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             snapshot = await companion_service.context_for(db, user.id)
             if snapshot is None: raise HTTPException(403, "Сопровождение отключено")
             snapshot["commerce_allowed"] = allow_commerce
-            tool_executor = CompanionToolExecutor(db, user.id, shop=tool_executor if allow_commerce else None)
+            if dialogue_protocol == 2:
+                from .companion import dialogue
+                flow = await dialogue.workflow(db, user.id, True)
+                snapshot["dialogue"] = await dialogue.snapshot(db, user.id)
+                dialogue_version = flow.version
+                dialogue_guards = {kind: await dialogue.guard_for(db, user.id, kind) for kind in ("profile", "nutrition", "settings", "plan", "plan_status")}
+            tool_executor = CompanionToolExecutor(db, user.id, shop=tool_executor if allow_commerce else None, dialogue=dialogue_protocol == 2)
             function_tools = [*COMPANION_TOOLS, *function_tools]
+            if dialogue_protocol == 2:
+                from .companion.dialogue_tools import DIALOGUE_TOOLS
+                function_tools = [*COMPANION_TOOLS, *[t for t in DIALOGUE_TOOLS if allow_commerce or t["name"] != "match_course_products"]]
             if not allow_commerce:
                 function_tools = [t for t in function_tools if t["name"] != "calculate_course_supply"]
             recent = list((await db.execute(select(AIMessage).where(AIMessage.chat_id == chat.id, AIMessage.id < user_message.id).order_by(AIMessage.id.desc()).limit(20))).scalars().all())
@@ -353,7 +378,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             user_id=user.id,
             function_tools=function_tools,
             function_tool_executor=tool_executor.execute if function_tools else None,
-            output_schema=build_ai_chat_output_schema(include_companion=companion_profile is not None),
+            output_schema=build_ai_chat_output_schema(include_companion=companion_profile is not None, dialogue=companion_profile is not None and dialogue_protocol == 2),
             output_schema_name="ai_chat_output",
             **companion_kwargs,
         )
@@ -372,7 +397,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         structured_output = parse_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
         reply_text = str(ai_result.get("text") or "").strip()
         if companion_profile is not None and structured_output is None:
-            reply_text = "Не удалось подготовить корректную карточку. Данные не изменены. Уточните запрос или внесите запись вручную."
+            reply_text = "Не удалось обработать запись. Данные не изменены. Уточните запрос или попробуйте ещё раз."
         interactive_payload = None
         assistant_context = _ai_message_context(tool_executor=tool_executor, ai_result=ai_result)
         resolved_openai_model = openai_model or professor_client._resolve_model_name(selected_model)
@@ -429,7 +454,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         ai_message = await create_ai_message(db, AIMessageCreate(user_id=user.id, chat_id=chat.id, text=reply_text or AI_CHAT_EMPTY_REPLY, sender=MessageSender.AI, context_json=assistant_context, is_sensitive=companion_profile is not None), commit=False)
         ai_message_id = ai_message.id
         if companion_profile is not None and structured_output is not None:
-            await companion_service.attach_proposals(db, user.id, ai_message, structured_output.companion_proposals, companion_profile, expected_version=proposal_version)
+            if dialogue_protocol == 2:
+                from .companion.dialogue_schemas import DialogueTurn
+                await dialogue.attach_turn(db, user.id, ai_message, structured_output.companion_dialogue or DialogueTurn(), user_message, allow_commerce=allow_commerce, expected_workflow_version=dialogue_version, expected_guards=dialogue_guards)
+            else:
+                await companion_service.attach_proposals(db, user.id, ai_message, structured_output.companion_proposals, companion_profile, expected_version=proposal_version)
             assistant_context = dict(ai_message.context_json or {})
         await create_ai_message_usage(db, AIMessageUsageCreate( message_id=ai_message.id, input_tokens=input_tokens, cached_input_tokens=cached_input_tokens, output_tokens=output_tokens, bot_model=selected_model, openai_model=resolved_openai_model), commit=False)
         interactive_payload = attach_ai_action_tokens(interactive_payload, user_id=user.id, chat_id=chat.id, message_id=ai_message.id)

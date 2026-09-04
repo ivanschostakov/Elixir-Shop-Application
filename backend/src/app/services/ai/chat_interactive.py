@@ -50,25 +50,27 @@ def _normalize_openai_json_schema(node: Any) -> Any:
     return node
 
 
-def build_ai_chat_output_schema(*, include_companion: bool = False) -> dict[str, Any]:
+def build_ai_chat_output_schema(*, include_companion: bool = False, dialogue: bool = False) -> dict[str, Any]:
     schema = copy.deepcopy(StructuredAIChatOutput.model_json_schema())
+    if not dialogue or not include_companion:
+        schema["properties"].pop("companion_dialogue", None)
     if not include_companion:
         schema["properties"].pop("companion_proposals", None)
-        # Keep only definitions reachable from the ordinary chat schema.
-        pending = [schema["properties"]]
-        names = set()
-        while pending:
-            node = pending.pop()
-            if isinstance(node, dict):
-                if "$ref" in node:
-                    name = node["$ref"].split("/")[-1]
-                    if name not in names:
-                        names.add(name)
-                        pending.append(schema["$defs"][name])
-                pending.extend(node.values())
-            elif isinstance(node, list):
-                pending.extend(node)
-        schema["$defs"] = {name: value for name, value in schema.get("$defs", {}).items() if name in names}
+    # Keep only definitions reachable in the negotiated protocol.
+    pending = [schema["properties"]]
+    names = set()
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            if "$ref" in node:
+                name = node["$ref"].split("/")[-1]
+                if name not in names:
+                    names.add(name)
+                    pending.append(schema["$defs"][name])
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+    schema["$defs"] = {name: value for name, value in schema.get("$defs", {}).items() if name in names}
     return _normalize_openai_json_schema(schema)
 
 

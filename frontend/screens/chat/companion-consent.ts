@@ -7,7 +7,7 @@ export async function withStorageConsent(
     action: CompanionAction,
     confirm: (version: string) => Promise<boolean>,
 ): Promise<CompanionAction> {
-    if (!state?.consent_required || ["enable", "disable", "cancel", "delete_entry"].includes(action.kind)) return action
+    if (!state?.consent_required || ["enable", "disable", "cancel", "delete_entry", "dialogue_cancel", "dialogue_edit"].includes(action.kind)) return action
     if (!await confirm(state.consent_version)) throw new CompanionActionCancelled()
     // The explicit 18+ save button, never merely opening the chat, grants consent.
     return { ...action, consent_version: state.consent_version, adult_confirmed: true }

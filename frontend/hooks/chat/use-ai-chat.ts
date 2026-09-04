@@ -37,7 +37,7 @@ type UseAiChatResult = {
 const AI_REPLY_POLL_INTERVAL_MS = 1500
 const AI_REPLY_POLL_MAX_ATTEMPTS = 30
 
-export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false): UseAiChatResult {
+export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false, companionProtocol: () => 1 | 2 = () => 1): UseAiChatResult {
     const isFocused = useIsFocused()
     const [refreshing, setRefreshing] = useState(false)
     const [sending, setSending] = useState(false)
@@ -45,6 +45,8 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
     const [optimisticMessages, setOptimisticMessages] = useState<ChatDisplayMessage[]>([])
     const hasLoadedOnceRef = useRef(false)
     const optimisticIdRef = useRef(0)
+    const failedRequestRef = useRef<{ fingerprint: string; key: string } | null>(null)
+    const sendingRef = useRef(false)
     const {
         data: chat,
         error,
@@ -138,6 +140,8 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
     }, [hasPendingServerReply, isFocused, sending, setChat])
 
     const sendMessage = async (text: string, attachments: UploadableChatAttachment[] = []) => {
+        if (sendingRef.current) throw new Error("Дождитесь ответа на предыдущее сообщение")
+        sendingRef.current = true
         const createdAt = new Date().toISOString()
         const nextOptimisticIndex = optimisticIdRef.current + 1
         optimisticIdRef.current = nextOptimisticIndex
@@ -156,7 +160,11 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
 
         try {
             const useCompanion = typeof companionEnabled === "function" ? await companionEnabled() : companionEnabled
-            const nextChat = await sendMyAiChatMessage(text, attachments, useCompanion ? requestKey() : undefined)
+            const fingerprint = JSON.stringify([text, attachments])
+            const key = failedRequestRef.current?.fingerprint === fingerprint ? failedRequestRef.current.key : requestKey()
+            failedRequestRef.current = { fingerprint, key }
+            const nextChat = await sendMyAiChatMessage(text, attachments, useCompanion ? key : undefined, companionProtocol())
+            failedRequestRef.current = null
             if (nextChat.basket) {
                 setBasketSnapshot(nextChat.basket)
             }
@@ -175,6 +183,7 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
         } finally {
             setAiTyping(false)
             setSending(false)
+            sendingRef.current = false
         }
     }
 

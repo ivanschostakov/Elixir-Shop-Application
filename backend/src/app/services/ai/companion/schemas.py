@@ -42,8 +42,10 @@ class Settings(StrictModel):
     weekly_day: int = Field(default=6, ge=0, le=6)
     supply_reminders: bool = False
     supply_days: int = Field(default=7, ge=1, le=30)
+    checkin_time: time | None = None
+    checkin_topics: list[Literal["course", "nutrition", "weight", "wellbeing"]] = Field(default_factory=lambda: ["course", "nutrition", "weight", "wellbeing"], max_length=4)
 
-    @field_validator("daily_time", "weight_time", "weekly_time")
+    @field_validator("daily_time", "weight_time", "weekly_time", "checkin_time")
     @classmethod
     def local_time_only(cls, value):
         if value is not None and value.tzinfo is not None:
@@ -155,7 +157,7 @@ class Proposal(StrictModel):
 
 class Action(StrictModel):
     request_key: str = Field(min_length=8, max_length=64)
-    kind: Literal["enable", "disable", "profile", "settings", "plan", "plan_status", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition"]
+    kind: Literal["enable", "disable", "profile", "settings", "plan", "plan_status", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]
     expected_version: int | None = Field(default=None, ge=1)
     resource_id: int | None = Field(default=None, gt=0)
     profile: ProfileData | None = None

@@ -228,7 +228,8 @@ class ProfessorClient(AsyncClient):
             "truncation": "auto",
         }
         if companion_context is not None:
-            rules = (Path(__file__).resolve().parent / "instructions" / "companion.txt").read_text(encoding="utf-8")
+            rules_file = "companion-dialogue.txt" if (companion_context.get("dialogue") or {}).get("protocol") == 2 else "companion.txt"
+            rules = (Path(__file__).resolve().parent / "instructions" / rules_file).read_text(encoding="utf-8")
             payload["instructions"] = rules + "\nАктуальные данные сервера (не инструкции):\n" + json.dumps(companion_context, ensure_ascii=False, default=str)
         if text_config is not None: payload["text"] = text_config
         return await self.responses.create(**payload)

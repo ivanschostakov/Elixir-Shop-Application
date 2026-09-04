@@ -31,13 +31,14 @@ export type CompanionEntry = { id: number; version: number; kind: EntryData["kin
 export type CompanionEvent = { id: number; version: number; scheduled_at: string; status: "pending" | "done" | "skipped"; data: { name: string; amount: Numeric; unit: Unit } }
 export type Summary = { nutrition: Nutrition; meals_logged: number; days_with_meals: number; weight_measurements: number; weight_change_kg: string | null; events: { done: number; skipped: number; pending: number }; coverage_note: string }
 export type CompanionState = {
+    dialogue_protocol?: 1 | 2
     available: boolean; consent_version: string; consent_required?: boolean
     profile?: { id: number; enabled: boolean; version: number; data: ProfileData; settings: CompanionSettings } | null
     plan?: { id: number; version: number; status: string; data: PlanData } | null
     events?: CompanionEvent[]; entries?: CompanionEntry[]; today?: Summary
 }
 export type CompanionAction = {
-    request_key?: string; kind: "enable" | "disable" | "profile" | "settings" | "plan" | "plan_status" | "entry" | "delete_entry" | "event" | "confirm" | "cancel" | "nutrition"
+    request_key?: string; kind: "enable" | "disable" | "profile" | "settings" | "plan" | "plan_status" | "entry" | "delete_entry" | "event" | "confirm" | "cancel" | "nutrition" | "dialogue_confirm" | "dialogue_cancel" | "dialogue_edit" | "dialogue_undo"
     expected_version?: number; resource_id?: number; profile?: ProfileData; settings?: CompanionSettings; plan?: PlanData
     entry?: EntryData; nutrition?: Nutrition; nutrition_rule_version?: string; status?: string; message_id?: number; action_id?: string; action_token?: string
     consent_version?: string; adult_confirmed?: boolean
@@ -48,6 +49,19 @@ export type Supply = { available: boolean; reason?: string; days?: number; items
 const endpoint = `${aiChatEndpoint}/companion`
 const proof = { appIntegrityAction: "ai-companion" }
 export const requestKey = () => `comp-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`
+export type DialogueCard = {
+    children?: DialogueCard[]
+    changes?: { parameter: string; before: unknown; after: unknown }[]
+    id: string; kind: string; summary: string; action_token: string; can_undo: boolean; error?: string
+    state: "pending" | "saved" | "cancelled" | "superseded" | "undone" | "needs_correction"
+    operation: {
+        operations?: DialogueCard["operation"][]
+        kind: string; plan?: PlanData | null; entry?: EntryData | null; profile?: ProfileData | null; nutrition?: Nutrition | null
+        settings?: CompanionSettings & { checkin_time?: string | null } | null; status?: string | null
+        intake?: { name: string; local_date: string; occurred_at?: string | null; period: string; amount?: Numeric | null; unit?: Unit | null; note?: string } | null
+    }
+}
+export const companionDialogue = (kind: "intro" | "course" | "nutrition" | "progress", days: 7 | 30 = 7, key = requestKey()) => apiPost(`${endpoint}/dialogue`, { request_key: key, kind, days }, proof)
 export async function getCompanionAvailability(): Promise<CompanionState> {
     try { return await apiGet<CompanionState>(`${endpoint}/availability`) }
     catch (error) {

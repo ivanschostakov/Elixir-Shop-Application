@@ -44,6 +44,7 @@ import { useAiChat, type ChatDisplayMessage } from "@/hooks/chat/use-ai-chat"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
+import { CompanionPanel, CompanionCards, useCompanion } from "@/screens/chat/companion"
 import { trackCustomerEvent } from "@/services/customer-intelligence"
 import type {
     AIInteractiveAction,
@@ -120,8 +121,6 @@ async function persistChatMode(mode: ChatMode) {
     }
 }
 
-import { CompanionPanel, CompanionCards, useCompanion } from "@/screens/chat/companion"
-
 export default function ChatScreen() {
     const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const router = useRouter()
@@ -134,7 +133,7 @@ export default function ChatScreen() {
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
     const companion = useCompanion()
-    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.resolveEnabled)
+    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.resolveEnabled, companion.resolveProtocol)
     const [chatHeaderHeight, setChatHeaderHeight] = useState(0)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
@@ -768,7 +767,7 @@ export default function ChatScreen() {
                     </Pressable>
                     <ChatModeSwitcher mode={chatMode} onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />
                 </View>
-                    <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} />
+                    <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} sending={sending} onPrompt={async text => { await sendMessage(text); await companion.refresh() }} />
                 </View>
 
                 <View testID="ai-chat-scroll-body" style={chatScreenStyles.chatBody}>

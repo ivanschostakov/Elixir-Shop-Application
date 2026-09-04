@@ -46,6 +46,15 @@ class AIMessage(Base, IdPkMixin, TimestampMixin):
         return (self.context_json or {}).get("companion_cards", [])
 
     @property
+    def dialogue_cards(self) -> list[dict[str, Any]]:
+        # Undo snapshots / internal guards are never sent to the client.
+        cards = (self.context_json or {}).get("dialogue_cards", [])
+        def public(card):
+            return {**{k: v for k, v in card.items() if k not in {"undo", "guard", "parts"}},
+                    "can_undo": bool(card.get("undo")), "children": [public(part) for part in card.get("parts", [])]}
+        return [public(card) for card in cards]
+
+    @property
     def interactive(self) -> AIInteractivePayload | None:
         payload = (self.context_json or {}).get("interactive")
         if not isinstance(payload, dict):

@@ -91,3 +91,15 @@ class AICompanionOperation(Base, IdPkMixin, TimestampMixin):
     request_key: Mapped[str] = mapped_column(String(64), nullable=False)
     fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     result: Mapped[dict[str, Any]] = mapped_column(Json, nullable=False)
+
+
+class AICompanionDialogue(Base, IdPkMixin, TimestampMixin):
+    """Small durable workflow state, separate from confirmed health records."""
+    __tablename__ = "ai_companion_dialogues"
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), unique=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    draft: Mapped[dict[str, Any]] = mapped_column(Json, default=dict, nullable=False)
+    focus: Mapped[dict[str, Any]] = mapped_column(Json, default=dict, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_hint_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    introduction_message_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("ai_messages.id", ondelete="SET NULL"))

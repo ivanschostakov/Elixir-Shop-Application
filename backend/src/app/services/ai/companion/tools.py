@@ -25,14 +25,23 @@ COMPANION_TOOLS = [
 
 
 class CompanionToolExecutor:
-    def __init__(self, db, user_id, shop=None):
+    def __init__(self, db, user_id, shop=None, dialogue=False):
         self.db, self.user_id, self.shop = db, user_id, shop
+        self.dialogue = dialogue
         self.calls = []
 
     async def execute(self, name, arguments=None):
         args = arguments or {}
+        if self.dialogue:
+            from .dialogue_tools import DIALOGUE_TOOLS, execute_dialogue_tool
+            if name in {t["name"] for t in DIALOGUE_TOOLS}:
+                result = await execute_dialogue_tool(self.db, self.user_id, name, args, self.shop is not None)
+                self.calls.append({"tool_name": name, "ok": result.get("ok", False)})
+                return result
         names = {t["name"] for t in COMPANION_TOOLS}
         if name not in names:
+            if self.dialogue:
+                return {"ok": False, "error": "tool_unavailable"}
             if self.shop:
                 result = await self.shop.execute(name, args)
                 self.calls = [*self.calls, *self.shop.calls[-1:]]
