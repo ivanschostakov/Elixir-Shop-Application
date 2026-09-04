@@ -135,6 +135,7 @@ export default function ChatScreen() {
     const companion = useCompanion()
     const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.resolveEnabled, companion.resolveProtocol)
     const [chatHeaderHeight, setChatHeaderHeight] = useState(0)
+    const [composerHeight, setComposerHeight] = useState(72)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [activeActionId, setActiveActionId] = useState<string | null>(null)
@@ -167,10 +168,10 @@ export default function ChatScreen() {
     const topBarOffset = topInset + 8
     const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottomInset, spacing.sm)
     const topEdgeFadeHeight = Math.max(topInset + 86, 112)
-    const bottomEdgeFadeHeight = composerBottomInset + (keyboardVisible ? 72 : 96)
+    const bottomEdgeFadeHeight = Math.max(composerHeight, composerBottomInset + (keyboardVisible ? 72 : 96))
     const edgeFadeColor = isDark ? "#07121C" : "#E8F7DF"
     const voiceStatusVisible = voiceRecording || voiceTranscribing
-    const composerOffset = composerBottomInset + 72 + (attachments.length > 0 ? 50 : 0) + (voiceStatusVisible ? 40 : 0)
+    const composerOffset = composerHeight + spacing.sm
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
     const messageTextWidth = Math.max(180, Math.min(screenWidth * 0.74, 330))
     const voiceRecordingSupported =
@@ -767,7 +768,6 @@ export default function ChatScreen() {
                     </Pressable>
                     <ChatModeSwitcher mode={chatMode} onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />
                 </View>
-                    <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} sending={sending} onPrompt={async text => { await sendMessage(text); await companion.refresh() }} />
                 </View>
 
                 <View testID="ai-chat-scroll-body" style={chatScreenStyles.chatBody}>
@@ -948,6 +948,8 @@ export default function ChatScreen() {
                         ) : null}
 
                         <View
+                            testID="ai-chat-composer-dock"
+                            onLayout={event => setComposerHeight(event.nativeEvent.layout.height)}
                             style={[
                                 chatScreenStyles.composerDock,
                                 {
@@ -955,6 +957,7 @@ export default function ChatScreen() {
                                 },
                             ]}
                         >
+                            <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} sending={sending} onPrompt={async text => { await sendMessage(text); await companion.refresh() }} />
                             {voiceStatusVisible ? (
                                 <View style={chatScreenStyles.voiceStatusPill}>
                                     {voiceTranscribing ? (
