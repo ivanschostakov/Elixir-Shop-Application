@@ -60,8 +60,9 @@ def test_calendar_interval_and_timezone():
     normalized = plan_data(interval_days=2, weekdays=[1])
     assert normalized.items[0].stages[0].interval_days == 1
     assert len(schedule_events(normalized)) == 1
-    with pytest.raises(ValidationError):
-        plan_data(times=["10:00", "10:00"])
+    normalized_times = plan_data(times=["10:00:00+03:00", "10:00:00"])
+    assert normalized_times.items[0].stages[0].times == [time(10)]
+    assert len(schedule_events(normalized_times)) == 3
     with pytest.raises(ValidationError):
         plan_data(end_date="2029-12-31")
 

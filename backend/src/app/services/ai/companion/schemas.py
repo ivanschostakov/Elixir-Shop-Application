@@ -81,8 +81,10 @@ class Stage(StrictModel):
         # instead of rejecting an otherwise unambiguous course.
         if self.weekdays:
             self.interval_days = 1
-        if len(set(self.times)) != len(self.times) or any(t.tzinfo is not None for t in self.times):
-            raise ValueError("Times must be unique local times without offset")
+        # PlanData.timezone is authoritative. RFC 3339 generators may append an
+        # offset to a time-only value even though the value represents a local
+        # wall clock time; remove that redundant offset and duplicate slots.
+        self.times = list(dict.fromkeys(value.replace(tzinfo=None) for value in self.times))
         return self
 
 

@@ -77,6 +77,7 @@ def test_ai_recommended_course_is_supported_and_prompt_is_advisory():
     prompt = (Path(__file__).parents[1] / "src/integrations/ai/instructions/companion-dialogue.txt").read_text()
     assert "предложить конкретную дозировку, частоту, длительность" in prompt
     assert "source=ai_recommended_plan" in prompt
+    assert "местное время по часам телефона без UTC offset и без повторов" in prompt
     assert "Не назначай препараты или дозировки" not in prompt
 
 
