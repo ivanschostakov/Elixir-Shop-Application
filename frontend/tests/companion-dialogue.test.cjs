@@ -48,6 +48,10 @@ test("new companion controls stay in chat and reuse operation keys on retry", ()
     assert.ok(source.includes('perform(card, "dialogue_undo")'))
     assert.ok(source.includes("formatCompanionDate(i.occurred_at, clock)"))
     assert.ok(source.includes("i.local_date"))
+    assert.ok(source.includes('backgroundColor: "transparent"'))
+    assert.ok(source.includes("CoursePlanDetails"))
+    assert.ok(source.includes("dateRange(stage.start_date, stage.end_date)"))
+    assert.ok(source.includes('tone="primary"'))
 })
 
 test("AI-recommended courses are visibly distinguished from user-supplied plans", () => {

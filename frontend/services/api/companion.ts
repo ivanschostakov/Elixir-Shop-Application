@@ -58,6 +58,7 @@ export type DialogueCard = {
         operations?: DialogueCard["operation"][]
         kind: string; plan?: PlanData | null; entry?: EntryData | null; profile?: ProfileData | null; nutrition?: Nutrition | null
         settings?: CompanionSettings & { checkin_time?: string | null } | null; status?: string | null
+        remind_course?: boolean | null
         intake?: { name: string; local_date: string; occurred_at?: string | null; period: string; amount?: Numeric | null; unit?: Unit | null; note?: string } | null
     }
 }

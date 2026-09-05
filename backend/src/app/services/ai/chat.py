@@ -1,6 +1,7 @@
 import aiofiles
 import mimetypes
 import hashlib
+import re
 
 from datetime import datetime
 from decimal import Decimal
@@ -114,6 +115,24 @@ def _structured_output_retry_input(errors: list[dict[str, str]]) -> str:
         "исправь только неверные поля и верни полный структурированный объект заново. "
         f"Ошибки валидации: {details or 'неизвестная ошибка структуры'}."
     )
+
+
+def _companion_output_semantic_errors(structured_output) -> list[dict[str, str]]:
+    turn = structured_output.companion_dialogue
+    if turn is not None and turn.operations:
+        return []
+    asks_to_confirm_missing_card = re.search(
+        r"\bподтверд\w*\s+(?:запис\w*|сохран\w*|курс\w*|схем\w*|изменен\w*)",
+        structured_output.assistant_text,
+        re.IGNORECASE,
+    )
+    if not asks_to_confirm_missing_card:
+        return []
+    return [{
+        "location": "companion_dialogue.operations",
+        "type": "missing_confirmation_operation",
+        "message": "A confirmation request must include the operation that the confirmation card will apply",
+    }]
 
 
 def _combine_ai_results(initial: dict[str, object], retry: dict[str, object]) -> dict[str, object]:
@@ -416,6 +435,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 raise HTTPException(409, "Контекст сопровождения изменился. Отправьте запрос заново.")
             proposal_version = snapshot["profile_version"]
         structured_output, initial_validation_errors = validate_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
+        if companion_profile is not None and dialogue_protocol == 2 and structured_output is not None:
+            semantic_errors = _companion_output_semantic_errors(structured_output)
+            if semantic_errors:
+                structured_output = None
+                initial_validation_errors = semantic_errors
         structured_retry: dict[str, Any] | None = None
         if companion_profile is not None and structured_output is None:
             first_result = ai_result
@@ -439,6 +463,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             if current_conversation != starting_conversation_id:
                 raise HTTPException(409, "Контекст сопровождения изменился. Отправьте запрос заново.")
             structured_output, final_validation_errors = validate_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
+            if dialogue_protocol == 2 and structured_output is not None:
+                semantic_errors = _companion_output_semantic_errors(structured_output)
+                if semantic_errors:
+                    structured_output = None
+                    final_validation_errors = semantic_errors
             structured_retry = {
                 "attempted": True,
                 "recovered": structured_output is not None,

@@ -438,6 +438,12 @@ async def direct_reply(db, user_id, user_message):
         await service.cancel_reminders(db, user_id)
         return await say(db, user_id, "Напоминания отключены. Учёт и история остались.")
     pending = await pending_cards(db, user_id)
+    # If an older/invalid model turn asked for confirmation without creating a
+    # card, let the model repair that turn in context instead of claiming that
+    # the user has nothing to confirm. Server-side guards still prevent a write
+    # until a real operation card exists.
+    if not pending and text in CONFIRM:
+        return None
     if len(pending) != 1:
         return await say(db, user_id, "Уточните, какую карточку подтвердить или отменить — нажмите кнопку под ней." if pending else "Сейчас нет карточки, ожидающей подтверждения.")
     message, card = pending[0]

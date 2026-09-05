@@ -78,6 +78,7 @@ def test_ai_recommended_course_is_supported_and_prompt_is_advisory():
     assert "предложить конкретную дозировку, частоту, длительность" in prompt
     assert "source=ai_recommended_plan" in prompt
     assert "местное время по часам телефона без UTC offset и без повторов" in prompt
+    assert "Никогда не пиши «подтвердите запись», если не вернул соответствующую операцию" in prompt
     assert "Не назначай препараты или дозировки" not in prompt
 
 
@@ -209,6 +210,19 @@ def test_daily_prompt_stop_and_intro_once():
 
 
 @db_test
+def test_bare_confirmation_without_card_falls_through_to_model():
+    async def run():
+        async with database() as (db, user):
+            await enable(db, user)
+            source = await dialogue.say(db, user.id, "Да", sender=MessageSender.USER)
+            assert await dialogue.direct_reply(db, user.id, source) is None
+            source = await dialogue.say(db, user.id, "Не сохраняй", sender=MessageSender.USER)
+            response = await dialogue.direct_reply(db, user.id, source)
+            assert response.text == "Сейчас нет карточки, ожидающей подтверждения."
+    asyncio.run(run())
+
+
+@db_test
 def test_multiple_pending_requires_selection_and_cross_user_actions_fail():
     async def run():
         async with database() as (db, user):
@@ -335,8 +349,9 @@ def test_v2_provider_roundtrip_retry_and_no_commerce_tools(monkeypatch):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("failure_kind", ["schema", "missing_card"])
 @db_test
-def test_invalid_provider_structure_is_corrected_once(monkeypatch):
+def test_invalid_provider_structure_is_corrected_once(monkeypatch, failure_kind):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
     from src.app.services.ai import chat as chat_service
@@ -348,9 +363,9 @@ def test_invalid_provider_structure_is_corrected_once(monkeypatch):
         async with database() as (db, user):
             profile = await enable(db, user)
             invalid = {
-                "text": "",
+                "text": "" if failure_kind == "schema" else "Подтвердите запись питания.",
                 "structured_output": {
-                    "assistant_text": "",
+                    "assistant_text": "" if failure_kind == "schema" else "Подтвердите запись питания.",
                     "product_refs": [],
                     "basket_addition": None,
                     "companion_proposals": [],
@@ -401,7 +416,7 @@ def test_invalid_provider_structure_is_corrected_once(monkeypatch):
                 professor_client=professor,
                 allow_commerce=False,
                 companion_profile=profile,
-                client_request_id="dialogue-validation-retry-001",
+                client_request_id=f"dialogue-validation-retry-{failure_kind}",
                 dialogue_protocol=2,
             )
 
@@ -415,6 +430,8 @@ def test_invalid_provider_structure_is_corrected_once(monkeypatch):
             assert professor.send_message_v2.await_count == 2
             retry_call = professor.send_message_v2.await_args_list[1].kwargs
             assert "не прошёл серверную валидацию" in retry_call["input_text"]
+            if failure_kind == "missing_card":
+                assert "confirmation card" in retry_call["input_text"]
             assert retry_call["conversation_id"] == "conv_mock"
             assert retry_call["function_tools"] == []
             assert retry_call["file_contents"] == []
