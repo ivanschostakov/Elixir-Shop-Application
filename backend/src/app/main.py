@@ -8,7 +8,7 @@ from uvicorn import Config, Server
 
 from config import CORS_ALLOWED_ORIGINS
 from src.app.services.cache import get_cache_service
-from src.app.services.platform_availability import CATALOG_VARY, catalog_response, is_commerce_path
+from src.app.services.platform_availability import CATALOG_VARY, catalog_response, is_ios_restricted_path
 from .router import api_router
 from ..integrations.ai import get_professor_client
 from ..integrations.delivery.geo import get_geo_client
@@ -50,7 +50,7 @@ async def media_cache_control(request: Request, call_next):
     if restricted_response is not None:
         return restricted_response
     response = await call_next(request)
-    if is_commerce_path(request.url.path, request.method):
+    if is_ios_restricted_path(request.url.path, request.method):
         response.headers["Cache-Control"] = "no-store"
         existing_vary = response.headers.get("Vary")
         response.headers["Vary"] = f"{existing_vary}, {CATALOG_VARY}" if existing_vary else CATALOG_VARY

@@ -1,7 +1,4 @@
-from .env import _bool_env, _csv_env, _env, _int_env
-
-# One platform-wide policy. Never dependent on a reviewer account or IP.
-APPLE_DEV_MODE = _bool_env("APPLE_DEV_MODE", True)
+from .env import _csv_env, _env, _int_env
 
 
 API_BASE_URL = _env("API_BASE_URL")

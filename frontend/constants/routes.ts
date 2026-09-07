@@ -51,6 +51,24 @@ export const PRIMARY_APP_ROUTES = [
     ROUTES.profile,
 ] as const
 
+export const IOS_PRIMARY_APP_ROUTES = [
+    ROUTES.home,
+    ROUTES.chat,
+    ROUTES.profile,
+] as const
+
+const IOS_RESTRICTED_ROUTES = new Set<string>([
+    ROUTES.discover,
+    ROUTES.basket,
+    ROUTES.checkout,
+    ROUTES.delivery,
+    ROUTES.favorites,
+    ROUTES.payment,
+    ROUTES.profileDiscounts,
+    ROUTES.profileDrafts,
+    ROUTES.publicOffer,
+])
+
 const ACCOUNT_REQUIRED_ROUTES = [
     ROUTES.favorites,
     ROUTES.chat,
@@ -71,6 +89,11 @@ export function getProductRoute(productId: number | string): Href {
 
 export function isProductRoute(pathname: string) {
     return pathname.startsWith(PRODUCT_ROUTE_PREFIX)
+}
+
+export function isIosRestrictedRoute(pathname: string) {
+    const normalizedPath = pathname.split("?")[0].replace(/\/+$/, "") || ROUTES.home
+    return isProductRoute(normalizedPath) || IOS_RESTRICTED_ROUTES.has(normalizedPath)
 }
 
 export function getProductIdFromRoute(pathname: string) {

@@ -34,7 +34,6 @@ def is_commerce_path(path: str, method: str = "GET") -> bool:
         "/api/v1/users/me/stock-subscriptions",
         "/api/v1/users/me/recommendations", "/api/v1/users/me/promotions",
         "/api/v1/users/me/search-queries",
-        "/api/v1/users/me/ai-chat/actions",
     )
     if any(path == root or path.startswith(root + "/") for root in roots):
         return True
@@ -42,16 +41,29 @@ def is_commerce_path(path: str, method: str = "GET") -> bool:
     return method == "POST" and (
         path == "/api/v1/users/me/orders"
         or (path.startswith("/api/v1/users/me/orders/") and path.endswith("/repeat"))
+        or path == "/api/v1/payments/create"
     )
 
 
+def is_ios_restricted_path(path: str, method: str = "GET") -> bool:
+    """Permanent native-iOS scope: no commerce or medical/companion AI."""
+    path = path.rstrip("/")
+    if path == "/api/v1/users/me/ai-chat/transcribe":
+        return False
+    if path == "/api/v1/users/me/ai-chat" or path.startswith("/api/v1/users/me/ai-chat/"):
+        return True
+    if path == "/api/v1/users/me/companion" or path.startswith("/api/v1/users/me/companion/"):
+        return True
+    return is_commerce_path(path, method)
+
+
 def is_commerce_blocked(headers: Mapping[str, str], path: str, method: str) -> bool:
-    return config.APPLE_DEV_MODE and is_ios_request(headers) and is_commerce_path(path, method)
+    return is_ios_request(headers) and is_commerce_path(path, method)
 
 
 def catalog_response(headers: Mapping[str, str], path: str, method: str) -> Response | None:
     """Empty catalog data, not a client feature flag or an alternative UI."""
-    if method == "OPTIONS" or not is_commerce_blocked(headers, path, method):
+    if method == "OPTIONS" or not (is_ios_request(headers) and is_ios_restricted_path(path, method)):
         return None
     path = path.rstrip("/")
     response_headers = {"Cache-Control": "no-store", "Vary": CATALOG_VARY}
@@ -77,9 +89,14 @@ def catalog_response(headers: Mapping[str, str], path: str, method: str) -> Resp
     ):
         return Response(status_code=204, headers=response_headers)
     # Never acknowledge a new order or cart mutation as a successful empty list.
+    is_commerce = is_commerce_path(path, method)
     return JSONResponse({"detail": {
-        "code": "ios_catalog_unavailable",
-        "message": "Catalog and purchases are unavailable on iOS.",
+        "code": "ios_catalog_unavailable" if is_commerce else "ios_feature_unavailable",
+        "message": (
+            "Catalog and purchases are unavailable on iOS."
+            if is_commerce
+            else "This feature is unavailable on iOS."
+        ),
     }}, status_code=403, headers=response_headers)
 
 
@@ -96,7 +113,7 @@ def empty_basket_payload(*, user_id: int, basket_id: int = 0, created_at=None, u
 
 
 def allow_push_for_platform(platform: str | None, data: dict) -> bool:
-    if not config.APPLE_DEV_MODE or (platform or "").lower() != "ios":
+    if (platform or "").lower() != "ios":
         return True
     # A custom campaign must not evade the restriction by omitting its type.
-    return data.get("type") in {"order_status_changed", "support_reply", "ai_companion"}
+    return data.get("type") in {"order_status_changed", "support_reply"}

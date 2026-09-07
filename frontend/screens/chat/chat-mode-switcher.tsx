@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Animated, type LayoutChangeEvent, Pressable, Text, View } from "react-native"
+import { Animated, type LayoutChangeEvent, Platform, Pressable, Text, View } from "react-native"
 
 import { useLanguage } from "@/providers/language-provider"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
@@ -33,6 +33,22 @@ export function ChatModeSwitcher({
     useEffect(() => {
         Animated.spring(progress, { toValue: modeIndex, damping: 20, stiffness: 220, mass: 0.7, useNativeDriver: true }).start()
     }, [modeIndex, progress])
+
+    if (Platform.OS === "ios") {
+        return (
+            <View accessibilityRole="tablist" style={styles.modeSwitcher}>
+                <View style={[styles.modeIndicator, { left: 3, right: 3 }]} />
+                <View accessibilityRole="tab" accessibilityState={{ selected: true }} style={styles.modeButton}>
+                    <Text style={[styles.modeText, styles.modeTextActive]}>{t("chat.modeSupport")}</Text>
+                    {supportUnreadCount > 0 ? (
+                        <View style={styles.modeBadge}>
+                            <Text style={styles.modeBadgeText}>{supportUnreadCount > 99 ? "99+" : supportUnreadCount}</Text>
+                        </View>
+                    ) : null}
+                </View>
+            </View>
+        )
+    }
 
     return (
         <View accessibilityRole="tablist" onLayout={handleLayout} style={styles.modeSwitcher}>

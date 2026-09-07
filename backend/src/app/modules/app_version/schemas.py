@@ -18,6 +18,5 @@ class AndroidAppVersionPolicyRead(BaseModel):
 
 
 class AppVersionPolicyRead(BaseModel):
-    apple_dev_mode: bool = False
     ios: IosAppVersionPolicyRead
     android: AndroidAppVersionPolicyRead

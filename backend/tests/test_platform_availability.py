@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock
 import config
 import pytest
 
-from src.app.services.platform_availability import allow_push_for_platform, catalog_response, is_commerce_blocked, is_commerce_path
+from src.app.services.platform_availability import (
+    allow_push_for_platform,
+    catalog_response,
+    is_commerce_blocked,
+    is_commerce_path,
+    is_ios_restricted_path,
+)
 from src.app.services.push_notifications import _build_push_messages
 
 
@@ -16,18 +22,15 @@ from src.app.services.push_notifications import _build_push_messages
     ("/api/v1/users/me/favorites/products", "GET"), ("/api/v1/users/me/stock-subscriptions/products", "POST"),
     ("/api/v1/users/me/orders", "POST"), ("/api/v1/users/me/orders/42/repeat", "POST"),
 ])
-def test_block_ios_only(monkeypatch, path, method):
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+def test_block_ios_only(path, method):
     assert is_commerce_blocked({"x-app-platform": "ios"}, path, method)
     for platform in ("android", "web"):
         assert not is_commerce_blocked({"x-app-platform": platform}, path, method)
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", False)
-    assert not is_commerce_blocked({"x-app-platform": "ios"}, path, method)
 
 
 @pytest.mark.parametrize("path", [
     "/api/v1/admin/products", "/api/v1/auth/login", "/api/v1/app-version",
-    "/api/v1/users/me/support", "/api/v1/users/me/ai-chat", "/api/v1/users/me/community/topics",
+    "/api/v1/users/me/support", "/api/v1/users/me/community/topics",
     "/api/v1/users/me/orders/42", "/api/v1/users/me/orders", "/api/v1/delivery/cdek/delivery-point-markers",
     "/api/v1/products-extra", "/api/v1/payments/status",
     "/api/v1/users/me/benefits/check",
@@ -36,22 +39,36 @@ def test_keep_other_features(path):
     assert not is_commerce_path(path)
 
 
-def test_web_on_iphone_is_not_native_ios(monkeypatch):
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+@pytest.mark.parametrize("path,method", [
+    ("/api/v1/users/me/ai-chat", "GET"),
+    ("/api/v1/users/me/ai-chat", "POST"),
+    ("/api/v1/users/me/ai-chat/actions", "POST"),
+    ("/api/v1/users/me/companion", "GET"),
+    ("/api/v1/users/me/companion/actions", "POST"),
+    ("/api/v1/payments/create", "POST"),
+])
+def test_ios_restricts_medical_ai_and_new_payments(path, method):
+    assert is_ios_restricted_path(path, method)
+
+
+def test_ios_keeps_support_and_voice_transcription():
+    assert not is_ios_restricted_path("/api/v1/users/me/support", "POST")
+    assert not is_ios_restricted_path("/api/v1/users/me/ai-chat/transcribe", "POST")
+    assert not is_ios_restricted_path("/api/v1/payments/status", "GET")
+
+
+def test_web_on_iphone_is_not_native_ios():
     assert not is_commerce_blocked({"x-app-platform": "web", "user-agent": "iPhone Safari"}, "/api/v1/products", "GET")
     assert is_commerce_blocked({"user-agent": "Elixir iPhone"}, "/api/v1/products", "GET")
 
 
-def test_policy_and_middleware(client, monkeypatch):
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+def test_policy_and_middleware(client):
     policy = client.get("/api/v1/app-version").json()
-    assert policy["apple_dev_mode"] is True
+    assert "apple_dev_mode" not in policy
     result = client.get("/api/v1/products/123", headers={"X-App-Platform": "ios"})
     assert result.status_code == 404
     assert result.json()["detail"] == "Not found"
     assert result.headers["cache-control"] == "no-store"
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", False)
-    assert client.get("/api/v1/app-version").json()["apple_dev_mode"] is False
 
 
 @pytest.mark.parametrize("path", [
@@ -61,8 +78,7 @@ def test_policy_and_middleware(client, monkeypatch):
     "/api/v1/users/me/recommendations", "/api/v1/users/me/promotions",
     "/api/v1/users/me/order-drafts", "/api/v1/users/me/search-queries",
 ])
-def test_ios_lists_are_successful_empty_arrays(client, monkeypatch, path):
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+def test_ios_lists_are_successful_empty_arrays(client, path):
     result = client.get(path, headers={"X-App-Platform": "ios"})
     assert result.status_code == 200
     assert result.json() == []
@@ -70,12 +86,9 @@ def test_ios_lists_are_successful_empty_arrays(client, monkeypatch, path):
     assert "X-App-Platform" in result.headers["vary"]
     assert catalog_response({"x-app-platform": "android"}, path.split("?")[0], "GET") is None
     assert catalog_response({"x-app-platform": "web", "user-agent": "iPhone"}, path.split("?")[0], "GET") is None
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", False)
-    assert catalog_response({"x-app-platform": "ios"}, path.split("?")[0], "GET") is None
 
 
-def test_empty_collection_keeps_its_envelope(client, monkeypatch):
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+def test_empty_collection_keeps_its_envelope(client):
     result = client.get("/api/v1/products/123/questions", headers={"X-App-Platform": "ios"})
     assert result.status_code == 200
     assert result.json() == {"items": [], "total": 0}
@@ -88,7 +101,6 @@ def test_basket_view_is_empty_without_clearing_stored_items(client, monkeypatch,
     from src.app.modules.users.me import basket as basket_module
     from src.database import get_db
 
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
     db = SimpleNamespace(commit=AsyncMock(), delete=AsyncMock())
     async def fake_db():
         yield db
@@ -118,7 +130,6 @@ def test_guest_basket_quote_is_empty_even_for_cached_items(client, monkeypatch):
     from src.app.modules.guest import router as guest_module
     from src.database import get_db
 
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
     async def fake_db():
         yield SimpleNamespace()
     app.dependency_overrides[get_db] = fake_db
@@ -132,8 +143,7 @@ def test_guest_basket_quote_is_empty_even_for_cached_items(client, monkeypatch):
     pricing.assert_not_awaited()
 
 
-def test_writes_are_not_acknowledged_as_successful_empty_lists(client, monkeypatch):
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+def test_writes_are_not_acknowledged_as_successful_empty_lists(client):
     for path in ("/api/v1/users/me/orders", "/api/v1/guest/orders", "/api/v1/users/me/basket/items"):
         result = client.post(path, headers={"X-App-Platform": "ios"}, json={})
         assert result.status_code == 403
@@ -141,13 +151,22 @@ def test_writes_are_not_acknowledged_as_successful_empty_lists(client, monkeypat
     assert catalog_response({"x-app-platform": "ios"}, "/api/v1/products", "OPTIONS") is None
 
 
-def test_marketing_push_is_filtered_per_device(monkeypatch):
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+@pytest.mark.parametrize("path", [
+    "/api/v1/users/me/ai-chat",
+    "/api/v1/users/me/ai-chat/actions",
+    "/api/v1/users/me/companion/actions",
+])
+def test_ios_ai_writes_are_blocked(client, path):
+    result = client.post(path, headers={"X-App-Platform": "ios"}, json={})
+    assert result.status_code == 403
+    assert result.json()["detail"]["code"] == "ios_feature_unavailable"
+
+
+def test_marketing_push_is_filtered_per_device():
     tokens = [SimpleNamespace(platform=platform, expo_push_token=platform) for platform in ("ios", "android")]
     messages = _build_push_messages(tokens, title="Sale", body="Promo", data={"type": "campaign"})
     assert [message["to"] for message in messages] == ["android"]
     assert not allow_push_for_platform("ios", {})
+    assert not allow_push_for_platform("ios", {"type": "ai_companion"})
     for kind in ("support_reply", "order_status_changed"):
         assert allow_push_for_platform("ios", {"type": kind})
-    monkeypatch.setattr(config, "APPLE_DEV_MODE", False)
-    assert allow_push_for_platform("ios", {"type": "campaign"})

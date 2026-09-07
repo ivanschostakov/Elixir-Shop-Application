@@ -222,6 +222,23 @@ function resolvePushTarget(data: PushNotificationData): Href | null {
         return null
     }
 
+    if (Platform.OS === "ios") {
+        if (type === "support_reply") {
+            const conversationId = asPositiveInt(data.conversation_id)
+            return {
+                pathname: ROUTES.chat,
+                params: {
+                    mode: "support",
+                    ...(conversationId ? { conversationId: String(conversationId) } : {}),
+                },
+            }
+        }
+        if (type === "order_status_changed") {
+            return ROUTES.profileHistory
+        }
+        return ROUTES.home
+    }
+
     switch (type) {
         case "order_status_changed": {
             const statusCode = asString(data.status_code)

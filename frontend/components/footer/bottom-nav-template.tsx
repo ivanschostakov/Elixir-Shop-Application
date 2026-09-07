@@ -1,4 +1,4 @@
-import { Pressable, View } from "react-native"
+import { Platform, Pressable, View } from "react-native"
 import { router } from "expo-router"
 
 import {
@@ -38,21 +38,21 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
             isActive: pathname === ROUTES.home,
             route: ROUTES.home,
         },
-        {
+        ...(Platform.OS === "ios" ? [] : [{
             key: ROUTES.discover,
             accessibilityLabel: t("nav.discover"),
             icon: <DiscoverIcon color={pathname === ROUTES.discover ? accentPalette.primary : palette.mutedText} />,
             isActive: pathname === ROUTES.discover,
             route: ROUTES.discover,
-        },
+        }]),
         {
             key: ROUTES.chat,
             accessibilityLabel: t("nav.chat"),
             icon: <SmileBubbleIcon color={pathname === ROUTES.chat ? accentPalette.primary : palette.mutedText} />,
             isActive: pathname === ROUTES.chat,
-            route: ROUTES.chat,
+            route: Platform.OS === "ios" ? `${ROUTES.chat}?mode=support` : ROUTES.chat,
         },
-        {
+        ...(Platform.OS === "ios" ? [] : [{
             key: ROUTES.basket,
             accessibilityLabel: t("nav.basket"),
             icon: (
@@ -63,7 +63,7 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
             ),
             isActive: pathname === ROUTES.basket,
             route: basketRoute,
-        },
+        }]),
         {
             key: ROUTES.profile,
             accessibilityLabel: t("nav.profile"),

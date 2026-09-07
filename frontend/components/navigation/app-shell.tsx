@@ -16,7 +16,7 @@ import {
     getDefaultScreenChromeTemplate,
     mergeScreenChromeTemplate,
 } from "@/components/navigation/screen-template-registry"
-import { PRIMARY_APP_ROUTES, ROUTES } from "@/constants/routes"
+import { IOS_PRIMARY_APP_ROUTES, PRIMARY_APP_ROUTES, ROUTES, isIosRestrictedRoute } from "@/constants/routes"
 import { ScreenChromeTemplateProvider, useScreenChromeTemplate } from "@/providers/screen-chrome-template-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { useAuth } from "@/providers/auth-provider"
@@ -71,8 +71,16 @@ function AppShellContent() {
             : null
     const shouldShowBrandOverlay = Platform.OS === "ios"
     const brandLabelTop = Math.max(2, topInset - 44)
-    const currentPrimaryRouteIndex = PRIMARY_APP_ROUTES.findIndex((route) => route === pathname)
+    const primaryAppRoutes = Platform.OS === "ios" ? IOS_PRIMARY_APP_ROUTES : PRIMARY_APP_ROUTES
+    const currentPrimaryRouteIndex = primaryAppRoutes.findIndex((route) => route === pathname)
     const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
+    const isRestrictedIosRoute = Platform.OS === "ios" && isIosRestrictedRoute(pathname)
+
+    useEffect(() => {
+        if (isRestrictedIosRoute) {
+            router.replace(ROUTES.home)
+        }
+    }, [isRestrictedIosRoute, router])
 
     useEffect(() => {
         if (Platform.OS !== "web") {
@@ -100,7 +108,7 @@ function AppShellContent() {
         }
 
         const nextRouteIndex = isSwipeLeft
-            ? Math.min(currentPrimaryRouteIndex + 1, PRIMARY_APP_ROUTES.length - 1)
+            ? Math.min(currentPrimaryRouteIndex + 1, primaryAppRoutes.length - 1)
             : Math.max(currentPrimaryRouteIndex - 1, 0)
 
         if (nextRouteIndex === currentPrimaryRouteIndex) {
@@ -109,7 +117,7 @@ function AppShellContent() {
 
         setRouteAnimation(isSwipeLeft ? "slide_from_right" : "slide_from_left")
         requestAnimationFrame(() => {
-            router.replace(PRIMARY_APP_ROUTES[nextRouteIndex])
+            router.replace(primaryAppRoutes[nextRouteIndex])
         })
     }
 
@@ -144,7 +152,7 @@ function AppShellContent() {
                 >
                     <View style={appShellStyles.content}>
                         <NavigationThemeProvider value={navigationTheme}>
-                            <Stack
+                            {isRestrictedIosRoute ? null : <Stack
                                 screenOptions={{
                                     animation: routeAnimation,
                                     animationDuration: motion.duration.route,
@@ -152,7 +160,7 @@ function AppShellContent() {
                                     gestureEnabled: true,
                                     headerShown: false,
                                 }}
-                            />
+                            />}
                         </NavigationThemeProvider>
                     </View>
                 </PanGestureHandler>

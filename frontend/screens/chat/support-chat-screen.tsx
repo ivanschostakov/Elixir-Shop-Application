@@ -137,6 +137,7 @@ export function SupportChatScreen({
     const isHistorical = Boolean(conversation && conversation.id !== inbox?.active?.id)
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
     const voiceStatusVisible = voiceRecording || voiceTranscribing
+    const voiceInputEnabled = Platform.OS !== "ios"
     const voiceRecordingSupported =
         __DEV__ || Platform.OS !== "ios" || nativeBuildNumber() >= IOS_MINIMUM_VOICE_RECORDING_BUILD
 
@@ -378,7 +379,11 @@ export function SupportChatScreen({
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_DARK} style={[chatStyles.backgroundImage, themeName === "dark" ? null : chatStyles.backgroundImageHidden]} />
                 <View pointerEvents="none" style={[chatStyles.backgroundScrim, isDark ? chatStyles.backgroundScrimDark : chatStyles.backgroundScrimLight]} />
                 <View style={[styles.header, { top: headerTop }]}>
-                    <Pressable accessibilityLabel={t("nav.back")} onPress={() => router.push(ROUTES.discover)} style={styles.backButton}>
+                    <Pressable
+                        accessibilityLabel={t("nav.back")}
+                        onPress={() => router.push(Platform.OS === "ios" ? ROUTES.home : ROUTES.discover)}
+                        style={styles.backButton}
+                    >
                         <Text style={styles.backText}>‹</Text>
                     </Pressable>
                     <ChatModeSwitcher
@@ -521,10 +526,11 @@ export function SupportChatScreen({
                                         />
                                     </View>
                                     <SendActionButton
-                                        disabled={sending || voiceTranscribing}
+                                        disabled={sending || voiceTranscribing || (!hasComposerContent && !voiceInputEnabled)}
                                         isDark={isDark}
-                                        isActive={hasComposerContent && !voiceRecording}
+                                        isActive={(hasComposerContent || !voiceInputEnabled) && !voiceRecording}
                                         onPress={() => {
+                                            if (!hasComposerContent && !voiceInputEnabled) return
                                             if (voiceRecording || !hasComposerContent) {
                                                 void handleVoiceButtonPress()
                                                 return
