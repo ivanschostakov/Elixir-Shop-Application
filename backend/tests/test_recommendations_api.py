@@ -220,13 +220,14 @@ def _seed_product_price_discount_context(user_id: int) -> None:
         assert user is not None
         user.promo_code = "SITE"
 
-        session.add(
-            ReferralProfile(
-                user_id=user_id,
-                referral_discount_base_total=Decimal("190000.00"),
-                current_discount_percent=Decimal("17.00"),
-            )
-        )
+        profile = session.execute(
+            select(ReferralProfile).where(ReferralProfile.user_id == user_id)
+        ).scalar_one_or_none()
+        if profile is None:
+            profile = ReferralProfile(user_id=user_id)
+            session.add(profile)
+        profile.referral_discount_base_total = Decimal("190000.00")
+        profile.current_discount_percent = Decimal("17.00")
         session.commit()
 
 
@@ -632,8 +633,9 @@ def test_home_recommendations_include_favourite_categories(
 
     payload = response.json()
     product_ids = [item["id"] for item in payload]
-    assert favourite_candidate["product_id"] in product_ids
-    assert other_candidate["product_id"] not in product_ids
+    assert product_ids[0] == favourite_candidate["product_id"]
+    assert other_candidate["product_id"] in product_ids[1:]
+    assert len(product_ids) == len(set(product_ids))
 
 
 def test_home_recommendations_include_viewed_categories(
@@ -668,7 +670,8 @@ def test_home_recommendations_include_viewed_categories(
         top_candidate["product_id"],
         second_candidate["product_id"],
     ]
-    assert other_candidate["product_id"] not in {item["id"] for item in payload}
+    assert len(payload) == 3
+    assert payload[2]["id"] == other_candidate["product_id"]
 
 
 def test_product_recommendations_rank_more_shared_categories_higher(

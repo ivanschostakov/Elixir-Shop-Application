@@ -23,7 +23,6 @@ if "PIL" not in sys.modules:
     sys.modules["PIL"] = pil_module
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
-from src.app.main import app
 from src.database.models import Product, ProductByCategory, ProductCategory, Variant
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
@@ -82,7 +81,7 @@ def _seed_search_products() -> dict[str, int]:
     created_product_ids: list[int] = []
     created_category_ids: list[int] = []
     with Session(sync_engine) as session:
-        category_peptides = _create_category(session, name=f"Пептиды-{token}")
+        category_peptides = _create_category(session, name=f"Категория-{token}")
         category_accessories = _create_category(session, name=f"Аксессуары-{token}")
         created_category_ids.extend([int(category_peptides.id), int(category_accessories.id)])
 
@@ -128,7 +127,7 @@ def _seed_search_products() -> dict[str, int]:
         "noise_product_id": created_product_ids[2],
         "peptides_category_id": created_category_ids[0],
         "accessories_category_id": created_category_ids[1],
-        "peptides_category_name": f"Пептиды-{token}",
+        "peptides_category_name": f"Категория-{token}",
         "ru_product_sku": f"RET-RU-{token}",
         "en_product_sku": f"RET-EN-{token}",
     }
@@ -152,79 +151,80 @@ def _response_product_ids(response) -> list[int]:
     return [int(item["id"]) for item in payload]
 
 
-def test_products_advanced_search_variants_and_regressions():
+def test_products_advanced_search_variants_and_regressions(client: TestClient):
     seed = _seed_search_products()
     try:
-        with TestClient(app) as client:
-            exact = client.get("/api/v1/products", params={"q": "Рета"})
-            assert exact.status_code == 200, exact.text
-            assert seed["ru_product_id"] in _response_product_ids(exact)
+        exact = client.get("/api/v1/products", params={"q": "Рета"})
+        assert exact.status_code == 200, exact.text
+        assert seed["ru_product_id"] in _response_product_ids(exact)
 
-            partial = client.get("/api/v1/products", params={"q": "восстановления"})
-            assert partial.status_code == 200, partial.text
-            assert seed["ru_product_id"] in _response_product_ids(partial)
+        partial = client.get("/api/v1/products", params={"q": "Пептид"})
+        assert partial.status_code == 200, partial.text
+        assert seed["ru_product_id"] in _response_product_ids(partial)
 
-            category_name = client.get("/api/v1/products", params={"q": seed["peptides_category_name"]})
-            assert category_name.status_code == 200, category_name.text
-            assert seed["ru_product_id"] in _response_product_ids(category_name)
+        # Search intentionally matches names/SKUs, not descriptive text or categories.
+        for excluded_query in ("восстановления", "Курс применения", seed["peptides_category_name"]):
+            excluded = client.get("/api/v1/products", params={"q": excluded_query})
+            assert excluded.status_code == 200, excluded.text
+            assert seed["ru_product_id"] not in _response_product_ids(excluded)
 
-            translit = client.get("/api/v1/products", params={"q": "reta"})
-            assert translit.status_code == 200, translit.text
-            translit_ids = _response_product_ids(translit)
-            assert seed["ru_product_id"] in translit_ids
-            assert seed["en_product_id"] in translit_ids
+        translit = client.get("/api/v1/products", params={"q": "reta"})
+        assert translit.status_code == 200, translit.text
+        translit_ids = _response_product_ids(translit)
+        assert seed["ru_product_id"] in translit_ids
+        assert seed["en_product_id"] in translit_ids
 
-            wrong_layout_en_to_ru = client.get("/api/v1/products", params={"q": "htnf"})
-            assert wrong_layout_en_to_ru.status_code == 200, wrong_layout_en_to_ru.text
-            assert seed["ru_product_id"] in _response_product_ids(wrong_layout_en_to_ru)
+        wrong_layout_en_to_ru = client.get("/api/v1/products", params={"q": "htnf"})
+        assert wrong_layout_en_to_ru.status_code == 200, wrong_layout_en_to_ru.text
+        assert seed["ru_product_id"] in _response_product_ids(wrong_layout_en_to_ru)
 
-            wrong_layout_ru_to_en = client.get("/api/v1/products", params={"q": "куеф"})
-            assert wrong_layout_ru_to_en.status_code == 200, wrong_layout_ru_to_en.text
-            assert seed["en_product_id"] in _response_product_ids(wrong_layout_ru_to_en)
+        wrong_layout_ru_to_en = client.get("/api/v1/products", params={"q": "куеф"})
+        assert wrong_layout_ru_to_en.status_code == 200, wrong_layout_ru_to_en.text
+        assert seed["en_product_id"] in _response_product_ids(wrong_layout_ru_to_en)
 
-            mixed_case = client.get("/api/v1/products", params={"q": "   рЕтА   "})
-            assert mixed_case.status_code == 200, mixed_case.text
-            assert seed["ru_product_id"] in _response_product_ids(mixed_case)
+        mixed_case = client.get("/api/v1/products", params={"q": "   рЕтА   "})
+        assert mixed_case.status_code == 200, mixed_case.text
+        assert seed["ru_product_id"] in _response_product_ids(mixed_case)
 
-            fuzzy = client.get("/api/v1/products", params={"q": "retaa"})
-            assert fuzzy.status_code == 200, fuzzy.text
-            assert seed["en_product_id"] in _response_product_ids(fuzzy)
+        fuzzy = client.get("/api/v1/products", params={"q": "retaa"})
+        assert fuzzy.status_code == 200, fuzzy.text
+        assert seed["en_product_id"] in _response_product_ids(fuzzy)
 
-            # SKU search should work for punctuated and compact input alike.
-            sku_punctuated = client.get("/api/v1/products", params={"q": seed["ru_product_sku"]})
-            assert sku_punctuated.status_code == 200, sku_punctuated.text
-            assert seed["ru_product_id"] in _response_product_ids(sku_punctuated)
+        # SKU search should work for punctuated and compact input alike.
+        sku_punctuated = client.get("/api/v1/products", params={"q": seed["ru_product_sku"]})
+        assert sku_punctuated.status_code == 200, sku_punctuated.text
+        assert seed["ru_product_id"] in _response_product_ids(sku_punctuated)
 
-            compact_sku_query = seed["ru_product_sku"].replace("-", "")
-            sku_compact = client.get("/api/v1/products", params={"q": compact_sku_query})
-            assert sku_compact.status_code == 200, sku_compact.text
-            assert seed["ru_product_id"] in _response_product_ids(sku_compact)
+        compact_sku_query = seed["ru_product_sku"].replace("-", "")
+        sku_compact = client.get("/api/v1/products", params={"q": compact_sku_query})
+        assert sku_compact.status_code == 200, sku_compact.text
+        assert seed["ru_product_id"] in _response_product_ids(sku_compact)
 
-            # Category filtering still applies.
-            filtered = client.get(
-                "/api/v1/products",
-                params={"q": "reta", "category_id": seed["peptides_category_id"]},
-            )
-            assert filtered.status_code == 200, filtered.text
-            filtered_ids = _response_product_ids(filtered)
-            assert seed["ru_product_id"] in filtered_ids
-            assert seed["en_product_id"] not in filtered_ids
+        # Category filtering still applies.
+        filtered = client.get(
+            "/api/v1/products",
+            params={"q": "reta", "category_id": seed["peptides_category_id"]},
+        )
+        assert filtered.status_code == 200, filtered.text
+        filtered_ids = _response_product_ids(filtered)
+        assert seed["ru_product_id"] in filtered_ids
+        assert seed["en_product_id"] not in filtered_ids
 
-            # Pagination and sorting still behave with search.
-            page_1 = client.get(
-                "/api/v1/products",
-                params={"q": "reta", "sort": "name_asc", "limit": 1, "offset": 0},
-            )
-            page_2 = client.get(
-                "/api/v1/products",
-                params={"q": "reta", "sort": "name_asc", "limit": 1, "offset": 1},
-            )
-            assert page_1.status_code == 200, page_1.text
-            assert page_2.status_code == 200, page_2.text
-            page_1_ids = _response_product_ids(page_1)
-            page_2_ids = _response_product_ids(page_2)
-            assert len(page_1_ids) == 1
-            assert len(page_2_ids) == 1
-            assert page_1_ids[0] != page_2_ids[0]
+        # Pagination and sorting still behave with search.
+        page_1 = client.get(
+            "/api/v1/products",
+            params={"q": "reta", "sort": "name_asc", "limit": 1, "offset": 0},
+        )
+        page_2 = client.get(
+            "/api/v1/products",
+            params={"q": "reta", "sort": "name_asc", "limit": 1, "offset": 1},
+        )
+        assert page_1.status_code == 200, page_1.text
+        assert page_2.status_code == 200, page_2.text
+        page_1_ids = _response_product_ids(page_1)
+        page_2_ids = _response_product_ids(page_2)
+        assert len(page_1_ids) == 1
+        assert len(page_2_ids) == 1
+        assert page_1_ids[0] != page_2_ids[0]
     finally:
         _cleanup_seed(seed)

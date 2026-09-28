@@ -6,6 +6,8 @@ import pytest
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import urlencode
+from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
@@ -28,6 +30,8 @@ from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT,
 from src.integrations.amocrm import amocrm_client
 from src.database.models import (
     AppReferralPurchase,
+    BonusProgramPurchase,
+    LoyaltyBonusCredit,
     Order,
     OrderDraft,
     Product,
@@ -39,6 +43,40 @@ from src.database.models import (
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
+
+
+@pytest.fixture
+def amocrm_webhook_body(monkeypatch):
+    import src.app.modules.webhooks.service as webhook_service
+
+    monkeypatch.setattr(webhook_service, "AMOCRM_WEBHOOK_ALLOWED_ACCOUNT_IDS", ["test-account"])
+    monkeypatch.setattr(webhook_service, "AMOCRM_WEBHOOK_ALLOWED_SUBDOMAINS", ["test-shop"])
+    monkeypatch.setattr(webhook_service, "AMOCRM_WEBHOOK_ALLOWED_IPS", [])
+
+    def build(status_id, *, account_id="test-account"):
+        return urlencode({
+            "account[id]": account_id,
+            "account[subdomain]": "test-shop",
+            "leads[status][0][id]": 67890,
+            "leads[status][0][status_id]": status_id,
+            "leads[status][0][pipeline_id]": amocrm_client.PIPELINE_ID,
+            "event_id": uuid.uuid4().hex,
+        })
+
+    return build
+
+
+@pytest.mark.parametrize("account_id", ["", "other-account"])
+def test_amocrm_webhook_rejects_untrusted_account(client, monkeypatch, amocrm_webhook_body, account_id):
+    get_lead = AsyncMock()
+    monkeypatch.setattr(amocrm_client, "get_lead", get_lead)
+    response = client.post(
+        "/api/v1/webhooks/amocrm",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        content=amocrm_webhook_body(amocrm_client.STATUS_IDS["check_paid"], account_id=account_id),
+    )
+    assert response.status_code == 403, response.text
+    get_lead.assert_not_awaited()
 
 
 def _decimal(value) -> Decimal:
@@ -315,6 +353,7 @@ def stub_amocrm(monkeypatch):
     class StubAmoCrmClient:
         STATUS_IDS = amocrm_client.STATUS_IDS
         STATUS_WORDS = amocrm_client.STATUS_WORDS
+        PAID_STATUS_IDS = amocrm_client.PAID_STATUS_IDS
 
         async def find_lead_by_order_number(self, order_number):
             return None
@@ -961,7 +1000,8 @@ def test_create_payment_sbp_error_keeps_order_retryable(client: TestClient, regi
     assert stored_order.is_canceled is False
 
 
-def test_amocrm_paid_webhook_creates_delivery_once(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
+@pytest.mark.parametrize("referral_sync_fails", [False, True])
+def test_amocrm_paid_webhook_creates_delivery_once(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch, amocrm_webhook_body, referral_sync_fails):
     catalog = variant_factory(stock=5, price=Decimal("17.00"))
     draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
 
@@ -990,12 +1030,13 @@ def test_amocrm_paid_webhook_creates_delivery_once(client: TestClient, registere
 
     monkeypatch.setattr("src.app.modules.webhooks.router.amocrm_client.get_lead", fake_get_lead)
     monkeypatch.setattr("src.app.services.orders.create_delivery_for_order", fake_create_delivery_for_order)
+    if referral_sync_fails:
+        monkeypatch.setattr(
+            "src.app.services.referrals.paid_orders.sync_paid_order_referral_to_app",
+            AsyncMock(side_effect=RuntimeError("Simulated referral integration failure")),
+        )
 
-    webhook_body = (
-        f"leads[status][0][id]=67890&"
-        f"leads[status][0][status_id]={amocrm_client.STATUS_IDS['check_paid']}&"
-        f"leads[status][0][pipeline_id]={amocrm_client.PIPELINE_ID}"
-    )
+    webhook_body = amocrm_webhook_body(amocrm_client.STATUS_IDS["check_paid"])
 
     first_response = client.post(
         "/api/v1/webhooks/amocrm",
@@ -1063,13 +1104,30 @@ def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, regist
     assert stored_order.payment_status == "paid"
     assert stored_order.payment_paid_at is not None
     assert stored_order.is_paid is True
-    reward_purchase = _get_reward_purchase(order_id)
-    assert reward_purchase is not None
-    assert reward_purchase.status == "posted"
-    assert reward_purchase.amount == Decimal("42.00")
-    assert reward_purchase.calculation_snapshot["participates_in_program"] is False
+    repeated_response = client.post(
+        "/api/v1/webhooks/intellectmoney",
+        content=webhook_response.request.content,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert repeated_response.status_code == 200, repeated_response.text
+    assert _get_reward_purchase(order_id) is None
+    with Session(sync_engine) as session:
+        purchase = session.execute(
+            select(BonusProgramPurchase).where(BonusProgramPurchase.order_id == order_id)
+        ).scalar_one()
+        assert purchase.status == "posted"
+        assert purchase.amount == Decimal("42.00")
+        assert purchase.calculation_snapshot["program"] == "bonus"
+        assert purchase.calculation_snapshot["bitrix_written"] is False
+        credit = session.execute(
+            select(LoyaltyBonusCredit).where(
+                LoyaltyBonusCredit.order_id == order_id,
+                LoyaltyBonusCredit.source_kind == "order_cashback",
+            )
+        ).scalar_one()
+        assert credit.points == 2
     profile = _get_referral_profile(registered_user["user_id"])
-    assert profile.referral_discount_base_total == Decimal("0.00")
+    assert profile.referral_discount_base_total == Decimal("42.00")
     assert profile.current_discount_percent == Decimal("0.00")
 
 
@@ -1180,6 +1238,7 @@ def test_intellectmoney_webhook_updates_amocrm_status_for_non_paid_results(
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
     order_number = order_response.json()["order_number"]
+    payment_id = f"invoice-{payment_status_code}-{uuid.uuid4().hex}"
 
     monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.verify_webhook_hash", lambda payload: True)
 
@@ -1196,8 +1255,8 @@ def test_intellectmoney_webhook_updates_amocrm_status_for_non_paid_results(
             "UserName": "Иван Петров",
             "UserEmail": "ivan.petrov@example.com",
             "PaymentData": "2026-04-23 12:00:00",
-                "PaymentId": f"invoice-{payment_status_code}-{uuid.uuid4().hex}",
-                "Hash": uuid.uuid4().hex,
+            "PaymentId": payment_id,
+            "Hash": uuid.uuid4().hex,
         },
     )
 
@@ -1209,7 +1268,7 @@ def test_intellectmoney_webhook_updates_amocrm_status_for_non_paid_results(
 
     stored_order = _get_order(order_id)
     assert stored_order.payment_provider == "intellectmoney"
-    assert stored_order.payment_invoice_id == f"invoice-{payment_status_code}"
+    assert stored_order.payment_invoice_id == payment_id
     assert stored_order.payment_status == expected_payment_status
     assert stored_order.status == amocrm_client.STATUS_WORDS[expected_amocrm_status_id]
     assert stored_order.is_active is expected_is_active
@@ -1379,6 +1438,7 @@ def test_amocrm_webhook_sends_push_notification_on_order_status_change(
     variant_factory,
     stub_amocrm,
     monkeypatch,
+    amocrm_webhook_body,
 ):
     catalog = variant_factory(stock=5, price=Decimal("18.00"))
     draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
@@ -1391,6 +1451,7 @@ def test_amocrm_webhook_sends_push_notification_on_order_status_change(
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
     order_number = order_response.json()["order_number"]
+    _update_order(order_id, delivery_created_at=datetime.now(timezone.utc))
 
     token_response = client.post(
         "/api/v1/users/me/push-tokens",
@@ -1416,11 +1477,7 @@ def test_amocrm_webhook_sends_push_notification_on_order_status_change(
     monkeypatch.setattr("src.app.services.push_notifications._send_expo_push_messages", fake_send_expo_push_messages)
     monkeypatch.setattr("src.app.modules.webhooks.router.amocrm_client.get_lead", fake_get_lead)
 
-    webhook_body = (
-        f"leads[status][0][id]=67890&"
-        f"leads[status][0][status_id]={amocrm_client.STATUS_IDS['package_sent']}&"
-        f"leads[status][0][pipeline_id]={amocrm_client.PIPELINE_ID}"
-    )
+    webhook_body = amocrm_webhook_body(amocrm_client.STATUS_IDS["package_sent"])
     webhook_response = client.post(
         "/api/v1/webhooks/amocrm",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -1442,6 +1499,7 @@ def test_amocrm_webhook_skips_push_notification_when_status_does_not_change(
     variant_factory,
     stub_amocrm,
     monkeypatch,
+    amocrm_webhook_body,
 ):
     catalog = variant_factory(stock=5, price=Decimal("18.00"))
     draft = _create_ready_draft(client, registered_user["headers"], catalog["variant_id"])
@@ -1479,11 +1537,7 @@ def test_amocrm_webhook_skips_push_notification_when_status_does_not_change(
     monkeypatch.setattr("src.app.services.push_notifications._send_expo_push_messages", fake_send_expo_push_messages)
     monkeypatch.setattr("src.app.modules.webhooks.router.amocrm_client.get_lead", fake_get_lead)
 
-    webhook_body = (
-        f"leads[status][0][id]=67890&"
-        f"leads[status][0][status_id]={amocrm_client.STATUS_IDS['main']}&"
-        f"leads[status][0][pipeline_id]={amocrm_client.PIPELINE_ID}"
-    )
+    webhook_body = amocrm_webhook_body(amocrm_client.STATUS_IDS["main"])
     webhook_response = client.post(
         "/api/v1/webhooks/amocrm",
         headers={"Content-Type": "application/x-www-form-urlencoded"},

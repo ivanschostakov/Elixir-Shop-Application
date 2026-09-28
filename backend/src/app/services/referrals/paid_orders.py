@@ -3,7 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, inspect, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1060,12 +1060,17 @@ async def sync_paid_order_referral_to_app_safe(
     *,
     order: Order,
 ) -> dict[str, Any] | None:
+    order_id = order.id
     try:
         return await sync_paid_order_referral_to_app(db, order=order)
     except Exception:
         await db.rollback()
-        logger.exception("Could not store app referral calculation order_id=%s", order.id)
+        logger.exception("Could not store app referral calculation order_id=%s", order_id)
         return None
+    finally:
+        # A handled integration failure may roll back and expire the caller's order.
+        if inspect(order).expired_attributes:
+            await db.refresh(order)
 
 
 async def retry_unsynced_app_referral_purchases(

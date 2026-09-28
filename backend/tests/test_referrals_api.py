@@ -252,6 +252,10 @@ def test_partner_program_requires_promo_even_after_30000(
     registered_user_factory,
 ):
     buyer = registered_user_factory(email_prefix="unified-program")
+    profile_response = client.get(
+        "/api/v1/users/me/referral-profile", headers=buyer["headers"]
+    )
+    assert profile_response.status_code == 200, profile_response.text
 
     before_threshold = client.post(
         "/api/v1/users/me/referral-profile/program",
