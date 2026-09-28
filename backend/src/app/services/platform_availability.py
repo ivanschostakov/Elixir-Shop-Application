@@ -46,7 +46,7 @@ def is_commerce_path(path: str, method: str = "GET") -> bool:
 
 
 def is_ios_restricted_path(path: str, method: str = "GET") -> bool:
-    """Permanent native-iOS scope: no commerce or medical/companion AI."""
+    """Paths covered by the native-iOS restriction switch."""
     path = path.rstrip("/")
     if path == "/api/v1/users/me/ai-chat/transcribe":
         return False
@@ -58,12 +58,12 @@ def is_ios_restricted_path(path: str, method: str = "GET") -> bool:
 
 
 def is_commerce_blocked(headers: Mapping[str, str], path: str, method: str) -> bool:
-    return is_ios_request(headers) and is_commerce_path(path, method)
+    return config.APPLE_DEV_MODE and is_ios_request(headers) and is_commerce_path(path, method)
 
 
 def catalog_response(headers: Mapping[str, str], path: str, method: str) -> Response | None:
     """Empty catalog data, not a client feature flag or an alternative UI."""
-    if method == "OPTIONS" or not (is_ios_request(headers) and is_ios_restricted_path(path, method)):
+    if not config.APPLE_DEV_MODE or method == "OPTIONS" or not (is_ios_request(headers) and is_ios_restricted_path(path, method)):
         return None
     path = path.rstrip("/")
     response_headers = {"Cache-Control": "no-store", "Vary": CATALOG_VARY}
@@ -113,7 +113,7 @@ def empty_basket_payload(*, user_id: int, basket_id: int = 0, created_at=None, u
 
 
 def allow_push_for_platform(platform: str | None, data: dict) -> bool:
-    if (platform or "").lower() != "ios":
+    if not config.APPLE_DEV_MODE or (platform or "").lower() != "ios":
         return True
     # A custom campaign must not evade the restriction by omitting its type.
     return data.get("type") in {"order_status_changed", "support_reply"}

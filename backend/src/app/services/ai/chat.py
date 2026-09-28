@@ -293,7 +293,7 @@ async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_cli
     return created
 
 
-async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1) -> AIChatSendResult:
+async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1, telegram_transport: bool = False, bot_model_override: BotModel | None = None) -> AIChatSendResult:
     chat = await get_or_create_user_chat(db, user=user, professor_client=professor_client)
     companion_profile_id = companion_profile.id if companion_profile is not None else None
     starting_conversation_id = chat.conversation_id
@@ -309,7 +309,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 return AIChatSendResult(chat=await get_ai_chat_by_id(db, chat.id, user_id=user.id), turn_meta={}, basket_updated=False)
             if dialogue_protocol != 2:
                 raise HTTPException(409, "Сообщение сохранено, но ответ не завершён. Обновите чат; при необходимости отправьте новый запрос.")
-    selected_model = await resolve_user_bot_model(db, user_id=user.id)
+    selected_model = bot_model_override if telegram_transport and bot_model_override is not None else await resolve_user_bot_model(db, user_id=user.id)
     user_attachment_paths: list[Path] = []
     ai_attachment_paths: list[Path] = []
     ai_message_id: int | None = None
@@ -374,17 +374,22 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             snapshot = await companion_service.context_for(db, user.id)
             if snapshot is None: raise HTTPException(403, "Сопровождение отключено")
             snapshot["commerce_allowed"] = allow_commerce
+            if telegram_transport:
+                snapshot["channel"] = "telegram"
             if dialogue_protocol == 2:
                 from .companion import dialogue
                 flow = await dialogue.workflow(db, user.id, True)
                 snapshot["dialogue"] = await dialogue.snapshot(db, user.id)
                 dialogue_version = flow.version
                 dialogue_guards = {kind: await dialogue.guard_for(db, user.id, kind) for kind in ("profile", "nutrition", "settings", "plan", "plan_status")}
-            tool_executor = CompanionToolExecutor(db, user.id, shop=tool_executor if allow_commerce else None, dialogue=dialogue_protocol == 2)
+            tool_executor = CompanionToolExecutor(db, user.id, shop=tool_executor if allow_commerce else None, dialogue=dialogue_protocol == 2, catalog_read_allowed=telegram_transport)
             function_tools = [*COMPANION_TOOLS, *function_tools]
             if dialogue_protocol == 2:
                 from .companion.dialogue_tools import DIALOGUE_TOOLS
                 function_tools = [*COMPANION_TOOLS, *[t for t in DIALOGUE_TOOLS if allow_commerce or t["name"] != "match_course_products"]]
+            if telegram_transport and allow_commerce:
+                from src.app.modules.telegram_ai.catalog import CATALOG_TOOLS
+                function_tools.extend(CATALOG_TOOLS)
             if not allow_commerce:
                 function_tools = [t for t in function_tools if t["name"] != "calculate_course_supply"]
             recent = list((await db.execute(select(AIMessage).where(AIMessage.chat_id == chat.id, AIMessage.id < user_message.id).order_by(AIMessage.id.desc()).limit(20))).scalars().all())
@@ -543,7 +548,15 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         if companion_profile is not None and structured_output is not None:
             if dialogue_protocol == 2:
                 from .companion.dialogue_schemas import DialogueTurn
-                await dialogue.attach_turn(db, user.id, ai_message, structured_output.companion_dialogue or DialogueTurn(), user_message, allow_commerce=allow_commerce, expected_workflow_version=dialogue_version, expected_guards=dialogue_guards)
+                turn = structured_output.companion_dialogue or DialogueTurn()
+                if telegram_transport:
+                    # Eligibility is changed only by the explicit Telegram control button.
+                    from .companion.schemas import Settings
+                    current_settings = Settings.model_validate(companion_profile.settings)
+                    for operation in turn.operations:
+                        if operation.settings is not None:
+                            operation.settings.nutrition_auto_eligible = current_settings.nutrition_auto_eligible
+                await dialogue.attach_turn(db, user.id, ai_message, turn, user_message, allow_commerce=allow_commerce, expected_workflow_version=dialogue_version, expected_guards=dialogue_guards)
             else:
                 await companion_service.attach_proposals(db, user.id, ai_message, structured_output.companion_proposals, companion_profile, expected_version=proposal_version)
             assistant_context = dict(ai_message.context_json or {})

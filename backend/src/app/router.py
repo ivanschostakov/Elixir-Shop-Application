@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from .modules.telegram_ai import telegram_ai_router
 from .modules.admin import admin_router
 from .modules.app_integrity import app_integrity_router
 from .modules.app_version import app_version_router
@@ -21,6 +22,7 @@ from .modules.webhooks import webhooks_router
 api_router = APIRouter(prefix="/api")
 v1_router = APIRouter(prefix="/v1")
 
+v1_router.include_router(telegram_ai_router)
 v1_router.include_router(health_router)
 v1_router.include_router(auth_router)
 v1_router.include_router(admin_router)

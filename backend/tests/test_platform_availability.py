@@ -14,6 +14,44 @@ from src.app.services.platform_availability import (
 from src.app.services.push_notifications import _build_push_messages
 
 
+@pytest.fixture(autouse=True)
+def restrictions_enabled(monkeypatch):
+    monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+
+
+@pytest.mark.parametrize("path,method", [
+    ("/api/v1/products", "GET"),
+    ("/api/v1/products/123", "GET"),
+    ("/api/v1/users/me/basket", "GET"),
+    ("/api/v1/guest/basket/quote", "POST"),
+    ("/api/v1/users/me/orders", "POST"),
+    ("/api/v1/payments/create", "POST"),
+    ("/api/v1/users/me/ai-chat", "GET"),
+    ("/api/v1/users/me/ai-chat", "POST"),
+    ("/api/v1/users/me/companion/actions", "POST"),
+])
+def test_switch_off_releases_all_restricted_paths(monkeypatch, path, method):
+    monkeypatch.setattr(config, "APPLE_DEV_MODE", False)
+    for headers in ({"x-app-platform": "ios"}, {"user-agent": "Elixir iPhone"}):
+        assert not is_commerce_blocked(headers, path, method)
+        assert catalog_response(headers, path, method) is None
+
+
+def test_switch_off_restores_push_delivery(monkeypatch):
+    monkeypatch.setattr(config, "APPLE_DEV_MODE", False)
+    for data in ({}, {"type": "campaign"}, {"type": "ai_companion"}):
+        assert allow_push_for_platform("ios", data)
+    tokens = [SimpleNamespace(platform="ios", expo_push_token="ios")]
+    assert len(_build_push_messages(tokens, title="Test", body="Test", data={"type": "campaign"})) == 1
+
+
+@pytest.mark.parametrize("path", ["/api/v1/users/me/ai-chat", "/api/v1/users/me/ai-chat/companion"])
+def test_switch_off_reaches_normal_authentication(client, monkeypatch, path):
+    monkeypatch.setattr(config, "APPLE_DEV_MODE", False)
+    result = client.get(path, headers={"X-App-Platform": "ios"})
+    assert result.status_code == 401
+
+
 @pytest.mark.parametrize("path,method", [
     ("/api/v1/products", "GET"), ("/api/v1/products/123/", "GET"),
     ("/api/v1/product-categories", "GET"), ("/api/v1/banners", "GET"),

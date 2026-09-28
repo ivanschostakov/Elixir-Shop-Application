@@ -1,0 +1,7 @@
+{
+  "src/ai/client.py": "f31e4f9f10d2a69119f4d9249c4735341965571073be1ef1cd6751b186e550cf",
+  "src/bot/main.py": "fd4bd7773a43684a35b82a7156f2fbcd2f4e7b7799542435becc0f41b11f0619",
+  "src/bot/handlers/new_user.py": "cbbfea90bf446e7044cc3383e45357cc4a032768e38c8f56f8affea867e4dac3",
+  "src/bot/handlers/ai_helpers.py": "6dd3c01f7ef67d26902b796a0ce3c5bb4956a82383298858dd18ba88f08d23d9",
+  "src/bot/keyboards/user.py": "cdd8e75420b62d46615f7f90efa64708854e767e10de34b3e81cf86874a2315e"
+}

@@ -1,0 +1,210 @@
+--- a/src/ai/client.py
++++ b/src/ai/client.py
+@@ -1,3 +1,5 @@
++import json
++from src.ai.telegram_mentor import catalog_context, CATALOG_TOOLS, CATALOG_NAMES, CATALOG_INSTRUCTIONS, PROFILE_TOOL, JOURNAL_TOOLS, memory_instructions, execute_tool, BridgeError
+ import base64
+ import io
+ import logging
+@@ -311,7 +313,30 @@
+     async def _create_v2_response(self, conversation_id: str, input_payload: str | list[dict[str, Any]], response_include: list[str] | None, *, trace_id: str | None = None, stage_name: str = "responses.create") -> Response:
+         step_started = time.monotonic()
+         self.__logger.info("AI client step | trace=%s | stage=%s.start | conversation_id=%s", trace_id, stage_name, conversation_id)
+-        response = await self.responses.create(model=self.__model, input=input_payload, instructions=self.instructions, conversation=ResponseConversationParamParam(id=conversation_id), tools=self._build_tools(), include=response_include, reasoning=self._build_reasoning_payload(), truncation="auto")
++        context = catalog_context.get()
++        tools = self._build_tools() + (CATALOG_TOOLS if context is not None else [])
++        if context is not None and context.get("saved") is not None:
++            tools = [*tools, PROFILE_TOOL, *JOURNAL_TOOLS]
++        instructions = self.instructions + (CATALOG_INSTRUCTIONS + memory_instructions(context) if context is not None else "")
++        response = await self.responses.create(model=self.__model, input=input_payload, instructions=instructions, conversation=ResponseConversationParamParam(id=conversation_id), tools=tools, include=response_include, reasoning=self._build_reasoning_payload(), truncation="auto")
++        if context is not None:
++            for round_index in range(6):
++                calls = [item for item in response.output if getattr(item, "type", None) == "function_call"]
++                if not calls:
++                    break
++                usage = self._extract_v2_usage(response)
++                context["usage"] = [a+b for a,b in zip(context["usage"], usage)]
++                outputs = []
++                for call in calls:
++                    try:
++                        result = await execute_tool(context, call.name, json.loads(call.arguments))
++                    except (ValueError, TypeError, BridgeError):
++                        result = {"ok": False, "error": "tool_failed", "message": "Действие не выполнено. Не утверждай, что профиль сохранён или каталог проверен. При неясных данных уточни один вопрос."}
++                    outputs.append({"type": "function_call_output", "call_id": call.call_id, "output": json.dumps(result, ensure_ascii=False)})
++                response = await self.responses.create(model=self.__model, input=outputs, instructions=instructions,
++                    conversation=ResponseConversationParamParam(id=conversation_id), tools=tools,
++                    tool_choice="none" if round_index == 5 else "auto", include=response_include,
++                    reasoning=self._build_reasoning_payload(), truncation="auto")
+         self.__logger.info("AI client step | trace=%s | stage=%s.done | conversation_id=%s | elapsed_ms=%d", trace_id, stage_name, conversation_id, int((time.monotonic() - step_started) * 1000))
+         return response
+ 
+@@ -400,12 +425,16 @@
+         file_count = sum(1 for f in response_files if (f.get("kind") if isinstance(f, dict) else None) == "file")
+ 
+         input_tokens, cached_input_tokens, output_tokens = self._extract_v2_usage(response)
++        final_context_tokens = input_tokens
++        context = catalog_context.get()
++        if context is not None:
++            input_tokens, cached_input_tokens, output_tokens = [a+b for a,b in zip((input_tokens, cached_input_tokens, output_tokens), context["usage"])]
+         final_conversation_id = getattr(getattr(response, "conversation", None), "id", None) or active_conversation_id
+-        self.__conversation_input_tokens[str(final_conversation_id)] = int(input_tokens)
+-        if user_id is not None and int(input_tokens) >= AI_CONVERSATION_SOFT_INPUT_TOKENS:
++        self.__conversation_input_tokens[str(final_conversation_id)] = int(final_context_tokens)
++        if user_id is not None and int(final_context_tokens) >= AI_CONVERSATION_SOFT_INPUT_TOKENS:
+             rollover_reason = (
+                 "hard_input_limit_post_response"
+-                if int(input_tokens) >= AI_CONVERSATION_HARD_INPUT_TOKENS
++                if int(final_context_tokens) >= AI_CONVERSATION_HARD_INPUT_TOKENS
+                 else "soft_input_limit_post_response"
+             )
+             step_started = time.monotonic()
+--- a/src/bot/main.py
++++ b/src/bot/main.py
+@@ -1,3 +1,4 @@
++from src.bot.handlers.mentor import router as mentor_router, shop_button, response_keyboard, reminder_loop, MentorNavigationMiddleware
+ import asyncio
+ import copy
+ import logging
+@@ -198,7 +199,7 @@
+     async def parse_response(self, response: dict, message: Message, back_menu: bool = False, adv: bool = False):
+         user_id = message.from_user.id
+         self.__logger = self.__logger
+-        self.__logger.info("INCOMING message | user_id=%s | text=%r",user_id, getattr(message, "text", None))
++        self.__logger.info("INCOMING message | user_id=%s | text=%r",user_id, "[mentor]" if response.get("mentor") else getattr(message, "text", None))
+         files = _normalize_response_files(response.get("files") or [], logger=self.__logger)
+         text: str = (response.get("text") or "").strip()
+         input_tokens: int = int(response.get("input_tokens") or 0)
+@@ -215,8 +216,10 @@
+         if input_tokens or output_tokens:
+             self._schedule_background("update_user_token_totals", self._safe_update_token_totals(user_id, input_tokens, output_tokens))
+ 
+-        keyboard = copy.deepcopy(user_keyboards.backk)
++        keyboard = response_keyboard(response) if response.get("mentor") else copy.deepcopy(user_keyboards.backk)
+         if adv: keyboard.inline_keyboard.append([InlineKeyboardButton(text="Ознакомиться с программой", url="https://t.me/obucheniepeptid/32"), InlineKeyboardButton(text="Попасть на обучение", url="https://www.peptidecourse.ru/")])
++        if response.get("open_shop") and message.chat.type == "private":
++            keyboard.inline_keyboard.insert(0, [await shop_button(self)])
+         reply_markup = keyboard if back_menu else ReplyKeyboardRemove()
+         if not files and not text:
+             self.__logger.warning("EMPTY response (no files, no text)")
+@@ -239,10 +242,11 @@
+                     await self._reply_text_safe(message, chunk, reply_markup=ReplyKeyboardRemove())
+                 sent_message = await self._reply_text_safe(message, chunks[-1], reply_markup=text_markup)
+             else:
+-                self.__logger.info("OUTGOING text | len=%d | preview=%r", len(out_text), out_text)
++                self.__logger.info("OUTGOING text | len=%d | preview=%r", len(out_text), "[mentor]" if response.get("mentor") else out_text)
+                 sent_message = await self._reply_text_safe(message, out_text, reply_markup=text_markup)
+ 
+-        if not files: return sent_message
++        if not files:
++            return sent_message
+ 
+         self.__logger.info("OUTGOING response has %d file(s)", len(files))
+         image_files = [(name, content) for name, content in files if _is_image_attachment(name, content)]
+@@ -355,8 +359,10 @@
+ professor_bot = ProfessorBot(PROFESSOR_BOT_TOKEN, BOT_NAMES[PROFESSOR_BOT_TOKEN])
+ professor_client = ProfessorClient(PROFESSOR_OPENAI_API, PROFESSOR_ASSISTANT_ID, keyword="new")
+ professor_dp = Dispatcher(storage=MemoryStorage())
++professor_dp.callback_query.outer_middleware(MentorNavigationMiddleware())
++professor_dp.message.outer_middleware(MentorNavigationMiddleware())
+ professor_dp.update.outer_middleware(MiniAppContactMiddleware())
+-professor_dp.include_routers(professor_chat_router, professor_admin_router, professor_user_router, professor_guest_router)
++professor_dp.include_routers(mentor_router, professor_chat_router, professor_admin_router, professor_user_router, professor_guest_router)
+ professor_dp.message.middleware(
+     ContextMiddleware(
+         professor_bot,
+@@ -397,5 +403,10 @@
+     polling_logger.info("Professor bot polling init: deleting webhook")
+     await professor_bot.delete_webhook(drop_pending_updates=False)
+     polling_logger.info("Professor bot webhook deleted: starting polling")
+-    await professor_dp.start_polling(professor_bot)
++    reminder_task = asyncio.create_task(reminder_loop(professor_bot))
++    try:
++        await professor_dp.start_polling(professor_bot)
++    finally:
++        reminder_task.cancel()
++        await asyncio.gather(reminder_task, return_exceptions=True)
+     polling_logger.warning("Professor bot start_polling returned")
+--- a/src/bot/handlers/new_user.py
++++ b/src/bot/handlers/new_user.py
+@@ -1,3 +1,4 @@
++from src.ai.telegram_mentor import wrap_client, mentor_enabled, reset_mentor_conversations
+ import base64
+ import asyncio
+ import httpx
+@@ -495,10 +496,14 @@
+ 
+ @professor_user_router.message(Command('new_chat'))
+ async def handle_new_chat(message: Message, state: FSMContext, professor_client, expert_client=None):
++    if mentor_enabled(message.from_user.id):
++        reset_mentor_conversations(message.from_user.id)
++        return await message.answer("Начали новый диалог с наставником. Ваш профиль сохранён.")
+     user = await webapp_client.get_user("tg_id", message.from_user.id)
+     last_used, has_unknown_last_used = _resolve_last_used(user)
+     if user and has_unknown_last_used: schedule_webapp_call(safe_webapp_call(webapp_client.update_user(message.from_user.id, {"last_used": last_used}), operation="update_last_used"), operation="update_last_used")
+     active_client = _resolve_mode_client(last_used, professor_client, expert_client)
++    active_client = wrap_client(active_client, message.from_user.id, last_used)
+     conversation_id = await active_client.create_conversation(user_id=message.from_user.id)
+     await safe_webapp_call(webapp_client.upsert_user({"tg_id": message.from_user.id, "name": message.from_user.first_name, "surname": message.from_user.last_name, "conversation_id": conversation_id, "last_used": last_used}), operation="upsert_conversation_id")
+     return await message.answer(user_texts.new_chat)
+@@ -580,6 +585,7 @@
+     existing_user = await webapp_client.get_user("tg_id", user_id)
+     last_used, has_unknown_last_used = _resolve_last_used(existing_user)
+     active_client = _resolve_mode_client(last_used, professor_client, expert_client)
++    active_client = wrap_client(active_client, message.from_user.id, last_used)
+     user = await _ensure_user(message, active_client)
+     if has_unknown_last_used:
+         schedule_webapp_call(safe_webapp_call(webapp_client.update_user(user_id, {"last_used": last_used}), operation="update_last_used"), operation="update_last_used")
+@@ -623,6 +629,7 @@
+     existing_user = await webapp_client.get_user("tg_id", user_id)
+     last_used, has_unknown_last_used = _resolve_last_used(existing_user)
+     active_client = _resolve_mode_client(last_used, professor_client, expert_client)
++    active_client = wrap_client(active_client, message.from_user.id, last_used)
+     user = await _ensure_user(message, active_client)
+     if has_unknown_last_used:
+         schedule_webapp_call(safe_webapp_call(webapp_client.update_user(user_id, {"last_used": last_used}), operation="update_last_used"), operation="update_last_used")
+--- a/src/bot/handlers/ai_helpers.py
++++ b/src/bot/handlers/ai_helpers.py
+@@ -1,3 +1,4 @@
++from src.ai.telegram_mentor import BridgeError
+ import io
+ import logging
+ import mimetypes
+@@ -232,7 +233,7 @@
+ 
+ 
+ async def send_message_v2_from_telegram(message: Message, professor_client, user_id: int, conversation_id: str | None, *, input_text_override: str | None = None) -> dict[str, Any]:
+-    trace_id = uuid.uuid4().hex[:12]
++    trace_id = f"tg-{message.chat.id}-{message.message_id}"
+     started_at = time.monotonic()
+     ai_pipeline_logger.info("AI flow start | trace=%s | mode=single | user_id=%s | message_id=%s | conversation_id=%s", trace_id, user_id, message.message_id, conversation_id)
+ 
+@@ -263,7 +264,7 @@
+ async def send_message_v2_from_media_group(messages: Sequence[Message], professor_client, user_id: int, conversation_id: str | None, *, input_text_override: str | None = None) -> dict[str, Any]:
+     if not messages: raise ValueError("messages must not be empty")
+ 
+-    trace_id = uuid.uuid4().hex[:12]
++    trace_id = f"tg-{messages[0].chat.id}-album-{messages[0].media_group_id}"
+     started_at = time.monotonic()
+     ai_pipeline_logger.info("AI flow start | trace=%s | mode=album | user_id=%s | messages=%d | conversation_id=%s", trace_id, user_id, len(messages), conversation_id)
+ 
+@@ -301,6 +302,10 @@
+         result = await asyncio.wait_for(request_coro, timeout=timeout_seconds)
+         ai_pipeline_logger.info("AI wrapper done | user_id=%s | message_id=%s | elapsed_ms=%d | ok=%s", user_id, message_id, _elapsed_ms(started_at), result is not None)
+         return result
++
++    except BridgeError as error:
++        await message.answer(str(error), parse_mode=None)
++        return None
+ 
+     except asyncio.CancelledError: raise
+     except asyncio.TimeoutError:
+--- a/src/bot/keyboards/user.py
++++ b/src/bot/keyboards/user.py
+@@ -21,6 +21,7 @@
+ ])
+ 
+ main_menu = InlineKeyboardMarkup(inline_keyboard=[
++    [InlineKeyboardButton(text="🌿 Наставник по похудению", callback_data="mentor:open")],
+     [InlineKeyboardButton(text='🤖 ИИ Ассистенты 🧠', callback_data="user:ai:start"),
+      InlineKeyboardButton(text='✖️ Калькуляторы ➗', callback_data="user:calculators")],
+     [InlineKeyboardButton(text="🛒 Открыть магазин 🛍️", url="https://elixirpeptide.ru")],
