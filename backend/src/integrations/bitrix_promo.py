@@ -247,21 +247,30 @@ class BitrixPromoClient:
         return await self._request(payload)
 
     async def _request(self, payload: dict[str, Any]) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.post(
-                self.endpoint,
-                json=payload,
-                headers={
-                    "X-Elixir-Promo-Token": self.token,
-                    "Accept": "application/json",
-                },
-            )
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(
+                    self.endpoint,
+                    json=payload,
+                    headers={
+                        "X-Elixir-Promo-Token": self.token,
+                        "Accept": "application/json",
+                    },
+                )
+        except httpx.HTTPError as exception:
+            raise BitrixPromoError(
+                status_code=502,
+                code="bitrix_unavailable",
+                message="Bitrix promo service is temporarily unavailable",
+                message_ru="Сервис промокодов временно недоступен. Повторите попытку позже.",
+                message_en="The promo service is temporarily unavailable. Please try again later.",
+            ) from exception
 
         try:
             result = response.json()
         except ValueError as exception:
             raise BitrixPromoError(
-                status_code=response.status_code,
+                status_code=502,
                 code="invalid_response",
                 message="Bitrix promo API returned invalid JSON",
                 message_ru="API промокодов Bitrix вернул некорректный JSON.",
@@ -278,7 +287,7 @@ class BitrixPromoClient:
         message_en = str(result.get("message_en") or result.get("message") or "Bitrix promo request failed")
         message_ru = str(result.get("message_ru") or "Не удалось проверить промокод в Bitrix.")
         raise BitrixPromoError(
-            status_code=response.status_code,
+            status_code=response.status_code if 400 <= response.status_code < 600 else 502,
             code=str(result.get("error") or "request_failed"),
             message=message_ru,
             message_ru=message_ru,

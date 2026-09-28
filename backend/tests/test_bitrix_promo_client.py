@@ -13,6 +13,45 @@ from src.integrations.bitrix_promo import BitrixPromoClient, BitrixPromoError
 TOKEN = "a" * 64
 
 
+@pytest.mark.parametrize("error_type", [httpx.ConnectTimeout, httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError])
+def test_transport_errors_become_retryable_service_errors_without_retry(monkeypatch, error_type):
+    calls = []
+
+    async def handler(request):
+        calls.append(request)
+        raise error_type("Transport failed", request=request)
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
+    with pytest.raises(BitrixPromoError) as raised:
+        asyncio.run(client.lookup("TEST"))
+    assert raised.value.status_code == 502
+    assert raised.value.code == "bitrix_unavailable"
+    assert isinstance(raised.value.__cause__, error_type)
+    assert len(calls) == 1
+    assert TOKEN not in str(raised.value)
+
+
+@pytest.mark.parametrize("status,body", [(200, b"not json"), (503, b"<html>Unavailable</html>"), (200, b"[]"), (200, b'{"ok":true}'), (200, b'{"ok":false}')])
+def test_invalid_responses_are_service_errors(monkeypatch, status, body):
+    async def handler(request):
+        return httpx.Response(status, content=body)
+
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(
+        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs),
+    )
+    client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
+    with pytest.raises(BitrixPromoError) as raised:
+        asyncio.run(client.lookup("TEST"))
+    assert raised.value.status_code == 502
+
+
 def test_lookup_uses_server_token_and_returns_data(monkeypatch):
     async def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["X-Elixir-Promo-Token"] == TOKEN
@@ -191,7 +230,7 @@ def test_profile_uses_customer_context_without_a_promo(monkeypatch):
     ("current_promo", "website_promo", "expected_total"),
     [
         ("OLD", "CURRENT", Decimal("50000.00")),
-        ("STALE", None, Decimal("0.00")),
+        ("STALE", None, Decimal("50000.00")),
     ],
 )
 def test_profile_refresh_updates_or_clears_local_referrer_promo(
@@ -253,6 +292,10 @@ def test_profile_refresh_updates_or_clears_local_referrer_promo(
     assert program_profile["order_sum"]["amount"] == 50000
     assert user.promo_code == website_promo
     assert profile.referral_discount_base_total == expected_total
+    assert profile.reward_program == ("partner" if website_promo else "bonus")
+    assert profile.reward_program_snapshot["participating_purchase_total"] == (
+        "50000.00" if website_promo else "0.00"
+    )
     assert db.flushed is True
 
 
@@ -313,7 +356,7 @@ def test_profile_refresh_preserves_configured_firm_promo(monkeypatch):
     assert profile.bitrix_user_id == 77
 
 
-def test_bonus_program_refresh_activates_website_promo_at_three_percent(monkeypatch):
+def test_website_promo_switches_bonus_to_partner_using_website_total(monkeypatch):
     class FakeDb:
         async def flush(self):
             return None
@@ -366,9 +409,11 @@ def test_bonus_program_refresh_activates_website_promo_at_three_percent(monkeypa
     )
 
     assert user.promo_code == "SLIM101"
-    assert profile.referral_discount_base_total == Decimal("30000.00")
+    assert profile.referral_discount_base_total == Decimal("12500.00")
     assert profile.current_discount_percent == Decimal("3.00")
-    assert profile.reward_program_snapshot["active_base_promo"] == "SLIM101"
+    assert profile.reward_program == "partner"
+    assert profile.reward_program_selection_source == "promo_attached"
+    assert profile.reward_program_snapshot["effective_app_promo"] == "SLIM101"
 
 
 @pytest.mark.parametrize(

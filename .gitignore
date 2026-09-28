@@ -40,3 +40,17 @@ integrations/bitrix/dist/
 
 /docs/product-image-audit-2026-05-06-after-fix.md
 /docs/product-image-audit-2026-05-06.md
+
+# Production-only state must never be published.
+!.env.*.example
+._*
+backups/
+backup/
+*.bak*
+*.backup*
+*.session
+*.session-*
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+.amocrm_playwright_profile*/

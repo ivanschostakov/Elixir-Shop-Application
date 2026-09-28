@@ -25,13 +25,18 @@ COMPANION_TOOLS = [
 
 
 class CompanionToolExecutor:
-    def __init__(self, db, user_id, shop=None, dialogue=False):
+    def __init__(self, db, user_id, shop=None, dialogue=False, catalog_read_allowed=False):
         self.db, self.user_id, self.shop = db, user_id, shop
         self.dialogue = dialogue
+        self.catalog_read_allowed = catalog_read_allowed
         self.calls = []
 
     async def execute(self, name, arguments=None):
         args = arguments or {}
+        if self.catalog_read_allowed:
+            from src.app.modules.telegram_ai.catalog import CATALOG_NAMES, CatalogRequest, read_catalog
+            if name in CATALOG_NAMES:
+                return await read_catalog(self.db, CatalogRequest(name=name, arguments=args))
         if self.dialogue:
             from .dialogue_tools import DIALOGUE_TOOLS, execute_dialogue_tool
             if name in {t["name"] for t in DIALOGUE_TOOLS}:

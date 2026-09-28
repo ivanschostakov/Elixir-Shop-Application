@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_FLOOR
 
+import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,6 +50,26 @@ def cashback_points_for_amount(amount: Decimal | int | float | str | None) -> in
 def _external_code(key: str, action: str = "earn") -> str:
     digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:24]
     return f"elixir-loyalty-{action}-{digest}"
+
+
+def _sync_error_message(error: Exception) -> str:
+    if isinstance(error, httpx.HTTPStatusError):
+        message = f"MoySklad HTTP {error.response.status_code}"
+        try:
+            body = error.response.json()
+        except ValueError:
+            body = None
+        errors = body.get("errors") if isinstance(body, dict) else None
+        if isinstance(errors, list):
+            details = [
+                f"{item.get('code', '?')}: {item.get('error', 'Request rejected')}"
+                for item in errors[:3]
+                if isinstance(item, dict)
+            ]
+            if details:
+                message += "; " + "; ".join(details)
+        return message[:500]
+    return (str(error) or error.__class__.__name__)[:500]
 
 
 async def _ensure_moysklad_wallet(
@@ -106,6 +127,7 @@ async def sync_loyalty_bonus_credit(
     credit: LoyaltyBonusCredit,
     client: MoySkladClient | None = None,
 ) -> bool:
+    credit_id = credit.id
     if credit.status == "applied" and credit.moysklad_bonus_transaction_id is not None:
         return True
     user = await db.get(User, credit.user_id)
@@ -126,7 +148,7 @@ async def sync_loyalty_bonus_credit(
             bonus_points=credit.points,
             transaction_type="EARNING",
             external_code=_external_code(credit.idempotency_key),
-            name=f"Начисление бонусов: {credit.source_kind}",
+            name=f"Начисление бонусов: {credit.source_kind} #{credit_id}",
             description=f"Elixir Shop loyalty credit #{credit.id}",
         )
         transaction_id = coerce_uuid(transaction.get("id"))
@@ -140,12 +162,12 @@ async def sync_loyalty_bonus_credit(
         return True
     except Exception as exc:
         await db.rollback()
-        persisted = await db.get(LoyaltyBonusCredit, credit.id)
+        persisted = await db.get(LoyaltyBonusCredit, credit_id)
         if persisted is not None:
             persisted.status = "failed"
-            persisted.sync_error = (str(exc) or exc.__class__.__name__)[:500]
+            persisted.sync_error = _sync_error_message(exc)
             await db.commit()
-        logger.exception("Could not sync loyalty bonus credit id=%s", credit.id)
+        logger.exception("Could not sync loyalty bonus credit id=%s: %s", credit_id, _sync_error_message(exc))
         return False
 
 
@@ -252,6 +274,7 @@ async def reverse_loyalty_bonus_credit(
     credit: LoyaltyBonusCredit,
     client: MoySkladClient | None = None,
 ) -> bool:
+    credit_id = credit.id
     if credit.status in {"reversed", "expired"}:
         return True
     if credit.status in {"pending", "failed"} and credit.moysklad_bonus_transaction_id is None:
@@ -283,7 +306,7 @@ async def reverse_loyalty_bonus_credit(
             bonus_points=unspent,
             transaction_type="SPENDING",
             external_code=_external_code(credit.idempotency_key, "reverse"),
-            name="Отмена начисления бонусов",
+            name=f"Отмена начисления бонусов #{credit_id}",
             description=f"Reversed Elixir Shop loyalty credit #{credit.id}",
         )
         transaction_id = coerce_uuid(transaction.get("id"))
@@ -297,12 +320,12 @@ async def reverse_loyalty_bonus_credit(
         return True
     except Exception as exc:
         await db.rollback()
-        persisted = await db.get(LoyaltyBonusCredit, credit.id)
+        persisted = await db.get(LoyaltyBonusCredit, credit_id)
         if persisted is not None:
             persisted.status = "reversal_pending"
-            persisted.sync_error = (str(exc) or exc.__class__.__name__)[:500]
+            persisted.sync_error = _sync_error_message(exc)
             await db.commit()
-        logger.exception("Could not reverse loyalty bonus credit id=%s", credit.id)
+        logger.exception("Could not reverse loyalty bonus credit id=%s: %s", credit_id, _sync_error_message(exc))
         return False
 
 
@@ -439,7 +462,7 @@ async def sync_pending_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 1
     rows = list(
         (
             await db.execute(
-                select(LoyaltyBonusCredit)
+                select(LoyaltyBonusCredit.id)
                 .where(LoyaltyBonusCredit.status.in_(("pending", "failed", "reversal_pending")))
                 .order_by(LoyaltyBonusCredit.id.asc())
                 .limit(max(1, min(limit, 500)))
@@ -448,7 +471,11 @@ async def sync_pending_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 1
     )
     synced = 0
     failed = 0
-    for credit in rows:
+    # A failed credit rolls back the session and expires every loaded ORM object.
+    for credit_id in rows:
+        credit = await db.get(LoyaltyBonusCredit, credit_id, populate_existing=True)
+        if credit is None or credit.status not in {"pending", "failed", "reversal_pending"}:
+            continue
         if credit.status == "reversal_pending":
             success = await reverse_loyalty_bonus_credit(db, credit=credit)
         else:
@@ -465,7 +492,7 @@ async def expire_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 100) ->
     rows = list(
         (
             await db.execute(
-                select(LoyaltyBonusCredit)
+                select(LoyaltyBonusCredit.id)
                 .where(
                     LoyaltyBonusCredit.status == "applied",
                     LoyaltyBonusCredit.expires_at <= now,
@@ -478,7 +505,10 @@ async def expire_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 100) ->
     expired = 0
     failed = 0
     client = get_moysklad_client()
-    for credit in rows:
+    for credit_id in rows:
+        credit = await db.get(LoyaltyBonusCredit, credit_id, populate_existing=True)
+        if credit is None or credit.status != "applied" or credit.expires_at > now:
+            continue
         unspent = max(0, credit.points - credit.spent_points)
         try:
             if unspent > 0:
@@ -494,7 +524,7 @@ async def expire_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 100) ->
                     bonus_points=unspent,
                     transaction_type="SPENDING",
                     external_code=_external_code(credit.idempotency_key, "expire"),
-                    name="Сгорание бонусов",
+                    name=f"Сгорание бонусов #{credit_id}",
                     description=f"Expired Elixir Shop loyalty credit #{credit.id}",
                 )
                 credit.moysklad_debit_transaction_id = coerce_uuid(transaction.get("id"))
@@ -507,9 +537,9 @@ async def expire_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 100) ->
             expired += 1
         except Exception as exc:
             await db.rollback()
-            persisted = await db.get(LoyaltyBonusCredit, credit.id)
+            persisted = await db.get(LoyaltyBonusCredit, credit_id)
             if persisted is not None:
-                persisted.sync_error = (str(exc) or exc.__class__.__name__)[:500]
+                persisted.sync_error = _sync_error_message(exc)
                 await db.commit()
             failed += 1
     return {"processed": len(rows), "expired": expired, "failed": failed}

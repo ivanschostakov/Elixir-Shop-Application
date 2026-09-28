@@ -1,4 +1,7 @@
-from .env import _csv_env, _env, _int_env
+from .env import _bool_env, _csv_env, _env, _int_env
+
+# One operational switch for all native iOS users, never reviewer-specific.
+APPLE_DEV_MODE = _bool_env("APPLE_DEV_MODE", True)
 
 
 API_BASE_URL = _env("API_BASE_URL")

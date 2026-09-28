@@ -1,3 +1,4 @@
+from .ai.telegram_profile import TelegramAIProfile, TelegramAIJournal, TelegramAIReminderSettings
 from .ai.attachment import Attachment
 from .ai.chat import AIChat
 from .ai.message import AIMessage
