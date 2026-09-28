@@ -15,6 +15,7 @@ services:
       retries: 5
 
   backend-api:
+    image: ${SHOP_BACKEND_IMAGE:-elixir-shop-backend:production}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -61,6 +62,7 @@ services:
       - "127.0.0.1:8080:80"
 
   worker-notifications:
+    image: ${SHOP_BACKEND_IMAGE:-elixir-shop-backend:production}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -90,6 +92,7 @@ services:
       - ./backend/logs:/app/backend/logs
 
   worker-moysklad-sync:
+    image: ${SHOP_BACKEND_IMAGE:-elixir-shop-backend:production}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -118,6 +121,7 @@ services:
       - ./backend/logs:/app/backend/logs
 
   worker-website-review-sync:
+    image: ${SHOP_BACKEND_IMAGE:-elixir-shop-backend:production}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -142,6 +146,7 @@ services:
       - ./backend/logs:/app/backend/logs
 
   worker-website-catalog-sync:
+    image: ${SHOP_BACKEND_IMAGE:-elixir-shop-backend:production}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -170,6 +175,7 @@ services:
       - ./backend/logs:/app/backend/logs
 
   worker-admin-jobs:
+    image: ${SHOP_BACKEND_IMAGE:-elixir-shop-backend:production}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -199,6 +205,7 @@ services:
       - ./backend/logs:/app/backend/logs
 
   worker-admin-automation:
+    image: ${SHOP_BACKEND_IMAGE:-elixir-shop-backend:production}
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -227,6 +234,7 @@ services:
       - ./backend/logs:/app/backend/logs
 
   worker-telegram-polling:
+    image: ${SHOP_BACKEND_IMAGE:-elixir-shop-backend:production}
     build:
       context: ./backend
       dockerfile: Dockerfile
