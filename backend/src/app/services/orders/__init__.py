@@ -41,6 +41,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, request: Re
         session,
         user=user,
         draft_id=draft_id,
+        client_platform=request.headers.get("X-App-Platform"),
         payment_method=payment_method,
         entered_code=entered_code,
         use_bonus_rubles=use_bonus_rubles,
@@ -53,6 +54,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, request: R
     return await _order_creation.create_order_from_basket_for_user(
         session,
         user=user,
+        client_platform=request.headers.get("X-App-Platform"),
         payment_method=payment_method,
         entered_code=entered_code,
         use_bonus_rubles=use_bonus_rubles,

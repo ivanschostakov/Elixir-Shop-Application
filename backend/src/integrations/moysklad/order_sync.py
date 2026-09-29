@@ -15,6 +15,9 @@ from config import (
     MOY_SKLAD_ORGANIZATION_ID,
     MOY_SKLAD_ORGANIZATION_NAME,
     MOY_SKLAD_SALES_CHANNEL_HREF,
+    MOY_SKLAD_IOS_SALES_CHANNEL_HREF,
+    MOY_SKLAD_ANDROID_SALES_CHANNEL_HREF,
+    MOY_SKLAD_TELEGRAM_SALES_CHANNEL_HREF,
 )
 from src.database.models import IntegrationRun, Order, Product, User, Variant
 from src.integrations.delivery.schemas import COUNTRY_NAMES
@@ -414,7 +417,13 @@ async def _resolve_customerorder_refs(moysklad_client: MoySkladClient, order: Or
     store = _maybe_meta_row(await moysklad_client.find_store_by_name(MOY_SKLAD_REQUIRED_STORE_NAME), entity_type="store")
     state = _maybe_meta_row(await moysklad_client.find_customerorder_state_by_name(_order_state_name(order)), entity_type="state")
 
-    sales_channel = _maybe_meta_row(MOY_SKLAD_SALES_CHANNEL_HREF, entity_type="saleschannel")
+    platform = extract_dict(order.checkout_snapshot).get("client_platform")
+    channel_href = {
+        "ios": MOY_SKLAD_IOS_SALES_CHANNEL_HREF,
+        "android": MOY_SKLAD_ANDROID_SALES_CHANNEL_HREF,
+        "web": MOY_SKLAD_TELEGRAM_SALES_CHANNEL_HREF,
+    }.get(platform) or MOY_SKLAD_SALES_CHANNEL_HREF
+    sales_channel = _maybe_meta_row(channel_href, entity_type="saleschannel")
 
     return {"store": store, "state": state, "sales_channel": sales_channel}
 

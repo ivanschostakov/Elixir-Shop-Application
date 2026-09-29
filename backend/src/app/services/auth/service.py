@@ -307,6 +307,12 @@ async def _link_moysklad_counterparty_by_email(user: User, db: AsyncSession) -> 
     if counterparty_id is None:
         return
 
+    phone = normalize_phone(getattr(user, "phone_number", None))
+    remote_phone = normalize_phone(counterparty.get("phone"))
+    if phone and remote_phone and not moysklad_client._counterparty_phone_matches(counterparty, phone):
+        logger.warning("MoySklad email link has a conflicting phone; manual review required user_id=%s", user.id)
+        return
+
     try:
         user.moysklad_counterparty_id = counterparty_id
         await db.commit()
@@ -327,7 +333,7 @@ def _sync_phone_identity_from_counterparty(user: User, *, phone_number: str, cou
         changed = True
 
     counterparty_id = coerce_uuid(counterparty.get("id")) if isinstance(counterparty, dict) else None
-    if counterparty_id is not None and user.moysklad_counterparty_id != counterparty_id:
+    if counterparty_id is not None and user.moysklad_counterparty_id is None:
         user.moysklad_counterparty_id = counterparty_id
         changed = True
 

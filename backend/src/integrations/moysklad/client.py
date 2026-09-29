@@ -159,17 +159,25 @@ class MoySkladClient:
             filtered = await self.get_page(f"/entity/{entity_type}", limit=100, filter=f"externalCode={external_code}")
             candidate_rows = filtered.get("rows")
             if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
-        except httpx.HTTPStatusError as exc: logger.debug("MoySklad %s filter lookup failed: %s", entity_type, exc)
+        except httpx.HTTPStatusError as exc:
+            if entity_type == "counterparty":
+                raise
+            logger.debug("MoySklad %s filter lookup failed: %s", entity_type, exc)
 
         if not rows:
             try:
                 searched = await self.get_page(f"/entity/{entity_type}", limit=100, search=external_code)
                 candidate_rows = searched.get("rows")
                 if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
-            except httpx.HTTPStatusError as exc: logger.debug("MoySklad %s search lookup failed: %s", entity_type, exc)
+            except httpx.HTTPStatusError as exc:
+                if entity_type == "counterparty":
+                    raise
+                logger.debug("MoySklad %s search lookup failed: %s", entity_type, exc)
 
-        for row in rows:
-            if optional_str(row.get("externalCode")) == external_code: return row
+        matches = [row for row in rows if optional_str(row.get("externalCode")) == external_code]
+        if entity_type == "counterparty" and (len(rows) >= 100 or len({row.get("id") for row in matches}) > 1):
+            raise RuntimeError("Ambiguous MoySklad counterparty external code; manual review required")
+        if matches: return matches[0]
         return None
 
     async def _find_counterparty(self, search: str) -> dict[str, Any] | None:
@@ -178,13 +186,10 @@ class MoySkladClient:
         data = await self.get_page("/entity/counterparty", limit=100, search=normalized)
         rows = data.get("rows")
         if not isinstance(rows, list): return None
-        for row in rows:
-            if isinstance(row, dict) and optional_str(row.get("externalCode")) == normalized: return row
-
-        for row in rows:
-            if not isinstance(row, dict): continue
-            if optional_str(row.get("name")) == normalized: return row
-        return next((row for row in rows if isinstance(row, dict)), None)
+        matches = [row for row in rows if isinstance(row, dict) and optional_str(row.get("externalCode")) == normalized]
+        if len(rows) >= 100 or len({row.get("id") for row in matches}) > 1:
+            raise RuntimeError("Ambiguous MoySklad counterparty external code; manual review required")
+        return matches[0] if matches else None
 
     @staticmethod
     def _counterparty_phone_matches(row: dict[str, Any], normalized_phone: str) -> bool:
@@ -208,10 +213,12 @@ class MoySkladClient:
         rows = data.get("rows")
         if not isinstance(rows, list): return None
 
-        for row in rows:
-            if isinstance(row, dict) and self._counterparty_phone_matches(row, normalized_phone): return row
-
-        return next((row for row in rows if isinstance(row, dict)), None)
+        matches = [row for row in rows if isinstance(row, dict) and self._counterparty_phone_matches(row, normalized_phone)]
+        # A truncated search or duplicate contact is not an identity decision.
+        if len(rows) >= 100 or len({row.get("id") for row in matches}) > 1:
+            logger.warning("MoySklad phone lookup is ambiguous; automatic linking skipped")
+            return None
+        return matches[0] if matches else None
 
     @staticmethod
     def _counterparty_email_matches(row: dict[str, Any], normalized_email: str) -> bool:
@@ -240,14 +247,11 @@ class MoySkladClient:
         rows = data.get("rows")
         if not isinstance(rows, list): return None
 
-        return next(
-            (
-                row
-                for row in rows
-                if isinstance(row, dict) and self._counterparty_email_matches(row, normalized_email)
-            ),
-            None,
-        )
+        matches = [row for row in rows if isinstance(row, dict) and self._counterparty_email_matches(row, normalized_email)]
+        if len(rows) >= 100 or len({row.get("id") for row in matches}) > 1:
+            logger.warning("MoySklad email lookup is ambiguous; automatic linking skipped")
+            return None
+        return matches[0] if matches else None
 
     async def get_counterparty(
         self,
@@ -623,6 +627,8 @@ class MoySkladClient:
         if not normalized_external_code: raise ValueError("Counterparty external_code is required")
 
         counterparty_data = await self._get_entity_by_id("counterparty", existing_counterparty_id) if existing_counterparty_id is not None else None
+        if existing_counterparty_id is not None and counterparty_data is None:
+            raise RuntimeError("Linked MoySklad counterparty is missing; manual relinking required")
         if counterparty_data is None: counterparty_data = await self._find_entity_by_external_code("counterparty", normalized_external_code)
         if counterparty_data is None: counterparty_data = await self._find_counterparty(normalized_external_code)
 
@@ -640,7 +646,8 @@ class MoySkladClient:
 
         counterparty_id = coerce_uuid(counterparty_data.get("id"))
         if counterparty_id is None: raise RuntimeError("MoySklad counterparty response is missing a valid id")
-        await self._update_entity("counterparty", counterparty_id, payload)
+        # Order synchronization must not overwrite a shared customer's contacts
+        # or replace another platform's externalCode with the application's ID.
         return counterparty_data
 
     async def resolve_or_sync_counterparty(self, *, existing_counterparty_id: UUID | None, external_code: str, sync_id: UUID, name: str, email: str | None, phone: str | None, actual_address: str | None) -> MoySkladCounterpartySyncResult:
@@ -665,7 +672,7 @@ class MoySkladClient:
             counterparty_id=counterparty_id,
             external_code=normalized_external_code,
             created=created,
-            updated=not created,
+            updated=False,
         )
 
     async def create_customer_order(self, payload: dict[str, Any]) -> dict[str, Any]:

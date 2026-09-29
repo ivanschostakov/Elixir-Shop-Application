@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react"
+import ProfileSettlementScreen from "@/screens/profile/profile-settlement-screen"
 import { ActivityIndicator, Alert, Image, Pressable, Text, TextInput, View } from "react-native"
 import { router, useFocusEffect } from "expo-router"
 import { LinearGradient } from "expo-linear-gradient"
@@ -61,6 +62,12 @@ const REFERRAL_DISCOUNT_GOALS = [
 ] as const
 
 export default function ProfileDiscountsScreen() {
+    return process.env.EXPO_PUBLIC_MS_ACCOUNT_VIEW_ENABLED === "true"
+        ? <ProfileSettlementScreen />
+        : <LegacyProfileDiscountsScreen />
+}
+
+function LegacyProfileDiscountsScreen() {
     const styles = useThemeStyles(createProfileDiscountsScreenStyles)
     const { user } = useAuth()
     const { t } = useLanguage()

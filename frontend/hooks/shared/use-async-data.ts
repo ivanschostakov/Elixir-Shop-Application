@@ -14,6 +14,7 @@ type UseAsyncDataOptions<TData> = {
     fetcher: () => Promise<TData>
     initialData: TData
     resetOnLoad?: boolean
+    preserveDataOnError?: boolean
 }
 
 export function useAsyncData<TData>({
@@ -23,6 +24,7 @@ export function useAsyncData<TData>({
     fetcher,
     initialData,
     resetOnLoad = false,
+    preserveDataOnError = false,
 }: UseAsyncDataOptions<TData>) {
     const [data, setData] = useState(initialData)
     const [loading, setLoading] = useState(enabled)
@@ -69,7 +71,7 @@ export function useAsyncData<TData>({
                 return null
             }
 
-            setData(initialDataRef.current)
+            if (!preserveDataOnError) setData(initialDataRef.current)
             setError(getErrorMessage(loadError))
             showBackendErrorAlert(loadError)
             return null
@@ -78,7 +80,7 @@ export function useAsyncData<TData>({
                 setLoading(false)
             }
         }
-    }, [resetOnLoad])
+    }, [preserveDataOnError, resetOnLoad])
 
     useEffect(() => {
         if (!enabled) {

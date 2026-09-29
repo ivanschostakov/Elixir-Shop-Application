@@ -229,12 +229,13 @@ def _checkout_snapshot_item(item) -> dict[str, Any]:
     }
 
 
-def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any], resolved_benefits: dict[str, Any] | None = None) -> dict[str, Any]:
+def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any], resolved_benefits: dict[str, Any] | None = None, client_platform: str | None = None) -> dict[str, Any]:
     if draft.recipient is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Recipient is required")
     items = [_checkout_snapshot_item(item) for item in draft.items]
     return {
         "source": "shop_application",
+        "client_platform": client_platform if client_platform in {"ios", "android", "web"} else "unknown",
         "payment_method": payment_method,
         "contact_info": {
             "name": draft.recipient.name,
@@ -398,7 +399,7 @@ def _build_order_item_from_basket_row(*, user_id: int, order_id: int, row: tuple
     )
 
 
-async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
@@ -478,6 +479,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total
     checkout_snapshot = _build_checkout_snapshot(
         draft,
+        client_platform=client_platform,
         payment_method=payment_method,
         selected_delivery_service=selected_delivery_service,
         selected_delivery_payload=selected_delivery_payload,
@@ -529,7 +531,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     return reloaded_order
 
 
-async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     basket = await get_basket_by_user_id(session, user_id)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
@@ -628,6 +630,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total
     checkout_snapshot = _build_checkout_snapshot(
         checkout_source,
+        client_platform=client_platform,
         payment_method=payment_method,
         selected_delivery_service=selected_delivery_service,
         selected_delivery_payload=selected_delivery_payload,

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -19,8 +19,16 @@ from src.app.services.referrals import (
 )
 from src.database import get_db
 from src.database.models import User
+from src.app.modules.users.me.schemas.settlement import SettlementRead
+from src.app.services.benefits.settlement import get_account_settlement
 
 my_referral_profile_router = APIRouter(prefix="/referral-profile", tags=["my_referral_profile"])
+
+
+@my_referral_profile_router.get("/settlement", response_model=SettlementRead)
+async def get_my_settlement(response: Response, current_user: User = Depends(get_current_user)) -> SettlementRead:
+    response.headers["Cache-Control"] = "private, no-store"
+    return await get_account_settlement(current_user.moysklad_counterparty_id)
 
 
 @my_referral_profile_router.get("", response_model=ReferralProfileRead, status_code=status.HTTP_200_OK)
