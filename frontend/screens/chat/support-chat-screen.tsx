@@ -381,7 +381,7 @@ export function SupportChatScreen({
                 <View style={[styles.header, { top: headerTop }]}>
                     <Pressable
                         accessibilityLabel={t("nav.back")}
-                        onPress={() => router.push(Platform.OS === "ios" ? ROUTES.home : ROUTES.discover)}
+                        onPress={() => router.push(ROUTES.discover)}
                         style={styles.backButton}
                     >
                         <Text style={styles.backText}>‹</Text>

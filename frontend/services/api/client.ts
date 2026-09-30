@@ -1,6 +1,6 @@
 import { API_BASE_URL } from "@/services/api/constants"
 import type { QueryParams, RequestOptions } from "@/services/api/client.types"
-import { getAppIntegrityHeaders, resetAppIntegrityState } from "@/services/app-integrity"
+import { AppIntegrityUnavailableError, getAppIntegrityHeaders, resetAppIntegrityState } from "@/services/app-integrity"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 import { Platform } from "react-native"
 import { fetchTextWithDeadline, RequestDeadlineError } from "@/services/api/request-deadline"
@@ -147,6 +147,7 @@ async function request<T>(
         response = result.response
         rawResponse = result.text
     } catch (error) {
+        if (error instanceof AppIntegrityUnavailableError || error instanceof ApiError) throw error
         throw new ApiError(
             503,
             error instanceof RequestDeadlineError ? REQUEST_TIMEOUT_MESSAGE : SERVICE_UNAVAILABLE_MESSAGE,

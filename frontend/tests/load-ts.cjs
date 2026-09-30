@@ -5,7 +5,7 @@ const ts = require("typescript")
 module.exports = function loadTs(relativePath, mocks = {}) {
     const filename = path.join(path.dirname(require.resolve("../package.json")), relativePath)
     const compiled = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
-        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+        compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
         fileName: filename,
     }).outputText
     const module = { exports: {} }

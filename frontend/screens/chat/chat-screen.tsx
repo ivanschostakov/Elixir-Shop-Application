@@ -975,10 +975,11 @@ export default function ChatScreen() {
                                 chatScreenStyles.composerDock,
                                 {
                                     paddingBottom: composerBottomInset,
+                                    ...(mentorVisible ? { backgroundColor: palette.surface } : {}),
                                 },
                             ]}
                         >
-                            <CompanionPanel controller={companion} onChanged={refresh} openRequested={routeParams.companion === "1"} sending={sending} onPrompt={async text => { await sendMessage(text); await companion.refresh() }} />
+                            <CompanionPanel controller={companion} workspaceVisible={mentorVisible} onChanged={refresh} openRequested={routeParams.companion === "1"} sending={sending} onPrompt={async text => { await sendMessage(text); await companion.refresh() }} />
                             {voiceStatusVisible ? (
                                 <View style={chatScreenStyles.voiceStatusPill}>
                                     {voiceTranscribing ? (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, View } from "react-native"
+import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native"
 import { Calendar } from "react-native-calendars"
 import Svg, { Circle, Line, Polyline } from "react-native-svg"
 import { useRouter } from "expo-router"
@@ -205,6 +205,6 @@ function MentorCourse({ controller: c }: { controller: Controller }) {
         {events.filter(event => localDay(event) === date).map(event => <View key={event.id} style={styles.section}><Copy>{event.data.name} · {event.data.amount} {event.data.unit}</Copy><Copy muted>{formatCompanionDate(event.scheduled_at, c.clock)} · {event.status === "done" ? "Выполнено" : event.status === "skipped" ? "Пропущено" : "Без отметки"}</Copy><View style={styles.row}>{(["done", "skipped", "pending"] as const).filter(status => status !== event.status).map(status => <Button key={status} label={status === "done" ? "Отметить" : status === "skipped" ? "Пропущено" : "Снять отметку"} disabled={c.busy || status === "done" && Date.parse(event.scheduled_at) > Date.now()} onPress={() => void c.attempt(async () => { const identity = `${event.id}:${event.version}:${status}`; const key = keys.current.get(identity) ?? requestKey(); keys.current.set(identity, key); await c.perform({ kind: "event", resource_id: event.id, expected_version: event.version, request_key: key, status }); keys.current.delete(identity); await load() })} />)}</View></View>)}
         {!loading && !events.some(event => localDay(event) === date) ? <Copy muted>На этот день нет событий.</Copy> : null}
         {events.length >= 200 ? <Copy muted>Показаны первые 200 событий. Полную историю можно открыть отдельно.</Copy> : null}
-        {Platform.OS !== "ios" ? <Button label="Запас по моей схеме" onPress={() => c.setEditor({ page: "supply" })} /> : plan ? <View style={styles.section}><Copy heading>Домашний запас</Copy>{plan.data.items.map((item, index) => <Copy key={index}>{item.name}: {item.home_amount ?? "не указан"} {item.package_unit ?? ""} на момент сохранения схемы</Copy>)}</View> : null}<Button label="Самочувствие" onPress={() => c.setEditor({ page: "wellbeing" })} /><Button label="История событий" onPress={() => c.setEditor({ page: "events" })} /><Copy muted>Контакт врача пока не настроен.</Copy><Button label="Написать в поддержку" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} />
+        <Button label="Запас по моей схеме" onPress={() => c.setEditor({ page: "supply" })} /><Button label="Самочувствие" onPress={() => c.setEditor({ page: "wellbeing" })} /><Button label="История событий" onPress={() => c.setEditor({ page: "events" })} /><Copy muted>Контакт врача пока не настроен.</Copy><Button label="Написать в поддержку" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} />
     </>
 }

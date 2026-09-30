@@ -25,6 +25,9 @@ htmlcov/
 node_modules/
 dist/
 build/
+# EAS evaluates this root rule independently of nested .gitignore files.
+!frontend/scripts/react-native-yamap-patches/build/
+!frontend/scripts/react-native-yamap-patches/build/**
 coverage/
 *.tsbuildinfo
 .expo/

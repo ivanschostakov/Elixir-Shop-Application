@@ -1,4 +1,4 @@
-import { Platform, Pressable, Text, View } from "react-native"
+import { Pressable, Text, View } from "react-native"
 import { router } from "expo-router"
 
 import { ProfileHeroCard } from "@/components/profile/profile-hero-card"
@@ -171,7 +171,6 @@ export default function ProfileScreen() {
                 <View style={ProfileScreenStyles.sectionCard}><Text style={ProfileScreenStyles.historyCardTitle}>{t("privacy.title")}</Text></View>
             </Pressable>
 
-            {Platform.OS !== "ios" ? <>
             <Pressable
                 accessibilityLabel={t("nav.favorites")}
                 accessibilityRole="button"
@@ -217,7 +216,6 @@ export default function ProfileScreen() {
                     </View>
                 </View>
             </Pressable>
-            </> : null}
 
             <Pressable
                 accessibilityLabel={t("profile.history.open")}
@@ -242,7 +240,7 @@ export default function ProfileScreen() {
                 </View>
             </Pressable>
 
-            {Platform.OS !== "ios" ? <Pressable
+            <Pressable
                 accessibilityLabel={t("profile.drafts.open")}
                 accessibilityRole="button"
                 onPress={() => router.push(ROUTES.profileDrafts)}
@@ -264,7 +262,6 @@ export default function ProfileScreen() {
                     </View>
                 </View>
             </Pressable>
-            : null}
 
             <View style={ProfileScreenStyles.sectionCard}>
                 <Text style={ProfileScreenStyles.sectionDescription}>
@@ -305,7 +302,7 @@ export default function ProfileScreen() {
                     </View>
                 </Pressable>
 
-                {Platform.OS !== "ios" ? <Pressable
+                <Pressable
                     accessibilityLabel={t("profile.openPublicOffer")}
                     accessibilityRole="button"
                     onPress={() => router.push(ROUTES.publicOffer)}
@@ -320,7 +317,7 @@ export default function ProfileScreen() {
                             <Text style={ProfileScreenStyles.historyCardArrow}>{">"}</Text>
                         </View>
                     </View>
-                </Pressable> : null}
+                </Pressable>
             </View>
 
         </FeedTemplate>

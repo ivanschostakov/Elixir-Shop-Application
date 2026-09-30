@@ -16,7 +16,7 @@ import {
     getDefaultScreenChromeTemplate,
     mergeScreenChromeTemplate,
 } from "@/components/navigation/screen-template-registry"
-import { IOS_PRIMARY_APP_ROUTES, PRIMARY_APP_ROUTES, ROUTES, isIosRestrictedRoute } from "@/constants/routes"
+import { PRIMARY_APP_ROUTES, ROUTES } from "@/constants/routes"
 import { ScreenChromeTemplateProvider, useScreenChromeTemplate } from "@/providers/screen-chrome-template-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { useAuth } from "@/providers/auth-provider"
@@ -71,16 +71,9 @@ function AppShellContent() {
             : null
     const shouldShowBrandOverlay = Platform.OS === "ios"
     const brandLabelTop = Math.max(2, topInset - 44)
-    const primaryAppRoutes = Platform.OS === "ios" ? IOS_PRIMARY_APP_ROUTES : PRIMARY_APP_ROUTES
+    const primaryAppRoutes = PRIMARY_APP_ROUTES
     const currentPrimaryRouteIndex = primaryAppRoutes.findIndex((route) => route === pathname)
     const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
-    const isRestrictedIosRoute = Platform.OS === "ios" && isIosRestrictedRoute(pathname)
-
-    useEffect(() => {
-        if (isRestrictedIosRoute) {
-            router.replace(ROUTES.home)
-        }
-    }, [isRestrictedIosRoute, router])
 
     useEffect(() => {
         if (Platform.OS !== "web") {
@@ -152,7 +145,7 @@ function AppShellContent() {
                 >
                     <View style={appShellStyles.content}>
                         <NavigationThemeProvider value={navigationTheme}>
-                            {isRestrictedIosRoute ? null : <Stack
+                            <Stack
                                 screenOptions={{
                                     animation: routeAnimation,
                                     animationDuration: motion.duration.route,
@@ -160,7 +153,7 @@ function AppShellContent() {
                                     gestureEnabled: true,
                                     headerShown: false,
                                 }}
-                            />}
+                            />
                         </NavigationThemeProvider>
                     </View>
                 </PanGestureHandler>

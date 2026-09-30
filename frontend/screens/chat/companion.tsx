@@ -161,7 +161,7 @@ export function CompanionCards({ controller: c, message, onChanged }: { controll
     </View>)}</>
 }
 
-export function CompanionPanel({ controller: c, onChanged, openRequested, onPrompt, sending }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean; onPrompt?: (text: string) => Promise<unknown>; sending?: boolean }) {
+export function CompanionPanel({ controller: c, onChanged, openRequested, onPrompt, sending, workspaceVisible = false }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean; onPrompt?: (text: string) => Promise<unknown>; sending?: boolean; workspaceVisible?: boolean }) {
     const { palette } = useTheme()
     const hasProfile = !!c.state?.profile
     const setEditor = c.setEditor
@@ -171,7 +171,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     const dialogue = c.state.dialogue_protocol === 2 && onPrompt
     return <View style={dialogue ? undefined : [styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }]}>
         {dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label="Мой курс · дневник · прогресс" disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} />}
-        {c.error ? <><Copy>{c.error}</Copy><Button label="Обновить" onPress={() => void changed()} /></> : null}
+        {c.error && !workspaceVisible ? <><Copy>{c.error}</Copy><Button label="Обновить" onPress={() => void changed()} /></> : null}
         <Modal visible={!!c.editor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => c.setEditor(null)}>
             <KeyboardAvoidingView style={{ flex: 1, backgroundColor: palette.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
                 <View style={styles.modalHeader}><Button label="Закрыть" onPress={() => c.setEditor(null)} />{c.busy ? <ActivityIndicator /> : null}</View>

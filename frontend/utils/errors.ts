@@ -2,6 +2,7 @@ import { Alert } from "react-native"
 
 import { translate } from "@/i18n/translations"
 import { ApiError } from "@/services/api/client"
+import { AppIntegrityUnavailableError } from "@/services/app-integrity"
 
 const ALERT_DEDUP_WINDOW_MS = 1200
 
@@ -84,6 +85,10 @@ export function isBackendError(error: unknown) {
 
 export function getErrorMessage(error: unknown, fallback?: string) {
     const resolvedFallback = fallback ?? translate("common.unknownError")
+
+    if (error instanceof AppIntegrityUnavailableError) {
+        return translate("auth.error.deviceVerificationUnavailable")
+    }
 
     if (error instanceof ApiError && error.status >= 500) {
         return getBackendUnavailableMessage()

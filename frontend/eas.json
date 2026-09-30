@@ -17,7 +17,8 @@
       "android": {
         "buildType": "app-bundle"
       },
-      "environment": "preview",
+      "environment": "production",
+      "channel": "production",
       "distribution": "internal"
     },
     "testing": {

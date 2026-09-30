@@ -471,28 +471,23 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
     const subtitle = order.delivery_string || order.delivery_address?.full_address || null
     const totalLabel = formatMoney(Number(order.grand_total), order.currency) ?? order.grand_total
     const isCompleted = order.history_bucket === "completed"
-    const isIos = Platform.OS === "ios"
-    const visibleItems = isIos ? [] : order.items.slice(0, 4)
+    const visibleItems = order.items.slice(0, 4)
     const statusLabel = t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created")
     const statusMessage = t(ORDER_STATUS_MESSAGE_KEYS[order.status_code] ?? "profile.history.statusMessage.created")
 
     const handleOpenOrder = useCallback(() => {
-        if (isIos) {
-            return
-        }
         router.push({ pathname: ROUTES.payment, params: { orderId: String(order.id) } })
-    }, [isIos, order.id])
+    }, [order.id])
 
     return (
         <View style={profileHistoryScreenStyles.historyCard}>
             <Pressable
                 accessibilityLabel={`#${order.order_number}`}
                 accessibilityRole="button"
-                disabled={isIos}
                 onPress={handleOpenOrder}
                 style={({ pressed }) => pressed && profileHistoryScreenStyles.historyCardPressed}
             >
-                {!isIos ? <View style={profileHistoryScreenStyles.historyCardCollage}>
+                <View style={profileHistoryScreenStyles.historyCardCollage}>
                     {visibleItems.map((item, index) => (
                         <View
                             key={`${order.id}-${item.id}-${item.variant_id}`}
@@ -508,13 +503,13 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
                             />
                         </View>
                     ))}
-                </View> : null}
+                </View>
 
                 <View style={profileHistoryScreenStyles.historyCardBody}>
                     <View style={profileHistoryScreenStyles.historyCardHeader}>
                         <View style={profileHistoryScreenStyles.historyCardCopy}>
                             <Text style={profileHistoryScreenStyles.historyCardEyebrow}>
-                                {isIos ? t("profile.history.title") : t("route.payment")}
+                                {t("route.payment")}
                             </Text>
                             <Text style={profileHistoryScreenStyles.historyCardTitle}>#{order.order_number}</Text>
                             {subtitle ? (
@@ -675,12 +670,6 @@ export default function ProfileHistoryScreen() {
             return t("profile.history.searchEmptyDescription")
         }
 
-        if (Platform.OS === "ios") {
-            return bucket === "active"
-                ? t("profile.history.activeEmptyDescription")
-                : t("profile.history.completedEmptyDescription")
-        }
-
         if (bucket === "active") {
             return t("profile.history.activeEmptyMotivation")
         }
@@ -740,7 +729,7 @@ export default function ProfileHistoryScreen() {
                                 {emptyStateDescription}
                             </Text>
 
-                            {Platform.OS !== "ios" ? <Pressable
+                            <Pressable
                                 accessibilityRole="button"
                                 onPress={() => {
                                     router.push(ROUTES.discover)
@@ -750,7 +739,7 @@ export default function ProfileHistoryScreen() {
                                 <Text style={profileHistoryScreenStyles.searchEmptyLink}>
                                     {t("profile.history.searchOpenCatalog")}
                                 </Text>
-                            </Pressable> : null}
+                            </Pressable>
                         </View>
                     )
                 }
