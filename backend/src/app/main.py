@@ -8,6 +8,7 @@ from uvicorn import Config, Server
 
 from config import CORS_ALLOWED_ORIGINS
 from src.app.services.cache import get_cache_service
+from src.app.modules.products.access import scoped_catalog_read
 from src.app.services.platform_availability import CATALOG_VARY, catalog_response, is_ios_restricted_path
 from .router import api_router
 from ..integrations.ai import get_professor_client
@@ -46,7 +47,7 @@ app.include_router(api_router)
 
 @app.middleware("http")
 async def media_cache_control(request: Request, call_next):
-    restricted_response = catalog_response(request.headers, request.url.path, request.method)
+    restricted_response = None if scoped_catalog_read(request.url.path, request.method) else catalog_response(request.headers, request.url.path, request.method)
     if restricted_response is not None:
         return restricted_response
     response = await call_next(request)

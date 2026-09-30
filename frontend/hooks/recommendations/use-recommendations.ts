@@ -23,7 +23,7 @@ export function useRecommendations({
     enabled = true,
     deps = [],
 }: UseRecommendationsOptions) {
-    const { isAuthenticated } = useAuth()
+    const { isAuthenticated, user } = useAuth()
     const pageSize = limit ?? (surface === "home" ? 8 : 6)
 
     const fetchRecommendationPage = useCallback(async ({
@@ -52,7 +52,7 @@ export function useRecommendations({
         loadingMore,
         reload,
     } = usePaginatedData<ProductWithVariantsRead>({
-        deps: [surface, productId, draftId, pageSize, ...deps],
+        deps: [user?.id, surface, productId, draftId, pageSize, ...deps],
         enabled: enabled && isAuthenticated,
         fetchPage: fetchRecommendationPage,
         getKey: (product) => product.id,

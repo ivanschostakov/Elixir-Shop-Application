@@ -3,6 +3,11 @@ from .env import _bool_env, _csv_env, _env, _int_env
 # One operational switch for all native iOS users, never reviewer-specific.
 APPLE_DEV_MODE = _bool_env("APPLE_DEV_MODE", True)
 
+# Customer catalog scope. Empty/default values leave existing access unchanged.
+CATALOG_ACCESSORY_CATEGORY_ID = _int_env("CATALOG_ACCESSORY_CATEGORY_ID", 0)
+CATALOG_ACCESSORY_ONLY_USER_IDS = _csv_env("CATALOG_ACCESSORY_ONLY_USER_IDS", "")
+CATALOG_GUEST_ACCESSORIES_ONLY = _bool_env("CATALOG_GUEST_ACCESSORIES_ONLY", False)
+
 
 API_BASE_URL = _env("API_BASE_URL")
 PUBLIC_API_BASE_URL = _env("PUBLIC_API_BASE_URL")

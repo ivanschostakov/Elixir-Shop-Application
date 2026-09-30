@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.app.modules.auth.dependencies import get_current_user
+from src.app.modules.products.access import CatalogScope, get_catalog_scope
 from src.app.modules.products.helpers import product_image_url
 from src.database import get_db
 from src.database.models import Product, ProductByCategory, ProductCategory, User
@@ -39,7 +40,10 @@ async def list_my_promotions(
     request: Request,
     db: AsyncSession = Depends(get_db),
     _current_user: User = Depends(get_current_user),
+    scope: CatalogScope = Depends(get_catalog_scope),
 ) -> list[ProfilePromotionRead]:
+    if scope is not None:
+        return []
     products = list(
         (
             await db.execute(

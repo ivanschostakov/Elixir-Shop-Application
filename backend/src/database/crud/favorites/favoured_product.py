@@ -31,7 +31,7 @@ async def get_favoured_products(session: AsyncSession, *, user_id: int | None = 
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_favourite_products_for_user(session: AsyncSession, user_id: int, *, product_id: int | None = None, offset: int = 0, limit: int = 100) -> list[Product]:
+async def get_favourite_products_for_user(session: AsyncSession, user_id: int, *, product_id: int | None = None, offset: int = 0, limit: int = 100, allowed_category_ids: tuple[int, ...] | None = None) -> list[Product]:
     stmt = (
         select(Product)
         .options(
@@ -41,6 +41,8 @@ async def get_favourite_products_for_user(session: AsyncSession, user_id: int, *
         .where(FavouredProduct.user_id == user_id, Product.archived.is_(False))
     )
     if product_id is not None: stmt = stmt.where(FavouredProduct.product_id == product_id)
+    if allowed_category_ids is not None:
+        stmt = stmt.where(Product.products_by_category.any(ProductByCategory.category_id.in_(allowed_category_ids)))
     stmt = stmt.order_by(Product.in_stock.desc(), FavouredProduct.id.desc()).offset(offset).limit(limit)
     return list((await session.execute(stmt)).scalars().all())
 

@@ -14,6 +14,7 @@ from starlette import status
 from config import ufa_now
 from src.app.modules.guest.schemas import GuestBasketItemPayload, GuestBasketQuoteRead, GuestDeliveryAddressPayload, GuestOrderPayload
 from src.app.services.basket import _product_image_url, _variant_image_url
+from src.app.services.catalog_access import customer_category_scope
 from src.app.services.catalog_merchandising import (
     catalog_unit_price,
     product_catalog_discount_percent,
@@ -71,6 +72,9 @@ async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[
         )
         .where(Variant.id.in_(items_by_variant_id.keys()))
     )
+    scope = customer_category_scope(None)
+    if scope is not None:
+        stmt = stmt.where(Variant.product.has(Product.products_by_category.any(ProductByCategory.category_id.in_(scope))))
     if lock: stmt = stmt.with_for_update()
     variants = list((await session.execute(stmt)).scalars().all())
     return {variant.id: variant for variant in variants}

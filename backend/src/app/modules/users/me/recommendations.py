@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
+from src.app.modules.products.access import CatalogScope, get_catalog_scope
 from src.app.modules.products.helpers import get_user_product_price_discount_context, serialize_products_with_variants
 from src.app.modules.users.me.schemas import RecommendationCategoryViewPayload, RecommendationSurface, RecommendationViewPayload
 from src.app.services.recommendations import (
@@ -13,7 +14,7 @@ from src.app.services.recommendations import (
 from src.app.services.customer_intelligence import record_customer_event_safe
 from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.database import get_db
-from src.database.crud import get_product_review_stats
+from src.database.crud import get_product_review_stats, get_products
 from src.database.models import User
 from src.database.schemas import ProductWithVariantsRead
 
@@ -50,8 +51,11 @@ async def create_my_recommendation_category_view(payload: RecommendationCategory
 
 
 @recommendations_router.get("", response_model=list[ProductWithVariantsRead], status_code=status.HTTP_200_OK)
-async def list_my_recommendations(request: Request, surface: RecommendationSurface = Query(...), product_id: int | None = Query(default=None, ge=1), draft_id: int | None = Query(default=None, ge=1), limit: int | None = Query(default=None, ge=1, le=20), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[ProductWithVariantsRead]:
-    products = await get_recommended_products_for_user(db, user_id=current_user.id, surface=surface, product_id=product_id, draft_id=draft_id, limit=limit, offset=offset)
+async def list_my_recommendations(request: Request, surface: RecommendationSurface = Query(...), product_id: int | None = Query(default=None, ge=1), draft_id: int | None = Query(default=None, ge=1), limit: int | None = Query(default=None, ge=1, le=20), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), scope: CatalogScope = Depends(get_catalog_scope)) -> list[ProductWithVariantsRead]:
+    if scope is not None:
+        products = await get_products(db, allowed_category_ids=scope, limit=limit or 6, offset=offset)
+    else:
+        products = await get_recommended_products_for_user(db, user_id=current_user.id, surface=surface, product_id=product_id, draft_id=draft_id, limit=limit, offset=offset)
     review_stats = await get_product_review_stats(db, product_ids=[product.id for product in products])
     discount_context = await get_user_product_price_discount_context(db, current_user)
     stock_policy = await get_stock_visibility_policy(db)

@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
+from src.app.modules.products.access import require_visible_product
 from src.app.services.notifications.core import (
     activate_stock_notifications_for_product,
     deactivate_stock_notifications_for_product,
@@ -31,6 +32,7 @@ async def _get_product_or_404(db: AsyncSession, product_id: int):
 
 @stock_subscriptions_router.get(
     "/{product_id}",
+    dependencies=[Depends(require_visible_product)],
     response_model=ProductStockSubscriptionStatusRead,
 )
 async def stock_subscription_status(
@@ -52,6 +54,7 @@ async def stock_subscription_status(
 
 @stock_subscriptions_router.post(
     "/{product_id}",
+    dependencies=[Depends(require_visible_product)],
     response_model=ProductStockSubscriptionStatusRead,
     status_code=status.HTTP_201_CREATED,
 )

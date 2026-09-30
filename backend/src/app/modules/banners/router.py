@@ -6,6 +6,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.modules.auth.dependencies import get_optional_current_user
+from src.app.modules.products.access import CatalogScope, get_catalog_scope
 from src.app.services.cache import build_cache_key, get_cache_service
 from src.app.services.rate_limit import client_ip_from_request
 from src.app.services.customer_intelligence import record_customer_event_safe
@@ -20,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 
 @banners_router.get("", response_model=list[BannerRead])
-async def banners_get(limit: int = Query(default=10, ge=1, le=50), offset: int = Query(default=0, ge=0), sort: Literal["newest", "priority_desc", "priority_asc"] | None = Query(default="priority_desc"), db: AsyncSession = Depends(get_db)) -> list[BannerRead]:
+async def banners_get(limit: int = Query(default=10, ge=1, le=50), offset: int = Query(default=0, ge=0), sort: Literal["newest", "priority_desc", "priority_asc"] | None = Query(default="priority_desc"), db: AsyncSession = Depends(get_db), scope: CatalogScope = Depends(get_catalog_scope)) -> list[BannerRead]:
+    # Banners have arbitrary artwork/URLs and cannot be scoped to a category.
+    if scope is not None:
+        return []
     cache = get_cache_service()
     base_key = build_cache_key(route="banners:list", params={
         "limit": limit,

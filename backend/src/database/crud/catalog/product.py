@@ -91,8 +91,11 @@ async def get_products(
     limit: int = 100,
     sort: str = None,
     include_archived: bool = False,
+    allowed_category_ids: tuple[int, ...] | None = None,
 ) -> list[Product]:
     stmt = select(Product).options(*_product_price_options())
+    if allowed_category_ids is not None:
+        stmt = stmt.where(Product.products_by_category.any(ProductByCategory.category_id.in_(allowed_category_ids)))
     if not include_archived:
         stmt = stmt.where(_not_archived_product_clause())
     if category_id is not None:
@@ -140,7 +143,7 @@ async def get_products(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def get_similar_products(session: AsyncSession, *, product_id: int, offset: int = 0, limit: int = 6) -> list[Product]:
+async def get_similar_products(session: AsyncSession, *, product_id: int, offset: int = 0, limit: int = 6, allowed_category_ids: tuple[int, ...] | None = None) -> list[Product]:
     category_ids_stmt = select(ProductByCategory.category_id).where(ProductByCategory.product_id == product_id)
     category_ids = [int(category_id) for category_id in (await session.execute(category_ids_stmt)).scalars().all()]
     if not category_ids:
@@ -172,6 +175,8 @@ async def get_similar_products(session: AsyncSession, *, product_id: int, offset
         .offset(offset)
         .limit(limit)
     )
+    if allowed_category_ids is not None:
+        stmt = stmt.where(Product.products_by_category.any(ProductByCategory.category_id.in_(allowed_category_ids)))
     return list((await session.execute(stmt)).scalars().all())
 
 

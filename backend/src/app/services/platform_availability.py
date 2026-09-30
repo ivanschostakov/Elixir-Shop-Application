@@ -6,7 +6,7 @@ from starlette.responses import JSONResponse, Response
 
 import config
 
-CATALOG_VARY = "X-App-Platform, X-App-Integrity-Platform, User-Agent"
+CATALOG_VARY = "Authorization, X-App-Platform, X-App-Integrity-Platform, User-Agent"
 _EMPTY_LIST_PATHS = {
     "/api/v1/products", "/api/v1/product-categories", "/api/v1/banners",
     "/api/v1/favorites/products", "/api/v1/users/me/favorites/products",

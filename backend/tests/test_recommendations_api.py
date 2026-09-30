@@ -1040,6 +1040,7 @@ def test_recommendations_pass_review_stats_to_product_serializer(monkeypatch: py
         offset=0,
         db=db,
         current_user=current_user,
+        scope=None,
     ))
 
     assert result == [product]

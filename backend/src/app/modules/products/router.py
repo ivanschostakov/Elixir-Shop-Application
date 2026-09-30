@@ -62,6 +62,7 @@ from .helpers import (
     serialize_review,
     serialize_reviews,
 )
+from .access import CatalogScope, get_catalog_scope, require_visible_product
 
 products_router = APIRouter(prefix="/products", tags=["products"])
 logger = logging.getLogger(__name__)
@@ -86,7 +87,7 @@ async def _bump_review_cache_namespaces() -> None:
     await cache.bump_namespace("catalog")
 
 
-@products_router.get("/{product_id}", response_model=ProductWithVariantsRead)
+@products_router.get("/{product_id}", response_model=ProductWithVariantsRead, dependencies=[Depends(require_visible_product)])
 async def products_get_by_id(request: Request, product_id: int, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
     cache = get_cache_service()
     base_key = build_cache_key(route="products:detail", params={"product_id": product_id, "base_url": str(request.base_url)})
@@ -111,11 +112,12 @@ async def products_get_by_id(request: Request, product_id: int, db: AsyncSession
     return payload
 
 
-@products_router.get("/{product_id}/similar", response_model=list[ProductWithVariantsRead])
-async def products_get_similar(request: Request, product_id: int, limit: int = Query(default=6, ge=1, le=20), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
+@products_router.get("/{product_id}/similar", response_model=list[ProductWithVariantsRead], dependencies=[Depends(require_visible_product)])
+async def products_get_similar(request: Request, product_id: int, limit: int = Query(default=6, ge=1, le=20), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user), scope: CatalogScope = Depends(get_catalog_scope)):
     cache = get_cache_service()
     base_key = build_cache_key(route="products:similar", params={
         "product_id": product_id,
+        "scope": scope,
         "limit": limit,
         "offset": offset,
         "base_url": str(request.base_url),
@@ -127,7 +129,7 @@ async def products_get_similar(request: Request, product_id: int, limit: int = Q
 
     product = await get_product_by_id(db, product_id)
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
-    similar_products = await get_similar_products(db, product_id=product_id, offset=offset, limit=limit)
+    similar_products = await get_similar_products(db, product_id=product_id, offset=offset, limit=limit, allowed_category_ids=scope)
     review_stats = await get_product_review_stats(db, product_ids=[item.id for item in similar_products])
     discount_context = await get_user_product_price_discount_context(db, current_user)
     stock_policy = await get_stock_visibility_policy(db)
@@ -142,7 +144,7 @@ async def products_get_similar(request: Request, product_id: int, limit: int = Q
     return payload
 
 
-@products_router.get("/{product_id}/reviews", response_model=list[ReviewRead])
+@products_router.get("/{product_id}/reviews", response_model=list[ReviewRead], dependencies=[Depends(require_visible_product)])
 async def products_get_reviews(request: Request, product_id: int, limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db)):
     cache = get_cache_service()
     base_key = build_cache_key(route="products:reviews", params={
@@ -163,14 +165,14 @@ async def products_get_reviews(request: Request, product_id: int, limit: int = Q
     return payload
 
 
-@products_router.get("/{product_id}/reviews/eligibility", response_model=ReviewEligibilityRead)
+@products_router.get("/{product_id}/reviews/eligibility", response_model=ReviewEligibilityRead, dependencies=[Depends(require_visible_product)])
 async def products_get_review_eligibility(product_id: int, db: AsyncSession = Depends(get_db)):
     product = await get_product_by_id(db, product_id)
     if product is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     return ReviewEligibilityRead(can_review=True)
 
 
-@products_router.get("/{product_id}/questions", response_model=ProductQuestionListRead)
+@products_router.get("/{product_id}/questions", response_model=ProductQuestionListRead, dependencies=[Depends(require_visible_product)])
 async def products_get_questions(
     product_id: int,
     limit: int = Query(default=100, ge=1, le=100),
@@ -195,6 +197,7 @@ async def products_get_questions(
 @products_router.post(
     "/{product_id}/questions",
     response_model=ProductQuestionRead,
+    dependencies=[Depends(require_visible_product)],
     status_code=status.HTTP_201_CREATED,
 )
 async def products_create_question(
@@ -223,7 +226,7 @@ async def products_create_question(
     return serialize_product_question(question)
 
 
-@products_router.post("/{product_id}/reviews", response_model=ReviewRead, status_code=status.HTTP_201_CREATED)
+@products_router.post("/{product_id}/reviews", response_model=ReviewRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_visible_product)])
 async def products_create_review(request: Request, product_id: int, value: int = Form(..., ge=0, le=5), text: str | None = Form(default=None), guest_name: str | None = Form(default=None, max_length=120), guest_email: str | None = Form(default=None, max_length=320), hide_sender_name: bool = Form(default=False), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
     await enforce_rate_limit(request, scope="reviews:create", limit=5, window_seconds=3600)
     product = await get_product_by_id(db, product_id)
@@ -299,6 +302,7 @@ async def products_get(
     db: AsyncSession = Depends(get_db),
     sort: Literal["newest", "name_asc", "name_desc", "price_asc", "price_desc"] | None = Query(default=None),
     current_user: User | None = Depends(get_optional_current_user),
+    scope: CatalogScope = Depends(get_catalog_scope),
 ):
     normalized_q = normalize_search_text(q) if q is not None else None
     normalized_sku = sku.strip() if sku is not None else None
@@ -308,6 +312,7 @@ async def products_get(
         "sku": normalized_sku,
         "min_priority": min_priority,
         "category_id": category_id,
+        "scope": scope,
         "new_only": new_only,
         "limit": limit,
         "offset": offset,
@@ -329,6 +334,7 @@ async def products_get(
         offset=offset,
         limit=limit,
         sort=sort,
+        allowed_category_ids=scope,
     )
     review_stats = await get_product_review_stats(db, product_ids=[product.id for product in products])
     discount_context = await get_user_product_price_discount_context(db, current_user)
