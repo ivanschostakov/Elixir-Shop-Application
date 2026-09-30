@@ -3,6 +3,8 @@ import { AppState } from "react-native"
 import { useIsFocused } from "@react-navigation/native"
 
 import {
+    blockCommunityAuthor,
+    unblockCommunityAuthor,
     deleteCommunityMessage,
     editCommunityMessage,
     getCommunityMessages,
@@ -18,6 +20,8 @@ import type {
     CommunityTopic,
     SendCommunityMessagePayload,
 } from "@/services/api/community.types"
+
+import { filterBlockedCommunityMessages } from "@/hooks/chat/community-blocks"
 
 const MESSAGE_POLL_INTERVAL_MS = 1250
 const TOPIC_POLL_INTERVAL_MS = 5000
@@ -59,6 +63,8 @@ export function useCommunityChat(
     const [status, setStatus] = useState<CommunityStatus | null>(null)
     const [topics, setTopics] = useState<CommunityTopic[]>([])
     const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null)
+    const [blockedAuthorIds, setBlockedAuthorIds] = useState<number[]>([])
+    const blockRevisionRef = useRef(0)
     const [messages, setMessages] = useState<CommunityMessage[]>([])
     const [loading, setLoading] = useState(false)
     const [refreshing, setRefreshing] = useState(false)
@@ -111,9 +117,11 @@ export function useCommunityChat(
 
     const loadTopics = useCallback(async () => {
         if (topicRequestRef.current) return topicRequestRef.current
+        const revision = blockRevisionRef.current
         const request = getCommunityTopics()
             .then((response) => {
-                if (!mountedRef.current) return response
+                if (!mountedRef.current || blockRevisionRef.current !== revision) return response
+                setBlockedAuthorIds(response.blocked_author_ids ?? [])
                 setTopics(response.topics)
                 onUnreadChange?.(response.total_unread)
                 return response
@@ -165,6 +173,7 @@ export function useCommunityChat(
                         topicGenerationRef.current !== generation
                     ) return
 
+                    setBlockedAuthorIds(response.blocked_author_ids ?? [])
                     const incoming = normalizeMessages(response.messages)
                     setMessages((current) => options.replace
                         ? incoming.filter((message) => !message.is_deleted)
@@ -351,6 +360,7 @@ export function useCommunityChat(
         try {
             const response = await getCommunityMessages(topicId, { beforeId: messages[0].id })
             if (selectedTopicIdRef.current !== topicId || topicGenerationRef.current !== generation) return
+            setBlockedAuthorIds(response.blocked_author_ids ?? [])
             setMessages((current) => mergeMessages(response.messages, current))
             setHasMore(response.has_more)
         } catch (loadError) {
@@ -495,13 +505,31 @@ export function useCommunityChat(
         }
     }, [reactingMessageId])
 
+    const setAuthorBlocked = useCallback(async (authorId: number, blocked: boolean) => {
+        if (blocked) await blockCommunityAuthor(authorId)
+        else await unblockCommunityAuthor(authorId)
+        if (!mountedRef.current) return
+        blockRevisionRef.current += 1
+        topicGenerationRef.current += 1
+        topicRequestRef.current = null
+        setBlockedAuthorIds((current) => blocked ? [...new Set([...current, authorId])] : current.filter((id) => id !== authorId))
+        if (blocked) {
+            setMessages((current) => filterBlockedCommunityMessages(current, [authorId]))
+            setTopics((current) => current.map((topic) => ({ ...topic, last_message: topic.last_message?.author.id === authorId ? null : topic.last_message })))
+        }
+        const topicId = selectedTopicIdRef.current
+        void loadTopics().catch(() => undefined)
+        if (topicId) void syncMessages(topicId, { full: true, replace: true }).catch(() => undefined)
+    }, [loadTopics, syncMessages])
+
     return {
         connectionState,
         error,
         hasMore,
         loading,
         loadingOlder,
-        messages,
+        messages: filterBlockedCommunityMessages(messages, blockedAuthorIds),
+        setAuthorBlocked,
         mutatingMessageId,
         reactingMessageId,
         refreshing,

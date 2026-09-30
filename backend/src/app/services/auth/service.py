@@ -142,11 +142,6 @@ def _counterparty_name_parts(counterparty: dict[str, object] | None) -> tuple[st
     return parts[0][:PERSON_NAME_MAX_LENGTH], " ".join(parts[1:])[:PERSON_NAME_MAX_LENGTH] or "Customer"
 
 
-def _deleted_phone_number(*, user_id: int, timestamp: int) -> str:
-    suffix = f"{user_id % 100000:05d}{timestamp % 100000000:08d}"
-    return f"+98{suffix}"
-
-
 def _telegram_config_unavailable() -> HTTPException:
     return HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Telegram auth is not configured")
 
@@ -1052,22 +1047,6 @@ async def logout_user_session(request: Request, payload: UserLogoutPayload, db: 
 async def delete_user_account(request: Request, current_user: User, db: AsyncSession) -> AuthLogoutResponse:
     await _apply_auth_rate_limit(request, scope="auth:delete_account", principal=str(current_user.id), verify=True)
 
-    from src.app.services.ai.companion.service import erase_companion, profile_for
-    if await profile_for(db, current_user.id) is not None:
-        await erase_companion(db, current_user.id)
-
-    now = ufa_now()
-    current_user.email = None
-    current_user.name = "Deleted"
-    current_user.surname = "User"
-    current_user.phone_number = _deleted_phone_number(user_id=current_user.id, timestamp=int(now.timestamp()))
-    current_user.contact_id = None
-    current_user.moysklad_counterparty_id = None
-    current_user.is_verified = False
-    current_user.is_active = False
-    current_user.password_hash = hash_password(secrets.token_urlsafe(32))
-    current_user.last_active_at = now
-
-    await revoke_active_user_sessions(db, user_id=current_user.id, revoked_at=now, commit=False)
-    await db.commit()
+    from .account_erasure import erase_account
+    await erase_account(db, current_user)
     return AuthLogoutResponse(ok=True, message="Account deleted")

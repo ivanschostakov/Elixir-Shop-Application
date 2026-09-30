@@ -30,6 +30,9 @@ def stub_ai_chat_security(monkeypatch: pytest.MonkeyPatch):
     async def record(*_args, **_kwargs):
         return SimpleNamespace(id=1, is_suspicious=False)
 
+    monkeypatch.setattr(ai_chat_router_module, "require_ai_data_consent", allow)
+    monkeypatch.setattr(ai_chat_service, "require_ai_data_consent", allow)
+    monkeypatch.setattr("src.app.main.migrate_legacy_ai_files", lambda *args: 0)
     monkeypatch.setattr(ai_chat_router_module, "ensure_app_ai_access", allow)
     monkeypatch.setattr(ai_chat_router_module, "record_app_ai_activity", record)
 
@@ -160,7 +163,7 @@ def _basket_payload() -> dict:
     }
 
 
-def test_get_my_ai_chat_bootstraps_when_missing(monkeypatch):
+def test_get_my_ai_chat_reads_existing_without_creating_provider_state(monkeypatch):
     async def fake_get_db():
         yield object()
 
@@ -173,7 +176,7 @@ def test_get_my_ai_chat_bootstraps_when_missing(monkeypatch):
     app.dependency_overrides[get_db] = fake_get_db
     app.dependency_overrides[auth_dependencies.get_current_user] = fake_get_current_user
     app.dependency_overrides[get_professor_client] = lambda: SimpleNamespace()
-    monkeypatch.setattr(ai_chat_router_module, "get_or_create_user_chat", fake_get_or_create_user_chat)
+    monkeypatch.setattr(ai_chat_router_module, "get_ai_chat_by_user_id", fake_get_or_create_user_chat)
 
     try:
         with TestClient(app) as test_client:

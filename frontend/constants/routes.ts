@@ -20,6 +20,7 @@ export const ROUTES = {
     contacts: "/contacts",
     requisites: "/requisites",
     publicOffer: "/public-offer",
+    privacy: "/privacy",
 } as const
 
 const PRODUCT_ROUTE_PREFIX = "/products/"
@@ -41,6 +42,7 @@ const headerTitleKeys: Record<string, TranslationKey> = {
     [ROUTES.contacts]: "route.contacts",
     [ROUTES.requisites]: "route.requisites",
     [ROUTES.publicOffer]: "route.publicOffer",
+    [ROUTES.privacy]: "privacy.title",
 }
 
 export const PRIMARY_APP_ROUTES = [

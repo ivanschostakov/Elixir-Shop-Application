@@ -42,6 +42,8 @@ from .basket.basket_item import BasketItem
 from .community import (
     CommunityAttachment,
     CommunityAuthor,
+    CommunityAuthorBlock,
+    CommunityReport,
     CommunityMessage,
     CommunityNotificationEvent,
     CommunityReaction,
@@ -135,6 +137,8 @@ __all__ = [
     "BasketItem",
     "CommunityAttachment",
     "CommunityAuthor",
+    "CommunityAuthorBlock",
+    "CommunityReport",
     "CommunityMessage",
     "CommunityNotificationEvent",
     "CommunityReaction",

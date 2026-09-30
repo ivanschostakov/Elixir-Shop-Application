@@ -10,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import HTTPException, Request, UploadFile
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
@@ -49,6 +49,7 @@ from src.database.crud.auth.user import get_user_by_telegram_user_id
 from src.database.models import (
     CommunityAttachment,
     CommunityAuthor,
+    CommunityAuthorBlock,
     CommunityMessage,
     CommunityNotificationEvent,
     CommunityReaction,
@@ -259,13 +260,13 @@ def _serialize_reactions(message: CommunityMessage, *, user_id: int) -> list[Com
     ]
 
 
-def serialize_community_message(message: CommunityMessage, *, request: Request, user_id: int) -> CommunityMessageRead:
+def serialize_community_message(message: CommunityMessage, *, request: Request, user_id: int, blocked_author_ids: set[int] | None = None) -> CommunityMessageRead:
     author = message.author
     author_read = CommunityAuthorRead(id=author.id if author else 0, full_name=author.full_name if author else "Telegram member", avatar_url=build_community_media_url(request, media_type="author", media_id=author.id, user_id=user_id) if author and author.avatar_local_filename else None, is_current_user=message.app_user_id == user_id)
     attachments = [] if message.deleted_at else [CommunityAttachmentRead(id=item.id, kind=item.kind, filename=item.original_filename or item.filename, mime_type=item.mime_type, size_bytes=item.size_bytes, media_url=build_community_media_url(request, media_type="attachment", media_id=item.id, user_id=user_id) if item.local_filename and item.status == "ready" else None, available_in_telegram=not bool(item.local_filename)) for item in message.attachments]
     reply = None
-    if message.reply_to:
-        reply = CommunityReplyPreviewRead(id=message.reply_to.id, author_name=message.reply_to.author.full_name if message.reply_to.author else "Telegram member", text=(message.reply_to.text or "Attachment")[:160])
+    if message.reply_to and not message.reply_to.deleted_at and message.reply_to.author_id not in (blocked_author_ids or set()):
+        reply = CommunityReplyPreviewRead(id=message.reply_to.id, author_id=message.reply_to.author_id, author_name=message.reply_to.author.full_name if message.reply_to.author else "Telegram member", text=(message.reply_to.text or "Attachment")[:160])
     can_mutate = message.source == "app" and message.app_user_id == user_id and not message.deleted_at
     return CommunityMessageRead(id=message.id, topic_id=message.topic_id, author=author_read, text="" if message.deleted_at else message.text, attachments=attachments, reply_to=reply, reactions=_serialize_reactions(message, user_id=user_id), unsupported_type=None if message.deleted_at else message.unsupported_type, telegram_url=_telegram_message_url(message), delivery_status=message.delivery_status, is_edited=bool(message.edited_at), is_deleted=bool(message.deleted_at), can_edit=can_mutate, can_delete=can_mutate, edited_at=message.edited_at, created_at=message.sent_at)
 
@@ -278,19 +279,60 @@ async def _initialize_read_baseline(db: AsyncSession, *, user_id: int, topics: l
     await db.commit()
 
 
+def _blocked_author_query(user_id: int):
+    direct = select(CommunityAuthorBlock.author_id).where(CommunityAuthorBlock.user_id == user_id)
+    # The same linked person can write through the app or Telegram.
+    people = select(CommunityAuthor.app_user_id).where(CommunityAuthor.id.in_(direct), CommunityAuthor.app_user_id.is_not(None))
+    return select(CommunityAuthor.id).where(or_(CommunityAuthor.id.in_(direct), CommunityAuthor.app_user_id.in_(people)))
+
+
+async def blocked_community_author_ids(db: AsyncSession, user_id: int) -> set[int]:
+    return set((await db.execute(_blocked_author_query(user_id))).scalars().all())
+
+
+def visible_community_message(user_id: int):
+    return or_(CommunityMessage.author_id.is_(None), CommunityMessage.author_id.not_in(_blocked_author_query(user_id)))
+
+
+async def list_blocked_community_authors(db: AsyncSession, *, user: User) -> list[CommunityAuthorRead]:
+    rows = (await db.execute(select(CommunityAuthor).join(CommunityAuthorBlock, CommunityAuthorBlock.author_id == CommunityAuthor.id).where(CommunityAuthorBlock.user_id == user.id).order_by(CommunityAuthor.full_name, CommunityAuthor.id))).scalars().all()
+    return [CommunityAuthorRead(id=row.id, full_name=row.full_name) for row in rows]
+
+
+async def block_community_author(db: AsyncSession, *, user: User, author_id: int) -> None:
+    # Serialise duplicate requests from the same account without a unique-key race.
+    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
+    author = await db.get(CommunityAuthor, author_id)
+    if author is None:
+        raise HTTPException(404, "Community author not found")
+    if author.app_user_id == user.id or (author.kind == "user" and author.telegram_peer_id == user.telegram_user_id):
+        raise HTTPException(422, "You cannot block yourself")
+    visible_author = (await db.execute(select(CommunityMessage.id).join(CommunityTopic).where(CommunityMessage.author_id == author_id, CommunityTopic.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID, CommunityTopic.is_hidden.is_(False), CommunityTopic.is_deleted.is_(False)).limit(1))).scalar_one_or_none()
+    if visible_author is None:
+        raise HTTPException(404, "Community author not found")
+    exists = (await db.execute(select(CommunityAuthorBlock.id).where(CommunityAuthorBlock.user_id == user.id, CommunityAuthorBlock.author_id == author_id))).scalar_one_or_none()
+    if exists is None:
+        db.add(CommunityAuthorBlock(user_id=user.id, author_id=author_id))
+    await db.commit()
+
+
+async def unblock_community_author(db: AsyncSession, *, user: User, author_id: int) -> None:
+    author = await db.get(CommunityAuthor, author_id)
+    author_ids = select(CommunityAuthor.id).where(or_(CommunityAuthor.id == author_id, CommunityAuthor.app_user_id == author.app_user_id)) if author and author.app_user_id else [author_id]
+    await db.execute(delete(CommunityAuthorBlock).where(CommunityAuthorBlock.user_id == user.id, CommunityAuthorBlock.author_id.in_(author_ids)))
+    await db.commit()
+
+
 async def list_community_topics(db: AsyncSession, *, user: User, request: Request) -> CommunityTopicListRead:
     await require_community_access(user)
     topics = list((await db.execute(select(CommunityTopic).where(CommunityTopic.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID, CommunityTopic.is_hidden.is_(False), CommunityTopic.is_deleted.is_(False)).order_by(CommunityTopic.last_message_at.desc().nullslast(), CommunityTopic.name.asc()))).scalars().all())
     await _initialize_read_baseline(db, user_id=user.id, topics=topics)
     topic_ids = [topic.id for topic in topics]
     topic_by_id = {topic.id: topic for topic in topics}
-    last_message_ids = [topic.last_message_id for topic in topics if topic.last_message_id]
-    last_messages = list((await db.execute(
-        select(CommunityMessage)
-        .where(CommunityMessage.id.in_(last_message_ids) if last_message_ids else False)
-        .options(*_message_options())
-    )).scalars().all())
-    last_message_by_id = {message.id: message for message in last_messages}
+    blocked_ids = await blocked_community_author_ids(db, user.id)
+    last_visible_ids = select(func.max(CommunityMessage.id)).where(CommunityMessage.topic_id.in_(topic_ids), CommunityMessage.deleted_at.is_(None), visible_community_message(user.id)).group_by(CommunityMessage.topic_id)
+    last_messages = list((await db.execute(select(CommunityMessage).where(CommunityMessage.id.in_(last_visible_ids)).options(*_message_options()))).scalars().all())
+    last_message_by_topic = {message.topic_id: message for message in last_messages}
     for message in last_messages:
         message.topic = topic_by_id.get(message.topic_id)
 
@@ -307,6 +349,7 @@ async def list_community_topics(db: AsyncSession, *, user: User, request: Reques
             CommunityMessage.topic_id.in_(topic_ids) if topic_ids else False,
             CommunityMessage.id > func.coalesce(CommunityTopicReadModel.last_read_message_id, 0),
             CommunityMessage.deleted_at.is_(None),
+            visible_community_message(user.id),
             or_(CommunityMessage.app_user_id.is_(None), CommunityMessage.app_user_id != user.id),
         )
         .group_by(CommunityMessage.topic_id)
@@ -315,21 +358,22 @@ async def list_community_topics(db: AsyncSession, *, user: User, request: Reques
     topic_reads: list[CommunityTopicRead] = []
     total_unread = 0
     for topic in topics:
-        last_message = last_message_by_id.get(topic.last_message_id) if topic.last_message_id else None
+        last_message = last_message_by_topic.get(topic.id)
         unread = unread_by_topic.get(topic.id, 0)
         total_unread += unread
-        topic_reads.append(CommunityTopicRead(id=topic.id, name=topic.name, icon_color=topic.icon_color, icon_custom_emoji_id=topic.icon_custom_emoji_id, is_closed=topic.is_closed, last_message=serialize_community_message(last_message, request=request, user_id=user.id) if last_message else None, unread_count=unread))
-    return CommunityTopicListRead(topics=topic_reads, total_unread=total_unread)
+        topic_reads.append(CommunityTopicRead(id=topic.id, name=topic.name, icon_color=topic.icon_color, icon_custom_emoji_id=topic.icon_custom_emoji_id, is_closed=topic.is_closed, last_message=serialize_community_message(last_message, request=request, user_id=user.id, blocked_author_ids=blocked_ids) if last_message else None, unread_count=unread))
+    return CommunityTopicListRead(topics=topic_reads, total_unread=total_unread, blocked_author_ids=sorted(blocked_ids))
 
 
 async def list_community_messages(db: AsyncSession, *, user: User, request: Request, topic_id: int, before_id: int | None, after_id: int | None, changed_after: datetime | None, changed_after_id: int, limit: int) -> CommunityMessagePageRead:
     await require_community_access(user)
+    blocked_ids = await blocked_community_author_ids(db, user.id)
     sync_cursor = ufa_now()
     sync_cursor_id = 0
     if before_id and after_id: raise HTTPException(status_code=422, detail="before_id and after_id cannot be combined")
     topic = await db.get(CommunityTopic, topic_id)
     if topic is None or topic.telegram_chat_id != TELEGRAM_COMMUNITY_CHAT_ID or topic.is_deleted: raise HTTPException(status_code=404, detail="Community topic not found")
-    stmt = select(CommunityMessage).where(CommunityMessage.topic_id == topic_id).options(*_message_options())
+    stmt = select(CommunityMessage).where(CommunityMessage.topic_id == topic_id, visible_community_message(user.id)).options(*_message_options())
     if after_id:
         new_rows = list((await db.execute(stmt.where(CommunityMessage.id > after_id).order_by(CommunityMessage.id.asc()).limit(limit + 1))).scalars().all())
         has_more = len(new_rows) > limit
@@ -339,6 +383,7 @@ async def list_community_messages(db: AsyncSession, *, user: User, request: Requ
                 select(CommunityMessage)
                 .where(
                     CommunityMessage.topic_id == topic_id,
+                    visible_community_message(user.id),
                     CommunityMessage.id <= after_id,
                     or_(
                         CommunityMessage.updated_at > changed_after,
@@ -363,7 +408,7 @@ async def list_community_messages(db: AsyncSession, *, user: User, request: Requ
             # Backward-compatible reconciliation for clients without a change cursor.
             changed_rows = list((await db.execute(
                 select(CommunityMessage)
-                .where(CommunityMessage.topic_id == topic_id, CommunityMessage.id <= after_id)
+                .where(CommunityMessage.topic_id == topic_id, CommunityMessage.id <= after_id, visible_community_message(user.id))
                 .order_by(CommunityMessage.id.desc())
                 .limit(20)
                 .options(*_message_options())
@@ -377,7 +422,7 @@ async def list_community_messages(db: AsyncSession, *, user: User, request: Requ
         rows = rows[:limit]
         rows.reverse()
     for row in rows: row.topic = topic
-    return CommunityMessagePageRead(messages=[serialize_community_message(row, request=request, user_id=user.id) for row in rows], has_more=has_more, oldest_id=rows[0].id if rows else None, newest_id=rows[-1].id if rows else None, sync_cursor=sync_cursor, sync_cursor_id=sync_cursor_id)
+    return CommunityMessagePageRead(blocked_author_ids=sorted(blocked_ids), messages=[serialize_community_message(row, request=request, user_id=user.id, blocked_author_ids=blocked_ids) for row in rows], has_more=has_more, oldest_id=rows[0].id if rows else None, newest_id=rows[-1].id if rows else None, sync_cursor=sync_cursor, sync_cursor_id=sync_cursor_id)
 
 
 async def mark_community_topic_read(db: AsyncSession, *, user: User, topic_id: int, last_message_id: int) -> None:
@@ -405,7 +450,7 @@ async def toggle_community_message_reaction(
         raise HTTPException(status_code=422, detail="Unsupported reaction")
     message = (await db.execute(
         select(CommunityMessage)
-        .where(CommunityMessage.id == message_id, CommunityMessage.topic_id == topic_id, CommunityMessage.deleted_at.is_(None))
+        .where(CommunityMessage.id == message_id, CommunityMessage.topic_id == topic_id, CommunityMessage.deleted_at.is_(None), visible_community_message(user.id))
         .options(
             selectinload(CommunityMessage.reactions),
             selectinload(CommunityMessage.telegram_parts),
@@ -500,9 +545,11 @@ async def create_community_message(db: AsyncSession, *, user: User, request: Req
     existing = (await db.execute(existing_stmt)).scalar_one_or_none()
     if existing:
         existing.topic = topic
-        return serialize_community_message(existing, request=request, user_id=user.id)
+        return serialize_community_message(existing, request=request, user_id=user.id, blocked_author_ids=await blocked_community_author_ids(db, user.id))
     reply_to = await db.get(CommunityMessage, reply_to_message_id) if reply_to_message_id else None
     if reply_to_message_id and (reply_to is None or reply_to.topic_id != topic_id): raise HTTPException(status_code=422, detail="Reply target is not in this topic")
+    if reply_to and (reply_to.deleted_at or reply_to.author_id in await blocked_community_author_ids(db, user.id)):
+        raise HTTPException(422, "Reply target is unavailable")
     prepared_uploads: list[tuple[str, str, bytes]] = []
     total_bytes = 0
     for index, upload in enumerate(uploads):
@@ -530,7 +577,7 @@ async def create_community_message(db: AsyncSession, *, user: User, request: Req
         raise
     stmt = select(CommunityMessage).where(CommunityMessage.id == message.id).options(*_message_options())
     message = (await db.execute(stmt)).scalar_one(); message.topic = topic
-    return serialize_community_message(message, request=request, user_id=user.id)
+    return serialize_community_message(message, request=request, user_id=user.id, blocked_author_ids=await blocked_community_author_ids(db, user.id))
 
 
 async def _refresh_topic_last_message(db: AsyncSession, topic: CommunityTopic) -> None:
@@ -648,7 +695,7 @@ async def edit_community_message(
         .where(CommunityMessage.id == message_id)
         .options(*_message_options(), selectinload(CommunityMessage.topic))
     )).scalar_one()
-    return serialize_community_message(message, request=request, user_id=user.id)
+    return serialize_community_message(message, request=request, user_id=user.id, blocked_author_ids=await blocked_community_author_ids(db, user.id))
 
 
 async def delete_community_message(
@@ -1231,6 +1278,8 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
         if not is_edit:
             return {"ok": True, "ignored": "duplicate"}
         logical = existing_part.message
+        if logical.deleted_at is not None:
+            return {"ok": True, "ignored": "deleted community message"}
         raw_text = str(message.get("text") or message.get("caption") or "")
         if logical.source == "app" and "\n\n" in raw_text:
             raw_text = raw_text.split("\n\n", 1)[1]
@@ -1288,6 +1337,8 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
         db.add(logical); await db.flush()
         db.add(CommunityNotificationEvent(message_id=logical.id))
         created_logical = True
+    elif logical.deleted_at is not None:
+        return {"ok": True, "ignored": "deleted community message"}
     elif raw_text and not logical.text: logical.text = raw_text
     photo_sizes = message.get("photo") if isinstance(message.get("photo"), list) else []
     document = message.get("document") if isinstance(message.get("document"), dict) else None

@@ -39,4 +39,4 @@ class Attachment(Base, IdPkMixin, TimestampMixin):
 
     @property
     def download_path(self) -> str | None:
-        return f"/api/v1/users/me/ai-chat/attachments/{self.id}" if self.is_private else None
+        return f"/api/v1/users/me/ai-chat/attachments/{self.id}"

@@ -267,7 +267,8 @@ def test_bonus_expiry_processor_warns_once_fourteen_days_before(monkeypatch: pyt
     assert session.added[0].type == notifications_service.DISPATCH_TYPE_BONUS_EXPIRY
 
 
-def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("blocked_by, recipients", [([], [12, 13]), ([12], [13])])
+def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyPatch, blocked_by, recipients):
     now = notifications_service.ufa_now()
     message = SimpleNamespace(
         id=501,
@@ -276,7 +277,7 @@ def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyP
         deleted_at=None,
         text="  New   community message  ",
         attachments=[],
-        author=SimpleNamespace(full_name="Татьяна"),
+        author=SimpleNamespace(id=21, app_user_id=11, full_name="Татьяна"),
         topic=SimpleNamespace(name="Приложение"),
     )
     event = SimpleNamespace(
@@ -289,6 +290,7 @@ def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyP
     session = _FakeSession([
         _FakeScalarResult(rows=[event]),
         _FakeScalarResult(rows=[11, 12, 13]),
+        _FakeScalarResult(rows=blocked_by),
     ])
     captured: dict[str, object] = {}
 
@@ -301,7 +303,7 @@ def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyP
     processed = asyncio.run(notifications_service.process_community_message_notifications(session, now=now))
 
     assert processed == 1
-    assert captured["user_ids"] == [12, 13]
+    assert captured["user_ids"] == recipients
     assert captured["title"] == "Приложение"
     assert captured["body"] == "Татьяна: New community message"
     assert captured["data"] == {"type": "community_message", "topic_id": 23, "message_id": 501}
@@ -320,7 +322,7 @@ def test_community_message_processor_retries_failed_delivery(monkeypatch: pytest
         deleted_at=None,
         text="",
         attachments=[SimpleNamespace(id=1)],
-        author=SimpleNamespace(full_name="Участник"),
+        author=SimpleNamespace(id=22, app_user_id=None, full_name="Участник"),
         topic=SimpleNamespace(name="Новости"),
     )
     event = SimpleNamespace(
@@ -333,6 +335,7 @@ def test_community_message_processor_retries_failed_delivery(monkeypatch: pytest
     session = _FakeSession([
         _FakeScalarResult(rows=[event]),
         _FakeScalarResult(rows=[12]),
+        _FakeScalarResult(rows=[]),
     ])
 
     async def fake_send_push_to_users(*args, **kwargs):

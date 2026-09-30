@@ -8,10 +8,6 @@ export const createDiscoverScreenStyles = (colors: ThemePalette) => StyleSheet.c
         flex: 1,
         backgroundColor: colors.surface,
     },
-    articleEmptyScreen: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
     emptyContent: {
         alignItems: "center",
         flex: 1,

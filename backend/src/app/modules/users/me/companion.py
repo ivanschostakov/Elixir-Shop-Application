@@ -13,6 +13,7 @@ from src.app.services.ai.companion.mentor import FavoriteMealsRead, MentorDashbo
 from src.app.services.ai.companion.photos import ProgressPhotosRead, serialize_entries
 from src.app.services.ai.companion.timezones import normalize_timezone, timezone_info
 from src.app.services.ai.security import ensure_app_ai_access
+from src.app.services.ai.data_consent import require_ai_data_consent
 from src.app.services.app_integrity.service import verify_app_integrity_request
 from src.database import get_db
 from src.database.models import User
@@ -142,6 +143,7 @@ async def nutrition(user: User = Depends(native_access), db: AsyncSession = Depe
 
 @companion_router.post("/messages")
 async def message(request: Request, text: str = Form(...), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), dialogue_protocol: int = Form(1, ge=1, le=2), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    await require_ai_data_consent(db, user.id)
     import asyncio
     from src.app.services.cache import get_cache_service
     from src.app.services.ai.chat import send_user_chat_message

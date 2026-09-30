@@ -1,9 +1,10 @@
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
-from starlette.staticfiles import StaticFiles
+from src.app.services.ai.private_attachments import PublicMediaFiles, migrate_legacy_ai_files
 from uvicorn import Config, Server
 
 from config import CORS_ALLOWED_ORIGINS
@@ -23,6 +24,8 @@ PORT = 8000
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    from config import ATTACHMENTS_DIR, LEGACY_PUBLIC_AI_ATTACHMENTS_DIR
+    await asyncio.to_thread(migrate_legacy_ai_files, LEGACY_PUBLIC_AI_ATTACHMENTS_DIR, ATTACHMENTS_DIR)
     await get_cache_service().connect()
     try: yield
     finally:
@@ -41,7 +44,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/media", StaticFiles(directory="media"), name="media")
+app.mount("/media", PublicMediaFiles(directory="media"), name="media")
 app.include_router(api_router)
 
 

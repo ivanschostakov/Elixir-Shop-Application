@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from src.integrations.ai.enums import AttachmentType
 
@@ -39,3 +39,8 @@ class AIAttachmentRead(AIAttachmentBase):
     relative_path: Path
     created_at: datetime
     updated_at: datetime
+
+    @field_serializer("is_private")
+    def serialize_private(self, _value: bool) -> bool:
+        # The database flag distinguishes storage roots; both are now private.
+        return True

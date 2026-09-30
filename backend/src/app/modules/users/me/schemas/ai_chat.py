@@ -14,7 +14,7 @@ class AIChatTurnMetaRead(BaseModel):
 
 
 class AIChatResponse(BaseModel):
-    chat: AIChatWithMessagesRead
+    chat: AIChatWithMessagesRead | None
     last_turn: AIChatTurnMetaRead | None = None
     basket: BasketRead | None = None
 

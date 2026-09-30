@@ -40,10 +40,12 @@ import { useApplyScreenTemplate } from "@/components/templates/screen-template.h
 import { ROUTES, getProductRoute } from "@/constants/routes"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
+import { useAiChatEntryConsent } from "@/hooks/chat/use-ai-chat-entry-consent"
 import { useAiChat, type ChatDisplayMessage } from "@/hooks/chat/use-ai-chat"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
+import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import { CompanionPanel, CompanionCards, useCompanion } from "@/screens/chat/companion"
 import { MentorWorkspace } from "@/screens/chat/mentor"
 import { trackCustomerEvent } from "@/services/customer-intelligence"
@@ -133,8 +135,6 @@ export default function ChatScreen() {
     const [cameraPermission, requestCameraPermission] = useCameraPermissions()
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
-    const companion = useCompanion()
-    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.resolveEnabled, companion.resolveProtocol)
     const [chatHeaderHeight, setChatHeaderHeight] = useState(0)
     const [composerHeight, setComposerHeight] = useState(72)
     const [draft, setDraft] = useState("")
@@ -147,6 +147,7 @@ export default function ChatScreen() {
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const [chatMode, setChatMode] = useState<ChatMode>("ai")
+    const [modeReady, setModeReady] = useState(false)
     const [communityUnread, setCommunityUnread] = useState(0)
     const [supportUnread, setSupportUnread] = useState(0)
     const requestedMode = Array.isArray(routeParams.mode) ? routeParams.mode[0] : routeParams.mode
@@ -162,7 +163,10 @@ export default function ChatScreen() {
         : null
     const communityRequestedByRoute = requestedMode === "community" || requestedTopicId !== null
     const supportRequestedByRoute = requestedMode === "support" || requestedConversationId !== null
-    const chatModeRequestedByRoute = communityRequestedByRoute || supportRequestedByRoute
+    const chatModeRequestedByRoute = communityRequestedByRoute || supportRequestedByRoute || requestedMode === "ai"
+    const aiAllowed = useAiChatEntryConsent(modeReady && chatMode === "ai")
+    const companion = useCompanion(aiAllowed)
+    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(companion.resolveEnabled, companion.resolveProtocol, aiAllowed)
     const scrollRef = useRef<ScrollView | null>(null)
     const mentorInputRef = useRef<TextInput | null>(null)
     const mentorVisible = Platform.OS !== "web" && companion.state?.dialogue_protocol === 2 && "mentor" in companion.state && companion.enabled && !!companion.mentorPage
@@ -190,7 +194,9 @@ export default function ChatScreen() {
     useEffect(() => {
         let mounted = true
         void readStoredChatMode().then((storedMode) => {
-            if (mounted && storedMode && !chatModeRequestedByRoute) setChatMode(storedMode)
+            if (!mounted) return
+            if (storedMode && !chatModeRequestedByRoute) setChatMode(storedMode)
+            setModeReady(true)
         })
         return () => { mounted = false }
     }, [chatModeRequestedByRoute])
@@ -206,6 +212,10 @@ export default function ChatScreen() {
         setChatMode("support")
         void persistChatMode("support")
     }, [requestedConversationId, supportRequestedByRoute])
+
+    useEffect(() => {
+        if (requestedMode === "ai" && !communityRequestedByRoute && !supportRequestedByRoute) setChatMode("ai")
+    }, [requestedMode, communityRequestedByRoute, supportRequestedByRoute])
 
     const handleChatModeChange = useCallback((nextMode: ChatMode) => {
         Keyboard.dismiss()
@@ -506,6 +516,7 @@ export default function ChatScreen() {
         } catch (sendError) {
             setDraft(draftText)
             setAttachments(queuedAttachments)
+            if (sendError instanceof AiConsentDeclinedError) return
             Alert.alert(
                 t("chat.sendFailedTitle"),
                 sendError instanceof Error ? sendError.message : t("chat.sendFailedMessage"),
@@ -706,7 +717,8 @@ export default function ChatScreen() {
 
     return (
         <View style={chatScreenStyles.container}>
-            {chatMode === "ai" ? (
+            {chatMode === "ai" && !aiAllowed ? <ActivityIndicator style={{ flex: 1 }} color={palette.primary} /> : null}
+            {chatMode === "ai" && aiAllowed ? (
                 <View style={chatScreenStyles.content}>
                 <ImageBackground
                     imageStyle={chatScreenStyles.backgroundImageAsset}

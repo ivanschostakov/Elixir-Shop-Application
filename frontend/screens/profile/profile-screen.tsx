@@ -167,6 +167,10 @@ export default function ProfileScreen() {
                 </View>
             </View>
 
+            <Pressable accessibilityRole="button" onPress={() => router.push(ROUTES.privacy)} style={ProfileScreenStyles.historyCardButton}>
+                <View style={ProfileScreenStyles.sectionCard}><Text style={ProfileScreenStyles.historyCardTitle}>{t("privacy.title")}</Text></View>
+            </Pressable>
+
             {Platform.OS !== "ios" ? <>
             <Pressable
                 accessibilityLabel={t("nav.favorites")}

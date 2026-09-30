@@ -1,3 +1,5 @@
+from .block import CommunityAuthorBlock
+from .report import CommunityReport
 from .author import CommunityAuthor
 from .attachment import CommunityAttachment
 from .message import CommunityMessage
@@ -11,6 +13,8 @@ from .topic import CommunityTopic
 __all__ = [
     "CommunityAttachment",
     "CommunityAuthor",
+    "CommunityAuthorBlock",
+    "CommunityReport",
     "CommunityMessage",
     "CommunityNotificationEvent",
     "CommunityReaction",

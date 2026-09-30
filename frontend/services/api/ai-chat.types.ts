@@ -114,7 +114,7 @@ export type AIChatTurnMetaRead = {
 }
 
 export type AIChatResponse = {
-    chat: AIChatRead
+    chat: AIChatRead | null
     last_turn: AIChatTurnMetaRead | null
     basket: BasketRead | null
 }

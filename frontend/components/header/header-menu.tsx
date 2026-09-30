@@ -56,6 +56,7 @@ export function HeaderMenuPopup({
     onClose,
     onOpenContacts,
     onOpenPublicOffer,
+    onOpenPrivacy,
     onOpenRequisites,
     onSignIn,
     onSignOut,
@@ -142,6 +143,9 @@ export function HeaderMenuPopup({
                 </>
             ) : null}
 
+            <Pressable accessibilityRole="button" onPress={onOpenPrivacy} style={({ pressed }) => [styles.menuAction, pressed && styles.menuActionPressed]}>
+                <Text style={[styles.menuActionText, { color: menuTextColor }]}>{t("privacy.title")}</Text>
+            </Pressable>
             {canToggleLanguage ? (
                 <>
                     <View style={styles.themeToggleAction}>

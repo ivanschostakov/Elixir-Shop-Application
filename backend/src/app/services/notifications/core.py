@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from config import LOYALTY_EXPIRY_WARNING_DAYS, NOTIFICATION_ABANDONED_CART_AFTER_HOURS, NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS, NOTIFICATION_BATCH_SIZE, NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS, NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS, NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS, ufa_now
 from src.app.services.push_notifications import send_push_to_user, send_push_to_users
-from src.database.models import AdminMarketingAutomation, Basket, BasketItem, CommunityMessage, CommunityNotificationEvent, LoyaltyBonusCredit, NotificationDispatch, Order, OrderItem, Review, StockNotificationSubscription, UserPushToken, Variant
+from src.database.models import AdminMarketingAutomation, Basket, BasketItem, CommunityAuthor, CommunityAuthorBlock, CommunityMessage, CommunityNotificationEvent, LoyaltyBonusCredit, NotificationDispatch, Order, OrderItem, Review, StockNotificationSubscription, UserPushToken, Variant
 
 log = logging.getLogger(__name__)
 
@@ -360,7 +360,11 @@ async def process_community_message_notifications(session: AsyncSession, *, now:
             event.last_error = None
             processed_count += 1
             continue
-        recipient_ids = [user_id for user_id in registered_user_ids if user_id != message.app_user_id]
+        author_id = message.author.id if message.author else None
+        linked_user_id = getattr(message.author, "app_user_id", None) if message.author else None
+        blocked_authors = select(CommunityAuthor.id).where(CommunityAuthor.app_user_id == linked_user_id) if linked_user_id else [author_id]
+        blocked_by = set((await session.execute(select(CommunityAuthorBlock.user_id).where(CommunityAuthorBlock.author_id.in_(blocked_authors)))).scalars().all()) if author_id else set()
+        recipient_ids = [user_id for user_id in registered_user_ids if user_id != message.app_user_id and user_id not in blocked_by]
         author_name = message.author.full_name if message.author else "Участник сообщества"
         preview = " ".join((message.text or "").split())
         if not preview:

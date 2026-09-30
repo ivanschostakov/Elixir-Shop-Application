@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-def test_delete_account_deactivates_user_and_revokes_session(client: TestClient, register_verified_user, monkeypatch: pytest.MonkeyPatch):
+def test_delete_account_removes_user_and_revokes_session(client: TestClient, register_verified_user, monkeypatch: pytest.MonkeyPatch):
     token = uuid.uuid4().hex[:10]
     payload = {
         "email": f"delete-me-{token}@example.com",

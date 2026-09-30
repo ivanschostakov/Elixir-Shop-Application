@@ -55,6 +55,7 @@ import {
     type CommunityMediaSource,
 } from "@/screens/chat/community-media-viewer"
 import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switcher"
+import { CommunityReportForm } from "@/screens/chat/community-report-form"
 import { AttachmentSheet, QueuedAttachmentStrip } from "@/screens/chat/chat-screen.attachments"
 import {
     type AttachmentMode,
@@ -70,7 +71,8 @@ import { createCommunityChatStyles } from "@/screens/chat/community-chat-screen.
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
 import { resolveApiMediaUri } from "@/services/api/media"
-import type { CommunityAttachment, CommunityMessage, CommunityTopic } from "@/services/api/community.types"
+import { getBlockedCommunityAuthors } from "@/services/api/community"
+import type { CommunityAuthor, CommunityAttachment, CommunityMessage, CommunityTopic } from "@/services/api/community.types"
 import {
     setPushNotificationCurrentPath,
     syncPushNotifications,
@@ -140,6 +142,11 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const [replyTo, setReplyTo] = useState<CommunityMessage | null>(null)
     const [editingMessage, setEditingMessage] = useState<CommunityMessage | null>(null)
     const [actionMenuMessage, setActionMenuMessage] = useState<CommunityMessage | null>(null)
+    const [blockedAuthors, setBlockedAuthors] = useState<CommunityAuthor[]>([])
+    const [blocksVisible, setBlocksVisible] = useState(false)
+    const [blocksLoading, setBlocksLoading] = useState(false)
+    const [blockBusy, setBlockBusy] = useState(false)
+    const [blocksError, setBlocksError] = useState<string | null>(null)
     const [activeMedia, setActiveMedia] = useState<CommunityMediaSource | null>(null)
     const chat = useCommunityChat(active, onUnreadChange, requestedTopicId)
     const markRead = chat.markRead
@@ -439,6 +446,38 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
         router.push(ROUTES.discover)
     }
 
+    const handleBlock = (message: CommunityMessage) => {
+        setActionMenuMessage(null)
+        Alert.alert(t("chat.communityBlockTitle"), t("chat.communityBlockMessage"), [
+            { text: t("common.cancel"), style: "cancel" },
+            { text: t("chat.communityBlockAction"), style: "destructive", onPress: () => {
+                void chat.setAuthorBlocked(message.author.id, true).then(() => {
+                    setReplyTo((current) => current?.author.id === message.author.id ? null : current)
+                    setActiveMedia(null)
+                }).catch(() => Alert.alert(t("chat.communityBlockFailed"), t("chat.communityDeleteFailedMessage")))
+            } },
+        ])
+    }
+
+    const loadBlocks = async () => {
+        setBlocksVisible(true)
+        setBlocksLoading(true)
+        setBlocksError(null)
+        try { setBlockedAuthors(await getBlockedCommunityAuthors()) }
+        catch { setBlocksError(t("chat.communityBlockFailed")) }
+        finally { setBlocksLoading(false) }
+    }
+
+    const handleUnblock = async (authorId: number) => {
+        if (blockBusy) return
+        setBlockBusy(true)
+        try {
+            await chat.setAuthorBlocked(authorId, false)
+            setBlockedAuthors((current) => current.filter((author) => author.id !== authorId))
+        } catch { Alert.alert(t("chat.communityBlockFailed"), t("chat.communityDeleteFailedMessage")) }
+        finally { setBlockBusy(false) }
+    }
+
     if (!active) {
         return null
     }
@@ -469,7 +508,7 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
                             <CommunityAccessState actionUrl={chat.status?.action_url ?? null} enabled={chat.status?.enabled ?? false} onRefresh={() => { void chat.refresh() }} state={chat.status?.access ?? "temporarily_unavailable"} />
                         ) : null}
                         {chat.status?.access === "granted" && !chat.selectedTopic ? (
-                            <TopicList onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} />
+                            <TopicList onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} onOpenBlocks={() => { void loadBlocks() }} />
                         ) : null}
                     </View>
                 ) : null}
@@ -506,11 +545,28 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
                     </>
                 ) : null}
                 <AttachmentSheet activeMode={attachmentMode} bottomInset={bottom} onClose={closeAttachmentSheet} onOpenCamera={() => { void openCamera() }} onOpenNativeGallery={() => { void openGallery() }} onPickFiles={() => { void pickFiles() }} onSelectMode={setAttachmentMode} visible={attachmentSheetVisible} />
+                <Modal visible={blocksVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setBlocksVisible(false)}>
+                    <View style={{ flex: 1, paddingTop: Math.max(top, spacing.md), backgroundColor: palette.background }}>
+                        <View style={{ padding: spacing.lg, gap: spacing.md }}>
+                            <Text style={styles.stateTitle}>{t("chat.communityBlockedAuthors")}</Text>
+                            <Pressable accessibilityRole="button" onPress={() => setBlocksVisible(false)} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("common.close")}</Text></Pressable>
+                        </View>
+                        <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: bottom + spacing.lg }}>
+                            {blocksLoading ? <ActivityIndicator color={palette.primary} /> : blocksError ? <Pressable onPress={() => { void loadBlocks() }}><Text style={styles.stateBody}>{blocksError} · {t("chat.retry")}</Text></Pressable> : !blockedAuthors.length ? <Text style={styles.stateBody}>{t("chat.communityNoBlockedAuthors")}</Text> : blockedAuthors.map((author) => (
+                                <View key={author.id} style={styles.topicCard}>
+                                    <Text style={[styles.topicTitle, { flex: 1 }]}>{author.full_name}</Text>
+                                    <Pressable accessibilityRole="button" accessibilityLabel={`${t("chat.communityUnblockAction")} ${author.full_name}`} disabled={blockBusy} onPress={() => { void handleUnblock(author.id) }} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityUnblockAction")}</Text></Pressable>
+                                </View>
+                            ))}
+                        </ScrollView>
+                    </View>
+                </Modal>
                 {activeMedia ? <CommunityMediaViewer media={activeMedia} onClose={() => setActiveMedia(null)} /> : null}
                 {actionMenuMessage ? (
                     <CommunityMessageActionMenu
                         message={actionMenuMessage}
                         onClose={() => setActionMenuMessage(null)}
+                        onBlock={() => handleBlock(actionMenuMessage)}
                         onCopy={() => { void handleMessageCopy(actionMenuMessage) }}
                         onDelete={() => handleMessageDelete(actionMenuMessage)}
                         onEdit={() => handleMessageEdit(actionMenuMessage)}
@@ -531,12 +587,12 @@ function CommunityAccessState({ actionUrl, enabled, onRefresh, state }: { action
     return <View style={styles.stateCenter}><View style={styles.stateIcon}><Text style={styles.stateIconText}>{copy.icon}</Text></View><Text style={styles.stateTitle}>{copy.title}</Text><Text style={styles.stateBody}>{copy.body}</Text>{copy.action && actionUrl ? <Pressable onPress={() => { void Linking.openURL(actionUrl) }} style={styles.primaryButton}><Text style={styles.primaryButtonText}>{copy.action}</Text></Pressable> : null}<Pressable onPress={onRefresh} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityRefresh")}</Text></Pressable></View>
 }
 
-function TopicList({ onOpen, onRefresh, refreshing, status, topics }: { onOpen: (topicId: number) => void; onRefresh: () => void; refreshing: boolean; status: { group: { title: string; image_url: string | null } | null }; topics: CommunityTopic[] }) {
+function TopicList({ onOpen, onOpenBlocks, onRefresh, refreshing, status, topics }: { onOpenBlocks: () => void; onOpen: (topicId: number) => void; onRefresh: () => void; refreshing: boolean; status: { group: { title: string; image_url: string | null } | null }; topics: CommunityTopic[] }) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const { palette } = useTheme()
     const { t } = useLanguage()
     const title = status.group?.title ?? t("chat.modeGroup")
-    return <ScrollView contentContainerStyle={styles.topicsContent} refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={palette.primary} />}><View style={styles.groupHero}><CommunityGroupAvatar name={title} uri={status.group?.image_url} /><View style={styles.groupCopy}><Text style={styles.groupTitle}>{title}</Text><Text style={styles.groupSubtitle}>{t("chat.communityTopicsSubtitle")}</Text></View></View><Text style={styles.sectionLabel}>{t("chat.communityTopicsTitle")}</Text>{!topics.length ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.communityNoTopicsTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoTopicsMessage")}</Text></View> : topics.map((topic) => <Pressable key={topic.id} onPress={() => onOpen(topic.id)} style={({ pressed }) => [styles.topicCard, pressed ? styles.topicCardPressed : null]}><View style={[styles.topicIcon, { backgroundColor: topicColor(topic) }]}><Text style={styles.topicIconText}>#</Text></View><View style={styles.topicCopy}><View style={styles.topicTitleRow}><Text numberOfLines={1} style={styles.topicTitle}>{topic.name}</Text>{topic.is_closed ? <View style={styles.closedPill}><Text style={styles.closedText}>{t("chat.communityClosed")}</Text></View> : null}</View><Text numberOfLines={1} style={styles.topicPreview}>{topic.last_message ? `${topic.last_message.author.full_name}: ${topic.last_message.is_deleted ? t("chat.communityDeletedMessage") : topic.last_message.text || t("chat.attachmentFallbackMessage")}` : t("chat.communityNoActivity")}</Text></View><View style={styles.topicMeta}><Text style={styles.topicTime}>{formatTopicTime(topic.last_message?.created_at)}</Text>{topic.unread_count ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{topic.unread_count > 99 ? "99+" : topic.unread_count}</Text></View> : null}</View></Pressable>)}</ScrollView>
+    return <ScrollView contentContainerStyle={styles.topicsContent} refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={palette.primary} />}><View style={styles.groupHero}><CommunityGroupAvatar name={title} uri={status.group?.image_url} /><View style={styles.groupCopy}><Text style={styles.groupTitle}>{title}</Text><Text style={styles.groupSubtitle}>{t("chat.communityTopicsSubtitle")}</Text></View></View><Pressable accessibilityRole="button" onPress={onOpenBlocks} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityBlockedAuthors")}</Text></Pressable><Text style={styles.sectionLabel}>{t("chat.communityTopicsTitle")}</Text>{!topics.length ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.communityNoTopicsTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoTopicsMessage")}</Text></View> : topics.map((topic) => <Pressable key={topic.id} onPress={() => onOpen(topic.id)} style={({ pressed }) => [styles.topicCard, pressed ? styles.topicCardPressed : null]}><View style={[styles.topicIcon, { backgroundColor: topicColor(topic) }]}><Text style={styles.topicIconText}>#</Text></View><View style={styles.topicCopy}><View style={styles.topicTitleRow}><Text numberOfLines={1} style={styles.topicTitle}>{topic.name}</Text>{topic.is_closed ? <View style={styles.closedPill}><Text style={styles.closedText}>{t("chat.communityClosed")}</Text></View> : null}</View><Text numberOfLines={1} style={styles.topicPreview}>{topic.last_message ? `${topic.last_message.author.full_name}: ${topic.last_message.is_deleted ? t("chat.communityDeletedMessage") : topic.last_message.text || t("chat.attachmentFallbackMessage")}` : t("chat.communityNoActivity")}</Text></View><View style={styles.topicMeta}><Text style={styles.topicTime}>{formatTopicTime(topic.last_message?.created_at)}</Text>{topic.unread_count ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{topic.unread_count > 99 ? "99+" : topic.unread_count}</Text></View> : null}</View></Pressable>)}</ScrollView>
 }
 
 function CommunityGroupAvatar({ name, uri }: { name: string; uri: string | null | undefined }) {
@@ -594,8 +650,9 @@ function CommunityMessageBubble({ message, onDoubleTap, onLongPress, onOpenAttac
     )
 }
 
-function CommunityMessageActionMenu({ message, onClose, onCopy, onDelete, onEdit, onReact, onReply, reacting }: {
+function CommunityMessageActionMenu({ message, onBlock, onClose, onCopy, onDelete, onEdit, onReact, onReply, reacting }: {
     message: CommunityMessage
+    onBlock: () => void
     onClose: () => void
     onCopy: () => void
     onDelete: () => void
@@ -608,14 +665,16 @@ function CommunityMessageActionMenu({ message, onClose, onCopy, onDelete, onEdit
     const { isDark } = useTheme()
     const { t } = useLanguage()
     const { bottom } = useSafeAreaInsets()
+    const [reporting, setReporting] = useState(false)
+    const [reportBusy, setReportBusy] = useState(false)
     const reactions = Array.isArray(message.reactions) ? message.reactions : []
     const androidBlurProps = Platform.OS === "android"
         ? { experimentalBlurMethod: "dimezisBlurView" as const }
         : {}
 
     return (
-        <Modal animationType="fade" onRequestClose={onClose} presentationStyle="overFullScreen" statusBarTranslucent transparent visible>
-            <View style={styles.messageMenuOverlay}>
+        <Modal animationType="fade" onRequestClose={() => { if (!reportBusy) onClose() }} presentationStyle="overFullScreen" statusBarTranslucent transparent visible>
+            {reporting ? <CommunityReportForm message={message} onClose={onClose} onBusyChange={setReportBusy} /> : <View style={styles.messageMenuOverlay}>
                 <BlurView
                     intensity={Platform.OS === "android" ? 45 : 70}
                     pointerEvents="none"
@@ -652,10 +711,12 @@ function CommunityMessageActionMenu({ message, onClose, onCopy, onDelete, onEdit
                         <CommunityMessageMenuAction icon="reply" label={t("chat.communityReplyAction")} onPress={onReply} />
                         {message.text.trim() ? <CommunityMessageMenuAction icon="copy" label={t("chat.communityCopyAction")} onPress={onCopy} /> : null}
                         {message.can_edit ? <CommunityMessageMenuAction icon="edit" label={t("chat.communityEditAction")} onPress={onEdit} /> : null}
+                        {!message.author.is_current_user && !message.is_deleted ? <CommunityMessageMenuAction danger icon="report" label={t("chat.communityReportAction")} onPress={() => setReporting(true)} /> : null}
+                        {!message.author.is_current_user && message.author.id > 0 ? <CommunityMessageMenuAction danger icon="block" label={t("chat.communityBlockAction")} onPress={onBlock} /> : null}
                         {message.can_delete ? <CommunityMessageMenuAction danger icon="delete" label={t("chat.communityDeleteAction")} onPress={onDelete} /> : null}
                     </BlurView>
                 </View>
-            </View>
+            </View>}
         </Modal>
     )
 }
@@ -697,7 +758,7 @@ function CommunityMessageMenuPreview({ message }: { message: CommunityMessage })
     )
 }
 
-type CommunityMessageMenuIcon = "copy" | "delete" | "edit" | "reply"
+type CommunityMessageMenuIcon = "copy" | "delete" | "edit" | "reply" | "block" | "report"
 
 function CommunityMessageMenuAction({ danger = false, icon, label, onPress }: { danger?: boolean; icon: CommunityMessageMenuIcon; label: string; onPress: () => void }) {
     const styles = useThemeStyles(createCommunityChatStyles)
@@ -714,7 +775,11 @@ function CommunityMessageMenuAction({ danger = false, icon, label, onPress }: { 
 function CommunityMessageMenuActionIcon({ danger, icon }: { danger: boolean; icon: CommunityMessageMenuIcon }) {
     const { palette } = useTheme()
     const color = danger ? palette.danger : palette.text
-    const path = icon === "reply"
+    const path = icon === "report"
+        ? "M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0"
+        : icon === "block"
+        ? "M5.6 5.6a9 9 0 1 0 12.8 12.8 9 9 0 0 0-12.8-12.8ZM5.6 5.6l12.8 12.8"
+        : icon === "reply"
         ? "M9 7 4 12l5 5M5 12h7a7 7 0 0 1 7 7"
         : icon === "copy"
             ? "M9 8V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2M6 8h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2Z"

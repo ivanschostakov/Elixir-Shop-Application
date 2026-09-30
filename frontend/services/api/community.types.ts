@@ -29,6 +29,7 @@ export type CommunityAttachment = {
 
 export type CommunityReplyPreview = {
     id: number
+    author_id?: number | null
     author_name: string
     text: string
 }
@@ -68,8 +69,8 @@ export type CommunityTopic = {
     unread_count: number
 }
 
-export type CommunityTopicList = { topics: CommunityTopic[]; total_unread: number }
-export type CommunityMessagePage = { messages: CommunityMessage[]; has_more: boolean; oldest_id: number | null; newest_id: number | null; sync_cursor: string; sync_cursor_id: number }
+export type CommunityTopicList = { blocked_author_ids?: number[]; topics: CommunityTopic[]; total_unread: number }
+export type CommunityMessagePage = { blocked_author_ids?: number[]; messages: CommunityMessage[]; has_more: boolean; oldest_id: number | null; newest_id: number | null; sync_cursor: string; sync_cursor_id: number }
 
 export type SendCommunityMessagePayload = {
     clientId: string

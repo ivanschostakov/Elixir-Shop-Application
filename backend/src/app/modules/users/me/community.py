@@ -6,6 +6,7 @@ from starlette import status
 
 from src.app.modules.auth.dependencies import get_current_user
 from src.database.schemas.community import (
+    CommunityAuthorRead,
     CommunityMarkReadPayload,
     CommunityMarkReadResponse,
     CommunityMessageEditPayload,
@@ -17,7 +18,12 @@ from src.database.schemas.community import (
     CommunityTopicListRead,
 )
 from src.app.services.app_integrity import require_app_integrity
+from src.app.services.community_reports import report_community_message
+from src.database.schemas.community import CommunityReportPayload, CommunityReportReceipt
 from src.app.services.community import (
+    block_community_author,
+    unblock_community_author,
+    list_blocked_community_authors,
     create_community_message,
     delete_community_message,
     edit_community_message,
@@ -31,6 +37,11 @@ from src.database import get_db
 from src.database.models import User
 
 community_router = APIRouter(prefix="/community", tags=["community"])
+
+
+@community_router.post("/topics/{topic_id}/messages/{message_id}/reports", response_model=CommunityReportReceipt, status_code=status.HTTP_201_CREATED)
+async def report_my_community_message(topic_id: int, message_id: int, payload: CommunityReportPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("community:send"))):
+    return await report_community_message(db, user=current_user, request=request, topic_id=topic_id, message_id=message_id, payload=payload)
 
 
 @community_router.get("/status", response_model=CommunityStatusRead, status_code=status.HTTP_200_OK)
@@ -139,3 +150,20 @@ async def toggle_my_community_message_reaction(
     _app_integrity: None = Depends(require_app_integrity("community:send")),
 ) -> list[CommunityReactionRead]:
     return await toggle_community_message_reaction(db, user=current_user, topic_id=topic_id, message_id=message_id, emoji=payload.emoji)
+
+
+@community_router.get("/blocks", response_model=list[CommunityAuthorRead])
+async def get_my_community_blocks(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("community:read"))):
+    return await list_blocked_community_authors(db, user=current_user)
+
+
+@community_router.post("/blocks/{author_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def add_my_community_block(author_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("community:send"))):
+    await block_community_author(db, user=current_user, author_id=author_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@community_router.delete("/blocks/{author_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_my_community_block(author_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("community:send"))):
+    await unblock_community_author(db, user=current_user, author_id=author_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

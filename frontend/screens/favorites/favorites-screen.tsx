@@ -1,12 +1,11 @@
 import { ActivityIndicator, Alert, FlatList, ScrollView, View } from "react-native"
-import { useLocalSearchParams, useRouter } from "expo-router"
+import { useRouter } from "expo-router"
 
 import { EmptyState } from "@/components/content/empty-state"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
 import { useFavouriteProducts } from "@/hooks/favorites/use-favourite-products"
-import { resolveContentTab } from "@/hooks/navigation/use-content-tabs"
 import { useLanguage } from "@/providers/language-provider"
 import { FavoriteProductItem } from "@/screens/favorites/favorite-product-item"
 import { createFavoritesScreenStyles } from "@/screens/favorites/favorites-screen.styles"
@@ -19,7 +18,6 @@ export default function FavoritesScreen() {
     const { palette } = useTheme()
     const router = useRouter()
     const { t } = useLanguage()
-    const params = useLocalSearchParams<{ tab?: string | string[] }>()
     const {
         error,
         loading,
@@ -29,8 +27,6 @@ export default function FavoritesScreen() {
         removeFavourite,
         removingProductId,
     } = useFavouriteProducts()
-    const isProductsTab = resolveContentTab(params.tab) === "products"
-    const savedProducts = isProductsTab ? products : []
 
     const handleRemoveFavourite = async (productId: number) => {
         showRemoveFavouriteConfirmation(t, () => {
@@ -45,23 +41,6 @@ export default function FavoritesScreen() {
                 }
             })()
         })
-    }
-
-    if (!isProductsTab) {
-        return (
-            <CatalogTemplate style={favoritesScreenStyles.screen}>
-                <View style={favoritesScreenStyles.emptyContent}>
-                    <EmptyState
-                        actionVariant="link"
-                        sticker={STICKERS.noArticles}
-                        description={t("favorites.articlesEmptyDescription")}
-                        actionLabel={t("favorites.openCatalog")}
-                        onPressAction={() => router.push(ROUTES.discover)}
-                        variant="plain"
-                    />
-                </View>
-            </CatalogTemplate>
-        )
     }
 
     if (loading && !products.length) {
@@ -118,7 +97,7 @@ export default function FavoritesScreen() {
     return (
         <CatalogTemplate style={favoritesScreenStyles.screen}>
             <FlatList
-                data={savedProducts}
+                data={products}
                 keyExtractor={(product) => String(product.id)}
                 contentContainerStyle={favoritesScreenStyles.listContent}
                 ItemSeparatorComponent={() => <View style={favoritesScreenStyles.separator} />}

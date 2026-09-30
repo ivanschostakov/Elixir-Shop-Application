@@ -1,5 +1,6 @@
 import { apiGet, apiPost, apiPostMultipart } from "@/services/api/client"
 import { aiChatEndpoint } from "@/services/api/ai-chat.constants"
+import { ensureAiDataConsent } from "@/services/api/ai-data-consent"
 import type {
     AIChatActionPayload,
     AIChatActionResponse,
@@ -12,7 +13,8 @@ export function getMyAiChat(): Promise<AIChatResponse> {
     return apiGet<AIChatResponse>(aiChatEndpoint, undefined, { appIntegrityAction: "ai-chat:read" })
 }
 
-export function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = [], companionRequestId?: string, dialogueProtocol: 1 | 2 = 1): Promise<AIChatResponse> {
+export async function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = [], companionRequestId?: string, dialogueProtocol: 1 | 2 = 1): Promise<AIChatResponse> {
+    await ensureAiDataConsent()
     const formData = new FormData()
     formData.append("text", text)
     if (companionRequestId) formData.append("client_request_id", companionRequestId)
@@ -36,7 +38,8 @@ export function performAiChatAction(payload: AIChatActionPayload): Promise<AICha
     return apiPost<AIChatActionResponse, AIChatActionPayload>(`${aiChatEndpoint}/actions`, payload, { appIntegrityAction: "ai-chat:action" })
 }
 
-export function transcribeMyAiChatVoice(audio: UploadableChatAttachment): Promise<AIChatTranscriptionResponse> {
+export async function transcribeMyAiChatVoice(audio: UploadableChatAttachment): Promise<AIChatTranscriptionResponse> {
+    await ensureAiDataConsent()
     const formData = new FormData()
     formData.append(
         "audio",

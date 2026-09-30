@@ -1,8 +1,17 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart } from "@/services/api/client"
-import type { CommunityMessage, CommunityMessagePage, CommunityReaction, CommunityStatus, CommunityTopicList, SendCommunityMessagePayload } from "@/services/api/community.types"
+import type { CommunityAuthor, CommunityMessage, CommunityMessagePage, CommunityReaction, CommunityStatus, CommunityTopicList, SendCommunityMessagePayload } from "@/services/api/community.types"
 
 const communityEndpoint = "/v1/users/me/community"
 const readOptions = { appIntegrityAction: "community:read" }
+
+export type CommunityReportReason = "spam" | "harassment" | "dangerous_content" | "inappropriate_content" | "other"
+
+export function reportCommunityMessage(topicId: number, messageId: number, reason: CommunityReportReason, details: string) {
+    return apiPost<{ id: number; status: "pending" | "dismissed" | "removed" }, { reason: CommunityReportReason; details: string }>(
+        `${communityEndpoint}/topics/${topicId}/messages/${messageId}/reports`,
+        { reason, details }, { appIntegrityAction: "community:send" },
+    )
+}
 
 export function getCommunityStatus(refresh = false) {
     return apiGet<CommunityStatus>(`${communityEndpoint}/status`, refresh ? { refresh: true } : undefined, readOptions)
@@ -52,4 +61,17 @@ export function toggleCommunityMessageReaction(topicId: number, messageId: numbe
         { emoji },
         { appIntegrityAction: "community:send" },
     )
+}
+
+
+export function getBlockedCommunityAuthors() {
+    return apiGet<CommunityAuthor[]>(`${communityEndpoint}/blocks`, undefined, readOptions)
+}
+
+export function blockCommunityAuthor(authorId: number) {
+    return apiPost<void, Record<string, never>>(`${communityEndpoint}/blocks/${authorId}`, {}, { appIntegrityAction: "community:send" })
+}
+
+export function unblockCommunityAuthor(authorId: number) {
+    return apiDelete<void>(`${communityEndpoint}/blocks/${authorId}`, { appIntegrityAction: "community:send" })
 }

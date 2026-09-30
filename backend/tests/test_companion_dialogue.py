@@ -13,6 +13,7 @@ from src.app.services.ai.companion.dialogue_tools import execute_dialogue_tool, 
 from src.app.services.ai.companion.jobs import reminder_text, schedule_recurring
 from src.app.services.ai.companion.schemas import Action, EntryData, Settings, PlanData
 from src.app.services.ai.chat_interactive import build_ai_chat_output_schema
+from src.app.services.ai.data_consent import AI_DATA_CONSENT_VERSION, AIDataConsentPayload, set_ai_data_consent
 from src.database.models import AIMessage, User
 from src.database.models.ai.companion import AICompanionDialogue, AICompanionEntry, AICompanionEvent, AICompanionReminder
 from src.integrations.ai.enums import MessageSender
@@ -326,6 +327,7 @@ def test_v2_provider_roundtrip_retry_and_no_commerce_tools(monkeypatch):
         async with database() as (db, user):
             profile = await enable(db, user)
             seen = {}
+            await set_ai_data_consent(db, user.id, AIDataConsentPayload(granted=True, version=AI_DATA_CONSENT_VERSION))
             async def respond(**kwargs):
                 seen.update(kwargs)
                 await kwargs["resource_recorder"]("conversation", kwargs["conversation_id"])
@@ -363,6 +365,7 @@ def test_invalid_provider_structure_is_corrected_once(monkeypatch, failure_kind)
     async def run():
         async with database() as (db, user):
             profile = await enable(db, user)
+            await set_ai_data_consent(db, user.id, AIDataConsentPayload(granted=True, version=AI_DATA_CONSENT_VERSION))
             invalid = {
                 "text": "" if failure_kind == "schema" else "Подтвердите запись питания.",
                 "structured_output": {

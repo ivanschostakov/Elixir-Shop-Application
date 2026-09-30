@@ -39,7 +39,6 @@ export default function AppHeader({ template }: AppHeaderProps) {
     const { clear, error: basketError, updating: basketUpdating } = useBasketMutations()
     const { language, setLanguage, t } = useLanguage()
     const { tabs } = useContentTabs(pathname, {
-        articles: t("common.articles"),
         products: t("common.products"),
     })
     const entranceStyle = useEntranceAnimation({ translateY: -6 })
@@ -192,6 +191,10 @@ export default function AppHeader({ template }: AppHeaderProps) {
                 onOpenPublicOffer={() => {
                     setIsMenuOpen(false)
                     router.push(ROUTES.publicOffer)
+                }}
+                onOpenPrivacy={() => {
+                    setIsMenuOpen(false)
+                    router.push(ROUTES.privacy)
                 }}
                 onOpenRequisites={() => {
                     setIsMenuOpen(false)

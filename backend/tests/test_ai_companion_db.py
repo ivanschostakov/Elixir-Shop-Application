@@ -364,6 +364,8 @@ def test_companion_turn_persists_draft_private_upload_and_deduplicates(monkeypat
     monkeypatch.setattr(chat_service, "record_customer_event_safe", AsyncMock())
     async def run():
         async with database() as (db, user):
+            from src.app.services.ai.data_consent import set_ai_data_consent, AIDataConsentPayload, AI_DATA_CONSENT_VERSION
+            await set_ai_data_consent(db, user.id, AIDataConsentPayload(granted=True, version=AI_DATA_CONSENT_VERSION))
             profile = await enable(db, user) if has_consent else await service.ensure_default_profile(db, user.id)
             await db.commit()
             entry = EntryData(kind="weight", occurred_at=datetime.now(timezone.utc), weight_kg=80)
@@ -441,6 +443,8 @@ def test_erasure_during_generation_cannot_restore_health_messages(monkeypatch):
     monkeypatch.setattr(chat_service, "record_customer_event_safe", AsyncMock())
     async def run():
         async with database() as (db, user):
+            from src.app.services.ai.data_consent import set_ai_data_consent, AIDataConsentPayload, AI_DATA_CONSENT_VERSION
+            await set_ai_data_consent(db, user.id, AIDataConsentPayload(granted=True, version=AI_DATA_CONSENT_VERSION))
             profile = await enable(db, user)
             user_id = user.id
             async def respond(**kwargs):
@@ -502,7 +506,7 @@ def test_account_deletion_queues_companion_erasure(monkeypatch):
             await service.register_resource(db, user_id, "file", "file_account")
             await db.commit()
             await auth.delete_user_account(Request({"type": "http", "headers": []}), user, db)
-            assert not user.is_active
+            assert (await db.execute(select(User.id).where(User.id == user_id))).scalar_one_or_none() is None
             assert await service.profile_for(db, user_id) is None
             resource = (await db.execute(select(AIProviderResource))).scalar_one()
             assert resource.status == "pending_delete"

@@ -38,6 +38,7 @@ class CommunityAttachmentRead(BaseModel):
 
 class CommunityReplyPreviewRead(BaseModel):
     id: int
+    author_id: int | None = None
     author_name: str
     text: str
 
@@ -72,6 +73,7 @@ class CommunityMessageRead(BaseModel):
 
 
 class CommunityMessagePageRead(BaseModel):
+    blocked_author_ids: list[int] = Field(default_factory=list)
     messages: list[CommunityMessageRead]
     has_more: bool = False
     oldest_id: int | None = None
@@ -91,6 +93,7 @@ class CommunityTopicRead(BaseModel):
 
 
 class CommunityTopicListRead(BaseModel):
+    blocked_author_ids: list[int] = Field(default_factory=list)
     topics: list[CommunityTopicRead]
     total_unread: int = 0
 
@@ -105,3 +108,13 @@ class CommunityMarkReadResponse(BaseModel):
 
 class CommunityMessageEditPayload(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
+
+
+class CommunityReportPayload(BaseModel):
+    reason: Literal["spam", "harassment", "dangerous_content", "inappropriate_content", "other"]
+    details: str = Field(default="", max_length=1000)
+
+
+class CommunityReportReceipt(BaseModel):
+    id: int
+    status: Literal["pending", "dismissed", "removed"]

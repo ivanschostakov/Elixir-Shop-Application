@@ -236,8 +236,16 @@ async def process_reminders():
 
 
 async def delete_provider_resource(client, kind, external_id):
-    if kind == "local_file":
-        root = (config.PRIVATE_MEDIA_DIR / "ai_companion").resolve()
+    local_roots = {
+        "local_file": config.PRIVATE_MEDIA_DIR / "ai_companion",
+        "public_ai_file": config.ATTACHMENTS_DIR,
+        "support_file": config.SUPPORT_MEDIA_DIR,
+        "review_file": config.REVIEWS_MEDIA_DIR,
+        "community_file": config.COMMUNITY_MEDIA_DIR / "attachments",
+        "community_avatar": config.COMMUNITY_MEDIA_DIR / "avatars",
+    }
+    if kind in local_roots:
+        root = local_roots[kind].resolve()
         path = (root / external_id).resolve()
         if not path.is_relative_to(root) or path == root:
             raise ValueError("Invalid private attachment path")
@@ -253,6 +261,18 @@ async def delete_provider_resource(client, kind, external_id):
             if not page.data:
                 break
             for item in page.data:
+                # Legacy ordinary chats did not register uploaded files. Erase
+                # their input uploads too, never shared file-search citations.
+                content = getattr(item, "content", None) or []
+                for part in content:
+                    data = part if isinstance(part, dict) else part.model_dump()
+                    file_id = data.get("file_id")
+                    if data.get("type") in {"input_file", "input_image"} and file_id:
+                        try:
+                            await client.files.delete(file_id)
+                        except Exception as error:
+                            if getattr(error, "status_code", None) != 404:
+                                raise
                 try:
                     await client.conversations.items.delete(item.id, conversation_id=external_id)
                 except Exception as error:

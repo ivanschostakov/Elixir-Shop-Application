@@ -8,7 +8,6 @@ import { ProductCard } from "@/components/content/product-card"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
-import { resolveContentTab } from "@/hooks/navigation/use-content-tabs"
 import type { ProductBrowseSort } from "@/hooks/products/product-browse"
 import { useInfiniteProductCatalog } from "@/hooks/products/use-infinite-product-catalog"
 import { useProductCategories } from "@/hooks/products/use-product-categories"
@@ -92,13 +91,11 @@ export default function DiscoverScreen() {
     const { t } = useLanguage()
     const { width: windowWidth } = useWindowDimensions()
     const params = useLocalSearchParams<{
-        tab?: string | string[]
         categoryId?: string | string[]
         q?: string | string[]
         newOnly?: string | string[]
         resetCategory?: string | string[]
     }>()
-    const isProductsTab = resolveContentTab(params.tab) === "products"
     const incomingCategoryId = parseCategoryId(params.categoryId)
     const shouldResetCategory = parseQuery(params.resetCategory) === "1"
     const incomingNewOnly = parseQuery(params.newOnly) === "1"
@@ -111,7 +108,7 @@ export default function DiscoverScreen() {
     const [newOnly, setNewOnly] = useState(() => discoverBrowseMemory.newOnly)
     const [sort, setSort] = useState<ProductBrowseSort>(() => discoverBrowseMemory.sort)
     const trackedCategoryIdRef = useRef<number | null>(null)
-    const { categories, reload: reloadCategories } = useProductCategories(isProductsTab)
+    const { categories, reload: reloadCategories } = useProductCategories()
     const {
         products: catalogProducts,
         loading: isLoading,
@@ -121,15 +118,15 @@ export default function DiscoverScreen() {
         reload: reloadCatalogProducts,
     } = useInfiniteProductCatalog({
         categoryId,
-        enabled: isProductsTab,
+        enabled: true,
         newOnly,
         query,
         sort,
     })
     const [refreshing, setRefreshing] = useState(false)
     const displayedProducts = useMemo(
-        () => (isProductsTab ? catalogProducts : []),
-        [catalogProducts, isProductsTab],
+        () => catalogProducts,
+        [catalogProducts],
     )
     const hasSearchQuery = query.length > 0
     const rowGap = isDesktop ? 16 : 12
@@ -178,7 +175,6 @@ export default function DiscoverScreen() {
 
     useEffect(() => {
         if (
-            !isProductsTab ||
             categoryId === null ||
             !categories.some((category) => category.id === categoryId)
         ) {
@@ -192,7 +188,7 @@ export default function DiscoverScreen() {
 
         trackedCategoryIdRef.current = categoryId
         void trackRecommendationCategoryView({ category_id: categoryId }).catch(() => undefined)
-    }, [categories, categoryId, isProductsTab])
+    }, [categories, categoryId])
 
     const handleRefresh = useCallback(async () => {
         if (refreshing) {
@@ -210,22 +206,6 @@ export default function DiscoverScreen() {
             setRefreshing(false)
         }
     }, [refreshing, reloadCatalogProducts, reloadCategories])
-
-    if (!isProductsTab) {
-        return (
-            <CatalogTemplate style={discoverScreenStyles.articleEmptyScreen}>
-                <View style={discoverScreenStyles.emptyContent}>
-                    <EmptyState
-                        sticker={STICKERS.noArticles}
-                        eyebrow={t("common.articles")}
-                        title={t("discover.articlesTitle")}
-                        description={t("discover.articlesDescription")}
-                        variant="plain"
-                    />
-                </View>
-            </CatalogTemplate>
-        )
-    }
 
     return (
         <CatalogTemplate style={discoverScreenStyles.screen}>
@@ -331,7 +311,7 @@ export default function DiscoverScreen() {
                     )
                 }
                 ListFooterComponent={
-                    !isProductsTab || !loadingMore ? null : (
+                    !loadingMore ? null : (
                         <View style={discoverScreenStyles.footerLoaderWrap}>
                             <ActivityIndicator color={palette.primary} />
                         </View>

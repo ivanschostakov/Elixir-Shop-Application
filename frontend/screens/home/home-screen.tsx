@@ -613,7 +613,8 @@ export default function HomeScreen() {
                                             setIsHomeMenuOpen(false)
                                             router.push(ROUTES.contacts)
                                         }}
-                                        onOpenPublicOffer={() => {
+                                        onOpenPrivacy={() => { setIsHomeMenuOpen(false); router.push(ROUTES.privacy) }}
+                            onOpenPublicOffer={() => {
                                             setIsHomeMenuOpen(false)
                                             router.push(ROUTES.publicOffer)
                                         }}
@@ -684,6 +685,7 @@ export default function HomeScreen() {
                                 setIsHomeMenuOpen(false)
                                 router.push(ROUTES.contacts)
                             }}
+                            onOpenPrivacy={() => { setIsHomeMenuOpen(false); router.push(ROUTES.privacy) }}
                             onOpenPublicOffer={() => {
                                 setIsHomeMenuOpen(false)
                                 router.push(ROUTES.publicOffer)

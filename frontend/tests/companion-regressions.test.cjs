@@ -52,6 +52,7 @@ test("ordinary and companion chat use separate routes without changing the origi
     const api = loadTs("services/api/ai-chat.ts", {
         "@/services/api/client": { apiPostMultipart: async (...args) => requests.push(args) },
         "@/services/api/ai-chat.constants": { aiChatEndpoint: "/v1/users/me/ai-chat" },
+        "@/services/api/ai-data-consent": { ensureAiDataConsent: async () => undefined },
     })
     await api.sendMyAiChatMessage("ordinary", [])
     await api.sendMyAiChatMessage("companion", [], "message-request-001")

@@ -14,10 +14,12 @@ from src.app.modules.users.me.schemas import (
     AIChatTurnMetaRead,
 )
 from src.app.services.app_integrity import require_app_integrity
-from src.app.services.ai.chat import get_or_create_user_chat, perform_user_ai_chat_action, send_user_chat_message
+from src.app.services.ai.chat import perform_user_ai_chat_action, send_user_chat_message
 from src.app.services.ai.security import ensure_app_ai_access, record_app_ai_activity
+from src.app.services.ai.data_consent import AIDataConsentPayload, get_ai_data_consent, set_ai_data_consent, require_ai_data_consent
 from src.app.services.basket import _get_serialized_basket
 from src.app.services.upload_limits import read_upload_file_limited
+from src.database.crud.ai.chat import get_ai_chat_by_user_id
 from src.database import get_db
 from src.database.models import User
 from src.integrations.ai import get_professor_client
@@ -26,6 +28,16 @@ if TYPE_CHECKING:
     from src.integrations.ai.client import ProfessorClient
 
 ai_chat_router = APIRouter(prefix="/ai-chat", tags=["ai_chat"])
+
+
+@ai_chat_router.get("/data-consent")
+async def read_ai_data_consent(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await get_ai_data_consent(db, current_user.id)
+
+
+@ai_chat_router.post("/data-consent")
+async def update_ai_data_consent(payload: AIDataConsentPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await set_ai_data_consent(db, current_user.id, payload)
 
 
 @ai_chat_router.get("/attachments/{attachment_id}")
@@ -41,13 +53,14 @@ async def download_private_attachment(attachment_id: int, db: AsyncSession = Dep
 
 
 @ai_chat_router.get("", response_model=AIChatResponse, status_code=status.HTTP_200_OK)
-async def get_my_ai_chat(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:read"))) -> AIChatResponse:
-    chat = await get_or_create_user_chat(db, user=current_user, professor_client=professor_client)
+async def get_my_ai_chat(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("ai-chat:read"))) -> AIChatResponse:
+    chat = await get_ai_chat_by_user_id(db, current_user.id)
     return AIChatResponse(chat=chat, last_turn=None)
 
 
 @ai_chat_router.post("", response_model=AIChatResponse, status_code=status.HTTP_200_OK)
 async def send_my_ai_chat_message(request: Request, text: str = Form(...), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:send"))) -> AIChatResponse:
+    await require_ai_data_consent(db, current_user.id)
     import config
     if config.AI_COMPANION_ENABLED:
         from src.app.services.ai.companion.service import profile_for
@@ -89,6 +102,7 @@ async def perform_my_ai_chat_action(payload: AIChatActionPayload, request: Reque
 
 @ai_chat_router.post("/transcribe", response_model=AIChatTranscriptionResponse, status_code=status.HTTP_200_OK)
 async def transcribe_my_ai_chat_voice_message(request: Request, audio: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:transcribe"))) -> AIChatTranscriptionResponse:
+    await require_ai_data_consent(db, current_user.id)
     await ensure_app_ai_access(db, request=request, user=current_user)
     await record_app_ai_activity(db, request=request, user=current_user, event_type="transcription_requested")
     content = await read_upload_file_limited(audio, max_bytes=AI_CHAT_MAX_AUDIO_BYTES, label="Audio upload")

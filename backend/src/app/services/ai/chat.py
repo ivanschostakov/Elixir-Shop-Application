@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette import status
+from src.app.services.ai.data_consent import require_ai_data_consent
 
 from config import (
     AI_CHAT_MAX_ATTACHMENTS,
@@ -80,18 +81,18 @@ AI_CHAT_EMPTY_REPLY = "Не смогла подготовить ответ. По
 def _build_commerce_ai_input(text: str) -> str:
     return (
         "Контекст приложения: это чат магазина Elixir Peptide. "
-        "Отвечай как уверенный консультант, который помогает выбрать и купить подходящий товар: живо, полезно, без сухого канцелярита. "
-        "Для целей пользователя используй свои медицинские и физиологические знания, чтобы понять, какие классы/пептиды подходят; затем используй tools, чтобы найти совпадающие товары в каталоге, проверить наличие, цены и точные product_id/variant_id. "
-        "Если пользователь спрашивает общо, например про похудение, сам предложи 2-4 сильных направления из доступного каталога вместо строгого отказа или длинных оговорок. "
+        "Помогай с проверяемыми сведениями о запрошенных товарах, документах и заказах. Ты ИИ-помощник, а не врач. "
+        "Не подбирай товары по симптомам, заболеваниям или целям здоровья. Не назначай лечение, дозировки, способы введения и курсы. Для явного запроса о конкретном товаре используй tools текущего пользователя: наличие, упаковка, цены и точные product_id/variant_id. "
+        "Если вопрос касается похудения, лечения или самостоятельного применения, направь к квалифицированному врачу без товарных рекомендаций и корзины. "
         "Не выдумывай product_id, variant_id, цены, остатки и ссылки: эти данные только из tools. "
         "Когда называешь товар из каталога в assistant_text, делай название markdown-ссылкой вида [Семаглутид](/products/{id}). "
-        "Заполняй product_refs только товарами, найденными через tools; карточки должны поддерживать рекомендации и продажу. "
+        "Заполняй product_refs только товарами, найденными через tools; карточки допустимы только для явно запрошенных товаров, без медицинских рекомендаций. "
         "Для каждого product_ref заполняй button_rows: это клавиатура карточки. Используй ключи open_product, compare, alternatives, checkout и variant:{variant_id}. "
-        "Группируй связанные кнопки в строки по 1-3 штуки: главные действия можно делать одной заметной строкой, варианты дозировок обычно группируй по 2 в строку. "
+        "Группируй связанные кнопки в строки по 1-3 штуки: главные действия можно делать одной заметной строкой, варианты упаковки обычно группируй по 2 в строку. "
         "Если пользователь уже выбрал нужный товар, ты добавляешь товар в корзину, или по данным get_my_basket корзина уже содержит нужные позиции и пользователь может быть готов завершать покупку, добавь checkout в отдельную заметную строку или рядом с главным действием. "
         "Не добавляй follow-up questions и не проси повторное подтверждение, если пользователь уже явно написал, что хочет купить/добавить товар. "
-        "Заполняй basket_addition только когда пользователь явно хочет купить/добавить в корзину конкретный товар, точную дозировку/вариант и количество, а tools подтвердили variant_id и наличие. "
-        "Если вариантов несколько, дозировка или количество неясны, не заполняй basket_addition; покажи подходящие товары и коротко попроси выбрать точный вариант. "
+        "Заполняй basket_addition только когда пользователь явно хочет купить/добавить в корзину конкретный товар, вариант упаковки и количество, а tools подтвердили variant_id и наличие. "
+        "Если вариантов несколько, упаковка или количество неясны, не заполняй basket_addition; покажи подходящие товары и коротко попроси выбрать точный вариант. "
         "AI может добавлять только в корзину; не создавай черновики, финальные заказы и оплату.\n\n"
         f"Сообщение пользователя:\n{text}"
     )
@@ -285,15 +286,23 @@ async def resolve_user_bot_model(db: AsyncSession, *, user_id: int) -> BotModel:
 
 
 async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_client: "ProfessorClient") -> AIChat:
+    # Account deletion takes this same lock before erasing chat state.
+    active_id = (await db.execute(select(User.id).where(User.id == user.id, User.is_active.is_(True)).with_for_update())).scalar_one_or_none()
+    if active_id is None:
+        raise HTTPException(401, "Account is no longer available")
     existing = await get_ai_chat_by_user_id(db, user.id)
     if existing is not None: return existing
 
+    from .companion.service import register_resource
     conversation_id = await professor_client.create_conversation(user_id=user.id)
+    await register_resource(db, user.id, "conversation", conversation_id)
     created = await create_ai_chat(db, AIChatCreate(user_id=user.id, conversation_id=conversation_id, current_tokens=0, total_tokens=0), commit=True)
     return created
 
 
 async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1, telegram_transport: bool = False, bot_model_override: BotModel | None = None) -> AIChatSendResult:
+    if not telegram_transport:
+        await require_ai_data_consent(db, user.id)
     chat = await get_or_create_user_chat(db, user=user, professor_client=professor_client)
     companion_profile_id = companion_profile.id if companion_profile is not None else None
     starting_conversation_id = chat.conversation_id
@@ -396,8 +405,8 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             replay = [{"role": "assistant" if m.sender == MessageSender.AI else "user", "content": m.text[:6000]} for m in reversed(recent)]
             async def record_resource(kind, external_id):
                 # Erasure and provider callbacks serialize on the same user lock.
-                await db.execute(select(User.id).where(User.id == user.id).with_for_update())
-                await companion_service.register_resource(db, user.id, kind, external_id)
+                active_id = (await db.execute(select(User.id).where(User.id == user.id, User.is_active.is_(True)).with_for_update())).scalar_one_or_none()
+                await companion_service.register_resource(db, active_id, kind, external_id)
                 await db.flush()
                 active = await companion_service.profile_for(db, user.id)
                 if active is None or active.id != companion_profile_id or not active.enabled:
@@ -408,6 +417,20 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                     raise HTTPException(409, "Сопровождение отключено")
                 await db.commit()
             companion_kwargs = {"companion_context": snapshot, "replay_history": replay, "resource_recorder": record_resource}
+
+        if companion_profile is None:
+            async def record_account_resource(kind, external_id):
+                from .companion.service import register_resource
+                from src.database.models.ai.companion import AIProviderResource
+                from sqlalchemy import update
+                active_id = (await db.execute(select(User.id).where(User.id == user.id, User.is_active.is_(True)).with_for_update())).scalar_one_or_none()
+                await register_resource(db, active_id, kind, external_id)
+                if active_id is None:
+                    await db.execute(update(AIProviderResource).where(AIProviderResource.kind == kind, AIProviderResource.external_id == external_id).values(status="pending_delete"))
+                await db.commit()
+                if active_id is None:
+                    raise HTTPException(401, "Account is no longer available")
+            companion_kwargs["resource_recorder"] = record_account_resource
 
         output_schema = build_ai_chat_output_schema(
             include_companion=companion_profile is not None,

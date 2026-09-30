@@ -9,6 +9,7 @@ test("dialogue v2 is negotiated explicitly; ordinary chat remains unchanged", as
     const api = loadTs("services/api/ai-chat.ts", {
         "@/services/api/client": { apiPostMultipart: async (...args) => requests.push(args) },
         "@/services/api/ai-chat.constants": { aiChatEndpoint: "/ai-chat" },
+        "@/services/api/ai-data-consent": { ensureAiDataConsent: async () => undefined },
     })
     await api.sendMyAiChatMessage("вес 84", [], "request-key-1", 2)
     await api.sendMyAiChatMessage("обычный чат")

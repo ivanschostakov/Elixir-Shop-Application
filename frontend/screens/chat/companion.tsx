@@ -23,7 +23,7 @@ const emptyNutrition = (): Nutrition => ({ kcal: "", protein: "", fat: "", carbs
 const numberOrNull = (value: string) => value.trim() ? Number(value.replace(",", ".")) : null
 const legacyEntryPage = (kind?: EntryData["kind"]): Page => kind === "workout" || kind === "measurement" || kind === "progress_photo" ? "journal" : kind ?? "meal"
 
-export function useCompanion() {
+export function useCompanion(enabled = true) {
     const focused = useIsFocused()
     const clock = useDeviceClock()
     const [state, setState] = useState<CompanionState | null>(null)
@@ -36,7 +36,7 @@ export function useCompanion() {
     const refreshSequence = useRef(0)
     const protocolRef = useRef<1 | 2>(1)
     const refresh = useCallback(async () => {
-        if (Platform.OS === "web") return
+        if (!enabled || Platform.OS === "web") return
         const sequence = ++refreshSequence.current
         try {
             const availability = await getCompanionAvailability()
@@ -54,9 +54,9 @@ export function useCompanion() {
             setError("")
             return availability
         } catch (e) { if (sequence === refreshSequence.current) setError(getErrorMessage(e)) }
-    }, [])
-    useEffect(() => { if (focused) void refresh() }, [focused, refresh, clock])
-    useEffect(() => () => { refreshSequence.current++ }, [])
+    }, [enabled])
+    useEffect(() => { if (focused && enabled) void refresh() }, [focused, enabled, refresh, clock])
+    useEffect(() => () => { refreshSequence.current++ }, [enabled])
     const resolveEnabled = async () => {
         if (Platform.OS === "web") return false
         if (state?.profile) return state.profile.enabled

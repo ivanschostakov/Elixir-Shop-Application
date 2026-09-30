@@ -118,7 +118,7 @@ def test_ai_chat_route_rejects_missing_app_integrity(guarded_app_overrides):
 
 
 def test_ai_chat_route_accepts_matching_app_integrity(monkeypatch: pytest.MonkeyPatch, guarded_app_overrides):
-    async def fake_get_or_create_user_chat(*_args, **_kwargs):
+    async def fake_get_ai_chat_by_user_id(*_args, **_kwargs):
         return {
             "id": 77,
             "user_id": 123,
@@ -130,7 +130,7 @@ def test_ai_chat_route_accepts_matching_app_integrity(monkeypatch: pytest.Monkey
             "updated_at": "2026-05-01T00:00:00Z",
         }
 
-    monkeypatch.setattr(ai_chat_router_module, "get_or_create_user_chat", fake_get_or_create_user_chat)
+    monkeypatch.setattr(ai_chat_router_module, "get_ai_chat_by_user_id", fake_get_ai_chat_by_user_id)
 
     with TestClient(app) as test_client:
         response = test_client.get(

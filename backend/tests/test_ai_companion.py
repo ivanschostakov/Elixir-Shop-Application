@@ -187,10 +187,11 @@ def test_strict_schema_and_ordinary_chat_isolation():
 
 def test_erasure_deletes_items_before_conversation_and_response():
     async def run():
-        items = SimpleNamespace(list=AsyncMock(side_effect=[SimpleNamespace(data=[SimpleNamespace(id="item1")]), SimpleNamespace(data=[])]), delete=AsyncMock())
+        items = SimpleNamespace(list=AsyncMock(side_effect=[SimpleNamespace(data=[SimpleNamespace(id="item1", content=[{"type": "input_file", "file_id": "file_private"}, {"type": "output_text", "annotations": [{"file_id": "shared_library"}]}])]), SimpleNamespace(data=[])]), delete=AsyncMock())
         client = SimpleNamespace(conversations=SimpleNamespace(items=items, delete=AsyncMock()), files=SimpleNamespace(delete=AsyncMock()), responses=SimpleNamespace(delete=AsyncMock()))
         await delete_provider_resource(client, "conversation", "conv1")
         items.delete.assert_awaited_once_with("item1", conversation_id="conv1")
+        client.files.delete.assert_awaited_once_with("file_private")
         client.conversations.delete.assert_awaited_once_with("conv1")
         await delete_provider_resource(client, "response", "resp1")
         client.responses.delete.assert_awaited_once_with("resp1")

@@ -5,6 +5,7 @@ import { setBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { getMyAiChat, performAiChatAction, sendMyAiChatMessage } from "@/services/api/ai-chat"
 import { requestKey } from "@/services/api/companion"
+import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import type {
     AIAttachmentRead,
     AIChatActionPayload,
@@ -37,8 +38,9 @@ type UseAiChatResult = {
 const AI_REPLY_POLL_INTERVAL_MS = 1500
 const AI_REPLY_POLL_MAX_ATTEMPTS = 30
 
-export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false, companionProtocol: () => 1 | 2 = () => 1): UseAiChatResult {
-    const isFocused = useIsFocused()
+export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false, companionProtocol: () => 1 | 2 = () => 1, enabled = true): UseAiChatResult {
+    const focused = useIsFocused()
+    const isFocused = focused && enabled
     const [refreshing, setRefreshing] = useState(false)
     const [sending, setSending] = useState(false)
     const [aiTyping, setAiTyping] = useState(false)
@@ -62,6 +64,7 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
     const hasPendingServerReply = hasServerPendingAssistantReply(chat)
 
     const refresh = async () => {
+        if (!enabled) return
         setRefreshing(true)
         try {
             const nextChat = await reload({ showLoading: false })
@@ -173,7 +176,7 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
             return nextChat
         } catch (sendError) {
             setOptimisticMessages((currentMessages) =>
-                currentMessages.map((message) =>
+                sendError instanceof AiConsentDeclinedError ? currentMessages.filter(message => message.id !== optimisticId) : currentMessages.map((message) =>
                     message.id === optimisticId
                         ? { ...message, delivery_status: "failed" }
                         : message,
@@ -197,7 +200,7 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
     }
 
     const messages = [
-        ...(chat?.chat.messages ?? []),
+        ...(chat?.chat?.messages ?? []),
         ...optimisticMessages,
     ]
 
@@ -216,7 +219,7 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
 }
 
 function hasPendingAssistantReply(chat: AIChatResponse | null) {
-    const messages = chat?.chat.messages ?? []
+    const messages = chat?.chat?.messages ?? []
     const lastMessage = messages[messages.length - 1]
     if (!lastMessage) {
         return false
@@ -255,7 +258,7 @@ function createOptimisticUserMessage({
                 messageId: id,
             }),
         ),
-        chat_id: chat?.chat.id ?? 0,
+        chat_id: chat?.chat?.id ?? 0,
         client_id: `local-${Math.abs(id)}`,
         created_at: createdAt,
         delivery_status: "pending",
@@ -264,7 +267,7 @@ function createOptimisticUserMessage({
         sender: "user",
         text,
         updated_at: createdAt,
-        user_id: chat?.chat.user_id ?? 0,
+        user_id: chat?.chat?.user_id ?? 0,
         usage: null,
     }
 }

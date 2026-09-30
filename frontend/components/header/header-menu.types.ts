@@ -10,6 +10,7 @@ export type HeaderMenuContentProps = {
     onClose: () => void
     onOpenContacts: () => void
     onOpenPublicOffer: () => void
+    onOpenPrivacy: () => void
     onOpenRequisites: () => void
     onSignIn: () => void
     onSignOut: () => Promise<void>
