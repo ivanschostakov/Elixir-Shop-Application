@@ -746,7 +746,7 @@ export function SendActionButton({
 
     const backgroundColor = activeProgress.interpolate({
         inputRange: [0, 1],
-        outputRange: ["rgba(255,255,255,0.94)", "#37C960"],
+        outputRange: ["rgba(255,255,255,0.82)", "#078BF5"],
     })
     const iconOpacity = busyProgress.interpolate({
         inputRange: [0, 1],
@@ -765,7 +765,9 @@ export function SendActionButton({
     return (
         <Pressable
             accessibilityLabel={isActive ? "Send message" : recording ? "Stop voice recording" : "Record voice message"}
+            accessibilityRole="button"
             disabled={disabled}
+            hitSlop={2}
             onPress={onPress}
             style={({ pressed }) => [
                 chatScreenStyles.circleButtonPressable,
@@ -801,22 +803,23 @@ export function SendActionButton({
                         </Svg>
                     ) : (
                         <View style={chatScreenStyles.sendButtonMicIconWrap}>
-                            <Svg fill="none" height={20} viewBox="0 0 24 24" width={20}>
+                            <Svg fill="none" height={24} viewBox="0 0 24 24" width={24}>
                                 <Path
-                                    d="M8 2H16V11C16 13.2091 14.2091 15 12 15V15C9.79086 15 8 13.2091 8 11V2Z"
-                                    fill={recording ? palette.onPrimary : "#12161A"}
+                                    d="M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3Z"
+                                    stroke={recording ? palette.onPrimary : "#12161A"}
+                                    strokeWidth={1.8}
                                 />
                                 <Path
-                                    d="M5 11C5 12.8565 5.7375 14.637 7.05025 15.9497C8.36301 17.2625 10.1435 18 12 18C13.8565 18 15.637 17.2625 16.9497 15.9497C18.2625 14.637 19 12.8565 19 11"
+                                    d="M5.5 11.5v.5a6.5 6.5 0 0 0 13 0v-.5"
                                     stroke={recording ? palette.onPrimary : "#12161A"}
-                                    strokeWidth={2}
+                                    strokeWidth={1.8}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                 />
                                 <Path
-                                    d="M12 21V19"
+                                    d="M12 18.5V22m-3 0h6"
                                     stroke={recording ? palette.onPrimary : "#12161A"}
-                                    strokeWidth={2}
+                                    strokeWidth={1.8}
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                 />

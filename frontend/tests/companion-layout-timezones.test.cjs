@@ -6,7 +6,7 @@ const ts = require("typescript")
 const loadTs = require("./load-ts.cjs")
 const timezones = loadTs("screens/chat/companion-timezones.ts")
 
-test("course actions are pinned directly above the input and stay outside message scrolling", () => {
+test("header, scrolling history and composer share one keyboard shell without an overlay dock", () => {
     const source = ts.createSourceFile("chat-screen.tsx", fs.readFileSync(path.join(__dirname, "../screens/chat/chat-screen.tsx"), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
     const nodes = []
     const visit = node => { nodes.push(node); ts.forEachChild(node, visit) }
@@ -22,17 +22,23 @@ test("course actions are pinned directly above the input and stay outside messag
     assert.ok(header.end < body.pos)
     const panel = nodes.find(node => tag(node) === "CompanionPanel")
     assert.equal(panel.parent, composer)
-    assert.ok(ancestors(panel).some(node => tag(node) === "KeyboardAvoidingView"))
     assert.ok(!ancestors(panel).includes(header))
     assert.ok(!ancestors(panel).some(node => tag(node) === "ScrollView"))
-    const input = nodes.find(node => tag(node) === "TextInput")
+    const input = nodes.find(node => tag(node) === "ChatComposerInput")
+    assert.ok(input, "Use the bounded production composer input")
     assert.ok(panel.end < input.pos)
     assert.match(composer.openingElement.attributes.properties.find(attr => attr.name?.text === "onLayout").getText(source), /setComposerHeight/)
-    const keyboard = nodes.find(node => tag(node) === "KeyboardAvoidingView")
-    assert.ok(ancestors(keyboard).includes(body))
-    assert.ok(!ancestors(keyboard).includes(header))
-    assert.equal(keyboard.openingElement.attributes.properties.find(attr => attr.name?.text === "keyboardVerticalOffset").initializer.expression.getText(source), "chatHeaderHeight")
-    assert.match(header.openingElement.attributes.properties.find(attr => attr.name?.text === "onLayout").getText(source), /setChatHeaderHeight/)
+    const keyboard = nodes.find(node => tag(node) === "ChatKeyboardLayout")
+    assert.ok(keyboard, "Use the same production shell exercised by the browser fixture")
+    assert.ok(ancestors(header).includes(keyboard), "Header belongs to the same screen coordinate system as keyboard avoidance")
+    assert.ok(ancestors(body).includes(keyboard))
+    assert.ok(ancestors(composer).includes(body))
+    assert.ok(!ancestors(composer).some(node => tag(node) === "ScrollView"))
+    assert.ok(!nodes.some(node => tag(node) === "KeyboardAvoidingView"), "Do not add a second keyboard avoidance layer")
+    const composerStyle = composer.openingElement.attributes.properties.find(attr => attr.name?.text === "style").getText(source)
+    assert.match(composerStyle, /composerDockInFlow/)
+    const focus = input.attributes.properties.find(attr => attr.name?.text === "onFocus")
+    assert.ok(!focus || !/setMentorPage\(null\)/.test(focus.getText(source)), "Focusing input must preserve the open mentor form")
     const { createChatScreenStyles } = loadTs("screens/chat/chat-screen.styles.ts", {
         "react-native": { StyleSheet: { create: value => value, absoluteFillObject: { position: "absolute" } } },
         "@/theme/spacing": { spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 } },
@@ -41,9 +47,30 @@ test("course actions are pinned directly above the input and stay outside messag
     assert.equal(styles.fixedHeader.flexShrink, 0)
     assert.notEqual(styles.fixedHeader.position, "absolute")
     assert.notEqual(styles.topBarRow.position, "absolute")
-    assert.equal(styles.composerDock.position, "absolute")
+    const dock = { ...styles.composerDock, ...styles.mentorComposerDock, ...styles.composerDockInFlow }
+    assert.notEqual(dock.position, "absolute", "The AI composer reserves real space above the keyboard")
+    assert.equal(dock.flexShrink, 0)
     assert.equal(styles.chatBody.flex, 1)
+    assert.equal(styles.chatBody.minHeight, 0)
     assert.equal(styles.chatBody.overflow, "hidden")
+    assert.equal(styles.messagesScroll.flex, 1)
+    assert.equal(styles.messagesScroll.minHeight, 0)
+})
+
+test("iOS keyboard avoidance resizes the screen instead of translating its scroll area", () => {
+    const renderShell = platform => {
+        const { ChatKeyboardLayout } = loadTs("screens/chat/chat-keyboard-layout.tsx", {
+            "react-native": { KeyboardAvoidingView: "KeyboardAvoidingView", Platform: { OS: platform }, StyleSheet: { create: value => value } },
+        })
+        return ChatKeyboardLayout({ children: "chat content" })
+    }
+    const ios = renderShell("ios")
+    assert.equal(ios.type, "KeyboardAvoidingView")
+    assert.equal(ios.props.behavior, "padding")
+    assert.equal(ios.props.keyboardVerticalOffset ?? 0, 0, "Fullscreen shell uses screen coordinates without double-counting header height")
+    assert.equal(ios.props.contentContainerStyle, undefined, "A translated content wrapper must not return")
+    const android = renderShell("android")
+    assert.ok(android.props.enabled === false || android.props.behavior === undefined, "Android's native resize must not be applied a second time")
 })
 
 test("automatic timezone handles iPhone aliases and exact fractional offsets", () => {

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useIsFocused } from "@react-navigation/native"
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
-import { useTheme } from "@/providers/theme-provider"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { getErrorMessage } from "@/utils/errors"
 import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, getCompanionEntries, getCompanionEvents, getCompanionSummary, getCompanionSupply, getNutritionSuggestion, requestKey } from "@/services/api/companion"
@@ -13,6 +12,7 @@ import { useDeviceClock } from "@/hooks/chat/use-device-clock"
 import { DialogueCards, DialoguePanel } from "@/screens/chat/companion-dialogue"
 import type { MentorPage } from "@/screens/chat/mentor-data"
 import { goalLabels } from "@/screens/chat/mentor-data"
+import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
 
 type Page = "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
 type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry }
@@ -22,6 +22,11 @@ const settingsDefault: CompanionSettings = { timezone: "UTC", nutrition_auto_eli
 const emptyNutrition = (): Nutrition => ({ kcal: "", protein: "", fat: "", carbs: "" })
 const numberOrNull = (value: string) => value.trim() ? Number(value.replace(",", ".")) : null
 const legacyEntryPage = (kind?: EntryData["kind"]): Page => kind === "workout" || kind === "measurement" || kind === "progress_photo" ? "journal" : kind ?? "meal"
+const editorTitles: Record<Page, string> = {
+    home: "Мой наставник", consent: "Начнём знакомство", profile: "Мой профиль", plan: "Мой курс",
+    meal: "Добавить еду", weight: "Добавить вес", wellbeing: "Самочувствие", nutrition: "Настроить питание",
+    settings: "Настройки", journal: "Мой дневник", events: "События курса", summary: "Мои результаты", supply: "Запас курса",
+}
 
 export function useCompanion(enabled = true) {
     const focused = useIsFocused()
@@ -91,22 +96,24 @@ export function useCompanion(enabled = true) {
 }
 
 function Copy({ children }: { children: React.ReactNode }) {
-    const { palette } = useTheme()
-    return <Text style={{ color: palette.text, lineHeight: 21, fontSize: 14 }}>{children}</Text>
+    const colors = useMentorPalette()
+    return <Text style={[styles.copy, { color: colors.text }]}>{children}</Text>
 }
-function Button({ label, onPress, disabled = false }: { label: string; onPress: () => void; disabled?: boolean }) {
-    const { palette } = useTheme()
-    return <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress} style={[styles.button, { backgroundColor: palette.surfaceMuted, opacity: disabled ? 0.4 : 1 }]}><Text style={{ color: palette.primary, fontWeight: "600" }}>{label}</Text></Pressable>
+function Button({ label, onPress, disabled = false, primary = false, selected = false, danger = false }: { label: string; onPress: () => void; disabled?: boolean; primary?: boolean; selected?: boolean; danger?: boolean }) {
+    const colors = useMentorPalette()
+    const emphasized = primary || selected
+    return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ disabled, selected }} disabled={disabled} onPress={onPress} style={({ pressed }) => [styles.button, primary ? styles.primaryButton : null, { backgroundColor: emphasized ? colors.greenBright : colors.soft, opacity: disabled ? 0.4 : pressed ? 0.75 : 1 }]}><Text style={[styles.buttonText, { color: emphasized ? "#FFFFFF" : danger ? "#B55353" : colors.green }]}>{label}</Text></Pressable>
 }
 function Field({ label, value, onChange, numeric = false, multiline = false, disabled = false }: { label: string; value: unknown; onChange: (value: string) => void; numeric?: boolean; multiline?: boolean; disabled?: boolean }) {
-    const { palette } = useTheme()
-    return <View style={styles.field}><Copy>{label}</Copy><TextInput accessibilityLabel={label} editable={!disabled} value={value == null ? "" : String(value)} onChangeText={onChange} keyboardType={numeric ? "decimal-pad" : "default"} autoCapitalize="none" multiline={multiline} style={[styles.input, { color: palette.text, backgroundColor: palette.fieldBackground, borderColor: palette.border }]} /></View>
+    const colors = useMentorPalette()
+    return <View style={styles.field}><Text style={[styles.fieldLabel, { color: colors.muted }]}>{label}</Text><TextInput accessibilityLabel={label} editable={!disabled} value={value == null ? "" : String(value)} onChangeText={onChange} keyboardType={numeric ? "decimal-pad" : "default"} autoCapitalize="none" multiline={multiline} textAlignVertical={multiline ? "top" : "center"} selectionColor={colors.greenBright} style={[styles.input, multiline ? styles.multilineInput : null, { color: colors.text, backgroundColor: colors.soft, borderColor: colors.border, opacity: disabled ? 0.55 : 1 }]} /></View>
 }
 function Toggle({ label, value, onChange, disabled = false }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
-    return <View style={styles.toggle}><View style={{ flex: 1 }}><Copy>{label}</Copy></View><Switch accessibilityLabel={label} disabled={disabled} value={value} onValueChange={onChange} /></View>
+    const colors = useMentorPalette()
+    return <View style={[styles.toggle, { backgroundColor: colors.soft, opacity: disabled ? 0.55 : 1 }]}><View style={{ flex: 1 }}><Copy>{label}</Copy></View><Switch accessibilityLabel={label} disabled={disabled} value={value} onValueChange={onChange} trackColor={{ false: colors.border, true: colors.greenBright }} thumbColor="#FFFFFF" ios_backgroundColor={colors.border} /></View>
 }
 function Choices<T extends string>({ options, value, onChange }: { options: Record<T, string>; value?: string | null; onChange: (value: T) => void }) {
-    return <View style={styles.row}>{(Object.keys(options) as T[]).map(key => <Button key={key} label={(value === key ? "✓ " : "") + options[key]} onPress={() => onChange(key)} />)}</View>
+    return <View style={styles.row}>{(Object.keys(options) as T[]).map(key => <Button key={key} selected={value === key} label={(value === key ? "✓ " : "") + options[key]} onPress={() => onChange(key)} />)}</View>
 }
 function NutritionFields({ value, onChange, disabled = false }: { value: Nutrition; onChange: (n: Nutrition) => void; disabled?: boolean }) {
     const labels = { kcal: "Калории, ккал", protein: "Белки, г", fat: "Жиры, г", carbs: "Углеводы, г" }
@@ -154,30 +161,40 @@ export function CompanionCards({ controller: c, message, onChanged }: { controll
         <Copy>{card.state === "confirmed" ? "✓ Сохранено" : card.state === "cancelled" ? "Отменено" : "Черновик — проверьте данные"}</Copy>
         <Copy>{card.summary}</Copy><ProposalCopy proposal={card.proposal} clock={c.clock} />
         {card.state === "pending" ? <View style={styles.row}>
-            <Button label="Подтвердить" disabled={c.busy} onPress={() => void c.attempt(() => action(card, "confirm"))} />
+            <Button label="Подтвердить" primary disabled={c.busy} onPress={() => void c.attempt(() => action(card, "confirm"))} />
             <Button label="Исправить" disabled={c.busy} onPress={() => void c.attempt(() => action(card, "cancel", true))} />
             <Button label="Отмена" disabled={c.busy} onPress={() => void c.attempt(() => action(card, "cancel"))} />
         </View> : null}
     </View>)}</>
 }
 
-export function CompanionPanel({ controller: c, onChanged, openRequested, onPrompt, sending, workspaceVisible = false }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean; onPrompt?: (text: string) => Promise<unknown>; sending?: boolean; workspaceVisible?: boolean }) {
-    const { palette } = useTheme()
+export function CompanionPanel({ controller: c, onChanged, openRequested, onPrompt, sending, workspaceVisible = false, navigationVisible = true }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean; onPrompt?: (text: string) => Promise<unknown>; sending?: boolean; workspaceVisible?: boolean; navigationVisible?: boolean }) {
+    const colors = useMentorPalette()
     const hasProfile = !!c.state?.profile
     const setEditor = c.setEditor
     useEffect(() => { if (openRequested && hasProfile && c.state?.dialogue_protocol !== 2) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor, c.state?.dialogue_protocol])
     if (Platform.OS === "web" || !c.state?.available) return null
     const changed = async () => { await c.refresh(); await onChanged() }
     const dialogue = c.state.dialogue_protocol === 2 && onPrompt
-    return <View style={dialogue ? undefined : [styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-        {dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label="Мой курс · дневник · прогресс" disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} />}
+    return <View style={dialogue ? undefined : [styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        {navigationVisible ? dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label="Мой курс · дневник · прогресс" disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} /> : null}
         {c.error && !workspaceVisible ? <><Copy>{c.error}</Copy><Button label="Обновить" onPress={() => void changed()} /></> : null}
         <Modal visible={!!c.editor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => c.setEditor(null)}>
-            <KeyboardAvoidingView style={{ flex: 1, backgroundColor: palette.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-                <View style={styles.modalHeader}><Button label="Закрыть" onPress={() => c.setEditor(null)} />{c.busy ? <ActivityIndicator /> : null}</View>
+            <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.mint }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+                <View style={[styles.modalHeader, { backgroundColor: colors.surface }]}>
+                    <View style={styles.modalBrandRow}>
+                        <View style={[styles.modalAvatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={27} /></View>
+                        <Text style={[styles.modalBrand, { color: colors.green }]}>Наставник ElixirPeptide</Text>
+                        {c.busy ? <ActivityIndicator color={colors.greenBright} /> : null}
+                        <Pressable accessibilityRole="button" accessibilityLabel="Закрыть" onPress={() => c.setEditor(null)} style={({ pressed }) => [styles.modalClose, { backgroundColor: colors.soft, opacity: pressed ? 0.65 : 1 }]}><Text style={[styles.modalCloseText, { color: colors.green }]}>×</Text></Pressable>
+                    </View>
+                    <Text accessibilityRole="header" style={[styles.modalTitle, { color: colors.text }]}>{c.editor?.entry ? "Изменить запись" : editorTitles[c.editor?.page ?? "home"]}</Text>
+                </View>
                 <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modal}>
-                    {c.error ? <Copy>{c.error}</Copy> : null}
-                    {c.editor ? <CompanionContent key={JSON.stringify(c.editor)} controller={c} onChanged={changed} /> : null}
+                    <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
+                        {c.error ? <Copy>{c.error}</Copy> : null}
+                        {c.editor ? <CompanionContent key={JSON.stringify(c.editor)} controller={c} onChanged={changed} /> : null}
+                    </View>
                 </ScrollView>
             </KeyboardAvoidingView>
         </Modal>
@@ -227,7 +244,7 @@ function ConsentForm({ controller: c, onSave }: { controller: Controller; onSave
         <Copy>По вашему согласию приложение хранит профиль, курс, дневник и сообщения сопровождения. Для ответов нужный контекст и отправленные вами вложения передаются OpenAI. Напоминания по умолчанию выключены; данные можно удалить в настройках. Не отправляйте чужие медицинские документы.</Copy>
         <Toggle label="Мне исполнилось 18 лет" value={adult} onChange={setAdult} />
         <Toggle label={"Согласен на обработку указанных данных и передачу контекста OpenAI для сопровождения (" + c.state?.consent_version + ")"} value={accepted} onChange={setAccepted} />
-        <Button label="Включить" disabled={!adult || !accepted || c.busy} onPress={() => void c.attempt(() => onSave({ kind: "enable", adult_confirmed: adult, consent_version: c.state!.consent_version, settings: { ...settingsDefault, timezone: deviceCompanionTimezone() } }))} />
+        <Button label="Включить" primary disabled={!adult || !accepted || c.busy} onPress={() => void c.attempt(() => onSave({ kind: "enable", adult_confirmed: adult, consent_version: c.state!.consent_version, settings: { ...settingsDefault, timezone: deviceCompanionTimezone() } }))} />
     </>
 }
 
@@ -266,7 +283,7 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             <Choices options={{ low: "Низкая активность", light: "Лёгкая", moderate: "Умеренная", high: "Высокая" }} value={person.activity} onChange={activity => setPerson({ ...person, activity })} />
             <Field label="Пищевые предпочтения" multiline value={person.preferences} onChange={preferences => setPerson({ ...person, preferences })} />
             <Field label="Известные вам ограничения" multiline value={person.restrictions} onChange={restrictions => setPerson({ ...person, restrictions })} />
-            <Button label="Сохранить профиль" disabled={c.busy} onPress={() => save({ kind: "profile", profile: person })} />
+            <Button label="Сохранить профиль" primary disabled={c.busy} onPress={() => save({ kind: "profile", profile: person })} />
         </> : null}
         {page === "nutrition" ? <>
             <Copy>КБЖУ на день: готовые значения можно внести вручную. Авторасчёт предлагает стартовый ориентир и не меняет прошлые записи.</Copy>
@@ -288,7 +305,7 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             })} />
             {suggestionNote ? <Copy>{suggestionNote}</Copy> : null}
             <NutritionFields value={nutrition} disabled={calculating || c.busy} onChange={value => { setNutrition(value); setRuleVersion(undefined); setSuggestionNote("Ручные значения — проверьте перед сохранением.") }} />
-            <Button label="Подтвердить КБЖУ" disabled={c.busy || calculating} onPress={() => save({ kind: "nutrition", nutrition, nutrition_rule_version: ruleVersion })} />
+            <Button label="Подтвердить КБЖУ" primary disabled={c.busy || calculating} onPress={() => save({ kind: "nutrition", nutrition, nutrition_rule_version: ruleVersion })} />
         </> : null}
         {["meal", "weight", "wellbeing"].includes(page) ? <>
             <Field label="Дата и время телефона, ГГГГ-ММ-ДД ЧЧ:ММ" value={entryDateText} onChange={value => {
@@ -299,9 +316,9 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             {page === "weight" ? <Field label="Вес, кг" value={entry.weight_kg} numeric onChange={text => setEntry({ ...entry, weight_kg: numberOrNull(text) })} /> : null}
             {page === "wellbeing" ? <>{(["wellbeing", "appetite", "energy", "sleep_hours"] as const).map((key, i) => <Field key={key} label={["Самочувствие, 1–5", "Аппетит, 1–5", "Энергия, 1–5", "Сон, часов"][i]} value={entry[key]} numeric onChange={text => setEntry({ ...entry, [key]: numberOrNull(text) })} />)}</> : null}
             <Field label="Комментарий" multiline value={entry.note} onChange={note => setEntry({ ...entry, note })} />
-            <Button label={editor.entry ? "Сохранить исправление" : "Подтвердить запись"} disabled={c.busy} onPress={() => void c.attempt(() => onSave({ kind: "entry", entry: { ...entry, occurred_at: localEntryTimestamp(entryDateText, entry.occurred_at) }, resource_id: editor.entry?.id, expected_version: editor.entry?.version }))} />
+            <Button label={editor.entry ? "Сохранить исправление" : "Подтвердить запись"} primary disabled={c.busy} onPress={() => void c.attempt(() => onSave({ kind: "entry", entry: { ...entry, occurred_at: localEntryTimestamp(entryDateText, entry.occurred_at) }, resource_id: editor.entry?.id, expected_version: editor.entry?.version }))} />
         </> : null}
-        {page === "plan" ? <><Copy>Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.</Copy><Field label="Название курса" value={plan.name} onChange={name => setPlan({ ...plan, name })} /><Copy>{plan.timezone === deviceCompanionTimezone() ? "Время определяется по телефону автоматически." : `Исходная схема записана в ${plan.timezone}. Её время не сдвигается при поездке; события в дневнике показаны по времени телефона.`}</Copy><PlanFields plan={plan} onChange={setPlan} /><Button label="Подтвердить и сохранить курс" disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
+        {page === "plan" ? <><Copy>Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.</Copy><Field label="Название курса" value={plan.name} onChange={name => setPlan({ ...plan, name })} /><Copy>{plan.timezone === deviceCompanionTimezone() ? "Время определяется по телефону автоматически." : `Исходная схема записана в ${plan.timezone}. Её время не сдвигается при поездке; события в дневнике показаны по времени телефона.`}</Copy><PlanFields plan={plan} onChange={setPlan} /><Button label="Подтвердить и сохранить курс" primary disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
         {page === "settings" ? <>
             <Copy>Push включается в настройках уведомлений приложения. Здесь задаётся, о чём и когда напоминать. Пустое время выключает напоминание.</Copy>
             <Copy>Дневник и ежедневные напоминания используют время телефона автоматически. При поездке старые записи отображаются в новом местном времени; подтверждённые события курса не переносятся.</Copy>
@@ -314,9 +331,9 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             <Field label="День недельной сводки: 0 пн … 6 вс" value={settings.weekly_day} numeric onChange={text => setSettings({ ...settings, weekly_day: Number(text) })} />
             <Toggle label="Напоминать о нехватке запаса" value={settings.supply_reminders} onChange={supply_reminders => setSettings({ ...settings, supply_reminders })} />
             <Field label="Проверять запас на ближайшие N дней" value={settings.supply_days} numeric onChange={text => setSettings({ ...settings, supply_days: Number(text) })} />
-            <Button label="Сохранить настройки" disabled={c.busy} onPress={() => save({ kind: "settings", settings })} />
+            <Button label="Сохранить настройки" primary disabled={c.busy} onPress={() => save({ kind: "settings", settings })} />
             <Button label="Выключить сопровождение" disabled={c.busy} onPress={() => Alert.alert("Выключить?", "Напоминания прекратятся; дневник сохранится. Обычный чат начнёт новый контекст.", [{ text: "Отмена" }, { text: "Выключить", onPress: () => void c.attempt(async () => { await c.perform({ kind: "disable", expected_version: version }); c.setEditor(null); await c.refresh() }) }])} />
-            <Button label="Удалить данные сопровождения" disabled={c.busy} onPress={() => Alert.alert("Удалить без восстановления?", "Будут удалены профиль, курс, дневник и сообщения сопровождения. Удаление копий диалогов и файлов у OpenAI будет поставлено в очередь с повторными попытками.", [{ text: "Отмена" }, { text: "Удалить", style: "destructive", onPress: () => void c.attempt(async () => { await eraseCompanion(); c.setEditor(null); await onChanged() }) }])} />
+            <Button label="Удалить данные сопровождения" danger disabled={c.busy} onPress={() => Alert.alert("Удалить без восстановления?", "Будут удалены профиль, курс, дневник и сообщения сопровождения. Удаление копий диалогов и файлов у OpenAI будет поставлено в очередь с повторными попытками.", [{ text: "Отмена" }, { text: "Удалить", style: "destructive", onPress: () => void c.attempt(async () => { await eraseCompanion(); c.setEditor(null); await onChanged() }) }])} />
         </> : null}
     </>
 }
@@ -341,7 +358,7 @@ function PlanFields({ plan, onChange }: { plan: PlanData; onChange: (plan: PlanD
                 <Field label="Время, ЧЧ:ММ; несколько через запятую" value={stage.times.join(", ")} onChange={text => change({ times: text.split(",").map(t => t.trim()) })} />
                 <Field label="Интервал в днях (1 = ежедневно)" value={stage.interval_days} numeric onChange={text => change({ interval_days: Number(text), weekdays: [] })} />
                 <Copy>Или конкретные дни недели:</Copy>
-                <View style={styles.row}>{["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((d, day) => <Button key={day} label={(stage.weekdays.includes(day) ? "✓ " : "") + d} onPress={() => change({ interval_days: 1, weekdays: stage.weekdays.includes(day) ? stage.weekdays.filter(v => v !== day) : [...stage.weekdays, day] })} />)}</View>
+                <View style={styles.row}>{["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((d, day) => <Button key={day} selected={stage.weekdays.includes(day)} label={(stage.weekdays.includes(day) ? "✓ " : "") + d} onPress={() => change({ interval_days: 1, weekdays: stage.weekdays.includes(day) ? stage.weekdays.filter(v => v !== day) : [...stage.weekdays, day] })} />)}</View>
                 {item.stages.length > 1 ? <Button label="Удалить этап из черновика" onPress={() => itemChange(i, { stages: item.stages.filter((_, n) => n !== j) })} /> : null}
             </View>
         })}
@@ -400,13 +417,25 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
 }
 
 const styles = StyleSheet.create({
-    panel: { borderWidth: 1, borderRadius: 16, padding: 4, gap: 8 },
+    panel: { borderWidth: 1, borderRadius: 18, padding: 6, gap: 8 },
+    copy: { fontSize: 15, lineHeight: 23, flexShrink: 1 },
     row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    button: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, alignSelf: "flex-start", minHeight: 44 },
-    card: { padding: 12, borderRadius: 12, borderWidth: 1, borderColor: "#8191a333", gap: 10, marginVertical: 5 },
-    field: { gap: 5, marginVertical: 4 },
-    input: { borderWidth: 1, borderRadius: 10, padding: 12, minHeight: 46, fontSize: 16 },
-    toggle: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 8 },
-    modalHeader: { paddingTop: 16, paddingHorizontal: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    modal: { padding: 20, paddingBottom: 60, gap: 12 },
+    button: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 13, alignSelf: "flex-start", minHeight: 48, maxWidth: "100%", justifyContent: "center", alignItems: "center" },
+    primaryButton: { alignSelf: "stretch", marginTop: 6 },
+    buttonText: { fontSize: 15, lineHeight: 21, fontWeight: "600", textAlign: "center", flexShrink: 1 },
+    card: { padding: 14, borderRadius: 18, borderWidth: 1, borderColor: "#86AC953D", gap: 12, marginVertical: 5 },
+    field: { gap: 6, marginVertical: 2 },
+    fieldLabel: { fontSize: 14, lineHeight: 21, fontWeight: "500" },
+    input: { borderWidth: 1, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 12, minHeight: 50, fontSize: 16, lineHeight: 23 },
+    multilineInput: { minHeight: 98 },
+    toggle: { flexDirection: "row", alignItems: "center", gap: 12, padding: 13, borderRadius: 14 },
+    modalHeader: { paddingTop: 16, paddingHorizontal: 18, paddingBottom: 20, gap: 15, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+    modalBrandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+    modalAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+    modalBrand: { flex: 1, fontSize: 15, lineHeight: 22, fontWeight: "600" },
+    modalTitle: { fontSize: 26, lineHeight: 33, fontWeight: "600" },
+    modalClose: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+    modalCloseText: { fontSize: 28, lineHeight: 32, fontWeight: "400" },
+    modal: { padding: 14, paddingBottom: 50, width: "100%", maxWidth: 700, alignSelf: "center" },
+    modalCard: { padding: 18, borderRadius: 22, gap: 15 },
 })

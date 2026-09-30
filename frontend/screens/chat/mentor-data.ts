@@ -1,6 +1,6 @@
 import type { CompanionEntry, Workout, WorkoutPlan } from "@/services/api/companion"
 
-export type MentorPage = "today" | "nutrition" | "workouts" | "course" | "progress" | "more" | "adjust"
+export type MentorPage = "today" | "nutrition" | "workouts" | "course" | "progress" | "more" | "adjust" | "ask"
 export const measurementLabels = { waist_cm: "Талия, см", chest_cm: "Грудь, см", hips_cm: "Бёдра, см", arm_cm: "Рука, см", thigh_cm: "Бедро, см", body_fat_percent: "Жир, % (измеренный)" }
 export const goalLabels = { weight_loss: "Снижение веса", weight_gain: "Набор веса", maintain: "Поддержание", custom: "Своя цель", course: "Сопровождение курса" }
 export function numeric(value: unknown): number | null {

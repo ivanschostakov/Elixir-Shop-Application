@@ -1,32 +1,46 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Alert, Pressable, ScrollView, View } from "react-native"
-import { Calendar } from "react-native-calendars"
-import Svg, { Circle, Line, Polyline } from "react-native-svg"
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native"
+import { Calendar, LocaleConfig } from "react-native-calendars"
 import { useRouter } from "expo-router"
 import { useTheme } from "@/providers/theme-provider"
-import { ProfileIcon, SavedIcon, SmileBubbleIcon } from "@/components/footer/sticky-footer.icons"
+import { ProfileIcon, SavedIcon } from "@/components/footer/sticky-footer.icons"
 import CameraIcon from "@/assets/icons/chat/camera-svgrepo-com.svg"
 import MicrophoneIcon from "@/assets/icons/chat/microphone-alt-svgrepo-com.svg"
 import { companionDialogue, getCompanionEntries, getCompanionEvents, getCompanionFavoriteMeals, getCompanionSummary, requestKey } from "@/services/api/companion"
-import type { CompanionAction, CompanionEntry, CompanionEvent, EntryData, Measurement, Summary } from "@/services/api/companion"
+import type { CompanionAction, CompanionEntry, CompanionEvent, EntryData, Measurement, MentorDashboard, Summary } from "@/services/api/companion"
 import type { AIAttachmentRead, AIMessageRead } from "@/services/api/ai-chat.types"
 import type { useCompanion } from "@/screens/chat/companion"
 import { calendarDate, companionCalendarDay, formatCompanionDate, localDateTime, localEntryTimestamp } from "@/screens/chat/companion-timezones"
-import { chartPoints, goalLabels, measurementLabels, numeric, recordedMean, repeatMeal, workoutTotals } from "@/screens/chat/mentor-data"
+import { goalLabels, measurementLabels, numeric, repeatMeal } from "@/screens/chat/mentor-data"
 import type { MentorPage } from "@/screens/chat/mentor-data"
 import { MentorWorkouts } from "@/screens/chat/mentor-workouts"
+import { MentorProgress } from "@/screens/chat/mentor-progress"
 import { MentorPhotos } from "@/screens/chat/mentor-photos"
-import { MentorButton as Button, MentorField as Field, MentorTabs as Tabs, MentorText as Copy, mentorStyles as styles } from "@/screens/chat/mentor-ui"
+import { MentorButton as Button, MentorField as Field, MentorTabs as Tabs, MentorText as Copy, mentorStyles as styles, MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
+
+LocaleConfig.locales["mentor-ru"] = {
+    monthNames: ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"],
+    monthNamesShort: ["Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек"],
+    dayNames: ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"],
+    dayNamesShort: ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"], today: "Сегодня",
+}
+LocaleConfig.defaultLocale = "mentor-ru"
 
 type Controller = ReturnType<typeof useCompanion>
 export type MentorComposeMode = "text" | "photo" | "voice"
 export const mentorNavigation = { today: "Сегодня", nutrition: "Питание", workouts: "Тренировки", course: "Мой курс", more: "Ещё" } as const
 export function MentorNavigation({ controller: c }: { controller: Controller }) {
-    return <Tabs items={mentorNavigation} value={c.mentorPage && c.mentorPage in mentorNavigation ? c.mentorPage as keyof typeof mentorNavigation : null} onChange={page => { c.setEditor(null); c.setMentorPage(page) }} />
+    const colors = useMentorPalette()
+    const icons = { today: "calendar", nutrition: "food", workouts: "workout", course: "book", more: "more" } as const
+    return <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.navigation}>
+        <View accessibilityRole="tablist" style={{ flexDirection: "row", gap: 4 }}>{(Object.keys(mentorNavigation) as (keyof typeof mentorNavigation)[]).map(page => <Pressable key={page} accessibilityRole="tab" accessibilityState={{ selected: c.mentorPage === page }} accessibilityLabel={mentorNavigation[page]} onPress={() => { c.setEditor(null); c.setMentorPage(page) }} style={({ pressed }) => [styles.navigationPill, { backgroundColor: colors.surface, opacity: pressed ? 0.7 : 1 }]}><MentorIcon name={icons[page]} size={14} color={colors.blue} /><Text style={[styles.navigationText, { color: colors.blue }]}>{mentorNavigation[page]}</Text></Pressable>)}</View>
+    </ScrollView>
 }
 
-export function MentorWorkspace({ controller: c, onCompose, onPrompt, photoMessages = [], renderPhotoAttachments = () => null }: { controller: Controller; onCompose: (mode: MentorComposeMode, text: string) => void; onPrompt: (text: string) => Promise<unknown>; photoMessages?: AIMessageRead[]; renderPhotoAttachments?: (attachments: AIAttachmentRead[]) => React.ReactNode }) {
+export function MentorWorkspace({ controller: c, onCompose, onPrompt, displayName, photoMessages = [], renderPhotoAttachments = () => null }: { controller: Controller; displayName?: string | null; onCompose: (mode: MentorComposeMode, text: string) => void; onPrompt: (text: string) => Promise<unknown>; photoMessages?: AIMessageRead[]; renderPhotoAttachments?: (attachments: AIAttachmentRead[]) => React.ReactNode }) {
     const { palette } = useTheme()
+    const colors = useMentorPalette()
+    const { width: screenWidth } = useWindowDimensions()
     const router = useRouter()
     const [entries, setEntries] = useState<CompanionEntry[]>(c.state?.entries ?? [])
     const [loading, setLoading] = useState(false)
@@ -39,8 +53,6 @@ export function MentorWorkspace({ controller: c, onCompose, onPrompt, photoMessa
     const [repeating, setRepeating] = useState<CompanionEntry | null>(null)
     const [progressTab, setProgressTab] = useState<"weight" | "nutrition" | "workouts" | "course" | "measurements" | "photos">("weight")
     const [summary, setSummary] = useState<Summary | null>(null)
-    const [selectedWeight, setSelectedWeight] = useState<number | null>(null)
-    const [chartWidth, setChartWidth] = useState(320)
     const [historyFrom, setHistoryFrom] = useState(calendarDate(-29))
     const [historyTo, setHistoryTo] = useState(calendarDate(1))
     const [historyRange, setHistoryRange] = useState({ from: calendarDate(-29), to: calendarDate(1) })
@@ -87,7 +99,7 @@ export function MentorWorkspace({ controller: c, onCompose, onPrompt, photoMessa
     const go = (page: MentorPage) => { setAddFood(false); c.setError(""); c.setMentorPage(page) }
     const compose = (mode: MentorComposeMode, text: string) => { c.setMentorPage(null); onCompose(mode, text) }
     const ask = (text: string) => void c.attempt(async () => { c.setMentorPage(null); await onPrompt(text) })
-    const report = () => void c.attempt(async () => { await companionDialogue("progress", days); c.setMentorPage(null); await onPrompt("") })
+    const report = (period: 7 | 30) => void c.attempt(async () => { await companionDialogue("progress", period); c.setMentorPage(null); await onPrompt("") })
     const mentor = c.state?.mentor
     const latest = mentor?.latest_weight
     const nutrition = mentor?.today.nutrition
@@ -95,33 +107,46 @@ export function MentorWorkspace({ controller: c, onCompose, onPrompt, photoMessa
     const sortedEntries = [...entries].sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at))
     const meals = mealMode === "favorites" ? favorites : sortedEntries.filter(entry => entry.kind === "meal")
     const periodEntries = progressEntries.filter(entry => Date.parse(entry.occurred_at) <= Date.now())
-    const points = chartPoints(periodEntries, chartWidth)
-    const point = points.find(value => value.id === selectedWeight) ?? points[points.length - 1]
-    const averageWeight = recordedMean(weeklyEntries, "weight", "weight_kg")
-    const targetWeight = numeric(c.state?.profile?.data.target_weight_kg)
-    const latestWeight = numeric(latest?.data.weight_kg)
+    const workoutTask = tasks.find(task => task.kind === "workout" && task.status !== "done") ?? tasks.find(task => task.kind === "workout")
+    const courseTask = tasks.find(task => task.kind === "course" && task.status === "pending")
+    const localTime = (date: string) => formatCompanionDate(date, c.clock).match(/(\d{2}:\d{2})(?::\d{2})?/)?.[1] ?? ""
+    const numberLabel = (value: unknown) => numeric(value)?.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) ?? "—"
     const page = c.mentorPage
     if (!page) return null
-    return <View testID="mentor-workspace" style={[styles.body, { backgroundColor: palette.surface }]}>
-        <View style={[styles.row, { justifyContent: "space-between" }]}><View style={{ flex: 1 }}><Copy heading>Наставник ElixirPeptide</Copy></View><Pressable accessibilityRole="button" accessibilityLabel="Вернуться к диалогу" onPress={() => c.setMentorPage(null)} style={{ padding: 12 }}><SmileBubbleIcon color={palette.primary} /></Pressable></View>
-        {c.error ? <><Copy>{c.error}</Copy><Button label="Обновить данные" onPress={() => void c.attempt(async () => { await c.refresh(); await load() })} /></> : null}
-        {loading || c.busy ? <ActivityIndicator color={palette.primary} /> : null}
+    return <View testID="mentor-workspace" style={[styles.body, { backgroundColor: colors.surface }, page === "today" ? { gap: 12, padding: 14 } : null]}>
+        <View style={styles.header}>
+            {page !== "today" ? <Pressable accessibilityRole="button" accessibilityLabel="Назад к сегодняшнему плану" onPress={() => go("today")} hitSlop={8} style={{ minHeight: 36, justifyContent: "center" }}><MentorIcon name="back" size={18} color={colors.green} /></Pressable> : null}
+            <View style={[styles.avatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={26} /></View>
+            <Text style={[styles.heading, { color: colors.green, fontSize: screenWidth < 360 ? 14 : 16 }]}>Наставник ElixirPeptide</Text>
+            {page === "today" ? <Text style={[styles.time, { color: colors.muted }]}>{localTime(new Date().toISOString())}</Text> : null}
+        </View>
+        {c.error ? <View style={[styles.notice, { backgroundColor: colors.mint }]}><Copy>{c.error}</Copy><Button label="Обновить данные" onPress={() => void c.attempt(async () => { await c.refresh(); await load() })} /></View> : null}
+        {c.busy || loading && page !== "today" ? <ActivityIndicator color={colors.green} /> : null}
         {page === "today" ? <>
-            <Copy heading>Ваш план на сегодня</Copy><Copy muted>{new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" })}</Copy>
-            <View style={styles.row}><View style={styles.metric}><Copy muted>Питание</Copy><Copy heading>{nutrition ? `${nutrition.consumed.kcal}${nutrition.target ? ` / ${nutrition.target.kcal}` : ""} ккал` : "Нет записей"}</Copy></View><View style={styles.metric}><Copy muted>Осталось</Copy><Copy heading>{nutrition?.remaining ? `${nutrition.remaining.kcal} ккал` : "Цель не задана"}</Copy></View></View>
-            <Copy muted>Приёмов пищи записано сегодня: {c.state?.today?.meals_logged ?? 0}</Copy>
-            <Copy>Вес: {latest ? `${latest.data.weight_kg} кг` : "ещё не записан"}{c.state?.profile?.data.target_weight_kg ? ` · цель ${c.state.profile.data.target_weight_kg} кг` : ""}</Copy>
-            {latest ? <Copy muted>{formatCompanionDate(latest.occurred_at, c.clock)}</Copy> : null}
-            <View style={styles.section}>{tasks.length ? <><Copy>Выполнено {tasks.filter(task => task.status === "done").length} из {tasks.length} запланированных событий</Copy>{tasks.map(task => <View key={task.id} style={styles.row}><View style={{ flex: 1 }}><Copy>{task.label}</Copy><Copy muted>{task.status === "done" ? "Выполнено" : task.status === "skipped" ? "Пропущено" : task.status === "in_progress" ? "В процессе" : task.scheduled_at ? formatCompanionDate(task.scheduled_at, c.clock) : "Запланировано"}</Copy></View><Button label={task.kind === "workout" ? "Тренировка" : "Открыть"} onPress={() => go(task.kind === "workout" ? "workouts" : "course")} /></View>)}</> : <Copy muted>На сегодня нет запланированных событий.</Copy>}</View>
-            <Button label="Добавить еду" primary onPress={() => { setAddFood(true); c.setMentorPage("nutrition") }} />
-            <View style={styles.row}><View style={{ flex: 1 }}><Button label="Начать тренировку" onPress={() => go("workouts")} /></View><View style={{ flex: 1 }}><Button label="Открыть курс" onPress={() => go("course")} /></View></View>
-            <View style={styles.row}><View style={{ flex: 1 }}><Button label="Самочувствие" onPress={() => c.setEditor({ page: "wellbeing" })} /></View><View style={{ flex: 1 }}><Button label="Прогресс" onPress={() => go("progress")} /></View></View><Button label="Скорректировать план" onPress={() => go("adjust")} />
+            <Copy style={styles.greeting}>Добрый день{displayName?.trim() ? `, ${displayName.trim().split(" ")[0]}` : ""}!</Copy>
+            <View style={styles.plan}>
+                <Copy style={[styles.planLine, { fontWeight: "700", marginBottom: 2 }]}>Ваш план на сегодня:</Copy>
+                <Text style={[styles.planLine, { color: colors.text }]}>🍽️ <Text style={{ fontWeight: "700" }}>Питание: </Text>{nutrition ? `${numberLabel(nutrition.consumed.kcal)}${nutrition.target ? ` из ${numberLabel(nutrition.target.kcal)}` : ""} ккал` : "пока нет записей"}</Text>
+                <Text style={[styles.planLine, { color: colors.text }]}>🏋️ <Text style={{ fontWeight: "700" }}>Силовая: </Text>{workoutTask ? `${workoutTask.label}${workoutTask.scheduled_at ? ` · ${localTime(workoutTask.scheduled_at)}` : workoutTask.status === "done" ? " · выполнена" : workoutTask.status === "in_progress" ? " · в процессе" : ""}` : mentor?.workout_plan ? "день отдыха" : "план не добавлен"}</Text>
+                <Text style={[styles.planLine, { color: colors.text }]}>🧬 <Text style={{ fontWeight: "700" }}>Курс: </Text>{courseTask ? `напоминание${courseTask.scheduled_at ? ` · ${localTime(courseTask.scheduled_at)}` : " сегодня"}` : c.state?.plan ? (c.state.plan.status === "paused" ? "напоминания на паузе" : c.state.plan.status === "completed" ? "завершён" : tasks.some(task => task.kind === "course" && task.status === "skipped") ? "есть пропущенные отметки" : tasks.some(task => task.kind === "course" && task.status === "done") ? "выполнено" : "сегодня без напоминаний") : "не добавлен"}</Text>
+                <Text style={[styles.planLine, { color: colors.text }]}>⚖️ <Text style={{ fontWeight: "700" }}>Вес: </Text>{latest ? `${numberLabel(latest.data.weight_kg)} кг` : "ещё не записан"}{c.state?.profile?.data.target_weight_kg ? ` · цель ${numberLabel(c.state.profile.data.target_weight_kg)} кг` : ""}</Text>
+            </View>
+            {!nutrition?.target ? <Pressable accessibilityRole="button" accessibilityLabel="Дополнить профиль" onPress={() => c.setEditor({ page: "profile" })} style={[styles.notice, { backgroundColor: colors.mint }]}><Copy style={{ color: colors.green }}>Дополните профиль, чтобы рассчитать ваш план →</Copy></Pressable> : null}
+            {tasks.length ? <Copy style={{ fontSize: 17 }}>Выполнено {tasks.filter(task => task.status === "done").length} из {tasks.length}</Copy> : <Copy muted>На сегодня нет запланированных событий.</Copy>}
+            <View style={styles.actions}>
+                <Button label="Добавить еду" icon={<MentorIcon name="plus" size={24} color="#FFFFFF" />} primary onPress={() => { setAddFood(true); c.setMentorPage("nutrition") }} />
+                <View style={styles.actionRow}><View style={styles.actionCell}><Button compact label="Начать тренировку" icon={<MentorIcon name="workout" size={20} color={colors.green} />} onPress={() => go("workouts")} /></View><View style={styles.actionCell}><Button compact label="Открыть курс" icon={<MentorIcon name="book" size={20} color={colors.green} />} onPress={() => go("course")} /></View></View>
+                <View style={styles.actionRow}><View style={styles.actionCell}><Button compact label="Самочувствие" icon={<MentorIcon name="smile" color={colors.green} />} onPress={() => c.setEditor({ page: "wellbeing" })} /></View><View style={styles.actionCell}><Button compact label="Прогресс" icon={<MentorIcon name="progress" color={colors.green} />} onPress={() => go("progress")} /></View></View>
+                <Button label="Скорректировать план" icon={<MentorIcon name="adjust" color={colors.green} />} onPress={() => go("adjust")} />
+            </View>
         </> : null}
         {page === "nutrition" ? <>
             <Copy heading>Питание</Copy>
-            {nutrition ? <><Copy>{nutrition.consumed.kcal} ккал за сегодня{nutrition.target ? ` из ${nutrition.target.kcal}` : ""}</Copy><View style={styles.row}>{(["protein", "fat", "carbs"] as const).map((key, index) => <View key={key} style={styles.metric}><Copy muted>{["Белки", "Жиры", "Углеводы"][index]}</Copy><Copy>{nutrition.consumed[key]} г{nutrition.target ? ` / ${nutrition.target[key]} г` : ""}</Copy></View>)}</View>{nutrition.remaining ? <Copy>Осталось: {nutrition.remaining.kcal} ккал · Б {nutrition.remaining.protein} · Ж {nutrition.remaining.fat} · У {nutrition.remaining.carbs} г</Copy> : <Button label="Задать ориентиры питания" onPress={() => c.setEditor({ page: "nutrition" })} />}</> : null}
+            {nutrition ? <NutritionOverview nutrition={nutrition} /> : <Copy muted>Запишите первый приём пищи, чтобы увидеть итоги дня.</Copy>}
+            {nutrition && !nutrition.target ? <Button label="Задать ориентиры питания" onPress={() => c.setEditor({ page: "nutrition" })} /> : null}
             <Button label="Добавить еду" primary onPress={() => setAddFood(value => !value)} />
-            {addFood ? <View style={styles.section}><Button label="Фото еды" icon={<CameraIcon width={22} height={22} color={palette.text} />} onPress={() => compose("photo", "Хочу записать еду по фото. Уточни порцию и предложи запись для подтверждения.")} /><Button label="Рассказать голосом" icon={<MicrophoneIcon width={22} height={22} color={palette.text} />} onPress={() => compose("voice", "")} /><Button label="Написать о еде" onPress={() => compose("text", "Хочу записать еду: ")} /><Button label="Внести КБЖУ вручную" onPress={() => c.setEditor({ page: "meal" })} /></View> : null}
+            {addFood ? <View style={[styles.notice, { backgroundColor: colors.mint }]}><Copy>Отправьте фотографию еды, голосовое сообщение или напишите, что вы съели.</Copy><Copy muted>Например: «гречка 150 г, куриная грудка 200 г и овощной салат».</Copy><Button label="Фото еды" icon={<CameraIcon width={22} height={22} color={palette.text} />} onPress={() => compose("photo", "Хочу записать еду по фото. Уточни порцию и предложи запись для подтверждения.")} /><Button label="Рассказать голосом" icon={<MicrophoneIcon width={22} height={22} color={palette.text} />} onPress={() => compose("voice", "")} /><Button label="Написать о еде" onPress={() => compose("text", "Хочу записать еду: ")} /><Button label="Внести КБЖУ вручную" onPress={() => c.setEditor({ page: "meal" })} /></View> : null}
+            <View style={styles.actionRow}><View style={styles.actionCell}><Button label="Что мне поесть?" icon={<MentorIcon name="food" color={colors.green} />} onPress={() => ask("Что мне поесть? Учти подтверждённые приёмы пищи за сегодня, оставшиеся калории и белок, мои любимые блюда, предпочтения и ограничения.")} /></View><View style={styles.actionCell}><Button label="Найти продукт" icon={<MentorIcon name="search" color={colors.green} />} onPress={() => compose("text", "Хочу найти продукт: ")} /></View></View>
             <Tabs items={{ recent: "Недавние", favorites: "Избранное", history: "История" }} value={mealMode} onChange={setMealMode} />
             {mealMode === "history" ? <View style={styles.row}><Field label="С даты, ГГГГ-ММ-ДД" value={historyFrom} onChange={setHistoryFrom} /><Field label="До даты (не включая)" value={historyTo} onChange={setHistoryTo} /><Button label="Загрузить историю" disabled={loading} onPress={() => setHistoryRange({ from: historyFrom, to: historyTo })} /></View> : null}
             {repeating ? <View style={styles.section}><Copy heading>Повторить приём пищи?</Copy><MealCopy entry={repeating} /><Button label="Подтвердить на сейчас" primary disabled={c.busy} onPress={() => void c.attempt(async () => { await save({ kind: "entry", entry: repeatMeal(repeating, repeating.data.occurred_at) }); setRepeating(null) })} /><Button label="Исправить перед записью" onPress={() => { c.setEditor({ page: "meal", proposal: { kind: "entry", summary: "", entry: repeatMeal(repeating, repeating.data.occurred_at) } }); setRepeating(null) }} /><Button label="Отмена" onPress={() => setRepeating(null)} /></View> : null}
@@ -131,36 +156,33 @@ export function MentorWorkspace({ controller: c, onCompose, onPrompt, photoMessa
         </> : null}
         {page === "workouts" ? <MentorWorkouts controller={c} entries={entries} onChanged={load} /> : null}
         {page === "course" ? <MentorCourse controller={c} /> : null}
-        {page === "progress" ? <>
-            <Copy heading>Прогресс за {days} дней</Copy><Copy muted>{calendarDate(1 - days)} – {calendarDate()}</Copy>
-            <Tabs items={{ "7": "7 дней", "30": "30 дней" }} value={String(days) as "7" | "30"} onChange={value => setDays(Number(value) as 7 | 30)} />
-            <Tabs items={{ weight: "Вес", nutrition: "Питание", workouts: "Тренировки", course: "Курс", measurements: "Замеры", photos: "Фото" }} value={progressTab} onChange={setProgressTab} />
-            <Copy muted>Энергия за {days} дней: {summary?.wellbeing?.average_energy == null ? "нет данных" : `${summary.wellbeing.average_energy}/5 · ${summary.wellbeing.energy_measurements ?? "—"} измерений`}</Copy>
-            {progressTab === "weight" ? <>
-                <Copy heading>{summary?.weight_change_kg != null ? `${Number(summary.weight_change_kg) > 0 ? "+" : ""}${summary.weight_change_kg} кг` : "Недостаточно данных для изменения"}</Copy>
-                <Copy muted>Средний вес за 7 дней: {averageWeight.value == null ? "нет измерений" : `${averageWeight.value} кг · ${averageWeight.count} измерений`}</Copy>
-                {weeklyEntries.length >= 200 ? <Copy muted>Среднее рассчитано по последним 200 измерениям.</Copy> : null}
-                {targetWeight != null && latestWeight != null ? <Copy>Цель: {targetWeight} кг · разница с последним весом: {Math.abs(targetWeight - latestWeight).toFixed(1)} кг</Copy> : null}
-                <View onLayout={event => setChartWidth(Math.max(220, event.nativeEvent.layout.width))} style={{ height: 190, width: "100%" }}>
-                    {points.length ? <Svg width="100%" height={180} viewBox={`0 0 ${chartWidth} 180`} accessibilityLabel="График измерений веса">
-                        {[20, 90, 160].map(y => <Line key={y} x1={20} x2={chartWidth - 20} y1={y} y2={y} stroke={palette.border} />)}
-                        <Polyline points={points.map(value => `${value.x},${value.y}`).join(" ")} stroke="#27855F" strokeWidth={3} fill="none" />
-                        {points.map(value => <Circle key={value.id} cx={value.x} cy={value.y} r={value.id === point?.id ? 8 : 5} fill={palette.surface} stroke="#27855F" strokeWidth={3} onPress={() => { setSelectedWeight(value.id); return {} }} />)}
-                    </Svg> : <Copy muted>В этом периоде нет измерений веса.</Copy>}
-                </View>
-                {point ? <Copy>{new Date(point.date).toLocaleDateString("ru-RU")} · {point.value} кг</Copy> : null}
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}><View style={[styles.row, { flexWrap: "nowrap" }]}>{points.map(value => <Button key={value.id} label={`${new Date(value.date).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}: ${value.value} кг`} onPress={() => setSelectedWeight(value.id)} />)}</View></ScrollView>
-                <Copy muted>{summary ? `${summary.weight_measurements} измерений за период. Вес не показывает состав тела.` : "Загружаем сводку…"}</Copy><Button label="Добавить вес" primary onPress={() => c.setEditor({ page: "weight" })} />
-            </> : null}
-            {progressTab === "nutrition" ? <>{summary ? <><Copy heading>{summary.nutrition.kcal} ккал записано</Copy><Copy>{summary.meals_logged} приёмов пищи за {summary.days_with_meals} дней с записями</Copy><Copy>Б {summary.nutrition.protein} · Ж {summary.nutrition.fat} · У {summary.nutrition.carbs} г</Copy><Copy muted>{summary.coverage_note}</Copy></> : <ActivityIndicator />}</> : null}
-            {progressTab === "course" ? <>{summary ? <><Copy>Выполнено {summary.events.done} · пропущено {summary.events.skipped} · без отметки {summary.events.pending}</Copy><Copy muted>{summary.coverage_note}</Copy></> : <ActivityIndicator />}</> : null}
-            {progressTab === "workouts" ? <>{summary?.workouts ? <><Copy heading>{summary.workouts.completed} завершённых тренировок</Copy><Copy>{summary.workouts.completed_sets} подходов · {summary.workouts.reps} повторений · {summary.workouts.volume_kg} кг · {Math.round(summary.workouts.duration_seconds / 60)} мин</Copy><Copy muted>{summary.workouts.in_progress} в процессе</Copy></> : null}{periodEntries.filter(entry => entry.kind === "workout").length ? periodEntries.filter(entry => entry.kind === "workout" && entry.data.workout).map(entry => { const workout = entry.data.workout!; const totals = workoutTotals(workout); return <View key={entry.id} style={styles.section}><Copy>{workout.name} · {workout.status === "completed" ? "Завершена" : "В процессе"}</Copy><Copy>{totals.sets} подходов · {totals.volume} кг · {Math.round(workout.duration_seconds / 60)} мин</Copy></View> }) : <Copy muted>Нет записей тренировок в загруженной истории.</Copy>}</> : null}
-            {progressTab === "measurements" ? <><Button label="Добавить замеры" primary onPress={() => setMeasurementOpen(true)} />{measurementOpen ? <MeasurementEditor controller={c} save={save} onClose={() => setMeasurementOpen(false)} /> : null}{periodEntries.filter(entry => entry.kind === "measurement").map(entry => <View key={entry.id} style={styles.section}><Copy muted>{formatCompanionDate(entry.occurred_at, c.clock)}</Copy>{Object.entries(entry.data.measurement ?? {}).filter(([, value]) => value != null).map(([key, value]) => <Copy key={key}>{measurementLabels[key as keyof Measurement]}: {value}</Copy>)}</View>)}{!periodEntries.some(entry => entry.kind === "measurement") ? <Copy muted>Замеров пока нет.</Copy> : null}</> : null}
-            {progressTab === "photos" ? <><Button label="Добавить фото прогресса" icon={<CameraIcon width={22} height={22} color={palette.text} />} onPress={() => compose("photo", "Фото прогресса. Не оценивай состав тела и здоровье по фотографии.")} /><MentorPhotos controller={c} days={days} messages={photoMessages} renderAttachments={renderPhotoAttachments} /></> : null}
-            <Button label={`Отчёт за ${days} дней в диалоге`} onPress={report} disabled={c.busy} />
-        </> : null}
-        {page === "more" ? <><Copy heading>Мой профиль</Copy><View style={styles.row}><ProfileIcon color={palette.primary} /><Copy>{c.state?.profile?.data.goal ? goalLabels[c.state.profile.data.goal] : "Цель не указана"}{c.state?.profile?.data.custom_goal ? `: ${c.state.profile.data.custom_goal}` : ""}</Copy></View><Copy>Последний вес: {latest ? `${latest.data.weight_kg} кг · ${formatCompanionDate(latest.occurred_at, c.clock)}` : "не записан"}</Copy><Button label="Профиль и цели" onPress={() => c.setEditor({ page: "profile" })} /><Button label="Записать вес" onPress={() => c.setEditor({ page: "weight" })} /><Button label="Прогресс и замеры" onPress={() => go("progress")} /><Button label="Настройки и напоминания" onPress={() => c.setEditor({ page: "settings" })} /><Button label="Дневник" onPress={() => c.setEditor({ page: "journal" })} /><Button label="Написать в поддержку" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} /></> : null}
-        {page === "adjust" ? <><Copy heading>Что скорректировать?</Copy><Button label="Цель и профиль" onPress={() => c.setEditor({ page: "profile" })} /><Button label="Питание и предпочтения" onPress={() => ask("Хочу скорректировать питание. Используй сохранённую цель, последний вес, предпочтения и подтверждённые записи. Уточни, что именно изменить, и запроси подтверждение.")} /><Button label="План тренировок" onPress={() => go("workouts")} /><Button label="Мою готовую схему курса" onPress={() => c.setEditor({ page: "plan" })} /><Button label="Самочувствие" onPress={() => c.setEditor({ page: "wellbeing" })} /><Button label="Написать в поддержку" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} /></> : null}
+        {page === "progress" ? <MentorProgress controller={c} entries={periodEntries} weeklyEntries={weeklyEntries} summary={summary} days={days} setDays={setDays} progressTab={progressTab} setProgressTab={setProgressTab} onReport={report}
+            measurementsContent={<><Button label="Добавить замеры" primary onPress={() => setMeasurementOpen(true)} />{measurementOpen ? <MeasurementEditor controller={c} save={save} onClose={() => setMeasurementOpen(false)} /> : null}{periodEntries.filter(entry => entry.kind === "measurement").map(entry => <View key={entry.id} style={styles.section}><Copy muted>{formatCompanionDate(entry.occurred_at, c.clock)}</Copy>{Object.entries(entry.data.measurement ?? {}).filter(([, value]) => value != null).map(([key, value]) => <Copy key={key}>{measurementLabels[key as keyof Measurement]}: {value}</Copy>)}</View>)}{!periodEntries.some(entry => entry.kind === "measurement") ? <Copy muted>Замеров пока нет.</Copy> : null}</>}
+            photosContent={<><Button label="Добавить фото прогресса" icon={<CameraIcon width={22} height={22} color={palette.text} />} onPress={() => compose("photo", "Фото прогресса. Не оценивай состав тела и здоровье по фотографии.")} /><MentorPhotos controller={c} days={days} messages={photoMessages} renderAttachments={renderPhotoAttachments} /></>}
+        /> : null}
+        {page === "more" ? <><Copy heading>Мой наставник</Copy><Copy muted>Ваши цели, история и помощь рядом.</Copy><Button label="Спросить наставника" icon={<MentorIcon name="chat" color="#FFFFFF" />} primary onPress={() => go("ask")} /><View style={styles.row}><ProfileIcon color={colors.green} /><Copy>{c.state?.profile?.data.goal ? goalLabels[c.state.profile.data.goal] : "Цель не указана"}{c.state?.profile?.data.custom_goal ? `: ${c.state.profile.data.custom_goal}` : ""}</Copy></View><Copy>Последний вес: {latest ? `${latest.data.weight_kg} кг · ${formatCompanionDate(latest.occurred_at, c.clock)}` : "не записан"}</Copy><Button label="Профиль и цели" onPress={() => c.setEditor({ page: "profile" })} /><Button label="Записать вес" onPress={() => c.setEditor({ page: "weight" })} /><Button label="Прогресс и замеры" onPress={() => go("progress")} /><Button label="Настройки и напоминания" onPress={() => c.setEditor({ page: "settings" })} /><Button label="Дневник" onPress={() => c.setEditor({ page: "journal" })} /><Button label="Написать в поддержку" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} /></> : null}
+        {page === "ask" ? <><Copy heading>Спросить наставника</Copy><Copy muted>Выберите тему или напишите свой вопрос.</Copy>{[
+            ["🍲 Что поесть?", "Что мне поесть? Учти сохранённые предпочтения, любимые блюда и остаток КБЖУ за сегодня."],
+            ["📊 Проанализировать мой день", "Проанализируй мой день по сохранённым записям питания, тренировок и самочувствия."],
+            ["🏋️ Скорректировать тренировку", "Помоги скорректировать тренировку с учётом моего плана и записанных результатов."],
+            ["⚖️ Почему вес стоит?", "Помоги разобраться в динамике моего веса, учитывая сохранённые измерения и питание."],
+        ].map(([label, prompt]) => <Button key={label} label={label} onPress={() => ask(prompt)} />)}<Button label="🧬 Вопрос по моему курсу" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} /><Button label="Задать свой вопрос" icon={<MentorIcon name="chat" color="#FFFFFF" />} primary onPress={() => compose("text", "")} /></> : null}
+        {page === "adjust" ? <><Copy heading>Что скорректировать?</Copy><Copy muted>Выберите, что сейчас не подходит.</Copy><Button label="🍽 Не подходит питание" onPress={() => ask("Хочу скорректировать питание. Используй сохранённую цель, последний вес, предпочтения и подтверждённые записи. Уточни, что именно изменить, и запроси подтверждение.")} /><Button label="🔥 Слишком мало калорий" onPress={() => ask("Мне не хватает калорий. Проанализируй сохранённую цель, питание и самочувствие, помоги скорректировать план с подтверждением.")} /><Button label="🏋️ Не подходит тренировка" onPress={() => go("workouts")} /><Button label="📅 Неудобное расписание" onPress={() => c.setEditor({ page: "settings" })} /><Button label="🧬 Вопрос по курсу" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} /><Button label="😓 Сложно соблюдать план" onPress={() => ask("Мне сложно соблюдать план. Помоги выбрать посильный следующий шаг с учётом моих записей.")} /><Button label="Другая причина" onPress={() => compose("text", "Хочу скорректировать план: ")} /><Button label="Цель и профиль" onPress={() => c.setEditor({ page: "profile" })} /></> : null}
+    </View>
+}
+
+function NutritionOverview({ nutrition }: { nutrition: MentorDashboard["today"]["nutrition"] }) {
+    const colors = useMentorPalette()
+    const fraction = (value: unknown, target: unknown) => {
+        const amount = numeric(value), total = numeric(target)
+        return amount != null && total != null && total > 0 ? Math.max(0, Math.min(1, amount / total)) : 0
+    }
+    return <View style={[styles.notice, { backgroundColor: colors.mint }]}>
+        <Copy muted>Итоги за сегодня</Copy>
+        <Text style={{ color: colors.green, fontSize: 30, fontWeight: "600" }}>{Number(nutrition.consumed.kcal).toLocaleString("ru-RU")} <Text style={{ fontSize: 15, fontWeight: "400", color: colors.muted }}>{nutrition.target ? `из ${Number(nutrition.target.kcal).toLocaleString("ru-RU")} ` : ""}ккал</Text></Text>
+        {nutrition.target ? <View style={{ height: 7, backgroundColor: colors.surface, borderRadius: 5, overflow: "hidden" }}><View style={{ height: 7, borderRadius: 5, width: `${fraction(nutrition.consumed.kcal, nutrition.target.kcal) * 100}%`, backgroundColor: colors.greenBright }} /></View> : null}
+        <View style={styles.row}>{(["protein", "fat", "carbs"] as const).map((key, index) => <View key={key} style={{ flex: 1, gap: 4, paddingTop: 8 }}><Copy muted style={{ fontSize: 12 }}>{["Белки", "Жиры", "Углеводы"][index]}</Copy><Copy style={{ fontSize: 16, fontWeight: "600", color: colors.green }}>{nutrition.consumed[key]} г</Copy>{nutrition.target ? <Copy muted style={{ fontSize: 12 }}>из {nutrition.target[key]} г</Copy> : null}</View>)}</View>
+        {nutrition.remaining ? <Copy style={{ color: colors.green }}>Осталось {nutrition.remaining.kcal} ккал · {nutrition.remaining.protein} г белка</Copy> : null}
     </View>
 }
 
@@ -175,6 +197,7 @@ function MeasurementEditor({ controller: c, save, onClose }: { controller: Contr
 }
 
 function MentorCourse({ controller: c }: { controller: Controller }) {
+    const colors = useMentorPalette()
     const router = useRouter()
     const [date, setDate] = useState(c.state?.mentor?.today.date ?? companionCalendarDay(new Date().toISOString(), c.clock))
     const [month, setMonth] = useState(date.slice(0, 7))
@@ -200,11 +223,11 @@ function MentorCourse({ controller: c }: { controller: Controller }) {
         <Button label={plan ? "Обновить мою схему" : "Записать готовую схему"} onPress={() => c.setEditor({ page: "plan" })} />
         {plan?.status === "active" ? <Button label="Приостановить напоминания курса" disabled={c.busy} onPress={() => void c.attempt(async () => { await c.perform({ kind: "plan_status", expected_version: c.state?.profile?.version, status: "paused" }); await load() })} /> : null}
         {plan && plan.status !== "completed" ? <Button label="Завершить учёт курса" disabled={c.busy} onPress={() => Alert.alert("Завершить учёт курса?", "Будущие напоминания будут отменены. История сохранится.", [{ text: "Отмена", style: "cancel" }, { text: "Завершить", onPress: () => void c.attempt(async () => { await c.perform({ kind: "plan_status", expected_version: c.state?.profile?.version, status: "completed" }); await load() }) }])} /> : null}
-        <Calendar current={`${month}-01`} onDayPress={day => setDate(day.dateString)} onMonthChange={value => setMonth(value.dateString.slice(0, 7))} markedDates={{ ...markedDates, [date]: { ...markedDates[date], selected: true, selectedColor: "#176B4A" } }} firstDay={1} />
+        <Calendar theme={{ backgroundColor: colors.soft, calendarBackground: colors.soft, dayTextColor: colors.text, monthTextColor: colors.green, arrowColor: colors.green, todayTextColor: colors.green, textDisabledColor: colors.muted, textSectionTitleColor: colors.muted, selectedDayBackgroundColor: colors.greenBright, selectedDayTextColor: "#FFFFFF", dotColor: colors.greenBright }} style={{ borderRadius: 18, padding: 8 }} current={`${month}-01`} onDayPress={day => setDate(day.dateString)} onMonthChange={value => setMonth(value.dateString.slice(0, 7))} markedDates={{ ...markedDates, [date]: { ...markedDates[date], selected: true, selectedColor: "#176B4A" } }} firstDay={1} />
         {loading ? <ActivityIndicator /> : null}<Copy heading>{date}</Copy>
         {events.filter(event => localDay(event) === date).map(event => <View key={event.id} style={styles.section}><Copy>{event.data.name} · {event.data.amount} {event.data.unit}</Copy><Copy muted>{formatCompanionDate(event.scheduled_at, c.clock)} · {event.status === "done" ? "Выполнено" : event.status === "skipped" ? "Пропущено" : "Без отметки"}</Copy><View style={styles.row}>{(["done", "skipped", "pending"] as const).filter(status => status !== event.status).map(status => <Button key={status} label={status === "done" ? "Отметить" : status === "skipped" ? "Пропущено" : "Снять отметку"} disabled={c.busy || status === "done" && Date.parse(event.scheduled_at) > Date.now()} onPress={() => void c.attempt(async () => { const identity = `${event.id}:${event.version}:${status}`; const key = keys.current.get(identity) ?? requestKey(); keys.current.set(identity, key); await c.perform({ kind: "event", resource_id: event.id, expected_version: event.version, request_key: key, status }); keys.current.delete(identity); await load() })} />)}</View></View>)}
         {!loading && !events.some(event => localDay(event) === date) ? <Copy muted>На этот день нет событий.</Copy> : null}
         {events.length >= 200 ? <Copy muted>Показаны первые 200 событий. Полную историю можно открыть отдельно.</Copy> : null}
-        <Button label="Запас по моей схеме" onPress={() => c.setEditor({ page: "supply" })} /><Button label="Самочувствие" onPress={() => c.setEditor({ page: "wellbeing" })} /><Button label="История событий" onPress={() => c.setEditor({ page: "events" })} /><Copy muted>Контакт врача пока не настроен.</Copy><Button label="Написать в поддержку" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} />
+        <Button label="Изменить время напоминаний" icon={<MentorIcon name="clock" color={colors.green} />} onPress={() => c.setEditor({ page: "settings" })} /><Button label="Запас по моей схеме" onPress={() => c.setEditor({ page: "supply" })} /><Button label="Самочувствие" onPress={() => c.setEditor({ page: "wellbeing" })} /><Button label="История событий" onPress={() => c.setEditor({ page: "events" })} /><Copy muted>Контакт врача пока не настроен.</Copy><Button label="Написать в поддержку" onPress={() => router.push({ pathname: "/chat", params: { mode: "support" } })} />
     </>
 }

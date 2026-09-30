@@ -5,10 +5,10 @@ import { spacing } from "@/theme/spacing"
 
 const glassShadow = {
     shadowColor: "#0C2A3A",
-    shadowOpacity: 0.2,
-    shadowRadius: 14,
-    shadowOffset: { height: 8, width: 0 },
-    elevation: 10,
+    shadowOpacity: 0.09,
+    shadowRadius: 10,
+    shadowOffset: { height: 3, width: 0 },
+    elevation: 4,
 } as const
 
 const liquidGlassBlue = {
@@ -21,6 +21,11 @@ const liquidGlassNeutral = {
     backgroundColor: "rgba(255,255,255,0.95)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.74)",
+} as const
+
+const composerGlass = {
+    backgroundColor: "rgba(255,255,255,0.82)",
+    borderWidth: 0,
 } as const
 
 export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.create({
@@ -42,15 +47,31 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         backgroundColor: colors.surfaceSoft,
         zIndex: 12,
     },
+    mentorHeader: {
+        paddingHorizontal: 8,
+        paddingBottom: 8,
+        backgroundColor: "rgba(255,255,255,0.96)",
+    },
+    mentorBackButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: "#FFFFFF",
+        borderWidth: 0,
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 3 },
+        elevation: 2,
+    },
     chatBody: {
         flex: 1,
         minHeight: 0,
-        // KeyboardAvoidingView may translate content on iOS. Clip it below
-        // the non-scrolling header rather than letting messages cover it.
+        // Keep scroll content and overscroll below the fixed header.
         overflow: "hidden",
     },
     content: {
         flex: 1,
+        minHeight: 0,
         position: "relative",
         backgroundColor: colors.surfaceSoft,
     },
@@ -150,12 +171,17 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
     },
     messagesScroll: {
         flex: 1,
+        minHeight: 0,
         backgroundColor: "transparent",
     },
     messagesContent: {
         flexGrow: 1,
         paddingHorizontal: spacing.sm,
         justifyContent: "flex-end",
+    },
+    mentorMessagesContent: {
+        paddingHorizontal: 16,
+        justifyContent: "flex-start",
     },
     messageList: {
         gap: spacing.sm,
@@ -720,10 +746,26 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         zIndex: 14,
         paddingTop: spacing.xs,
     },
+    mentorComposerDock: {
+        left: 6,
+        right: 6,
+        paddingTop: 8,
+        backgroundColor: "transparent",
+    },
+    composerDockInFlow: {
+        position: "relative",
+        left: 0,
+        right: 0,
+        bottom: 0,
+        flexShrink: 0,
+        width: "100%",
+        paddingHorizontal: 8,
+        paddingTop: 6,
+    },
     composerRow: {
         flexDirection: "row",
         alignItems: "flex-end",
-        gap: spacing.sm,
+        gap: 7,
     },
     voiceStatusPill: {
         alignSelf: "center",
@@ -750,19 +792,20 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         fontWeight: "700",
     },
     circleButton: {
-        width: 46,
-        height: 46,
-        borderRadius: 23,
-        ...liquidGlassBlue,
+        width: 40,
+        height: 40,
+        flexShrink: 0,
+        borderRadius: 20,
+        ...composerGlass,
         alignItems: "center",
         justifyContent: "center",
         overflow: "visible",
-        ...glassShadow,
     },
     circleButtonPressable: {
-        width: 46,
-        height: 46,
-        borderRadius: 23,
+        width: 40,
+        height: 40,
+        flexShrink: 0,
+        borderRadius: 20,
         overflow: "visible",
     },
     circleButtonPressed: {
@@ -770,26 +813,27 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
     },
     composerInputWrap: {
         flex: 1,
-        minHeight: 46,
-        maxHeight: 118,
-        borderRadius: 23,
-        ...liquidGlassNeutral,
+        minWidth: 0,
+        minHeight: 40,
+        maxHeight: 128,
+        borderRadius: 20,
+        ...composerGlass,
         flexDirection: "row",
         alignItems: "flex-end",
-        paddingLeft: spacing.md,
-        paddingRight: spacing.sm,
-        paddingVertical: 3,
-        ...glassShadow,
+        paddingHorizontal: 12,
+        overflow: "hidden",
     },
     composerInput: {
         flex: 1,
-        minHeight: 38,
-        maxHeight: 96,
+        minWidth: 0,
+        minHeight: 40,
+        maxHeight: 128,
         color: "#111417",
         fontSize: 17,
-        lineHeight: 21,
-        paddingVertical: spacing.sm,
-        paddingRight: spacing.xs,
+        lineHeight: 22,
+        paddingVertical: 9,
+        paddingHorizontal: 0,
+        includeFontPadding: false,
     },
     emojiPicker: {
         borderRadius: 20,
@@ -841,7 +885,7 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
     },
     sendButtonRecordingLayer: {
         ...StyleSheet.absoluteFillObject,
-        borderRadius: 23,
+        borderRadius: 20,
         backgroundColor: "#FF3B30",
     },
     sendButtonSpinnerLayer: {
