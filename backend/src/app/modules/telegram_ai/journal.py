@@ -115,6 +115,24 @@ async def dashboard(payload: Identity, db: AsyncSession = Depends(get_db)):
     totals = {key: round(sum(float(m.data.get(key,0)) for m in meals),1) for key in ("kcal","protein","fat","carbs")}
     from .mentor import workspace_state
     workspace = await workspace_state(db, payload.telegram_user_id, totals)
+    favorites = list((await db.execute(select(TelegramAIJournal).where(
+        TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+        TelegramAIJournal.kind == "meal", TelegramAIJournal.status == "confirmed",
+        TelegramAIJournal.data["favorite"].as_boolean().is_(True)
+    ).order_by(TelegramAIJournal.occurred_at.desc()).limit(10))).scalars())
+    workspace["favorite_meals"] = [dump(m) for m in favorites]
+    first_weight = (await db.execute(select(TelegramAIJournal).where(
+        TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+        TelegramAIJournal.kind == "weight", TelegramAIJournal.status == "confirmed",
+        TelegramAIJournal.occurred_at <= instant
+    ).order_by(TelegramAIJournal.occurred_at, TelegramAIJournal.id).limit(1))).scalar_one_or_none()
+    target_weight = saved["profile"].get("target_weight_kg")
+    current_weight = saved["profile"].get("current_weight_kg")
+    if first_weight and target_weight is not None and current_weight is not None:
+        initial = first_weight.data["weight_kg"]
+        denominator = initial-target_weight
+        workspace["goal_progress"] = {"initial_weight": initial, "since": first_weight.occurred_at.isoformat(),
+            "percent": round(max(0, min(100, (initial-current_weight)/denominator*100)), 1) if denominator else None}
     return {**saved, "workspace": workspace, "settings": settings, "date": local.date().isoformat(), "now": instant.isoformat(),
         "meals": [dump(m) for m in meals], "totals": totals,
         "weights": [dump(w) for w in reversed(weights)], "draft": dump(pending) if pending else None}

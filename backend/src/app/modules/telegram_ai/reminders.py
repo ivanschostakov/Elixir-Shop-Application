@@ -44,6 +44,7 @@ class Options(Identity):
     weekday: int = Field(default=6, ge=0, le=6)
     inactivity_days: int | None = Field(default=None, ge=1, le=30)
     course: bool = False
+    detailed_reports: bool = False
 
     @model_validator(mode="after")
     def validated(self):
@@ -69,6 +70,8 @@ async def check(payload: Ack, db: AsyncSession = Depends(get_db)):
         if allowed:
             course = await db.get(TelegramAIJournal, event.data["course_id"])
             allowed = bool(course and course.status == "confirmed")
+            if allowed:
+                allowed = row.data.get("course_revision", 0) == course.data.get("reminder_revision", 0)
     if allowed:
         allowed = not expired(row.data, row.occurred_at, now())
     if allowed and not row.data.get("legacy"):
@@ -154,6 +157,15 @@ def scheduled(settings, kind, instant):
     return target
 
 
+def course_notification_time(event, course):
+    clock = course.data.get("reminder_time")
+    if not clock:
+        return event.occurred_at
+    zone = ZoneInfo(course.data["timezone"])
+    local = event.occurred_at.astimezone(zone)
+    return datetime.combine(local.date(), time.fromisoformat(clock), zone).astimezone(timezone.utc)
+
+
 async def enqueue(db, uid, kind, instant, key, **extra):
     found = (await db.execute(select(TelegramAIJournal.id).where(
         TelegramAIJournal.telegram_user_id == uid, TelegramAIJournal.request_key == key
@@ -206,15 +218,26 @@ async def claim_due(db):
             events = list((await db.execute(select(TelegramAIJournal).where(
                 TelegramAIJournal.telegram_user_id == rule.telegram_user_id,
                 TelegramAIJournal.kind == "course_event", TelegramAIJournal.status == "pending",
-                TelegramAIJournal.occurred_at >= datetime.fromisoformat(data["course_since"]),
-                TelegramAIJournal.occurred_at <= instant
+                TelegramAIJournal.occurred_at >= instant-timedelta(days=2),
+                TelegramAIJournal.occurred_at <= instant+timedelta(days=2)
             ))).scalars())
             for event in events:
                 course = await db.get(TelegramAIJournal, event.data["course_id"])
                 if course is None or course.status != "confirmed":
                     continue
-                await enqueue(db, rule.telegram_user_id, "course", event.occurred_at,
-                    f"reminder:course:{event.id}", event_id=event.id, schedule=schedule_signature(data, "course"))
+                notification_at = course_notification_time(event, course)
+                if not datetime.fromisoformat(data["course_since"]) <= notification_at <= instant:
+                    continue
+                sent = (await db.execute(select(TelegramAIJournal.id).where(
+                    TelegramAIJournal.telegram_user_id == rule.telegram_user_id,
+                    TelegramAIJournal.kind == "reminder", TelegramAIJournal.status == "sent",
+                    TelegramAIJournal.data["event_id"].as_integer() == event.id).limit(1))).scalar_one_or_none()
+                if sent is not None:
+                    continue
+                revision = course.data.get("reminder_revision", 0)
+                key = f"reminder:course:{event.id}" + (f":v{revision}" if revision else "")
+                await enqueue(db, rule.telegram_user_id, "course", notification_at,
+                    key, event_id=event.id, course_revision=revision, schedule=schedule_signature(data, "course"))
         rule.data = data
     await db.flush()
     rows = list((await db.execute(select(TelegramAIJournal).where(

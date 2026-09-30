@@ -1,5 +1,6 @@
 """Telegram-owned mentor workflows. All records stay in the existing journal."""
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 import hashlib
 import os
 from typing import Literal
@@ -13,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.app.services.ai.companion.schemas import StrictModel
 from src.database import get_db
 from src.database.models import TelegramAIJournal
-from .profile import Identity
+from .profile import Identity, snapshot
 from .journal import MealData, MealDraft, draft, dump, now, settings_for
 
 router = APIRouter(prefix="/workspace")
@@ -28,6 +29,32 @@ def section_enabled(section):
 def require_section(section):
     if not section_enabled(section):
         raise HTTPException(403, "Раздел временно отключён")
+
+
+class NutritionPreview(Identity):
+    eligibility_confirmed: bool = False
+    activity: Literal["low", "light", "moderate", "high"] | None = None
+
+
+@router.post("/nutrition/preview")
+async def nutrition_preview(payload: NutritionPreview, db: AsyncSession = Depends(get_db)):
+    from config.companion import AI_COMPANION_NUTRITION_RULES_JSON
+    from src.app.services.ai.companion.nutrition import calculate_nutrition
+    from src.app.services.ai.companion.schemas import ProfileData
+    require_section("food")
+    saved = (await snapshot(db, payload.telegram_user_id))["profile"]
+    fields = ("goal", "age", "sex", "height_cm", "target_weight_kg")
+    activity = payload.activity or saved.get("activity")
+    missing = [k for k in (*fields[:4], "current_weight_kg") if saved.get(k) is None]
+    if activity not in {"low", "light", "moderate", "high"}:
+        missing.append("activity")
+    if missing:
+        return {"available": False, "missing": missing, "reason": "Дозаполните профиль для расчёта КБЖУ."}
+    if saved["age"] < 18:
+        return {"available": False, "reason": "Авторасчёт доступен только совершеннолетним. Нужны индивидуальные рекомендации специалиста."}
+    profile = ProfileData(**{k: saved[k] for k in fields if saved.get(k) is not None}, activity=activity)
+    return calculate_nutrition(profile, Decimal(str(saved["current_weight_kg"])), AI_COMPANION_NUTRITION_RULES_JSON,
+                               eligibility_confirmed=payload.eligibility_confirmed)
 
 
 class NutritionTarget(StrictModel):
@@ -377,6 +404,42 @@ async def course_action(payload: CourseAction, db: AsyncSession = Depends(get_db
     return {"ok": True, "entry": dump(row)}
 
 
+class CourseReminder(Identity):
+    entry_id: int = Field(gt=0)
+    reminder_time: str | None = None
+
+    @field_validator("reminder_time")
+    @classmethod
+    def clock(cls, value):
+        from .journal import ReminderUpdate
+        return ReminderUpdate.valid_clock(value)
+
+
+@router.post("/course/reminder")
+async def course_reminder(payload: CourseReminder, db: AsyncSession = Depends(get_db)):
+    require_section("course")
+    await db.execute(text("SELECT pg_advisory_xact_lock(733000111)"))
+    await lock(db, payload.telegram_user_id)
+    course = await owned(db, payload.telegram_user_id, payload.entry_id, "course")
+    if course.status != "confirmed":
+        raise HTTPException(409, "Курс не активен")
+    if course.data.get("reminder_time") != payload.reminder_time:
+        course.data = {**course.data, "reminder_time": payload.reminder_time,
+                       "reminder_revision": course.data.get("reminder_revision", 0)+1}
+        events = list((await db.execute(select(TelegramAIJournal.id).where(
+            TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+            TelegramAIJournal.kind == "course_event", TelegramAIJournal.data["course_id"].as_integer() == course.id))).scalars())
+        if events:
+            queued = list((await db.execute(select(TelegramAIJournal).where(
+                TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+                TelegramAIJournal.kind == "reminder", TelegramAIJournal.status.in_(["pending", "leased"]),
+                TelegramAIJournal.data["event_id"].as_integer().in_(events)))).scalars())
+            for item in queued:
+                item.status = "cancelled"
+    await db.commit()
+    return {"ok": True, "entry": dump(course)}
+
+
 @router.post("/meals")
 async def meals(payload: MealLibrary, db: AsyncSession = Depends(get_db)):
     require_section("food")
@@ -435,7 +498,33 @@ def summarize(rows, instant, zone, days=7):
     seven_weights = [r.data["weight_kg"] for r in weights if r.occurred_at >= seven_start]
     wellbeing = [r.data["score"] for r in confirmed if r.kind == "wellbeing"]
     energy = [r.data["energy_score"] for r in confirmed if r.kind == "wellbeing" and r.data.get("energy_score") is not None]
+    daily = {}
+    for row in confirmed:
+        if row.kind == "meal":
+            day = row.occurred_at.astimezone(zone).date()
+            value = daily.setdefault(day, {"kcal": 0, "protein": 0})
+            for key in value:
+                value[key] += row.data.get(key, 0)
+    targets = sorted([r for r in rows if r.kind == "target" and r.status in {"confirmed", "replaced"}], key=lambda r: (r.occurred_at, r.id))
+    protein_actual = protein_target = 0
+    protein_days = 0
+    for day, values in daily.items():
+        target = next((r for r in reversed(targets) if r.occurred_at.astimezone(zone).date() <= day), None)
+        if target and target.data.get("protein") and target.data.get("source") in {"user", "specialist"}:
+            protein_actual += values["protein"]
+            protein_target += target.data["protein"]
+            protein_days += 1
+    programs = sorted([r for r in rows if r.kind == "program" and r.status in {"confirmed", "replaced"}], key=lambda r: (r.occurred_at, r.id))
+    planned = 0
+    for n in range(days):
+        day = start.date()+timedelta(days=n)
+        program = next((r for r in reversed(programs) if r.occurred_at.astimezone(zone).date() <= day), None)
+        if program and any(e["weekday"] == day.weekday() for e in program.data["exercises"]):
+            planned += 1
     return {"days": days, "from": start.date().isoformat(), "to": local.date().isoformat(),
+        "nutrition_days": len(daily), "average_kcal": round(sum(v["kcal"] for v in daily.values())/len(daily), 1) if daily else None,
+        "protein_target_percent": round(100*protein_actual/protein_target, 1) if protein_target else None,
+        "protein_target_days": protein_days, "planned_workouts": planned,
         "weight_measurements": len(weights), "weight_mean_7d": round(sum(seven_weights)/len(seven_weights), 2) if seven_weights else None,
         "weight_samples_7d": len(seven_weights), "wellbeing_mean": round(sum(wellbeing)/len(wellbeing), 2) if wellbeing else None,
         "wellbeing_samples": len(wellbeing), "energy_mean": round(sum(energy)/len(energy), 2) if energy else None,
@@ -461,8 +550,9 @@ async def report(payload: Report, db: AsyncSession = Depends(get_db)):
     start = datetime.combine(instant.astimezone(zone).date()-timedelta(days=payload.days-1), time.min, zone)
     rows = list((await db.execute(select(TelegramAIJournal).where(
         TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
-        TelegramAIJournal.kind.in_(["weight", "workout", "meal", "course_event", "wellbeing"]),
-        TelegramAIJournal.occurred_at >= start, TelegramAIJournal.occurred_at <= instant
+        TelegramAIJournal.kind.in_(["weight", "workout", "meal", "course_event", "wellbeing", "target", "program"]),
+        (TelegramAIJournal.occurred_at >= start) | TelegramAIJournal.kind.in_(["target", "program"]),
+        TelegramAIJournal.occurred_at <= instant
     ).order_by(TelegramAIJournal.occurred_at, TelegramAIJournal.id))).scalars())
     return summarize(rows, instant, zone, payload.days)
 
@@ -475,7 +565,8 @@ async def workspace_state(db, uid, totals=None):
     rows = list((await db.execute(select(TelegramAIJournal).where(
         TelegramAIJournal.telegram_user_id == uid,
         TelegramAIJournal.kind.in_([*MODELS, "meal", "weight", "course_event"]),
-        TelegramAIJournal.status.not_in(["draft", "cancelled", "replaced"]),
+        TelegramAIJournal.status.not_in(["draft", "cancelled"]),
+        (TelegramAIJournal.status != "replaced") | TelegramAIJournal.kind.in_(["target", "program"]),
         (TelegramAIJournal.occurred_at >= instant-timedelta(days=31)) |
         TelegramAIJournal.kind.in_(["target", "program", "course"])
     ).order_by(TelegramAIJournal.occurred_at, TelegramAIJournal.id))).scalars())

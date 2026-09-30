@@ -9,7 +9,10 @@ are separate. Leaving, choosing an ordinary AI assistant, or `/start` exits ment
 
 The first screen offers **Добавить еду** plus **Сегодня**, **Питание**,
 **Тренировки**, **Мой курс**, **Прогресс**, **Спросить наставника**, **Профиль**,
-and **Настройки**. Sections default open. Replies retain a return-to-menu button.
+and **Настройки**. Sections default open. Navigation uses one edited Telegram card,
+including multi-step form replies. Long diaries paginate without trimming text.
+AI replies, requested chart/photo attachments, and scheduled notifications remain
+separate messages. `/mentor` creates the initial card; subsequent buttons edit it.
 
 - Today uses confirmed meals, the saved target (if any), today's weekly-program
   exercises, actual course dates, and wellbeing records. Weekly/interval course
@@ -19,7 +22,11 @@ and **Настройки**. Sections default open. Replies retain a return-to-me
   rules. A server-side meal draft has confirm/edit/add/cancel buttons. History,
   search, favorites, and repeat create real persisted records; repeating food still
   requires confirmation. Remaining values are floored at zero and only use confirmed
-  explicit user/specialist targets. No automatic calorie target is invented.
+  explicit user/specialist targets. The target calculator reuses the application
+  nutrition rules, requires adult eligibility confirmation and a complete profile,
+  and creates a draft which must be confirmed. It never silently replaces a target.
+  Product lookup offers an approximate food estimate or search in the saved diary;
+  it does not pretend to be a verified external food database.
 - Workouts support a saved weekly exercise program, a resumable active session,
   idempotent per-set weight/repetition writes, duration, and total volume. A session
   freezes its program snapshot. Set entry defaults to the next unfinished planned
@@ -31,12 +38,17 @@ and **Настройки**. Sections default open. Replies retain a return-to-me
   add them individually. Calendar, done/skipped marks, adherence, and supply estimates
   use those saved schedules. Supply needs stock and per-intake consumption in the
   same explicit unit; there is no dosage inference or unit conversion. Stopping a
-  schedule preserves history and is not advice to discontinue treatment.
+  schedule preserves history and is not advice to discontinue treatment. A separate
+  notification time can be set per course without changing its dose or intake times.
+  Schedule revisions invalidate queued reminders; already sent events are not resent.
 - Progress includes weight history, confirmed circumference measurements, private
   Telegram photo references, and accurate 7/30-day text reports for meals, workouts
   and courses. Reports include the recorded seven-day mean weight, average wellbeing,
   optional separately recorded energy, and sample counts. Missing days are not zero
   samples. Photo
+  Reports also include calories averaged over recorded days, protein relative to
+  the targets valid on those days, planned workout days, and progress toward the
+  current weight goal from the first recorded measurement. Weight graphs are PNGs.
   IDs and transport receipts are removed from model context. No public photo URL
   is generated; viewing an owned photo uses protected Telegram content.
 - Profile supports loss, gain, maintain, and custom goals with a goal detail. Missing
@@ -52,7 +64,9 @@ and **Настройки**. Sections default open. Replies retain a return-to-me
   cannot create or confirm a medication schedule or alter a dose.
 - Settings offers opt-in morning weight, evening, weekly, inactivity and actual
   course-schedule reminders, timezone controls, and disable-all. Notifications omit
-  health details. A specialist link exists only when configured with an HTTPS URL.
+  health details by default. Detailed evening/weekly reports require a separate
+  explicit opt-in; weekly reports include a weight chart when measurements exist.
+  A specialist link exists only when configured with an HTTPS URL.
 
 The initial introduction asks one question at a time and remembers the last menu
 question so a short answer such as “19” is meaningful. Opening the menu itself does
@@ -77,6 +91,8 @@ Identity, source message and request key come from the bot, never model argument
 - `/workspace/workout/start`, `/set`, `/finish`: durable active sessions and per-set
   retries. (All three share the `/workspace/workout` prefix.)
 - `/workspace/course/action`: owned done/skipped marks, never before the event time.
+- `/workspace/course/reminder`: owned reminder-time override, no dosage changes.
+- `/workspace/nutrition/preview`: guarded shared-rule calculation, no persistence.
 - `/workspace/meals`, `/meals/favorite`, `/meals/repeat`: paginated confirmed meal
   library, literal name search, favorite state and repeat-to-draft.
 - `/workspace/touch`: only the interaction timestamp, not message content.
@@ -158,7 +174,8 @@ and retains all profile/journal tables. No credential changes are required.
 The deployed baseline inspected on September 29 is bot commit `560d7192`. Its
 `src/bot/main.py` already registers the mentor router/middleware and launches
 `reminder_loop(professor_bot)` in `run_professor_bot`; no `run.py` edit is required.
-Copy **all** overlay files, including the new `src/bot/handlers/mentor_flows.py`.
+Copy **all** overlay files, including `src/bot/handlers/mentor_flows.py` and
+`src/bot/handlers/mentor_panel.py`.
 The existing mentor router includes its form router. Do not apply the old cumulative
 patch again to this already integrated baseline.
 
@@ -169,6 +186,13 @@ Rollback must coordinate both sides and retain the journal and bot data director
 
 ## Local validation and limitations
 
+September 30 editable-dialogue update: 59 bot tests and 54 backend tests pass,
+including isolated PostgreSQL. Coverage includes real callback routing without
+`sendMessage`, typed workout steps editing the original card, pagination, stale
+pages, private opt-in reports, ownership, reminder invalidation/no resends, and
+historical target calculations. These tests mock Telegram delivery; they are not
+a claim that every customer/device interaction has been exercised live.
+
 September 29 changes have been tested with mocked transport and focused backend
 validation tests; isolated PostgreSQL integration tests are supplied for the parent's
 serial full run. No production/customer message or deployment was performed here.
@@ -176,13 +200,13 @@ The overlay adds no dependency. Full original bot imports require its existing
 requirements, including `python-dotenv`, `matplotlib`, `Telethon`, `phonenumbers` and
 `aiogram-media-group`, absent from the application-only local environment.
 
-Explicit target entry is implemented; automatic calorie/macro calculation is not
-connected to the app companion's calculator. Weekly programs, measurements and course
+Explicit target entry and a confirmed preview from the shared app calculator are
+implemented. Weekly programs, measurements and course
 schedules use guided text forms rather than model-generated persistence. Multiple
 course products are entered individually; there is no bulk prescription importer.
 Course corrections stop/recreate the item; historical adherence is preserved. The
 progress list shows recent measurements/photos (31-day window, latest 30 records),
-not an unlimited photo archive or a rendered chart. Course previews show the nearest
+not an unlimited photo archive. Rendered charts use the loaded weight history. Course previews show the nearest
 calendar window, while all generated events remain stored. Incomplete form fields
 use the existing FSM until a server draft is created; a bot restart may require
 re-entering an unfinished form. Confirmed data and active workouts survive restart.
