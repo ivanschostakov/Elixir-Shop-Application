@@ -64,20 +64,29 @@ def test_correction_replaces_old_draft_and_weight_history_is_not_duplicated():
 
 
 @pytest.mark.skipif(not URL,reason='Isolated database required')
-def test_reminders_are_opt_in_claimed_once_and_stale_expire(monkeypatch):
-    import src.app.modules.telegram_ai.journal as module
+def test_reminders_are_opt_in_leased_retried_and_acknowledged(monkeypatch):
+    import src.app.modules.telegram_ai.reminders as module
+    import src.app.modules.telegram_ai.journal as journal
+    from src.app.modules.telegram_ai.reminders import ack, Ack
     instant=datetime(2030,1,1,17,59,tzinfo=timezone.utc)
     monkeypatch.setattr(module,'now',lambda:instant)
+    monkeypatch.setattr(journal,'now',lambda:instant)
     async def run():
         nonlocal instant
         async with database() as (db,user):
             assert (await due(db))['items']==[]
             await reminder_settings(ReminderUpdate(telegram_user_id=UID,timezone='Europe/Moscow',daily_time='21:00'),db)
             instant+=timedelta(minutes=2)
-            assert (await due(db))['items']==[{'telegram_user_id':UID}]
+            delivery = (await due(db))['items'][0]
+            assert delivery['telegram_user_id'] == UID
+            assert (await due(db))['items']==[]
+            instant+=timedelta(minutes=6)
+            retry = (await due(db))['items'][0]
+            assert retry['delivery_id'] == delivery['delivery_id'] and retry['token'] != delivery['token']
+            await ack(Ack(telegram_user_id=UID, delivery_id=retry['delivery_id'], token=retry['token'], outcome='sent'), db)
             assert (await due(db))['items']==[]
             instant+=timedelta(days=1,hours=1)
-            assert (await due(db))['items']==[]
+            assert len((await due(db))['items']) == 1  # Outages no longer silently discard reminders.
             await reminder_settings(ReminderUpdate(telegram_user_id=UID,daily_time=None),db)
             instant+=timedelta(days=1)
             assert (await due(db))['items']==[]

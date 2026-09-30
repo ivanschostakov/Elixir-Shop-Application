@@ -28,11 +28,15 @@ from .auth import require_bot
 from .catalog import CatalogRequest, read_catalog
 from .profile import router as profile_router
 from .journal import router as journal_router
+from .mentor import router as workspace_router
+from .reminders import router as reminder_router
 
 telegram_ai_router = APIRouter(prefix="/integrations/telegram-ai", tags=["telegram_ai"], dependencies=[Depends(require_bot)])
 
 telegram_ai_router.include_router(profile_router)
 telegram_ai_router.include_router(journal_router)
+telegram_ai_router.include_router(workspace_router)
+telegram_ai_router.include_router(reminder_router)
 
 
 class Identity(StrictModel):

@@ -70,28 +70,23 @@ def test_immediate_save_policy_and_strict_payloads():
     verify(schema)
 
 
-def test_ai_recommended_course_is_supported_and_prompt_is_advisory():
-    from pathlib import Path
+def test_historical_ai_recommended_course_parses_but_cannot_be_prepared():
     plan = PlanData.model_validate({"name": "Рекомендация", "source": "ai_recommended_plan", "items": [{"name": "Example", "stages": [{"start_date": "2030-01-01", "end_date": "2030-01-03", "amount": 1, "unit": "mg", "times": ["10:00"]}]}]})
     assert plan.source == "ai_recommended_plan"
-    prompt = (Path(__file__).parents[1] / "src/integrations/ai/instructions/companion-dialogue.txt").read_text()
-    assert "предложить конкретную дозировку, частоту, длительность" in prompt
-    assert "source=ai_recommended_plan" in prompt
-    assert "местное время по часам телефона без UTC offset и без повторов" in prompt
-    assert "Никогда не пиши «подтвердите запись», если не вернул соответствующую операцию" in prompt
-    assert "Не назначай препараты или дозировки" not in prompt
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(service.prepare_plan(None, plan))
+    assert error.value.status_code == 422
 
 
 @db_test
-def test_ai_recommended_course_has_server_disclosure():
+def test_new_ai_recommended_course_requires_correction():
     async def run():
         async with database() as (db, user):
             await enable(db, user)
             plan = PlanData.model_validate({"name": "Рекомендация", "source": "ai_recommended_plan", "items": [{"name": "Example", "stages": [{"start_date": "2030-01-01", "end_date": "2030-01-03", "amount": 1, "unit": "mg", "times": ["10:00"]}]}]})
             reply = await turn(db, user, "составь курс", [DialogueOperation(kind="plan", summary="Курс Example", evidence="составь курс", plan=plan)])
             card = reply.dialogue_cards[0]
-            assert card["state"] == "pending"
-            assert card["summary"].startswith("Рекомендация ИИ — не медицинское назначение.")
+            assert card["state"] == "needs_correction"
             assert await service.current_plan(db, user.id) is None
     asyncio.run(run())
 
@@ -105,7 +100,7 @@ def test_auto_save_undo_and_idempotent_action():
             card = message.dialogue_cards[0]
             assert card["state"] == "saved" and card["can_undo"]
             assert "undo" not in card and "guard" not in card
-            assert profile.settings["checkin_time"] == "21:00:00"
+            assert profile.settings["checkin_time"] is None
             assert len(list((await db.execute(select(AICompanionEntry))).scalars())) == 1
             action = Action(request_key="same-undo-key", kind="dialogue_undo", message_id=message.id, action_id=card["id"], action_token=card["action_token"])
             first = await service.apply_action(db, user.id, action)
@@ -192,7 +187,12 @@ def test_daily_prompt_stop_and_intro_once():
             await dialogue.introduce(db, user.id)
             await db.commit()
             assert len(list((await db.execute(select(AIMessage))).scalars())) == 1
+            assert "21:00" not in dialogue.INTRO and "только по вашему выбору" in dialogue.INTRO
             await turn(db, user, "вес 84", [weight()])
+            await schedule_recurring(db, profile, service.now_utc())
+            await db.flush()
+            assert not list((await db.execute(select(AICompanionReminder).where(AICompanionReminder.kind == "checkin"))).scalars())
+            await act(db, user, "settings", expected_version=profile.version, settings=Settings(checkin_time=time(21), inactivity_days=3))
             await schedule_recurring(db, profile, service.now_utc())
             await db.flush()
             reminder = (await db.execute(select(AICompanionReminder).where(AICompanionReminder.kind == "checkin"))).scalar_one()
@@ -203,6 +203,7 @@ def test_daily_prompt_stop_and_intro_once():
             await dialogue.direct_reply(db, user.id, source)
             await db.commit()
             assert profile.settings["checkin_time"] is None
+            assert profile.settings["inactivity_days"] is None
             await turn(db, user, "вес 83", [weight("83")])
             assert profile.settings["checkin_time"] is None
             assert await reminder_text(db, reminder, profile) is None

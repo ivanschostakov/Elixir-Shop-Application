@@ -136,9 +136,30 @@ async def entries_for(db, user_id, start, end, kind=None, limit=200):
     return list((await db.execute(stmt.order_by(AICompanionEntry.occurred_at.desc(), AICompanionEntry.id.desc()).limit(limit))).scalars().all())
 
 
+async def latest_weight(db, user_id, now=None):
+    return (await db.execute(select(AICompanionEntry).where(
+        AICompanionEntry.user_id == user_id, AICompanionEntry.kind == "weight",
+        AICompanionEntry.occurred_at <= (now or now_utc()),
+    ).order_by(AICompanionEntry.occurred_at.desc(), AICompanionEntry.id.desc()).limit(1))).scalar_one_or_none()
+
+
+async def favorite_meals_for(db, user_id):
+    profile = await profile_for(db, user_id)
+    if profile is None or not profile.enabled:
+        raise HTTPException(403, "Сопровождение отключено")
+    await require_consent(db, user_id)
+    rows = list((await db.execute(select(AICompanionEntry).where(
+        AICompanionEntry.user_id == user_id, AICompanionEntry.kind == "meal",
+        AICompanionEntry.data["favorite"].as_boolean().is_(True),
+        AICompanionEntry.occurred_at <= now_utc(),
+    ).order_by(AICompanionEntry.occurred_at.desc(), AICompanionEntry.id.desc()).limit(201))).scalars())
+    return {"entries": [dump(row) for row in rows[:200]], "limit": 200, "may_have_more": len(rows) > 200}
+
+
 async def summary_for(db, user_id, start, end):
+    from .mentor import progress_totals
     # Totals use the complete bounded period, not the UI's paginated entries.
-    entries = await entries_for(db, user_id, start, end, limit=10001)
+    entries = await entries_for(db, user_id, start, min(end, now_utc() + timedelta(microseconds=1)), limit=10001)
     if len(entries) > 10000:
         raise HTTPException(422, "Слишком много записей; сократите период")
     meals = [e for e in entries if e.kind == "meal"]
@@ -147,16 +168,18 @@ async def summary_for(db, user_id, start, end):
     events = list((await db.execute(select(AICompanionEvent).where(AICompanionEvent.user_id == user_id, AICompanionEvent.scheduled_at >= start, AICompanionEvent.scheduled_at < end, AICompanionEvent.status != "cancelled"))).scalars().all())
     profile = await profile_for(db, user_id)
     zone = timezone_info(Settings.model_validate(profile.settings if profile else {}).timezone)
-    return {"from": start.isoformat(), "to": end.isoformat(), "nutrition": totals, "meals_logged": len(meals), "days_with_meals": len({e.occurred_at.astimezone(zone).date() for e in meals}), "weight_measurements": len(weights), "weight_change_kg": str(Decimal(weights[-1].data["weight_kg"]) - Decimal(weights[0].data["weight_kg"])) if len(weights) > 1 else None, "events": {status: sum(e.status == status for e in events) for status in ("done", "skipped", "pending")}, "coverage_note": "Итоги только по внесённым записям; отсутствие записи не означает отсутствие еды или выполненного действия."}
+    return {"from": start.isoformat(), "to": end.isoformat(), "nutrition": totals, "meals_logged": len(meals), "days_with_meals": len({e.occurred_at.astimezone(zone).date() for e in meals}), "weight_measurements": len(weights), "weight_change_kg": str(Decimal(weights[-1].data["weight_kg"]) - Decimal(weights[0].data["weight_kg"])) if len(weights) > 1 else None, "events": {status: sum(e.status == status for e in events) for status in ("done", "skipped", "pending")}, "coverage_note": "Итоги только по внесённым записям; отсутствие записи не означает отсутствие еды или выполненного действия.", **progress_totals(entries)}
 
 
 async def get_state(db, user_id):
+    from .mentor import dashboard
+    from .photos import serialize_entries
     base = {"available": config.AI_COMPANION_ENABLED, "consent_version": config.AI_COMPANION_CONSENT_VERSION, "dialogue_protocol": 2 if config.AI_COMPANION_DIALOGUE_ENABLED else 1}
     if not base["available"]:
         return base
     profile = await profile_for(db, user_id)
     if profile is None:
-        return {**base, "consent_required": True, "profile": None, "plan": None, "events": [], "entries": []}
+        return {**base, "consent_required": True, "profile": None, "plan": None, "events": [], "entries": [], "mentor": None}
     base["consent_required"] = not consent_is_current(await consent_for(db, user_id))
     settings = Settings.model_validate(profile.settings)
     now = now_utc()
@@ -164,7 +187,7 @@ async def get_state(db, user_id):
     today = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     tomorrow = (local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).astimezone(timezone.utc)
     events = list((await db.execute(select(AICompanionEvent).where(AICompanionEvent.user_id == user_id, AICompanionEvent.scheduled_at >= today, AICompanionEvent.scheduled_at < now + timedelta(days=7), AICompanionEvent.status != "cancelled").order_by(AICompanionEvent.scheduled_at).limit(100))).scalars().all())
-    return {**base, "profile": dump(profile), "plan": dump(await current_plan(db, user_id)), "events": [dump(e) for e in events], "entries": [dump(e) for e in await entries_for(db, user_id, today - timedelta(days=7), tomorrow, limit=100)], "today": await summary_for(db, user_id, today, tomorrow)}
+    return {**base, "profile": dump(profile), "plan": dump(await current_plan(db, user_id)), "events": [dump(e) for e in events], "entries": await serialize_entries(db, user_id, await entries_for(db, user_id, today - timedelta(days=7), tomorrow, limit=100)), "today": await summary_for(db, user_id, today, tomorrow), "mentor": await dashboard(db, user_id)}
 
 
 async def context_for(db, user_id):
@@ -176,8 +199,19 @@ async def context_for(db, user_id):
         return {"as_of": now_utc().isoformat(), "profile": {}, "profile_version": profile["version"], "timezone": profile["settings"].get("timezone", "Europe/Moscow"), "active_plan": None, "today": None, "latest_weight": None, "upcoming_events": [], "pending_confirmations": [], "storage_consent_required": True}
     pending_messages = list((await db.execute(select(AIMessage).where(AIMessage.user_id == user_id, AIMessage.is_sensitive.is_(True), AIMessage.sender == "ai").order_by(AIMessage.id.desc()).limit(5))).scalars().all())
     pending = [card for message in pending_messages for card in (message.context_json or {}).get("companion_cards", []) if card.get("state") == "pending"][:3]
-    weights = (await db.execute(select(AICompanionEntry).where(AICompanionEntry.user_id == user_id, AICompanionEntry.kind == "weight").order_by(AICompanionEntry.occurred_at.desc(), AICompanionEntry.id.desc()).limit(1))).scalar_one_or_none()
-    return {"as_of": now_utc().isoformat(), "pending_confirmations": [{"kind": c["kind"], "summary": c["summary"], "proposal": c["proposal"]} for c in pending], "profile": profile["data"], "profile_version": profile["version"], "timezone": profile["settings"].get("timezone", "Europe/Moscow"), "active_plan": {key: state["plan"][key] for key in ("id", "version", "status")} if state["plan"] else None, "today": state["today"], "latest_weight": dump(weights), "upcoming_events": state["events"][:8]}
+    now = now_utc()
+    weights = await latest_weight(db, user_id, now)
+    zone = timezone_info(Settings.model_validate(profile["settings"]).timezone)
+    start = now.astimezone(zone).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    meals = await entries_for(db, user_id, start, now + timedelta(microseconds=1), "meal", limit=10001)
+    recent = await entries_for(db, user_id, start - timedelta(days=7), now + timedelta(microseconds=1), limit=10001)
+    return {"as_of": now.isoformat(), "pending_confirmations": [{"kind": c["kind"], "summary": c["summary"], "proposal": c["proposal"]} for c in pending], "profile": profile["data"], "profile_version": profile["version"], "timezone": profile["settings"].get("timezone", "Europe/Moscow"), "active_plan": {key: state["plan"][key] for key in ("id", "version", "status", "data")} if state["plan"] else None, "today": state["today"], "latest_weight": dump(weights), "upcoming_events": state["events"][:8],
+        "confirmed_food_today": [dump(e) for e in meals], "remaining_nutrition": state["mentor"]["today"]["nutrition"]["remaining"],
+        "recent_wellbeing": [dump(e) for e in recent if e.kind == "wellbeing"][:14],
+        "recent_workouts": [dump(e) for e in recent if e.kind == "workout"][:14],
+        "recent_measurements": [dump(e) for e in recent if e.kind == "measurement"][:14],
+        "workout_plan": state["mentor"]["workout_plan"], "week": state["mentor"]["week"],
+        "record_policy": "Only confirmed entries are actual. Pending proposals and workout targets are not consumption, completed exercise or measurements. Remaining nutrition is based on logged food only."}
 
 
 async def nutrition_suggestion(db, user_id):
@@ -193,6 +227,8 @@ async def nutrition_suggestion(db, user_id):
 
 
 async def prepare_plan(db, plan, existing=None):
+    if plan.source == "ai_recommended_plan":
+        raise HTTPException(422, "Нельзя сохранять назначенный ИИ курс или дозировки. Внесите готовое назначение специалиста.")
     from src.database.models import Variant
     value = plan.model_copy(deep=True)
     previous = {item.get("variant_id"): item for item in existing.data["items"]} if existing else {}
@@ -321,15 +357,26 @@ async def apply_action(db: AsyncSession, user_id: int, action: Action, *, allow_
 
 
 async def apply_payload(db, user_id, profile, action, source_message_id=None):
-    if action.kind in {"profile", "settings", "plan", "plan_status", "nutrition"}:
+    if action.kind in {"profile", "settings", "plan", "plan_status", "nutrition", "workout_plan"}:
         require_version(profile.version, action.expected_version)
     if action.kind == "profile":
         if action.profile is None:
             raise HTTPException(422, "Нет данных профиля")
         old = ProfileData.model_validate(profile.data)
-        new = action.profile
+        new = action.profile.model_copy(deep=True)
+        # Older clients and AI profile cards do not own the workout schedule.
+        if new.workout_plan is None:
+            new.workout_plan = old.workout_plan
+        if "nutrition" not in action.profile.model_fields_set:
+            new.nutrition, new.nutrition_source, new.nutrition_rule_version = old.nutrition, old.nutrition_source, old.nutrition_rule_version
         if old.nutrition != new.nutrition:
             profile.target_history = [*profile.target_history, {"changed_at": now_utc().isoformat(), "previous": old.nutrition.model_dump(mode="json") if old.nutrition else None}]
+        profile.data = new.model_dump(mode="json")
+    elif action.kind == "workout_plan":
+        if "workout_plan" not in action.model_fields_set:
+            raise HTTPException(422, "Нет плана тренировок")
+        new = ProfileData.model_validate(profile.data)
+        new.workout_plan = action.workout_plan
         profile.data = new.model_dump(mode="json")
     elif action.kind == "nutrition":
         if action.nutrition is None:
@@ -389,8 +436,15 @@ async def apply_payload(db, user_id, profile, action, source_message_id=None):
             return
         if action.entry is None:
             raise HTTPException(422, "Нет данных записи")
+        if row is not None and row.kind != action.entry.kind:
+            raise HTTPException(422, "Нельзя менять тип существующей записи")
         if action.entry.occurred_at > now_utc() + timedelta(minutes=5):
             raise HTTPException(422, "Нельзя отметить фактическую запись в будущем")
+        if action.entry.workout:
+            await validate_workout_entry(db, user_id, profile, action.entry, row)
+        if action.entry.kind == "progress_photo":
+            from .photos import validate_photo_attachments
+            await validate_photo_attachments(db, user_id, action.entry.photo_attachment_ids)
         if row is None:
             row = AICompanionEntry(user_id=user_id, kind=action.entry.kind, occurred_at=action.entry.occurred_at, data={}, source="ai_confirmed" if source_message_id else "manual", source_message_id=source_message_id)
             db.add(row)
@@ -413,6 +467,33 @@ async def apply_payload(db, user_id, profile, action, source_message_id=None):
     else:
         raise HTTPException(422, "Неподдерживаемое действие")
     await db.flush()
+
+
+async def validate_workout_entry(db, user_id, profile, entry, existing):
+    workout = entry.workout
+    identity = (workout.plan_day_key, workout.scheduled_date.isoformat() if workout.scheduled_date else None)
+    if existing:
+        previous = existing.data["workout"]
+        if (previous.get("plan_day_key"), previous.get("scheduled_date")) != identity:
+            raise HTTPException(422, "Нельзя менять привязку начатой тренировки")
+        if workout.plan_day_key and existing.occurred_at != entry.occurred_at:
+            raise HTTPException(422, "Нельзя менять дату запланированной тренировки")
+        return  # A plan revision or device timezone change must not strand a session.
+    if workout.plan_day_key is None:
+        return
+    local_date = entry.occurred_at.astimezone(timezone_info(Settings.model_validate(profile.settings).timezone)).date()
+    if local_date != workout.scheduled_date:
+        raise HTTPException(422, "Дата тренировки должна совпадать с датой записи")
+    plan = ProfileData.model_validate(profile.data).workout_plan
+    day = next((d for d in plan.days if d.key == workout.plan_day_key), None) if plan else None
+    if not day or local_date < plan.start_date or (plan.end_date and local_date > plan.end_date) or local_date.weekday() not in day.weekdays:
+        raise HTTPException(422, "Тренировка не запланирована на выбранный день")
+    start = datetime.combine(local_date, datetime.min.time(), timezone_info(Settings.model_validate(profile.settings).timezone))
+    rows = await entries_for(db, user_id, start.astimezone(timezone.utc), (start + timedelta(days=1)).astimezone(timezone.utc), "workout", limit=10001)
+    if len(rows) > 10000:
+        raise HTTPException(422, "Слишком много тренировок за день")
+    if any((e.data["workout"].get("plan_day_key"), e.data["workout"].get("scheduled_date")) == identity for e in rows):
+        raise HTTPException(409, "Тренировка уже начата. Обновите существующую запись.")
 
 
 async def attach_proposals(db, user_id, message, proposals, profile, expected_version=None):

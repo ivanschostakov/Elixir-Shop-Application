@@ -17,6 +17,7 @@ class NutritionRules(StrictModel):
     activity: dict[Literal["low", "light", "moderate", "high"], Annotated[Decimal, Field(ge=1, le=2)]]
     loss_fraction: Decimal = Field(ge=0, le=Decimal("0.20"))
     max_deficit_kcal: Decimal = Field(ge=0, le=500)
+    gain_surplus_kcal: Decimal | None = Field(default=None, ge=300, le=500)
     kcal_floor: dict[Literal["male", "female"], Annotated[Decimal, Field(ge=1500, le=2500)]]
     max_kcal: Decimal = Field(ge=2500, le=6000)
     protein_fraction: Decimal = Field(ge=Decimal("0.10"), le=Decimal("0.30"))
@@ -38,6 +39,9 @@ DEFAULT_NUTRITION_RULES = NutritionRules(
     version="balanced-adult-v1", enabled=True,
     activity={"low": "1.2", "light": "1.375", "moderate": "1.55", "high": "1.725"},
     loss_fraction="0.15", max_deficit_kcal=500,
+    # Lower end of NHS adult guidance; eligibility and BMI exclusions still apply.
+    # https://www.nhs.uk/live-well/healthy-weight/managing-your-weight/healthy-ways-to-gain-weight/
+    gain_surplus_kcal=300,
     kcal_floor={"female": 1500, "male": 1800}, max_kcal=4000,
     protein_fraction="0.25", fat_fraction="0.30", carbs_fraction="0.45",
 )
@@ -48,6 +52,8 @@ def unavailable(reason: str) -> dict:
 
 
 def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: str = "", *, eligibility_confirmed: bool = False) -> dict:
+    if profile.goal == "custom":
+        return unavailable("Для индивидуальной цели автоматический расчёт недоступен. Внесите согласованные со специалистом КБЖУ вручную.")
     if not eligibility_confirmed:
         return unavailable("В разделе КБЖУ подтвердите отсутствие ограничений для авторасчёта. При беременности, ГВ, РПП или необходимости лечебного питания используйте ориентир специалиста.")
     if any(v is None for v in (profile.age, profile.sex, profile.height_cm, profile.activity)):
@@ -68,6 +74,8 @@ def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: st
 
         height_m2 = (profile.height_cm / 100) ** 2
         bmi = weight_kg / height_m2
+        # Product auto-target guardrail, including gain: low BMI may need an
+        # individual assessment. Manual clinician targets remain available.
         if bmi < Decimal("18.5") or (profile.target_weight_kg is not None and profile.target_weight_kg / height_m2 < Decimal("18.5")):
             return unavailable("Текущий или целевой вес ниже диапазона авторасчёта. Нужен индивидуальный ориентир специалиста.")
         if profile.goal == "weight_loss":
@@ -75,6 +83,13 @@ def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: st
                 return unavailable("При ИМТ ниже 25 автоматический дефицит не предлагаем. Выберите поддержание или внесите индивидуальные КБЖУ.")
             if profile.target_weight_kg is not None and profile.target_weight_kg >= weight_kg:
                 return unavailable("Целевой вес уже достигнут или выше текущего. Уточните цель или выберите поддержание.")
+        if profile.goal == "weight_gain":
+            if rules.gain_surplus_kcal is None:
+                return unavailable("Правила набора веса не настроены. Внесите индивидуальные КБЖУ вручную.")
+            if bmi >= 25 or (profile.target_weight_kg is not None and profile.target_weight_kg / height_m2 >= 25):
+                return unavailable("Текущий или целевой вес вне диапазона стандартного набора. Нужен индивидуальный ориентир специалиста.")
+            if profile.target_weight_kg is not None and profile.target_weight_kg <= weight_kg:
+                return unavailable("Целевой вес уже достигнут или ниже текущего. Уточните цель.")
 
         bmr = 10 * weight_kg + Decimal("6.25") * profile.height_cm - 5 * profile.age + (5 if profile.sex == "male" else -161)
         maintenance = bmr * rules.activity[profile.activity]
@@ -82,7 +97,8 @@ def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: st
         floor = rules.kcal_floor[profile.sex]
         if maintenance < floor or (profile.goal == "weight_loss" and maintenance == floor):
             return unavailable("Расчёт слишком низкий для стандартного режима. Используйте индивидуальный ориентир специалиста.")
-        target = max(floor, maintenance - deficit)
+        surplus = rules.gain_surplus_kcal if profile.goal == "weight_gain" else Decimal(0)
+        target = max(floor, maintenance - deficit + surplus)
         if target > rules.max_kcal:
             return unavailable("Расчёт выше диапазона стандартного режима. Проверьте данные или внесите индивидуальный ориентир.")
         kcal = target.quantize(Decimal(1), rounding=ROUND_CEILING if profile.goal == "weight_loss" else ROUND_HALF_UP)
@@ -95,10 +111,11 @@ def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: st
             carbs=(kcal * rules.carbs_fraction / 4).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP),
         )
         return {
-            "available": True, "nutrition": nutrition.model_dump(mode="json"), "rule_version": rules.version,
-            "maintenance_kcal": str(round(maintenance)), "deficit_kcal": str(round(maintenance - kcal)),
+            "available": True, "nutrition": nutrition.model_dump(mode="json"), "rule_version": rules.version + (":gain-v1" if profile.goal == "weight_gain" else ""),
+            "maintenance_kcal": str(round(maintenance)), "deficit_kcal": str(max(0, round(maintenance - kcal))),
+            "surplus_kcal": str(max(0, round(kcal - maintenance))),
             "note": "Стартовый ориентир по формуле Миффлина — Сан Жеора, не медицинское назначение. "
-                    + ("Дефицит уменьшен из-за нижней границы калорий. " if target > maintenance - deficit else "")
+                    + ("Дефицит уменьшен из-за нижней границы калорий. " if profile.goal == "weight_loss" and target > maintenance - deficit else "")
                     + "Проверьте значения перед сохранением. Они не меняются автоматически при новых записях веса.",
         }
     except (ValueError, TypeError, KeyError, DecimalException):

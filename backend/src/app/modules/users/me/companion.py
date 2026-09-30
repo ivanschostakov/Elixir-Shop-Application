@@ -9,6 +9,8 @@ import config
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.ai.companion import service
 from src.app.services.ai.companion.schemas import Action, Settings, StrictModel
+from src.app.services.ai.companion.mentor import FavoriteMealsRead, MentorDashboard, ProgressSummary, dashboard
+from src.app.services.ai.companion.photos import ProgressPhotosRead, serialize_entries
 from src.app.services.ai.companion.timezones import normalize_timezone, timezone_info
 from src.app.services.ai.security import ensure_app_ai_access
 from src.app.services.app_integrity.service import verify_app_integrity_request
@@ -94,16 +96,34 @@ async def bounds(db, user_id, from_date, to_date):
 
 @companion_router.get("/entries")
 async def entries(from_date: date, to_date: date, kind: str | None = None, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
-    if kind is not None and kind not in {"meal", "weight", "wellbeing"}:
+    if kind is not None and kind not in {"meal", "weight", "wellbeing", "workout", "measurement", "progress_photo"}:
         raise HTTPException(422, "Неизвестный тип записи")
     start, end = await bounds(db, user.id, from_date, to_date)
-    return {"entries": [service.dump(e) for e in await service.entries_for(db, user.id, start, end, kind)]}
+    return {"entries": await serialize_entries(db, user.id, await service.entries_for(db, user.id, start, end, kind))}
 
 
-@companion_router.get("/summary")
+@companion_router.get("/progress-photos", response_model=ProgressPhotosRead)
+async def progress_photos(from_date: date, to_date: date, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    await service.require_consent(db, user.id)
+    start, end = await bounds(db, user.id, from_date, to_date)
+    rows = await service.entries_for(db, user.id, start, end, "progress_photo", limit=201)
+    return {"entries": await serialize_entries(db, user.id, rows[:200]), "limit": 200, "may_have_more": len(rows) > 200}
+
+
+@companion_router.get("/favorite-meals", response_model=FavoriteMealsRead)
+async def favorite_meals(user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    return await service.favorite_meals_for(db, user.id)
+
+
+@companion_router.get("/summary", response_model=ProgressSummary)
 async def summary(from_date: date, to_date: date, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
     start, end = await bounds(db, user.id, from_date, to_date)
     return await service.summary_for(db, user.id, start, end)
+
+
+@companion_router.get("/mentor", response_model=MentorDashboard | None)
+async def mentor(user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    return await dashboard(db, user.id)
 
 
 @companion_router.get("/events")

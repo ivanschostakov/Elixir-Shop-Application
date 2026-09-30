@@ -17,7 +17,7 @@ DATES = {"from_date": {"type": "string", "description": "Inclusive local date YY
 COMPANION_TOOLS = [
     function("get_active_plan", "Read the user's current confirmed plan before discussing its schedule or quantities. Never invent or change a dose."),
     function("get_course_events", "Read scheduled events and actual marks. Missing marks are not missed doses.", DATES),
-    function("get_entries", "Read confirmed diary entries, newest first, up to 200.", {**DATES, "kind": {"type": "string", "enum": ["meal", "weight", "wellbeing"]}}),
+    function("get_entries", "Read confirmed diary entries, newest first, up to 200. Progress photos are attachment references, never inferred measurements.", {**DATES, "kind": {"type": "string", "enum": ["meal", "weight", "wellbeing", "workout", "measurement", "progress_photo"]}}),
     function("get_progress_summary", "Get complete server-calculated totals for the period; do not sum a paginated diary.", DATES),
     function("calculate_course_supply", "Calculate package needs from the existing confirmed plan. This does not prescribe or buy anything.", {"days": {"type": "integer", "minimum": 1, "maximum": 90}}),
     function("calculate_nutrition_targets", "Get an optional server-calculated nutrition target. Requires a complete confirmed adult profile, recent weight and nutrition eligibility. User confirmation is still required."),
@@ -78,7 +78,7 @@ class CompanionToolExecutor:
                 if name == "get_progress_summary":
                     result = await service.summary_for(self.db, self.user_id, start, end)
                 elif name == "get_entries":
-                    if args.get("kind") not in {"meal", "weight", "wellbeing"}:
+                    if args.get("kind") not in {"meal", "weight", "wellbeing", "workout", "measurement", "progress_photo"}:
                         raise ValueError("Invalid diary kind")
                     rows = await service.entries_for(self.db, self.user_id, start, end, args["kind"])
                     result = {"entries": [service.dump(e) for e in rows], "limit": 200, "may_have_more": len(rows) == 200}

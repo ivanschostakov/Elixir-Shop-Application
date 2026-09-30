@@ -84,7 +84,10 @@ def dump(row):
 
 async def settings_for(db, uid):
     row = await db.get(TelegramAIReminderSettings, uid)
-    return {"timezone": row.timezone if row else "Europe/Moscow", "daily_time": row.daily_time if row else None}
+    from .reminders import options_for
+    options = await options_for(db, uid)
+    return {"timezone": row.timezone if row else "Europe/Moscow", "daily_time": row.daily_time if row else None,
+            "reminders": {k: v for k, v in options.data.items() if k not in {"next", "course_since"}} if options else {}}
 
 
 @router.post("/dashboard")
@@ -110,7 +113,9 @@ async def dashboard(payload: Identity, db: AsyncSession = Depends(get_db)):
         TelegramAIJournal.created_at >= instant-timedelta(days=1)
     ).order_by(TelegramAIJournal.id.desc()).limit(1))).scalar_one_or_none()
     totals = {key: round(sum(float(m.data.get(key,0)) for m in meals),1) for key in ("kcal","protein","fat","carbs")}
-    return {**saved, "settings": settings, "date": local.date().isoformat(), "now": instant.isoformat(),
+    from .mentor import workspace_state
+    workspace = await workspace_state(db, payload.telegram_user_id, totals)
+    return {**saved, "workspace": workspace, "settings": settings, "date": local.date().isoformat(), "now": instant.isoformat(),
         "meals": [dump(m) for m in meals], "totals": totals,
         "weights": [dump(w) for w in reversed(weights)], "draft": dump(pending) if pending else None}
 
@@ -155,6 +160,14 @@ async def meal_action(payload: MealAction, db: AsyncSession = Depends(get_db)):
 
 @router.post("/reminder/settings")
 async def reminder_settings(payload: ReminderUpdate, db: AsyncSession = Depends(get_db)):
+    await db.execute(text("SELECT pg_advisory_xact_lock(733000111)"))
+    from .reminders import Options, options, options_for
+    existing = await options_for(db, payload.telegram_user_id)
+    if existing:
+        values = {k: v for k, v in existing.data.items() if k in Options.model_fields}
+        values.update(telegram_user_id=payload.telegram_user_id, timezone=payload.timezone, evening=payload.daily_time)
+        await options(Options.model_validate(values), db)
+        return {"ok": True, **await settings_for(db, payload.telegram_user_id)}
     await db.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": -payload.telegram_user_id})
     row=await db.get(TelegramAIReminderSettings,payload.telegram_user_id)
     if row is None:
@@ -162,20 +175,18 @@ async def reminder_settings(payload: ReminderUpdate, db: AsyncSession = Depends(
         db.add(row)
     row.timezone=payload.timezone;row.daily_time=payload.daily_time
     row.next_at=next_reminder(row.timezone,row.daily_time,now()) if row.daily_time else None
+    if not row.daily_time:
+        queued = list((await db.execute(select(TelegramAIJournal).where(
+            TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+            TelegramAIJournal.kind == "reminder", TelegramAIJournal.status.in_(["pending", "leased"])
+        ))).scalars())
+        for item in queued:
+            if item.data.get("legacy"): item.status = "cancelled"
     await db.commit()
     return {"ok":True,**await settings_for(db,payload.telegram_user_id)}
 
 
 @router.post("/reminder/due")
 async def due(db: AsyncSession = Depends(get_db)):
-    instant=now()
-    rows=list((await db.execute(select(TelegramAIReminderSettings).where(
-        TelegramAIReminderSettings.next_at<=instant,TelegramAIReminderSettings.daily_time.is_not(None)
-    ).order_by(TelegramAIReminderSettings.next_at).limit(50).with_for_update(skip_locked=True))).scalars())
-    items=[]
-    for row in rows:
-        # Claim before sending: no duplicate reminder after bot restart; stale reminders expire.
-        if instant-row.next_at <= timedelta(minutes=30): items.append({"telegram_user_id":row.telegram_user_id})
-        row.next_at=next_reminder(row.timezone,row.daily_time,instant)
-    await db.commit()
-    return {"items":items}
+    from .reminders import claim_due
+    return await claim_due(db)

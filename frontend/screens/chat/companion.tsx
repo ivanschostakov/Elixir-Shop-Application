@@ -4,13 +4,15 @@ import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressa
 import { useTheme } from "@/providers/theme-provider"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { getErrorMessage } from "@/utils/errors"
-import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, getCompanionEntries, getCompanionEvents, getCompanionSummary, getCompanionSupply, getNutritionSuggestion } from "@/services/api/companion"
+import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, getCompanionEntries, getCompanionEvents, getCompanionSummary, getCompanionSupply, getNutritionSuggestion, requestKey } from "@/services/api/companion"
 import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
 import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
 import { calendarDate, deviceCompanionTimezone, formatCompanionDate as dateLabel, localDateTime, localEntryTimestamp } from "@/screens/chat/companion-timezones"
 import { useDeviceClock } from "@/hooks/chat/use-device-clock"
 import { DialogueCards, DialoguePanel } from "@/screens/chat/companion-dialogue"
+import type { MentorPage } from "@/screens/chat/mentor-data"
+import { goalLabels } from "@/screens/chat/mentor-data"
 
 type Page = "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
 type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry }
@@ -19,6 +21,7 @@ const unitLabels: Record<Unit, string> = { mg: "мг", mcg: "мкг", g: "г", m
 const settingsDefault: CompanionSettings = { timezone: "UTC", nutrition_auto_eligible: false, course_reminders: false, daily_time: null, weight_time: null, weekly_time: null, weekly_day: 6, supply_reminders: false, supply_days: 7 }
 const emptyNutrition = (): Nutrition => ({ kcal: "", protein: "", fat: "", carbs: "" })
 const numberOrNull = (value: string) => value.trim() ? Number(value.replace(",", ".")) : null
+const legacyEntryPage = (kind?: EntryData["kind"]): Page => kind === "workout" || kind === "measurement" || kind === "progress_photo" ? "journal" : kind ?? "meal"
 
 export function useCompanion() {
     const focused = useIsFocused()
@@ -26,8 +29,10 @@ export function useCompanion() {
     const [state, setState] = useState<CompanionState | null>(null)
     const [busy, setBusy] = useState(false)
     const busyRef = useRef(false)
+    const retryKeys = useRef(new Map<string, string>())
     const [error, setError] = useState("")
     const [editor, setEditor] = useState<Editor | null>(null)
+    const [mentorPage, setMentorPage] = useState<MentorPage | null>("today")
     const refreshSequence = useRef(0)
     const protocolRef = useRef<1 | 2>(1)
     const refresh = useCallback(async () => {
@@ -70,7 +75,11 @@ export function useCompanion() {
                     { text: "Мне есть 18 — сохранить", onPress: () => resolve(true) },
                 ], { cancelable: true, onDismiss: () => resolve(false) })
             }))
-            const result = await actCompanion({ ...payload, ...(payload.settings ? { settings: { ...payload.settings, timezone: deviceCompanionTimezone() } } : {}) })
+            const identity = JSON.stringify(action)
+            const key = action.request_key ?? retryKeys.current.get(identity) ?? requestKey()
+            retryKeys.current.set(identity, key)
+            const result = await actCompanion({ ...payload, request_key: key, ...(payload.settings ? { settings: { ...payload.settings, timezone: deviceCompanionTimezone() } } : {}) })
+            retryKeys.current.delete(identity)
             setState(result.state)
             return result.state
         } finally { busyRef.current = false; setBusy(false) }
@@ -78,7 +87,7 @@ export function useCompanion() {
     const attempt = async (operation: () => Promise<unknown>) => {
         try { await operation() } catch (e) { if (!(e instanceof CompanionActionCancelled)) setError(getErrorMessage(e)) }
     }
-    return { state, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => protocolRef.current, busy, error, setError, editor, setEditor, refresh, perform, attempt }
+    return { state, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => protocolRef.current, busy, error, setError, editor, setEditor, mentorPage, setMentorPage, refresh, perform, attempt }
 }
 
 function Copy({ children }: { children: React.ReactNode }) {
@@ -114,7 +123,7 @@ function ProposalCopy({ proposal, clock }: { proposal: Proposal; clock: string }
     </View>)}<Copy>Это ваша готовая схема, а не назначение AI. Проверьте каждый этап и остаток перед подтверждением.</Copy></>
     if (proposal.entry) {
         const entry = proposal.entry
-        return <><Copy>{dateLabel(entry.occurred_at, clock)} · {entry.kind === "meal" ? entry.name : entry.kind === "weight" ? String(entry.weight_kg) + " кг" : "Самочувствие"}</Copy>
+        return <><Copy>{dateLabel(entry.occurred_at, clock)} · {entry.kind === "meal" ? entry.name : entry.kind === "weight" ? String(entry.weight_kg) + " кг" : entry.kind === "workout" ? entry.workout?.name : entry.kind === "measurement" ? "Замеры" : entry.kind === "progress_photo" ? "Фото прогресса" : "Самочувствие"}</Copy>
             {entry.portion_g ? <Copy>Порция: {entry.portion_g} г</Copy> : null}
             {entry.nutrition ? <NutritionCopy value={entry.nutrition} /> : null}
             {entry.estimated ? <Copy>Приблизительная оценка: {entry.assumptions || "проверьте состав и размер порции"}</Copy> : null}
@@ -124,7 +133,7 @@ function ProposalCopy({ proposal, clock }: { proposal: Proposal; clock: string }
     if (proposal.nutrition) return <NutritionCopy value={proposal.nutrition} />
     if (proposal.profile) {
         const p = proposal.profile
-        return <><Copy>Цель: {p.goal === "course" ? "сопровождение курса" : p.goal === "maintain" ? "поддержание" : "снижение веса"}. Возраст {p.age ?? "—"}, рост {p.height_cm ?? "—"} см, целевой вес {p.target_weight_kg ?? "—"} кг.</Copy><Copy>Пол: {p.sex === "female" ? "женский" : p.sex === "male" ? "мужской" : "не указан"}. Активность: {({ low: "низкая", light: "лёгкая", moderate: "умеренная", high: "высокая" })[p.activity ?? "low"]}.</Copy><Copy>Предпочтения: {p.preferences || "—"}. Ограничения: {p.restrictions || "—"}.</Copy>{p.nutrition ? <NutritionCopy value={p.nutrition} /> : null}</>
+        return <><Copy>Цель: {p.goal ? goalLabels[p.goal] : "не указана"}{p.custom_goal ? ` · ${p.custom_goal}` : ""}. Возраст {p.age ?? "—"}, рост {p.height_cm ?? "—"} см, целевой вес {p.target_weight_kg ?? "—"} кг.</Copy><Copy>Пол: {p.sex === "female" ? "женский" : p.sex === "male" ? "мужской" : "не указан"}. Активность: {({ low: "низкая", light: "лёгкая", moderate: "умеренная", high: "высокая" })[p.activity ?? "low"]}.</Copy><Copy>Предпочтения: {p.preferences || "—"}. Ограничения: {p.restrictions || "—"}.</Copy>{p.nutrition ? <NutritionCopy value={p.nutrition} /> : null}</>
     }
     return null
 }
@@ -139,7 +148,7 @@ export function CompanionCards({ controller: c, message, onChanged }: { controll
         }
         await c.perform({ kind, message_id: message.id, action_id: card.id, action_token: card.action_token ?? "" })
         await onChanged()
-        if (edit) c.setEditor({ page: card.kind === "entry" ? card.proposal.entry?.kind ?? "meal" : card.kind, proposal: card.proposal })
+        if (edit) c.setEditor({ page: card.kind === "entry" ? legacyEntryPage(card.proposal.entry?.kind) : card.kind, proposal: card.proposal })
     }
     return <><DialogueCards controller={c} message={message} onChanged={onChanged} />{message.companion_cards?.map(card => <View key={card.id} style={styles.card}>
         <Copy>{card.state === "confirmed" ? "✓ Сохранено" : card.state === "cancelled" ? "Отменено" : "Черновик — проверьте данные"}</Copy>
@@ -156,12 +165,12 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     const { palette } = useTheme()
     const hasProfile = !!c.state?.profile
     const setEditor = c.setEditor
-    useEffect(() => { if (openRequested && hasProfile) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor])
+    useEffect(() => { if (openRequested && hasProfile && c.state?.dialogue_protocol !== 2) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor, c.state?.dialogue_protocol])
     if (Platform.OS === "web" || !c.state?.available) return null
-    if (c.state.dialogue_protocol === 2 && onPrompt) return <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt} sending={sending} />
     const changed = async () => { await c.refresh(); await onChanged() }
-    return <View style={[styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-        <Button label="Мой курс · дневник · прогресс" disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} />
+    const dialogue = c.state.dialogue_protocol === 2 && onPrompt
+    return <View style={dialogue ? undefined : [styles.panel, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+        {dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label="Мой курс · дневник · прогресс" disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} />}
         {c.error ? <><Copy>{c.error}</Copy><Button label="Обновить" onPress={() => void changed()} /></> : null}
         <Modal visible={!!c.editor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => c.setEditor(null)}>
             <KeyboardAvoidingView style={{ flex: 1, backgroundColor: palette.background }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -181,7 +190,7 @@ function CompanionContent({ controller: c, onChanged }: { controller: Controller
     const profile = state.profile
     const version = profile?.version
     const open = (page: Page) => { c.setError(""); c.setEditor({ page }) }
-    const save = async (action: CompanionAction) => { await c.perform(action); c.setEditor({ page: "home" }); await onChanged() }
+    const save = async (action: CompanionAction) => { await c.perform(action); c.setEditor(state.dialogue_protocol === 2 ? null : { page: "home" }); await onChanged() }
     if (page === "consent") return <ConsentForm controller={c} onSave={save} />
     if (["profile", "meal", "weight", "wellbeing", "nutrition", "plan", "settings"].includes(page)) return <ManualForm controller={c} onSave={save} onChanged={onChanged} />
     if (page === "summary" || page === "journal" || page === "events" || page === "supply") return <ReviewPanel controller={c} onChanged={onChanged} />
@@ -247,7 +256,9 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
     return <>
         {page === "profile" ? <>
             <Copy>Профиль: заполняйте только нужные для сопровождения данные.</Copy>
-            <Choices options={{ weight_loss: "Снижение веса", maintain: "Поддержание", course: "Курс" }} value={person.goal} onChange={goal => setPerson({ ...person, goal })} />
+            <Choices options={goalLabels} value={person.goal} onChange={goal => setPerson({ ...person, goal })} />
+            {person.goal === "custom" ? <Field label="Своя цель" value={person.custom_goal} onChange={custom_goal => setPerson({ ...person, custom_goal })} /> : null}
+            {c.state?.mentor?.latest_weight ? <Copy>Последний сохранённый вес: {c.state.mentor.latest_weight.data.weight_kg} кг · {dateLabel(c.state.mentor.latest_weight.occurred_at, c.clock)}</Copy> : null}
             <Field label="Возраст, лет" value={person.age} numeric onChange={text => setPerson({ ...person, age: numberOrNull(text) })} />
             <Choices options={{ male: "Мужской", female: "Женский" }} value={person.sex} onChange={sex => setPerson({ ...person, sex })} />
             <Field label="Рост, см" value={person.height_cm} numeric onChange={text => setPerson({ ...person, height_cm: numberOrNull(text) })} />
@@ -271,7 +282,7 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
                     const result = await getNutritionSuggestion()
                     if (result.available && result.nutrition) {
                         setNutrition(result.nutrition); setRuleVersion(result.rule_version)
-                        setSuggestionNote((result.note ?? "Проверьте перед сохранением.") + " Поддержание: ~" + result.maintenance_kcal + " ккал; дефицит: ~" + result.deficit_kcal + " ккал. Версия: " + result.rule_version)
+                        setSuggestionNote((result.note ?? "Проверьте перед сохранением.") + " Поддержание: ~" + result.maintenance_kcal + " ккал; " + (Number(result.surplus_kcal) > 0 ? "профицит: ~" + result.surplus_kcal : "дефицит: ~" + result.deficit_kcal) + " ккал. Версия: " + result.rule_version)
                     } else { setRuleVersion(undefined); setSuggestionNote(result.reason ?? "Расчёт недоступен") }
                 } finally { calculationRef.current = false; setCalculating(false) }
             })} />
@@ -295,6 +306,10 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             <Copy>Push включается в настройках уведомлений приложения. Здесь задаётся, о чём и когда напоминать. Пустое время выключает напоминание.</Copy>
             <Copy>Дневник и ежедневные напоминания используют время телефона автоматически. При поездке старые записи отображаются в новом местном времени; подтверждённые события курса не переносятся.</Copy>
             <Toggle label="Напоминать о событиях курса" value={settings.course_reminders} onChange={course_reminders => setSettings({ ...settings, course_reminders })} />
+            <Toggle label="Ежедневный вопрос о самочувствии и дневнике" value={!!settings.checkin_time} onChange={value => setSettings({ ...settings, checkin_time: value ? "18:00" : null })} />
+            {settings.checkin_time ? <Field label="Время ежедневного вопроса, ЧЧ:ММ" value={settings.checkin_time} onChange={checkin_time => setSettings({ ...settings, checkin_time })} /> : null}
+            <Toggle label="Напомнить после перерыва" value={settings.inactivity_days != null} onChange={value => setSettings({ ...settings, inactivity_days: value ? 3 : null })} />
+            {settings.inactivity_days != null ? <><Field label="Дней без записей, 2–30" value={settings.inactivity_days} numeric onChange={text => setSettings({ ...settings, inactivity_days: numberOrNull(text) })} /><Field label="Время напоминания после перерыва, ЧЧ:ММ" value={settings.inactivity_time ?? "18:00"} onChange={inactivity_time => setSettings({ ...settings, inactivity_time })} /></> : null}
             {(["daily_time", "weight_time", "weekly_time"] as const).map((key, i) => <Field key={key} label={["Итоги дня, ЧЧ:ММ", "Напомнить внести вес, ЧЧ:ММ", "Итоги недели, ЧЧ:ММ"][i]} value={settings[key]} onChange={text => setSettings({ ...settings, [key]: text || null })} />)}
             <Field label="День недельной сводки: 0 пн … 6 вс" value={settings.weekly_day} numeric onChange={text => setSettings({ ...settings, weekly_day: Number(text) })} />
             <Toggle label="Напоминать о нехватке запаса" value={settings.supply_reminders} onChange={supply_reminders => setSettings({ ...settings, supply_reminders })} />
@@ -375,7 +390,7 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
             <Copy>{dateLabel(event.scheduled_at, c.clock)} · {event.data.name} · {event.data.amount} {unitLabels[event.data.unit]} · {event.status === "pending" ? "без отметки" : event.status === "done" ? "выполнено" : "пропущено"}</Copy>
             <View style={styles.row}>{(["done", "skipped", "pending"] as const).filter(status => status !== event.status).map(status => <Button key={status} label={status === "done" ? "Выполнено" : status === "skipped" ? "Пропущено" : "Снять отметку"} disabled={c.busy || status === "done" && Date.parse(event.scheduled_at) > Date.now()} onPress={() => void c.attempt(async () => { await c.perform({ kind: "event", resource_id: event.id, expected_version: event.version, status }); await load() })} />)}</View>
         </View>)}{events.length >= 200 ? <Copy>Показаны 200 событий. Сузьте период для остальных.</Copy> : null}</> : null}
-        {page === "journal" ? <>{!entries.length ? <Copy>В этом периоде нет записей.</Copy> : null}{entries.map(entry => <View key={entry.id} style={styles.card}><ProposalCopy proposal={{ kind: "entry", summary: "", entry: entry.data }} clock={c.clock} /><View style={styles.row}><Button label="Исправить" onPress={() => c.setEditor({ page: entry.kind, entry })} /><Button label="Удалить" disabled={c.busy} onPress={() => Alert.alert("Удалить запись?", "Она исчезнет из дневника и итогов.", [{ text: "Отмена" }, { text: "Удалить", style: "destructive", onPress: () => void c.attempt(async () => { await c.perform({ kind: "delete_entry", resource_id: entry.id, expected_version: entry.version }); await load(); await onChanged() }) }])} /></View></View>)}{entries.length >= 200 ? <Copy>Показаны последние 200 записей. Сузьте период для просмотра остальных; сводка считает весь выбранный период.</Copy> : null}</> : null}
+        {page === "journal" ? <>{!entries.length ? <Copy>В этом периоде нет записей.</Copy> : null}{entries.map(entry => <View key={entry.id} style={styles.card}><ProposalCopy proposal={{ kind: "entry", summary: "", entry: entry.data }} clock={c.clock} /><View style={styles.row}>{legacyEntryPage(entry.kind) === "journal" ? <Button label="Открыть" onPress={() => { c.setEditor(null); c.setMentorPage(entry.kind === "workout" ? "workouts" : "progress") }} /> : <Button label="Исправить" onPress={() => c.setEditor({ page: legacyEntryPage(entry.kind), entry })} />}<Button label="Удалить" disabled={c.busy} onPress={() => Alert.alert("Удалить запись?", "Она исчезнет из дневника и итогов.", [{ text: "Отмена" }, { text: "Удалить", style: "destructive", onPress: () => void c.attempt(async () => { await c.perform({ kind: "delete_entry", resource_id: entry.id, expected_version: entry.version }); await load(); await onChanged() }) }])} /></View></View>)}{entries.length >= 200 ? <Copy>Показаны последние 200 записей. Сузьте период для просмотра остальных; сводка считает весь выбранный период.</Copy> : null}</> : null}
         {page === "supply" && supply ? <>{supply.reason ? <Copy>{supply.reason}</Copy> : null}{supply.items?.map((item, i) => <View key={i} style={styles.card}>
             <Copy>{item.name}</Copy>
             {item.available ? <>{item.projected_shortage_at ? <Copy>По прогнозу не хватит к: {dateLabel(item.projected_shortage_at, c.clock)}</Copy> : null}<Copy>Нужно: {item.required} {item.unit ? unitLabels[item.unit] : ""}; остаток по журналу: {item.home_remaining}. Докупить: {item.packages} уп. Цена: {item.price ?? "неизвестна"} ₽, сумма: {item.estimated_cost ?? "неизвестна"} ₽. На складе: {item.stock ?? "неизвестно"}.</Copy>

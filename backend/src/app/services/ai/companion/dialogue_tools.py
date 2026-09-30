@@ -16,8 +16,8 @@ DIALOGUE_TOOLS = [
     function("match_course_products", "Match ONLY products the user already takes; never prescribe or sell. Clarify ambiguous variants; no match permits an unlinked item.", {"query": {"type": "string", "minLength": 2, "maxLength": 200}}),
     function("list_course_history", "List the user's latest 30 course versions for selecting a previous course."),
     function("get_course_report", "Complete course report across every revision, through now. Null plan_id selects current course.", {"plan_id": {"type": ["integer", "null"]}}),
-    function("find_companion_records", "Find owned diary records to edit/delete; returns IDs and versions, never aggregate totals.", {
-        "kind": {"type": "string", "enum": ["meal", "weight", "wellbeing", "intake", "all"]},
+    function("find_companion_records", "Find owned meal, weight, wellbeing, intake, workout, measurement or progress_photo records to edit/delete; returns IDs and versions, never aggregate totals. Photos are private references, not inferred body measurements.", {
+        "kind": {"type": "string", "enum": ["meal", "weight", "wellbeing", "intake", "workout", "measurement", "progress_photo", "all"]},
         "from_date": {"type": "string"}, "to_date": {"type": "string"}, "query": {"type": "string", "maxLength": 200},
     }),
 ]
@@ -66,7 +66,7 @@ async def execute_dialogue_tool(db, user_id, name, args, allow_commerce):
             data = await course_report(db, user_id, args.get("plan_id"))
         else:
             first, last = date.fromisoformat(args["from_date"]), date.fromisoformat(args["to_date"])
-            if not 0 < (last - first).days <= 731 or args["kind"] not in {"meal", "weight", "wellbeing", "intake", "all"}:
+            if not 0 < (last - first).days <= 731 or args["kind"] not in {"meal", "weight", "wellbeing", "intake", "workout", "measurement", "progress_photo", "all"}:
                 raise ValueError("Invalid period or kind")
             zone = timezone_info(Settings.model_validate(profile.settings).timezone)
             stmt = select(AICompanionEntry).where(AICompanionEntry.user_id == user_id, AICompanionEntry.occurred_at >= datetime.combine(first, time.min, zone), AICompanionEntry.occurred_at < datetime.combine(last, time.min, zone))

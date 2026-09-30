@@ -1,10 +1,11 @@
 """Durable reminders and erasure queue, run by the existing notification worker."""
 import logging
 from datetime import datetime, time, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 
 import config
 from src.database import get_session
@@ -36,6 +37,8 @@ async def schedule_recurring(db, profile, now):
         kinds.append(("weekly", settings.weekly_time))
     if settings.supply_reminders:
         kinds.append(("supply", time(12)))
+    if settings.inactivity_days is not None:
+        await schedule_inactivity(db, profile, settings, now)
     for kind, value in kinds:
         if value is None:
             continue
@@ -52,8 +55,52 @@ async def schedule_recurring(db, profile, now):
             exists.status, exists.due_at, exists.next_attempt_at = "pending", due, None
 
 
+async def last_user_activity(db, profile, now):
+    message_at = (await db.execute(select(func.max(AIMessage.created_at)).where(
+        AIMessage.user_id == profile.user_id, AIMessage.sender == MessageSender.USER,
+        AIMessage.created_at <= now,
+    ))).scalar_one()
+    entry_at = (await db.execute(select(func.max(AICompanionEntry.created_at)).where(
+        AICompanionEntry.user_id == profile.user_id, AICompanionEntry.created_at <= now,
+    ))).scalar_one()
+    # AI reminder messages must not reset the user's inactivity clock.
+    values = [value for value in (profile.created_at, profile.updated_at, message_at, entry_at) if value and value <= now]
+    return max(values) if values else now
+
+
+def inactivity_slot(last_activity, settings, now):
+    if settings.inactivity_days is None or now - last_activity < timedelta(days=settings.inactivity_days):
+        return None
+    zone = timezone_info(settings.timezone)
+    due = local_due(now.astimezone(zone).date(), settings.inactivity_time, zone)
+    if due is None:
+        return None
+    # One reminder per idle episode, not one notification every idle day.
+    return f"inactivity:{last_activity.isoformat()}", due
+
+
+async def schedule_inactivity(db, profile, settings, now):
+    slot = inactivity_slot(await last_user_activity(db, profile, now), settings, now)
+    if slot is None:
+        return
+    key, due = slot
+    row = (await db.execute(select(AICompanionReminder).where(
+        AICompanionReminder.user_id == profile.user_id, AICompanionReminder.dedupe_key == key,
+    ))).scalar_one_or_none()
+    if row is None:
+        db.add(AICompanionReminder(user_id=profile.user_id, kind="inactivity", dedupe_key=key, due_at=due))
+    elif row.status == "cancelled" and row.message_id is None and row.attempts == 0 and due >= now:
+        row.status, row.due_at, row.next_attempt_at = "pending", due, None
+
+
 async def reminder_text(db, row, profile):
     settings = Settings.model_validate(profile.settings)
+    if row.kind == "inactivity":
+        instant = service.now_utc()
+        slot = inactivity_slot(await last_user_activity(db, profile, instant), settings, instant)
+        if slot is None or slot[0] != row.dedupe_key:
+            return None
+        return "Давно не общались. Можно продолжить с того места, где остановились: записать еду, тренировку или самочувствие. Без необходимости начинать всё заново."
     if row.kind == "checkin":
         if not config.AI_COMPANION_DIALOGUE_ENABLED or settings.checkin_time is None or settings.daily_time is not None or not settings.checkin_topics:
             return None
@@ -63,7 +110,7 @@ async def reminder_text(db, row, profile):
         entries = await service.entries_for(db, row.user_id, start, row.due_at)
         kinds = {entry.kind for entry in entries}
         tracked = set((await db.execute(select(AICompanionEntry.kind).where(AICompanionEntry.user_id == row.user_id).distinct())).scalars())
-        nutrition_goal = profile.data.get("goal") in {"weight_loss", "maintain"}
+        nutrition_goal = profile.data.get("goal") in {"weight_loss", "weight_gain", "maintain"}
         questions = []
         topics = settings.checkin_topics
         if "course" in topics and summary["events"]["pending"]:
@@ -105,6 +152,11 @@ async def reminder_text(db, row, profile):
     text = f"{label}: записей еды — {summary['meals_logged']}, всего {summary['nutrition']['kcal']} ккал. Отмечено событий: выполнено — {summary['events']['done']}, пропущено — {summary['events']['skipped']}, без отметки — {summary['events']['pending']}."
     if summary["weight_change_kg"] is not None:
         text += f" Изменение между внесёнными измерениями веса: {summary['weight_change_kg']} кг."
+    workouts = summary.get("workouts", {})
+    text += f" Завершённых тренировок: {workouts.get('completed', 0)}, выполненных подходов: {workouts.get('completed_sets', 0)}."
+    wellbeing = summary.get("wellbeing", {})
+    if wellbeing.get("average_energy") is not None:
+        text += f" Средняя записанная оценка энергии: {Decimal(str(wellbeing['average_energy'])):.1f} из 5 ({wellbeing['energy_measurements']} записей)."
     return text + " " + summary["coverage_note"]
 
 

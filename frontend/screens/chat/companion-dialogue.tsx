@@ -6,13 +6,15 @@ import type { CompanionAction, DialogueCard, EntryData, PlanData, Stage, Unit } 
 import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import type { useCompanion } from "@/screens/chat/companion"
 import { formatCompanionDate } from "@/screens/chat/companion-timezones"
+import { MentorNavigation } from "@/screens/chat/mentor"
+import { measurementLabels, workoutTotals } from "@/screens/chat/mentor-data"
 
 type Controller = ReturnType<typeof useCompanion>
 const units: Record<Unit, string> = { mg: "мг", mcg: "мкг", g: "г", ml: "мл", capsule: "капсул", tablet: "таблеток", IU: "МЕ" }
 const periods: Record<string, string> = { morning: "утром", afternoon: "днём", evening: "вечером", night: "ночью", unknown: "точное время не указано" }
 const weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
 const parameterLabels: Record<string, string> = { goal: "Цель питания", age: "Возраст", sex: "Пол", height_cm: "Рост, см", target_weight_kg: "Целевой вес, кг", activity: "Активность", preferences: "Предпочтения", restrictions: "Ограничения", nutrition: "КБЖУ", nutrition_source: "Источник КБЖУ", nutrition_rule_version: "Правило расчёта", checkin_time: "Ежедневный вопрос", checkin_topics: "Темы вопросов", daily_time: "Итоги дня", weight_time: "Напоминание о весе", weekly_time: "Еженедельный отчёт", weekly_day: "День недели (0 — пн)", course_reminders: "События курса", supply_reminders: "Напоминания о запасе", supply_days: "Запас, дней", nutrition_auto_eligible: "Подтверждение условий расчёта питания" }
-const valueLabels: Record<string, string> = { weight_loss: "снижение веса", maintain: "поддержание", course: "курс", male: "мужской", female: "женский", low: "низкая", light: "лёгкая", moderate: "умеренная", high: "высокая", nutrition: "питание", weight: "вес", wellbeing: "самочувствие", manual: "пользователь", calculated: "расчёт" }
+const valueLabels: Record<string, string> = { weight_loss: "снижение веса", weight_gain: "набор веса", custom: "своя цель", maintain: "поддержание", course: "курс", male: "мужской", female: "женский", low: "низкая", light: "лёгкая", moderate: "умеренная", high: "высокая", nutrition: "питание", weight: "вес", wellbeing: "самочувствие", manual: "пользователь", calculated: "расчёт" }
 function displayValue(value: unknown): string {
     if (value === null || value === undefined || value === "") return "не задано"
     if (typeof value === "boolean") return value ? "да" : "нет"
@@ -67,6 +69,7 @@ export function DialoguePanel({ controller: c, onChanged, onPrompt, sending }: {
     })
     const busy = working || c.busy || sending || !c.enabled
     const toggle = (section: "record" | "reports" | "more") => setExpanded(current => current === section ? null : section)
+    if (c.state && "mentor" in c.state && c.enabled) return <View testID="companion-dialogue-panel" style={styles.panel}><MentorNavigation controller={c} /></View>
     return <View testID="companion-dialogue-panel" style={styles.panel}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.quickActionsRow}>
             <Chip label="Мой курс" disabled={busy} onPress={() => prompt("Покажи мой текущий курс и ближайшие события. Если курса ещё нет, помоги записать мою схему.")} />
@@ -176,10 +179,13 @@ function NutritionMetric({ label, value, color }: { label: string; value: string
 
 function EntryDetails({ entry, clock }: { entry: EntryData; clock: string }) {
     const { palette } = useTheme()
-    const title = entry.kind === "weight" ? `${entry.weight_kg} кг` : entry.name || "Самочувствие"
+    const title = entry.kind === "weight" ? `${entry.weight_kg} кг` : entry.kind === "workout" ? entry.workout?.name : entry.kind === "measurement" ? "Замеры" : entry.kind === "progress_photo" ? "Фото прогресса" : entry.name || "Самочувствие"
     return <View style={styles.entryDetails}>
         <Text style={[styles.entryTitle, { color: palette.text }]}>{title}</Text>
         <Text style={[styles.itemCaption, { color: palette.mutedText }]}>{formatCompanionDate(entry.occurred_at, clock)}</Text>
+        {entry.workout ? <><Copy>{entry.workout.status === "completed" ? "Завершена" : "В процессе"} · {workoutTotals(entry.workout).sets} выполненных подходов · {workoutTotals(entry.workout).volume} кг объёма</Copy>{entry.workout.exercises.map(exercise => <View key={exercise.key}><Copy>{exercise.name}</Copy>{exercise.sets.map((set, index) => <Copy key={index}>{index + 1}: {set.weight_kg ?? "—"} кг × {set.reps ?? "—"} · {set.completed ? "выполнен" : "не выполнен"}</Copy>)}</View>)}</> : null}
+        {entry.measurement ? <>{Object.entries(entry.measurement).filter(([, value]) => value != null).map(([key, value]) => <Copy key={key}>{measurementLabels[key as keyof typeof measurementLabels]}: {value}</Copy>)}</> : null}
+        {entry.kind === "progress_photo" ? <Copy>Приватных фото: {entry.photo_attachment_ids?.length ?? 0}</Copy> : null}
         {entry.nutrition ? <View style={styles.metricsRow}>
             <NutritionMetric label="ккал" value={displayNumber(entry.nutrition.kcal)} color={palette.text} />
             <NutritionMetric label="белки" value={`${displayNumber(entry.nutrition.protein)} г`} color={palette.primary} />

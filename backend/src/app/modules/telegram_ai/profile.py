@@ -23,7 +23,8 @@ class Identity(StrictModel):
 
 
 class ProfilePatch(StrictModel):
-    goal: Literal["weight_loss", "maintain", "weight_gain"] | None = None
+    goal: Literal["weight_loss", "maintain", "weight_gain", "custom"] | None = None
+    goal_detail: str | None = Field(default=None, max_length=1000)
     age: int | None = Field(default=None, ge=1, le=120)
     sex: Literal["male", "female"] | None = None
     height_cm: float | None = Field(default=None, ge=50, le=260)
@@ -58,12 +59,15 @@ class Update(Identity):
 
 
 async def legacy_profile(db, telegram_user_id):
+    from src.app.services.ai.companion.service import consent_for, consent_is_current
     user = (await db.execute(select(User).where(User.telegram_user_id == telegram_user_id))).scalar_one_or_none()
     if user is None:
         return {}
     if not user.is_active:
         raise HTTPException(403, "Аккаунт отключён")
     saved = (await db.execute(select(AICompanionProfile).where(AICompanionProfile.user_id == user.id))).scalar_one_or_none()
+    if saved is None or not saved.enabled or not consent_is_current(await consent_for(db, user.id)):
+        return {}
     values = {}
     if saved:
         # Confirmed facts only: never import pending cards, drafts or app eligibility flags.
@@ -74,8 +78,14 @@ async def legacy_profile(db, telegram_user_id):
                     values.update(ProfilePatch.model_validate({field: value}).model_dump(exclude_unset=True))
                 except ValueError:
                     pass
+        if "goal_detail" not in values and saved.data.get("custom_goal"):
+            try:
+                values.update(ProfilePatch(goal_detail=saved.data["custom_goal"]).model_dump(exclude_unset=True))
+            except ValueError:
+                pass
     weight = (await db.execute(select(AICompanionEntry).where(
-        AICompanionEntry.user_id == user.id, AICompanionEntry.kind == "weight"
+        AICompanionEntry.user_id == user.id, AICompanionEntry.kind == "weight",
+        AICompanionEntry.occurred_at <= datetime.now(timezone.utc)
     ).order_by(AICompanionEntry.occurred_at.desc(), AICompanionEntry.id.desc()).limit(1))).scalar_one_or_none()
     if weight and weight.data.get("weight_kg") is not None:
         values["current_weight_kg"] = float(weight.data["weight_kg"])
@@ -85,7 +95,10 @@ async def legacy_profile(db, telegram_user_id):
 async def snapshot(db, telegram_user_id):
     row = await db.get(TelegramAIProfile, telegram_user_id)
     if row:
-        return {"profile": row.data, "version": row.version}
+        # Fill absent keys only from an already verified Telegram identity. Local
+        # values (including explicit null deletions) win; no phone/name linking.
+        inherited = await legacy_profile(db, telegram_user_id)
+        return {"profile": {**inherited, **row.data}, "version": row.version}
     return {"profile": await legacy_profile(db, telegram_user_id), "version": 0}
 
 
@@ -97,6 +110,7 @@ async def context(payload: Identity, db: AsyncSession = Depends(get_db)):
 @router.post("/update")
 async def update(payload: Update, db: AsyncSession = Depends(get_db)):
     await db.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": -payload.telegram_user_id})
+    inherited = await legacy_profile(db, payload.telegram_user_id)
     row = await db.get(TelegramAIProfile, payload.telegram_user_id, populate_existing=True)
     patch = payload.patch.model_dump(exclude_unset=True)
     digest = hashlib.sha256(json.dumps([payload.request_key, patch], sort_keys=True).encode()).hexdigest()
@@ -107,7 +121,7 @@ async def update(payload: Update, db: AsyncSession = Depends(get_db)):
         raise HTTPException(409, "Профиль уже изменился. Загрузите актуальную версию.")
     if row is None:
         row = TelegramAIProfile(telegram_user_id=payload.telegram_user_id, version=0,
-                                data=await legacy_profile(db, payload.telegram_user_id), receipts=[])
+                                data=inherited, receipts=[])
         db.add(row)
     if patch.get("current_weight_kg") is not None:
         db.add(TelegramAIJournal(telegram_user_id=payload.telegram_user_id,

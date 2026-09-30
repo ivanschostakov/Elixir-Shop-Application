@@ -1,6 +1,6 @@
 from datetime import date, datetime, time
 from decimal import Decimal
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -18,8 +18,105 @@ class Nutrition(StrictModel):
     carbs: Decimal = Field(ge=0, le=10000)
 
 
+class WorkoutExercisePlan(StrictModel):
+    key: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=200)
+    sets: int = Field(ge=1, le=30)
+    target_reps: int | None = Field(default=None, ge=1, le=1000)
+    target_weight_kg: Decimal | None = Field(default=None, ge=0, le=1000)
+
+
+class WorkoutDay(StrictModel):
+    key: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=200)
+    weekdays: list[int] = Field(min_length=1, max_length=7)
+    exercises: list[WorkoutExercisePlan] = Field(min_length=1, max_length=30)
+
+    @model_validator(mode="after")
+    def unique_schedule(self):
+        if len(set(self.weekdays)) != len(self.weekdays) or any(day not in range(7) for day in self.weekdays):
+            raise ValueError("Weekdays must be unique integers from 0 to 6")
+        if len({exercise.key for exercise in self.exercises}) != len(self.exercises):
+            raise ValueError("Exercise keys must be unique")
+        return self
+
+
+class WorkoutPlan(StrictModel):
+    name: str = Field(min_length=1, max_length=200)
+    start_date: date
+    end_date: date | None = None
+    days: list[WorkoutDay] = Field(min_length=1, max_length=14)
+
+    @model_validator(mode="after")
+    def valid_plan(self):
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("Workout plan ends before it starts")
+        if len({day.key for day in self.days}) != len(self.days):
+            raise ValueError("Workout day keys must be unique")
+        return self
+
+
+class WorkoutSet(StrictModel):
+    weight_kg: Decimal | None = Field(default=None, ge=0, le=1000)
+    reps: int | None = Field(default=None, ge=1, le=1000)
+    completed: bool = False
+
+    @model_validator(mode="after")
+    def actual_values(self):
+        if self.completed and (self.weight_kg is None or self.reps is None):
+            raise ValueError("Completed sets require actual reps and weight (0 for bodyweight)")
+        return self
+
+
+class WorkoutExercise(StrictModel):
+    key: str = Field(min_length=1, max_length=80)
+    name: str = Field(min_length=1, max_length=200)
+    sets: list[WorkoutSet] = Field(min_length=1, max_length=30)
+
+
+class WorkoutData(StrictModel):
+    name: str = Field(min_length=1, max_length=200)
+    plan_day_key: str | None = Field(default=None, min_length=1, max_length=80)
+    scheduled_date: date | None = None
+    status: Literal["in_progress", "completed"] = "in_progress"
+    duration_seconds: int = Field(default=0, ge=0, le=86400)
+    current_exercise_index: int = Field(default=0, ge=0, le=30)
+    exercises: list[WorkoutExercise] = Field(min_length=1, max_length=30)
+
+    @model_validator(mode="after")
+    def valid_progress(self):
+        if (self.plan_day_key is None) != (self.scheduled_date is None):
+            raise ValueError("A scheduled workout needs both day key and date")
+        if len({exercise.key for exercise in self.exercises}) != len(self.exercises):
+            raise ValueError("Exercise keys must be unique")
+        if self.current_exercise_index > len(self.exercises):
+            raise ValueError("Exercise cursor is outside the workout")
+        has_actual_sets = any(s.completed for e in self.exercises for s in e.sets)
+        if self.status == "completed" and not has_actual_sets:
+            raise ValueError("Log at least one actual set before finishing the workout")
+        if self.status == "completed":
+            self.current_exercise_index = len(self.exercises)
+        return self
+
+
+class MeasurementData(StrictModel):
+    waist_cm: Decimal | None = Field(default=None, gt=0, le=400)
+    chest_cm: Decimal | None = Field(default=None, gt=0, le=400)
+    hips_cm: Decimal | None = Field(default=None, gt=0, le=400)
+    arm_cm: Decimal | None = Field(default=None, gt=0, le=200)
+    thigh_cm: Decimal | None = Field(default=None, gt=0, le=200)
+    body_fat_percent: Decimal | None = Field(default=None, gt=0, lt=100)
+
+    @model_validator(mode="after")
+    def nonempty(self):
+        if all(value is None for value in self.model_dump().values()):
+            raise ValueError("At least one measurement is required")
+        return self
+
+
 class ProfileData(StrictModel):
-    goal: Literal["weight_loss", "maintain", "course"] = "weight_loss"
+    goal: Literal["weight_loss", "weight_gain", "maintain", "course", "custom"] = "weight_loss"
+    custom_goal: str = Field(default="", max_length=500)
     age: int | None = Field(default=None, ge=18, le=120)
     sex: Literal["male", "female"] | None = None
     height_cm: Decimal | None = Field(default=None, ge=50, le=260)
@@ -30,6 +127,7 @@ class ProfileData(StrictModel):
     nutrition: Nutrition | None = None
     nutrition_source: Literal["manual", "calculated"] = "manual"
     nutrition_rule_version: str | None = Field(default=None, max_length=80)
+    workout_plan: WorkoutPlan | None = None
 
 
 class Settings(StrictModel):
@@ -43,9 +141,11 @@ class Settings(StrictModel):
     supply_reminders: bool = False
     supply_days: int = Field(default=7, ge=1, le=30)
     checkin_time: time | None = None
+    inactivity_days: int | None = Field(default=None, ge=2, le=30)
+    inactivity_time: time = time(18, 0)
     checkin_topics: list[Literal["course", "nutrition", "weight", "wellbeing"]] = Field(default_factory=lambda: ["course", "nutrition", "weight", "wellbeing"], max_length=4)
 
-    @field_validator("daily_time", "weight_time", "weekly_time", "checkin_time")
+    @field_validator("daily_time", "weight_time", "weekly_time", "checkin_time", "inactivity_time")
     @classmethod
     def local_time_only(cls, value):
         if value is not None and value.tzinfo is not None:
@@ -116,7 +216,7 @@ class PlanData(StrictModel):
 
 
 class EntryData(StrictModel):
-    kind: Literal["meal", "weight", "wellbeing"]
+    kind: Literal["meal", "weight", "wellbeing", "workout", "measurement", "progress_photo"]
     occurred_at: datetime
     name: str | None = Field(default=None, max_length=300)
     portion_g: Decimal | None = Field(default=None, gt=0, le=100000)
@@ -129,6 +229,10 @@ class EntryData(StrictModel):
     note: str = Field(default="", max_length=3000)
     estimated: bool = False
     assumptions: str = Field(default="", max_length=1500)
+    favorite: bool = False
+    workout: WorkoutData | None = None
+    measurement: MeasurementData | None = None
+    photo_attachment_ids: list[Annotated[int, Field(gt=0)]] = Field(default_factory=list, max_length=8)
 
     @model_validator(mode="after")
     def check_entry(self):
@@ -140,6 +244,19 @@ class EntryData(StrictModel):
             raise ValueError("Weight is required")
         if self.kind == "wellbeing" and not self.note and all(v is None for v in (self.wellbeing, self.appetite, self.energy, self.sleep_hours)):
             raise ValueError("A wellbeing value or note is required")
+        for name in ("workout", "measurement"):
+            if (getattr(self, name) is not None) != (self.kind == name):
+                raise ValueError(f"{name} payload must match entry kind")
+        if self.favorite and self.kind != "meal":
+            raise ValueError("Only meals can be favorites")
+        if bool(self.photo_attachment_ids) != (self.kind == "progress_photo"):
+            raise ValueError("Progress photos require private image attachment IDs; other entries cannot contain them")
+        if len(set(self.photo_attachment_ids)) != len(self.photo_attachment_ids):
+            raise ValueError("Photo attachment IDs must be unique")
+        if self.kind == "progress_photo" and (self.estimated or any(v is not None for v in (
+            self.nutrition, self.portion_g, self.weight_kg, self.wellbeing, self.appetite, self.energy, self.sleep_hours,
+        ))):
+            raise ValueError("Progress photos cannot imply nutrition, weight or health measurements")
         return self
 
 
@@ -162,12 +279,13 @@ class Proposal(StrictModel):
 
 class Action(StrictModel):
     request_key: str = Field(min_length=8, max_length=64)
-    kind: Literal["enable", "disable", "profile", "settings", "plan", "plan_status", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]
+    kind: Literal["enable", "disable", "profile", "settings", "plan", "plan_status", "workout_plan", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]
     expected_version: int | None = Field(default=None, ge=1)
     resource_id: int | None = Field(default=None, gt=0)
     profile: ProfileData | None = None
     settings: Settings | None = None
     plan: PlanData | None = None
+    workout_plan: WorkoutPlan | None = None
     entry: EntryData | None = None
     nutrition: Nutrition | None = None
     nutrition_rule_version: str | None = Field(default=None, max_length=80)

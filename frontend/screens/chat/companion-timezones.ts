@@ -54,6 +54,24 @@ export function deviceClockKey(): string {
     return `${deviceCompanionTimezone()}|${new Date().getTimezoneOffset()}|${calendarDate()}`
 }
 
+export function companionCalendarDay(value: string, clock: string): string {
+    const zone = clock.split("|")[0]
+    const fixed = /^UTC([+-])(\d{2}):(\d{2})$/.exec(zone)
+    if (fixed) {
+        const minutes = (Number(fixed[2]) * 60 + Number(fixed[3])) * (fixed[1] === "+" ? 1 : -1)
+        return new Date(Date.parse(value) + minutes * 60_000).toISOString().slice(0, 10)
+    }
+    const parts = new Intl.DateTimeFormat("en", { timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(value))
+    const values = Object.fromEntries(parts.map(part => [part.type, part.value]))
+    return `${values.year}-${values.month}-${values.day}`
+}
+
+export function shiftCalendarDay(value: string, offset: number): string {
+    const date = new Date(`${value}T12:00:00Z`)
+    date.setUTCDate(date.getUTCDate() + offset)
+    return date.toISOString().slice(0, 10)
+}
+
 export function formatCompanionDate(value: string, clock: string): string {
     const zone = clock.split("|")[0]
     const fixed = /^UTC([+-])(\d{2}):(\d{2})$/.exec(zone)

@@ -19,7 +19,7 @@ from .dialogue_schemas import DialogueOperation
 from .schemas import Action, Settings, ProfileData
 from .timezones import timezone_info
 
-INTRO = "Могу помочь вести ваш текущий курс, отмечать приёмы, питание, вес и самочувствие, напоминать о записях и показывать прогресс. Расскажите, что сейчас принимаете или какую цель хотите отслеживать. Всё можно делать сообщениями — без анкет. После начала учёта буду ежедневно спрашивать о прогрессе в 21:00 по времени телефона; время можно изменить, напоминания — отключить. Я не назначаю препараты и не меняю дозировки."
+INTRO = "Могу помочь вести ваш текущий курс, отмечать приёмы, питание, вес и самочувствие, напоминать о записях и показывать прогресс. Расскажите, что сейчас принимаете или какую цель хотите отслеживать. Всё можно делать сообщениями — без анкет. Напоминания включаются только по вашему выбору: укажите удобное время и подтвердите настройки. Я не назначаю препараты и не меняю дозировки."
 CONFIRM = {"да", "подтверждаю", "подтвердить", "сохрани", "сохранить", "верно", "всё верно", "все верно"}
 CANCEL = {"отмена", "отмени", "не сохраняй", "отменить"}
 STOP = {"не напоминай", "выключи напоминания", "отключи напоминания", "не присылай напоминания"}
@@ -112,6 +112,10 @@ def can_save_immediately(op, user_text):
         return False
     if normalized(op.evidence) not in normalized(user_text):
         return False
+    # New structured exercise/body records need an explicit review of all values;
+    # a short phrase such as "trained today" cannot confirm each set or measure.
+    if op.entry and op.entry.kind in {"workout", "measurement", "progress_photo"}:
+        return False
     # Fail closed for hypothetical, quoted, negated, future and instructional
     # sentences. The model's classification alone is not permission to write.
     if re.search(r"\b(если|допустим|например|завтра|планирую|собираюсь|буду|надо|нужно|не|нельзя|пример|представь|цитата|if|tomorrow|will|not|example|imagine|would|might)\b|[?«»]", user_text, re.I):
@@ -128,11 +132,6 @@ async def start_checkins(db, user_id, profile):
     if flow.started_at is not None:
         return
     flow.started_at = service.now_utc()
-    settings = Settings.model_validate(profile.settings)
-    # Preserve existing schedules. A daily report already provides a daily contact.
-    if settings.daily_time is None and settings.checkin_time is None:
-        settings.checkin_time = time(21)
-        profile.settings = settings.model_dump(mode="json")
 
 
 def intake_payload(intake, zone, now):
@@ -248,8 +247,6 @@ async def attach_turn(db, user_id, message, turn, user_message, *, allow_commerc
             card["changes"] = [{"parameter": key, "before": before.get(key), "after": value} for key, value in after.items() if value != before.get(key) and key != "timezone"]
         if op and op.plan:
             try:
-                if op.plan.source == "ai_recommended_plan":
-                    card["summary"] = "Рекомендация ИИ — не медицинское назначение. " + card["summary"]
                 current = await service.current_plan(db, user_id)
                 if op.remind_course is None:
                     op.remind_course = bool(profile.settings.get("course_reminders")) if current and current.status in {"active", "paused"} else True
@@ -392,6 +389,9 @@ async def apply_card(db, user_id, action, *, allow_commerce=True):
             if row is not None:
                 raise HTTPException(409, "Запись уже восстановлена")
             old = dict(change["before"])
+            if old.get("kind") == "progress_photo":
+                from .photos import validate_photo_attachments
+                await validate_photo_attachments(db, user_id, old["data"]["photo_attachment_ids"])
             for key in ("created_at", "updated_at", "occurred_at"):
                 if old.get(key): old[key] = datetime.fromisoformat(old[key])
             old["version"] += 1
@@ -404,6 +404,9 @@ async def apply_card(db, user_id, action, *, allow_commerce=True):
                 await db.delete(row)
             else:
                 old = change["before"]
+                if old.get("kind") == "progress_photo":
+                    from .photos import validate_photo_attachments
+                    await validate_photo_attachments(db, user_id, old["data"]["photo_attachment_ids"])
                 row.data = old["data"]
                 row.occurred_at = datetime.fromisoformat(old["occurred_at"]) if old["occurred_at"] else None
                 if change["table"] == "event": row.status = old["status"]
@@ -431,6 +434,7 @@ async def direct_reply(db, user_id, user_message):
         settings = Settings.model_validate(profile.settings)
         settings.course_reminders = settings.supply_reminders = False
         settings.daily_time = settings.weight_time = settings.weekly_time = settings.checkin_time = None
+        settings.inactivity_days = None
         profile.settings = settings.model_dump(mode="json")
         profile.version += 1
         flow = await workflow(db, user_id, True)

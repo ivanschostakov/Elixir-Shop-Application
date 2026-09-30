@@ -45,6 +45,7 @@ import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import { CompanionPanel, CompanionCards, useCompanion } from "@/screens/chat/companion"
+import { MentorWorkspace } from "@/screens/chat/mentor"
 import { trackCustomerEvent } from "@/services/customer-intelligence"
 import type {
     AIInteractiveAction,
@@ -163,6 +164,9 @@ export default function ChatScreen() {
     const supportRequestedByRoute = requestedMode === "support" || requestedConversationId !== null
     const chatModeRequestedByRoute = communityRequestedByRoute || supportRequestedByRoute
     const scrollRef = useRef<ScrollView | null>(null)
+    const mentorInputRef = useRef<TextInput | null>(null)
+    const mentorVisible = Platform.OS !== "web" && companion.state?.dialogue_protocol === 2 && "mentor" in companion.state && companion.enabled && !!companion.mentorPage
+    useEffect(() => { if (mentorVisible) scrollRef.current?.scrollTo({ y: 0, animated: false }) }, [mentorVisible, companion.mentorPage])
     const shouldAutoScrollRef = useRef(true)
     const cameraPermissionPromptedRef = useRef(false)
     const topBarOffset = topInset + 8
@@ -230,7 +234,7 @@ export default function ChatScreen() {
             return
         }
 
-        if (!shouldAutoScrollRef.current) {
+        if (mentorVisible || !shouldAutoScrollRef.current) {
             return
         }
 
@@ -241,7 +245,7 @@ export default function ChatScreen() {
         return () => {
             cancelAnimationFrame(animationFrameId)
         }
-    }, [aiTyping, messages.length])
+    }, [aiTyping, messages.length, mentorVisible])
 
     const handleMessagesScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
@@ -821,7 +825,12 @@ export default function ChatScreen() {
                             )}
                             style={chatScreenStyles.messagesScroll}
                         >
-                            {messages.length ? (
+                            {mentorVisible ? <MentorWorkspace controller={companion} onPrompt={async text => { if (text) await sendMessage(text); await refresh(); await companion.refresh() }} onCompose={(mode, text) => {
+                                if (text) setDraft(current => current.trim() ? `${text}\n${current}` : text)
+                                if (mode === "photo") handleOpenAttachmentSheet()
+                                else if (mode === "voice") void handleVoiceButtonPress()
+                                else requestAnimationFrame(() => mentorInputRef.current?.focus())
+                            }} photoMessages={messages} renderPhotoAttachments={photoAttachments => <MessageAttachmentList attachments={photoAttachments} isUserMessage mediaWidth={messageMediaWidth} />} /> : messages.length ? (
                                 <View style={chatScreenStyles.messageList}>
                                     {messages.map((message, messageIndex) => {
                                         const isUserMessage = message.sender === "user"
@@ -933,7 +942,7 @@ export default function ChatScreen() {
                                 </View>
                             ) : null}
                         </ScrollView>
-                        {!messages.length && !(loading && !chat) && !(error && !chat) ? (
+                        {!mentorVisible && !messages.length && !(loading && !chat) && !(error && !chat) ? (
                             <View pointerEvents="none" style={chatScreenStyles.emptyCenterOverlay}>
                                 <View style={chatScreenStyles.emptyBubble}>
                                     <Text style={chatScreenStyles.emptyText}>{t("chat.emptyDescription")}</Text>
@@ -986,7 +995,9 @@ export default function ChatScreen() {
                                 </Pressable>
 
                                 <View style={chatScreenStyles.composerInputWrap}>
-                                    <TextInput
+                                <TextInput
+                                        ref={mentorInputRef}
+                                        onFocus={() => companion.setMentorPage(null)}
                                         editable={!voiceRecording && !voiceTranscribing}
                                         multiline
                                         onChangeText={setDraft}
