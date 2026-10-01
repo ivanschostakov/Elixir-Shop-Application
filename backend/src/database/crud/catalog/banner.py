@@ -5,6 +5,9 @@ from src.database.models import Banner
 from src.database.schemas import BannerCreate, BannerUpdate
 from config import ufa_now
 
+UNIVERSAL_BANNER_AUDIENCE = {"catalog_scope": "all"}
+CATALOG_BANNER_LINK = "/discover?tab=products"
+
 
 async def create_banner(session: AsyncSession, data: BannerCreate) -> Banner:
     banner = Banner(**data.model_dump())
@@ -21,7 +24,7 @@ async def get_banner_by_id(session: AsyncSession, banner_id: int, *, include_arc
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_banners(session: AsyncSession, *, offset: int = 0, limit: int = 100, sort: str | None = None, include_archived: bool = False) -> list[Banner]:
+async def get_banners(session: AsyncSession, *, offset: int = 0, limit: int = 100, sort: str | None = None, include_archived: bool = False, universal_only: bool = False) -> list[Banner]:
     stmt = select(Banner)
     if not include_archived:
         now = ufa_now()
@@ -30,6 +33,14 @@ async def get_banners(session: AsyncSession, *, offset: int = 0, limit: int = 10
             Banner.status == "published",
             or_(Banner.starts_at.is_(None), Banner.starts_at <= now),
             or_(Banner.ends_at.is_(None), Banner.ends_at >= now),
+        )
+
+    if universal_only:
+        # Only explicitly neutral artwork linking to the scoped catalog is universal.
+        stmt = stmt.where(
+            Banner.audience_json.contains(UNIVERSAL_BANNER_AUDIENCE),
+            Banner.inner_link == CATALOG_BANNER_LINK,
+            Banner.outer_link.is_(None),
         )
 
     sort_map = {

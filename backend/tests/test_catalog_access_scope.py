@@ -1,10 +1,11 @@
 import uuid
+from datetime import timedelta
 
 import config
 import pytest
 from sqlalchemy.orm import Session
 
-from src.database.models import FavouredProduct, ProductByCategory
+from src.database.models import Banner, FavouredProduct, ProductByCategory
 from test_products_advanced_search_api import _seed_search_products, _cleanup_seed, sync_engine
 
 
@@ -109,3 +110,45 @@ def test_guest_quote_cannot_reveal_hidden_product(client, scoped_catalog):
     variant_id = product["variants"][0]["id"]
     response = client.post("/api/v1/guest/basket/quote", json={"items": [{"variant_id": variant_id, "quantity": 1}]})
     assert response.status_code == 404, response.text
+
+
+def test_neutral_welcome_banner_is_visible_without_product_leaks(client, scoped_catalog):
+    token = uuid.uuid4().hex
+    now = config.ufa_now()
+    banners = []
+    for name, changes in (
+        ("welcome", {}),
+        ("product", {"audience_json": {}}),
+        ("product-link", {"inner_link": "/products/148"}),
+        ("external", {"outer_link": "https://example.com"}),
+        ("draft", {"status": "draft"}),
+        ("future", {"starts_at": now + timedelta(days=1)}),
+        ("expired", {"ends_at": now - timedelta(days=1)}),
+        ("archived", {"archived": True}),
+    ):
+        data = dict(image_path=f"/media/banners/{token}-{name}.png", title=name,
+                    inner_link="/discover?tab=products", audience_json={"catalog_scope": "all"},
+                    priority=100 if name == "welcome" else 200, status="published", archived=False)
+        data.update(changes)
+        banners.append(Banner(**data))
+    with Session(sync_engine) as db:
+        db.add_all(banners)
+        db.flush()
+        ids = [banner.id for banner in banners]
+        db.commit()
+    try:
+        regular = client.get("/api/v1/banners?limit=50", headers=scoped_catalog["regular"])
+        assert regular.status_code == 200, regular.text
+        assert {row["id"] for row in regular.json()} == set(ids[:4])
+        for headers in ({}, scoped_catalog["limited"], {**scoped_catalog["regular"], "X-App-Platform": "ios"}):
+            for query in ("?limit=50", "?limit=1&sort=priority_desc"):
+                response = client.get("/api/v1/banners" + query, headers=headers)
+                assert response.status_code == 200, response.text
+                assert [row["id"] for row in response.json()] == [ids[0]]
+                assert response.json()[0]["inner_link"] == "/discover?tab=products"
+            assert client.get("/api/v1/banners?limit=1&offset=1", headers=headers).json() == []
+            assert client.get(f"/api/v1/products/{scoped_catalog['ru_product_id']}", headers=headers).status_code == 404
+    finally:
+        with Session(sync_engine) as db:
+            db.query(Banner).filter(Banner.id.in_(ids)).delete(synchronize_session=False)
+            db.commit()
