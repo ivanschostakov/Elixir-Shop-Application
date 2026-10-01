@@ -14,8 +14,8 @@ from src.database.models import Banner
 
 
 async def main():
-    source = Path(__file__).resolve().parents[2] / "assets/banners/welcome-elixirpeptide-v1.png"
-    image_path = "/media/banners/welcome-elixirpeptide-v1.png"
+    source = Path(__file__).resolve().parents[2] / "assets/banners/welcome-elixirpeptide-v2.jpg"
+    image_path = "/media/banners/welcome-elixirpeptide-v2.jpg"
     target = MEDIA_DIR / "banners" / source.name
     if not source.is_file():
         raise FileNotFoundError(source)
@@ -23,10 +23,13 @@ async def main():
     shutil.copyfile(source, target)
     target.chmod(0o644)
     async with SessionLocal() as db:
-        banner = await db.scalar(select(Banner).where(Banner.image_path == image_path))
+        banner = await db.scalar(select(Banner).where(Banner.image_path.in_(
+            [image_path, "/media/banners/welcome-elixirpeptide-v1.png"]
+        )).order_by(Banner.id).limit(1))
         if banner is None:
             banner = Banner(image_path=image_path)
             db.add(banner)
+        banner.image_path = image_path
         banner.title = "Добро пожаловать в ElixirPeptide"
         banner.inner_link = CATALOG_BANNER_LINK
         banner.outer_link = None
