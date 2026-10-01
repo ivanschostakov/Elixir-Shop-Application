@@ -1,6 +1,6 @@
+import { QuietLoading } from "@/components/ui/quiet-loading"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
-    ActivityIndicator,
     Alert,
     type NativeScrollEvent,
     type NativeSyntheticEvent,
@@ -613,7 +613,7 @@ export default function CartScreen() {
     if (loading && !basket) {
         return renderStateScreen(
             <View style={cartScreenStyles.stateLoadingRow}>
-                <ActivityIndicator />
+                <QuietLoading loading={loading} kind="content" />
             </View>,
         )
     }

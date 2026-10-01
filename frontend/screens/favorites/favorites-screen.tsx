@@ -1,4 +1,5 @@
-import { ActivityIndicator, Alert, FlatList, ScrollView, View } from "react-native"
+import { QuietLoading } from "@/components/ui/quiet-loading"
+import { Alert, FlatList, ScrollView, View } from "react-native"
 import { useRouter } from "expo-router"
 
 import { EmptyState } from "@/components/content/empty-state"
@@ -10,12 +11,10 @@ import { useLanguage } from "@/providers/language-provider"
 import { FavoriteProductItem } from "@/screens/favorites/favorite-product-item"
 import { createFavoritesScreenStyles } from "@/screens/favorites/favorites-screen.styles"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
-import { useTheme } from "@/providers/theme-provider"
 import { showRemoveFavouriteConfirmation } from "@/utils/favorites/show-remove-favourite-confirmation"
 
 export default function FavoritesScreen() {
     const favoritesScreenStyles = useThemeStyles(createFavoritesScreenStyles)
-    const { palette } = useTheme()
     const router = useRouter()
     const { t } = useLanguage()
     const {
@@ -51,7 +50,7 @@ export default function FavoritesScreen() {
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={favoritesScreenStyles.loaderWrap}>
-                        <ActivityIndicator color={palette.primary} />
+                        <QuietLoading loading={loading} kind="content" />
                     </View>
                 </ScrollView>
             </CatalogTemplate>

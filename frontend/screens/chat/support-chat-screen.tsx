@@ -29,6 +29,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
 import { ROUTES } from "@/constants/routes"
+import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
 import { useSupportChat } from "@/hooks/chat/use-support-chat"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useLanguage } from "@/providers/language-provider"
@@ -57,10 +58,12 @@ import { SendActionButton } from "@/screens/chat/chat-screen.core-components"
 import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switcher"
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { createSupportChatStyles } from "@/screens/chat/support-chat-screen.styles"
+import { QuietLoading } from "@/components/ui/quiet-loading"
 import { spacing } from "@/theme/spacing"
 import { createUuid } from "@/utils/uuid"
 
 type SupportChatScreenProps = {
+    embedded?: boolean
     active: boolean
     communityUnreadCount: number
     mode: ChatMode
@@ -93,6 +96,7 @@ function nativeBuildNumber() {
 }
 
 export function SupportChatScreen({
+    embedded = false,
     active,
     communityUnreadCount,
     mode,
@@ -111,12 +115,15 @@ export function SupportChatScreen({
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
     const scrollRef = useRef<ScrollView | null>(null)
+    const chatScroll = useChatScroll(scrollRef, null)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(74)
     const [keyboardVisible, setKeyboardVisible] = useState(false)
+    const keyboardAnimationActive = useRef(active)
+    keyboardAnimationActive.current = active
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const {
@@ -153,20 +160,14 @@ export function SupportChatScreen({
     }, [active, closePrevious, conversation?.id, inbox?.active?.id, inbox?.previous, openPrevious, requestedConversationId])
 
     useEffect(() => {
-        if (!active || !conversation?.messages.length) return
-        const frame = requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
-        return () => cancelAnimationFrame(frame)
-    }, [active, conversation?.messages.length])
-
-    useEffect(() => {
         const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow"
         const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide"
         const showSubscription = Keyboard.addListener(showEvent, (event) => {
-            Keyboard.scheduleLayoutAnimation(event)
+            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
             setKeyboardVisible(true)
         })
         const hideSubscription = Keyboard.addListener(hideEvent, (event) => {
-            Keyboard.scheduleLayoutAnimation(event)
+            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
             setKeyboardVisible(false)
         })
         return () => {
@@ -368,17 +369,19 @@ export function SupportChatScreen({
         spam: t("chat.supportStatusSpam"),
     }
 
-    if (!active) {
+    if (!active && !embedded) {
         return null
     }
 
     return (
         <View style={styles.overlay}>
-            <View style={styles.screen}>
+            <View style={[styles.screen, embedded ? { backgroundColor: "transparent" } : null]}>
+                {!embedded ? <>
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_LIGHT} style={[chatStyles.backgroundImage, themeName === "dark" ? chatStyles.backgroundImageHidden : null]} />
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_DARK} style={[chatStyles.backgroundImage, themeName === "dark" ? null : chatStyles.backgroundImageHidden]} />
                 <View pointerEvents="none" style={[chatStyles.backgroundScrim, isDark ? chatStyles.backgroundScrimDark : chatStyles.backgroundScrimLight]} />
-                <View style={[styles.header, { top: headerTop }]}>
+                </> : null}
+                {!embedded ? <View style={[styles.header, { top: headerTop }]}>
                     <Pressable
                         accessibilityLabel={t("nav.back")}
                         onPress={() => router.push(ROUTES.discover)}
@@ -392,9 +395,10 @@ export function SupportChatScreen({
                         supportUnreadCount={supportUnreadCount}
                         unreadCount={communityUnreadCount}
                     />
-                </View>
+                </View> : null}
 
                 <KeyboardAvoidingView
+                    enabled={!embedded}
                     behavior={Platform.OS === "ios" ? "position" : "height"}
                     contentContainerStyle={chatStyles.keyboardContent}
                     keyboardVerticalOffset={0}
@@ -405,13 +409,18 @@ export function SupportChatScreen({
                             contentContainerStyle={[
                                 styles.messagesContent,
                                 {
-                                    paddingTop: headerTop + 60,
+                                    paddingTop: embedded ? spacing.sm : headerTop + 60,
                                     paddingBottom: isHistorical ? spacing.md : composerHeight + spacing.md,
                                 },
                             ]}
                             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                             keyboardShouldPersistTaps="handled"
                             ref={scrollRef}
+                            onScroll={chatScroll.onScroll}
+                            onScrollBeginDrag={chatScroll.onScrollBeginDrag}
+                            onContentSizeChange={chatScroll.onContentSizeChange}
+                            onLayout={chatScroll.onLayout}
+                            scrollEventThrottle={16}
                             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} tintColor={palette.primary} />}
                             style={styles.messages}
                         >
@@ -436,8 +445,8 @@ export function SupportChatScreen({
                             </ScrollView>
                         ) : null}
 
-                        {loading && !conversation ? <ActivityIndicator color={palette.primary} size="large" /> : null}
-                        {!loading && !conversation ? (
+                        <QuietLoading loading={!inbox && !error} />
+                        {inbox && !loading && !conversation ? (
                             <View style={styles.state}>
                                 <View style={styles.stateIcon}><Text style={styles.stateIconText}>?</Text></View>
                                 <Text style={styles.stateTitle}>{t("chat.supportNewTitle")}</Text>

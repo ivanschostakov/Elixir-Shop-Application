@@ -1,21 +1,26 @@
 // Isolated synthetic browser fixture. Never imported by application routes.
 // Reference values demonstrate the requested layout; these are not account data.
-import React, { useRef, useState } from "react"
+import React, { createContext, useContext, useEffect, useRef, useState } from "react"
 import { createRoot } from "react-dom/client"
 import { Alert, Pressable, ScrollView, Text, useWindowDimensions, View } from "react-native"
 import Svg, { Path } from "react-native-svg"
 import { MentorWorkspace, MentorNavigation } from "@/screens/chat/mentor"
-import { MentorWallpaper } from "@/screens/chat/mentor-wallpaper"
+import { ChatBackdrop } from "@/screens/chat/chat-backdrop"
+import { ContentReveal, QuietLoading } from "@/components/ui/quiet-loading"
 import { ChatModeSwitcher } from "@/screens/chat/chat-mode-switcher"
+import { ChatModePane, ChatModeTransition } from "@/screens/chat/chat-mode-transition"
+import { MentorModeToggle } from "@/screens/chat/mentor-mode-toggle"
 import { SendActionButton } from "@/screens/chat/chat-screen.core-components"
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { ChatKeyboardLayout } from "@/screens/chat/chat-keyboard-layout"
 import { ChatComposerInput } from "@/screens/chat/chat-composer-input"
 import { ChatFormFocusProvider } from "@/screens/chat/chat-form-focus"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
+import { useMentorMode } from "@/hooks/chat/use-mentor-mode"
 import AttachmentIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
 import { lightColors } from "@/theme/colors"
-import { calendarDate } from "@/screens/chat/companion-timezones"
+import { calendarDate, companionCalendarDay, deviceClockKey } from "@/screens/chat/companion-timezones"
+import { setTranslationLanguage, translate } from "@/i18n/translations"
 
 const today = new Date()
 const iso = days => new Date(today.getTime() - days * 86400000 - 3600000).toISOString()
@@ -35,7 +40,7 @@ export const store = {
     entries: [meal, ...weights], events: [], actions: [], summary,
     state: {
         available: true, consent_required: false, consent_version: "test", dialogue_protocol: 2,
-        profile: { id: 1, version: 1, enabled: true, data: { goal: "weight_loss", target_weight_kg: "85" }, settings: { timezone: "UTC" } },
+        profile: { id: 1, version: 1, enabled: true, data: { goal: "weight_loss", target_weight_kg: "85" }, settings: { timezone: deviceClockKey().split("|")[0] } },
         entries: [meal, ...weights], today: { ...summary, meals_logged: 3 },
         mentor: {
             latest_weight: weights[0], workout_plan: plan,
@@ -56,24 +61,33 @@ export const store = {
     },
 }
 export const useTheme = () => ({ palette: lightColors, themeName: "light" })
-export const useLanguage = () => ({ t: key => ({ "chat.modeAi": "AI", "chat.modeGroup": "Наша группа", "chat.modeSupport": "Поддержка" })[key] ?? key })
+const PreviewLanguageContext = createContext({ language: "ru", t: key => translate(key, "ru") })
+export const useLanguage = () => useContext(PreviewLanguageContext)
 export const requestKey = () => `fixture-${Date.now()}-${Math.random()}`
-export const getCompanionEntries = async (from, to, kind) => ({ entries: structuredClone(store.entries.filter(entry => (!kind || entry.kind === kind) && (!from || entry.occurred_at.slice(0, 10) >= from) && (!to || entry.occurred_at.slice(0, 10) < to))) })
+export const getCompanionEntries = async (from, to, kind) => { await waitForData(); return { entries: structuredClone(store.entries.filter(entry => {
+    const day = companionCalendarDay(entry.occurred_at, deviceClockKey())
+    return (!kind || entry.kind === kind) && (!from || day >= from) && (!to || day < to)
+})) } }
 export const getCompanionProgressPhotos = async () => ({ entries: store.entries.filter(entry => entry.kind === "progress_photo"), limit: 200, may_have_more: false })
 export const getCompanionFavoriteMeals = async () => ({ entries: store.entries.filter(entry => entry.kind === "meal" && entry.data.favorite), limit: 200, may_have_more: false })
 export const getCompanionEvents = async () => ({ events: store.events })
-export const getCompanionSummary = async () => structuredClone(store.summary)
+const waitForData = (kind = "entries") => new Promise(resolve => setTimeout(resolve, Number(new URLSearchParams(location.search).get(kind === "summary" ? "summaryDelay" : "dataDelay")) || Number(new URLSearchParams(location.search).get("dataDelay")) || 0))
+export const getCompanionSummary = async () => { await waitForData("summary"); return structuredClone(store.summary) }
 export const companionDialogue = async (...args) => store.actions.push({ report: args })
 export const useRouter = () => ({ push: route => store.actions.push({ route }) })
 
 Alert.alert = (_title, _text, buttons) => { window.__confirmation = buttons; if (window.confirm(_text)) buttons[buttons.length - 1].onPress?.() }
 function App() {
+    const [language, setLanguage] = useState(new URLSearchParams(location.search).get("lang") || "ru")
+    setTranslationLanguage(language)
     const { height } = useWindowDimensions()
     const initialHeight = useRef(height)
     // Browser-only constraint simulation; UIKit avoidance is verified separately.
     const keyboardVisible = height < initialHeight.current - 140
     const phonePreview = new URLSearchParams(location.search).get("device") === "phone"
     const styles = createChatScreenStyles(lightColors)
+    const [initialReady, setInitialReady] = useState(!new URLSearchParams(location.search).has("initialDelay"))
+    useEffect(() => { const timer = setTimeout(() => setInitialReady(true), Number(new URLSearchParams(location.search).get("initialDelay")) || 0); return () => clearTimeout(timer) }, [])
     const [state, setState] = useState(structuredClone(store.state))
     const [mentorPage, setMentorPage] = useState(new URLSearchParams(location.search).get("page") || "today")
     const [chatMode, setChatMode] = useState("ai")
@@ -83,8 +97,15 @@ function App() {
     const [messages, setMessages] = useState([])
     const [recording, setRecording] = useState(false)
     const scrollRef = useRef(null)
-    const chatScroll = useChatScroll(scrollRef, mentorPage)
-    const controller = { state, enabled: true, clock: `UTC|0|${date}`, mentorPage, setMentorPage, busy, error, setError,
+    const mentorMode = useMentorMode(async () => true)
+    const mentorVisible = mentorMode.shown && !!mentorPage
+    const chatScroll = useChatScroll(scrollRef, mentorVisible ? mentorPage : null)
+    const toggleMentor = () => {
+        mentorMode.setShown(!mentorMode.shown)
+        if (mentorMode.shown) chatScroll.followLatest()
+        else setMentorPage(current => current ?? "today")
+    }
+    const controller = { state, enabled: true, clock: deviceClockKey(), mentorPage, setMentorPage, busy, error, setError,
         setEditor: value => store.actions.push({ editor: value }),
         refresh: async () => state,
         attempt: async fn => { try { await fn() } catch (e) { setError(e.message) } },
@@ -104,37 +125,47 @@ function App() {
         },
     }
     const compose = (mode, text) => { store.actions.push({ compose: mode, text }); setDraft(text); if (mode === "voice") setRecording(true) }
-    const send = () => {
+    const send = async () => {
         if (!draft.trim()) { setRecording(value => !value); return }
+        const companionEnabled = await mentorMode.resolveEnabled()
         chatScroll.followLatest()
-        store.actions.push({ message: draft }); setMessages(value => [...value, { id: `sent-${value.length}`, sender: "user", text: draft }]); setDraft(""); setMentorPage(null)
+        store.actions.push({ message: draft, companionEnabled }); setMessages(value => [...value, { id: `sent-${value.length}`, sender: "user", text: draft }]); setDraft(""); setMentorPage(null)
     }
-    window.__mentor = { store, setMentorPage, setState,
+    window.__mentor = { store, setMentorPage, setState, setLanguage, language, initialReady, shown: mentorMode.shown, mentorPage, chatMode,
+        loadHistory: () => setMessages(historyMessages),
         seedHistory: () => { setMentorPage(null); setMessages(historyMessages) },
         appendMessage: () => setMessages(value => [...value, { id: `incoming-${value.length}`, sender: "ai", text: "Новый ответ наставника: история не должна прыгать вниз во время чтения." }]),
     }
-    return <View style={[styles.container, { height: "100vh", minHeight: 0 }, phonePreview ? { width: 390, maxWidth: "100%", alignSelf: "center" } : null]}>
+    return <PreviewLanguageContext.Provider value={{ language, t: key => translate(key, language) }}><View style={[styles.container, { height: "100vh", minHeight: 0 }, phonePreview ? { width: 390, maxWidth: "100%", alignSelf: "center" } : null]}>
+        <ChatBackdrop />
         <ChatKeyboardLayout>
-        <View style={styles.content}>
-            <MentorWallpaper />
             <View testID="fixture-header" style={[styles.fixedHeader, styles.mentorHeader, { paddingTop: 8 }]}>
                 <View style={styles.topBarRow}>
                     <Pressable accessibilityRole="button" accessibilityLabel="Назад" onPress={() => { setChatMode("ai"); setMentorPage("today") }} style={[styles.topBackButton, styles.mentorBackButton]}><Svg fill="none" height={20} viewBox="0 0 24 24" width={20}><Path d="M15.5 5.5 9 12l6.5 6.5" stroke="#12161A" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} /></Svg></Pressable>
                     <ChatModeSwitcher mentorStyle mode={chatMode} onChange={setChatMode} unreadCount={100} />
                 </View>
             </View>
+        <ChatModeTransition mode={chatMode}>
+        <ChatModePane mode="ai" active={chatMode === "ai"}>
+        <View style={styles.content}>
             <View style={styles.chatBody}>
-                <ScrollView ref={scrollRef} testID="fixture-scroll" keyboardShouldPersistTaps="handled" onScroll={chatScroll.onScroll} onScrollBeginDrag={chatScroll.onScrollBeginDrag} onContentSizeChange={chatScroll.onContentSizeChange} onLayout={chatScroll.onLayout} scrollEventThrottle={16} style={styles.messagesScroll} contentContainerStyle={[styles.messagesContent, mentorPage ? styles.mentorMessagesContent : null, { paddingTop: mentorPage === "today" ? Math.max(20, Math.min(76, (height - 660) * .45)) : 12, paddingBottom: 8 }]}>
-                    {chatMode === "ai" ? <>
-                        <ChatFormFocusProvider value={chatScroll.onFieldFocus}><MentorWorkspace controller={controller} displayName="Тимур" onPrompt={async text => store.actions.push({ prompt: text })} onCompose={compose} photoMessages={photoMessages} renderPhotoAttachments={attachments => attachments.map(attachment => <View key={attachment.id} style={{ height: 90, backgroundColor: "#e5e7eb" }}><Text>Private test attachment {attachment.id}</Text></View>)} /></ChatFormFocusProvider>
-                        {!mentorPage ? <View style={styles.messageList}>{messages.map(message => <View key={message.id} testID={`fixture-message-${message.id}`} style={[styles.messageBubble, message.sender === "user" ? styles.userMessageBubble : styles.aiMessageBubble]}>
+                <QuietLoading loading={!initialReady} />
+                <ContentReveal ready={initialReady} style={{ flex: 1, minHeight: 0 }}>
+                <ScrollView ref={scrollRef} testID="fixture-scroll" keyboardShouldPersistTaps="handled" onScroll={chatScroll.onScroll} onScrollBeginDrag={chatScroll.onScrollBeginDrag} onContentSizeChange={chatScroll.onContentSizeChange} onLayout={chatScroll.onLayout} scrollEventThrottle={16} style={styles.messagesScroll} contentContainerStyle={[styles.messagesContent, mentorVisible ? styles.mentorMessagesContent : null, { paddingTop: mentorVisible && mentorPage === "today" ? Math.max(20, Math.min(76, (height - 660) * .45)) : 12, paddingBottom: 8 }]}>
+                    {initialReady ? <>
+                        {mentorVisible ? <ChatFormFocusProvider value={chatScroll.onFieldFocus}><MentorWorkspace controller={controller} displayName="Тимур" onPrompt={async text => store.actions.push({ prompt: text })} onCompose={compose} photoMessages={photoMessages} renderPhotoAttachments={attachments => attachments.map(attachment => <View key={attachment.id} style={{ height: 90, backgroundColor: "#e5e7eb" }}><Text>Private test attachment {attachment.id}</Text></View>)} /></ChatFormFocusProvider> : null}
+                        {!mentorVisible ? <View style={styles.messageList}>{messages.map(message => <View key={message.id} testID={`fixture-message-${message.id}`} style={[styles.messageBubble, message.sender === "user" ? styles.userMessageBubble : styles.aiMessageBubble]}>
                             {message.photo ? <View testID="fixture-large-photo" accessibilityLabel="Синтетическое фото еды" style={{ height: 430, width: 245, maxWidth: "100%", borderRadius: 14, backgroundColor: "#DACBAE", alignItems: "center", justifyContent: "center" }}><Text>Фото еды · тестовый пример</Text></View> : null}
                             <Text>{message.text}</Text>
                         </View>)}</View> : null}
-                    </> : <View style={{ padding: 24, borderRadius: 24, backgroundColor: "white" }}><Text>{chatMode === "community" ? "Наша группа" : "Поддержка"} · тестовая страница</Text></View>}
+                    </> : null}
                 </ScrollView>
+                </ContentReveal>
                 <View testID="fixture-composer" style={[styles.composerDock, styles.mentorComposerDock, styles.composerDockInFlow, { paddingBottom: 8 }]}>
-                    {!keyboardVisible ? <View testID="fixture-navigation"><MentorNavigation controller={controller} /></View> : null}
+                    {<View style={styles.composerShortcuts}>
+                        <MentorModeToggle shown={mentorMode.shown} onToggle={toggleMentor} />
+                        {mentorMode.shown && !keyboardVisible ? <View testID="fixture-navigation" style={styles.mentorShortcutPanel}><MentorNavigation controller={controller} /></View> : null}
+                    </View>}
                     {recording ? <View style={styles.voiceStatusPill}><View style={styles.voiceStatusDot} /><Text style={styles.voiceStatusText}>Тестовая запись голоса</Text></View> : null}
                     <View style={styles.composerRow}>
                         <Pressable accessibilityRole="button" accessibilityLabel="Прикрепить файл" style={styles.circleButton} onPress={() => store.actions.push({ attachment: true })}><AttachmentIcon color="#12161A" height={28} width={28} /></Pressable>
@@ -144,7 +175,11 @@ function App() {
                 </View>
             </View>
         </View>
+        </ChatModePane>
+        <ChatModePane mode="community" active={chatMode === "community"}><View style={{ padding: 24, borderRadius: 24, backgroundColor: "white" }}><Text>Наша группа · тестовая страница</Text></View></ChatModePane>
+        <ChatModePane mode="support" active={chatMode === "support"}><View style={{ padding: 24, borderRadius: 24, backgroundColor: "white" }}><Text>Поддержка · тестовая страница</Text></View></ChatModePane>
+        </ChatModeTransition>
         </ChatKeyboardLayout>
-    </View>
+    </View></PreviewLanguageContext.Provider>
 }
 createRoot(document.getElementById("root")).render(<App />)

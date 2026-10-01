@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -59,10 +59,10 @@ async def get_my_ai_chat(db: AsyncSession = Depends(get_db), current_user: User 
 
 
 @ai_chat_router.post("", response_model=AIChatResponse, status_code=status.HTTP_200_OK)
-async def send_my_ai_chat_message(request: Request, text: str = Form(...), attachments: list[UploadFile] | None = File(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:send"))) -> AIChatResponse:
+async def send_my_ai_chat_message(request: Request, text: str = Form(...), attachments: list[UploadFile] | None = File(default=None), chat_mode: Literal["ordinary"] | None = Form(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:send"))) -> AIChatResponse:
     await require_ai_data_consent(db, current_user.id)
     import config
-    if config.AI_COMPANION_ENABLED:
+    if config.AI_COMPANION_ENABLED and chat_mode != "ordinary":
         from src.app.services.ai.companion.service import profile_for
         profile = await profile_for(db, current_user.id)
         if profile and profile.enabled:

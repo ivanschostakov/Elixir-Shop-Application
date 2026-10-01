@@ -269,6 +269,61 @@ def test_post_my_ai_chat_message_rejects_blank_text(monkeypatch):
         app.dependency_overrides.pop(get_professor_client, None)
 
 
+@pytest.mark.parametrize("chat_mode,expected_status", [(None, 409), ("ordinary", 200), ("mentor", 422)])
+def test_post_my_ai_chat_explicit_ordinary_mode_keeps_active_mentor(monkeypatch, chat_mode, expected_status):
+    from unittest.mock import AsyncMock
+    import config
+    from src.app.services.ai.companion import service as companion_service
+
+    profile = SimpleNamespace(id=9, enabled=True, version=4, data={"goal": "maintain"})
+    consent = AsyncMock()
+    security = AsyncMock()
+    send = AsyncMock(return_value=SimpleNamespace(chat=_chat_payload(), turn_meta={"selected_bot_model": "premium", "input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1}, basket_updated=False))
+    lookup = AsyncMock(return_value=profile)
+    monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
+    monkeypatch.setattr(companion_service, "profile_for", lookup)
+    monkeypatch.setattr(ai_chat_router_module, "require_ai_data_consent", consent)
+    monkeypatch.setattr(ai_chat_router_module, "ensure_app_ai_access", security)
+    monkeypatch.setattr(ai_chat_router_module, "send_user_chat_message", send)
+
+    async def fake_get_db():
+        yield object()
+
+    app.dependency_overrides[get_db] = fake_get_db
+    app.dependency_overrides[auth_dependencies.get_current_user] = _fake_user
+    app.dependency_overrides[get_professor_client] = lambda: SimpleNamespace()
+    data = {"text": "hello"}
+    if chat_mode is not None:
+        data["chat_mode"] = chat_mode
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.post("/api/v1/users/me/ai-chat", data=data)
+
+        assert response.status_code == expected_status, response.text
+        assert profile.enabled and profile.version == 4 and profile.data == {"goal": "maintain"}
+        if expected_status == 200:
+            consent.assert_awaited_once()
+            security.assert_awaited_once()
+            lookup.assert_not_awaited()
+            send.assert_awaited_once()
+            assert "companion_profile" not in send.await_args.kwargs
+            assert response.json()["chat"]["id"] == 77
+        else:
+            send.assert_not_awaited()
+            security.assert_not_awaited()
+            if expected_status == 409:
+                consent.assert_awaited_once()
+                lookup.assert_awaited_once()
+            else:
+                consent.assert_not_awaited()
+                lookup.assert_not_awaited()
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(auth_dependencies.get_current_user, None)
+        app.dependency_overrides.pop(get_professor_client, None)
+
+
 def test_post_my_ai_chat_action_returns_updated_basket(monkeypatch):
     captured: dict[str, object] = {}
 

@@ -77,9 +77,12 @@ import {
     setPushNotificationCurrentPath,
     syncPushNotifications,
 } from "@/services/notifications/order-status-notifications"
+import { QuietLoading } from "@/components/ui/quiet-loading"
 import { spacing } from "@/theme/spacing"
 
 type CommunityChatScreenProps = {
+    embedded?: boolean
+    onTopicNavigationChange?: (navigation: { title: string; onBack: () => void } | null) => void
     active: boolean
     mode: ChatMode
     onEnabledChange: (enabled: boolean) => void
@@ -118,7 +121,7 @@ function nativeBuildNumber() {
     return Number.isFinite(parsedBuild) ? parsedBuild : 0
 }
 
-export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChange, onUnreadChange, requestedTopicId, supportUnreadCount, unreadCount }: CommunityChatScreenProps) {
+export function CommunityChatScreen({ embedded = false, onTopicNavigationChange, active, mode, onEnabledChange, onModeChange, onUnreadChange, requestedTopicId, supportUnreadCount, unreadCount }: CommunityChatScreenProps) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const chatStyles = useThemeStyles(createChatScreenStyles)
     const { isDark, palette, themeName } = useTheme()
@@ -137,6 +140,8 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(110)
     const [keyboardVisible, setKeyboardVisible] = useState(false)
+    const keyboardAnimationActive = useRef(active)
+    keyboardAnimationActive.current = active
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const [replyTo, setReplyTo] = useState<CommunityMessage | null>(null)
@@ -149,9 +154,14 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
     const [blocksError, setBlocksError] = useState<string | null>(null)
     const [activeMedia, setActiveMedia] = useState<CommunityMediaSource | null>(null)
     const chat = useCommunityChat(active, onUnreadChange, requestedTopicId)
+    const selectTopic = chat.selectTopic
+    const topicTitle = chat.selectedTopic?.name
+    useEffect(() => {
+        onTopicNavigationChange?.(topicTitle ? { title: topicTitle, onBack: () => selectTopic(null) } : null)
+    }, [onTopicNavigationChange, selectTopic, topicTitle])
     const markRead = chat.markRead
     const headerTop = top + 8
-    const contentTop = headerTop + 58
+    const contentTop = embedded ? 0 : headerTop + 58
     const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottom, spacing.sm)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
@@ -209,14 +219,14 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
         const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow"
         const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide"
         const showSubscription = Keyboard.addListener(showEvent, (event) => {
-            Keyboard.scheduleLayoutAnimation(event)
+            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
             setKeyboardVisible(true)
             if (shouldAutoScrollRef.current) {
                 requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
             }
         })
         const hideSubscription = Keyboard.addListener(hideEvent, (event) => {
-            Keyboard.scheduleLayoutAnimation(event)
+            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
             setKeyboardVisible(false)
         })
         return () => {
@@ -478,17 +488,19 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
         finally { setBlockBusy(false) }
     }
 
-    if (!active) {
+    if (!active && !embedded) {
         return null
     }
 
     return (
         <View style={styles.overlay}>
-            <View style={styles.screen}>
+            <View style={[styles.screen, embedded ? { backgroundColor: "transparent" } : null]}>
+                {!embedded ? <>
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_LIGHT} style={[chatStyles.backgroundImage, themeName === "dark" ? chatStyles.backgroundImageHidden : null]} />
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_DARK} style={[chatStyles.backgroundImage, themeName === "dark" ? null : chatStyles.backgroundImageHidden]} />
                 <View pointerEvents="none" style={[chatStyles.backgroundScrim, isDark ? chatStyles.backgroundScrimDark : chatStyles.backgroundScrimLight]} />
-                <View style={[styles.header, { top: headerTop }]}>
+                </> : null}
+                {!embedded ? <View style={[styles.header, { top: headerTop }]}>
                     <Pressable accessibilityLabel={t("nav.back")} onPress={handleBack} style={styles.backButton}>
                         <Text style={styles.backText}>‹</Text>
                     </Pressable>
@@ -499,11 +511,11 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
                     ) : (
                         <ChatModeSwitcher mode={mode} onChange={onModeChange} supportUnreadCount={supportUnreadCount} unreadCount={unreadCount} />
                     )}
-                </View>
+                </View> : null}
 
                 {chat.status?.access !== "granted" || !chat.selectedTopic ? (
                     <View style={[styles.content, { paddingTop: contentTop }]}>
-                        {chat.loading && !chat.status ? <View style={styles.stateCenter}><ActivityIndicator color={palette.primary} size="large" /></View> : null}
+                        <QuietLoading loading={!chat.status && !chat.error} />
                         {!chat.loading && chat.status?.access !== "granted" ? (
                             <CommunityAccessState actionUrl={chat.status?.action_url ?? null} enabled={chat.status?.enabled ?? false} onRefresh={() => { void chat.refresh() }} state={chat.status?.access ?? "temporarily_unavailable"} />
                         ) : null}
@@ -515,7 +527,7 @@ export function CommunityChatScreen({ active, mode, onEnabledChange, onModeChang
 
                 {chat.status?.access === "granted" && chat.selectedTopic ? (
                     <>
-                        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.topicKeyboardLayer}>
+                        <KeyboardAvoidingView enabled={!embedded} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.topicKeyboardLayer}>
                             <View style={chatStyles.keyboardContent}>
                                 <ScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + spacing.sm, paddingBottom: composerHeight + spacing.sm }]} keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} style={styles.messageScroll}>
                                     {chat.hasMore ? <Pressable disabled={chat.loadingOlder} onPress={() => { void chat.loadOlder() }} style={styles.loadOlder}>{chat.loadingOlder ? <ActivityIndicator color={palette.primary} size="small" /> : <Text style={styles.loadOlderText}>{t("chat.communityLoadOlder")}</Text>}</Pressable> : null}

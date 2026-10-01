@@ -1,3 +1,4 @@
+import { mentorText } from "@/i18n/mentor-translations"
 import { useEffect, useRef, useState } from "react"
 import { useIsFocused } from "@react-navigation/native"
 
@@ -143,7 +144,7 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
     }, [hasPendingServerReply, isFocused, sending, setChat])
 
     const sendMessage = async (text: string, attachments: UploadableChatAttachment[] = []) => {
-        if (sendingRef.current) throw new Error("Дождитесь ответа на предыдущее сообщение")
+        if (sendingRef.current) throw new Error(mentorText("Дождитесь ответа на предыдущее сообщение"))
         sendingRef.current = true
         const createdAt = new Date().toISOString()
         const nextOptimisticIndex = optimisticIdRef.current + 1
@@ -163,10 +164,10 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
 
         try {
             const useCompanion = typeof companionEnabled === "function" ? await companionEnabled() : companionEnabled
-            const fingerprint = JSON.stringify([text, attachments])
+            const fingerprint = JSON.stringify([useCompanion, text, attachments])
             const key = failedRequestRef.current?.fingerprint === fingerprint ? failedRequestRef.current.key : requestKey()
             failedRequestRef.current = { fingerprint, key }
-            const nextChat = await sendMyAiChatMessage(text, attachments, useCompanion ? key : undefined, companionProtocol())
+            const nextChat = await sendMyAiChatMessage(text, attachments, useCompanion ? key : undefined, companionProtocol(), !useCompanion)
             failedRequestRef.current = null
             if (nextChat.basket) {
                 setBasketSnapshot(nextChat.basket)

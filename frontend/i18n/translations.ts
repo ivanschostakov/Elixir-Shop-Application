@@ -743,6 +743,7 @@ export const ruTranslations = {
     "common.apply": "Применить",
     "common.reset": "Сбросить",
     "common.retry": "Повторить",
+    "common.loading": "Загрузка",
     "common.signOut": "Выйти",
     "common.show": "Показать",
     "common.hide": "Скрыть",
@@ -775,6 +776,10 @@ export const ruTranslations = {
     "chat.loadFailedMessage": "Попробуйте еще раз немного позже.",
     "chat.sendFailedTitle": "Не удалось отправить сообщение",
     "chat.sendFailedMessage": "Попробуйте отправить сообщение еще раз.",
+    "chat.mentorChat": "ИИ-наставник",
+    "chat.ordinaryAiChat": "Обычный ИИ-чат",
+    "chat.hideMentor": "Скрыть наставника",
+    "chat.showMentor": "Показать наставника",
     "chat.attachmentFallbackMessage": "Вложение",
     "chat.attachmentsPhotoTab": "Фото",
     "chat.attachmentsFileTab": "Файл",
@@ -1748,6 +1753,7 @@ const enTranslations: Record<TranslationKey, string> = {
     "common.apply": "Apply",
     "common.reset": "Reset",
     "common.retry": "Retry",
+    "common.loading": "Loading",
     "common.signOut": "Sign out",
     "common.show": "Show",
     "common.hide": "Hide",
@@ -1781,6 +1787,10 @@ const enTranslations: Record<TranslationKey, string> = {
     "chat.loadFailedMessage": "Please try again a little later.",
     "chat.sendFailedTitle": "Could not send message",
     "chat.sendFailedMessage": "Try sending the message again.",
+    "chat.mentorChat": "AI mentor",
+    "chat.ordinaryAiChat": "AI chat",
+    "chat.hideMentor": "Hide mentor",
+    "chat.showMentor": "Show mentor",
     "chat.attachmentFallbackMessage": "Attachment",
     "chat.attachmentsPhotoTab": "Photos",
     "chat.attachmentsFileTab": "File",
@@ -2741,6 +2751,7 @@ const kzTranslations: Record<TranslationKey, string> = {
     "common.apply": "Қолдану",
     "common.reset": "Қалпына келтіру",
     "common.retry": "Қайталап көріңіз",
+    "common.loading": "Жүктелуде",
     "common.signOut": "Шығу",
     "common.show": "Көрсету",
     "common.hide": "Жасыру",
@@ -2773,6 +2784,10 @@ const kzTranslations: Record<TranslationKey, string> = {
     "chat.loadFailedMessage": "Сәлден кейін қайталап көріңіз.",
     "chat.sendFailedTitle": "Хабарды жіберу мүмкін болмады",
     "chat.sendFailedMessage": "Хабарды қайта жіберіп көріңіз.",
+    "chat.mentorChat": "ЖИ тәлімгері",
+    "chat.ordinaryAiChat": "Қалыпты ЖИ чаты",
+    "chat.hideMentor": "Тәлімгерді жасыру",
+    "chat.showMentor": "Тәлімгерді көрсету",
     "chat.attachmentFallbackMessage": "Тіркеме",
     "chat.attachmentsPhotoTab": "Фотосуреттер",
     "chat.attachmentsFileTab": "Файл",
@@ -2983,6 +2998,10 @@ const kzTranslations: Record<TranslationKey, string> = {
 }
 
 let activeLanguage: Language = "ru"
+
+export function getTranslationLanguage(): Language {
+    return activeLanguage
+}
 
 export function setTranslationLanguage(language: Language) {
     activeLanguage = language

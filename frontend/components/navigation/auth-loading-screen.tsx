@@ -1,12 +1,11 @@
-import { ActivityIndicator, View } from "react-native"
+import { View } from "react-native"
 
 import { authLoadingScreenStyles } from "@/components/navigation/auth-loading-screen.styles"
-import { useTheme } from "@/providers/theme-provider"
+import { QuietLoading } from "@/components/ui/quiet-loading"
 export default function AuthLoadingScreen() {
-    const { palette } = useTheme()
     return (
         <View style={authLoadingScreenStyles.container}>
-            <ActivityIndicator color={palette.primary} size="large" />
+            <QuietLoading loading kind="content" />
         </View>
     )
 }

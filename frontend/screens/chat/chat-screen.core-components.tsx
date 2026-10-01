@@ -29,8 +29,8 @@ import type {
 } from "@/services/api/ai-chat.types"
 import type { BasketItemRead, BasketRead } from "@/types/basket"
 
-export function AnimatedMessageBlock({ children }: { children: ReactNode }) {
-    const shouldAnimate = Platform.OS !== "android"
+export function AnimatedMessageBlock({ children, animate = true }: { children: ReactNode; animate?: boolean }) {
+    const shouldAnimate = animate && Platform.OS !== "android"
     const progress = useRef(new Animated.Value(shouldAnimate ? 0 : 1)).current
 
     useEffect(() => {

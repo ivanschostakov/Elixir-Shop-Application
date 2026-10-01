@@ -1,8 +1,13 @@
-import type { CompanionEntry, Workout, WorkoutPlan } from "@/services/api/companion"
+import { mentorText as mt } from "@/i18n/mentor-translations"
+import type { CompanionEntry, Workout, WorkoutPlan, Unit } from "@/services/api/companion"
 
 export type MentorPage = "today" | "nutrition" | "workouts" | "course" | "progress" | "more" | "adjust" | "ask"
-export const measurementLabels = { waist_cm: "Талия, см", chest_cm: "Грудь, см", hips_cm: "Бёдра, см", arm_cm: "Рука, см", thigh_cm: "Бедро, см", body_fat_percent: "Жир, % (измеренный)" }
-export const goalLabels = { weight_loss: "Снижение веса", weight_gain: "Набор веса", maintain: "Поддержание", custom: "Своя цель", course: "Сопровождение курса" }
+export const measurementLabels = { get waist_cm() { return mt("Талия, см") }, get chest_cm() { return mt("Грудь, см") }, get hips_cm() { return mt("Бёдра, см") }, get arm_cm() { return mt("Рука, см") }, get thigh_cm() { return mt("Бедро, см") }, get body_fat_percent() { return mt("Жир, % (измеренный)") } }
+export const goalLabels = { get weight_loss() { return mt("Снижение веса") }, get weight_gain() { return mt("Набор веса") }, get maintain() { return mt("Поддержание") }, get custom() { return mt("Своя цель") }, get course() { return mt("Сопровождение курса") } }
+export function mentorUnitLabel(unit: Unit) {
+    const labels: Record<Unit, string> = { mg: "мг", mcg: "мкг", g: "г", ml: "мл", capsule: "капсул", tablet: "таблеток", IU: "МЕ" }
+    return mt(labels[unit])
+}
 export function numeric(value: unknown): number | null {
     if (value == null || String(value).trim() === "") return null
     const number = Number(String(value).replace(",", "."))
@@ -38,6 +43,6 @@ export function canFinishWorkout(workout: Workout) {
     return completed.length > 0 && completed.every(set => numeric(set.weight_kg) !== null && Number(set.weight_kg) >= 0 && Number.isInteger(set.reps) && Number(set.reps) > 0)
 }
 export function repeatMeal(entry: CompanionEntry, now = new Date().toISOString()) {
-    if (entry.kind !== "meal") throw new Error("Можно повторить только приём пищи")
+    if (entry.kind !== "meal") throw new Error(mt("Можно повторить только приём пищи"))
     return { ...entry.data, occurred_at: now, favorite: false }
 }

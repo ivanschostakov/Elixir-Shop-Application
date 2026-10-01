@@ -58,9 +58,93 @@ test("ordinary and companion chat use separate routes without changing the origi
     await api.sendMyAiChatMessage("companion", [], "message-request-001")
     assert.equal(requests[0][0], "/v1/users/me/ai-chat")
     assert.equal(requests[0][2].appIntegrityAction, "ai-chat:send")
+    assert.equal(requests[0][1].get("chat_mode"), null)
     assert.equal(requests[1][0], "/v1/users/me/ai-chat/companion/messages")
     assert.equal(requests[1][1].get("client_request_id"), "message-request-001")
     assert.equal(requests[1][2].appIntegrityAction, "ai-companion")
+})
+
+test("explicit ordinary chat sends the mode flag while mentor requests retain protocol 2", async () => {
+    const requests = []
+    let consentChecks = 0
+    const api = loadTs("services/api/ai-chat.ts", {
+        "@/services/api/client": { apiPostMultipart: async (...args) => requests.push(args) },
+        "@/services/api/ai-chat.constants": { aiChatEndpoint: "/v1/users/me/ai-chat" },
+        "@/services/api/ai-data-consent": { ensureAiDataConsent: async () => { consentChecks++ } },
+    })
+    await api.sendMyAiChatMessage("ordinary", [], undefined, 2, true)
+    await api.sendMyAiChatMessage("mentor", [], "mentor-request-001", 2)
+    assert.equal(consentChecks, 2)
+    assert.equal(requests[0][0], "/v1/users/me/ai-chat")
+    assert.equal(requests[0][1].get("chat_mode"), "ordinary")
+    assert.equal(requests[0][1].get("dialogue_protocol"), null)
+    assert.equal(requests[0][1].get("client_request_id"), null)
+    assert.equal(requests[0][2].appIntegrityAction, "ai-chat:send")
+    assert.equal(requests[1][0], "/v1/users/me/ai-chat/companion/messages")
+    assert.equal(requests[1][1].get("chat_mode"), null)
+    assert.equal(requests[1][1].get("dialogue_protocol"), "2")
+    assert.equal(requests[1][1].get("client_request_id"), "mentor-request-001")
+    assert.equal(requests[1][2].appIntegrityAction, "ai-companion")
+})
+
+test("chat sends follow the resolved mentor mode without changing the saved profile", async () => {
+    const requests = []
+    const profile = { enabled: true, version: 4 }
+    let mentorShown = true
+    const { useAiChat } = loadTs("hooks/chat/use-ai-chat.ts", {
+        react: {
+            useEffect: () => {},
+            useRef: current => ({ current }),
+            useState: initial => [initial, () => {}],
+        },
+        "@react-navigation/native": { useIsFocused: () => true },
+        "@/hooks/basket/basket-store": { setBasketSnapshot: () => {} },
+        "@/hooks/shared/use-async-data": { useAsyncData: () => ({ data: null, error: null, loading: false, reload: async () => null, setData: () => {} }) },
+        "@/services/api/ai-chat": { sendMyAiChatMessage: async (...args) => { requests.push(args); return { chat: { messages: [] } } } },
+        "@/services/api/companion": { requestKey: () => "mentor-request-001" },
+        "@/services/api/ai-data-consent": { AiConsentDeclinedError: class extends Error {} },
+    })
+    const chat = useAiChat(async () => mentorShown && profile.enabled, () => 2)
+    await chat.sendMessage("mentor")
+    mentorShown = false
+    await chat.sendMessage("ordinary")
+    mentorShown = true
+    await chat.sendMessage("mentor again")
+    assert.deepEqual(requests, [
+        ["mentor", [], "mentor-request-001", 2, false],
+        ["ordinary", [], undefined, 2, true],
+        ["mentor again", [], "mentor-request-001", 2, false],
+    ])
+    assert.deepEqual(profile, { enabled: true, version: 4 })
+})
+
+test("failed chat retries retain their key only while the resolved mode stays the same", async () => {
+    const requests = []
+    let mentorShown = true
+    let keyIndex = 0
+    const { useAiChat } = loadTs("hooks/chat/use-ai-chat.ts", {
+        react: {
+            useEffect: () => {},
+            useRef: current => ({ current }),
+            useState: initial => [initial, () => {}],
+        },
+        "@react-navigation/native": { useIsFocused: () => true },
+        "@/hooks/basket/basket-store": { setBasketSnapshot: () => {} },
+        "@/hooks/shared/use-async-data": { useAsyncData: () => ({ data: null, error: null, loading: false, reload: async () => null, setData: () => {} }) },
+        "@/services/api/ai-chat": { sendMyAiChatMessage: async (...args) => { requests.push(args); throw new Error("offline") } },
+        "@/services/api/companion": { requestKey: () => `retry-key-${++keyIndex}` },
+        "@/services/api/ai-data-consent": { AiConsentDeclinedError: class extends Error {} },
+    })
+    const chat = useAiChat(async () => mentorShown, () => 2)
+    await assert.rejects(chat.sendMessage("same draft"), /offline/)
+    await assert.rejects(chat.sendMessage("same draft"), /offline/)
+    mentorShown = false
+    await assert.rejects(chat.sendMessage("same draft"), /offline/)
+    mentorShown = true
+    await assert.rejects(chat.sendMessage("same draft"), /offline/)
+    assert.deepEqual(requests.map(args => args[2]), ["retry-key-1", "retry-key-1", undefined, "retry-key-3"])
+    assert.deepEqual(requests.map(args => args[4]), [false, false, true, false])
+    assert.equal(keyIndex, 3)
 })
 
 test("private diary attachments never resolve to public media URLs", () => {

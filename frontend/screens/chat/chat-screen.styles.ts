@@ -32,6 +32,7 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
     container: {
         flex: 1,
         backgroundColor: colors.surface,
+        overflow: "hidden",
     },
     keyboardContent: {
         flex: 1,
@@ -44,13 +45,13 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         paddingHorizontal: spacing.md,
         paddingBottom: spacing.sm,
         gap: spacing.sm,
-        backgroundColor: colors.surfaceSoft,
+        backgroundColor: "transparent",
         zIndex: 12,
     },
     mentorHeader: {
         paddingHorizontal: 8,
         paddingBottom: 8,
-        backgroundColor: "rgba(255,255,255,0.96)",
+        backgroundColor: "transparent",
     },
     mentorBackButton: {
         width: 44,
@@ -69,11 +70,13 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         // Keep scroll content and overscroll below the fixed header.
         overflow: "hidden",
     },
+    topicHeaderPill: { flex: 1, height: 44, borderRadius: 24, paddingHorizontal: spacing.md, justifyContent: "center", backgroundColor: colors.surfaceOverlaySoft },
+    topicHeaderText: { color: colors.text, fontSize: 16, fontWeight: "700", textAlign: "center" },
     content: {
         flex: 1,
         minHeight: 0,
         position: "relative",
-        backgroundColor: colors.surfaceSoft,
+        backgroundColor: "transparent",
     },
     backgroundImage: {
         ...StyleSheet.absoluteFillObject,
@@ -737,6 +740,17 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         color: "#FFF9F9",
         fontSize: 12,
         lineHeight: 16,
+    },
+    composerShortcuts: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        marginBottom: 8,
+        minHeight: 48,
+    },
+    mentorShortcutPanel: {
+        flex: 1,
+        minWidth: 0,
     },
     composerDock: {
         position: "absolute",

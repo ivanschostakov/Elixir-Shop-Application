@@ -1,6 +1,7 @@
+import { QuietLoading } from "@/components/ui/quiet-loading"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as ScreenCapture from "expo-screen-capture"
-import { ActivityIndicator, Animated, Image, Platform, Pressable, ScrollView, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
+import { Animated, Image, Platform, Pressable, ScrollView, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
 import { ContentRail } from "@/components/content/content-rail"
@@ -37,7 +38,7 @@ import type { UploadableReviewAttachment } from "@/types/product"
 export default function ProductScreen({ productId, preferredVariantId }: ProductScreenProps) {
     const productScreenStyle = useThemeStyles(createProductScreenStyle)
     const { palette } = useTheme()
-    const { product, loading, error } = useProduct(productId)
+    const { product, loading } = useProduct(productId)
     const { reviews, loading: reviewsLoading, error: reviewsError } = useProductReviews(productId)
     const {
         questions,
@@ -269,17 +270,17 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
         [favouriteLoading, handleBookmarkPress, handleSharePress, isFavourite, palette, product, productScreenStyle, t, updating],
     )
 
-    if (loading) {
+    if (loading && !product) {
         return (
             <DetailTemplate chromeTemplate={chromeTemplate} style={productScreenStyle.screen}>
                 <View style={productScreenStyle.stateContainer}>
-                    <ActivityIndicator />
+                    <QuietLoading loading={loading} kind="content" />
                 </View>
             </DetailTemplate>
         )
     }
 
-    if (error || !product) {
+    if (!product) {
         return (
             <DetailTemplate chromeTemplate={chromeTemplate} style={productScreenStyle.screen}>
                 <View style={productScreenStyle.stateContainer}>

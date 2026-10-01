@@ -59,6 +59,9 @@ async function persistLanguage(language: Language) {
 export function LanguageProvider({ children }: LanguageProviderProps) {
     const [language, setLanguageState] = useState<Language>(getDeviceLanguage)
 
+    // Date and message helpers also need the current language during this render.
+    setTranslationLanguage(language)
+
     useEffect(() => {
         setTranslationLanguage(language)
     }, [language])

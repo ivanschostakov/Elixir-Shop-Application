@@ -75,7 +75,6 @@ export const mentorStyles = StyleSheet.create({
     actions: { gap: 9 },
     actionRow: { flexDirection: "row", alignItems: "stretch", gap: 9 },
     actionCell: { flex: 1 },
-    navigation: { flexDirection: "row", gap: 4, paddingVertical: 5, paddingHorizontal: 1, alignItems: "center" },
-    navigationPill: { minHeight: 40, paddingHorizontal: 6, paddingVertical: 10, borderRadius: 24, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
-    navigationText: { fontSize: 10, fontWeight: "600" },
+    navigation: { flexDirection: "row", gap: 6, alignItems: "center" },
+    navigationPill: { flex: 1, minWidth: 44, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
 })

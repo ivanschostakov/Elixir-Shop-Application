@@ -1,3 +1,4 @@
+import { mentorText as mt, mentorDateTimeLabel } from "@/i18n/mentor-translations"
 // Device metadata, never a user preference. Do not infer cities/DST from offsets.
 const pad = (value: number) => String(value).padStart(2, "0")
 
@@ -13,7 +14,7 @@ export function normalizeCompanionTimezone(value: string | null | undefined): st
         if (!minutes) return hours ? `Etc/GMT${offset[1] === "+" ? "-" : "+"}${hours}` : "UTC"
         return `UTC${offset[1]}${pad(hours)}:${pad(minutes)}`
     }
-    try { new Intl.DateTimeFormat("en", { timeZone: zone }).format(0); return zone }
+    try { new Intl.DateTimeFormat("en", { timeZone: zone, hour12: false }).format(0); return zone }
     catch { return null }
 }
 
@@ -35,11 +36,11 @@ export function localEntryTimestamp(value: string, original: string): string {
     // Keep seconds and the exact occurrence of an ambiguous autumn hour unless edited.
     if (value === localDateTime(original)) return original
     const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})$/.exec(value.trim())
-    if (!match) throw new Error("Укажите дату и время в формате ГГГГ-ММ-ДД ЧЧ:ММ")
+    if (!match) throw new Error(mt("Укажите дату и время в формате ГГГГ-ММ-ДД ЧЧ:ММ"))
     const [, y, m, d, h, minute] = match.map(Number)
     const date = new Date(y, m - 1, d, h, minute)
     if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d || date.getHours() !== h || date.getMinutes() !== minute) {
-        throw new Error("Такой даты или времени нет на телефоне. Проверьте введённое время.")
+        throw new Error(mt("Такой даты или времени нет на телефоне. Проверьте введённое время."))
     }
     return date.toISOString()
 }
@@ -77,7 +78,7 @@ export function formatCompanionDate(value: string, clock: string): string {
     const fixed = /^UTC([+-])(\d{2}):(\d{2})$/.exec(zone)
     if (fixed) {
         const minutes = (Number(fixed[2]) * 60 + Number(fixed[3])) * (fixed[1] === "+" ? 1 : -1)
-        return new Date(Date.parse(value) + minutes * 60_000).toLocaleString("ru-RU", { timeZone: "UTC" })
+        return mentorDateTimeLabel(new Date(Date.parse(value) + minutes * 60_000), "UTC")
     }
-    return new Date(value).toLocaleString("ru-RU", { timeZone: zone })
+    return mentorDateTimeLabel(new Date(value), zone)
 }
