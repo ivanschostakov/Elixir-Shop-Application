@@ -41,8 +41,15 @@ async def main():
         banner.audience_json = dict(UNIVERSAL_BANNER_AUDIENCE)
         await db.commit()
         print(json.dumps({"id": banner.id, "image_path": image_path, "inner_link": banner.inner_link, "status": banner.status, "universal": True}))
-    await get_cache_service().bump_namespace("banners")
-    await engine.dispose()
+    cache = get_cache_service()
+    await cache.connect()
+    try:
+        if cache.client is None:
+            raise RuntimeError("Banner was saved, but Redis cache invalidation is unavailable; retry publication")
+        await cache.bump_namespace("banners")
+    finally:
+        await cache.close()
+        await engine.dispose()
 
 
 if __name__ == "__main__":
