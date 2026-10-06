@@ -6,6 +6,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
+from fastapi import HTTPException
 
 from .rows import build_variant_rows, build_product_rows, EXCLUDED_PATHS
 from .schemas import MoySkladCatalogSyncStats, MoySkladCounterpartySyncResult, MoySkladCustomerOrderSyncResult, MoySkladInitialRelinkStats, MoySkladInvoiceOutSyncResult
@@ -160,23 +161,20 @@ class MoySkladClient:
             candidate_rows = filtered.get("rows")
             if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
         except httpx.HTTPStatusError as exc:
-            if entity_type == "counterparty":
+            if entity_type == "counterparty" or exc.response.status_code != 400:
                 raise
             logger.debug("MoySklad %s filter lookup failed: %s", entity_type, exc)
 
         if not rows:
-            try:
-                searched = await self.get_page(f"/entity/{entity_type}", limit=100, search=external_code)
-                candidate_rows = searched.get("rows")
-                if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
-            except httpx.HTTPStatusError as exc:
-                if entity_type == "counterparty":
-                    raise
-                logger.debug("MoySklad %s search lookup failed: %s", entity_type, exc)
+            searched = await self.get_page(f"/entity/{entity_type}", limit=100, search=external_code)
+            candidate_rows = searched.get("rows")
+            if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
 
         matches = [row for row in rows if optional_str(row.get("externalCode")) == external_code]
-        if entity_type == "counterparty" and (len(rows) >= 100 or len({row.get("id") for row in matches}) > 1):
-            raise RuntimeError("Ambiguous MoySklad counterparty external code; manual review required")
+        if len({row.get("id") for row in matches}) > 1 or len(rows) >= 100:
+            if entity_type == "counterparty":
+                raise RuntimeError("Ambiguous MoySklad counterparty external code; manual review required")
+            raise HTTPException(status_code=409, detail=f"Ambiguous MoySklad {entity_type} external code; manual review required")
         if matches: return matches[0]
         return None
 
@@ -619,7 +617,7 @@ class MoySkladClient:
         }
         if discount is not None:
             normalized_discount = max(Decimal("0.00"), min(Decimal("100.00"), Decimal(discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)))
-            if normalized_discount > Decimal("0.00"): position["discount"] = float(normalized_discount)
+            position["discount"] = float(normalized_discount)
         return position
 
     async def get_or_create_counterparty(self, *, existing_counterparty_id: UUID | None, external_code: str, sync_id: UUID, name: str, email: str | None, phone: str | None, actual_address: str | None) -> dict[str, Any]:
@@ -741,6 +739,7 @@ class MoySkladClient:
         customerorder_data = await self.get_customer_order(existing_customerorder_id) if existing_customerorder_id is not None else None
         if customerorder_data is None: customerorder_data = await self._find_entity_by_external_code("customerorder", external_code)
         if customerorder_data is not None:
+            self._validate_document_sum(customerorder_data, positions)
             customerorder_id = coerce_uuid(customerorder_data.get("id"))
             if customerorder_id is None: raise RuntimeError("MoySklad customerorder response is missing a valid id")
             return MoySkladCustomerOrderSyncResult(customerorder_id=customerorder_id, external_code=external_code, created=False)
@@ -764,6 +763,7 @@ class MoySkladClient:
             owner=owner,
         )
         customerorder_data = await self.create_customer_order(payload)
+        self._validate_document_sum(customerorder_data, positions)
 
         customerorder_id = coerce_uuid(customerorder_data.get("id"))
         if customerorder_id is None: raise RuntimeError("MoySklad customerorder response is missing a valid id")
@@ -774,6 +774,16 @@ class MoySkladClient:
             created=True,
         )
 
+    @staticmethod
+    def _validate_document_sum(data: dict[str, Any], positions: list[dict[str, Any]]) -> None:
+        if data.get("sum") is None: return
+        expected = sum((
+            (Decimal(str(row["price"])) * Decimal(str(row["quantity"])) * (1 - Decimal(str(row.get("discount", 0))) / 100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+            for row in positions
+        ), Decimal("0"))
+        if Decimal(str(data["sum"])) != expected:
+            raise HTTPException(status_code=409, detail=f"MoySklad document {data.get('id')} total differs from the order; manual review required")
+
     async def find_invoiceout_by_external_code(self, external_code: str) -> dict[str, Any] | None:
         normalized_external_code = optional_str(external_code)
         if not normalized_external_code: return None
@@ -783,6 +793,7 @@ class MoySkladClient:
         invoiceout_data = await self.get_invoiceout(existing_invoiceout_id) if existing_invoiceout_id is not None else None
         if invoiceout_data is None: invoiceout_data = await self.find_invoiceout_by_external_code(external_code)
         if invoiceout_data is not None:
+            self._validate_document_sum(invoiceout_data, positions)
             invoiceout_id = coerce_uuid(invoiceout_data.get("id"))
             if invoiceout_id is None: raise RuntimeError("MoySklad invoiceout response is missing a valid id")
             return MoySkladInvoiceOutSyncResult(invoiceout_id=invoiceout_id, external_code=external_code, created=False)
@@ -806,6 +817,7 @@ class MoySkladClient:
             owner=owner,
         )
         invoiceout_data = await self.create_invoiceout(payload)
+        self._validate_document_sum(invoiceout_data, positions)
         invoiceout_id = coerce_uuid(invoiceout_data.get("id"))
         if invoiceout_id is None: raise RuntimeError("MoySklad invoiceout response is missing a valid id")
         return MoySkladInvoiceOutSyncResult(invoiceout_id=invoiceout_id, external_code=external_code, created=True)

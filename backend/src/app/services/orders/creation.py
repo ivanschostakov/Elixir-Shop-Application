@@ -31,7 +31,7 @@ from src.integrations.delivery.schemas import COUNTRY_NAMES
 from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
 from src.normalize import optional_str
 
-from .common import _delivery_string, _normalize_phone
+from .common import _delivery_string, _normalize_phone, _require_recipient_phone
 from .crm import ensure_order_has_amocrm_lead
 from .fulfillment_payloads import normalize_address_for_cf
 
@@ -422,6 +422,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
 
     if draft.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
     if not draft.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft is empty")
+    draft.recipient.phone = _require_recipient_phone(draft.recipient.phone)
     current_variants = list((await session.execute(
         select(Variant)
         .options(selectinload(Variant.product))
@@ -543,6 +544,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
         basket.recipient = recipient
         await session.flush()
 
+    basket.recipient.phone = _require_recipient_phone(basket.recipient.phone)
     basket_subtotal = Decimal("0.00")
     total_quantity = 0
     snapshot_items = []

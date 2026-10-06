@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import logging
 import re
 from typing import Any
@@ -23,7 +23,7 @@ from src.database.models import IntegrationRun, Order, Product, User, Variant
 from src.integrations.delivery.schemas import COUNTRY_NAMES
 from src.normalize import coerce_uuid, extract_dict, lower_optional_str, optional_str
 
-from .client import MoySkladClient, get_moysklad_client
+from .client import MoySkladClient, get_moysklad_client, moysklad_money
 from .idempotency import (
     build_counterparty_external_code,
     build_customerorder_external_code,
@@ -158,31 +158,55 @@ async def _load_assortment_refs(session: AsyncSession, *, variant_ids: list[int]
 
 def _build_customerorder_positions(*, moysklad_client: MoySkladClient, assortment_refs: dict[int, tuple[str, UUID]], order: Order) -> tuple[list[dict[str, Any]], list[int]]:
     positions: list[dict[str, Any]] = []
-    missing_variant_ids: list[int] = []
-    discount_percent = _order_positions_discount_percent(order)
+    missing_variant_ids = [int(item.variant_id) for item in order.items if int(item.variant_id) not in assortment_refs]
+    if missing_variant_ids: return positions, missing_variant_ids
+    line_amounts = [moysklad_money(Decimal(item.line_total)) for item in order.items]
+    subtotal = sum(line_amounts)
+    target = moysklad_money(Decimal(order.grand_total) - Decimal(order.delivery_total))
+    if subtotal != moysklad_money(Decimal(order.basket_subtotal)) or not 0 <= target <= subtotal:
+        raise ValueError("Order totals are inconsistent; MoySklad sync requires manual review")
+    if not subtotal: allocated = [0] * len(line_amounts)
+    else:
+        # Allocate whole kopecks, then distribute the rounding remainder deterministically.
+        allocated = [amount * target // subtotal for amount in line_amounts]
+        remainder_order = sorted(range(len(line_amounts)), key=lambda i: (line_amounts[i] * target % subtotal, -i), reverse=True)
+        for index in remainder_order[:target - sum(allocated)]: allocated[index] += 1
 
-    for item in order.items:
-        assortment_ref = assortment_refs.get(int(item.variant_id))
-        if assortment_ref is None:
-            missing_variant_ids.append(int(item.variant_id))
-            continue
-
+    for item, line_total in zip(order.items, allocated):
+        quantity = int(item.quantity)
+        if quantity <= 0 or quantity != item.quantity: raise ValueError("Invalid order item quantity")
+        assortment_ref = assortment_refs[int(item.variant_id)]
         entity_type, entity_id = assortment_ref
-        positions.append(moysklad_client.build_customerorder_position(
-            assortment_entity_type=entity_type,
-            assortment_id=entity_id,
-            quantity=item.quantity,
-            unit_price=Decimal(item.unit_price),
-            discount=discount_percent,
-        ))
-
+        unit_minor, extra_units = divmod(line_total, quantity)
+        for count, price in [(quantity - extra_units, unit_minor), (extra_units, unit_minor + 1)]:
+            if not count: continue
+            positions.append(moysklad_client.build_customerorder_position(
+                assortment_entity_type=entity_type,
+                assortment_id=entity_id,
+                quantity=count,
+                unit_price=Decimal(price) / 100,
+                discount=Decimal("0.00"),
+            ))
     return positions, missing_variant_ids
 
 
 def _build_order_description(order: Order) -> str:
     comment = optional_str(order.comment)
-    if comment: return f"{order.order_code}. {comment}"
-    return order.order_code
+    subtotal = Decimal(order.basket_subtotal)
+    delivery = Decimal(order.delivery_total)
+    total = Decimal(order.grand_total)
+    lines = [order.order_code, f"Товары до скидок: {subtotal:.2f}", f"Скидки и бонусы: {subtotal + delivery - total:.2f}", f"Товары после скидок: {total - delivery:.2f}", f"Доставка (отдельное поле): {delivery:.2f}", f"Итого к оплате в приложении: {total:.2f}"]
+    for item in order.items:
+        lines.append(f"{item.product_name}: {item.quantity} x {Decimal(item.unit_price):.2f} (до скидок)")
+    benefits = extract_dict(extract_dict(order.checkout_snapshot).get("benefits"))
+    for application in benefits.get("applications") or []:
+        application = extract_dict(application)
+        amount = _decimal_or_zero(application.get("discount_amount"))
+        if amount <= 0: continue
+        label = "Бонусы" if application.get("source_kind") == "moysklad_bonus" else f"Промокод {application.get('code') or ''}".strip()
+        lines.append(f"{label}: -{amount:.2f}")
+    if comment: lines.append(comment)
+    return "\n".join(lines)
 
 
 def _delivery_cost_value(order: Order) -> str:
@@ -192,20 +216,6 @@ def _delivery_cost_value(order: Order) -> str:
 def _decimal_or_zero(value: Any) -> Decimal:
     try: return Decimal(str(value))
     except Exception: return Decimal("0.00")
-
-
-def _order_positions_discount_percent(order: Order) -> Decimal:
-    benefits = extract_dict(extract_dict(order.checkout_snapshot).get("benefits"))
-    subtotal = _decimal_or_zero(benefits.get("basket_subtotal"))
-    discount_amount = _decimal_or_zero(benefits.get("stacked_discount_amount"))
-    if discount_amount <= Decimal("0.00"):
-        total_after = _decimal_or_zero(benefits.get("total_after_discounts"))
-        if total_after > Decimal("0.00") and total_after < subtotal: discount_amount = subtotal - total_after
-    if discount_amount <= Decimal("0.00"):
-        options = benefits.get("stacked_discount_options")
-        if isinstance(options, list): discount_amount = sum((_decimal_or_zero(extract_dict(option).get("discount_amount")) for option in options), Decimal("0.00"))
-    if subtotal <= Decimal("0.00") or discount_amount <= Decimal("0.00"): return Decimal("0.00")
-    return max(Decimal("0.00"), min(Decimal("100.00"), ((discount_amount * Decimal("100.00")) / subtotal).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)))
 
 
 def _shipment_address(order: Order) -> str | None:
@@ -514,6 +524,8 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         await session.flush()
         await session.commit()
 
+    await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+    await session.refresh(order, attribute_names=["moysklad_customerorder_id", "moysklad_invoiceout_id"])
     variant_ids = [int(item.variant_id) for item in order.items]
     assortment_refs = await _load_assortment_refs(session, variant_ids=variant_ids)
     positions, missing_variant_ids = _build_customerorder_positions(
@@ -560,12 +572,19 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         state=refs["state"],
         sales_channel=refs["sales_channel"],
     )
+    if order.moysklad_customerorder_id != customerorder_result.customerorder_id:
+        order.moysklad_customerorder_id = customerorder_result.customerorder_id
+        await session.flush()
+        await session.commit()
     invoiceout_result = None
     if _is_intellectmoney_payment(order):
+        await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+        await session.refresh(order, attribute_names=["moysklad_invoiceout_id"])
         order_id = int(order.__dict__.get("id") or order.id)
         invoiceout_external_code = _invoiceout_external_code(order_id)
         invoiceout_sync_id = build_sync_id(scope="invoiceout", key=invoiceout_external_code)
         invoiceout_result = await moysklad_client.resolve_or_sync_invoiceout(
+            existing_invoiceout_id=order.moysklad_invoiceout_id,
             external_code=invoiceout_external_code,
             sync_id=invoiceout_sync_id,
             name=_invoiceout_name(order),
@@ -634,6 +653,7 @@ async def sync_order_to_moysklad_safe(session: AsyncSession, *, order: Order, us
                 status="queued",
                 error=str(error)[:8000] or error.__class__.__name__,
                 enqueue=True,
+                retry_error=error,
             )
         except Exception:
             log.exception("Failed to queue MoySklad order sync retry order_id=%s", order_id)
@@ -648,6 +668,7 @@ async def _record_automatic_order_sync(
     counters: dict[str, Any] | None = None,
     error: str | None = None,
     enqueue: bool = False,
+    retry_error: Exception | None = None,
 ) -> IntegrationRun:
     idempotency_key = f"order:auto:moysklad:{order_id}"
     existing = (await session.execute(
@@ -656,6 +677,10 @@ async def _record_automatic_order_sync(
     if existing is not None:
         return existing
 
+    delay = 0
+    if enqueue:
+        from src.app.services.admin.jobs import retry_delay_for_error
+        delay = max(60, retry_delay_for_error(retry_error, 1)) if retry_error is not None else 60
     run = IntegrationRun(
         provider="moysklad",
         operation="moysklad_order_sync",
@@ -668,6 +693,7 @@ async def _record_automatic_order_sync(
         error=error,
         idempotency_key=idempotency_key,
         finished_at=datetime.now(timezone.utc) if status in {"success", "error"} else None,
+        next_attempt_at=datetime.now(timezone.utc) + timedelta(seconds=delay) if enqueue else None,
     )
     session.add(run)
     await session.flush()
@@ -676,7 +702,7 @@ async def _record_automatic_order_sync(
         try:
             from src.app.services.admin.jobs import enqueue_integration_run
 
-            await enqueue_integration_run(run.id)
+            await enqueue_integration_run(run.id, delay_seconds=delay)
         except Exception as enqueue_error:
             run.status = "error"
             run.error = f"Failed to enqueue MoySklad retry: {enqueue_error}"[:8000]

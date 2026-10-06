@@ -415,8 +415,16 @@ def test_create_final_order_automatically_enables_default_bonus_program(
         _delete_user(user_id)
 
 
-def test_create_final_order_uses_self_recipient_when_draft_recipient_is_missing(client: TestClient, registered_user, variant_factory, stub_amocrm):
+@pytest.mark.parametrize("has_phone", [True, False])
+def test_create_final_order_uses_self_recipient_when_draft_recipient_is_missing(client: TestClient, registered_user, variant_factory, stub_amocrm, has_phone):
     catalog = variant_factory(stock=5, price=Decimal("12.50"))
+    if has_phone:
+        response = client.patch(
+            "/api/v1/users/me/profile/personal-data",
+            headers=registered_user["headers"],
+            json={"phone_number": "+79990000000"},
+        )
+        assert response.status_code == 200, response.text
 
     basket_response = client.post(
         "/api/v1/users/me/basket/items",
@@ -439,11 +447,18 @@ def test_create_final_order_uses_self_recipient_when_draft_recipient_is_missing(
         json={"draft_id": draft["id"], "payment_method": "later"},
     )
 
+    if not has_phone:
+        assert order_response.status_code == 422, order_response.text
+        with Session(sync_engine) as session:
+            assert session.get(OrderDraft, draft["id"]) is not None
+            assert session.query(Order).filter(Order.user_id == registered_user["user_id"]).count() == 0
+        return
     assert order_response.status_code == 200, order_response.text
     payload = order_response.json()
     assert payload["recipient"]["name"] == "Orders"
     assert payload["recipient"]["surname"] == "Tester"
     assert payload["recipient"]["email"] == registered_user["email"]
+    assert payload["recipient"]["phone"] == "+79990000000"
 
 
 def test_create_final_order_persists_snapshot_and_amocrm_link(client: TestClient, registered_user, variant_factory, stub_amocrm):

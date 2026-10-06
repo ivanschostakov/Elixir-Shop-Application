@@ -3,6 +3,9 @@ import logging
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from email.utils import parsedate_to_datetime
+
+import httpx
 
 from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
@@ -63,9 +66,25 @@ def retry_delay_seconds(attempts: int) -> int:
 
 
 def is_retryable_error(error: Exception) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code == 429 or error.response.status_code >= 500
     if not isinstance(error, HTTPException):
         return True
     return error.status_code == 429 or error.status_code >= 500
+
+
+def retry_delay_for_error(error: Exception, attempts: int) -> int:
+    delay = retry_delay_seconds(attempts)
+    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
+        delay = max(delay, 60)
+        retry_after = error.response.headers.get("Retry-After", "")
+        try: delay = max(delay, int(retry_after))
+        except ValueError:
+            try:
+                retry_at = parsedate_to_datetime(retry_after)
+                delay = max(delay, int((retry_at - datetime.now(timezone.utc)).total_seconds()) + 1)
+            except (ValueError, TypeError, OverflowError): pass
+    return delay
 
 
 def encode_job(run_id: int) -> str:
@@ -428,7 +447,7 @@ async def execute_integration_run(run_id: int) -> None:
             run.error = _error_text(error)
             run.heartbeat_at = datetime.now(timezone.utc)
             if is_retryable_error(error) and run.attempts < run.max_attempts:
-                retry_delay = retry_delay_seconds(run.attempts)
+                retry_delay = retry_delay_for_error(error, run.attempts)
                 run.status = "retrying"
                 run.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=retry_delay)
             else:
