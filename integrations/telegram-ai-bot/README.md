@@ -15,6 +15,31 @@ AI replies, requested chart/photo attachments, and scheduled notifications remai
 separate messages. Buttons on an AI answer create a navigation card instead of
 overwriting the answer. Mentor responses use escaped HTML and keep URL underscores literal.
 
+## Conversational input
+
+Structured fields accept ordinary language rather than positional numbers, pipe
+delimiters, weekday codes or technical timezones. `mentor_input.py` uses the existing
+OpenAI client with a small, stateless `gpt-5-mini` Structured Outputs extraction call
+(`store=False`, no tools or conversation). It normalizes weight, nutrition targets,
+measurements, exercises/sets/repetitions, durations, course schedules/supplies,
+reminder times and cities/timezones into the existing backend contracts. Plain
+names, notes and verbatim existing dosage instructions remain plain text.
+
+Incomplete answers retain the current step's question/answer history and produce
+one clarification, without saving data or guessing missing fields. Local typed
+validation and backend limits remain authoritative. The parser cannot prescribe
+doses, calculate a nutrition target, convert medication units or approve its own
+draft. Weight, reminders, timezone and explicit workout duration show a review
+before a token-bound confirmation; other structured records keep their existing
+draft/confirm flow. Old review buttons are invalidated by navigation. In-flight
+extraction is discarded after navigation, mentor exit or privacy/conversation reset.
+
+Extraction usage is recorded through the existing usage/token APIs; normalization
+is a service operation and does not spend a premium answer credit. Ordinary AI
+answers and media keep their existing phone, subscription, model and quota gates.
+Raw answers are never added to extraction error logs. Temporary answer history is
+bounded and cleared on a new step. No schema migration or mobile OTA is required.
+
 - Today uses confirmed meals, the saved target (if any), today's weekly-program
   exercises, actual course dates, and wellbeing records. Weekly/interval course
   events are not represented as daily tasks.
