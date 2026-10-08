@@ -26,6 +26,25 @@ current views. Mentor responses use escaped HTML and keep URL underscores litera
 
 ## Conversational input
 
+Workout/program, body measurements and wellbeing buttons select a task in the
+same persistent Responses/Conversations dialogue used by the mentor. They no longer
+start isolated extraction forms. The assistant reads the live profile, weekly plan,
+performed workouts, separate activities and current draft statuses through function
+tools. It asks only for missing facts. Natural corrections revise an owned draft
+with `replaces_id`, preserving other exercises/days; saving still needs confirmation.
+Weight and goal questions also return to this conversation and the existing explicit-fact
+profile tool. Buttons alone cannot supply evidence of a completed workout or measurement.
+
+`mentor_records.py` exposes draft-only tools for strength workouts, other physical
+activities, measurements and wellbeing, plus an owned-record read tool. The backend
+validates every request; identity/version come from the transport, never model arguments.
+Confirmed workout/activity cards replace draft prose with the actual saved values.
+Other physical activity uses `activity_log`, not a weekly program or fabricated
+strength sets. Actual duration is explicitly reported by the user, never chat time.
+Old active strength sessions remain compatible and are replaced only when their
+conversational completion draft is confirmed, without creating two completed workouts.
+
+The remaining settings/course/manual-nutrition steps retain bounded extraction:
 Structured fields accept ordinary language rather than positional numbers, pipe
 delimiters, weekday codes or technical timezones. `mentor_input.py` uses the existing
 OpenAI client with a small, stateless `gpt-5-mini` Structured Outputs extraction call
@@ -72,14 +91,14 @@ changing buttons, funnels, saving confirmations or medical safeguards.
   and creates a draft which must be confirmed. It never silently replaces a target.
   Product lookup offers an approximate food estimate or search in the saved diary;
   it does not pretend to be a verified external food database.
-- Workouts support a saved weekly exercise program, a resumable active session,
-  idempotent per-set weight/repetition writes, duration, and total volume. A session
-  freezes its program snapshot. Set entry defaults to the next unfinished planned
-  exercise; an explicit exercise name overrides it. Finishing uses elapsed time or
-  an explicit duration. Programs can be built step by step (weekday, exercise,
-  sets, repetitions) or proposed by the AI as an unconfirmed draft. With no program,
-  starting offers program creation or a free session; leaving cancels only empty
-  active sessions, never recorded sets.
+- Workouts support a saved weekly exercise program and confirmed actual sets,
+  explicitly reported duration and total volume. Program and workout buttons use
+  the ongoing AI conversation, not a per-field questionnaire or automatic timer.
+  Proposals are unconfirmed drafts. Adjusting a day preserves the other days.
+  Other activities have separate counts/minutes and never inflate strength volume.
+  Legacy active sessions and idempotent per-set endpoints remain compatible;
+  finishing requires an explicit duration. Leaving cancels only empty active
+  sessions, never recorded sets.
 - Course items record existing user/specialist schemes only, with verbatim dose
   text, inclusive start/end dates, weekdays OR an interval anchored to the start
   date, multiple times, and an explicit timezone. Multiple items/products coexist;
@@ -141,7 +160,8 @@ Identity, source message and request key come from the bot, never model argument
 - `/journal/action`: owned `confirm` / `cancel`, invoked by the actual user button.
   Only confirmed meals count toward daily totals. Old replaced drafts cannot be saved.
 - `/workspace/draft`, `/workspace/action`: strict typed draft/confirm/cancel for
-  targets, programs, course items, measurements and wellbeing; course stop is explicit.
+  targets, programs, workouts, other activities, course items, measurements and
+  wellbeing; course stop is explicit.
 - `/workspace/workout/start`, `/set`, `/finish`: durable active sessions and per-set
   retries. (All three share the `/workspace/workout` prefix.)
 - `/workspace/course/action`: owned done/skipped marks, never before the event time.
@@ -187,7 +207,7 @@ server. The bot's private SQLite file `data/telegram_mentor_modes.sqlite3` (0600
 stores selected mode, mentor conversation IDs, the current navigation question and
 temporary delivery receipts containing only numeric IDs. This release needs **no new
 database migration**: new kinds and typed data reuse the existing Telegram journal.
-New kinds: `target`, `program`, `workout`, `course`, `course_event`, `measurement`,
+New kinds: `target`, `program`, `workout`, `activity_log`, `course`, `course_event`, `measurement`,
 `wellbeing`, `activity`, `reminder_rule`, `reminder`. Reminder settings are the unique
 `reminder-options` journal row; legacy daily settings remain compatible. Shared app
 companion tables and schemas are not modified by this Telegram implementation.

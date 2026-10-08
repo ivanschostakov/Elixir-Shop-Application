@@ -94,6 +94,40 @@ def test_record_models_reject_invalid_data_and_nonfinite_numbers():
             m.RecordDraft(telegram_user_id=UID, request_key="valid-key", kind=kind, data=data)
 
 
+@pytest.mark.parametrize("duration", [0, -1, 1441, float("nan"), float("inf")])
+def test_activity_requires_a_real_bounded_duration(duration):
+    with pytest.raises(ValidationError):
+        m.RecordDraft(telegram_user_id=UID, request_key="activity-key", kind="activity_log",
+            data={"name": "Walk", "duration_minutes": duration})
+
+
+def test_activity_is_not_a_strength_workout_or_program():
+    entry = m.RecordDraft(telegram_user_id=UID, request_key="activity-key", kind="activity_log",
+        data={"name": "Walk", "duration_minutes": 30})
+    assert entry.data == {"name": "Walk", "duration_minutes": 30}
+    row = SimpleNamespace(id=1, kind=entry.kind, status="confirmed", data=entry.data, occurred_at=NOW)
+    result = m.summarize([row], NOW, ZoneInfo("UTC"))
+    assert result["workouts"] == result["duration_minutes"] == result["volume_kg"] == 0
+    assert result["activities"] == 1 and result["activity_duration_minutes"] == 30
+
+
+def test_finish_never_uses_chat_elapsed_time_as_duration(monkeypatch):
+    monkeypatch.setattr(m, "lock", AsyncMock())
+    entry = SimpleNamespace(id=7, kind="workout", status="active", occurred_at=NOW-timedelta(seconds=54),
+        data={"sets": [{"exercise": "Squat", "weight_kg": 40, "reps": 10}]})
+    monkeypatch.setattr(m, "owned", AsyncMock(return_value=entry))
+    monkeypatch.setattr(m, "now", lambda: NOW)
+    db = SimpleNamespace(commit=AsyncMock())
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(m.workout_finish(m.WorkoutFinish(telegram_user_id=UID, entry_id=7), db))
+    assert error.value.status_code == 422
+    assert entry.status == "active" and "duration_minutes" not in entry.data
+    db.commit.assert_not_awaited()
+    result = asyncio.run(m.workout_finish(m.WorkoutFinish(telegram_user_id=UID, entry_id=7, duration_minutes=30), db))
+    assert result["entry"]["duration_minutes"] == 30
+    assert entry.status == "confirmed"
+
+
 def test_weekly_stats_only_count_confirmed_real_entries():
     def row(kind, status, **data):
         return SimpleNamespace(kind=kind, status=status, data=data, occurred_at=NOW-timedelta(days=1), id=1)
@@ -223,4 +257,63 @@ def test_database_vertical_workflows_and_multiple_course_items():
             assert len(finished["entry"]["sets"]) == 1
             assert finished["entry"]["duration_minutes"] == 30
             assert (await m.workout_start(m.WorkoutStart(telegram_user_id=UID, request_key="workout-start-1"), db))["entry"]["id"] == entry_id
+    asyncio.run(run())
+
+
+def test_activity_draft_confirmation_and_ownership_in_real_database(monkeypatch):
+    from test_ai_companion_db import database, URL
+    if not URL:
+        pytest.skip("An isolated PostgreSQL database is required")
+    monkeypatch.setattr(m, "now", lambda: NOW)
+    async def run():
+        async with database() as (db, user):
+            result = await m.record_draft(m.RecordDraft(telegram_user_id=UID, request_key="activity-original",
+                kind="activity_log", data={"name": "Walk", "duration_minutes": 30}), db)
+            entry_id = result["entry"]["id"]
+            assert not (await m.workspace_state(db, UID))["today_activities"]
+            with pytest.raises(HTTPException) as error:
+                await m.record_action(m.RecordAction(telegram_user_id=UID+1, entry_id=entry_id, action="confirm"), db)
+            assert error.value.status_code == 404
+            await m.record_action(m.RecordAction(telegram_user_id=UID, entry_id=entry_id, action="confirm"), db)
+            await m.record_action(m.RecordAction(telegram_user_id=UID, entry_id=entry_id, action="confirm"), db)
+            state = await m.workspace_state(db, UID)
+            assert len(state["today_activities"]) == 1
+            assert state["today_activities"][0]["duration_minutes"] == 30
+            assert not state["today_workouts"] and state["program"] is None
+            assert state["weekly"]["activities"] == 1 and state["weekly"]["workouts"] == 0
+            assert {"id": entry_id, "kind": "activity_log", "status": "confirmed"} in state["record_statuses"]
+            report = await m.report(m.Report(telegram_user_id=UID), db)
+            assert report["activities"] == 1 and report["activity_duration_minutes"] == 30
+    asyncio.run(run())
+
+
+def test_conversational_workout_replaces_owned_legacy_active_only_on_confirmation(monkeypatch):
+    from test_ai_companion_db import database, URL
+    if not URL:
+        pytest.skip("An isolated PostgreSQL database is required")
+    monkeypatch.setattr(m, "now", lambda: NOW)
+    async def run():
+        async with database() as (db, user):
+            active = (await m.workout_start(m.WorkoutStart(telegram_user_id=UID, request_key="legacy-start"), db))["entry"]
+            data = {"sets": [{"exercise": "Squat", "weight_kg": 40, "reps": 10}],
+                "duration_minutes": 30, "active_entry_id": active["id"]}
+            draft = (await m.record_draft(m.RecordDraft(telegram_user_id=UID, request_key="dialogue-finish",
+                kind="workout", data=data), db))["entry"]
+            assert (await m.workspace_state(db, UID))["active_workout"]["id"] == active["id"]
+            await m.record_action(m.RecordAction(telegram_user_id=UID, entry_id=draft["id"], action="confirm"), db)
+            await m.record_action(m.RecordAction(telegram_user_id=UID, entry_id=draft["id"], action="confirm"), db)
+            state = await m.workspace_state(db, UID)
+            assert state["active_workout"] is None and len(state["today_workouts"]) == 1
+            assert state["weekly"]["workouts"] == 1 and state["weekly"]["duration_minutes"] == 30
+            assert (await m.read_record(m.RecordRead(telegram_user_id=UID, entry_id=active["id"]), db))["entry"]["status"] == "replaced"
+            stale = (await m.record_draft(m.RecordDraft(telegram_user_id=UID, request_key="stale-finish",
+                kind="workout", data=data), db))["entry"]
+            with pytest.raises(HTTPException) as error:
+                await m.record_action(m.RecordAction(telegram_user_id=UID, entry_id=stale["id"], action="confirm"), db)
+            assert error.value.status_code == 409
+            foreign = (await m.record_draft(m.RecordDraft(telegram_user_id=UID+1, request_key="foreign-finish",
+                kind="workout", data=data), db))["entry"]
+            with pytest.raises(HTTPException) as error:
+                await m.record_action(m.RecordAction(telegram_user_id=UID+1, entry_id=foreign["id"], action="confirm"), db)
+            assert error.value.status_code == 404
     asyncio.run(run())

@@ -144,6 +144,12 @@ class WorkoutSet(StrictModel):
 class Workout(StrictModel):
     sets: list[WorkoutSet] = Field(min_length=1, max_length=200)
     duration_minutes: float = Field(gt=0, le=1440, allow_inf_nan=False)
+    active_entry_id: int | None = Field(default=None, gt=0)
+
+
+class PhysicalActivity(StrictModel):
+    name: str = Field(min_length=1, max_length=120)
+    duration_minutes: float = Field(gt=0, le=1440, allow_inf_nan=False)
 
 
 class Course(StrictModel):
@@ -204,22 +210,24 @@ class Wellbeing(StrictModel):
     note: str = Field(default="", max_length=2000)
 
 
-MODELS = {"target": NutritionTarget, "program": Program, "workout": Workout,
+MODELS = {"target": NutritionTarget, "program": Program, "workout": Workout, "activity_log": PhysicalActivity,
           "course": Course, "measurement": Measurement, "wellbeing": Wellbeing}
-KINDS_SECTION = {"target": "food", "program": "workouts", "workout": "workouts",
+KINDS_SECTION = {"target": "food", "program": "workouts", "workout": "workouts", "activity_log": "workouts",
                  "course": "course", "measurement": "progress", "wellbeing": "today"}
 
 
 class RecordDraft(Identity):
     request_key: str = Field(min_length=8, max_length=128)
     expected_version: int | None = Field(default=None, ge=0)
-    kind: Literal["target", "program", "workout", "course", "measurement", "wellbeing"]
+    kind: Literal["target", "program", "workout", "activity_log", "course", "measurement", "wellbeing"]
     data: dict
     replaces_id: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def structured_data(self):
         self.data = MODELS[self.kind].model_validate(self.data).model_dump(mode="json")
+        if self.kind == "workout" and self.data.get("active_entry_id") is None:
+            self.data.pop("active_entry_id", None)
         return self
 
 
@@ -324,10 +332,9 @@ async def workout_finish(payload: WorkoutFinish, db: AsyncSession = Depends(get_
         return {"ok": True, "entry": dump(row)}
     if row.status != "active" or not row.data["sets"]:
         raise HTTPException(409, "Запишите хотя бы один подход")
-    duration = payload.duration_minutes or round((now()-row.occurred_at).total_seconds()/60, 1)
-    if duration > 1440:
+    if payload.duration_minutes is None:
         raise HTTPException(422, "Укажите фактическую длительность тренировки в минутах")
-    row.data = {**row.data, "duration_minutes": max(0.1, duration)}
+    row.data = {**row.data, "duration_minutes": payload.duration_minutes}
     row.status = "confirmed"
     await db.commit()
     return {"ok": True, "entry": dump(row)}
@@ -447,6 +454,11 @@ async def record_action(payload: RecordAction, db: AsyncSession = Depends(get_db
     elif row.status != "draft":
         raise HTTPException(409, "Черновик уже обработан")
     elif target == "confirmed":
+        if row.kind == "workout" and row.data.get("active_entry_id"):
+            active = await owned(db, payload.telegram_user_id, row.data["active_entry_id"], "workout")
+            if active.status != "active":
+                raise HTTPException(409, "Эта тренировка уже завершена. Обновите запись перед сохранением")
+            active.status = "replaced"
         if row.kind in {"target", "program"}:
             previous = list((await db.execute(select(TelegramAIJournal).where(
                 TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
@@ -566,6 +578,7 @@ def summarize(rows, instant, zone, days=7):
     week = [r for r in rows if start <= r.occurred_at <= instant]
     confirmed = [r for r in week if r.status == "confirmed"]
     workouts = [r for r in confirmed if r.kind == "workout"]
+    activities = [r for r in confirmed if r.kind == "activity_log"]
     weights = sorted([r for r in confirmed if r.kind == "weight"], key=lambda r: (r.occurred_at, r.id))
     events = [r for r in week if r.kind == "course_event" and r.status != "cancelled"]
     seven_start = datetime.combine(local.date()-timedelta(days=6), time.min, zone)
@@ -604,6 +617,7 @@ def summarize(rows, instant, zone, days=7):
         "wellbeing_samples": len(wellbeing), "energy_mean": round(sum(energy)/len(energy), 2) if energy else None,
         "energy_samples": len(energy), "meals": sum(r.kind == "meal" for r in confirmed),
         "workouts": len(workouts), "duration_minutes": round(sum(r.data["duration_minutes"] for r in workouts), 1),
+        "activities": len(activities), "activity_duration_minutes": round(sum(r.data["duration_minutes"] for r in activities), 1),
         "volume_kg": round(sum(s["weight_kg"]*s["reps"] for r in workouts for s in r.data["sets"]), 1),
         "weight_change_kg": round(weights[-1].data["weight_kg"]-weights[0].data["weight_kg"], 2) if len(weights)>1 else None,
         "course_due": len(events), "course_done": sum(r.status == "done" for r in events),
@@ -624,7 +638,7 @@ async def report(payload: Report, db: AsyncSession = Depends(get_db)):
     start = datetime.combine(instant.astimezone(zone).date()-timedelta(days=payload.days-1), time.min, zone)
     rows = list((await db.execute(select(TelegramAIJournal).where(
         TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
-        TelegramAIJournal.kind.in_(["weight", "workout", "meal", "course_event", "wellbeing", "target", "program"]),
+        TelegramAIJournal.kind.in_(["weight", "workout", "activity_log", "meal", "course_event", "wellbeing", "target", "program"]),
         (TelegramAIJournal.occurred_at >= start) | TelegramAIJournal.kind.in_(["target", "program"]),
         TelegramAIJournal.occurred_at <= instant
     ).order_by(TelegramAIJournal.occurred_at, TelegramAIJournal.id))).scalars())
@@ -667,12 +681,20 @@ async def workspace_state(db, uid, totals=None):
                 "runs_out_at": pending[count].occurred_at.isoformat() if count < len(pending) else None}
         courses.append({**dump(course), "done": done, "due": due_count, "supply": supply,
             "calendar": [dump(e) for e in events if e.occurred_at >= instant-timedelta(days=7)][:40]})
+    statuses = list((await db.execute(select(TelegramAIJournal.id, TelegramAIJournal.kind, TelegramAIJournal.status).where(
+        TelegramAIJournal.telegram_user_id == uid,
+        TelegramAIJournal.kind.in_([*MODELS, "meal"])
+    ).order_by(TelegramAIJournal.id.desc()).limit(20))).mappings())
     return {"sections": {s: section_enabled(s) for s in sorted(SECTIONS)},
+        "record_statuses": [dict(row) for row in statuses],
         "target": dump(target) if target else None, "remaining": remaining(target.data if target else None, totals or {}),
         "program": dump(program) if program else None,
         "today_exercises": [e for e in program.data["exercises"] if e["weekday"] == instant.astimezone(zone).weekday()] if program else [],
         "today_course": [dump(r) for r in today if r.kind == "course_event" and r.status != "cancelled"],
         "today_workouts": [dump(r) for r in today if r.kind == "workout" and r.status == "confirmed"],
+        "today_activities": [dump(r) for r in today if r.kind == "activity_log" and r.status == "confirmed"],
+        "recent_workouts": [dump(r) for r in rows if r.kind == "workout" and r.status == "confirmed"][-10:],
+        "recent_activities": [dump(r) for r in rows if r.kind == "activity_log" and r.status == "confirmed"][-10:],
         "active_workout": next((dump(r) for r in reversed(rows) if r.kind == "workout" and r.status == "active"), None),
         "today_wellbeing": [dump(r) for r in today if r.kind == "wellbeing" and r.status == "confirmed"],
         "courses": courses, "weekly": summarize(rows, instant, zone),
