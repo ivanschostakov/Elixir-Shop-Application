@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_db
 from src.database.models import TelegramAIJournal, TelegramAIReminderSettings
 from src.app.services.ai.companion.schemas import StrictModel
-from .profile import Identity, snapshot
+from .profile import Identity, snapshot, ensure_version
 
 router = APIRouter()
 
@@ -31,6 +31,7 @@ class MealData(StrictModel):
 
 class MealDraft(Identity):
     request_key: str = Field(min_length=8, max_length=128)
+    expected_version: int | None = Field(default=None, ge=0)
     meal: MealData
     replaces_id: int | None = Field(default=None, gt=0)
     occurred_at: datetime | None = None
@@ -115,6 +116,11 @@ async def dashboard(payload: Identity, db: AsyncSession = Depends(get_db)):
     totals = {key: round(sum(float(m.data.get(key,0)) for m in meals),1) for key in ("kcal","protein","fat","carbs")}
     from .mentor import workspace_state
     workspace = await workspace_state(db, payload.telegram_user_id, totals)
+    eligibility = (await db.execute(select(TelegramAIJournal).where(
+        TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+        TelegramAIJournal.request_key == "nutrition-eligibility"))).scalar_one_or_none()
+    workspace["nutrition_eligibility_confirmed"] = bool(eligibility and eligibility.data.get("confirmed")
+        and eligibility.occurred_at >= instant-timedelta(days=30))
     favorites = list((await db.execute(select(TelegramAIJournal).where(
         TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
         TelegramAIJournal.kind == "meal", TelegramAIJournal.status == "confirmed",
@@ -141,6 +147,7 @@ async def dashboard(payload: Identity, db: AsyncSession = Depends(get_db)):
 @router.post("/journal/draft")
 async def draft(payload: MealDraft, db: AsyncSession = Depends(get_db)):
     await db.execute(text("SELECT pg_advisory_xact_lock(:id)"), {"id": -payload.telegram_user_id})
+    await ensure_version(db, payload.telegram_user_id, payload.expected_version)
     key = "meal:" + hashlib.sha256(payload.request_key.encode()).hexdigest()
     row = (await db.execute(select(TelegramAIJournal).where(TelegramAIJournal.telegram_user_id==payload.telegram_user_id,
         TelegramAIJournal.request_key==key))).scalar_one_or_none()

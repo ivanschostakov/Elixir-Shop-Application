@@ -8,13 +8,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field, field_validator, model_validator
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.services.ai.companion.schemas import StrictModel
 from src.database import get_db
-from src.database.models import TelegramAIJournal
-from .profile import Identity, snapshot
+from src.database.models import TelegramAIJournal, TelegramAIProfile, TelegramAIReminderSettings
+from .profile import Identity, ProfilePatch, snapshot, ensure_version
 from .journal import MealData, MealDraft, draft, dump, now, settings_for
 
 router = APIRouter(prefix="/workspace")
@@ -34,6 +34,65 @@ def require_section(section):
 class NutritionPreview(Identity):
     eligibility_confirmed: bool = False
     activity: Literal["low", "light", "moderate", "high"] | None = None
+
+
+class NutritionEligibility(Identity):
+    confirmed: bool
+
+
+@router.post("/nutrition/eligibility")
+async def nutrition_eligibility(payload: NutritionEligibility, db: AsyncSession = Depends(get_db)):
+    require_section("food")
+    await lock(db, payload.telegram_user_id)
+    row = (await db.execute(select(TelegramAIJournal).where(
+        TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+        TelegramAIJournal.request_key == "nutrition-eligibility"))).scalar_one_or_none()
+    if row is None:
+        row = TelegramAIJournal(telegram_user_id=payload.telegram_user_id,
+            request_key="nutrition-eligibility", kind="nutrition_guard", status="confirmed", occurred_at=now(), data={})
+        db.add(row)
+    row.data = {"confirmed": payload.confirmed}
+    row.occurred_at = now()
+    await db.commit()
+    return {"ok": True}
+
+
+class EraseData(Identity):
+    confirmed: Literal[True]
+
+
+@router.post("/privacy/erase")
+async def erase_data(payload: EraseData, db: AsyncSession = Depends(get_db)):
+    # Same lock order as the reminder scheduler: no new lease during deletion.
+    await db.execute(text("SELECT pg_advisory_xact_lock(733000111)"))
+    await lock(db, payload.telegram_user_id)
+    for model in (TelegramAIJournal, TelegramAIReminderSettings):
+        await db.execute(delete(model).where(model.telegram_user_id == payload.telegram_user_id))
+    row = await db.get(TelegramAIProfile, payload.telegram_user_id, populate_existing=True)
+    if row is None:
+        row = TelegramAIProfile(telegram_user_id=payload.telegram_user_id, version=0, data={}, receipts=[])
+        db.add(row)
+    # Explicit nulls prevent re-importing app health data through legacy_profile.
+    row.data = {field: None for field in ProfilePatch.model_fields}
+    row.version += 1
+    row.receipts = []
+    await db.commit()
+    return {"ok": True, "scope": "telegram_mentor"}
+
+
+@router.post("/workout/discard-empty")
+async def discard_empty_workout(payload: Identity, db: AsyncSession = Depends(get_db)):
+    await lock(db, payload.telegram_user_id)
+    rows = (await db.execute(select(TelegramAIJournal).where(
+        TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+        TelegramAIJournal.kind == "workout", TelegramAIJournal.status == "active"))).scalars()
+    count = 0
+    for row in rows:
+        if not row.data.get("sets"):
+            row.status = "cancelled"
+            count += 1
+    await db.commit()
+    return {"ok": True, "discarded": count}
 
 
 @router.post("/nutrition/preview")
@@ -153,6 +212,7 @@ KINDS_SECTION = {"target": "food", "program": "workouts", "workout": "workouts",
 
 class RecordDraft(Identity):
     request_key: str = Field(min_length=8, max_length=128)
+    expected_version: int | None = Field(default=None, ge=0)
     kind: Literal["target", "program", "workout", "course", "measurement", "wellbeing"]
     data: dict
     replaces_id: int | None = Field(default=None, gt=0)
@@ -330,6 +390,7 @@ def course_dates(course):
 async def record_draft(payload: RecordDraft, db: AsyncSession = Depends(get_db)):
     require_section(KINDS_SECTION[payload.kind])
     await lock(db, payload.telegram_user_id)
+    await ensure_version(db, payload.telegram_user_id, payload.expected_version)
     key = "record:"+hashlib.sha256(payload.request_key.encode()).hexdigest()
     row = (await db.execute(select(TelegramAIJournal).where(
         TelegramAIJournal.telegram_user_id == payload.telegram_user_id,

@@ -9,10 +9,11 @@ are separate. Leaving, choosing an ordinary AI assistant, or `/start` exits ment
 
 The first screen offers **Добавить еду** plus **Сегодня**, **Питание**,
 **Тренировки**, **Мой курс**, **Прогресс**, **Спросить наставника**, **Профиль**,
-and **Настройки**. Sections default open. Navigation uses one edited Telegram card,
-including multi-step form replies. Long diaries paginate without trimming text.
+and **Настройки**. Sections default open. Navigation edits its own Telegram card.
+Typed form replies appear below the user's input as new messages. Long diaries paginate without trimming text.
 AI replies, requested chart/photo attachments, and scheduled notifications remain
-separate messages. `/mentor` creates the initial card; subsequent buttons edit it.
+separate messages. Buttons on an AI answer create a navigation card instead of
+overwriting the answer. Mentor responses use escaped HTML and keep URL underscores literal.
 
 - Today uses confirmed meals, the saved target (if any), today's weekly-program
   exercises, actual course dates, and wellbeing records. Weekly/interval course
@@ -31,7 +32,10 @@ separate messages. `/mentor` creates the initial card; subsequent buttons edit i
   idempotent per-set weight/repetition writes, duration, and total volume. A session
   freezes its program snapshot. Set entry defaults to the next unfinished planned
   exercise; an explicit exercise name overrides it. Finishing uses elapsed time or
-  an explicit duration.
+  an explicit duration. Programs can be built step by step (weekday, exercise,
+  sets, repetitions) or proposed by the AI as an unconfirmed draft. With no program,
+  starting offers program creation or a free session; leaving cancels only empty
+  active sessions, never recorded sets.
 - Course items record existing user/specialist schemes only, with verbatim dose
   text, inclusive start/end dates, weekdays OR an interval anchored to the start
   date, multiple times, and an explicit timezone. Multiple items/products coexist;
@@ -66,7 +70,13 @@ separate messages. `/mentor` creates the initial card; subsequent buttons edit i
   course-schedule reminders, timezone controls, and disable-all. Notifications omit
   health details by default. Detailed evening/weekly reports require a separate
   explicit opt-in; weekly reports include a weight chart when measurements exist.
-  A specialist link exists only when configured with an HTTPS URL.
+  A specialist link uses the configured HTTPS destination; otherwise the existing
+  support contact is offered without claiming it is a doctor.
+  Privacy includes explicit, token-confirmed deletion of Telegram profile/journal
+  and reminder records. App data, orders, Telegram messages and provider retention
+  are outside that deletion's scope. Null tombstones prevent app health facts from
+  being re-imported. In-flight AI drafts carry a profile version; resetting the
+  conversation invalidates local in-flight replies as well.
 
 The initial introduction asks one question at a time and remembers the last menu
 question so a short answer such as “19” is meaningful. Opening the menu itself does
@@ -93,6 +103,9 @@ Identity, source message and request key come from the bot, never model argument
 - `/workspace/course/action`: owned done/skipped marks, never before the event time.
 - `/workspace/course/reminder`: owned reminder-time override, no dosage changes.
 - `/workspace/nutrition/preview`: guarded shared-rule calculation, no persistence.
+- `/workspace/nutrition/eligibility`: explicit, revocable 30-day eligibility confirmation.
+- `/workspace/workout/discard-empty`: cancels only owned empty active sessions.
+- `/workspace/privacy/erase`: explicitly confirmed Telegram-only data removal.
 - `/workspace/meals`, `/meals/favorite`, `/meals/repeat`: paginated confirmed meal
   library, literal name search, favorite state and repeat-to-draft.
 - `/workspace/touch`: only the interaction timestamp, not message content.
@@ -165,6 +178,9 @@ TELEGRAM_MENTOR_SPECIALIST_URL=
 owner's pre-existing changes. `overlay/` contains new modules and bot tests. Never
 blindly apply the cumulative patch over a previous release. Preserve `.env`, instruction
 files, Telegram sessions and data. Check patches with `patch --dry-run -p1`.
+`mentor-delivery.patch` is the small October 8 transport delta against integrated
+bot revision `da02e73`. Apply it once to `src/bot/main.py` after copying the overlay;
+check `git apply --check` first. It leaves the ordinary assistant transport unchanged.
 
 Build and test a candidate against an isolated PostgreSQL database named `companion_test`.
 Back up the current image/source, run the additive migration, replace only `backend-api`,
@@ -186,11 +202,13 @@ Rollback must coordinate both sides and retain the journal and bot data director
 
 ## Local validation and limitations
 
-September 30 editable-dialogue update: 59 bot tests and 54 backend tests pass,
-including isolated PostgreSQL. Coverage includes real callback routing without
-`sendMessage`, typed workout steps editing the original card, pagination, stale
-pages, private opt-in reports, ownership, reminder invalidation/no resends, and
-historical target calculations. These tests mock Telegram delivery; they are not
+October 8 feedback update: bot regression coverage includes numeric weight without
+AI, immutable AI replies, edited navigation, new typed-form responses, nutrition
+preflight/shared calculator drafts, guarded stale buttons, guided exercise programs,
+energy buttons, media transport, photo drafts, search/favorites, and section gates.
+Isolated PostgreSQL tests cover deletion ownership, app-data preservation,
+non-reimporting null tombstones, stale writes, eligibility expiry and empty-workout
+cleanup. These tests mock Telegram delivery; they are not
 a claim that every customer/device interaction has been exercised live.
 
 September 29 changes have been tested with mocked transport and focused backend
@@ -201,8 +219,9 @@ requirements, including `python-dotenv`, `matplotlib`, `Telethon`, `phonenumbers
 `aiogram-media-group`, absent from the application-only local environment.
 
 Explicit target entry and a confirmed preview from the shared app calculator are
-implemented. Weekly programs, measurements and course
-schedules use guided text forms rather than model-generated persistence. Multiple
+implemented. AI target calculations use the same preview endpoint and create
+saveable drafts. Measurements and course schedules use guided text forms. Weekly
+programs also support AI drafts, but every save still requires a real user button. Multiple
 course products are entered individually; there is no bulk prescription importer.
 Course corrections stop/recreate the item; historical adherence is preserved. The
 progress list shows recent measurements/photos (31-day window, latest 30 records),
@@ -213,6 +232,13 @@ re-entering an unfinished form. Confirmed data and active workouts survive resta
 Delivery is bounded by the documented grace windows and has the small ambiguous-send
 duplicate window described above. Provider speech/food extraction quality and real
 Telegram taps still require the parent's deployment verification.
+
+Timur's test history/reminders have not been deleted. Identify the exact Telegram
+identity and obtain his approval before any cleanup (feedback item 40). No third-party
+test data is automatically erased. A legal review of health-data consent, retention
+and provider deletion obligations is still required; the erasure endpoint is not a
+claim of complete legal compliance. Callback timing is logged without health content;
+the UI shows progress/retry, but no 15-second provider latency guarantee is made.
 
 ## Historical verification of the previous four-section release
 

@@ -102,6 +102,13 @@ async def snapshot(db, telegram_user_id):
     return {"profile": await legacy_profile(db, telegram_user_id), "version": 0}
 
 
+async def ensure_version(db, telegram_user_id, expected_version):
+    if expected_version is not None:
+        row = await db.get(TelegramAIProfile, telegram_user_id, populate_existing=True)
+        if expected_version != (row.version if row else 0):
+            raise HTTPException(409, "Данные наставника изменились. Откройте актуальное меню.")
+
+
 @router.post("/context")
 async def context(payload: Identity, db: AsyncSession = Depends(get_db)):
     return await snapshot(db, payload.telegram_user_id)

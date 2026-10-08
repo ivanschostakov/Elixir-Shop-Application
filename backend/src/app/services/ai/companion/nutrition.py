@@ -77,7 +77,8 @@ def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: st
         # Product auto-target guardrail, including gain: low BMI may need an
         # individual assessment. Manual clinician targets remain available.
         if bmi < Decimal("18.5") or (profile.target_weight_kg is not None and profile.target_weight_kg / height_m2 < Decimal("18.5")):
-            return unavailable("Текущий или целевой вес ниже диапазона авторасчёта. Нужен индивидуальный ориентир специалиста.")
+            minimum = Decimal("18.5") * height_m2
+            return unavailable(f"При росте {profile.height_cm:g} см текущий вес {weight_kg:g} кг или целевой вес {profile.target_weight_kg if profile.target_weight_kg is not None else 'не указан'} кг ниже нижней границы авторасчёта {minimum:.1f} кг (ИМТ 18,5). Нужен индивидуальный ориентир специалиста.")
         if profile.goal == "weight_loss":
             if bmi < 25:
                 return unavailable("При ИМТ ниже 25 автоматический дефицит не предлагаем. Выберите поддержание или внесите индивидуальные КБЖУ.")
@@ -87,7 +88,7 @@ def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: st
             if rules.gain_surplus_kcal is None:
                 return unavailable("Правила набора веса не настроены. Внесите индивидуальные КБЖУ вручную.")
             if bmi >= 25 or (profile.target_weight_kg is not None and profile.target_weight_kg / height_m2 >= 25):
-                return unavailable("Текущий или целевой вес вне диапазона стандартного набора. Нужен индивидуальный ориентир специалиста.")
+                return unavailable(f"При росте {profile.height_cm:g} см текущий вес {weight_kg:g} кг или целевой вес {profile.target_weight_kg if profile.target_weight_kg is not None else 'не указан'} кг вне диапазона стандартного набора: от {Decimal('18.5') * height_m2:.1f} до {25 * height_m2:.1f} кг, верхняя граница не включается (ИМТ от 18,5 до 25). Нужен индивидуальный ориентир специалиста.")
             if profile.target_weight_kg is not None and profile.target_weight_kg <= weight_kg:
                 return unavailable("Целевой вес уже достигнут или ниже текущего. Уточните цель.")
 
