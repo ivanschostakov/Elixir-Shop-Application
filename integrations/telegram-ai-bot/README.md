@@ -16,8 +16,11 @@ Long diaries and confirmed previews paginate without trimming text. Opening the 
 from the main menu edits that menu; root screens do not have a redundant self-back button.
 AI replies and scheduled notifications remain separate messages. Buttons on an AI answer
 reuse a separate navigation card instead of overwriting the answer. Confirmations consume
-the preview's action buttons and retain its full contents; AI explanations are never
-rewritten. Graphs and progress photos use one protected, reusable media viewer per chat,
+the preview's action buttons and retain its full contents. Meal confirmations/cancellations
+replace the clicked draft card with an authoritative receipt, removing obsolete draft
+instructions and follow-up questions. Confirmed calories/macros come from the saved entry;
+failure to reload remaining nutrition does not hide a successful write. Other AI
+explanations are not rewritten. Graphs and progress photos use one protected, reusable media viewer per chat,
 with navigation attached to the image. Favorite and course-status changes refresh their
 current views. Mentor responses use escaped HTML and keep URL underscores literal.
 
