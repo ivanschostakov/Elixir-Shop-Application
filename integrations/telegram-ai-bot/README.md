@@ -10,10 +10,16 @@ are separate. Leaving, choosing an ordinary AI assistant, or `/start` exits ment
 The first screen offers **Добавить еду** plus **Сегодня**, **Питание**,
 **Тренировки**, **Мой курс**, **Прогресс**, **Спросить наставника**, **Профиль**,
 and **Настройки**. Sections default open. Navigation edits its own Telegram card.
-Typed form replies appear below the user's input as new messages. Long diaries paginate without trimming text.
-AI replies, requested chart/photo attachments, and scheduled notifications remain
-separate messages. Buttons on an AI answer create a navigation card instead of
-overwriting the answer. Mentor responses use escaped HTML and keep URL underscores literal.
+Typed form replies appear below the user's input as new messages, and become editable
+cards for subsequent button actions. Superseded form questions lose their keyboards.
+Long diaries and confirmed previews paginate without trimming text. Opening the mentor
+from the main menu edits that menu; root screens do not have a redundant self-back button.
+AI replies and scheduled notifications remain separate messages. Buttons on an AI answer
+reuse a separate navigation card instead of overwriting the answer. Confirmations consume
+the preview's action buttons and retain its full contents; AI explanations are never
+rewritten. Graphs and progress photos use one protected, reusable media viewer per chat,
+with navigation attached to the image. Favorite and course-status changes refresh their
+current views. Mentor responses use escaped HTML and keep URL underscores literal.
 
 ## Conversational input
 
@@ -211,6 +217,11 @@ Apply it once to `src/bot/handlers/new_user.py` with `git apply --check` first.
 It connects literal text confirmation and draft tracking, routes counter-questions
 through the original gated AI handler, and suppresses repeated free-mode hints
 inside the mentor. It does not remove media/subscription/phone gates.
+`mentor-navigation.patch` is the small follow-up against bot revision `fc4d0c4`.
+Apply it once to `src/bot/handlers/new_user.py` with `git apply --check`; it makes the
+requisites button edit its menu, while `/about` still sends a temporary message.
+Copy the updated overlay at the same time. UI card receipts remain bounded in the
+existing FSM storage, separate from pending form writes; no database migration is needed.
 
 Build and test a candidate against an isolated PostgreSQL database named `companion_test`.
 Back up the current image/source, run the additive migration, replace only `backend-api`,
