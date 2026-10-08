@@ -259,3 +259,56 @@ def test_opening_course_and_leaving_mentor_do_not_start_a_scheme(monkeypatch):
     assert not t.mentor_enabled(123)
     assert call.await_args.args[0] == "/workspace/workout/discard-empty"
     assert "ИИ Ассистенты" in str(msg.answer.await_args.kwargs["reply_markup"])
+
+
+def test_real_bot_response_method_uses_html_and_draft_buttons():
+    import ast
+    import logging
+    from pathlib import Path
+    import src.bot
+    # Load the actual class/helpers, excluding module-level bot/client startup.
+    path=Path(src.bot.__file__).with_name("main.py")
+    tree=ast.parse(path.read_text())
+    boundary=next(i for i,node in enumerate(tree.body) if isinstance(node,ast.Assign)
+        and any(isinstance(target,ast.Name) and target.id=="expert_bot" for target in node.targets))
+    namespace={"__name__":"mentor_transport_test"}
+    exec(compile(ast.Module(body=tree.body[:boundary],type_ignores=[]),str(path),"exec"),namespace)
+    bot=SimpleNamespace(_ProfessorBot__logger=logging.getLogger("test-mentor"))
+    msg=message()
+    msg.chat.type="private"
+    msg.reply=AsyncMock(side_effect=AssertionError("Synthetic reply target must not be used"))
+    asyncio.run(namespace["ProfessorBot"].parse_response(bot,
+        {"mentor":True,"text":"**Норма** https://example.test/some_product/","target_draft":{"id":77}},msg,back_menu=True))
+    assert "<b>Норма</b>" in msg.answer.await_args.args[0]
+    assert msg.answer.await_args.kwargs["parse_mode"] == "HTML"
+    assert "record:confirm:77" in str(msg.answer.await_args.kwargs["reply_markup"])
+    msg.reply.assert_not_awaited()
+
+
+def test_callback_timeout_keeps_a_retry_button(monkeypatch):
+    from datetime import datetime, timezone
+    from aiogram import Bot
+    from aiogram.methods import SendMessage, EditMessageText, DeleteMessage
+    from aiogram.types import Message, Chat, User, CallbackQuery
+    from src.ai import helpers
+    from src.bot.handlers import new_user
+    monkeypatch.setattr(helpers,"check_blocked",AsyncMock(return_value=True))
+    monkeypatch.setattr(helpers,"CHAT_NOT_BANNED_FILTER",AsyncMock(return_value=True))
+    monkeypatch.setattr(new_user,"handle_single_ai_message",AsyncMock(return_value=None))
+    async def run():
+        bot=Bot("111:testtoken")
+        calls=[]
+        async def request(_bot,method,**kwargs):
+            calls.append(method)
+            if isinstance(method,SendMessage):
+                return Message(message_id=21,date=datetime.now(timezone.utc),chat=Chat(id=123,type="private"),text=method.text).as_(bot)
+            return True
+        monkeypatch.setattr(bot.session,"make_request",request)
+        msg=Message(message_id=20,date=datetime.now(timezone.utc),chat=Chat(id=123,type="private"),text="menu").as_(bot)
+        q=CallbackQuery(id="retry-test",chat_instance="test",message=msg,data="mentor:suggest",from_user=User(id=123,is_bot=False,first_name="Test")).as_(bot)
+        await mentor.run_ai_action(q,State(),None,None,None,"Что поесть?")
+        edit=next(c for c in calls if isinstance(c,EditMessageText))
+        assert "mentor:suggest" in str(edit.reply_markup)
+        assert not any(isinstance(c,DeleteMessage) for c in calls)
+        await bot.session.close()
+    asyncio.run(run())
