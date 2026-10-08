@@ -46,6 +46,16 @@ answers and media keep their existing phone, subscription, model and quota gates
 Raw answers are never added to extraction error logs. Temporary answer history is
 bounded and cleared on a new step. No schema migration or mobile OTA is required.
 
+Questions use a respectful adult tone with enough context for first-time users:
+typically a question plus a brief explanation, units or one example. Shared copy
+in `mentor_copy.py` keeps entry forms and clarification fallbacks consistent.
+Corrections name the relevant values and retain the other collected fields.
+The food prompt offers photos, voice and video notes only when the current
+professor mode, verified phone and subscription/credits allow media; otherwise
+it remains usable with a plain description and an approximate portion.
+The main mentor prompt and stateless parser follow the same clarity rules without
+changing buttons, funnels, saving confirmations or medical safeguards.
+
 - Today uses confirmed meals, the saved target (if any), today's weekly-program
   exercises, actual course dates, and wellbeing records. Weekly/interval course
   events are not represented as daily tasks.
