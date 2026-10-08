@@ -206,6 +206,11 @@ files, Telegram sessions and data. Check patches with `patch --dry-run -p1`.
 `mentor-delivery.patch` is the small October 8 transport delta against integrated
 bot revision `da02e73`. Apply it once to `src/bot/main.py` after copying the overlay;
 check `git apply --check` first. It leaves the ordinary assistant transport unchanged.
+`mentor-conversation.patch` is the subsequent delta against bot revision `56344b5`.
+Apply it once to `src/bot/handlers/new_user.py` with `git apply --check` first.
+It connects literal text confirmation and draft tracking, routes counter-questions
+through the original gated AI handler, and suppresses repeated free-mode hints
+inside the mentor. It does not remove media/subscription/phone gates.
 
 Build and test a candidate against an isolated PostgreSQL database named `companion_test`.
 Back up the current image/source, run the additive migration, replace only `backend-api`,
@@ -227,6 +232,33 @@ Rollback must coordinate both sides and retain the journal and bot data director
 
 ## Local validation and limitations
 
+October 8 conversational completion (Telegram only, audit items 1-17):
+
+- Guided steps retain validated known fields across follow-ups, provider failures
+  and bounded history compaction. An answer may include several details at once.
+  Counter-questions go to the ordinary mentor; pause/unknown/cancel are not facts.
+- Corrections seed the owner's existing draft and alter only the specified fields.
+  `POST /workspace/record` is signed, owner-scoped and respects section gates.
+  Photo handles stay out of the extraction prompt and survive measurement edits.
+- Literal confirmation is serialized and applies only to a unique existing preview.
+  Several previews require the corresponding button; replacements remove stale
+  pending previews. The model never obtains a confirmation/write tool.
+- Voice/video-note answers in guided steps use existing transcription and the same
+  professor, verified-phone and quota restrictions as ordinary media messages.
+- Onboarding asks no mandatory questionnaire; profile numeric evidence accepts
+  explicit Russian number words without relaxing source evidence or value ranges.
+- Questions and previews keep the existing navigation/funnel. Meal edit instructions
+  remain hidden. Reports add short factual next steps; missing logs are not treated
+  as skipped meals or workouts. Workout results contain only workout information.
+- No mobile UI, mobile companion implementation, subscription pricing or credentials
+  change. Temporary form state still uses the bot's existing FSM storage; this is
+  not a claim that an unfinished form survives a process restart.
+
+Validation uses the bot snapshot plus `overlay/tests`, and all backend
+`tests/test_telegram*.py` against a disposable local `companion_test` database.
+Synthetic live-model extraction checks use `store=False` and do not send customer
+messages or write their profiles/journals. Automated Telegram delivery remains mocked.
+
 October 8 feedback update: bot regression coverage includes numeric weight without
 AI, immutable AI replies, edited navigation, new typed-form responses, nutrition
 preflight/shared calculator drafts, guarded stale buttons, guided exercise programs,
@@ -246,7 +278,8 @@ requirements, including `python-dotenv`, `matplotlib`, `Telethon`, `phonenumbers
 Explicit target entry and a confirmed preview from the shared app calculator are
 implemented. AI target calculations use the same preview endpoint and create
 saveable drafts. Measurements and course schedules use guided text forms. Weekly
-programs also support AI drafts, but every save still requires a real user button. Multiple
+programs also support AI drafts. Every save requires explicit user confirmation,
+by button or an unambiguous text confirmation of the sole pending preview. Multiple
 course products are entered individually; there is no bulk prescription importer.
 Course corrections stop/recreate the item; historical adherence is preserved. The
 progress list shows recent measurements/photos (31-day window, latest 30 records),

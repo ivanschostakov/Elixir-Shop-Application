@@ -1,7 +1,6 @@
 """Signed service endpoints; identity and source text come from Telegram, never the model."""
 import hashlib
 import json
-import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,6 +13,7 @@ from src.database import get_db
 from src.database.models import User, TelegramAIProfile, TelegramAIJournal
 from src.database.models.ai.companion import AICompanionProfile, AICompanionEntry
 from src.app.services.ai.companion.schemas import StrictModel
+from .spoken_numbers import evidence_numbers
 
 router = APIRouter(prefix="/profile")
 
@@ -50,10 +50,10 @@ class Update(Identity):
         if not patch:
             raise ValueError("Empty profile update")
         # Reject fabricated numbers even if a model quotes an unrelated real sentence.
-        numbers = {float(n.replace(",", ".")) for n in re.findall(r"(?<![\w.])\d+(?:[.,]\d+)?", self.evidence)}
         for field in ("age", "height_cm", "current_weight_kg", "target_weight_kg"):
             value = patch.get(field)
-            if value is not None and float(value) not in numbers:
+            numbers = evidence_numbers(self.evidence, height=field == "height_cm")
+            if value is not None and round(float(value), 6) not in numbers:
                 raise ValueError("Numeric profile values must occur in the quoted message")
         return self
 

@@ -375,6 +375,19 @@ async def owned(db, uid, entry_id, kind=None):
     return row
 
 
+class RecordRead(Identity):
+    entry_id: int = Field(gt=0)
+
+
+@router.post("/record")
+async def read_record(payload: RecordRead, db: AsyncSession = Depends(get_db)):
+    row = await owned(db, payload.telegram_user_id, payload.entry_id)
+    section = "food" if row.kind == "meal" else KINDS_SECTION.get(row.kind)
+    if section is None: raise HTTPException(422, "Этот тип записи нельзя открыть здесь")
+    require_section(section)
+    return {"entry":dump(row)}
+
+
 def course_dates(course):
     zone = ZoneInfo(course.timezone)
     day = course.start_date

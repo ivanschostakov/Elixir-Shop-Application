@@ -82,3 +82,22 @@ def test_nutrition_eligibility_is_explicit_revocable_and_expires():
             await db.commit()
             assert not (await j.dashboard(identity,db))["workspace"]["nutrition_eligibility_confirmed"]
     asyncio.run(run())
+
+
+def test_correction_record_read_is_owner_scoped_and_respects_closed_section(monkeypatch):
+    from fastapi import HTTPException
+    async def run():
+        async with database() as (db,_):
+            result = await m.record_draft(m.RecordDraft(telegram_user_id=UID,request_key="read-own-draft",
+                kind="measurement",data={"waist_cm":80,"photo_file_id":"private-test"}),db)
+            identity = {"telegram_user_id":UID,"entry_id":result["entry"]["id"]}
+            entry = (await m.read_record(m.RecordRead(**identity),db))["entry"]
+            assert entry["waist_cm"] == 80 and entry["photo_file_id"] == "private-test"
+            with pytest.raises(HTTPException) as error:
+                await m.read_record(m.RecordRead(**{**identity,"telegram_user_id":UID+1}),db)
+            assert error.value.status_code == 404
+            monkeypatch.setenv("TELEGRAM_MENTOR_CLOSED_SECTIONS","progress")
+            with pytest.raises(HTTPException) as error:
+                await m.read_record(m.RecordRead(**identity),db)
+            assert error.value.status_code == 403
+    asyncio.run(run())

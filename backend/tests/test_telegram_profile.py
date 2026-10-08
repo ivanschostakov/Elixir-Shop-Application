@@ -19,6 +19,23 @@ def test_rejects_invented_numbers_and_foreign_fields():
     assert payload().patch.current_weight_kg == 110
 
 
+@pytest.mark.parametrize("text,patch", [
+    ("мне сорок лет", {"age":40}),
+    ("вешу семьдесят пять с половиной", {"current_weight_kg":75.5}),
+    ("рост метр восемьдесят", {"height_cm":180}),
+    ("рост 1,83 метра", {"height_cm":183}),
+    ("рост сто восемьдесят три", {"height_cm":183}),
+])
+def test_accepts_only_explicit_spoken_numbers(text, patch):
+    assert Update(telegram_user_id=123, expected_version=0, request_key="spoken-test-1", source_text=text, evidence=text, patch=patch).patch
+
+
+@pytest.mark.parametrize("text,patch", [("я взрослый", {"age":40}), ("рост метр восемьдесят", {"height_cm":185}), ("семьдесят пять", {"current_weight_kg":75.5})])
+def test_spoken_normalization_cannot_invent_missing_values(text, patch):
+    with pytest.raises(ValidationError):
+        Update(telegram_user_id=123, expected_version=0, request_key="spoken-test-2", source_text=text, evidence=text, patch=patch)
+
+
 def test_profiles_durable_isolated_idempotent_and_versioned():
     from test_ai_companion_db import database, URL
     if not URL:
