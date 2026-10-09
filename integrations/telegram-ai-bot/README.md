@@ -14,8 +14,10 @@ Typed form replies appear below the user's input as new messages, and become edi
 cards for subsequent button actions. Superseded form questions lose their keyboards.
 Long diaries and confirmed previews paginate without trimming text. Opening the mentor
 from the main menu edits that menu; root screens do not have a redundant self-back button.
-AI replies and scheduled notifications remain separate messages. Buttons on an AI answer
-reuse a separate navigation card instead of overwriting the answer. Confirmations consume
+AI replies and scheduled notifications remain separate messages. Opening navigation from
+an AI answer or saved receipt sends a fresh menu below it, preserving the conversation
+and never editing an older menu elsewhere in the chat. Subsequent navigation edits only
+the clicked menu card. Confirmations consume
 the preview's action buttons and retain its full contents. Meal confirmations/cancellations
 replace the clicked draft card with an authoritative receipt, removing obsolete draft
 instructions and follow-up questions. Confirmed calories/macros come from the saved entry;
