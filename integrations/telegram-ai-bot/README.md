@@ -7,7 +7,15 @@ are separate. Leaving, choosing an ordinary AI assistant, or `/start` exits ment
 
 ## Current menu and workflows
 
-The first screen offers **Добавить еду** plus **Сегодня**, **Питание**,
+October 10: users with an incomplete profile first receive an optional guided
+introduction: goal, age, sex, height, weight, activity, habits and local timezone.
+It asks one question at a time, skips known facts and can resume after a restart.
+Explicit profile answers use the existing signed backend API; only step metadata
+and timezone/draft references are stored in the private bot SQLite database.
+The shared backend calculator still enforces eligibility and creates an unconfirmed
+nutrition draft. A user must save it explicitly. No automatic reminder opt-in occurs.
+
+The daily screen offers **Добавить еду** plus **Сегодня**, **Питание**,
 **Тренировки**, **Мой курс**, **Прогресс**, **Спросить наставника**, **Профиль**,
 and **Настройки**. Sections default open. Navigation edits its own Telegram card.
 Typed form replies appear below the user's input as new messages, and become editable
@@ -17,7 +25,9 @@ from the main menu edits that menu; root screens do not have a redundant self-ba
 AI replies and scheduled notifications remain separate messages. Opening navigation from
 an AI answer or saved receipt sends a fresh menu below it, preserving the conversation
 and never editing an older menu elsewhere in the chat. Subsequent navigation edits only
-the clicked menu card. Confirmations consume
+the latest clicked service card. Clicking an old card cannot edit a newer one or
+silently activate another input form. A user/AI-message watermark makes navigation
+appear below the conversation. Confirmations consume
 the preview's action buttons and retain its full contents. Meal confirmations/cancellations
 replace the clicked draft card with an authoritative receipt, removing obsolete draft
 instructions and follow-up questions. Confirmed calories/macros come from the saved entry;
@@ -34,8 +44,11 @@ start isolated extraction forms. The assistant reads the live profile, weekly pl
 performed workouts, separate activities and current draft statuses through function
 tools. It asks only for missing facts. Natural corrections revise an owned draft
 with `replaces_id`, preserving other exercises/days; saving still needs confirmation.
-Weight and goal questions also return to this conversation and the existing explicit-fact
-profile tool. Buttons alone cannot supply evidence of a completed workout or measurement.
+Weight buttons retain an explicit weight-input context: an answer like `100`
+means kilograms, is validated without a model call, and is shown for confirmation.
+Free-form weight answers still use bounded AI extraction. Goal questions use the
+existing explicit-fact profile tool. Buttons alone cannot supply evidence of a
+completed workout or measurement.
 
 `mentor_records.py` exposes draft-only tools for strength workouts, other physical
 activities, measurements and wellbeing, plus an owned-record read tool. The backend
@@ -207,7 +220,9 @@ Migrations: `c4e6a8b0d2f4` creates `telegram_ai_profiles`; `d5f7a9c1e3b5` adds
 `telegram_ai_journal` and `telegram_ai_reminder_settings`. Data lives on the application
 server. The bot's private SQLite file `data/telegram_mentor_modes.sqlite3` (0600)
 stores selected mode, mentor conversation IDs, the current navigation question and
-temporary delivery receipts containing only numeric IDs. This release needs **no new
+temporary delivery receipts containing only numeric IDs, and resumable onboarding
+metadata (step, token, timezone confirmation and pending nutrition draft ID).
+The privacy-erasure flow removes onboarding metadata too. This release needs **no new
 database migration**: new kinds and typed data reuse the existing Telegram journal.
 New kinds: `target`, `program`, `workout`, `activity_log`, `course`, `course_event`, `measurement`,
 `wellbeing`, `activity`, `reminder_rule`, `reminder`. Reminder settings are the unique
@@ -237,7 +252,7 @@ TELEGRAM_SHOP_WEBAPP_URL=https://elixirlink.online/
 TELEGRAM_MENTOR_CLOSED_SECTIONS=
 # Values: today,food,workouts,course,progress,ask,profile,settings
 # Bot only; omit until a real specialist destination is supplied
-TELEGRAM_MENTOR_SPECIALIST_URL=
+TELEGRAM_MENTOR_SPECIALIST_URL=https://t.me/peptide_rus/107318
 ```
 
 `existing-bot.patch` is cumulative against `baseline-sha256.json`, which includes the
@@ -277,6 +292,21 @@ An old bot does not ACK the new leases and will cause repeated delivery attempts
 Rollback must coordinate both sides and retain the journal and bot data directory.
 
 ## Local validation and limitations
+
+October 10 guided-introduction release:
+
+- The deployed baseline is bot commit `75e6579`. `mentor-onboarding.patch`
+  contains the incremental changes to existing bot delivery, phone registration
+  and greeting files. Apply it only to that baseline, then copy the complete
+  overlay including new `mentor_onboarding.py` and `mentor_access.py`.
+  Prefer deploying the corresponding complete Elixir-AI-Bot Git commit.
+- Own-contact registration resumes unprocessed mentor text/media/album requests
+  through the existing gated AI pipeline; normal `/start` is not inserted first.
+- Filled progress/photo views no longer shadow the date formatter. Reminder
+  prompts appear once. Cancelled records have no misleading results action.
+- First-run profile answers are durable; ordinary unfinished legacy FSM forms
+  are still process-local. This update does not change medical rules, tariffs,
+  mobile UI or backend contracts. It requires neither database migration nor OTA.
 
 October 8 conversational completion (Telegram only, audit items 1-17):
 
