@@ -222,8 +222,11 @@ async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, 
         credit.expires_at = None
         credit.sync_error = None
         await db.commit()
-        from .settlement import invalidate_account_settlement
-        await invalidate_account_settlement(user.moysklad_counterparty_id)
+        try:
+            from .settlement_cache import invalidate_account_settlement
+            await invalidate_account_settlement(user.moysklad_counterparty_id)
+        except Exception:
+            logger.warning("Could not invalidate settlement cache credit_id=%s", credit_id)
         return True
     except Exception as error:
         await db.rollback()

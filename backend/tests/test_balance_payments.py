@@ -1,4 +1,6 @@
 import asyncio
+import subprocess
+import sys
 from copy import deepcopy
 from decimal import Decimal
 from types import SimpleNamespace
@@ -10,7 +12,7 @@ import pytest
 
 from src.integrations.moysklad import balance_payments as payments
 from src.integrations.moysklad.client import MoySkladClient
-from src.app.services.benefits import loyalty, settlement, service as benefits
+from src.app.services.benefits import loyalty, settlement_cache, service as benefits
 from src.app.services.benefits.moysklad_bonus import MoySkladBonusWallet
 from src.app.services.referrals import wallet_sync
 from src.app.services.notifications import core as notifications
@@ -150,7 +152,7 @@ def test_template_cannot_forward_authorization_to_other_host(client):
 def test_app_credit_records_payment_reference_and_has_no_expiry(monkeypatch, kind):
     monkeypatch.setattr(loyalty, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
     invalidate = AsyncMock()
-    monkeypatch.setattr(settlement, "invalidate_account_settlement", invalidate)
+    monkeypatch.setattr(settlement_cache, "invalidate_account_settlement", invalidate)
     user = SimpleNamespace(id=1, moysklad_counterparty_id=CID)
     credit = SimpleNamespace(id=1, user_id=1, source_kind=kind, points=1000,
         status="failed", idempotency_key="welcome:user:1", expires_at="old", sync_error="old")
@@ -225,3 +227,27 @@ def test_failed_post_is_retained_for_idempotent_retry(monkeypatch):
     assert credit.status == "failed" and credit.sync_error == "retryable"
     assert credit.moysklad_paymentin_id is None
     db.rollback.assert_awaited_once()
+
+
+def test_worker_can_import_cache_helper_without_loading_api_routes():
+    result = subprocess.run([sys.executable, "-c",
+        "import sys; from src.app.services.benefits.loyalty import sync_loyalty_bonus_credit; "
+        "from src.app.services.benefits.settlement_cache import invalidate_account_settlement; "
+        "assert 'src.app.modules.users.me.referral_profile' not in sys.modules"],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_cache_failure_cannot_turn_posted_credit_into_failed(monkeypatch):
+    monkeypatch.setattr(loyalty, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
+    monkeypatch.setattr(settlement_cache, "invalidate_account_settlement", AsyncMock(side_effect=RuntimeError('cache unavailable')))
+    user = SimpleNamespace(id=1, moysklad_counterparty_id=CID)
+    credit = SimpleNamespace(id=1, user_id=1, source_kind="welcome", points=1000,
+        status="failed", idempotency_key="welcome:user:1")
+    db = SimpleNamespace(get=AsyncMock(return_value=user), commit=AsyncMock(), rollback=AsyncMock())
+    monkeypatch.setattr(loyalty, "create_bonus_balance_payment", AsyncMock(return_value={"id": str(PAYMENT)}))
+    assert asyncio.run(loyalty.sync_loyalty_bonus_credit(db, credit=credit,
+        client=SimpleNamespace(is_configured=lambda: True))) is True
+    assert credit.status == "applied" and credit.moysklad_paymentin_id == PAYMENT
+    db.commit.assert_awaited_once()
+    db.rollback.assert_not_awaited()

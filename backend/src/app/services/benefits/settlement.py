@@ -24,19 +24,6 @@ REFERRER_ATTRIBUTE_ID = "10c17b69-13e8-11f1-0a80-14740012e754"
 PROGRAM_NAMES = {"нулевая": 0, "накопительная": 1, "реферальная": 2}
 
 
-async def invalidate_account_settlement(counterparty_id: UUID) -> None:
-    try:
-        client = get_moysklad_client()
-        redis = get_cache_service().client
-        if redis is None:
-            return
-        scope = hashlib.sha256(client.base_url.encode()).hexdigest()[:12]
-        key = f"ms:settlement:v1:{scope}:{counterparty_id}"
-        await redis.delete(key, f"{key}:retry")
-    except Exception:
-        logger.warning("settlement_cache_invalidation_failed counterparty_id=%s", counterparty_id)
-
-
 def _money(value: object) -> Decimal:
     if value is None or isinstance(value, bool):
         raise ValueError("Missing settlement amount")
