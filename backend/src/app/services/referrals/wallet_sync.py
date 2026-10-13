@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from config import LOYALTY_USE_SETTLEMENT_BALANCE
 
 from src.app.services.benefits.moysklad_bonus import (
     MoySkladBonusWallet,
@@ -224,6 +225,8 @@ async def sync_referral_accrual_to_bonus_wallet(
     accrual: AppReferralAccrual,
     moysklad_client: MoySkladClient | None = None,
 ) -> WalletSyncOutcome:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return "not_applicable"
     client = moysklad_client or get_moysklad_client()
     if not client.is_configured():
         raise BonusWalletNotReady("Интеграция МойСклад не настроена")
@@ -249,6 +252,8 @@ async def sync_approved_referral_accruals_to_bonus_wallet(
     limit: int = 200,
     moysklad_client: MoySkladClient | None = None,
 ) -> dict[str, int]:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return {"processed": 0, "credited": 0, "reversed": 0, "waiting": 0, "failed": 0}
     client = moysklad_client or get_moysklad_client()
     if not client.is_configured():
         return {

@@ -12,6 +12,7 @@ from src.normalize import coerce_uuid, optional_str
 
 from .money import quantize_money
 from .loyalty import allocate_bonus_spend_to_credits
+from config import LOYALTY_USE_SETTLEMENT_BALANCE
 
 BONUS_SOURCE_KIND = "moysklad_bonus"
 logger = logging.getLogger(__name__)
@@ -89,6 +90,8 @@ async def redeem_order_bonus_safe(
     client = moysklad_client or get_moysklad_client()
 
     try:
+        if LOYALTY_USE_SETTLEMENT_BALANCE:
+            raise RuntimeError("Native bonus redemption is disabled; settlement must be handled in MoySklad")
         if program_id is None or counterparty_id is None or points <= 0:
             raise ValueError("Incomplete MoySklad bonus redemption data")
         if not client.is_configured():
@@ -163,6 +166,8 @@ async def reverse_order_bonus_safe(
     user: User,
     moysklad_client: MoySkladClient | None = None,
 ) -> bool:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return False
     application = await _bonus_application(session, order_id=order.id)
     if application is None or application.status == "reversed":
         return True

@@ -11,6 +11,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 TEST_ENV = {
+    "LOYALTY_USE_SETTLEMENT_BALANCE": "false",
     "POSTGRES_DB": "test",
     "POSTGRES_USER": "test",
     "POSTGRES_HOST": "localhost",

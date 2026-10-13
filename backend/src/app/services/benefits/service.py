@@ -4,7 +4,7 @@ from decimal import Decimal
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from config import LOYALTY_BONUS_LIFETIME_DAYS, LOYALTY_ORDER_CASHBACK_PERCENT
+from config import LOYALTY_BONUS_LIFETIME_DAYS, LOYALTY_ORDER_CASHBACK_PERCENT, LOYALTY_USE_SETTLEMENT_BALANCE
 from src.app.services.discounts import product_is_discountable
 from src.app.services.catalog_merchandising import catalog_unit_price
 from src.app.services.referrals import (
@@ -407,8 +407,8 @@ async def resolve_benefits_for_user(
         "stacked_discount_amount": stacked_discount_amount,
         "total_after_discounts": total_after_discounts,
         "bonus_option": asdict(bonus_option) if bonus_option is not None else None,
-        "bonus_balance_points": bonus_wallet.balance_points + pending_bonus_points,
-        "bonus_balance_rubles": bonus_wallet.balance_rubles + pending_bonus_rubles,
+        "bonus_balance_points": bonus_wallet.balance_points + (0 if LOYALTY_USE_SETTLEMENT_BALANCE else pending_bonus_points),
+        "bonus_balance_rubles": bonus_wallet.balance_rubles + (Decimal("0.00") if LOYALTY_USE_SETTLEMENT_BALANCE else pending_bonus_rubles),
         "bonus_pending_points": pending_bonus_points,
         "bonus_pending_rubles": pending_bonus_rubles,
         "bonus_program_name": bonus_wallet.program_name,
@@ -418,5 +418,5 @@ async def resolve_benefits_for_user(
         "bonus_applied_rubles": bonus_rubles if use_bonus_rubles else Decimal("0.00"),
         "cashback_percent": Decimal(str(max(0, min(100, int(LOYALTY_ORDER_CASHBACK_PERCENT))))),
         "cashback_earned_points": cashback_earned_points,
-        "cashback_expires_in_days": max(1, int(LOYALTY_BONUS_LIFETIME_DAYS)),
+        "cashback_expires_in_days": 0 if LOYALTY_USE_SETTLEMENT_BALANCE else max(1, int(LOYALTY_BONUS_LIFETIME_DAYS)),
     }

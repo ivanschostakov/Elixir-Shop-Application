@@ -80,4 +80,4 @@ class BenefitCheckRead(BaseModel):
     bonus_applied_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)
     cashback_percent: Decimal = Field(default=Decimal("5.00"), ge=0, le=100, max_digits=7, decimal_places=2)
     cashback_earned_points: int = Field(default=0, ge=0)
-    cashback_expires_in_days: int = Field(default=60, ge=1)
+    cashback_expires_in_days: int = Field(default=60, ge=0)

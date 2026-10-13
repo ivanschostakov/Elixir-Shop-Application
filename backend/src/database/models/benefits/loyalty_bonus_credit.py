@@ -11,7 +11,7 @@ from src.database.mixins import IdPkMixin, TimestampMixin
 
 
 class LoyaltyBonusCredit(Base, IdPkMixin, TimestampMixin):
-    """An idempotent, expiring bonus credit mirrored to MoySklad."""
+    """An idempotent credit with its remote accounting document reference."""
 
     __tablename__ = "loyalty_bonus_credits"
     __table_args__ = (
@@ -58,11 +58,12 @@ class LoyaltyBonusCredit(Base, IdPkMixin, TimestampMixin):
     )
     earned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     moysklad_bonus_program_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     moysklad_bonus_transaction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
+    moysklad_paymentin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
     moysklad_debit_transaction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
     sync_error: Mapped[str | None] = mapped_column(String(length=500), nullable=True)
 

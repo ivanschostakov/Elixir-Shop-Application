@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_FLOOR
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import (
@@ -14,18 +14,21 @@ from config import (
     LOYALTY_PHOTO_REVIEW_BONUS_POINTS,
     LOYALTY_TEXT_REVIEW_BONUS_POINTS,
     LOYALTY_WELCOME_BONUS_POINTS,
+    LOYALTY_USE_SETTLEMENT_BALANCE,
     MOY_SKLAD_BONUS_PROGRAM_ID,
     ufa_now,
 )
 from src.database.models import LoyaltyBonusCredit, Order, OrderItem, Review, ReviewAttachment, User
 from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
+from src.integrations.moysklad.balance_payments import create_bonus_balance_payment
 from src.integrations.moysklad.idempotency import build_counterparty_external_code, build_sync_id
-from src.normalize import coerce_uuid, optional_str
+from src.normalize import coerce_uuid, normalize_email, optional_str
 
 from .money import quantize_money
 from .moysklad_bonus import MoySkladBonusWallet, get_moysklad_bonus_wallet
 
 logger = logging.getLogger(__name__)
+APP_BALANCE_CREDIT_KINDS = ("welcome", "review_text", "review_photo")
 
 REWARD_MODE_CASHBACK = "cashback"
 REWARD_MODE_PROMO = "promo"
@@ -127,6 +130,8 @@ async def sync_loyalty_bonus_credit(
     credit: LoyaltyBonusCredit,
     client: MoySkladClient | None = None,
 ) -> bool:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return await _sync_balance_credit(db, credit=credit, client=client)
     credit_id = credit.id
     if credit.status == "applied" and credit.moysklad_bonus_transaction_id is not None:
         return True
@@ -171,6 +176,66 @@ async def sync_loyalty_bonus_credit(
         return False
 
 
+async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, client=None) -> bool:
+    credit_id = credit.id
+    if credit.status == "applied":
+        # Historical native credits stay in the audit ledger, never copied.
+        return True
+    if credit.source_kind not in APP_BALANCE_CREDIT_KINDS:
+        return False
+    user = await db.get(User, credit.user_id)
+    client = client or get_moysklad_client()
+    try:
+        if user is None:
+            raise RuntimeError("User not found")
+        if not client.is_configured():
+            raise RuntimeError("MoySklad is not configured")
+        if user.moysklad_counterparty_id is None:
+            from src.app.services.auth.service import _link_moysklad_counterparty_by_email
+            await _link_moysklad_counterparty_by_email(user, db)
+        if user.moysklad_counterparty_id is None:
+            email = normalize_email(user.email)
+            if email:
+                candidates = await client.get_page("/entity/counterparty", limit=100, search=email, expand="contactpersons")
+                rows = candidates.get("rows", [])
+                if len(rows) >= 100 or any(client._counterparty_email_matches(row, email) for row in rows):
+                    raise RuntimeError("Existing MoySklad contacts require manual identity reconciliation")
+            external_code = build_counterparty_external_code(user_id=user.id)
+            result = await client.resolve_or_sync_counterparty(
+                existing_counterparty_id=None, external_code=external_code,
+                sync_id=build_sync_id(scope="counterparty", key=external_code),
+                name=" ".join(filter(None, (user.name, user.surname))) or f"App user {user.id}",
+                email=user.email, phone=user.phone_number, actual_address=None,
+            )
+            user.moysklad_counterparty_id = result.counterparty_id
+            await db.commit()
+        label = "Приветственное начисление за регистрацию в приложении" if credit.source_kind == "welcome" else "Начисление за отзыв в приложении"
+        payment = await create_bonus_balance_payment(
+            client, counterparty_id=user.moysklad_counterparty_id, amount=Decimal(credit.points),
+            external_code=_external_code(credit.idempotency_key),
+            description=f"Начисление бонусных рублей: {label.lower()} №{credit_id}",
+            payment_purpose=f"{label} №{credit_id}",
+            is_welcome=credit.source_kind == "welcome",
+        )
+        credit.moysklad_paymentin_id = coerce_uuid(payment["id"])
+        credit.status = "applied"
+        credit.expires_at = None
+        credit.sync_error = None
+        await db.commit()
+        from .settlement import invalidate_account_settlement
+        await invalidate_account_settlement(user.moysklad_counterparty_id)
+        return True
+    except Exception as error:
+        await db.rollback()
+        persisted = await db.get(LoyaltyBonusCredit, credit_id)
+        if persisted is not None:
+            persisted.status = "failed"
+            persisted.sync_error = _sync_error_message(error)
+            await db.commit()
+        logger.exception("Could not post loyalty incoming payment credit_id=%s: %s", credit_id, _sync_error_message(error))
+        return False
+
+
 async def create_loyalty_bonus_credit(
     db: AsyncSession,
     *,
@@ -204,7 +269,7 @@ async def create_loyalty_bonus_credit(
         status="pending",
         earned_at=origin,
         available_at=origin,
-        expires_at=origin + timedelta(days=max(1, int(LOYALTY_BONUS_LIFETIME_DAYS))),
+        expires_at=None if LOYALTY_USE_SETTLEMENT_BALANCE else origin + timedelta(days=max(1, int(LOYALTY_BONUS_LIFETIME_DAYS))),
     )
     db.add(credit)
     await db.commit()
@@ -237,6 +302,8 @@ def _order_benefits(order: Order) -> dict:
 
 
 async def grant_order_cashback_safe(db: AsyncSession, *, order: Order, user: User) -> LoyaltyBonusCredit | None:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return None
     if not order.is_paid or order.is_canceled:
         return None
     benefits = _order_benefits(order)
@@ -274,6 +341,9 @@ async def reverse_loyalty_bonus_credit(
     credit: LoyaltyBonusCredit,
     client: MoySkladClient | None = None,
 ) -> bool:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        # Settlement money may already have paid for an order on another site.
+        return False
     credit_id = credit.id
     if credit.status in {"reversed", "expired"}:
         return True
@@ -415,7 +485,8 @@ async def pending_loyalty_bonus_points(db: AsyncSession, *, user_id: int) -> int
             select(func.coalesce(func.sum(LoyaltyBonusCredit.points), 0)).where(
                 LoyaltyBonusCredit.user_id == user_id,
                 LoyaltyBonusCredit.status.in_(("pending", "failed")),
-                LoyaltyBonusCredit.expires_at > ufa_now(),
+                or_(LoyaltyBonusCredit.expires_at.is_(None), LoyaltyBonusCredit.expires_at > ufa_now()),
+                *([LoyaltyBonusCredit.source_kind.in_(APP_BALANCE_CREDIT_KINDS)] if LOYALTY_USE_SETTLEMENT_BALANCE else []),
             )
         )
     ).scalar_one()
@@ -428,6 +499,8 @@ async def loyalty_bonus_expiration_summary(
     user_id: int,
     now: datetime | None = None,
 ) -> dict[str, object]:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return {"next_expires_at": None, "expiring_points": 0, "warning_days": max(1, int(LOYALTY_EXPIRY_WARNING_DAYS))}
     current_time = now or ufa_now()
     warning_cutoff = current_time + timedelta(
         days=max(1, int(LOYALTY_EXPIRY_WARNING_DAYS))
@@ -464,6 +537,7 @@ async def sync_pending_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 1
             await db.execute(
                 select(LoyaltyBonusCredit.id)
                 .where(LoyaltyBonusCredit.status.in_(("pending", "failed", "reversal_pending")))
+                .where(*([LoyaltyBonusCredit.source_kind.in_(APP_BALANCE_CREDIT_KINDS), LoyaltyBonusCredit.status != "reversal_pending"] if LOYALTY_USE_SETTLEMENT_BALANCE else []))
                 .order_by(LoyaltyBonusCredit.id.asc())
                 .limit(max(1, min(limit, 500)))
             )
@@ -488,6 +562,8 @@ async def sync_pending_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 1
 
 
 async def expire_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 100) -> dict[str, int]:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return {"processed": 0, "expired": 0, "failed": 0}
     now = ufa_now()
     rows = list(
         (

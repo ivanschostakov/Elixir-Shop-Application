@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+from config import LOYALTY_USE_SETTLEMENT_BALANCE
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -277,6 +278,8 @@ async def process_bonus_expiry_notifications(
     *,
     now: datetime | None = None,
 ) -> int:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return 0
     current_time = now or ufa_now()
     warning_days = max(1, int(LOYALTY_EXPIRY_WARNING_DAYS))
     cutoff = current_time + timedelta(days=warning_days)

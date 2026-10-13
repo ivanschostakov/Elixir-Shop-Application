@@ -7,6 +7,7 @@ from uuid import UUID
 from src.database.models import User
 from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
 from src.normalize import coerce_uuid, optional_str
+from config import LOYALTY_USE_SETTLEMENT_BALANCE
 
 from .money import quantize_money
 
@@ -102,6 +103,8 @@ async def get_user_moysklad_bonus_wallet(
     *,
     moysklad_client: MoySkladClient | None = None,
 ) -> MoySkladBonusWallet:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return MoySkladBonusWallet()
     client = moysklad_client or get_moysklad_client()
     if user.moysklad_counterparty_id is None or not client.is_configured():
         return MoySkladBonusWallet()
