@@ -165,6 +165,10 @@ class Course(StrictModel):
     supply_amount: float | None = Field(default=None, ge=0, le=1000000, allow_inf_nan=False)
     amount_per_intake: float | None = Field(default=None, gt=0, le=1000000, allow_inf_nan=False)
     supply_unit: str | None = Field(default=None, min_length=1, max_length=40)
+    package_count: float | None = Field(default=None, ge=0, le=1000000, allow_inf_nan=False)
+    package_amount: float | None = Field(default=None, gt=0, le=1000000, allow_inf_nan=False)
+    package_unit: str | None = Field(default=None, max_length=40)
+    intake_unit: str | None = Field(default=None, max_length=40)
 
     @model_validator(mode="after")
     def schedule_valid(self):
@@ -184,9 +188,15 @@ class Course(StrictModel):
             parsed = time.fromisoformat(value)
             if len(value) != 5 or parsed.tzinfo is not None:
                 raise ValueError("Expected HH:MM")
-        supplied = [self.supply_amount, self.amount_per_intake, self.supply_unit]
-        if any(x is not None for x in supplied) and not all(x is not None for x in supplied):
-            raise ValueError("Supply requires amount, consumption per intake and the same unit")
+        supplied = [self.supply_amount, self.amount_per_intake, self.supply_unit, self.package_count,
+            self.package_amount, self.package_unit, self.intake_unit]
+        if any(x is not None for x in supplied):
+            from .course_inventory import normalize_supply
+            normalized = normalize_supply(self.model_dump())
+            for key in ("supply_amount", "amount_per_intake", "supply_unit"):
+                setattr(self, key, normalized[key])
+            for key in ("package_count", "package_amount", "package_unit", "intake_unit"):
+                setattr(self, key, None)
         return self
 
 
@@ -485,8 +495,69 @@ async def course_action(payload: CourseAction, db: AsyncSession = Depends(get_db
         raise HTTPException(409, "Отметка уже обработана")
     if row.occurred_at > now():
         raise HTTPException(422, "Будущий приём нельзя отметить заранее")
-    row.status = payload.action
+    if row.status != payload.action:
+        row.status = payload.action
+        row.data = {**row.data, "completed_at": now().isoformat()}
     await db.commit()
+    return {"ok": True, "entry": dump(row)}
+
+
+class CourseSupply(Identity):
+    entry_id: int = Field(gt=0)
+    request_key: str = Field(min_length=8, max_length=128)
+    supply_amount: float = Field(ge=0, le=1000000, allow_inf_nan=False)
+    amount_per_intake: float = Field(gt=0, le=1000000, allow_inf_nan=False)
+    supply_unit: str = Field(min_length=1, max_length=40)
+
+    @model_validator(mode="after")
+    def normalized(self):
+        from .course_inventory import normalize_supply
+        result = normalize_supply(self.model_dump())
+        self.supply_unit = result["supply_unit"]
+        return self
+
+
+class SupplyPreview(Identity):
+    supply_amount: float | None = Field(default=None, ge=0, le=1000000, allow_inf_nan=False)
+    amount_per_intake: float | None = Field(default=None, gt=0, le=1000000, allow_inf_nan=False)
+    supply_unit: str | None = Field(default=None, max_length=40)
+    package_count: float | None = Field(default=None, ge=0, le=1000000, allow_inf_nan=False)
+    package_amount: float | None = Field(default=None, gt=0, le=1000000, allow_inf_nan=False)
+    package_unit: str | None = Field(default=None, max_length=40)
+    intake_unit: str | None = Field(default=None, max_length=40)
+
+
+@router.post("/course/supply-preview")
+async def supply_preview(payload: SupplyPreview):
+    require_section("course")
+    from .course_inventory import normalize_supply
+    try:
+        data = normalize_supply(payload.model_dump())
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    return {"supply": {key: data[key] for key in ("supply_amount", "amount_per_intake", "supply_unit")}}
+
+
+@router.post("/course/supply")
+async def course_supply(payload: CourseSupply, db: AsyncSession = Depends(get_db)):
+    require_section("course")
+    await lock(db, payload.telegram_user_id)
+    row = await owned(db, payload.telegram_user_id, payload.entry_id, "course")
+    if row.status != "confirmed":
+        raise HTTPException(409, "Расписание не активно. Откройте актуальный курс.")
+    key = hashlib.sha256(payload.request_key.encode()).hexdigest()
+    receipts = row.data.get("supply_receipts", [])
+    if key not in receipts:
+        done_ids = list((await db.execute(select(TelegramAIJournal.id).where(
+            TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+            TelegramAIJournal.kind == "course_event", TelegramAIJournal.status == "done",
+            TelegramAIJournal.data["course_id"].as_integer() == row.id))).scalars())
+        row.data = {**row.data, "supply_amount": payload.supply_amount,
+            "amount_per_intake": payload.amount_per_intake, "supply_unit": payload.supply_unit,
+            "package_count": None, "package_amount": None, "package_unit": None, "intake_unit": None,
+            "supply_measured_at": now().isoformat(), "supply_baseline_done": done_ids,
+            "supply_receipts": [*receipts, key][-100:]}
+        await db.commit()
     return {"ok": True, "entry": dump(row)}
 
 
@@ -538,6 +609,60 @@ async def meals(payload: MealLibrary, db: AsyncSession = Depends(get_db)):
     rows = list((await db.execute(query.order_by(TelegramAIJournal.occurred_at.desc(),
         TelegramAIJournal.id.desc()).offset(payload.offset).limit(11))).scalars())
     return {"items": [dump(r) for r in rows[:10]], "has_more": len(rows) > 10}
+
+
+@router.post("/food/estimate")
+async def estimate_food(payload: MealDraft, db: AsyncSession = Depends(get_db)):
+    require_section("food")
+    await lock(db, payload.telegram_user_id)
+    await ensure_version(db, payload.telegram_user_id, payload.expected_version)
+    key = "food-estimate:" + hashlib.sha256(payload.request_key.encode()).hexdigest()
+    row = (await db.execute(select(TelegramAIJournal).where(
+        TelegramAIJournal.telegram_user_id == payload.telegram_user_id, TelegramAIJournal.request_key == key))).scalar_one_or_none()
+    if row is None:
+        row = TelegramAIJournal(telegram_user_id=payload.telegram_user_id, request_key=key,
+            kind="food_estimate", status="preview", occurred_at=now(), data=payload.meal.model_dump())
+        db.add(row)
+        await db.commit()
+    return {"ok": True, "estimate": dump(row), "recorded": False}
+
+
+class EstimateRecord(Identity):
+    entry_id: int = Field(gt=0)
+
+
+@router.post("/food/record")
+async def record_estimate(payload: EstimateRecord, db: AsyncSession = Depends(get_db)):
+    require_section("food")
+    await lock(db, payload.telegram_user_id)
+    estimate = await owned(db, payload.telegram_user_id, payload.entry_id, "food_estimate")
+    key = f"food-estimate-record:{estimate.id}"
+    row = (await db.execute(select(TelegramAIJournal).where(
+        TelegramAIJournal.telegram_user_id == payload.telegram_user_id, TelegramAIJournal.request_key == key))).scalar_one_or_none()
+    if row is None:
+        meal = MealData.model_validate({k: estimate.data[k] for k in MealData.model_fields if k in estimate.data})
+        row = TelegramAIJournal(telegram_user_id=payload.telegram_user_id, request_key=key,
+            kind="meal", status="confirmed", occurred_at=now(), data=meal.model_dump())
+        db.add(row)
+        estimate.status = "recorded"
+        await db.commit()
+    elif row.status != "confirmed":
+        raise HTTPException(409, "Эта запись уже удалена. Для новой записи повторите поиск продукта.")
+    return {"ok": True, "entry": dump(row)}
+
+
+@router.post("/meals/delete")
+async def delete_meal(payload: EstimateRecord, db: AsyncSession = Depends(get_db)):
+    require_section("food")
+    await lock(db, payload.telegram_user_id)
+    row = await owned(db, payload.telegram_user_id, payload.entry_id, "meal")
+    if row.status == "deleted":
+        return {"ok": True}
+    if row.status != "confirmed":
+        raise HTTPException(409, "Удалить из дневника можно только сохранённую еду.")
+    row.status = "deleted"
+    await db.commit()
+    return {"ok": True}
 
 
 @router.post("/meals/favorite")
@@ -603,16 +728,24 @@ def summarize(rows, instant, zone, days=7):
             protein_days += 1
     programs = sorted([r for r in rows if r.kind == "program" and r.status in {"confirmed", "replaced"}], key=lambda r: (r.occurred_at, r.id))
     planned = 0
+    completed_planned_days = set()
     for n in range(days):
         day = start.date()+timedelta(days=n)
         program = next((r for r in reversed(programs) if r.occurred_at.astimezone(zone).date() <= day), None)
         if program and any(e["weekday"] == day.weekday() for e in program.data["exercises"]):
             planned += 1
+            names = {e["name"].casefold() for e in program.data["exercises"] if e["weekday"] == day.weekday()}
+            if any(r.occurred_at.astimezone(zone).date() == day and
+                any(s["exercise"].casefold() in names for s in r.data["sets"]) for r in workouts):
+                completed_planned_days.add(day)
     return {"days": days, "from": start.date().isoformat(), "to": local.date().isoformat(),
         "nutrition_days": len(daily), "average_kcal": round(sum(v["kcal"] for v in daily.values())/len(daily), 1) if daily else None,
         "protein_target_percent": round(100*protein_actual/protein_target, 1) if protein_target else None,
         "protein_target_days": protein_days, "planned_workouts": planned,
+        "planned_workouts_done": len(completed_planned_days),
         "weight_measurements": len(weights), "weight_mean_7d": round(sum(seven_weights)/len(seven_weights), 2) if seven_weights else None,
+        "weight_mean": round(sum(r.data["weight_kg"] for r in weights)/len(weights), 2) if weights else None,
+        "weight_samples": len(weights),
         "weight_samples_7d": len(seven_weights), "wellbeing_mean": round(sum(wellbeing)/len(wellbeing), 2) if wellbeing else None,
         "wellbeing_samples": len(wellbeing), "energy_mean": round(sum(energy)/len(energy), 2) if energy else None,
         "energy_samples": len(energy), "meals": sum(r.kind == "meal" for r in confirmed),
@@ -672,13 +805,13 @@ async def workspace_state(db, uid, totals=None):
         due_count = sum(e.occurred_at <= instant and e.status != "cancelled" for e in events)
         pending = [e for e in events if e.status == "pending" and e.occurred_at >= instant]
         supply = None
-        amount = course.data.get("amount_per_intake")
-        if amount is not None and course.data.get("supply_amount") is not None:
-            left = max(0, course.data["supply_amount"]-done*amount)
-            count = int(left//amount)
-            supply = {"remaining": round(left, 4), "unit": course.data["supply_unit"],
-                "intakes_available": count, "shortfall": round(max(0, len(pending)*amount-left), 4),
-                "runs_out_at": pending[count].occurred_at.isoformat() if count < len(pending) else None}
+        if course.data.get("amount_per_intake") is not None and course.data.get("supply_amount") is not None:
+            from .course_inventory import calculate_supply
+            try:
+                supply = calculate_supply(course, events, instant)
+            except ValueError:
+                supply = {"available": False, "remaining": None, "unit": "", "intakes_available": 0,
+                    "runs_out_at": None, "reason": "Запас и расход сохранены неоднозначно. Уточните фактический остаток и расход по вашей схеме."}
         courses.append({**dump(course), "done": done, "due": due_count, "supply": supply,
             "calendar": [dump(e) for e in events if e.occurred_at >= instant-timedelta(days=7)][:40]})
     statuses = list((await db.execute(select(TelegramAIJournal.id, TelegramAIJournal.kind, TelegramAIJournal.status).where(

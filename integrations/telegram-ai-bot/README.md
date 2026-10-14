@@ -1,5 +1,39 @@
 # Telegram mentor
 
+## October 14 review fixes
+
+Deploy the complete bot commit based on `caef14d` with the matching backend.
+`mentor-review-20261014.patch` is the incremental transport change to
+`new_user.py` and `ai_helpers.py` against that baseline; apply once with
+`git apply --check`, then copy the full overlay. No migration or mobile OTA is needed.
+
+- Course inventory distinguishes packages, their explicitly stated contents and
+  per-intake consumption. Only named mass units are convertible, never concentration
+  or an inferred dose. One vial containing 10 mg at 2 mg per intake gives five intakes.
+  Recount uses an explicit preview/confirmation and snapshots previously completed
+  event IDs, so retries and old completed events cannot subtract stock twice.
+- Course cards include an intake-mark action and one specialist link. Instruction
+  replies have a private, user-scoped one-hour SQLite cache keyed by course/profile
+  facts and mode; phone, subscription and media gates are still checked before use.
+  Cached replies consume no answer credit, drafts/errors are not cached, and privacy
+  reset clears the cache. Cold provider requests can still take longer than cached reads.
+- Food lookup creates a reference preview, not a meal or diary draft. Only the
+  explicit record button copies its stored values to a confirmed meal, exactly once.
+  Cancelling keeps the estimate text in Telegram. Confirmed history has named repeat
+  actions and a separate token-confirmed delete flow that recalculates totals.
+- Old cards never edit another message. Stale pages open a fresh menu. AI and
+  estimate receipts preserve dialogue; current service navigation edits its own card.
+  Callback-owned AI errors produce one retry/menu message, not two notifications.
+- Thirty-day reports use the real thirty-day weight mean; dates, decimals and timezones
+  are localized. Completed workouts link to results, empty course counters are hidden,
+  optional measurements do not force a second serial questionnaire, and target
+  cancellation returns to the currently saved target rather than a stale question.
+
+New signed endpoints: `/workspace/course/supply-preview`, `/workspace/course/supply`,
+`/workspace/food/estimate`, `/workspace/food/record`, `/workspace/meals/delete`.
+New journal kind `food_estimate` never contributes to meal statistics. Stock receipts
+and private baseline identifiers are excluded from model context.
+
 The original ordinary AI assistant retains its original prompt, tools, model selection,
 conversation, phone/subscription checks and usage accounting. The user enters the
 mentor explicitly from the main menu or `/mentor`. Mentor history and profile context
@@ -119,13 +153,13 @@ changing buttons, funnels, saving confirmations or medical safeguards.
   date, multiple times, and an explicit timezone. Multiple items/products coexist;
   add them individually. Calendar, done/skipped marks, adherence, and supply estimates
   use those saved schedules. Supply needs stock and per-intake consumption in the
-  same explicit unit; there is no dosage inference or unit conversion. Stopping a
+  explicit compatible units; only named mass conversion is allowed, never dosage or concentration inference. Stopping a
   schedule preserves history and is not advice to discontinue treatment. A separate
   notification time can be set per course without changing its dose or intake times.
   Schedule revisions invalidate queued reminders; already sent events are not resent.
 - Progress includes weight history, confirmed circumference measurements, private
   Telegram photo references, and accurate 7/30-day text reports for meals, workouts
-  and courses. Reports include the recorded seven-day mean weight, average wellbeing,
+  and courses. Reports include the recorded mean weight for the selected period, average wellbeing,
   optional separately recorded energy, and sample counts. Missing days are not zero
   samples. Photo
   Reports also include calories averaged over recorded days, protein relative to
