@@ -4,8 +4,9 @@
 
 Deploy the complete bot commit based on `caef14d` with the matching backend.
 `mentor-review-20261014.patch` is the incremental transport change to
-`new_user.py` and `ai_helpers.py` against that baseline; apply once with
-`git apply --check`, then copy the full overlay. No migration or mobile OTA is needed.
+`client.py`, `new_user.py` and `ai_helpers.py` against that baseline; apply once with
+`git apply --unidiff-zero --check` followed by `git apply --unidiff-zero`, then copy
+the full overlay. No migration or mobile OTA is needed.
 
 - Course inventory distinguishes packages, their explicitly stated contents and
   per-intake consumption. Only named mass units are convertible, never concentration
@@ -33,6 +34,24 @@ New signed endpoints: `/workspace/course/supply-preview`, `/workspace/course/sup
 `/workspace/food/estimate`, `/workspace/food/record`, `/workspace/meals/delete`.
 New journal kind `food_estimate` never contributes to meal statistics. Stock receipts
 and private baseline identifiers are excluded from model context.
+
+### Completion audit
+
+- Existing complete profiles get a one-time local-time confirmation without a new
+  profile questionnaire. Manual settings choices count as confirmed and invalidate
+  older onboarding buttons. Deferral retains menu access and an explicit resume action.
+- Food suggestions, daily analysis and reference food lookup use the existing model
+  and continuing conversation with a focused prompt, low reasoning effort and the
+  relevant current diary. Suggestions cannot call write tools. Lookup may only create
+  an unrecorded food estimate. Ordinary assistant and course-research tools are unchanged.
+- Skipping optional course stock clears partial inventory fields while retaining the
+  original dose text and schedule. The source-selection step has an explicit cancel action.
+- Signed `/workspace/course/events` provides owner-scoped, ten-item pages for the full
+  calendar and all overdue pending intakes. The old seven-day/40-item dashboard preview
+  no longer limits which events can be viewed or marked. `next_event` gives the actual
+  next intake independently of that preview. No database migration is needed.
+- Wellbeing starts with explicit 1-5 score buttons, then energy and an optional note.
+  Text answers and questions remain supported; the model cannot invent a score from symptoms.
 
 The original ordinary AI assistant retains its original prompt, tools, model selection,
 conversation, phone/subscription checks and usage accounting. The user enters the
@@ -72,7 +91,7 @@ current views. Mentor responses use escaped HTML and keep URL underscores litera
 
 ## Conversational input
 
-Workout/program, body measurements and wellbeing buttons select a task in the
+Workout/program and body-measurement buttons select a task in the
 same persistent Responses/Conversations dialogue used by the mentor. They no longer
 start isolated extraction forms. The assistant reads the live profile, weekly plan,
 performed workouts, separate activities and current draft statuses through function

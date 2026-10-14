@@ -1,85 +1,75 @@
+diff --git a/src/ai/client.py b/src/ai/client.py
+index 6d1e98a..8b19921 100644
+--- a/src/ai/client.py
++++ b/src/ai/client.py
+@@ -2 +2 @@ import json
+-from src.ai.telegram_mentor import catalog_context, CATALOG_TOOLS, CATALOG_NAMES, CATALOG_INSTRUCTIONS, PROFILE_TOOL, JOURNAL_TOOLS, memory_instructions, execute_tool, BridgeError
++from src.ai.telegram_mentor import catalog_context, CATALOG_TOOLS, CATALOG_NAMES, CATALOG_INSTRUCTIONS, NUTRITION_INSTRUCTIONS, PROFILE_TOOL, JOURNAL_TOOLS, memory_instructions, execute_tool, BridgeError
+@@ -321 +321,17 @@ class ProfessorClient(AsyncClient):
+-        response = await self.responses.create(model=self.__model, input=input_payload, instructions=instructions, conversation=ResponseConversationParamParam(id=conversation_id), tools=tools, include=response_include, reasoning=self._build_reasoning_payload(), truncation="auto")
++        reasoning = self._build_reasoning_payload()
++        nutrition_task = context is not None and (context.get("food_lookup_mode") or
++            context.get("button_action") in {"suggest", "analyze_day"})
++        if nutrition_task:
++            # Ordinary meal questions need the fresh diary, not peptide retrieval or rendering tools.
++            tools = [tool for tool in JOURNAL_TOOLS if tool["name"] == "draft_mentor_meal"] if context.get("food_lookup_mode") and context.get("saved") is not None else []
++            saved = context.get("saved")
++            if saved is not None:
++                saved = {key: saved[key] for key in ("profile", "date", "now", "meals", "totals", "weights") if key in saved}
++                workspace = context["saved"].get("workspace", {})
++                saved["workspace"] = {key: workspace[key] for key in ("target", "remaining", "today_workouts",
++                    "today_activities", "today_wellbeing") if key in workspace}
++            instructions = NUTRITION_INSTRUCTIONS + memory_instructions({**context, "saved": saved})
++            reasoning = {"effort": "low"}
++            response_include = None
++        allowed_functions = {tool["name"] for tool in tools if isinstance(tool, dict) and tool.get("type") == "function"}
++        response = await self.responses.create(model=self.__model, input=input_payload, instructions=instructions, conversation=ResponseConversationParamParam(id=conversation_id), tools=tools, include=response_include, reasoning=reasoning, truncation="auto")
+@@ -331,0 +348,2 @@ class ProfessorClient(AsyncClient):
++                        if call.name not in allowed_functions:
++                            raise ValueError("Tool is not available for this task")
+@@ -339 +357 @@ class ProfessorClient(AsyncClient):
+-                    reasoning=self._build_reasoning_payload(), truncation="auto")
++                    reasoning=reasoning, truncation="auto")
 diff --git a/src/bot/handlers/ai_helpers.py b/src/bot/handlers/ai_helpers.py
 index 367b55a..9abfa82 100644
 --- a/src/bot/handlers/ai_helpers.py
 +++ b/src/bot/handlers/ai_helpers.py
-@@ -292,7 +292,7 @@ async def send_message_v2_from_media_group(messages: Sequence[Message], professo
-     return response
- 
- 
+@@ -295 +295 @@ async def send_message_v2_from_media_group(messages: Sequence[Message], professo
 -async def safe_ai_response(message: Message, request_coro, *, error_text: str = AI_TEMPORARY_ERROR_TEXT, timeout_text: str = AI_TIMEOUT_ERROR_TEXT, timeout_seconds: float = float(AI_REQUEST_TIMEOUT_SECONDS)) -> dict[str, Any] | None:
 +async def safe_ai_response(message: Message, request_coro, *, error_text: str = AI_TEMPORARY_ERROR_TEXT, timeout_text: str = AI_TIMEOUT_ERROR_TEXT, timeout_seconds: float = float(AI_REQUEST_TIMEOUT_SECONDS), notify_errors: bool = True) -> dict[str, Any] | None:
-     started_at = time.monotonic()
-     user_id = getattr(getattr(message, "from_user", None), "id", None)
-     message_id = getattr(message, "message_id", None)
-@@ -300,24 +300,29 @@ async def safe_ai_response(message: Message, request_coro, *, error_text: str =
- 
-     try:
-         result = await asyncio.wait_for(request_coro, timeout=timeout_seconds)
+@@ -302,0 +303,2 @@ async def safe_ai_response(message: Message, request_coro, *, error_text: str =
 +        if result and result.get("mentor") and not str(result.get("text") or "").strip() and not result.get("files"):
 +            raise BridgeError("Не удалось получить ответ наставника. Попробуйте ещё раз.")
-         ai_pipeline_logger.info("AI wrapper done | user_id=%s | message_id=%s | elapsed_ms=%d | ok=%s", user_id, message_id, _elapsed_ms(started_at), result is not None)
-         return result
- 
-     except BridgeError as error:
+@@ -307 +309,2 @@ async def safe_ai_response(message: Message, request_coro, *, error_text: str =
 -        await message.answer(str(error), parse_mode=None)
 +        if notify_errors:
 +            await message.answer(str(error), parse_mode=None)
-         return None
- 
-     except asyncio.CancelledError: raise
-     except asyncio.TimeoutError:
-         ai_pipeline_logger.error("AI wrapper timeout | user_id=%s | message_id=%s | elapsed_ms=%d | timeout_s=%s", user_id, message_id, _elapsed_ms(started_at), timeout_seconds)
+@@ -313 +316,2 @@ async def safe_ai_response(message: Message, request_coro, *, error_text: str =
 -        try: await message.answer(timeout_text)
 +        try:
 +            if notify_errors: await message.answer(timeout_text)
-         except Exception: pass
-         return None
- 
-     except Exception as e:
-         ai_pipeline_logger.exception(f"AI wrapper failed {e} | user_id=%s | message_id=%s | elapsed_ms=%d", user_id, message_id, _elapsed_ms(started_at))
-         logging.getLogger(__name__).exception(f"AI request failed for user_id=%s: {e}", getattr(getattr(message, "from_user", None), "id", None))
+@@ -320 +324,2 @@ async def safe_ai_response(message: Message, request_coro, *, error_text: str =
 -        try: await message.answer(error_text)
 +        try:
 +            if notify_errors: await message.answer(error_text)
-         except Exception: pass
-         return None
- 
 diff --git a/src/bot/handlers/new_user.py b/src/bot/handlers/new_user.py
 index 6766339..7092bd3 100644
 --- a/src/bot/handlers/new_user.py
 +++ b/src/bot/handlers/new_user.py
-@@ -1,4 +1,4 @@
+@@ -1 +1 @@
 -from src.ai.telegram_mentor import wrap_client, mentor_enabled, reset_mentor_conversations, BridgeError
 +from src.ai.telegram_mentor import wrap_client, mentor_enabled, reset_mentor_conversations, BridgeError, food_lookup_mode
- import base64
- import asyncio
- import httpx
-@@ -614,7 +614,11 @@ async def _handle_media_group(messages: list[Message], state: FSMContext, profes
-     if not user.tg_phone and (last_used == LAST_USED_PROFESSOR or used_requests >= UNVERIFIED_REQUEST_LIMIT): return await _request_phone(message, state, mentor_input=messages)
-     if last_used == LAST_USED_PROFESSOR and not _can_use_professor_mode(user): return await message.answer(user_texts.premium_limit_0, reply_markup=user_keyboards.only_free)
- 
+@@ -617 +617,5 @@ async def _handle_media_group(messages: list[Message], state: FSMContext, profes
 -    response = await safe_ai_response(message, send_message_v2_from_media_group(messages=messages, professor_client=active_client, user_id=user_id, conversation_id=user.conversation_id))
 +    food_token = food_lookup_mode.set(bool((await state.get_data()).get("mentor_food_lookup")))
 +    try:
 +        response = await safe_ai_response(message, send_message_v2_from_media_group(messages=messages, professor_client=active_client, user_id=user_id, conversation_id=user.conversation_id))
 +    finally:
 +        food_lookup_mode.reset(food_token)
-     if response is None: return None
-     await consume_mentor_phone_input(messages, state)
-     schedule_webapp_call(
-@@ -643,7 +647,7 @@ async def _handle_media_group(messages: list[Message], state: FSMContext, profes
- 
- @professor_user_router.message(lambda message: not message.media_group_id and ((message.text and message.text.strip()) or (message.caption and message.caption.strip()) or message.photo or message.video or message.video_note or message.document or message.voice))
- @with_action()
+@@ -646 +650 @@ async def _handle_media_group(messages: list[Message], state: FSMContext, profes
 -async def handle_single_ai_message(message: Message, state: FSMContext, professor_bot, professor_client, expert_client=None, *, mentor_followup=False):
 +async def handle_single_ai_message(message: Message, state: FSMContext, professor_bot, professor_client, expert_client=None, *, mentor_followup=False, callback_error_owner=False, cached_response=None, response_sink=None):
-     user_id = message.from_user.id
-     if mentor_enabled(user_id) and not mentor_followup:
-         from .mentor_flows import pending_text
-@@ -670,8 +674,19 @@ async def handle_single_ai_message(message: Message, state: FSMContext, professo
-     if not user.tg_phone and (last_used == LAST_USED_PROFESSOR or used_requests >= UNVERIFIED_REQUEST_LIMIT): return await _request_phone(message, state, mentor_input=[message])
-     if last_used == LAST_USED_PROFESSOR and not _can_use_professor_mode(user): return await message.answer(user_texts.premium_limit_0, reply_markup=user_keyboards.only_free)
- 
+@@ -673 +677,10 @@ async def handle_single_ai_message(message: Message, state: FSMContext, professo
 -    response = await safe_ai_response(message, send_message_v2_from_telegram(message=message, professor_client=active_client, user_id=user_id, conversation_id=user.conversation_id))
 +    if cached_response is not None and cached_response.get("instruction_mode") == last_used:
 +        response = {**cached_response, "input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}
@@ -91,18 +81,9 @@ index 6766339..7092bd3 100644
 +            response = await safe_ai_response(message, send_message_v2_from_telegram(message=message, professor_client=active_client, user_id=user_id, conversation_id=user.conversation_id), notify_errors=not callback_error_owner)
 +        finally:
 +            food_lookup_mode.reset(food_token)
-     if response is None: return None
+@@ -674,0 +688,2 @@ async def handle_single_ai_message(message: Message, state: FSMContext, professo
 +    if response_sink is not None and not using_cache:
 +        response_sink(response, last_used)
-     await consume_mentor_phone_input([message], state)
-     if response.get("mentor"):
-         from .mentor_flows import remember_response
-@@ -689,7 +704,7 @@ async def handle_single_ai_message(message: Message, state: FSMContext, professo
-         ),
-         operation="write_usage",
-     )
+@@ -692 +707 @@ async def handle_single_ai_message(message: Message, state: FSMContext, professo
 -    if last_used == LAST_USED_PROFESSOR and _should_spend_premium_request(user):
 +    if not using_cache and last_used == LAST_USED_PROFESSOR and _should_spend_premium_request(user):
-         next_requests = max(int(getattr(user, "premium_requests", 0) or 0) - 1, 0)
-         schedule_webapp_call(safe_webapp_call(webapp_client.update_user(message.from_user.id, {"premium_requests": next_requests}), operation="decrement_premium_requests"),operation="decrement_premium_requests")
- 

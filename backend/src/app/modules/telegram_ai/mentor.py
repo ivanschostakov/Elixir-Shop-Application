@@ -396,6 +396,27 @@ class RecordRead(Identity):
     entry_id: int = Field(gt=0)
 
 
+class CourseEvents(RecordRead):
+    offset: int = Field(default=0, ge=0, le=3000)
+    limit: int = Field(default=10, ge=1, le=20)
+    pending_only: bool = False
+
+
+@router.post("/course/events")
+async def course_events(payload: CourseEvents, db: AsyncSession = Depends(get_db)):
+    require_section("course")
+    await owned(db, payload.telegram_user_id, payload.entry_id, "course")
+    query = select(TelegramAIJournal).where(
+        TelegramAIJournal.telegram_user_id == payload.telegram_user_id,
+        TelegramAIJournal.kind == "course_event",
+        TelegramAIJournal.data["course_id"].as_integer() == payload.entry_id)
+    if payload.pending_only:
+        query = query.where(TelegramAIJournal.status == "pending", TelegramAIJournal.occurred_at <= now())
+    rows = list((await db.execute(query.order_by(TelegramAIJournal.occurred_at, TelegramAIJournal.id)
+        .offset(payload.offset).limit(payload.limit+1))).scalars())
+    return {"items": [dump(row) for row in rows[:payload.limit]], "has_more": len(rows) > payload.limit}
+
+
 @router.post("/record")
 async def read_record(payload: RecordRead, db: AsyncSession = Depends(get_db)):
     row = await owned(db, payload.telegram_user_id, payload.entry_id)
@@ -813,6 +834,7 @@ async def workspace_state(db, uid, totals=None):
                 supply = {"available": False, "remaining": None, "unit": "", "intakes_available": 0,
                     "runs_out_at": None, "reason": "Запас и расход сохранены неоднозначно. Уточните фактический остаток и расход по вашей схеме."}
         courses.append({**dump(course), "done": done, "due": due_count, "supply": supply,
+            "next_event": dump(pending[0]) if pending else None,
             "calendar": [dump(e) for e in events if e.occurred_at >= instant-timedelta(days=7)][:40]})
     statuses = list((await db.execute(select(TelegramAIJournal.id, TelegramAIJournal.kind, TelegramAIJournal.status).where(
         TelegramAIJournal.telegram_user_id == uid,

@@ -150,3 +150,37 @@ def test_timezone_and_nutrition_saving_work_with_new_profile(monkeypatch):
             await m.record_action(m.RecordAction(telegram_user_id=UID, entry_id=result["entry"]["id"], action="confirm"), db)
             assert (await m.workspace_state(db, UID))["target"]["kcal"] == float(value["nutrition"]["kcal"])
     asyncio.run(run())
+
+
+@pytest.mark.skipif(not URL, reason="Requires isolated companion_test database")
+def test_old_course_events_are_reachable_markable_and_owner_scoped(monkeypatch):
+    monkeypatch.setattr(m, "now", lambda: NOW)
+    async def run():
+        async with database() as (db, _):
+            value = {**course(), "start_date": (NOW-timedelta(days=60)).date().isoformat(),
+                "end_date": (NOW+timedelta(days=30)).date().isoformat(), "weekdays": [],
+                "interval_days": 1, "times": ["08:00", "20:00"]}
+            entry = (await m.record_draft(m.RecordDraft(telegram_user_id=UID, request_key="old-events-test",
+                kind="course", data=value), db))["entry"]
+            await m.record_action(m.RecordAction(telegram_user_id=UID, entry_id=entry["id"], action="confirm"), db)
+            ids = []
+            for offset in range(0, 200, 20):
+                page = await m.course_events(m.CourseEvents(telegram_user_id=UID, entry_id=entry["id"],
+                    offset=offset, limit=20), db)
+                ids.extend(row["id"] for row in page["items"])
+                if not page["has_more"]:
+                    break
+            assert len(ids) == len(set(ids)) == 182
+            pending = await m.course_events(m.CourseEvents(telegram_user_id=UID, entry_id=entry["id"], pending_only=True), db)
+            oldest = pending["items"][0]
+            assert datetime.fromisoformat(oldest["occurred_at"]) < NOW-timedelta(days=7)
+            await m.course_action(m.CourseAction(telegram_user_id=UID, entry_id=oldest["id"], action="done"), db)
+            pending = await m.course_events(m.CourseEvents(telegram_user_id=UID, entry_id=entry["id"], pending_only=True), db)
+            assert oldest["id"] not in [row["id"] for row in pending["items"]]
+            assert all(datetime.fromisoformat(row["occurred_at"]) <= NOW for row in pending["items"])
+            state = await m.workspace_state(db, UID)
+            assert state["courses"][0]["next_event"]["occurred_at"] == NOW.replace(hour=20).isoformat()
+            with pytest.raises(HTTPException) as error:
+                await m.course_events(m.CourseEvents(telegram_user_id=UID+1, entry_id=entry["id"]), db)
+            assert error.value.status_code == 404
+    asyncio.run(run())
