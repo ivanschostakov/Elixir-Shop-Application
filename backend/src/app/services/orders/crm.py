@@ -1,4 +1,5 @@
 import logging
+from copy import deepcopy
 
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -19,6 +20,7 @@ from src.app.services.benefits.redemption import reverse_order_bonus_safe
 from .common import _normalize_phone
 from .fulfillment import create_delivery_for_order
 from .fulfillment_payloads import normalize_address_for_cf
+from src.integrations.moysklad.settlement_checkout import order_settlement
 
 log = logging.getLogger(__name__)
 amocrm_client = get_amocrm_client()
@@ -85,17 +87,30 @@ def _format_order_for_amocrm(order_number: str, payload: dict[str, Any], deliver
         goods_total = Decimal(str(benefits.get("total_after_discounts", items_total)))
         grand_total = goods_total + delivery_sum
     goods_total = grand_total - delivery_sum
+    settlement = payload.get("settlement_payment")
+    if settlement:
+        goods_total = Decimal(settlement["gross_rubles"]) - delivery_sum
     discount_total = items_total - goods_total
     discount_lines = []
     for application in benefits.get("applications") or []:
         amount = Decimal(str(application.get("discount_amount") or 0))
         if amount <= 0: continue
         kind = application.get("source_kind")
+        if kind == "moysklad_settlement":
+            continue
         label = "Бонусы" if kind == "moysklad_bonus" else f"Скидка / промокод {application.get('code') or ''}".strip()
         discount_lines.append(f"{label}: -{amount:.2f}")
     if discount_total > 0:
         discount_lines.append(f"Всего скидок и бонусов: -{discount_total:.2f}")
     discounts_block = "".join(f"{line}\n" for line in discount_lines)
+    balance_block = ""
+    payment_label = "Итого к оплате"
+    if settlement:
+        confirmed = settlement.get("status") == "confirmed"
+        paid_from_balance = Decimal(str(settlement.get("balance_rubles") if confirmed else benefits.get("bonus_applied_rubles", 0)))
+        balance_block = f"Стоимость заказа с доставкой: {Decimal(settlement['gross_rubles']):.2f}\nОплата с баланса МойСклад: {paid_from_balance:.2f}\n"
+        if not confirmed:
+            payment_label = "Предварительно к оплате (уточняется по счёту МойСклад)"
     service_normalized = (delivery_service or "").strip().upper()
     tariff_normalized = (tariff or "").strip().lower()
     delivery_mode = (delivery.get("deliveryMode") or "").strip()
@@ -129,12 +144,33 @@ def _format_order_for_amocrm(order_number: str, payload: dict[str, Any], deliver
         f"{discounts_block}"
         f"Стоимость товаров после скидок: {goods_total:.2f}\n"
         f"Стоимость доставки: {delivery_sum:.2f}\n"
-        f"Итого к оплате: {grand_total:.2f}\n\n"
+        f"{balance_block}"
+        f"{payment_label}: {grand_total:.2f}\n\n"
         f"Имя клиента: {full_name}\n"
         f"Номер телефона: {phone}\n"
         f"Email: {email}\n\n"
         f"Комментарий к заказу: {commentary_text or 'Не указан'}"
     )
+
+
+async def sync_settlement_amount_to_crm(session: AsyncSession, order: Order) -> None:
+    settlement = order_settlement(order)
+    if not settlement or settlement.get("status") != "confirmed" or not order.amocrm_lead_id:
+        return
+    marker = f"{settlement['invoice_id']}:{settlement['cash_rubles']}:{settlement['balance_rubles']}"
+    if settlement.get("crm_calculation") == marker:
+        return
+    await amocrm_client.update_lead_price(int(order.amocrm_lead_id), int(order.grand_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
+    await amocrm_client.add_lead_note(int(order.amocrm_lead_id),
+        f"Окончательный расчёт по счёту МойСклад {settlement['invoice_id']}\n"
+        f"Заказ {order.order_code} с доставкой: {settlement['gross_rubles']} руб.\n"
+        f"Оплата с баланса: {settlement['balance_rubles']} руб.\n"
+        f"Целое поле бонусов (округлено вверх): {settlement['displayed_spent_rubles']}\n"
+        f"К оплате через платёжный сервис: {settlement['cash_rubles']} руб.")
+    snapshot = deepcopy(order.checkout_snapshot)
+    snapshot["settlement_payment"]["crm_calculation"] = marker
+    order.checkout_snapshot = snapshot
+    await session.commit()
 
 async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, user: User) -> int:
     if order.amocrm_lead_id: return int(order.amocrm_lead_id)

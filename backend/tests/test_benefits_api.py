@@ -264,6 +264,7 @@ def test_benefit_check_uses_owned_order_draft_context(monkeypatch):
         basket_subtotal=Decimal("200.00"),
         currency="RUB",
         items=draft_items,
+        delivery_total=Decimal("199.00"),
     )
     quote_items = [
         {
@@ -329,6 +330,7 @@ def test_benefit_check_uses_owned_order_draft_context(monkeypatch):
     assert captured["entered_code"] == "ROMANI"
     assert captured["subtotal"] == Decimal("200.00")
     assert captured["discountable_subtotal"] == Decimal("200.00")
+    assert captured["delivery_total"] == Decimal("199.00")
     assert captured["currency"] == "RUB"
     assert captured["quote_items"] is quote_items
     assert db.committed is True

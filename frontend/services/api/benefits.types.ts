@@ -50,6 +50,7 @@ export type BenefitCheckResponse = {
     stacked_discount_options: BenefitOptionResponse[]
     stacked_discount_amount: string
     total_after_discounts: string
+    cash_total?: string | null
     bonus_option: BenefitOptionResponse | null
     bonus_balance_points: number
     bonus_balance_rubles: string

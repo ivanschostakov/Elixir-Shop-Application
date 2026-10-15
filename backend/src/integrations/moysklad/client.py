@@ -703,7 +703,7 @@ class MoySkladClient:
 
     async def get_customer_order(self, order_id: UUID | str, expand: bool = False) -> dict[str, Any] | None:
         http_client = await self.client()
-        params = {"expand": "positions.assortment"} if expand else None
+        params = {"expand": "positions.assortment,state" if expand else "state"}
         try:
             response = await http_client.get(f"/entity/customerorder/{order_id}", params=params)
             response.raise_for_status()
@@ -715,7 +715,7 @@ class MoySkladClient:
 
     async def get_invoiceout(self, invoiceout_id: UUID | str, expand: bool = False) -> dict[str, Any] | None:
         http_client = await self.client()
-        params = {"expand": "positions.assortment"} if expand else None
+        params = {"expand": "positions.assortment,state" if expand else "state"}
         try:
             response = await http_client.get(f"/entity/invoiceout/{invoiceout_id}", params=params)
             response.raise_for_status()

@@ -12,6 +12,7 @@ export type PaymentStatusRead = {
     payment_status: string | null
     payment_step: string | null
     invoice_id: string | null
+    amount_rubles?: number | null
     qr_url: string | null
     qr_image: string | null
     expires_at: string | null

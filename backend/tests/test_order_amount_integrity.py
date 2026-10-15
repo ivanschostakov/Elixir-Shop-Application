@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import httpx
@@ -199,3 +200,35 @@ def test_customerorder_id_is_committed_before_invoice_failure_and_reused(monkeyp
     asyncio.run(order_sync.sync_order_to_moysklad(Session(), order=order, user=user))
     assert client.customer_creates == 1
     assert committed[-1] == (ENTITY_ID, INVOICE_ID)
+
+
+def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monkeypatch):
+    order = make_order(["4890"], [2], "9195.92", "415.92")
+    order.checkout_snapshot["settlement_payment"] = {
+        "version": 1, "counterparty_id": str(ENTITY_ID), "gross_rubles": "10195.92",
+    }
+    user = SimpleNamespace(id=47, moysklad_counterparty_id=ENTITY_ID)
+    session = SimpleNamespace(execute=AsyncMock(), refresh=AsyncMock(), flush=AsyncMock(), commit=AsyncMock())
+    client = MoySkladClient(token="test")
+    monkeypatch.setattr(client, "get_counterparty", AsyncMock(return_value={"id": str(ENTITY_ID)}))
+    monkeypatch.setattr(client, "resolve_or_sync_counterparty", AsyncMock(side_effect=AssertionError("Do not relink funds")))
+    monkeypatch.setattr(client, "resolve_or_sync_invoiceout", AsyncMock(side_effect=AssertionError("No second invoice")))
+    monkeypatch.setattr(client, "resolve_or_sync_customerorder", AsyncMock(return_value=
+        MoySkladCustomerOrderSyncResult(ENTITY_ID, "app_order:22")))
+    monkeypatch.setattr(client, "get_all", AsyncMock(return_value=[{"id": str(INVOICE_ID)}]))
+    monkeypatch.setattr(client, "build_customerorder_attributes", lambda **kwargs: [])
+    monkeypatch.setattr(order_sync, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
+    monkeypatch.setattr(order_sync, "get_moysklad_client", lambda: client)
+    monkeypatch.setattr(order_sync, "_resolve_organization_id", AsyncMock(return_value=ENTITY_ID))
+    monkeypatch.setattr(order_sync, "_load_assortment_refs", AsyncMock(return_value={1: ("variant", ENTITY_ID)}))
+    monkeypatch.setattr(order_sync, "_resolve_customerorder_refs", AsyncMock(return_value={"store": {}, "state": {}, "sales_channel": {}}))
+    monkeypatch.setattr(order_sync, "_moysklad_custom_attr_refs", AsyncMock(return_value={}))
+    monkeypatch.setattr(order_sync, "_shipment_address_full", AsyncMock(return_value={}))
+    asyncio.run(order_sync.sync_order_to_moysklad(session, order=order, user=user))
+    positions = client.resolve_or_sync_customerorder.call_args.kwargs["positions"]
+    assert sum(Decimal(str(p["price"])) * Decimal(str(p["quantity"])) for p in positions) == Decimal("1019592")
+    assert positions[-1]["assortment"]["meta"]["type"] == "service"
+    assert positions[-1]["price"] == 41592
+    client.resolve_or_sync_counterparty.assert_not_awaited()
+    client.resolve_or_sync_invoiceout.assert_not_awaited()
+    assert order.moysklad_customerorder_id == ENTITY_ID

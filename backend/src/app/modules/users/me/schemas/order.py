@@ -30,6 +30,7 @@ class PaymentStatusRead(BaseModel):
     payment_status: str | None = Field(default=None, max_length=PAYMENT_STATUS_MAX_LENGTH)
     payment_step: str | None = None
     invoice_id: str | None = Field(default=None, max_length=EXTERNAL_ID_MAX_LENGTH)
+    amount_rubles: float | None = Field(default=None, ge=0)
     qr_url: str | None = None
     qr_image: str | None = None
     expires_at: datetime | str | None = None

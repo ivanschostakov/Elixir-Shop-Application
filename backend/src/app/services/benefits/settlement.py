@@ -21,7 +21,8 @@ RETRY_SECONDS = 60
 PROGRAM_ATTRIBUTE_ID = "a779beff-9d52-11f1-0a80-06b0000da6f9"
 OWN_PROMO_ATTRIBUTE_ID = "10c17c18-13e8-11f1-0a80-14740012e755"
 REFERRER_ATTRIBUTE_ID = "10c17b69-13e8-11f1-0a80-14740012e754"
-PROGRAM_NAMES = {"нулевая": 0, "накопительная": 1, "реферальная": 2}
+PROGRAM_NAMES = {"нулевая": 0, "накопительная": 1, "бонусная": 1,
+                 "реферальная": 2, "партнерская": 2, "партнёрская": 2}
 
 
 def _money(value: object) -> Decimal:

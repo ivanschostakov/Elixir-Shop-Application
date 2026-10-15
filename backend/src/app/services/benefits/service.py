@@ -225,6 +225,7 @@ async def resolve_benefits_for_user(
     entered_code: str | None = None,
     subtotal: Decimal | None = None,
     discountable_subtotal: Decimal | None = None,
+    delivery_total: Decimal | None = None,
     currency: str | None = None,
     quote_items: list[dict] | None = None,
     use_bonus_rubles: bool = False,
@@ -330,17 +331,20 @@ async def resolve_benefits_for_user(
         subtotal=effective_subtotal,
         discountable_subtotal=effective_discountable_subtotal,
     )
+    delivery = max(Decimal("0.00"), quantize_money(delivery_total) or Decimal("0.00"))
+    payable_before_balance = total_after_discounts + delivery
+    bonus_subtotal = payable_before_balance if bonus_wallet.is_settlement else total_after_discounts
     bonus_points, bonus_rubles = bonus_spend_for_subtotal(
         bonus_wallet,
-        total_after_discounts,
+        bonus_subtotal,
     )
     bonus_option = (
         ResolvedDiscountOption(
-            source_kind="moysklad_bonus",
+            source_kind="moysklad_settlement" if bonus_wallet.is_settlement else "moysklad_bonus",
             source_record_id=None,
-            source_external_id=str(bonus_wallet.program_id) if bonus_wallet.program_id else None,
+            source_external_id=str(bonus_wallet.counterparty_id if bonus_wallet.is_settlement else bonus_wallet.program_id),
             code=None,
-            title="Бонусные рубли",
+            title="Оплата с баланса" if bonus_wallet.is_settlement else "Бонусные рубли",
             status="available" if bonus_points > 0 else "not_applicable",
             is_applicable=bonus_points > 0,
             is_personal=True,
@@ -350,21 +354,23 @@ async def resolve_benefits_for_user(
             discount_amount=bonus_rubles,
             currency="RUB",
             estimated_discount_amount=bonus_rubles,
-            estimated_total_after=quantize_money(total_after_discounts - bonus_rubles),
+            estimated_total_after=quantize_money(bonus_subtotal - bonus_rubles),
             reason=None if bonus_points > 0 else "Бонусные рубли недоступны для этой корзины",
             benefit_units=Decimal(bonus_points),
-            benefit_unit_name="points",
+            benefit_unit_name="rubles" if bonus_wallet.is_settlement else "points",
         )
-        if bonus_wallet.program_id is not None
+        if bonus_wallet.program_id is not None or bonus_wallet.is_settlement
         else None
     )
     if use_bonus_rubles and bonus_option is not None and bonus_option.is_applicable:
-        bonus_application, total_after_discounts = _apply_discount_option(
+        bonus_application, _ = _apply_discount_option(
             bonus_option,
-            subtotal=total_after_discounts,
-            discountable_subtotal=total_after_discounts,
+            subtotal=bonus_subtotal,
+            discountable_subtotal=bonus_subtotal,
             sequence=len(stacked_discount_options) + 1,
         )
+        # Keep the legacy goods subtotal nonnegative; cash_total also covers delivery.
+        total_after_discounts = max(Decimal("0.00"), total_after_discounts - bonus_rubles)
         stacked_discount_options.append(bonus_application)
         stacked_discount_amount = (
             quantize_money(stacked_discount_amount + bonus_rubles) or Decimal("0.00")
@@ -406,12 +412,15 @@ async def resolve_benefits_for_user(
         "stacked_discount_options": stacked_discount_options,
         "stacked_discount_amount": stacked_discount_amount,
         "total_after_discounts": total_after_discounts,
+        "cash_total": payable_before_balance - (bonus_rubles if use_bonus_rubles else Decimal("0.00")) if delivery_total is not None else None,
         "bonus_option": asdict(bonus_option) if bonus_option is not None else None,
         "bonus_balance_points": bonus_wallet.balance_points + (0 if LOYALTY_USE_SETTLEMENT_BALANCE else pending_bonus_points),
         "bonus_balance_rubles": bonus_wallet.balance_rubles + (Decimal("0.00") if LOYALTY_USE_SETTLEMENT_BALANCE else pending_bonus_rubles),
         "bonus_pending_points": pending_bonus_points,
         "bonus_pending_rubles": pending_bonus_rubles,
         "bonus_program_name": bonus_wallet.program_name,
+        "settlement_counterparty_id": str(bonus_wallet.counterparty_id) if bonus_wallet.is_settlement else None,
+        "settlement_balance_rubles": bonus_wallet.balance_rubles if bonus_wallet.is_settlement else None,
         "bonus_max_paid_rate_percent": bonus_wallet.max_paid_rate_percent,
         "use_bonus_rubles": use_bonus_rubles,
         "bonus_applied_points": bonus_points if use_bonus_rubles else 0,

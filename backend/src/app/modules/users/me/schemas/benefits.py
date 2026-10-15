@@ -68,6 +68,7 @@ class BenefitCheckRead(BaseModel):
     stacked_discount_options: list[BenefitOptionRead] = Field(default_factory=list)
     stacked_discount_amount: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
     total_after_discounts: Decimal = Field(ge=0, max_digits=14, decimal_places=2)
+    cash_total: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     bonus_option: BenefitOptionRead | None = None
     bonus_balance_points: int = Field(default=0, ge=0)
     bonus_balance_rubles: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=14, decimal_places=2)

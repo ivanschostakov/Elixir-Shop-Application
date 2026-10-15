@@ -300,13 +300,13 @@ export default function PaymentScreen() {
         ?? resolvePaymentMethod(order?.payment_method)
         ?? selectedMethod
     const totalLabel = useMemo(() => {
-        const total = order?.grand_total ?? orderDraft?.grand_total
+        const total = payment?.amount_rubles ?? order?.grand_total ?? orderDraft?.grand_total
         const currency = order?.currency ?? orderDraft?.currency
-        if (!total || !currency) {
+        if (total == null || !currency) {
             return null
         }
         return formatMoney(Number(total), currency)
-    }, [order?.currency, order?.grand_total, orderDraft?.currency, orderDraft?.grand_total])
+    }, [payment?.amount_rubles, order?.currency, order?.grand_total, orderDraft?.currency, orderDraft?.grand_total])
     const basketSubtotalLabel = useMemo(() => {
         const subtotal = order?.basket_subtotal ?? orderDraft?.basket_subtotal
         const currency = order?.currency ?? orderDraft?.currency
@@ -494,6 +494,9 @@ export default function PaymentScreen() {
                 payment_method: effectiveMethod,
             })
             setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
+            if (typeof nextPayment.amount_rubles === "number" && Number.isFinite(nextPayment.amount_rubles)) {
+                setOrder({ ...nextOrder, grand_total: String(nextPayment.amount_rubles) })
+            }
             const resolvedNextMethod =
                 resolvePaymentMethod(nextPayment.payment_method)
                 ?? resolvePaymentMethod(nextOrder.payment_method)

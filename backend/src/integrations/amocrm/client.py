@@ -130,6 +130,9 @@ class AsyncAmoCRM:
         data = await self._patch("/api/v4/leads", json=[self.transport.dump_payload(payload)])
         return ((data.get("_embedded") or {}).get("leads") or [{"id": lead_id, "status_id": status_id}])[0]
 
+    async def update_lead_price(self, lead_id: int, price: int) -> dict[str, Any]:
+        return await self._patch(f"/api/v4/leads/{lead_id}", json={"price": price})
+
     async def link_contact_to_lead(self, lead_id: int, contact_id: int) -> dict[str, Any]:
         payload = build_lead_link_payload(contact_id=contact_id)
         return await self._post(f"/api/v4/leads/{lead_id}/link", json=[self.transport.dump_payload(payload)])

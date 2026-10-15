@@ -7,9 +7,10 @@ from uuid import UUID
 from src.database.models import User
 from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
 from src.normalize import coerce_uuid, optional_str
-from config import LOYALTY_USE_SETTLEMENT_BALANCE
+from config import LOYALTY_USE_SETTLEMENT_BALANCE, LOYALTY_SETTLEMENT_CHECKOUT_ENABLED
 
 from .money import quantize_money
+from src.integrations.moysklad.settlement_checkout import display_spent_rubles
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True, slots=True)
 class MoySkladBonusWallet:
     is_loaded: bool = False
+    is_settlement: bool = False
     counterparty_id: UUID | None = None
     program_id: UUID | None = None
     program_name: str | None = None
@@ -30,7 +32,7 @@ class MoySkladBonusWallet:
     def is_available(self) -> bool:
         return (
             self.counterparty_id is not None
-            and self.program_id is not None
+            and (self.program_id is not None or self.is_settlement)
             and self.balance_points > 0
             and self.balance_rubles > Decimal("0.00")
             and self.max_paid_rate_percent > Decimal("0.00")
@@ -103,13 +105,19 @@ async def get_user_moysklad_bonus_wallet(
     *,
     moysklad_client: MoySkladClient | None = None,
 ) -> MoySkladBonusWallet:
-    if LOYALTY_USE_SETTLEMENT_BALANCE:
-        return MoySkladBonusWallet()
     client = moysklad_client or get_moysklad_client()
     if user.moysklad_counterparty_id is None or not client.is_configured():
         return MoySkladBonusWallet()
 
     try:
+        if LOYALTY_USE_SETTLEMENT_BALANCE:
+            if not LOYALTY_SETTLEMENT_CHECKOUT_ENABLED:
+                return MoySkladBonusWallet()
+            from .settlement import get_account_settlement
+            value = await get_account_settlement(user.moysklad_counterparty_id, client=client)
+            if value.status != "fresh":
+                return MoySkladBonusWallet()
+            return _settlement_wallet(user.moysklad_counterparty_id, value)
         return await get_moysklad_bonus_wallet(
             user.moysklad_counterparty_id,
             moysklad_client=client,
@@ -121,6 +129,30 @@ async def get_user_moysklad_bonus_wallet(
             user.moysklad_counterparty_id,
         )
         return MoySkladBonusWallet()
+
+
+async def get_moysklad_settlement_wallet(counterparty_id: UUID, *, moysklad_client=None) -> MoySkladBonusWallet:
+    from .settlement import parse_settlement
+
+    client = moysklad_client or get_moysklad_client()
+    http = await client.client()
+    card = await http.get(f"/entity/counterparty/{counterparty_id}", timeout=10)
+    card.raise_for_status()
+    counterparty = card.json()
+    if counterparty.get("archived") or counterparty.get("deleted"):
+        raise ValueError("Settlement counterparty is archived")
+    report = await http.get(f"/report/counterparty/{counterparty_id}", timeout=10)
+    report.raise_for_status()
+    value = parse_settlement(counterparty, report.json(), expected_id=counterparty_id, now=0)
+    return _settlement_wallet(counterparty_id, value)
+
+
+def _settlement_wallet(counterparty_id, value):
+    available = max(Decimal("0.00"), value.balance_rubles)
+    return MoySkladBonusWallet(is_loaded=True, is_settlement=True,
+        counterparty_id=counterparty_id, program_name="Баланс МойСклад",
+        balance_points=display_spent_rubles(available), balance_rubles=available,
+        max_paid_rate_percent=Decimal("100"), sales_amount_rubles=value.total_purchases_rubles)
 
 
 async def get_moysklad_bonus_wallet(
@@ -159,6 +191,10 @@ def bonus_spend_for_subtotal(
     normalized_subtotal = quantize_money(subtotal) or Decimal("0.00")
     if not wallet.is_available or normalized_subtotal <= Decimal("0.00"):
         return 0, Decimal("0.00")
+
+    if wallet.is_settlement:
+        amount = min(normalized_subtotal, wallet.balance_rubles)
+        return display_spent_rubles(amount), amount
 
     maximum_rubles = quantize_money(
         normalized_subtotal * wallet.max_paid_rate_percent / Decimal("100")

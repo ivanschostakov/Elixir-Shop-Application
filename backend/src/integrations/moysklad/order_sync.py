@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from copy import deepcopy
 from decimal import Decimal
 import logging
 import re
@@ -30,7 +31,8 @@ from .idempotency import (
     build_sync_id,
 )
 from .rows import synthetic_variant_id
-from .schemas import MoySkladOrderSyncResult
+from .schemas import MoySkladOrderSyncResult, MoySkladCounterpartySyncResult
+from .settlement_checkout import order_settlement, money as settlement_money, entity_id
 
 log = logging.getLogger(__name__)
 MOY_SKLAD_REQUIRED_STORE_NAME = "Основной склад"
@@ -162,7 +164,9 @@ def _build_customerorder_positions(*, moysklad_client: MoySkladClient, assortmen
     if missing_variant_ids: return positions, missing_variant_ids
     line_amounts = [moysklad_money(Decimal(item.line_total)) for item in order.items]
     subtotal = sum(line_amounts)
-    target = moysklad_money(Decimal(order.grand_total) - Decimal(order.delivery_total))
+    settlement = order_settlement(order)
+    gross = settlement_money(settlement["gross_rubles"]) if settlement else Decimal(order.grand_total)
+    target = moysklad_money(gross - Decimal(order.delivery_total))
     if subtotal != moysklad_money(Decimal(order.basket_subtotal)) or not 0 <= target <= subtotal:
         raise ValueError("Order totals are inconsistent; MoySklad sync requires manual review")
     if not subtotal: allocated = [0] * len(line_amounts)
@@ -195,7 +199,16 @@ def _build_order_description(order: Order) -> str:
     subtotal = Decimal(order.basket_subtotal)
     delivery = Decimal(order.delivery_total)
     total = Decimal(order.grand_total)
-    lines = [order.order_code, f"Товары до скидок: {subtotal:.2f}", f"Скидки и бонусы: {subtotal + delivery - total:.2f}", f"Товары после скидок: {total - delivery:.2f}", f"Доставка (отдельное поле): {delivery:.2f}", f"Итого к оплате в приложении: {total:.2f}"]
+    settlement = order_settlement(order)
+    if settlement:
+        gross = settlement_money(settlement["gross_rubles"])
+        lines = [order.order_code, f"Товары до скидок: {subtotal:.2f}",
+            f"Скидка на товары: {subtotal + delivery - gross:.2f}",
+            f"Стоимость заказа с доставкой: {gross:.2f}", f"Доставка: {delivery:.2f}",
+            "Клиент выбрал оплату с баланса. Точная сумма к оплате определяется связанным счётом МойСклад.",
+            "Не создавать повторное списание или дополнительный входящий платёж на сумму баланса."]
+    else:
+        lines = [order.order_code, f"Товары до скидок: {subtotal:.2f}", f"Скидки и бонусы: {subtotal + delivery - total:.2f}", f"Товары после скидок: {total - delivery:.2f}", f"Доставка (отдельное поле): {delivery:.2f}", f"Итого к оплате в приложении: {total:.2f}"]
     for item in order.items:
         lines.append(f"{item.product_name}: {item.quantity} x {Decimal(item.unit_price):.2f} (до скидок)")
     benefits = extract_dict(extract_dict(order.checkout_snapshot).get("benefits"))
@@ -203,6 +216,8 @@ def _build_order_description(order: Order) -> str:
         application = extract_dict(application)
         amount = _decimal_or_zero(application.get("discount_amount"))
         if amount <= 0: continue
+        if application.get("source_kind") == "moysklad_settlement":
+            continue
         label = "Бонусы" if application.get("source_kind") == "moysklad_bonus" else f"Промокод {application.get('code') or ''}".strip()
         lines.append(f"{label}: -{amount:.2f}")
     if comment: lines.append(comment)
@@ -471,7 +486,10 @@ async def sync_moysklad_invoiceout_state(order: Order, *, state_name: str) -> bo
     moysklad_client = get_moysklad_client()
     if not moysklad_client.is_configured(): return False
     try:
-        invoiceout = await moysklad_client.find_invoiceout_by_external_code(_invoiceout_external_code(int(order_id)))
+        invoiceout = (await moysklad_client.get_invoiceout(order.moysklad_invoiceout_id)
+            if order.moysklad_invoiceout_id else None)
+        if invoiceout is None:
+            invoiceout = await moysklad_client.find_invoiceout_by_external_code(_invoiceout_external_code(int(order_id)))
         if invoiceout is None:
             log.warning("Skipping MoySklad invoiceout state sync because invoiceout not found order_id=%s state_name=%s", order_id, normalized_state_name)
             return False
@@ -509,15 +527,29 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     user_id = int(user.__dict__.get("id") or user.id)
     counterparty_external_code = build_counterparty_external_code(user_id=user_id)
     counterparty_sync_id = build_sync_id(scope="counterparty", key=counterparty_external_code)
-    counterparty_result = await moysklad_client.resolve_or_sync_counterparty(
-        existing_counterparty_id=user.moysklad_counterparty_id,
-        external_code=counterparty_external_code,
-        sync_id=counterparty_sync_id,
-        name=_full_name(user, order),
-        email=_counterparty_email(user, order),
-        phone=_counterparty_phone(user, order),
-        actual_address=_counterparty_address(order),
-    )
+    settlement = order_settlement(order)
+    if settlement:
+        expected_id = coerce_uuid(settlement.get("counterparty_id"))
+        if expected_id is None or user.moysklad_counterparty_id != expected_id:
+            raise ValueError("Settlement counterparty changed; refuse to relink funds")
+        counterparty = await moysklad_client.get_counterparty(expected_id)
+        if not counterparty or counterparty.get("archived") or entity_id(counterparty) != expected_id:
+            raise ValueError("Settlement counterparty is unavailable")
+        counterparty_result = MoySkladCounterpartySyncResult(expected_id, counterparty_external_code)
+        snapshot = deepcopy(order.checkout_snapshot)
+        snapshot["settlement_payment"]["organization_id"] = str(organization_id)
+        order.checkout_snapshot = snapshot
+        await session.commit()
+    else:
+        counterparty_result = await moysklad_client.resolve_or_sync_counterparty(
+            existing_counterparty_id=user.moysklad_counterparty_id,
+            external_code=counterparty_external_code,
+            sync_id=counterparty_sync_id,
+            name=_full_name(user, order),
+            email=_counterparty_email(user, order),
+            phone=_counterparty_phone(user, order),
+            actual_address=_counterparty_address(order),
+        )
 
     if user.moysklad_counterparty_id != counterparty_result.counterparty_id:
         user.moysklad_counterparty_id = counterparty_result.counterparty_id
@@ -549,6 +581,14 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         counterparty=counterparty_result,
     )
 
+    if settlement and Decimal(order.delivery_total) > 0:
+        delivery_services = await moysklad_client.get_all("/entity/service", filter="name=Доставка заказа;archived=false")
+        if len(delivery_services) != 1 or entity_id(delivery_services[0]) is None:
+            raise ValueError("A unique delivery service is required for settlement checkout")
+        positions.append(moysklad_client.build_customerorder_position(
+            assortment_entity_type="service", assortment_id=entity_id(delivery_services[0]),
+            quantity=1, unit_price=Decimal(order.delivery_total), discount=Decimal("0")))
+
     customerorder_external_code = build_customerorder_external_code(order_id=order.id)
     customerorder_sync_id = build_sync_id(scope="customerorder", key=customerorder_external_code)
     refs = await _resolve_customerorder_refs(moysklad_client, order)
@@ -577,7 +617,7 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         await session.flush()
         await session.commit()
     invoiceout_result = None
-    if _is_intellectmoney_payment(order):
+    if _is_intellectmoney_payment(order) and not settlement:
         await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
         await session.refresh(order, attribute_names=["moysklad_invoiceout_id"])
         order_id = int(order.__dict__.get("id") or order.id)

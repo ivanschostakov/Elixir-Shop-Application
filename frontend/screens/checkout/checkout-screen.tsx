@@ -360,7 +360,9 @@ export default function CheckoutScreen() {
     const grandTotal = orderDraft
         ? formatMoney(
             benefitCheck
-                ? Number(benefitCheck.total_after_discounts) + Number(orderDraft.delivery_total)
+                ? (benefitCheck.cash_total != null
+                    ? Number(benefitCheck.cash_total)
+                    : Number(benefitCheck.total_after_discounts) + Number(orderDraft.delivery_total))
                 : Number(orderDraft.grand_total),
             orderDraft.currency,
         )
@@ -1249,7 +1251,8 @@ export default function CheckoutScreen() {
                                         <View style={checkoutScreenStyles.detailsSheetDivider} />
                                         <View style={checkoutScreenStyles.detailsSheetRow}>
                                             <Text numberOfLines={2} style={checkoutScreenStyles.detailsSheetLabel}>
-                                                {t("checkout.bonusRublesTitle")}
+                                                {benefitCheck?.bonus_option?.source_kind === "moysklad_settlement"
+                                                    ? t("checkout.settlementBalanceTitle") : t("checkout.bonusRublesTitle")}
                                             </Text>
                                             <View style={checkoutScreenStyles.bonusToggleCopy}>
                                                 <Text style={checkoutScreenStyles.bonusToggleValue}>
@@ -1265,7 +1268,8 @@ export default function CheckoutScreen() {
                                                 </Text>
                                             </View>
                                             <Switch
-                                                accessibilityLabel={t("checkout.bonusRublesTitle")}
+                                                accessibilityLabel={benefitCheck?.bonus_option?.source_kind === "moysklad_settlement"
+                                                    ? t("checkout.settlementBalanceTitle") : t("checkout.bonusRublesTitle")}
                                                 disabled={!benefitCheck?.bonus_option?.is_applicable}
                                                 onValueChange={setUseBonusRubles}
                                                 trackColor={{ false: palette.border, true: palette.primaryMuted }}

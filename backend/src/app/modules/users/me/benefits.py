@@ -20,6 +20,7 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
     discountable_subtotal = payload.discountable_subtotal
     currency = payload.currency
     quote_items = None
+    delivery_total = None
 
     if payload.draft_id is not None:
         draft = await get_order_draft_by_id(db, payload.draft_id, user_id=current_user.id)
@@ -40,6 +41,7 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
             ((item.product_id, item.line_total) for item in draft.items),
         )
         currency = draft.currency
+        delivery_total = draft.delivery_total
         quote_items = await build_bitrix_delivery_items(db, draft.items)
 
     resolved = await resolve_benefits_for_user(
@@ -48,6 +50,7 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
         entered_code=payload.code,
         subtotal=subtotal,
         discountable_subtotal=discountable_subtotal,
+        delivery_total=delivery_total,
         currency=currency,
         quote_items=quote_items,
         use_bonus_rubles=payload.use_bonus_rubles,

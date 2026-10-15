@@ -34,6 +34,7 @@ from src.normalize import optional_str
 from .common import _delivery_string, _normalize_phone, _require_recipient_phone
 from .crm import ensure_order_has_amocrm_lead
 from .fulfillment_payloads import normalize_address_for_cf
+from .settlement_payment import serialized_settlement_checkout
 
 ORDER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 amocrm_client = get_amocrm_client()
@@ -193,12 +194,15 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
         "basket_subtotal": _json_money(resolved_benefits.get("basket_subtotal")),
         "stacked_discount_amount": _json_money(resolved_benefits.get("stacked_discount_amount")),
         "total_after_discounts": _json_money(resolved_benefits.get("total_after_discounts")),
+        "cash_total": _json_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None else None,
         "use_bonus_rubles": bool(resolved_benefits.get("use_bonus_rubles")),
         "bonus_applied_points": int(resolved_benefits.get("bonus_applied_points") or 0),
         "bonus_applied_rubles": _json_money(resolved_benefits.get("bonus_applied_rubles")),
         "cashback_percent": str(resolved_benefits.get("cashback_percent") or 0),
         "cashback_earned_points": int(resolved_benefits.get("cashback_earned_points") or 0),
         "cashback_expires_in_days": int(resolved_benefits.get("cashback_expires_in_days") or 0),
+        "settlement_counterparty_id": resolved_benefits.get("settlement_counterparty_id"),
+        "settlement_balance_rubles": str(resolved_benefits.get("settlement_balance_rubles") or 0),
         "applications": [
             {
                 "source_kind": option.get("source_kind"),
@@ -233,7 +237,7 @@ def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected
     if draft.recipient is None:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Recipient is required")
     items = [_checkout_snapshot_item(item) for item in draft.items]
-    return {
+    snapshot = {
         "source": "shop_application",
         "client_platform": client_platform if client_platform in {"ios", "android", "web"} else "unknown",
         "payment_method": payment_method,
@@ -250,6 +254,18 @@ def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected
         "commentary": draft.comment or "Не указан",
         "order_date": datetime.now(timezone.utc).isoformat(),
     }
+    benefits = snapshot["benefits"]
+    if benefits.get("settlement_counterparty_id") and benefits.get("use_bonus_rubles"):
+        snapshot["settlement_payment"] = {
+            "version": 1, "status": "awaiting_invoice",
+            "counterparty_id": benefits["settlement_counterparty_id"],
+            "maximum_balance_rubles": benefits["settlement_balance_rubles"],
+            "gross_rubles": str(quantize_money(
+                (Decimal(str(benefits["cash_total"])) if benefits.get("cash_total") is not None
+                 else Decimal(str(benefits["total_after_discounts"])) + draft.delivery_total)
+                + Decimal(str(benefits["bonus_applied_rubles"])))),
+        }
+    return snapshot
 
 
 async def _persist_order_benefit_applications(session: AsyncSession, *, order: Order, user: User, resolved_benefits: dict[str, Any]) -> None:
@@ -289,7 +305,7 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
                 discount_amount=option.get("applied_discount_amount"),
                 benefit_units=option.get("benefit_units"),
                 currency=option.get("currency") or resolved_benefits.get("currency") or order.currency,
-                status="applied",
+                status="pending" if source_kind == "moysklad_settlement" else "applied",
                 applied_at=now,
                 calculation_snapshot=snapshot,
                 **kwargs,
@@ -307,6 +323,7 @@ async def _resolve_checkout_benefits(
     user: User,
     subtotal: Decimal,
     discountable_subtotal: Decimal,
+    delivery_total: Decimal,
     currency: str,
     entered_code: str | None,
     quote_items: list[dict[str, Any]],
@@ -319,11 +336,14 @@ async def _resolve_checkout_benefits(
         entered_code=entered_code,
         subtotal=subtotal,
         discountable_subtotal=discountable_subtotal,
+        delivery_total=delivery_total,
         currency=currency,
         quote_items=quote_items,
         use_bonus_rubles=use_bonus_rubles,
         reward_mode=reward_mode,
     )
+    if use_bonus_rubles and not (resolved.get("bonus_option") or {}).get("is_applicable"):
+        raise HTTPException(409, "Баланс недоступен или изменился. Обновите оформление заказа.")
     return resolved
 
 
@@ -399,6 +419,7 @@ def _build_order_item_from_basket_row(*, user_id: int, order_id: int, row: tuple
     )
 
 
+@serialized_settlement_checkout
 async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
@@ -463,6 +484,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
         user=user,
         subtotal=draft.basket_subtotal,
         discountable_subtotal=discountable_subtotal,
+        delivery_total=draft.delivery_total,
         currency=draft.currency,
         entered_code=entered_code,
         quote_items=[
@@ -477,7 +499,8 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
         use_bonus_rubles=use_bonus_rubles,
         reward_mode=reward_mode,
     )
-    grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total
+    grand_total = (quantize_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None
+        else (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total)
     checkout_snapshot = _build_checkout_snapshot(
         draft,
         client_platform=client_platform,
@@ -532,6 +555,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     return reloaded_order
 
 
+@serialized_settlement_checkout
 async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     basket = await get_basket_by_user_id(session, user_id)
@@ -615,6 +639,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
         user=user,
         subtotal=basket_subtotal,
         discountable_subtotal=discountable_subtotal,
+        delivery_total=basket.delivery_total,
         currency=basket.currency,
         entered_code=entered_code,
         quote_items=[
@@ -629,7 +654,8 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
         use_bonus_rubles=use_bonus_rubles,
         reward_mode=reward_mode,
     )
-    grand_total = (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total
+    grand_total = (quantize_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None
+        else (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total)
     checkout_snapshot = _build_checkout_snapshot(
         checkout_source,
         client_platform=client_platform,
