@@ -1,67 +1,75 @@
-# Elixir Peptide App
+# Elixir Peptide Mobile Application
 
-This project uses Expo, React Native, Expo Router, and TypeScript.
+Customer application for the [Elixir commerce platform](../README.md), built with Expo, React Native, Expo Router, and TypeScript. The Android application is available on [Google Play](https://play.google.com/store/apps/details?id=com.elixirpeptide.elixirpeptide).
 
-The current setup is intentionally small:
+The application includes product browsing, search, favorites, basket and checkout, delivery and payment screens, customer profiles, and AI chat. API access and available features depend on backend configuration and the signed-in account.
 
-- one root layout in `app/_layout.tsx`
-- one home screen in `app/index.tsx`
-- shared code that can target web and iOS from the same codebase
+## Source Map
 
-## Start the project
+- `app/`: Expo Router screens and layouts, including guest and authenticated routes.
+- `components/`: reusable interface components.
+- `hooks/`: application state and feature-specific behavior.
+- `tests/`: JavaScript regression checks.
+- `scripts/`: Expo CLI wrapper and native map compatibility patches.
+
+## Local Development
+
+Use Node.js 20 through 24, as specified in `package.json`.
 
 ```bash
-npm install
-npm run ios
-# or
-npm run android
+npm ci
+cp .env.example .env.local
+```
 
+Configure the API connection in `.env.local` for the backend you are authorized to use. Native builds require the corresponding Android or iOS development tools.
+
+Build and start a native development client:
+
+```bash
+npm run android
+# Or, on macOS with the iOS toolchain:
+npm run ios
+```
+
+For subsequent sessions:
+
+```bash
 npm run start
 ```
 
-`npm run start` now launches Metro for an Expo development build instead of Expo Go. Build the native client once with `npm run ios` or `npm run android`, then keep using `npm run start` while you work.
+The start command targets an Expo development client. The native map and integrity integrations require a native build. The install hook applies versioned map compatibility patches, so keep the patch files under `scripts/`.
 
-Useful commands:
+Web development is also available:
 
 ```bash
-npm run start
-npm run android
 npm run web
-npm run ios
-npm run prebuild:clean
-npm run lint
 ```
 
-If you add a library with native code or change app config, run `npm run prebuild:clean` and rebuild the dev client so the native projects stay in sync.
+Web support does not imply that every native integration behaves identically in a browser.
 
-## Store Builds
+## Checks
 
-Android testing build:
+```bash
+npm run lint
+npm run typecheck
+npm run test:regressions
+```
+
+For a web production export:
+
+```bash
+npm run web:export
+```
+
+## Native Configuration and Store Builds
+
+After changing native dependencies or app configuration, review and commit any intended native configuration changes before running `npm run prebuild:clean`. That command regenerates native projects and should not be treated as a routine cleanup command.
+
+Build profiles are defined in `eas.json`. With the appropriate Expo account and signing access:
 
 ```bash
 eas build --platform android --profile testing
-```
-
-iOS TestFlight build:
-
-```bash
 eas build --platform ios --profile testflight
 ```
 
-iOS TestFlight submit:
-
-```bash
-eas submit --platform ios --profile testflight
-```
-
-## Why this structure
-
-The default Expo tutorial screens were removed so the app starts from a cleaner base. This makes it
-easier to learn React Native step by step without carrying demo code you do not plan to ship.
-
-## Suggested roadmap
-
-1. Build the first real screen flow for web and iOS.
-2. Extract shared UI pieces only when they repeat.
-3. Add backend or API integration after the first screens are clear.
-4. Add Android once the product direction is validated.
+Use the [repository documentation](../README.md) for backend and administration setup. Store publishing requires the existing release process and signing credentials.
