@@ -4,6 +4,16 @@ Production-oriented commerce platform spanning a React Native customer applicati
 
 [View the Android application on Google Play](https://play.google.com/store/apps/details?id=com.elixirpeptide.elixirpeptide)
 
+## Repository Guide
+
+- [Mobile application](frontend/README.md): development setup, native builds, and frontend checks.
+- [Admin web](docs/admin-web.md): staff workflows and operational configuration.
+- [Backend](backend/src/app/): FastAPI application and business services.
+- [Background workers](backend/src/workers/): integration and operational jobs.
+- [Release consistency](docs/backend-release-consistency.md): backend deployment checks.
+
+Related repositories: [Shop Webapp](https://github.com/ivanschostakov/Elixir-Shop-Webapp) and [AI Bot Suite](https://github.com/ivanschostakov/Elixir-AI-Bot). The Telegram integration overlay is a coordinated integration package; consult its [deployment notes](integrations/telegram-ai-bot/README.md) before changing or applying it.
+
 ## Product Surfaces
 
 - **Mobile application:** catalog, search, favorites, cart, checkout, delivery, payments, customer profile, notifications, and community features.
@@ -34,7 +44,9 @@ React Native / Expo app        React admin web
 
 Copy the relevant environment templates before starting any service. Never place production credentials in committed files.
 
-### Full stack with Docker
+### Existing Docker deployment configuration
+
+The root Compose file expects an externally configured PostgreSQL host and local credential mounts. It is a deployment configuration, not a self-contained local environment. Review `docker-compose.yml` and provide the required infrastructure and files before running it.
 
 ```bash
 cp backend/.env.example backend/.env
@@ -72,11 +84,17 @@ npm run dev
 
 ## Verification
 
+Install backend development dependencies before running its tests:
+
 ```bash
-cd backend && pytest -q
+cd backend
+pip install -r requirements-dev.txt
+pytest -q
 cd ../admin-web && npm test && npm run typecheck
-cd ../frontend && npm run lint && npm run typecheck
+cd ../frontend && npm run lint && npm run typecheck && npm run test:regressions
 ```
+
+Examples of backend coverage: [order amount integrity](backend/tests/test_order_amount_integrity.py), [loyalty synchronization resilience](backend/tests/test_loyalty_sync_resilience.py), and [application integrity](backend/tests/test_app_integrity_service.py). Test results depend on the environment and test run.
 
 ## Repository Hygiene
 
