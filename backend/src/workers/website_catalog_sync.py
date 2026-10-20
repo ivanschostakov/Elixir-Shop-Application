@@ -22,22 +22,15 @@ async def _run_once() -> None:
     if not website_catalog_sync_configured():
         log.warning("Website catalog sync is disabled because endpoint or shared secret is missing")
         return
+    
     async with SessionLocal() as db:
-        run = IntegrationRun(
-            provider="website_catalog",
-            operation="product_content_sync",
-            status="running",
-            attempts=1,
-            max_attempts=1,
-            input_json={},
-            counters_json={},
-        )
+        run = IntegrationRun( provider="website_catalog", operation="product_content_sync", status="running", attempts=1, max_attempts=1, input_json={}, counters_json={})
         db.add(run)
         await db.commit()
         run_id = run.id
+    
     try:
-        async with SessionLocal() as db:
-            stats = await sync_catalog_content_with_website(db)
+        async with SessionLocal() as db: stats = await sync_catalog_content_with_website(db)
         async with SessionLocal() as db:
             run = await db.get(IntegrationRun, run_id)
             if run is not None:
@@ -45,7 +38,9 @@ async def _run_once() -> None:
                 run.counters_json = stats.as_dict()
                 run.finished_at = datetime.now(timezone.utc)
                 await db.commit()
+        
         log.info("Website catalog sync tick completed: %s", stats.as_dict())
+    
     except Exception as error:
         async with SessionLocal() as db:
             run = await db.get(IntegrationRun, run_id)
@@ -61,8 +56,7 @@ async def run_forever() -> None:
     stop_event = asyncio.Event()
     cache = get_cache_service()
     await cache.connect()
-    if cache.client is None:
-        raise RuntimeError("Redis is required for the website catalog sync worker")
+    if cache.client is None: raise RuntimeError("Redis is required for the website catalog sync worker")
     interval_seconds = max(int(WEBSITE_CATALOG_SYNC_INTERVAL_MINUTES), 1) * 60
     loop = asyncio.get_running_loop()
     for signal_name in ("SIGINT", "SIGTERM"):
@@ -71,16 +65,12 @@ async def run_forever() -> None:
 
     try:
         while not stop_event.is_set():
-            try:
-                await _run_once()
-            except Exception:
-                log.exception("Website catalog sync tick failed")
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-            except TimeoutError:
-                continue
-    finally:
-        await cache.close()
+            try: await _run_once()
+            except Exception: log.exception("Website catalog sync tick failed")
+            try: await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+            except TimeoutError: continue
+            
+    finally: await cache.close()
 
 
 if __name__ == "__main__":

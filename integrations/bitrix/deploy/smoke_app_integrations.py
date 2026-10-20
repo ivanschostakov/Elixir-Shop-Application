@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from src.app.modules.auth.schemas.login import UserLoginPayload
-from src.app.services.auth.service import _get_email_login_user
+from src.app.services.auth.service import _get_login_user
 from src.database import SessionLocal
 from src.database.models import Product, Variant
 from src.integrations.bitrix_promo import BitrixPromoClient
@@ -67,7 +67,7 @@ async def main() -> None:
         if matched_quote is None:
             raise RuntimeError("No real active product accepted the smoke promo")
 
-        local_user = await _get_email_login_user(
+        local_user = await _get_login_user(
             UserLoginPayload(login=email, password=password),
             db,
         )

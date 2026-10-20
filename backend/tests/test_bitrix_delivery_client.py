@@ -55,7 +55,7 @@ def test_quote_is_signed_and_returns_bitrix_result(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_delivery.httpx.AsyncClient",
+        "src.integrations.bitrix_delivery.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixDeliveryClient(endpoint="https://example.test/quote.php", secret=SECRET)
@@ -95,7 +95,7 @@ def test_error_preserves_bilingual_messages(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_delivery.httpx.AsyncClient",
+        "src.integrations.bitrix_delivery.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixDeliveryClient(endpoint="https://example.test/quote.php", secret=SECRET)
@@ -107,7 +107,7 @@ def test_error_preserves_bilingual_messages(monkeypatch):
 
 
 def test_empty_configuration_is_rejected(monkeypatch):
-    monkeypatch.setattr("src.integrations.bitrix_delivery.BITRIX_DELIVERY_ENDPOINT", None)
-    monkeypatch.setattr("src.integrations.bitrix_delivery.BITRIX_DELIVERY_SECRET", None)
+    monkeypatch.setattr("src.integrations.bitrix_delivery.client.BITRIX_DELIVERY_ENDPOINT", None)
+    monkeypatch.setattr("src.integrations.bitrix_delivery.client.BITRIX_DELIVERY_SECRET", None)
     with pytest.raises(RuntimeError, match="not configured"):
         BitrixDeliveryClient()

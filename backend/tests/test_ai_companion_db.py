@@ -497,7 +497,9 @@ def test_account_deletion_queues_companion_erasure(monkeypatch):
     from starlette.requests import Request
     from src.app.services.auth import service as auth
     monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
-    monkeypatch.setattr(auth, "_apply_auth_rate_limit", AsyncMock())
+    _patched_value_500 = AsyncMock()
+    for target in ('src.app.services.auth.service.email._apply_auth_rate_limit', 'src.app.services.auth.service.phone._apply_auth_rate_limit', 'src.app.services.auth.service.rate_limits._apply_auth_rate_limit', 'src.app.services.auth.service.sessions._apply_auth_rate_limit', 'src.app.services.auth.service.telegram._apply_auth_rate_limit',):
+        monkeypatch.setattr(target, _patched_value_500)
     monkeypatch.setattr(auth, "revoke_active_user_sessions", AsyncMock())
     async def run():
         async with database() as (db, user):

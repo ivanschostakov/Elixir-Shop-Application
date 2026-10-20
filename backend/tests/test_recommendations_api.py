@@ -388,7 +388,9 @@ def stub_amocrm(monkeypatch):
 
     stub_client = StubAmoCrmClient()
     monkeypatch.setattr("src.app.services.orders.get_amocrm_client", lambda: stub_client)
-    monkeypatch.setattr("src.app.services.orders.creation.amocrm_client", stub_client)
+    _patched_value_391 = stub_client
+    for target in ('src.app.services.orders.creation.common.amocrm_client', 'src.app.services.orders.creation.payloads.amocrm_client',):
+        monkeypatch.setattr(target, _patched_value_391)
     monkeypatch.setattr("src.app.services.orders.crm.amocrm_client", stub_client)
 
 

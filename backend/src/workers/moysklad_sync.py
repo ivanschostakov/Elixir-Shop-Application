@@ -28,18 +28,13 @@ async def run_forever() -> None:
             loop.add_signal_handler(getattr(signal, sig_name), lambda: asyncio.create_task(_shutdown()))
 
     while not stop_event.is_set():
-        try:
-            await _run_once()
-        except Exception:
-            log.exception("MoySklad sync tick failed")
+        try: await _run_once()
+        except Exception: log.exception("MoySklad sync tick failed")
 
-        if stop_event.is_set():
-            break
+        if stop_event.is_set(): break
 
-        try:
-            await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
-        except TimeoutError:
-            continue
+        try: await asyncio.wait_for(stop_event.wait(), timeout=interval_seconds)
+        except TimeoutError: continue
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from src.app.modules.products.helpers import (
 )
 from src.app.services import review_attachments
 from src.database.schemas import ReviewCreate
-from src.integrations.website_reviews import _push_payload
+from src.integrations.website_reviews.utils import _push_payload
 
 
 def _request() -> Request:

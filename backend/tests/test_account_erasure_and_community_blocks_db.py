@@ -97,8 +97,12 @@ def test_erasure_retains_submitted_order_but_not_saved_addresses_or_drafts():
 
 def test_blocks_hide_history_replies_previews_unread_and_linked_aliases(monkeypatch):
     async def allowed(*args, **kwargs): pass
-    monkeypatch.setattr(community, "require_community_access", allowed)
-    monkeypatch.setattr(community, "TELEGRAM_COMMUNITY_CHAT_ID", -100123)
+    _patched_value_100 = allowed
+    for target in ('src.app.services.community.access.require_community_access', 'src.app.services.community.messages.require_community_access', 'src.app.services.community.reading.require_community_access',):
+        monkeypatch.setattr(target, _patched_value_100)
+    _patched_value_101 = -100123
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.blocks.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.messages.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.reading.TELEGRAM_COMMUNITY_CHAT_ID',):
+        monkeypatch.setattr(target, _patched_value_101)
     request = Request({"type": "http", "method": "GET", "scheme": "https", "path": "/", "headers": [], "server": ("example.test", 443)})
     async def run():
         async with database() as (db, viewer):
@@ -183,8 +187,12 @@ def test_account_erasure_during_ordinary_ai_request_queues_late_provider_file(mo
 def test_deleted_community_content_cannot_return_from_telegram_edit(monkeypatch, tmp_path):
     import config
     monkeypatch.setattr(config, "COMMUNITY_MEDIA_DIR", tmp_path)
-    monkeypatch.setattr(community, "TELEGRAM_COMMUNITY_ENABLED", True)
-    monkeypatch.setattr(community, "TELEGRAM_COMMUNITY_CHAT_ID", -100123)
+    _patched_value_186 = True
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_ENABLED',):
+        monkeypatch.setattr(target, _patched_value_186)
+    _patched_value_187 = -100123
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.blocks.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.messages.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.reading.TELEGRAM_COMMUNITY_CHAT_ID',):
+        monkeypatch.setattr(target, _patched_value_187)
     async def run():
         async with database() as (db, user):
             topic = m.CommunityTopic(telegram_chat_id=-100123, telegram_thread_id=1, name="Topic")

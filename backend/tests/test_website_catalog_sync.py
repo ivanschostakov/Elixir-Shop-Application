@@ -2,21 +2,23 @@ import hashlib
 import hmac
 import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 from uuid import UUID
 
 import httpx
 import pytest
 
+from src.database.models import Product, ProductByCategory, ProductCategory, ProductCertificate
 from src.integrations.website_catalog import (
     WebsiteCatalogContent,
     WebsiteCatalogSyncClient,
     WebsiteCatalogSyncStats,
-    _apply_content,
-    _legacy_category_candidates,
-    _match_content_rows,
-    _parse_categories,
-    _parse_content_rows,
+    sync as catalog_sync,
+    sync_catalog_content_with_website,
 )
+from src.integrations.website_catalog.categories import _legacy_category_candidates
+from src.integrations.website_catalog.parsers import _parse_categories, _parse_content_rows
+from src.integrations.website_catalog.products import _apply_content, _match_content_rows
 from src.integrations import website_catalog_certificates as certificate_storage
 
 
@@ -401,3 +403,92 @@ def test_legacy_category_aliases_preserve_existing_icon_ids():
     assert _legacy_category_candidates("Антидепресанты") == (
         "антидепрессанты",
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("fail_download", [False, True])
+async def test_catalog_sync_updates_content_categories_and_certificates_atomically(tmp_path, monkeypatch, fail_download):
+    media_dir = tmp_path / "media"
+    certificates_dir = media_dir / "product-certificates"
+    monkeypatch.setattr(certificate_storage, "MEDIA_DIR", media_dir)
+    monkeypatch.setattr(certificate_storage, "PRODUCT_CERTIFICATES_MEDIA_DIR", certificates_dir)
+    monkeypatch.setattr(certificate_storage, "PUBLIC_API_BASE_URL", "https://api.example.test")
+    stale_file = certificates_dir / "42" / "7000.pdf"
+    stale_file.parent.mkdir(parents=True)
+    stale_file.write_bytes(b"old certificate")
+    old_certificate = ProductCertificate(product_id=42, website_file_id=7000, title="Old", url="https://api.example.test/media/product-certificates/42/7000.pdf?v=1")
+    system_id = UUID("7e2a5eeb-13e1-11f1-0a80-176100294e52")
+    product = Product(id=42, system_id=system_id, sku="SKU-42", description="Old", usage=None, expiration=None, certificates=[old_certificate])
+    category = ProductCategory(id=7, name="пептиды", archived=True)
+    obsolete_category = ProductCategory(id=8, name="Old category", archived=False)
+    obsolete_link = ProductByCategory(product_id=42, category_id=8)
+
+    def result(rows):
+        query_result = Mock()
+        query_result.scalars.return_value.all.return_value = rows
+        return query_result
+
+    async def commit():
+        assert stale_file.exists()
+
+    session = Mock(
+        execute=AsyncMock(side_effect=[result([product]), result([category, obsolete_category]), result([obsolete_link])]),
+        flush=AsyncMock(), commit=AsyncMock(side_effect=commit), rollback=AsyncMock(), delete=AsyncMock(),
+    )
+    cache = Mock(bump_namespace=AsyncMock())
+    monkeypatch.setattr(catalog_sync, "get_cache_service", lambda: cache)
+    content = b"%PDF-1.7 new certificate"
+
+    async def handle(request):
+        if request.method == "POST":
+            assert request.url == "https://catalog.example.test/sync"
+            return httpx.Response(200, json={
+                "ok": True,
+                "products": [{
+                    "system_id": str(system_id), "sku": "SKU-42", "description": "New description", "usage": None, "storage": "Keep cool",
+                    "certificates": [{"source_file_id": 7342, "title": "New", "original_name": "new.pdf", "content_type": "application/pdf", "size_bytes": len(content) + int(fail_download), "path": "/upload/new.pdf"}],
+                }],
+                "categories": [{"source_id": 149, "name": "Все пептиды", "product_system_ids": [str(system_id)]}],
+            })
+        assert request.url == "https://catalog.example.test/upload/new.pdf"
+        return httpx.Response(200, content=content, headers={"Content-Type": "application/pdf"})
+
+    client = WebsiteCatalogSyncClient(endpoint="https://catalog.example.test/sync", secret="catalog-secret-" * 4, transport=httpx.MockTransport(handle))
+    if fail_download:
+        with pytest.raises(RuntimeError, match="does not match"):
+            await sync_catalog_content_with_website(session, client=client)
+        session.rollback.assert_awaited_once()
+        session.commit.assert_not_awaited()
+        session.delete.assert_not_awaited()
+        cache.bump_namespace.assert_not_awaited()
+        assert stale_file.exists()
+        assert list(certificates_dir.rglob("*.*")) == [stale_file]
+        return
+
+    stats = await sync_catalog_content_with_website(session, client=client)
+
+    assert product.description == "New description"
+    assert product.expiration == "Keep cool"
+    assert category.id == 7
+    assert category.name == "Все пептиды"
+    assert category.website_category_id == 149
+    assert category.archived is False
+    assert obsolete_category.archived is True
+    assert stats.matched_by_system_id == stats.updated_products == 1
+    assert stats.certificates_created == stats.certificates_deleted == stats.certificates_downloaded == 1
+    assert stats.categories_matched == stats.categories_renamed == stats.categories_restored == stats.categories_archived == 1
+    assert stats.category_links_created == stats.category_links_deleted == stats.certificate_files_deleted == 1
+    assert stats.certificate_bytes_downloaded == len(content)
+    added = [call.args[0] for call in session.add.call_args_list]
+    certificate = next(obj for obj in added if isinstance(obj, ProductCertificate))
+    link = next(obj for obj in added if isinstance(obj, ProductByCategory))
+    assert certificate.website_file_id == 7342
+    assert certificate.url.startswith("https://api.example.test/media/product-certificates/42/7342.pdf?v=")
+    assert (link.product_id, link.category_id) == (42, 7)
+    assert (certificates_dir / "42" / "7342.pdf").read_bytes() == content
+    assert not stale_file.exists()
+    session.delete.assert_any_await(old_certificate)
+    session.delete.assert_any_await(obsolete_link)
+    session.commit.assert_awaited_once()
+    session.rollback.assert_not_awaited()
+    assert [call.args[0] for call in cache.bump_namespace.await_args_list] == ["catalog", "product", "categories"]

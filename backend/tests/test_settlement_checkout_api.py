@@ -62,8 +62,10 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         order.checkout_snapshot = snapshot
         order.moysklad_customerorder_id = OID
         await db.commit()
-    monkeypatch.setattr(creation, "sync_order_to_moysklad_safe", sync_mock)
-    monkeypatch.setattr(creation, "_enrich_selected_delivery_address_payload", AsyncMock())
+    _patched_value_65 = sync_mock
+    for target in ('src.app.services.orders.creation.basket.sync_order_to_moysklad_safe', 'src.app.services.orders.creation.draft.sync_order_to_moysklad_safe',):
+        monkeypatch.setattr(target, _patched_value_65)
+    monkeypatch.setattr('src.app.services.orders.creation.delivery._enrich_selected_delivery_address_payload', AsyncMock())
     gateway = AsyncMock(return_value={"Result": {"InvoiceId": "mock-invoice-1"}})
     state = {"Result": {"PaymentStep": "Created", "Form3DS": '{"SbpQrCodeUrl":"https://example.test/qr"}'}}
     monkeypatch.setattr("src.app.services.orders.intellectmoney.create_invoice", gateway)

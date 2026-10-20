@@ -19,9 +19,11 @@ def sync(monkeypatch):
     card = {"id": str(CID), "email": "customer@example.com", "phone": "+7 (999) 000-11-22"}
     monkeypatch.setattr(client, "get_counterparty_by_email", AsyncMock(return_value=card))
     monkeypatch.setattr(client, "get_counterparty", AsyncMock(return_value=card))
-    monkeypatch.setattr(service, "get_moysklad_client", lambda: client)
+    monkeypatch.setattr('src.app.services.auth.service.counterparty.get_moysklad_client', lambda: client)
     owner = AsyncMock(return_value=None)
-    monkeypatch.setattr(service, "get_user_by_phone_number", owner)
+    _patched_value_24 = owner
+    for target in ('src.app.services.auth.service.counterparty.get_user_by_phone_number', 'src.app.services.auth.service.phone.get_user_by_phone_number', 'src.app.services.auth.service.telegram.get_user_by_phone_number',):
+        monkeypatch.setattr(target, _patched_value_24)
     db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock(), rollback=AsyncMock())
     user = SimpleNamespace(id=48, email="customer@example.com", phone_number=None,
         moysklad_counterparty_id=None, telegram_phone_confirmed_at=None)

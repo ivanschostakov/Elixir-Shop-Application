@@ -57,9 +57,15 @@ def test_app_community_access_does_not_call_telegram(monkeypatch):
 
     fake_client = FakeTelegramClient()
     user = SimpleNamespace(telegram_user_id=None)
-    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_ENABLED", True)
-    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_CHAT_ID", -10099)
-    monkeypatch.setattr(community_service, "TELEGRAM_BOT_TOKEN", "test-token")
+    _patched_value_60 = True
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_ENABLED',):
+        monkeypatch.setattr(target, _patched_value_60)
+    _patched_value_61 = -10099
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.blocks.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.messages.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.reading.TELEGRAM_COMMUNITY_CHAT_ID',):
+        monkeypatch.setattr(target, _patched_value_61)
+    _patched_value_62 = "test-token"
+    for target in ('src.app.services.community.access.TELEGRAM_BOT_TOKEN', 'src.app.services.community.media.TELEGRAM_BOT_TOKEN',):
+        monkeypatch.setattr(target, _patched_value_62)
 
     first = asyncio.run(community_service._membership_access(user, telegram_client=fake_client))
     second = asyncio.run(community_service._membership_access(user, telegram_client=fake_client))
@@ -70,16 +76,24 @@ def test_app_community_access_does_not_call_telegram(monkeypatch):
 
 
 def test_app_community_access_only_requires_bridge_configuration(monkeypatch):
-    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_ENABLED", True)
-    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_CHAT_ID", -10099)
-    monkeypatch.setattr(community_service, "TELEGRAM_BOT_TOKEN", "test-token")
+    _patched_value_73 = True
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_ENABLED',):
+        monkeypatch.setattr(target, _patched_value_73)
+    _patched_value_74 = -10099
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.blocks.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.messages.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.reading.TELEGRAM_COMMUNITY_CHAT_ID',):
+        monkeypatch.setattr(target, _patched_value_74)
+    _patched_value_75 = "test-token"
+    for target in ('src.app.services.community.access.TELEGRAM_BOT_TOKEN', 'src.app.services.community.media.TELEGRAM_BOT_TOKEN',):
+        monkeypatch.setattr(target, _patched_value_75)
     assert asyncio.run(community_service._membership_access(SimpleNamespace(telegram_user_id=None))) == "granted"
-    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_ENABLED", False)
+    _patched_value_77 = False
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_ENABLED',):
+        monkeypatch.setattr(target, _patched_value_77)
     assert asyncio.run(community_service._membership_access(SimpleNamespace(telegram_user_id=None))) == "temporarily_unavailable"
 
 
 def test_media_signatures_are_user_scoped(monkeypatch):
-    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_MEDIA_SIGNING_SECRET", "test-secret")
+    monkeypatch.setattr('src.app.services.community.media.TELEGRAM_COMMUNITY_MEDIA_SIGNING_SECRET', "test-secret")
     expires = 4102444800
     signature = community_service._media_signature(media_type="attachment", media_id=8, user_id=12, expires=expires)
 
@@ -165,7 +179,9 @@ def test_outbound_worker_is_inert_when_feature_disabled(monkeypatch):
         async def execute(self, *_args, **_kwargs):
             raise AssertionError("disabled bridge queried the outbound queue")
 
-    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_ENABLED", False)
+    _patched_value_168 = False
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_ENABLED',):
+        monkeypatch.setattr(target, _patched_value_168)
 
     assert asyncio.run(community_service.relay_next_community_message(SessionThatMustNotBeUsed())) is False
 
@@ -175,7 +191,9 @@ def test_reaction_outbound_worker_is_inert_when_feature_disabled(monkeypatch):
         async def execute(self, *_args, **_kwargs):
             raise AssertionError("disabled bridge queried the reaction queue")
 
-    monkeypatch.setattr(community_service, "TELEGRAM_COMMUNITY_ENABLED", False)
+    _patched_value_178 = False
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_ENABLED', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_ENABLED',):
+        monkeypatch.setattr(target, _patched_value_178)
 
     assert asyncio.run(community_service.relay_next_community_reaction(SessionThatMustNotBeUsed())) is False
 
@@ -351,11 +369,7 @@ def test_telethon_topic_snapshot_parses_structural_metadata():
 
 
 def test_telethon_proxy_uses_existing_http_gateway(monkeypatch):
-    monkeypatch.setattr(
-        telegram_userbot,
-        "TELEGRAM_USERBOT_PROXY_URL",
-        "http://proxy-user:proxy-pass@172.18.0.1:3129",
-    )
+    monkeypatch.setattr('src.integrations.telegram.userbot.session.TELEGRAM_USERBOT_PROXY_URL', "http://proxy-user:proxy-pass@172.18.0.1:3129")
 
     assert telegram_userbot._telethon_proxy() == (
         "http",

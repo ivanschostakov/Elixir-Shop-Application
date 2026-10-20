@@ -40,8 +40,8 @@ def test_order_snapshot_freezes_validated_platform(platform):
 @pytest.mark.parametrize("platform,expected", [("ios", "iphone"), ("android", "android"), ("web", "telegram"), ("unknown", "legacy"), (None, "legacy")])
 def test_channels_use_snapshot_and_keep_legacy_fallback(monkeypatch, platform, expected):
     for name, value in [("IOS", "iphone"), ("ANDROID", "android"), ("TELEGRAM", "telegram")]:
-        monkeypatch.setattr(order_sync, f"MOY_SKLAD_{name}_SALES_CHANNEL_HREF", f"https://example.test/{value}")
-    monkeypatch.setattr(order_sync, "MOY_SKLAD_SALES_CHANNEL_HREF", "https://example.test/legacy")
+        monkeypatch.setattr(f"src.integrations.moysklad.order_sync.attributes.MOY_SKLAD_{name}_SALES_CHANNEL_HREF", f"https://example.test/{value}")
+    monkeypatch.setattr('src.integrations.moysklad.order_sync.attributes.MOY_SKLAD_SALES_CHANNEL_HREF', "https://example.test/legacy")
     client = SimpleNamespace(find_store_by_name=AsyncMock(return_value=None), find_customerorder_state_by_name=AsyncMock(return_value=None))
     value = asyncio.run(order_sync._resolve_customerorder_refs(client, SimpleNamespace(checkout_snapshot={"client_platform": platform})))
     assert value["sales_channel"]["meta"]["href"] == f"https://example.test/{expected}"
@@ -70,7 +70,7 @@ def test_phone_login_does_not_replace_an_existing_customer_link():
 def test_email_link_rejects_conflicting_phone_without_saving(monkeypatch):
     client = MoySkladClient(token="test")
     monkeypatch.setattr(client, "get_counterparty_by_email", AsyncMock(return_value={"id": str(CID), "phone": "+79990000001"}))
-    monkeypatch.setattr("src.app.services.auth.service.get_moysklad_client", lambda: client)
+    monkeypatch.setattr('src.app.services.auth.service.counterparty.get_moysklad_client', lambda: client)
     db = SimpleNamespace(commit=AsyncMock(), refresh=AsyncMock())
     user = SimpleNamespace(id=7, email="a@example.com", phone_number="+79990000000", moysklad_counterparty_id=None)
     asyncio.run(_link_moysklad_counterparty_by_email(user, db))

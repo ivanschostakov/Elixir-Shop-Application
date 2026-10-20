@@ -112,11 +112,17 @@ def test_activity_is_not_a_strength_workout_or_program():
 
 
 def test_finish_never_uses_chat_elapsed_time_as_duration(monkeypatch):
-    monkeypatch.setattr(m, "lock", AsyncMock())
+    _patched_value_115 = AsyncMock()
+    for target in ('src.app.modules.telegram_ai.mentor.courses.lock', 'src.app.modules.telegram_ai.mentor.helpers.lock', 'src.app.modules.telegram_ai.mentor.food.lock', 'src.app.modules.telegram_ai.mentor.nutrition.lock', 'src.app.modules.telegram_ai.mentor.records.lock', 'src.app.modules.telegram_ai.mentor.workouts.lock',):
+        monkeypatch.setattr(target, _patched_value_115)
     entry = SimpleNamespace(id=7, kind="workout", status="active", occurred_at=NOW-timedelta(seconds=54),
         data={"sets": [{"exercise": "Squat", "weight_kg": 40, "reps": 10}]})
-    monkeypatch.setattr(m, "owned", AsyncMock(return_value=entry))
-    monkeypatch.setattr(m, "now", lambda: NOW)
+    _patched_value_118 = AsyncMock(return_value=entry)
+    for target in ('src.app.modules.telegram_ai.mentor.courses.owned', 'src.app.modules.telegram_ai.mentor.helpers.owned', 'src.app.modules.telegram_ai.mentor.food.owned', 'src.app.modules.telegram_ai.mentor.records.owned', 'src.app.modules.telegram_ai.mentor.workouts.owned',):
+        monkeypatch.setattr(target, _patched_value_118)
+    _patched_value_119 = lambda: NOW
+    for target in ('src.app.modules.telegram_ai.mentor.courses.now', 'src.app.modules.telegram_ai.mentor.helpers.now', 'src.app.modules.telegram_ai.mentor.food.now', 'src.app.modules.telegram_ai.mentor.nutrition.now', 'src.app.modules.telegram_ai.mentor.records.now', 'src.app.modules.telegram_ai.mentor.workouts.now', 'src.app.modules.telegram_ai.mentor.workspace.now',):
+        monkeypatch.setattr(target, _patched_value_119)
     db = SimpleNamespace(commit=AsyncMock())
     with pytest.raises(HTTPException) as error:
         asyncio.run(m.workout_finish(m.WorkoutFinish(telegram_user_id=UID, entry_id=7), db))
@@ -157,11 +163,17 @@ def test_seven_and_thirty_day_reports_have_measured_averages_not_fabricated_days
 
 
 def test_stopping_course_keeps_past_unmarked_events_and_disables_delivery(monkeypatch):
-    monkeypatch.setattr(m, "lock", AsyncMock())
-    monkeypatch.setattr(m, "now", lambda: NOW)
+    _patched_value_160 = AsyncMock()
+    for target in ('src.app.modules.telegram_ai.mentor.courses.lock', 'src.app.modules.telegram_ai.mentor.helpers.lock', 'src.app.modules.telegram_ai.mentor.food.lock', 'src.app.modules.telegram_ai.mentor.nutrition.lock', 'src.app.modules.telegram_ai.mentor.records.lock', 'src.app.modules.telegram_ai.mentor.workouts.lock',):
+        monkeypatch.setattr(target, _patched_value_160)
+    _patched_value_161 = lambda: NOW
+    for target in ('src.app.modules.telegram_ai.mentor.courses.now', 'src.app.modules.telegram_ai.mentor.helpers.now', 'src.app.modules.telegram_ai.mentor.food.now', 'src.app.modules.telegram_ai.mentor.nutrition.now', 'src.app.modules.telegram_ai.mentor.records.now', 'src.app.modules.telegram_ai.mentor.workouts.now', 'src.app.modules.telegram_ai.mentor.workspace.now',):
+        monkeypatch.setattr(target, _patched_value_161)
     course_row = SimpleNamespace(id=5, kind="course", status="confirmed", occurred_at=NOW, data={})
     future = SimpleNamespace(id=7, status="pending", data={"course_id": 5})
-    monkeypatch.setattr(m, "owned", AsyncMock(return_value=course_row))
+    _patched_value_164 = AsyncMock(return_value=course_row)
+    for target in ('src.app.modules.telegram_ai.mentor.courses.owned', 'src.app.modules.telegram_ai.mentor.helpers.owned', 'src.app.modules.telegram_ai.mentor.food.owned', 'src.app.modules.telegram_ai.mentor.records.owned', 'src.app.modules.telegram_ai.mentor.workouts.owned',):
+        monkeypatch.setattr(target, _patched_value_164)
     db = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(scalars=lambda: [future])), commit=AsyncMock())
     asyncio.run(m.record_action(m.RecordAction(telegram_user_id=UID, entry_id=5, action="stop"), db))
     assert future.status == "cancelled" and course_row.status == "stopped"
@@ -211,9 +223,13 @@ def test_ack_requires_current_owned_lease_and_retry_is_not_sent(monkeypatch):
 
 
 def test_set_retry_is_idempotent_and_changed_payload_conflicts(monkeypatch):
-    monkeypatch.setattr(m, "lock", AsyncMock())
+    _patched_value_214 = AsyncMock()
+    for target in ('src.app.modules.telegram_ai.mentor.courses.lock', 'src.app.modules.telegram_ai.mentor.helpers.lock', 'src.app.modules.telegram_ai.mentor.food.lock', 'src.app.modules.telegram_ai.mentor.nutrition.lock', 'src.app.modules.telegram_ai.mentor.records.lock', 'src.app.modules.telegram_ai.mentor.workouts.lock',):
+        monkeypatch.setattr(target, _patched_value_214)
     entry = SimpleNamespace(id=7, kind="workout", status="active", occurred_at=NOW, data={"sets": [], "set_receipts": {}})
-    monkeypatch.setattr(m, "owned", AsyncMock(return_value=entry))
+    _patched_value_216 = AsyncMock(return_value=entry)
+    for target in ('src.app.modules.telegram_ai.mentor.courses.owned', 'src.app.modules.telegram_ai.mentor.helpers.owned', 'src.app.modules.telegram_ai.mentor.food.owned', 'src.app.modules.telegram_ai.mentor.records.owned', 'src.app.modules.telegram_ai.mentor.workouts.owned',):
+        monkeypatch.setattr(target, _patched_value_216)
     db = SimpleNamespace(commit=AsyncMock())
     payload = m.SetInput(telegram_user_id=UID, request_key="set-request-1", entry_id=7,
         exercise_set={"exercise": "Squat", "weight_kg": 40, "reps": 10})
@@ -264,7 +280,9 @@ def test_activity_draft_confirmation_and_ownership_in_real_database(monkeypatch)
     from test_ai_companion_db import database, URL
     if not URL:
         pytest.skip("An isolated PostgreSQL database is required")
-    monkeypatch.setattr(m, "now", lambda: NOW)
+    _patched_value_267 = lambda: NOW
+    for target in ('src.app.modules.telegram_ai.mentor.courses.now', 'src.app.modules.telegram_ai.mentor.helpers.now', 'src.app.modules.telegram_ai.mentor.food.now', 'src.app.modules.telegram_ai.mentor.nutrition.now', 'src.app.modules.telegram_ai.mentor.records.now', 'src.app.modules.telegram_ai.mentor.workouts.now', 'src.app.modules.telegram_ai.mentor.workspace.now',):
+        monkeypatch.setattr(target, _patched_value_267)
     async def run():
         async with database() as (db, user):
             result = await m.record_draft(m.RecordDraft(telegram_user_id=UID, request_key="activity-original",
@@ -291,7 +309,9 @@ def test_conversational_workout_replaces_owned_legacy_active_only_on_confirmatio
     from test_ai_companion_db import database, URL
     if not URL:
         pytest.skip("An isolated PostgreSQL database is required")
-    monkeypatch.setattr(m, "now", lambda: NOW)
+    _patched_value_294 = lambda: NOW
+    for target in ('src.app.modules.telegram_ai.mentor.courses.now', 'src.app.modules.telegram_ai.mentor.helpers.now', 'src.app.modules.telegram_ai.mentor.food.now', 'src.app.modules.telegram_ai.mentor.nutrition.now', 'src.app.modules.telegram_ai.mentor.records.now', 'src.app.modules.telegram_ai.mentor.workouts.now', 'src.app.modules.telegram_ai.mentor.workspace.now',):
+        monkeypatch.setattr(target, _patched_value_294)
     async def run():
         async with database() as (db, user):
             active = (await m.workout_start(m.WorkoutStart(telegram_user_id=UID, request_key="legacy-start"), db))["entry"]

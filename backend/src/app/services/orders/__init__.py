@@ -8,6 +8,7 @@ from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCo
 from src.integrations.amocrm import get_amocrm_client
 
 from . import creation as _order_creation
+from .creation import basket as _basket_creation, draft as _draft_creation, payloads as _creation_payloads
 from . import crm as _order_crm
 from . import payments as _order_payments
 from .common import _delivery_string, _normalize_phone
@@ -24,8 +25,9 @@ def _sync_runtime_dependencies() -> None:
     amocrm_client = get_amocrm_client()
     _order_crm.amocrm_client = amocrm_client
     _order_crm.create_delivery_for_order = create_delivery_for_order
-    _order_creation.amocrm_client = amocrm_client
-    _order_creation.ensure_order_has_amocrm_lead = ensure_order_has_amocrm_lead
+    _creation_payloads.amocrm_client = amocrm_client
+    _basket_creation.ensure_order_has_amocrm_lead = ensure_order_has_amocrm_lead
+    _draft_creation.ensure_order_has_amocrm_lead = ensure_order_has_amocrm_lead
     _order_payments.intellectmoney = intellectmoney
     _order_payments._resolve_payment_qr_image = _resolve_payment_qr_image
 

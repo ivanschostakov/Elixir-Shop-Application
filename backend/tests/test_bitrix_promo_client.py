@@ -23,7 +23,7 @@ def test_transport_errors_become_retryable_service_errors_without_retry(monkeypa
 
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -43,7 +43,7 @@ def test_invalid_responses_are_service_errors(monkeypatch, status, body):
 
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=httpx.MockTransport(handler), **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -64,7 +64,7 @@ def test_lookup_uses_server_token_and_returns_data(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
 
@@ -87,7 +87,7 @@ def test_error_preserves_russian_and_english_messages(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
 
@@ -117,7 +117,7 @@ def test_quote_supports_email_user_context(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -163,7 +163,7 @@ def test_user_promo_actions_include_customer_context(monkeypatch, method_name, e
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -188,7 +188,7 @@ def test_detach_referrer_includes_customer_context(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -216,7 +216,7 @@ def test_profile_uses_customer_context_without_a_promo(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -456,7 +456,7 @@ def test_paid_order_actions_send_idempotent_order_identity(
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -497,7 +497,7 @@ def test_referral_eligibility_uses_bitrix_user_identity(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -528,7 +528,7 @@ def test_paid_purchase_without_partner_promo_omits_promo_field(monkeypatch):
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -559,7 +559,7 @@ def test_paid_purchase_reversal_uses_only_idempotent_order_identity(monkeypatch)
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
     monkeypatch.setattr(
-        "src.integrations.bitrix_promo.httpx.AsyncClient",
+        "src.integrations.bitrix_promo.client.httpx.AsyncClient",
         lambda **kwargs: original_client(transport=transport, **kwargs),
     )
     client = BitrixPromoClient(endpoint="https://example.test/api.php", token=TOKEN)
@@ -572,7 +572,7 @@ def test_paid_purchase_reversal_uses_only_idempotent_order_identity(monkeypatch)
 
 
 def test_empty_configuration_is_rejected(monkeypatch):
-    monkeypatch.setattr("src.integrations.bitrix_promo.BITRIX_PROMO_ENDPOINT", None)
-    monkeypatch.setattr("src.integrations.bitrix_promo.BITRIX_PROMO_TOKEN", None)
+    monkeypatch.setattr("src.integrations.bitrix_promo.client.BITRIX_PROMO_ENDPOINT", None)
+    monkeypatch.setattr("src.integrations.bitrix_promo.client.BITRIX_PROMO_TOKEN", None)
     with pytest.raises(RuntimeError, match="not configured"):
         BitrixPromoClient()

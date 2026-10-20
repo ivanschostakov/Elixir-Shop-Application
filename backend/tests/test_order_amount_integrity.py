@@ -95,11 +95,13 @@ def test_phone_is_checked_before_stock_quotes_and_order_creation(monkeypatch, so
     async def no_existing(*args, **kwargs): return None
     session = SimpleNamespace()
     if source == "basket":
-        monkeypatch.setattr(creation, "get_basket_by_user_id", get)
+        monkeypatch.setattr('src.app.services.orders.creation.basket.get_basket_by_user_id', get)
         call = creation.create_order_from_basket_for_user(session, user=user, payment_method="sbp")
     else:
-        monkeypatch.setattr(creation, "get_order_draft_by_id", get)
-        monkeypatch.setattr(creation, "get_order_by_draft_id", no_existing)
+        _patched_value_101 = get
+        for target in ('src.app.services.orders.creation.draft.get_order_draft_by_id', 'src.app.services.orders.creation.repeat.get_order_draft_by_id',):
+            monkeypatch.setattr(target, _patched_value_101)
+        monkeypatch.setattr('src.app.services.orders.creation.draft.get_order_by_draft_id', no_existing)
         call = creation.create_order_from_draft_for_user(session, user=user, draft_id=1, payment_method="sbp")
     with pytest.raises(HTTPException) as exc: asyncio.run(call)
     assert exc.value.status_code == 422
@@ -187,13 +189,27 @@ def test_customerorder_id_is_committed_before_invoice_failure_and_reused(monkeyp
     async def assortment(*args, **kwargs): return {1: ("variant", ENTITY_ID)}
     async def refs(*args): return {"store": {}, "state": {}, "sales_channel": {}}
     async def empty(*args, **kwargs): return {}
-    monkeypatch.setattr(order_sync, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
-    monkeypatch.setattr(order_sync, "get_moysklad_client", lambda: client)
-    monkeypatch.setattr(order_sync, "_resolve_organization_id", organization)
-    monkeypatch.setattr(order_sync, "_load_assortment_refs", assortment)
-    monkeypatch.setattr(order_sync, "_resolve_customerorder_refs", refs)
-    monkeypatch.setattr(order_sync, "_moysklad_custom_attr_refs", empty)
-    monkeypatch.setattr(order_sync, "_shipment_address_full", empty)
+    _patched_value_190 = True
+    for target in ('src.integrations.moysklad.order_sync.service.MOY_SKLAD_ORDER_SYNC_ENABLED', 'src.integrations.moysklad.order_sync.states.MOY_SKLAD_ORDER_SYNC_ENABLED',):
+        monkeypatch.setattr(target, _patched_value_190)
+    _patched_value_191 = lambda: client
+    for target in ('src.integrations.moysklad.order_sync.service.get_moysklad_client', 'src.integrations.moysklad.order_sync.states.get_moysklad_client',):
+        monkeypatch.setattr(target, _patched_value_191)
+    _patched_value_192 = organization
+    for target in ('src.integrations.moysklad.order_sync.organization._resolve_organization_id', 'src.integrations.moysklad.order_sync.service._resolve_organization_id',):
+        monkeypatch.setattr(target, _patched_value_192)
+    _patched_value_193 = assortment
+    for target in ('src.integrations.moysklad.order_sync.positions._load_assortment_refs', 'src.integrations.moysklad.order_sync.service._load_assortment_refs',):
+        monkeypatch.setattr(target, _patched_value_193)
+    _patched_value_194 = refs
+    for target in ('src.integrations.moysklad.order_sync.attributes._resolve_customerorder_refs', 'src.integrations.moysklad.order_sync.service._resolve_customerorder_refs',):
+        monkeypatch.setattr(target, _patched_value_194)
+    _patched_value_195 = empty
+    for target in ('src.integrations.moysklad.order_sync.attributes._moysklad_custom_attr_refs', 'src.integrations.moysklad.order_sync.service._moysklad_custom_attr_refs',):
+        monkeypatch.setattr(target, _patched_value_195)
+    _patched_value_196 = empty
+    for target in ('src.integrations.moysklad.order_sync.address._shipment_address_full', 'src.integrations.moysklad.order_sync.service._shipment_address_full',):
+        monkeypatch.setattr(target, _patched_value_196)
     with pytest.raises(TimeoutError): asyncio.run(order_sync.sync_order_to_moysklad(Session(), order=order, user=user))
     assert order.moysklad_customerorder_id == ENTITY_ID
     client.fail_invoice = False
@@ -217,13 +233,27 @@ def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monke
         MoySkladCustomerOrderSyncResult(ENTITY_ID, "app_order:22")))
     monkeypatch.setattr(client, "get_all", AsyncMock(return_value=[{"id": str(INVOICE_ID)}]))
     monkeypatch.setattr(client, "build_customerorder_attributes", lambda **kwargs: [])
-    monkeypatch.setattr(order_sync, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
-    monkeypatch.setattr(order_sync, "get_moysklad_client", lambda: client)
-    monkeypatch.setattr(order_sync, "_resolve_organization_id", AsyncMock(return_value=ENTITY_ID))
-    monkeypatch.setattr(order_sync, "_load_assortment_refs", AsyncMock(return_value={1: ("variant", ENTITY_ID)}))
-    monkeypatch.setattr(order_sync, "_resolve_customerorder_refs", AsyncMock(return_value={"store": {}, "state": {}, "sales_channel": {}}))
-    monkeypatch.setattr(order_sync, "_moysklad_custom_attr_refs", AsyncMock(return_value={}))
-    monkeypatch.setattr(order_sync, "_shipment_address_full", AsyncMock(return_value={}))
+    _patched_value_220 = True
+    for target in ('src.integrations.moysklad.order_sync.service.MOY_SKLAD_ORDER_SYNC_ENABLED', 'src.integrations.moysklad.order_sync.states.MOY_SKLAD_ORDER_SYNC_ENABLED',):
+        monkeypatch.setattr(target, _patched_value_220)
+    _patched_value_221 = lambda: client
+    for target in ('src.integrations.moysklad.order_sync.service.get_moysklad_client', 'src.integrations.moysklad.order_sync.states.get_moysklad_client',):
+        monkeypatch.setattr(target, _patched_value_221)
+    _patched_value_222 = AsyncMock(return_value=ENTITY_ID)
+    for target in ('src.integrations.moysklad.order_sync.organization._resolve_organization_id', 'src.integrations.moysklad.order_sync.service._resolve_organization_id',):
+        monkeypatch.setattr(target, _patched_value_222)
+    _patched_value_223 = AsyncMock(return_value={1: ("variant", ENTITY_ID)})
+    for target in ('src.integrations.moysklad.order_sync.positions._load_assortment_refs', 'src.integrations.moysklad.order_sync.service._load_assortment_refs',):
+        monkeypatch.setattr(target, _patched_value_223)
+    _patched_value_224 = AsyncMock(return_value={"store": {}, "state": {}, "sales_channel": {}})
+    for target in ('src.integrations.moysklad.order_sync.attributes._resolve_customerorder_refs', 'src.integrations.moysklad.order_sync.service._resolve_customerorder_refs',):
+        monkeypatch.setattr(target, _patched_value_224)
+    _patched_value_225 = AsyncMock(return_value={})
+    for target in ('src.integrations.moysklad.order_sync.attributes._moysklad_custom_attr_refs', 'src.integrations.moysklad.order_sync.service._moysklad_custom_attr_refs',):
+        monkeypatch.setattr(target, _patched_value_225)
+    _patched_value_226 = AsyncMock(return_value={})
+    for target in ('src.integrations.moysklad.order_sync.address._shipment_address_full', 'src.integrations.moysklad.order_sync.service._shipment_address_full',):
+        monkeypatch.setattr(target, _patched_value_226)
     asyncio.run(order_sync.sync_order_to_moysklad(session, order=order, user=user))
     positions = client.resolve_or_sync_customerorder.call_args.kwargs["positions"]
     assert sum(Decimal(str(p["price"])) * Decimal(str(p["quantity"])) for p in positions) == Decimal("1019592")

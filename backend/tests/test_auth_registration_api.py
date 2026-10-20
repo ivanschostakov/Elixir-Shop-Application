@@ -82,13 +82,21 @@ async def test_website_username_login_creates_app_user_with_bitrix_login(monkeyp
         captured["commit"] = commit
         return SimpleNamespace(**user_create.model_dump())
 
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_username", fake_get_user_by_username)
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_email", fake_get_user_by_email)
-    monkeypatch.setattr("src.app.services.auth.service.AUTH_LOGIN_WEBSITE_FIRST_ENABLED", True)
-    monkeypatch.setattr("src.app.services.auth.service.website_identity_configured", lambda: True)
-    monkeypatch.setattr("src.app.services.auth.service.WebsiteIdentityClient", FakeWebsiteIdentityClient)
-    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "hashed-password")
-    monkeypatch.setattr("src.app.services.auth.service.create_user", fake_create_user)
+    _patched_value_85 = fake_get_user_by_username
+    for target in ('src.app.services.auth.service.login.get_user_by_username', 'src.app.services.auth.service.website.get_user_by_username',):
+        monkeypatch.setattr(target, _patched_value_85)
+    _patched_value_86 = fake_get_user_by_email
+    for target in ('src.app.services.auth.service.email.get_user_by_email', 'src.app.services.auth.service.login.get_user_by_email', 'src.app.services.auth.service.phone.get_user_by_email', 'src.app.services.auth.service.website.get_user_by_email',):
+        monkeypatch.setattr(target, _patched_value_86)
+    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_LOGIN_WEBSITE_FIRST_ENABLED', True)
+    monkeypatch.setattr('src.app.services.auth.service.login.website_identity_configured', lambda: True)
+    monkeypatch.setattr('src.app.services.auth.service.login.WebsiteIdentityClient', FakeWebsiteIdentityClient)
+    _patched_value_90 = lambda _password: "hashed-password"
+    for target in ('src.app.services.auth.service.email.hash_password', 'src.app.services.auth.service.phone.hash_password', 'src.app.services.auth.service.telegram.hash_password', 'src.app.services.auth.service.website.hash_password',):
+        monkeypatch.setattr(target, _patched_value_90)
+    _patched_value_91 = fake_create_user
+    for target in ('src.app.services.auth.service.email.create_user', 'src.app.services.auth.service.phone.create_user', 'src.app.services.auth.service.telegram.create_user', 'src.app.services.auth.service.website.create_user',):
+        monkeypatch.setattr(target, _patched_value_91)
 
     user = await _get_login_user(payload, object())
 
@@ -137,12 +145,18 @@ async def test_local_login_refreshes_assigned_referrer_promo_from_website(monkey
                 },
             }
 
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_email", fake_get_user_by_email)
-    monkeypatch.setattr("src.app.services.auth.service.AUTH_LOGIN_WEBSITE_FIRST_ENABLED", True)
-    monkeypatch.setattr("src.app.services.auth.service.website_identity_configured", lambda: True)
-    monkeypatch.setattr("src.app.services.auth.service.WebsiteIdentityClient", FakeWebsiteIdentityClient)
-    monkeypatch.setattr("src.app.services.auth.service.verify_password", lambda _password, _hash: True)
-    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "refreshed-hash")
+    _patched_value_140 = fake_get_user_by_email
+    for target in ('src.app.services.auth.service.email.get_user_by_email', 'src.app.services.auth.service.login.get_user_by_email', 'src.app.services.auth.service.phone.get_user_by_email', 'src.app.services.auth.service.website.get_user_by_email',):
+        monkeypatch.setattr(target, _patched_value_140)
+    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_LOGIN_WEBSITE_FIRST_ENABLED', True)
+    monkeypatch.setattr('src.app.services.auth.service.login.website_identity_configured', lambda: True)
+    monkeypatch.setattr('src.app.services.auth.service.login.WebsiteIdentityClient', FakeWebsiteIdentityClient)
+    _patched_value_144 = lambda _password, _hash: True
+    for target in ('src.app.services.auth.service.login.verify_password', 'src.app.services.auth.service.phone.verify_password',):
+        monkeypatch.setattr(target, _patched_value_144)
+    _patched_value_145 = lambda _password: "refreshed-hash"
+    for target in ('src.app.services.auth.service.email.hash_password', 'src.app.services.auth.service.phone.hash_password', 'src.app.services.auth.service.telegram.hash_password', 'src.app.services.auth.service.website.hash_password',):
+        monkeypatch.setattr(target, _patched_value_145)
 
     result = await _get_login_user(payload, db)
 
@@ -189,12 +203,18 @@ async def test_local_login_clears_referrer_promo_removed_on_website(monkeypatch:
                 },
             }
 
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_email", fake_get_user_by_email)
-    monkeypatch.setattr("src.app.services.auth.service.AUTH_LOGIN_WEBSITE_FIRST_ENABLED", True)
-    monkeypatch.setattr("src.app.services.auth.service.website_identity_configured", lambda: True)
-    monkeypatch.setattr("src.app.services.auth.service.WebsiteIdentityClient", FakeWebsiteIdentityClient)
-    monkeypatch.setattr("src.app.services.auth.service.verify_password", lambda _password, _hash: True)
-    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "refreshed-hash")
+    _patched_value_192 = fake_get_user_by_email
+    for target in ('src.app.services.auth.service.email.get_user_by_email', 'src.app.services.auth.service.login.get_user_by_email', 'src.app.services.auth.service.phone.get_user_by_email', 'src.app.services.auth.service.website.get_user_by_email',):
+        monkeypatch.setattr(target, _patched_value_192)
+    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_LOGIN_WEBSITE_FIRST_ENABLED', True)
+    monkeypatch.setattr('src.app.services.auth.service.login.website_identity_configured', lambda: True)
+    monkeypatch.setattr('src.app.services.auth.service.login.WebsiteIdentityClient', FakeWebsiteIdentityClient)
+    _patched_value_196 = lambda _password, _hash: True
+    for target in ('src.app.services.auth.service.login.verify_password', 'src.app.services.auth.service.phone.verify_password',):
+        monkeypatch.setattr(target, _patched_value_196)
+    _patched_value_197 = lambda _password: "refreshed-hash"
+    for target in ('src.app.services.auth.service.email.hash_password', 'src.app.services.auth.service.phone.hash_password', 'src.app.services.auth.service.telegram.hash_password', 'src.app.services.auth.service.website.hash_password',):
+        monkeypatch.setattr(target, _patched_value_197)
 
     result = await _get_login_user(payload, db)
 
@@ -222,10 +242,7 @@ async def test_auth_links_moysklad_counterparty_by_email(monkeypatch: pytest.Mon
             captured["email"] = email
             return {"id": str(counterparty_id)}
 
-    monkeypatch.setattr(
-        "src.app.services.auth.service.get_moysklad_client",
-        lambda: FakeMoySkladClient(),
-    )
+    monkeypatch.setattr('src.app.services.auth.service.counterparty.get_moysklad_client', lambda: FakeMoySkladClient())
 
     await _link_moysklad_counterparty_by_email(user, db)
 
@@ -251,10 +268,7 @@ async def test_auth_email_link_failure_does_not_block_authentication(monkeypatch
         async def get_counterparty_by_email(self, _email: str):
             raise RuntimeError("MoySklad unavailable")
 
-    monkeypatch.setattr(
-        "src.app.services.auth.service.get_moysklad_client",
-        lambda: FailingMoySkladClient(),
-    )
+    monkeypatch.setattr('src.app.services.auth.service.counterparty.get_moysklad_client', lambda: FailingMoySkladClient())
 
     await _link_moysklad_counterparty_by_email(user, db)
 
@@ -342,12 +356,24 @@ async def test_register_user_by_phone_without_email_creates_verified_user_and_re
         assert db_arg is db
         return "tokens"
 
-    monkeypatch.setattr("src.app.services.auth.service._apply_auth_rate_limit", fake_apply_auth_rate_limit)
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_phone_number", fake_get_user_by_phone_number)
-    monkeypatch.setattr("src.app.services.auth.service._get_counterparty_for_phone", fake_get_counterparty_for_phone)
-    monkeypatch.setattr("src.app.services.auth.service.hash_password", fake_hash_password)
-    monkeypatch.setattr("src.app.services.auth.service.create_user", fake_create_user)
-    monkeypatch.setattr("src.app.services.auth.service._build_auth_tokens_response", fake_build_auth_tokens_response)
+    _patched_value_345 = fake_apply_auth_rate_limit
+    for target in ('src.app.services.auth.service.email._apply_auth_rate_limit', 'src.app.services.auth.service.phone._apply_auth_rate_limit', 'src.app.services.auth.service.rate_limits._apply_auth_rate_limit', 'src.app.services.auth.service.sessions._apply_auth_rate_limit', 'src.app.services.auth.service.telegram._apply_auth_rate_limit',):
+        monkeypatch.setattr(target, _patched_value_345)
+    _patched_value_346 = fake_get_user_by_phone_number
+    for target in ('src.app.services.auth.service.counterparty.get_user_by_phone_number', 'src.app.services.auth.service.phone.get_user_by_phone_number', 'src.app.services.auth.service.telegram.get_user_by_phone_number',):
+        monkeypatch.setattr(target, _patched_value_346)
+    _patched_value_347 = fake_get_counterparty_for_phone
+    for target in ('src.app.services.auth.service.counterparty._get_counterparty_for_phone', 'src.app.services.auth.service.phone._get_counterparty_for_phone', 'src.app.services.auth.service.telegram._get_counterparty_for_phone',):
+        monkeypatch.setattr(target, _patched_value_347)
+    _patched_value_348 = fake_hash_password
+    for target in ('src.app.services.auth.service.email.hash_password', 'src.app.services.auth.service.phone.hash_password', 'src.app.services.auth.service.telegram.hash_password', 'src.app.services.auth.service.website.hash_password',):
+        monkeypatch.setattr(target, _patched_value_348)
+    _patched_value_349 = fake_create_user
+    for target in ('src.app.services.auth.service.email.create_user', 'src.app.services.auth.service.phone.create_user', 'src.app.services.auth.service.telegram.create_user', 'src.app.services.auth.service.website.create_user',):
+        monkeypatch.setattr(target, _patched_value_349)
+    _patched_value_350 = fake_build_auth_tokens_response
+    for target in ('src.app.services.auth.service.email._build_auth_tokens_response', 'src.app.services.auth.service.phone._build_auth_tokens_response', 'src.app.services.auth.service.sessions._build_auth_tokens_response', 'src.app.services.auth.service.telegram._build_auth_tokens_response',):
+        monkeypatch.setattr(target, _patched_value_350)
 
     response = await register_user_by_phone(request, payload, db, SimpleNamespace())
 
@@ -379,8 +405,12 @@ async def test_start_phone_auth_returns_claim_step_for_counterparty_without_loca
     async def fake_resolve_user_for_phone(*_args, **_kwargs):
         return None, {"id": str(uuid4()), "email": "counterparty@example.com"}
 
-    monkeypatch.setattr("src.app.services.auth.service._apply_auth_rate_limit", fake_apply_auth_rate_limit)
-    monkeypatch.setattr("src.app.services.auth.service._resolve_user_for_phone", fake_resolve_user_for_phone)
+    _patched_value_382 = fake_apply_auth_rate_limit
+    for target in ('src.app.services.auth.service.email._apply_auth_rate_limit', 'src.app.services.auth.service.phone._apply_auth_rate_limit', 'src.app.services.auth.service.rate_limits._apply_auth_rate_limit', 'src.app.services.auth.service.sessions._apply_auth_rate_limit', 'src.app.services.auth.service.telegram._apply_auth_rate_limit',):
+        monkeypatch.setattr(target, _patched_value_382)
+    _patched_value_383 = fake_resolve_user_for_phone
+    for target in ('src.app.services.auth.service.counterparty._resolve_user_for_phone', 'src.app.services.auth.service.phone._resolve_user_for_phone',):
+        monkeypatch.setattr(target, _patched_value_383)
 
     response = await start_phone_auth(object(), payload, object(), SimpleNamespace())
 
@@ -413,10 +443,18 @@ async def test_login_user_by_phone_updates_phone_identity_from_counterparty(monk
         assert db_arg is db
         return "tokens"
 
-    monkeypatch.setattr("src.app.services.auth.service._apply_auth_rate_limit", fake_apply_auth_rate_limit)
-    monkeypatch.setattr("src.app.services.auth.service._resolve_user_for_phone", fake_resolve_user_for_phone)
-    monkeypatch.setattr("src.app.services.auth.service.verify_password", lambda provided, stored: provided == payload.password and stored == user.password_hash)
-    monkeypatch.setattr("src.app.services.auth.service._build_auth_tokens_response", fake_build_auth_tokens_response)
+    _patched_value_416 = fake_apply_auth_rate_limit
+    for target in ('src.app.services.auth.service.email._apply_auth_rate_limit', 'src.app.services.auth.service.phone._apply_auth_rate_limit', 'src.app.services.auth.service.rate_limits._apply_auth_rate_limit', 'src.app.services.auth.service.sessions._apply_auth_rate_limit', 'src.app.services.auth.service.telegram._apply_auth_rate_limit',):
+        monkeypatch.setattr(target, _patched_value_416)
+    _patched_value_417 = fake_resolve_user_for_phone
+    for target in ('src.app.services.auth.service.counterparty._resolve_user_for_phone', 'src.app.services.auth.service.phone._resolve_user_for_phone',):
+        monkeypatch.setattr(target, _patched_value_417)
+    _patched_value_418 = lambda provided, stored: provided == payload.password and stored == user.password_hash
+    for target in ('src.app.services.auth.service.login.verify_password', 'src.app.services.auth.service.phone.verify_password',):
+        monkeypatch.setattr(target, _patched_value_418)
+    _patched_value_419 = fake_build_auth_tokens_response
+    for target in ('src.app.services.auth.service.email._build_auth_tokens_response', 'src.app.services.auth.service.phone._build_auth_tokens_response', 'src.app.services.auth.service.sessions._build_auth_tokens_response', 'src.app.services.auth.service.telegram._build_auth_tokens_response',):
+        monkeypatch.setattr(target, _patched_value_419)
 
     response = await login_user_by_phone(object(), payload, db, SimpleNamespace())
 
@@ -441,9 +479,11 @@ async def test_telegram_session_requires_contact_before_phone_is_linked(monkeypa
     async def fake_get_user_by_telegram_user_id(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr("src.app.services.auth.service.TELEGRAM_BOT_TOKEN", bot_token)
-    monkeypatch.setattr("src.app.services.auth.service._apply_auth_rate_limit", fake_apply_auth_rate_limit)
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_telegram_user_id", fake_get_user_by_telegram_user_id)
+    monkeypatch.setattr('src.app.services.auth.service.telegram_identity.TELEGRAM_BOT_TOKEN', bot_token)
+    _patched_value_445 = fake_apply_auth_rate_limit
+    for target in ('src.app.services.auth.service.email._apply_auth_rate_limit', 'src.app.services.auth.service.phone._apply_auth_rate_limit', 'src.app.services.auth.service.rate_limits._apply_auth_rate_limit', 'src.app.services.auth.service.sessions._apply_auth_rate_limit', 'src.app.services.auth.service.telegram._apply_auth_rate_limit',):
+        monkeypatch.setattr(target, _patched_value_445)
+    monkeypatch.setattr('src.app.services.auth.service.telegram.get_user_by_telegram_user_id', fake_get_user_by_telegram_user_id)
 
     response = await login_user_by_telegram(object(), TelegramAuthPayload(init_data=init_data), object())
 
@@ -469,10 +509,16 @@ async def test_link_telegram_contact_to_user_creates_verified_phone_user(monkeyp
         captured["commit"] = commit
         return created_user
 
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_telegram_user_id", fake_get_user_by_telegram_user_id)
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_phone_number", fake_get_user_by_phone_number)
-    monkeypatch.setattr("src.app.services.auth.service.create_user", fake_create_user)
-    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "hashed-random-password")
+    monkeypatch.setattr('src.app.services.auth.service.telegram.get_user_by_telegram_user_id', fake_get_user_by_telegram_user_id)
+    _patched_value_473 = fake_get_user_by_phone_number
+    for target in ('src.app.services.auth.service.counterparty.get_user_by_phone_number', 'src.app.services.auth.service.phone.get_user_by_phone_number', 'src.app.services.auth.service.telegram.get_user_by_phone_number',):
+        monkeypatch.setattr(target, _patched_value_473)
+    _patched_value_474 = fake_create_user
+    for target in ('src.app.services.auth.service.email.create_user', 'src.app.services.auth.service.phone.create_user', 'src.app.services.auth.service.telegram.create_user', 'src.app.services.auth.service.website.create_user',):
+        monkeypatch.setattr(target, _patched_value_474)
+    _patched_value_475 = lambda _password: "hashed-random-password"
+    for target in ('src.app.services.auth.service.email.hash_password', 'src.app.services.auth.service.phone.hash_password', 'src.app.services.auth.service.telegram.hash_password', 'src.app.services.auth.service.website.hash_password',):
+        monkeypatch.setattr(target, _patched_value_475)
 
     user, reason = await link_telegram_contact_to_user(
         db,
@@ -526,10 +572,16 @@ async def test_link_telegram_contact_to_user_saves_moysklad_counterparty_id(monk
         captured["commit"] = commit
         return created_user
 
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_telegram_user_id", fake_get_user_by_telegram_user_id)
-    monkeypatch.setattr("src.app.services.auth.service.get_user_by_phone_number", fake_get_user_by_phone_number)
-    monkeypatch.setattr("src.app.services.auth.service.create_user", fake_create_user)
-    monkeypatch.setattr("src.app.services.auth.service.hash_password", lambda _password: "hashed-random-password")
+    monkeypatch.setattr('src.app.services.auth.service.telegram.get_user_by_telegram_user_id', fake_get_user_by_telegram_user_id)
+    _patched_value_530 = fake_get_user_by_phone_number
+    for target in ('src.app.services.auth.service.counterparty.get_user_by_phone_number', 'src.app.services.auth.service.phone.get_user_by_phone_number', 'src.app.services.auth.service.telegram.get_user_by_phone_number',):
+        monkeypatch.setattr(target, _patched_value_530)
+    _patched_value_531 = fake_create_user
+    for target in ('src.app.services.auth.service.email.create_user', 'src.app.services.auth.service.phone.create_user', 'src.app.services.auth.service.telegram.create_user', 'src.app.services.auth.service.website.create_user',):
+        monkeypatch.setattr(target, _patched_value_531)
+    _patched_value_532 = lambda _password: "hashed-random-password"
+    for target in ('src.app.services.auth.service.email.hash_password', 'src.app.services.auth.service.phone.hash_password', 'src.app.services.auth.service.telegram.hash_password', 'src.app.services.auth.service.website.hash_password',):
+        monkeypatch.setattr(target, _patched_value_532)
 
     user, reason = await link_telegram_contact_to_user(
         db,

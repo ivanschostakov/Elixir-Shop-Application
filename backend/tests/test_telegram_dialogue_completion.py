@@ -16,7 +16,7 @@ UID = 88000000993
 def test_nutrition_uses_shared_rules_and_requires_explicit_eligibility(monkeypatch):
     profile = dict(goal="weight_loss", age=35, sex="male", height_cm=180, current_weight_kg=100,
                    target_weight_kg=85, activity="moderate")
-    monkeypatch.setattr(m, "snapshot", AsyncMock(return_value={"profile": profile}))
+    monkeypatch.setattr('src.app.modules.telegram_ai.mentor.nutrition.snapshot', AsyncMock(return_value={"profile": profile}))
     result = asyncio.run(m.nutrition_preview(m.NutritionPreview(telegram_user_id=UID), None))
     assert not result["available"]
     result = asyncio.run(m.nutrition_preview(m.NutritionPreview(telegram_user_id=UID, eligibility_confirmed=True), None))
@@ -55,7 +55,9 @@ def test_period_average_ignores_missing_days_and_uses_saved_targets():
 def test_owned_course_reminder_update_and_stale_lease_in_real_database(monkeypatch):
     from test_ai_companion_db import database, URL
     if not URL: pytest.skip("Isolated database required")
-    monkeypatch.setattr(m, "now", lambda: NOW)
+    _patched_value_58 = lambda: NOW
+    for target in ('src.app.modules.telegram_ai.mentor.courses.now', 'src.app.modules.telegram_ai.mentor.helpers.now', 'src.app.modules.telegram_ai.mentor.food.now', 'src.app.modules.telegram_ai.mentor.nutrition.now', 'src.app.modules.telegram_ai.mentor.records.now', 'src.app.modules.telegram_ai.mentor.workouts.now', 'src.app.modules.telegram_ai.mentor.workspace.now',):
+        monkeypatch.setattr(target, _patched_value_58)
     monkeypatch.setattr(r, "now", lambda: NOW)
     async def run():
         async with database() as (db, user):
@@ -89,7 +91,9 @@ def test_dashboard_report_retains_replaced_targets_in_real_database(monkeypatch)
     from test_ai_companion_db import database, URL
     from src.database.models import TelegramAIJournal
     if not URL: pytest.skip("Isolated database required")
-    monkeypatch.setattr(m, "now", lambda: NOW)
+    _patched_value_92 = lambda: NOW
+    for target in ('src.app.modules.telegram_ai.mentor.courses.now', 'src.app.modules.telegram_ai.mentor.helpers.now', 'src.app.modules.telegram_ai.mentor.food.now', 'src.app.modules.telegram_ai.mentor.nutrition.now', 'src.app.modules.telegram_ai.mentor.records.now', 'src.app.modules.telegram_ai.mentor.workouts.now', 'src.app.modules.telegram_ai.mentor.workspace.now',):
+        monkeypatch.setattr(target, _patched_value_92)
     async def run():
         async with database() as (db, user):
             for key, day, kind, status, data in [

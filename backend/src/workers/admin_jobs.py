@@ -33,18 +33,14 @@ async def _handle_job(raw_payload: str) -> None:
     if run_id is None:
         log.error("Discarding invalid admin job payload")
         return
+    
     await acknowledge_queued_marker(run_id)
     await execute_integration_run(run_id)
 
 
 async def _cleanup_customer_events() -> int:
-    async with SessionLocal() as db:
-        deleted = await delete_expired_customer_events(
-            db,
-            retention_days=CUSTOMER_EVENT_RETENTION_DAYS,
-        )
-    if deleted:
-        log.info("Deleted %s expired customer events", deleted)
+    async with SessionLocal() as db: deleted = await delete_expired_customer_events(db, retention_days=CUSTOMER_EVENT_RETENTION_DAYS)
+    if deleted: log.info("Deleted %s expired customer events", deleted)
     return deleted
 
 
@@ -73,21 +69,18 @@ async def run_forever() -> None:
             if loop.time() - last_recovery_at >= max(5, ADMIN_JOB_RECOVERY_INTERVAL_SECONDS):
                 await recover_due_database_runs()
                 last_recovery_at = loop.time()
+            
             if loop.time() - last_event_cleanup_at >= max(300, CUSTOMER_EVENT_CLEANUP_INTERVAL_SECONDS):
                 await _cleanup_customer_events()
                 last_event_cleanup_at = loop.time()
 
             payload = await redis.brpoplpush(ADMIN_JOB_QUEUE_NAME, PROCESSING_QUEUE_NAME, timeout=5)
-            if payload is None:
-                continue
-            try:
-                await _handle_job(payload)
-            except Exception:
-                log.exception("Admin background job failed")
-            finally:
-                await redis.lrem(PROCESSING_QUEUE_NAME, 1, payload)
-    finally:
-        await cache.close()
+            if payload is None: continue
+            try: await _handle_job(payload)
+            except Exception: log.exception("Admin background job failed")
+            finally: await redis.lrem(PROCESSING_QUEUE_NAME, 1, payload)
+            
+    finally: await cache.close()
 
 
 if __name__ == "__main__":

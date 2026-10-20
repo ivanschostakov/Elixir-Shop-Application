@@ -1,0 +1,196 @@
+from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Any
+from uuid import UUID
+import httpx
+from fastapi import HTTPException
+from src.integrations.moysklad.schemas import MoySkladCustomerOrderSyncResult, MoySkladInvoiceOutSyncResult
+from src.normalize import coerce_uuid, optional_str
+from .common import CUSTOMER_ORDER_CUSTOMENTITY_ATTR_KEYS, logger
+from .utils import custom_order_attr, entity_ref, order_attr
+
+
+class DocumentsMixin:
+    def build_customerorder_attributes(self, *, values: dict[str, Any] | None = None, custom_refs: dict[str, str] | None = None) -> list[dict[str, Any]]:
+        attrs: list[dict[str, Any]] = []
+        for attr_key, href in (custom_refs or {}).items():
+            if attr_key not in CUSTOMER_ORDER_CUSTOMENTITY_ATTR_KEYS: continue
+            if not optional_str(href): continue
+            attrs.append(custom_order_attr(attr_key, href))
+
+        for attr_key, value in (values or {}).items():
+            if value is None or attr_key in CUSTOMER_ORDER_CUSTOMENTITY_ATTR_KEYS: continue
+            attrs.append(order_attr(attr_key, value))
+        return attrs
+
+
+    def build_customerorder_payload(self, *, organization: dict[str, Any], agent: dict[str, Any], positions: list[dict[str, Any]], description: str | None = None, shipment_address: str | None = None, shipment_address_full: dict[str, Any] | None = None, attributes: list[dict[str, Any]] | None = None, store: dict[str, Any] | None = None, state: dict[str, Any] | None = None, sales_channel: dict[str, Any] | None = None, owner: dict[str, Any] | None = None, external_code: str | None = None, sync_id: UUID | None = None, moment: datetime | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"organization": entity_ref(organization), "agent": entity_ref(agent), "positions": positions}
+        if store is not None: payload["store"] = entity_ref(store)
+        if state is not None: payload["state"] = entity_ref(state)
+        if sales_channel is not None: payload["salesChannel"] = entity_ref(sales_channel)
+        if owner is not None: payload["owner"] = entity_ref(owner)
+        normalized_description = optional_str(description)
+        if normalized_description: payload["description"] = normalized_description
+        normalized_shipment_address = optional_str(shipment_address)
+        if normalized_shipment_address: payload["shipmentAddress"] = normalized_shipment_address
+        if isinstance(shipment_address_full, dict) and shipment_address_full: payload["shipmentAddressFull"] = shipment_address_full
+        if attributes: payload["attributes"] = attributes
+        normalized_external_code = optional_str(external_code)
+        if normalized_external_code: payload["externalCode"] = normalized_external_code
+        if sync_id is not None: payload["syncId"] = str(sync_id)
+        if moment is not None: payload["moment"] = self._format_moment(moment)
+        return payload
+
+
+    def build_invoiceout_payload(self, *, name: str, organization: dict[str, Any], agent: dict[str, Any], positions: list[dict[str, Any]], customer_order: dict[str, Any] | None = None, description: str | None = None, store: dict[str, Any] | None = None, state: dict[str, Any] | None = None, sales_channel: dict[str, Any] | None = None, owner: dict[str, Any] | None = None, external_code: str | None = None, sync_id: UUID | None = None, moment: datetime | None = None) -> dict[str, Any]:
+        payload: dict[str, Any] = {"name": name, "organization": entity_ref(organization), "agent": entity_ref(agent), "positions": positions}
+        if customer_order is not None: payload["customerOrder"] = entity_ref(customer_order)
+        if store is not None: payload["store"] = entity_ref(store)
+        if state is not None: payload["state"] = entity_ref(state)
+        if sales_channel is not None: payload["salesChannel"] = entity_ref(sales_channel)
+        if owner is not None: payload["owner"] = entity_ref(owner)
+        normalized_description = optional_str(description)
+        if normalized_description: payload["description"] = normalized_description
+        normalized_external_code = optional_str(external_code)
+        if normalized_external_code: payload["externalCode"] = normalized_external_code
+        if sync_id is not None: payload["syncId"] = str(sync_id)
+        if moment is not None: payload["moment"] = self._format_moment(moment)
+        return payload
+
+
+    def build_customerorder_position(self, *, assortment_entity_type: str, assortment_id: UUID, quantity: int, unit_price: Decimal, discount: Decimal | None = None) -> dict[str, Any]:
+        position = {
+            "assortment": self._meta_payload(
+                href=self.entity_href(assortment_entity_type, assortment_id),
+                entity_type=assortment_entity_type,
+            ),
+            "quantity": int(quantity),
+            "price": self._money_to_minor(unit_price),
+        }
+        if discount is not None:
+            normalized_discount = max(Decimal("0.00"), min(Decimal("100.00"), Decimal(discount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)))
+            position["discount"] = float(normalized_discount)
+        return position
+
+
+    async def create_customer_order(self, payload: dict[str, Any]) -> dict[str, Any]:
+        http_client = await self.client()
+        try:
+            response = await http_client.post("/entity/customerorder", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            body = exc.response.text if exc.response is not None else ""
+            logger.error("MoySklad customerorder create failed status=%s body=%s external_code=%s", status_code, body[:4000], payload.get("externalCode"))
+            raise
+        data = response.json()
+        if not isinstance(data, dict): raise RuntimeError("MoySklad returned invalid customerorder create response")
+        return data
+
+
+    async def create_invoiceout(self, payload: dict[str, Any]) -> dict[str, Any]:
+        http_client = await self.client()
+        try:
+            response = await http_client.post("/entity/invoiceout", json=payload)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            body = exc.response.text if exc.response is not None else ""
+            logger.error("MoySklad invoiceout create failed status=%s body=%s external_code=%s", status_code, body[:4000], payload.get("externalCode"))
+            raise
+        data = response.json()
+        if not isinstance(data, dict): raise RuntimeError("MoySklad returned invalid invoiceout create response")
+        return data
+
+
+    async def get_customer_order(self, order_id: UUID | str, expand: bool = False) -> dict[str, Any] | None:
+        http_client = await self.client()
+        params = {"expand": "positions.assortment,state" if expand else "state"}
+        try:
+            response = await http_client.get(f"/entity/customerorder/{order_id}", params=params)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404: return None
+            raise
+        data = response.json()
+        return data if isinstance(data, dict) else None
+
+
+    async def get_invoiceout(self, invoiceout_id: UUID | str, expand: bool = False) -> dict[str, Any] | None:
+        http_client = await self.client()
+        params = {"expand": "positions.assortment,state" if expand else "state"}
+        try:
+            response = await http_client.get(f"/entity/invoiceout/{invoiceout_id}", params=params)
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404: return None
+            raise
+        data = response.json()
+        return data if isinstance(data, dict) else None
+
+
+    async def update_customer_order_state(self, order_id: UUID | str, state: dict[str, Any]) -> dict[str, Any]:
+        normalized_order_id = coerce_uuid(order_id)
+        if normalized_order_id is None: raise ValueError("Invalid MoySklad customerorder id")
+        return await self._update_entity("customerorder", normalized_order_id, {"state": entity_ref(state)})
+
+
+    async def update_invoiceout_state(self, invoiceout_id: UUID | str, state: dict[str, Any]) -> dict[str, Any]:
+        normalized_invoiceout_id = coerce_uuid(invoiceout_id)
+        if normalized_invoiceout_id is None: raise ValueError("Invalid MoySklad invoiceout id")
+        return await self._update_entity("invoiceout", normalized_invoiceout_id, {"state": entity_ref(state)})
+
+
+    async def resolve_or_sync_customerorder(self, *, existing_customerorder_id: UUID | None, external_code: str, sync_id: UUID, organization_id: UUID, counterparty_id: UUID, positions: list[dict[str, Any]], moment: datetime, description: str | None, shipment_address: str | None = None, shipment_address_full: dict[str, Any] | None = None, attributes: list[dict[str, Any]] | None = None, store: dict[str, Any] | None = None, state: dict[str, Any] | None = None, sales_channel: dict[str, Any] | None = None, owner: dict[str, Any] | None = None) -> MoySkladCustomerOrderSyncResult:
+        customerorder_data = await self.get_customer_order(existing_customerorder_id) if existing_customerorder_id is not None else None
+        if customerorder_data is None: customerorder_data = await self._find_entity_by_external_code("customerorder", external_code)
+        if customerorder_data is not None:
+            self._validate_document_sum(customerorder_data, positions)
+            customerorder_id = coerce_uuid(customerorder_data.get("id"))
+            if customerorder_id is None: raise RuntimeError("MoySklad customerorder response is missing a valid id")
+            return MoySkladCustomerOrderSyncResult(customerorder_id=customerorder_id, external_code=external_code, created=False)
+
+        organization_row = {"meta": {"href": self.entity_href("organization", organization_id), "type": "organization", "mediaType": "application/json"}}
+        agent_row = {"meta": {"href": self.entity_href("counterparty", counterparty_id), "type": "counterparty", "mediaType": "application/json"}}
+        payload = self.build_customerorder_payload(organization=organization_row, agent=agent_row, positions=positions, moment=moment, description=description, external_code=external_code, sync_id=sync_id, shipment_address=shipment_address, shipment_address_full=shipment_address_full, attributes=attributes, store=store, state=state, sales_channel=sales_channel, owner=owner,)
+        customerorder_data = await self.create_customer_order(payload)
+        self._validate_document_sum(customerorder_data, positions)
+
+        customerorder_id = coerce_uuid(customerorder_data.get("id"))
+        if customerorder_id is None: raise RuntimeError("MoySklad customerorder response is missing a valid id")
+
+        return MoySkladCustomerOrderSyncResult(customerorder_id=customerorder_id, external_code=external_code, created=True,)
+
+
+    @staticmethod
+    def _validate_document_sum(data: dict[str, Any], positions: list[dict[str, Any]]) -> None:
+        if data.get("sum") is None: return
+        expected = sum(((Decimal(str(row["price"])) * Decimal(str(row["quantity"])) * (1 - Decimal(str(row.get("discount", 0))) / 100)).quantize(Decimal("1"), rounding=ROUND_HALF_UP) for row in positions), Decimal("0"))
+        if Decimal(str(data["sum"])) != expected: raise HTTPException(status_code=409, detail=f"MoySklad document {data.get('id')} total differs from the order; manual review required")
+
+
+    async def find_invoiceout_by_external_code(self, external_code: str) -> dict[str, Any] | None:
+        normalized_external_code = optional_str(external_code)
+        if not normalized_external_code: return None
+        return await self._find_entity_by_external_code("invoiceout", normalized_external_code)
+
+
+    async def resolve_or_sync_invoiceout(self, *, existing_invoiceout_id: UUID | None = None, external_code: str, sync_id: UUID, name: str, organization_id: UUID, counterparty_id: UUID, positions: list[dict[str, Any]], customerorder_id: UUID | None = None, moment: datetime | None = None, description: str | None = None, store: dict[str, Any] | None = None, state: dict[str, Any] | None = None, sales_channel: dict[str, Any] | None = None, owner: dict[str, Any] | None = None) -> MoySkladInvoiceOutSyncResult:
+        invoiceout_data = await self.get_invoiceout(existing_invoiceout_id) if existing_invoiceout_id is not None else None
+        if invoiceout_data is None: invoiceout_data = await self.find_invoiceout_by_external_code(external_code)
+        if invoiceout_data is not None:
+            self._validate_document_sum(invoiceout_data, positions)
+            invoiceout_id = coerce_uuid(invoiceout_data.get("id"))
+            if invoiceout_id is None: raise RuntimeError("MoySklad invoiceout response is missing a valid id")
+            return MoySkladInvoiceOutSyncResult(invoiceout_id=invoiceout_id, external_code=external_code, created=False)
+
+        organization_row = {"meta": {"href": self.entity_href("organization", organization_id), "type": "organization", "mediaType": "application/json"}}
+        agent_row = {"meta": {"href": self.entity_href("counterparty", counterparty_id), "type": "counterparty", "mediaType": "application/json"}}
+        customer_order_row = {"meta": {"href": self.entity_href("customerorder", customerorder_id), "type": "customerorder", "mediaType": "application/json"}} if customerorder_id is not None else None
+        payload = self.build_invoiceout_payload(name=name, organization=organization_row, agent=agent_row, positions=positions, customer_order=customer_order_row, moment=moment, description=description, external_code=external_code, sync_id=sync_id, store=store, state=state, sales_channel=sales_channel, owner=owner,)
+        invoiceout_data = await self.create_invoiceout(payload)
+        self._validate_document_sum(invoiceout_data, positions)
+        invoiceout_id = coerce_uuid(invoiceout_data.get("id"))
+        if invoiceout_id is None: raise RuntimeError("MoySklad invoiceout response is missing a valid id")
+        return MoySkladInvoiceOutSyncResult(invoiceout_id=invoiceout_id, external_code=external_code, created=True)

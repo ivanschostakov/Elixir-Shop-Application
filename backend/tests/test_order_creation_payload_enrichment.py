@@ -23,7 +23,7 @@ class _GeoClientStub:
 
 def test_enrich_selected_delivery_address_payload_adds_geocode_components(monkeypatch):
     geo_client = _GeoClientStub()
-    monkeypatch.setattr(creation, "get_geo_client", lambda: geo_client)
+    monkeypatch.setattr('src.app.services.orders.creation.delivery.get_geo_client', lambda: geo_client)
     payload = {
         "address": "пер. Большой Тишинский, 26",
         "full_address": "123557, Россия, Москва, пер. Большой Тишинский, 26",

@@ -68,13 +68,11 @@ def client():
 
 @pytest.fixture(autouse=True)
 def stub_email_verification(monkeypatch: pytest.MonkeyPatch):
-    import src.app.services.auth.service as auth_service_module
-
     async def fake_send_user_verification_code_email(*, to_email: str, code: str) -> None:
         return None
 
-    monkeypatch.setattr(auth_service_module, "generate_email_verification_code", lambda: TEST_EMAIL_VERIFICATION_CODE)
-    monkeypatch.setattr(auth_service_module, "send_user_verification_code_email", fake_send_user_verification_code_email)
+    monkeypatch.setattr('src.app.services.auth.service.verification.generate_email_verification_code', lambda: TEST_EMAIL_VERIFICATION_CODE)
+    monkeypatch.setattr('src.app.services.auth.service.verification.send_user_verification_code_email', fake_send_user_verification_code_email)
 
 
 @pytest.fixture(autouse=True)
@@ -101,7 +99,7 @@ def stub_authoritative_bitrix_delivery(monkeypatch: pytest.MonkeyPatch):
         "src.app.modules.delivery.cdek.router.calculate_authoritative_cdek_quote",
         "src.app.services.basket.calculate_authoritative_cdek_quote",
         "src.app.services.guest_checkout.calculate_authoritative_cdek_quote",
-        "src.app.services.orders.creation.calculate_authoritative_cdek_quote",
+        'src.app.services.orders.creation.basket.calculate_authoritative_cdek_quote', 'src.app.services.orders.creation.draft.calculate_authoritative_cdek_quote',
         "src.app.services.orders.drafts.calculate_authoritative_cdek_quote",
     )
     for target in targets:

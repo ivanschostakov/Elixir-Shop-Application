@@ -370,7 +370,9 @@ def stub_amocrm(monkeypatch):
 
     stub_client = StubAmoCrmClient()
     monkeypatch.setattr("src.app.services.orders.get_amocrm_client", lambda: stub_client)
-    monkeypatch.setattr("src.app.services.orders.creation.amocrm_client", stub_client)
+    _patched_value_373 = stub_client
+    for target in ('src.app.services.orders.creation.common.amocrm_client', 'src.app.services.orders.creation.payloads.amocrm_client',):
+        monkeypatch.setattr(target, _patched_value_373)
     monkeypatch.setattr("src.app.services.orders.crm.amocrm_client", stub_client)
     yield calls
 
@@ -1046,10 +1048,9 @@ def test_amocrm_paid_webhook_creates_delivery_once(client: TestClient, registere
     monkeypatch.setattr("src.app.modules.webhooks.router.amocrm_client.get_lead", fake_get_lead)
     monkeypatch.setattr("src.app.services.orders.create_delivery_for_order", fake_create_delivery_for_order)
     if referral_sync_fails:
-        monkeypatch.setattr(
-            "src.app.services.referrals.paid_orders.sync_paid_order_referral_to_app",
-            AsyncMock(side_effect=RuntimeError("Simulated referral integration failure")),
-        )
+        _patched_value_1049 = AsyncMock(side_effect=RuntimeError("Simulated referral integration failure"))
+        for target in ('src.app.services.referrals.paid_orders.orders.sync_paid_order_referral_to_app', 'src.app.services.referrals.paid_orders.reconciliation.sync_paid_order_referral_to_app',):
+            monkeypatch.setattr(target, _patched_value_1049)
 
     webhook_body = amocrm_webhook_body(amocrm_client.STATUS_IDS["check_paid"])
 

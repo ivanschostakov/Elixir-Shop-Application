@@ -135,7 +135,7 @@ def test_organization_id_is_rejected_when_it_points_to_another_legal_entity(monk
             assert name == "ИП Хакимов"
             return {"id": str(correct_id), "name": name}
 
-    monkeypatch.setattr(order_sync, "MOY_SKLAD_ORGANIZATION_ID", str(wrong_id))
-    monkeypatch.setattr(order_sync, "MOY_SKLAD_ORGANIZATION_NAME", "ИП Хакимов")
+    monkeypatch.setattr('src.integrations.moysklad.order_sync.organization.MOY_SKLAD_ORGANIZATION_ID', str(wrong_id))
+    monkeypatch.setattr('src.integrations.moysklad.order_sync.organization.MOY_SKLAD_ORGANIZATION_NAME', "ИП Хакимов")
 
     assert asyncio.run(order_sync._resolve_organization_id(Client())) == correct_id

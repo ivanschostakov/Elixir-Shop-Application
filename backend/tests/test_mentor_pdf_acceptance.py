@@ -73,7 +73,9 @@ def test_month_mean_is_not_a_relabelled_seven_day_mean():
 
 @pytest.mark.skipif(not URL, reason="Requires isolated companion_test database")
 def test_real_course_count_stock_update_and_duplicate_confirmation(monkeypatch):
-    monkeypatch.setattr(m, "now", lambda: NOW)
+    _patched_value_76 = lambda: NOW
+    for target in ('src.app.modules.telegram_ai.mentor.courses.now', 'src.app.modules.telegram_ai.mentor.helpers.now', 'src.app.modules.telegram_ai.mentor.food.now', 'src.app.modules.telegram_ai.mentor.nutrition.now', 'src.app.modules.telegram_ai.mentor.records.now', 'src.app.modules.telegram_ai.mentor.workouts.now', 'src.app.modules.telegram_ai.mentor.workspace.now',):
+        monkeypatch.setattr(target, _patched_value_76)
     monkeypatch.setattr(j, "now", lambda: NOW)
     async def run():
         async with database() as (db, _):
@@ -154,7 +156,9 @@ def test_timezone_and_nutrition_saving_work_with_new_profile(monkeypatch):
 
 @pytest.mark.skipif(not URL, reason="Requires isolated companion_test database")
 def test_old_course_events_are_reachable_markable_and_owner_scoped(monkeypatch):
-    monkeypatch.setattr(m, "now", lambda: NOW)
+    _patched_value_157 = lambda: NOW
+    for target in ('src.app.modules.telegram_ai.mentor.courses.now', 'src.app.modules.telegram_ai.mentor.helpers.now', 'src.app.modules.telegram_ai.mentor.food.now', 'src.app.modules.telegram_ai.mentor.nutrition.now', 'src.app.modules.telegram_ai.mentor.records.now', 'src.app.modules.telegram_ai.mentor.workouts.now', 'src.app.modules.telegram_ai.mentor.workspace.now',):
+        monkeypatch.setattr(target, _patched_value_157)
     async def run():
         async with database() as (db, _):
             value = {**course(), "start_date": (NOW-timedelta(days=60)).date().isoformat(),

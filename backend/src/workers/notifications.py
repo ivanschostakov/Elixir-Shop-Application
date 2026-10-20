@@ -17,10 +17,8 @@ async def _run_once() -> None:
 
 
 async def _run_community_once() -> None:
-    async with get_session() as session:
-        processed = await process_community_message_notifications(session)
-    if processed:
-        log.info("community notification tick completed processed=%s", processed)
+    async with get_session() as session: processed = await process_community_message_notifications(session)
+    if processed: log.info("community notification tick completed processed=%s", processed)
 
 
 async def run_forever() -> None:
@@ -53,14 +51,11 @@ async def run_forever() -> None:
     async def _run_companion_loop() -> None:
         from src.app.services.ai.companion.jobs import run_once
         while not stop_event.is_set():
-            try:
-                await run_once()
-            except Exception:
-                log.exception("companion notification tick failed")
-            try:
-                await asyncio.wait_for(stop_event.wait(), timeout=60)
-            except TimeoutError:
-                continue
+            try: await run_once()
+            except Exception: log.exception("companion notification tick failed")
+            
+            try: await asyncio.wait_for(stop_event.wait(), timeout=60)
+            except TimeoutError: continue
 
     await asyncio.gather(_run_marketing_loop(), _run_community_loop(), _run_companion_loop())
 

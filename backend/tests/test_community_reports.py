@@ -20,8 +20,12 @@ db_test = pytest.mark.skipif(not URL, reason="Set an isolated COMPANION_TEST_DB_
 
 @pytest.fixture
 def allowed(monkeypatch):
-    monkeypatch.setattr(community, "require_community_access", AsyncMock())
-    monkeypatch.setattr(community, "TELEGRAM_COMMUNITY_CHAT_ID", -100123)
+    _patched_value_23 = AsyncMock()
+    for target in ('src.app.services.community.access.require_community_access', 'src.app.services.community.messages.require_community_access', 'src.app.services.community.reading.require_community_access',):
+        monkeypatch.setattr(target, _patched_value_23)
+    _patched_value_24 = -100123
+    for target in ('src.app.services.community.access.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.blocks.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.delivery.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.incoming.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.messages.TELEGRAM_COMMUNITY_CHAT_ID', 'src.app.services.community.reading.TELEGRAM_COMMUNITY_CHAT_ID',):
+        monkeypatch.setattr(target, _patched_value_24)
     monkeypatch.setattr(community_reports, "enforce_rate_limit", AsyncMock())
 
 
