@@ -64,6 +64,10 @@ class LoyaltyBonusCredit(Base, IdPkMixin, TimestampMixin):
     moysklad_bonus_program_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     moysklad_bonus_transaction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
     moysklad_paymentin_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
+    reconciled_to_credit_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("loyalty_bonus_credits.id", ondelete="SET NULL"), nullable=True,
+    )
+    reconciliation_note: Mapped[str | None] = mapped_column(String(length=500), nullable=True)
     moysklad_debit_transaction_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
     sync_error: Mapped[str | None] = mapped_column(String(length=500), nullable=True)
 

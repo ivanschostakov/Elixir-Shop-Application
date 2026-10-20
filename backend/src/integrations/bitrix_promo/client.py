@@ -36,6 +36,13 @@ class BitrixPromoClient:
     async def profile(self, *, bitrix_user_id: int | None = None, user_email: str | None = None) -> dict[str, Any]:
         return await self._user_request(action="profile", bitrix_user_id=bitrix_user_id, user_email=user_email)
 
+    async def ensure_customer(self, *, app_user_id: int, user_email: str, name: str, surname: str) -> dict[str, Any]:
+        return await self._request({
+            "action": "ensure_customer", "app_user_id": app_user_id,
+            "user_email": user_email, "email_verified": True,
+            "name": name, "last_name": surname,
+        })
+
     async def set_opening_balance(self, *, amount: str, currency: str = "RUB", bitrix_user_id: int | None = None, user_email: str | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "action": "set_opening_balance",

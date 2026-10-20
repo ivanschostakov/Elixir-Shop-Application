@@ -87,12 +87,42 @@ def test_repeated_credit_returns_existing_payment(client):
     client.client._create_entity.assert_awaited_once()
 
 
-def test_previously_credited_manual_welcome_payment_requires_review(client):
-    client.client.get_all.return_value = [{"sum": 100000, "applicable": True,
-        "description": "Приветственное начисление за регистрацию", "externalCode": "manual"}]
-    with pytest.raises(RuntimeError, match="reconciliation"):
+def test_previously_credited_manual_welcome_is_reused_without_remote_writes(client):
+    previous = post(client)
+    previous.update(description="Приветственное начисление за регистрацию", externalCode="manual")
+    client.client.get_all.return_value = [previous]
+    client.client._create_entity.reset_mock()
+    assert post(client)["id"] == str(PAYMENT)
+    assert previous["externalCode"] == "manual"
+    client.client._create_entity.assert_not_awaited()
+
+
+def test_multiple_previous_welcomes_block_another_credit(client):
+    previous = post(client)
+    previous["description"] = "Welcome"
+    client.client.get_all.return_value = [previous, {**previous, "id": str(UUID(int=100))}]
+    client.client._create_entity.reset_mock()
+    with pytest.raises(RuntimeError, match="Multiple previous"):
         post(client)
     client.client._create_entity.assert_not_awaited()
+
+
+@pytest.mark.parametrize("field,value", [("sum", 50000), ("vatSum", 200), ("agent", {}),
+    ("organization", {}), ("state", {}), ("rate", {}), ("attributes", []), ("operations", [{"sum": 100}])])
+def test_legacy_welcome_must_match_accounting_template(client, field, value):
+    previous = post(client)
+    previous.update(description="Welcome", externalCode="manual")
+    previous[field] = value
+    client.client.get_all.return_value = [previous]
+    client.client._create_entity.reset_mock()
+    with pytest.raises(RuntimeError):
+        post(client)
+    client.client._create_entity.assert_not_awaited()
+
+
+def payment_db(user, owner=None):
+    return SimpleNamespace(get=AsyncMock(return_value=user), commit=AsyncMock(), rollback=AsyncMock(),
+        refresh=AsyncMock(), execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: owner)))
 
 
 def test_timeout_after_remote_create_recovers_same_payment(client):
@@ -156,7 +186,7 @@ def test_app_credit_records_payment_reference_and_has_no_expiry(monkeypatch, kin
     user = SimpleNamespace(id=1, moysklad_counterparty_id=CID)
     credit = SimpleNamespace(id=1, user_id=1, source_kind=kind, points=1000,
         status="failed", idempotency_key="welcome:user:1", expires_at="old", sync_error="old")
-    db = SimpleNamespace(get=AsyncMock(return_value=user), commit=AsyncMock(), rollback=AsyncMock())
+    db = payment_db(user)
     post_payment = AsyncMock(return_value={"id": str(PAYMENT)})
     monkeypatch.setattr(loyalty, "create_bonus_balance_payment", post_payment)
     client = SimpleNamespace(is_configured=lambda: True)
@@ -219,8 +249,8 @@ def test_failed_post_is_retained_for_idempotent_retry(monkeypatch):
     user = SimpleNamespace(id=1, moysklad_counterparty_id=CID)
     credit = SimpleNamespace(id=1, user_id=1, source_kind="welcome", points=1000,
         status="pending", idempotency_key="welcome:user:1", moysklad_paymentin_id=None)
-    db = SimpleNamespace(get=AsyncMock(side_effect=lambda model, identifier: user if model is User else credit),
-        commit=AsyncMock(), rollback=AsyncMock())
+    db = payment_db(user)
+    db.get.side_effect = lambda model, identifier: user if model is User else credit
     monkeypatch.setattr(loyalty, "create_bonus_balance_payment", AsyncMock(side_effect=RuntimeError("retryable")))
     assert asyncio.run(loyalty.sync_loyalty_bonus_credit(db, credit=credit,
         client=SimpleNamespace(is_configured=lambda: True))) is False
@@ -244,10 +274,44 @@ def test_cache_failure_cannot_turn_posted_credit_into_failed(monkeypatch):
     user = SimpleNamespace(id=1, moysklad_counterparty_id=CID)
     credit = SimpleNamespace(id=1, user_id=1, source_kind="welcome", points=1000,
         status="failed", idempotency_key="welcome:user:1")
-    db = SimpleNamespace(get=AsyncMock(return_value=user), commit=AsyncMock(), rollback=AsyncMock())
+    db = payment_db(user)
     monkeypatch.setattr(loyalty, "create_bonus_balance_payment", AsyncMock(return_value={"id": str(PAYMENT)}))
     assert asyncio.run(loyalty.sync_loyalty_bonus_credit(db, credit=credit,
         client=SimpleNamespace(is_configured=lambda: True))) is True
     assert credit.status == "applied" and credit.moysklad_paymentin_id == PAYMENT
     db.commit.assert_awaited_once()
     db.rollback.assert_not_awaited()
+
+
+def test_welcome_already_owned_by_another_credit_is_linked_without_duplicating_wallet(monkeypatch):
+    monkeypatch.setattr(loyalty, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
+    monkeypatch.setattr(settlement_cache, "invalidate_account_settlement", AsyncMock())
+    user = SimpleNamespace(id=2, moysklad_counterparty_id=CID)
+    owner = SimpleNamespace(id=1, source_kind="welcome", status="applied")
+    item = SimpleNamespace(id=2, user_id=2, source_kind="welcome", points=1000,
+        status="failed", idempotency_key="welcome:user:2", moysklad_paymentin_id=None)
+    db = payment_db(user, owner)
+    post_payment = AsyncMock(return_value={"id": str(PAYMENT)})
+    monkeypatch.setattr(loyalty, "create_bonus_balance_payment", post_payment)
+    client = SimpleNamespace(is_configured=lambda: True)
+    assert asyncio.run(loyalty.sync_loyalty_bonus_credit(db, credit=item, client=client))
+    assert item.status == "already_granted" and item.reconciled_to_credit_id == 1
+    assert item.moysklad_paymentin_id is None
+    assert asyncio.run(loyalty.sync_loyalty_bonus_credit(db, credit=item, client=client))
+    post_payment.assert_awaited_once()
+
+
+def test_waiting_worker_rechecks_credit_after_obtaining_customer_lock(monkeypatch):
+    monkeypatch.setattr(loyalty, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
+    user = SimpleNamespace(id=1, moysklad_counterparty_id=CID)
+    item = SimpleNamespace(id=1, user_id=1, source_kind="welcome", status="pending")
+    db = payment_db(user)
+    async def refresh(credit):
+        credit.status = "applied"
+    db.refresh.side_effect = refresh
+    post_payment = AsyncMock()
+    monkeypatch.setattr(loyalty, "create_bonus_balance_payment", post_payment)
+    assert asyncio.run(loyalty.sync_loyalty_bonus_credit(db, credit=item,
+        client=SimpleNamespace(is_configured=lambda: True)))
+    post_payment.assert_not_awaited()
+    assert "pg_advisory_xact_lock" in str(db.execute.await_args.args[0])

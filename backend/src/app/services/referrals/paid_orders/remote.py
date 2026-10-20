@@ -22,7 +22,19 @@ async def _sync_purchase_progress_to_bitrix(db: AsyncSession, *, purchase: AppRe
     try:
         calculation_snapshot = (purchase.calculation_snapshot if isinstance(purchase.calculation_snapshot, dict) else {})
         raw_buyer_discount_percent = calculation_snapshot.get("buyer_discount_percent")
-        result = await client.record_paid_purchase(external_order_id=purchase.external_order_id, user_email=user.email or "", promo=purchase.promo_code, amount=str(purchase.amount), currency=purchase.currency, paid_at=purchase.paid_at.isoformat(), buyer_discount_percent=(str(raw_buyer_discount_percent) if raw_buyer_discount_percent is not None else None),)
+        payload = dict(external_order_id=purchase.external_order_id, user_email=user.email or "", promo=purchase.promo_code, amount=str(purchase.amount), currency=purchase.currency, paid_at=purchase.paid_at.isoformat(), buyer_discount_percent=(str(raw_buyer_discount_percent) if raw_buyer_discount_percent is not None else None))
+        try:
+            result = await client.record_paid_purchase(**payload)
+        except BitrixPromoError as error:
+            if error.code != "user_not_found" or not user.is_verified or not user.email:
+                raise
+            await client.ensure_customer(
+                app_user_id=user.id, user_email=user.email,
+                name=user.name or "", surname=user.surname or "",
+            )
+            # Keep the original order key: a lost response must not post a
+            # second purchase or increment coupon usage twice.
+            result = await client.record_paid_purchase(**payload)
     except BitrixPromoError as error:
         purchase.bitrix_sync_status = "failed"
         purchase.sync_error = f"{error.code}: {error.message_en}"[:500]

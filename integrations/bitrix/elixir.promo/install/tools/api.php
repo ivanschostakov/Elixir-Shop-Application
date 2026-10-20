@@ -14,6 +14,7 @@ use Bitrix\Main\Config\Option;
 use Bitrix\Main\Loader;
 use Elixir\Promo\Service\PromoService;
 use Elixir\Promo\Service\ReferralAccrualService;
+use Elixir\Promo\Service\AppCustomerService;
 
 const ELIXIR_PROMO_MODULE_ID = 'elixir.promo';
 
@@ -72,6 +73,12 @@ $promo = trim((string)($payload['promo'] ?? ''));
 
 try {
     $service = new PromoService();
+    if ($action === 'ensure_customer') {
+        elixirPromoRespond([
+            'action' => 'ensure_customer',
+            'data' => (new AppCustomerService())->ensureCustomer($payload),
+        ]);
+    }
     if ($action === 'lookup') {
         elixirPromoRespond(['action' => 'lookup', 'data' => $service->lookup($promo)]);
     }

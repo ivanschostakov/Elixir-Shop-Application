@@ -72,9 +72,10 @@ async def create_bonus_balance_payment(
         "attributes": attributes,
     }
 
-    def validate(payment):
+    def validate(payment, *, require_external_code=True):
         if (coerce_uuid(payment.get("id")) is None or payment.get("applicable") is not True
-            or payment.get("externalCode") != external_code or Decimal(str(payment.get("sum", 0))) != amount_minor
+            or (require_external_code and payment.get("externalCode") != external_code)
+            or Decimal(str(payment.get("sum", 0))) != amount_minor
             or Decimal(str(payment.get("vatSum", -1))) != 0
             or _href(payment.get("agent")) != _href(payload["agent"])
             or _href(payment.get("organization")) != _href(payload["organization"])
@@ -91,11 +92,18 @@ async def create_bonus_balance_payment(
         return validate(existing)
     if is_welcome:
         previous = await client.get_all("/entity/paymentin", filter=f"agent={client.entity_href('counterparty', counterparty_id)}")
+        candidates = []
         for payment in previous:
             text = f"{payment.get('description') or ''} {payment.get('paymentPurpose') or ''}".casefold()
-            if (payment.get("applicable") is True and Decimal(str(payment.get("sum", 0))) == amount_minor
+            if (payment.get("applicable") is True
                 and any(word in text for word in ("приветств", "регистрац", "welcome"))):
-                raise RuntimeError("A previous welcome payment requires reconciliation before another credit")
+                candidates.append(payment)
+        if candidates:
+            if len(candidates) != 1:
+                raise RuntimeError("Multiple previous welcome payments require reconciliation")
+            # Reuse the posted accounting document; changing its external code
+            # would break the integration which originally created it.
+            return validate(candidates[0], require_external_code=False)
     try:
         payment = await client._create_entity("paymentin", payload)
     except Exception:

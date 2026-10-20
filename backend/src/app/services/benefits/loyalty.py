@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_FLOOR
 
 import httpx
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import (
@@ -178,7 +178,7 @@ async def sync_loyalty_bonus_credit(
 
 async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, client=None) -> bool:
     credit_id = credit.id
-    if credit.status == "applied":
+    if credit.status in {"applied", "already_granted"}:
         # Historical native credits stay in the audit ledger, never copied.
         return True
     if credit.source_kind not in APP_BALANCE_CREDIT_KINDS:
@@ -209,6 +209,16 @@ async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, 
             )
             user.moysklad_counterparty_id = result.counterparty_id
             await db.commit()
+        # Serialize rewards for the accounting customer, including separate app
+        # accounts linked to that same customer. The lock lasts until commit.
+        lock_key = int.from_bytes(hashlib.sha256(
+            f"loyalty-balance:{user.moysklad_counterparty_id}".encode()
+        ).digest()[:8], "big", signed=True)
+        await db.execute(select(func.pg_advisory_xact_lock(lock_key)))
+        await db.refresh(credit)
+        if credit.status in {"applied", "already_granted"}:
+            await db.commit()
+            return True
         label = "Приветственное начисление за регистрацию в приложении" if credit.source_kind == "welcome" else "Начисление за отзыв в приложении"
         payment = await create_bonus_balance_payment(
             client, counterparty_id=user.moysklad_counterparty_id, amount=Decimal(credit.points),
@@ -217,8 +227,24 @@ async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, 
             payment_purpose=f"{label} №{credit_id}",
             is_welcome=credit.source_kind == "welcome",
         )
-        credit.moysklad_paymentin_id = coerce_uuid(payment["id"])
-        credit.status = "applied"
+        payment_id = coerce_uuid(payment["id"])
+        if payment_id is None:
+            raise RuntimeError("MoySklad incoming payment is missing its id")
+        owner = (await db.execute(select(LoyaltyBonusCredit).where(
+            LoyaltyBonusCredit.moysklad_paymentin_id == payment_id,
+            LoyaltyBonusCredit.id != credit_id,
+        ))).scalar_one_or_none()
+        if owner is not None:
+            if credit.source_kind != "welcome" or owner.source_kind != "welcome" or owner.status != "applied":
+                raise RuntimeError("Incoming payment already belongs to another reward")
+            credit.reconciled_to_credit_id = owner.id
+            credit.reconciliation_note = f"Welcome reward already posted by credit #{owner.id}, payment {payment_id}"
+            credit.status = "already_granted"
+        else:
+            credit.moysklad_paymentin_id = payment_id
+            credit.status = "applied"
+            if payment.get("externalCode") and payment["externalCode"] != _external_code(credit.idempotency_key):
+                credit.reconciliation_note = f"Linked existing posted welcome payment {payment_id}; no new payment created"
         credit.expires_at = None
         credit.sync_error = None
         await db.commit()
@@ -535,6 +561,15 @@ async def loyalty_bonus_expiration_summary(
 
 
 async def sync_pending_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 100) -> dict[str, int]:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        await db.execute(update(LoyaltyBonusCredit).where(
+            LoyaltyBonusCredit.source_kind == "order_cashback",
+            LoyaltyBonusCredit.status.in_(("pending", "failed")),
+            LoyaltyBonusCredit.moysklad_bonus_transaction_id.is_(None),
+            LoyaltyBonusCredit.moysklad_paymentin_id.is_(None),
+        ).values(status="superseded", sync_error=None,
+            reconciliation_note="Native cashback queue retired: cashback is handled by MoySklad shipment automation in settlement mode"))
+        await db.commit()
     rows = list(
         (
             await db.execute(
