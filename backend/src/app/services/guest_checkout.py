@@ -70,7 +70,10 @@ async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[
             .selectinload(Product.products_by_category)
             .selectinload(ProductByCategory.category),
         )
-        .where(Variant.id.in_(items_by_variant_id.keys()))
+        .where(
+            Variant.id.in_(items_by_variant_id.keys()),
+            Variant.product.has(Product.is_visible_in_app.is_(True)),
+        )
     )
     scope = customer_category_scope(None)
     if scope is not None:

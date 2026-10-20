@@ -52,7 +52,7 @@ async def execute_dialogue_tool(db, user_id, name, args, allow_commerce):
         # No descriptions, price, stock or purchase links are exposed by this tool.
         term = query.replace("%", "\\%").replace("_", "\\_")
         rows = (await db.execute(select(Variant, Product).join(Product, Variant.product_id == Product.id).where(
-            Product.archived.is_(False), Variant.archived.is_(False),
+            Product.archived.is_(False), Product.is_visible_in_app.is_(True), Variant.archived.is_(False),
             or_(Product.name.ilike(f"%{term}%"), Variant.name.ilike(f"%{term}%"), Variant.sku.ilike(f"%{term}%")),
         ).order_by(Product.id, Variant.id).limit(13))).all()
         return {"ok": True, "data": {"candidates": [{"variant_id": v.id, "product_name": p.name, "variant_name": v.name, "package": parse_package(p.name, v.name)} for v, p in rows[:12]], "has_more": len(rows) > 12}}

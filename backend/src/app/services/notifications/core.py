@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from config import LOYALTY_EXPIRY_WARNING_DAYS, NOTIFICATION_ABANDONED_CART_AFTER_HOURS, NOTIFICATION_ABANDONED_CART_COOLDOWN_HOURS, NOTIFICATION_BATCH_SIZE, NOTIFICATION_INACTIVE_CUSTOMER_AFTER_DAYS, NOTIFICATION_INACTIVE_CUSTOMER_COOLDOWN_DAYS, NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, NOTIFICATION_REVIEW_REMINDER_AFTER_DAYS, ufa_now
 from src.app.services.push_notifications import send_push_to_user, send_push_to_users
-from src.database.models import AdminMarketingAutomation, Basket, BasketItem, CommunityAuthor, CommunityAuthorBlock, CommunityMessage, CommunityNotificationEvent, LoyaltyBonusCredit, NotificationDispatch, Order, OrderItem, Review, StockNotificationSubscription, UserPushToken, Variant
+from src.database.models import AdminMarketingAutomation, Basket, BasketItem, CommunityAuthor, CommunityAuthorBlock, CommunityMessage, CommunityNotificationEvent, LoyaltyBonusCredit, NotificationDispatch, Order, OrderItem, Product, Review, StockNotificationSubscription, UserPushToken, Variant
 
 log = logging.getLogger(__name__)
 
@@ -182,7 +182,7 @@ async def process_restock_notifications(session: AsyncSession, *, now: datetime 
     current_time = now or ufa_now()
     normalized = normalize_marketing_automation_settings("restock", settings)
 
-    rows = (await session.execute(select(StockNotificationSubscription, Variant).join(Variant, Variant.id == StockNotificationSubscription.variant_id).where(StockNotificationSubscription.is_active.is_(True), StockNotificationSubscription.last_seen_stock <= NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, Variant.archived.is_(False), Variant.stock > StockNotificationSubscription.last_seen_stock).order_by(StockNotificationSubscription.id.asc()).limit(NOTIFICATION_BATCH_SIZE))).all()
+    rows = (await session.execute(select(StockNotificationSubscription, Variant).join(Variant, Variant.id == StockNotificationSubscription.variant_id).where(StockNotificationSubscription.is_active.is_(True), StockNotificationSubscription.last_seen_stock <= NOTIFICATION_RESTOCK_LOW_STOCK_THRESHOLD, Variant.archived.is_(False), Variant.product.has(Product.is_visible_in_app.is_(True)), Variant.stock > StockNotificationSubscription.last_seen_stock).order_by(StockNotificationSubscription.id.asc()).limit(NOTIFICATION_BATCH_SIZE))).all()
 
     sent_count = 0
     for subscription, variant in rows:

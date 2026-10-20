@@ -19,6 +19,8 @@ The Vite server proxies `/api` and `/media` to `http://127.0.0.1:8000`. Override
 
 ## Production
 
+Apply pending database migrations (`cd backend && alembic upgrade head`) before starting the updated API and workers. Product visibility requires revision `b1d3f5a7c9e0`; existing products remain visible after the migration. Docker startup does not apply migrations automatically.
+
 Run `docker compose up -d --build admin-web worker-admin-jobs worker-admin-automation`. The job worker consumes idempotent long-running operations from Redis; the automation worker scans enabled order rules and SLA deadlines. The web container serves the SPA on `127.0.0.1:8080` and proxies `/api`, `/media` and `/health` to `backend-api`. Put the existing HTTPS reverse proxy in front of port 8080.
 
 `backend-api` and `worker-admin-jobs` must share the `backend/private_media` volume. The worker writes completed exports there, while the API stores private support attachments under `private_media/support`; both are served through authenticated download routes.
@@ -119,7 +121,9 @@ Analytics is a read-only owner view available from `/analytics`. It covers sales
 
 Customer analytics includes total and unique app openings, openings per customer and daily/monthly graphs. Product analytics includes units, revenue, orders, buyers, views, unique viewers, conversion and current stock.
 
-## Product images and stock
+## Product visibility, images and stock
+
+In Catalog → Products, turn off **Shown in app** (**Показ в приложении**) to hide a product from the customer storefront. The row stays available in the admin panel with a **Hidden** status; turn the switch back on to restore it. This requires the `catalog.merchandise` permission (Content and storefront or Super administrator). Visibility is saved immediately and is independent of MoySklad's archive and stock state.
 
 Main and variant images are uploaded from Catalog → Products → Merchandising. JPEG, PNG and WEBP files up to 10 MB are normalized to PNG, corrected for EXIF orientation and atomically written into the existing product media structure.
 

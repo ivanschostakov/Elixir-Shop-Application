@@ -25,6 +25,7 @@ class AdminProductRead(BaseModel):
     expiration: str | None
     in_stock: bool
     archived: bool
+    is_visible_in_app: bool
     priority: int
     is_new_manual: bool
     is_new: bool
@@ -48,6 +49,11 @@ class AdminProductMerchandisePayload(BaseModel):
     discount_percent: Decimal | None = Field(default=None, ge=0, le=100, max_digits=5, decimal_places=2)
     stock_reduction_override: int | None = Field(default=None, ge=0, le=1_000_000)
     category_ids: list[int] = Field(default_factory=list)
+    expected_updated_at: datetime
+
+
+class AdminProductVisibilityPayload(BaseModel):
+    is_visible_in_app: bool
     expected_updated_at: datetime
 
 

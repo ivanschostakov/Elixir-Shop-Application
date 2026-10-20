@@ -58,7 +58,7 @@ async def create_product(session: AsyncSession, data: ProductCreate) -> Product:
     return product
 
 
-async def get_product_by_id(session: AsyncSession, product_id: int, *, include_out_of_stock: bool = True, include_archived: bool = False) -> Product | None:
+async def get_product_by_id(session: AsyncSession, product_id: int, *, include_out_of_stock: bool = True, include_archived: bool = False, include_hidden: bool = False) -> Product | None:
     stmt = (
         select(Product)
         .options(*_product_price_options())
@@ -68,6 +68,8 @@ async def get_product_by_id(session: AsyncSession, product_id: int, *, include_o
         stmt = stmt.where(_in_stock_product_clause())
     if not include_archived:
         stmt = stmt.where(_not_archived_product_clause())
+    if not include_hidden:
+        stmt = stmt.where(Product.is_visible_in_app.is_(True))
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
@@ -93,7 +95,7 @@ async def get_products(
     include_archived: bool = False,
     allowed_category_ids: tuple[int, ...] | None = None,
 ) -> list[Product]:
-    stmt = select(Product).options(*_product_price_options())
+    stmt = select(Product).options(*_product_price_options()).where(Product.is_visible_in_app.is_(True))
     if allowed_category_ids is not None:
         stmt = stmt.where(Product.products_by_category.any(ProductByCategory.category_id.in_(allowed_category_ids)))
     if not include_archived:
@@ -166,7 +168,7 @@ async def get_similar_products(session: AsyncSession, *, product_id: int, offset
         select(Product)
         .options(*_product_price_options())
         .join(shared_category_counts, shared_category_counts.c.product_id == Product.id)
-        .where(_in_stock_product_clause(), _not_archived_product_clause())
+        .where(_in_stock_product_clause(), _not_archived_product_clause(), Product.is_visible_in_app.is_(True))
         .order_by(
             shared_category_counts.c.shared_category_count.desc(),
             Product.created_at.desc(),
@@ -188,7 +190,7 @@ async def get_priority_products(session: AsyncSession, *, min_priority: int = 1,
         .offset(offset)
         .limit(limit)
     )
-    predicates = [_in_stock_product_clause(), Product.priority >= min_priority]
+    predicates = [_in_stock_product_clause(), Product.priority >= min_priority, Product.is_visible_in_app.is_(True)]
     if not include_archived:
         predicates.append(_not_archived_product_clause())
     stmt = stmt.where(*predicates)

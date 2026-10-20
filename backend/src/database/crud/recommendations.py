@@ -134,6 +134,7 @@ async def get_candidate_products_for_categories(session: AsyncSession, *, catego
             ProductByCategory.category_id.in_(normalized_category_ids),
             Product.in_stock.is_(True),
             Product.archived.is_(False),
+            Product.is_visible_in_app.is_(True),
         )
     )
     if excluded_product_ids:
@@ -146,7 +147,7 @@ async def get_home_fallback_products(session: AsyncSession, *, offset: int, limi
     stmt: Select[tuple[Product]] = (
         select(Product)
         .options(*_product_price_options())
-        .where(Product.in_stock.is_(True), Product.archived.is_(False))
+        .where(Product.in_stock.is_(True), Product.archived.is_(False), Product.is_visible_in_app.is_(True))
         .order_by(Product.created_at.desc(), Product.id.desc())
         .offset(offset)
         .limit(limit)

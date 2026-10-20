@@ -22,6 +22,8 @@ class StockVisibilityPolicy:
         return max(0, int(self.global_reduction))
 
     def visible_stock(self, stock: int | None, product: Product | None) -> int:
+        if getattr(product, "is_visible_in_app", True) is False:
+            return 0
         return max(0, int(stock or 0) - self.reduction_for(product))
 
 

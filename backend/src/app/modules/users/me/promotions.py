@@ -20,7 +20,9 @@ def _representative_product(category: ProductCategory) -> Product | None:
     products = [
         link.product
         for link in category.products_by_category
-        if link.product is not None and not link.product.archived
+        if link.product is not None
+        and not link.product.archived
+        and getattr(link.product, "is_visible_in_app", True) is not False
     ]
     if not products:
         return None
@@ -50,6 +52,7 @@ async def list_my_promotions(
                 select(Product)
                 .where(
                     Product.archived.is_(False),
+                    Product.is_visible_in_app.is_(True),
                     Product.discount_percent > Decimal("0.00"),
                 )
                 .order_by(

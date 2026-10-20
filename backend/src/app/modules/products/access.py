@@ -39,12 +39,15 @@ async def require_visible_product(
     scope: CatalogScope = Depends(get_catalog_scope),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-    if scope is None:
-        return
-    visible = await db.scalar(select(Product.id).where(
+    statement = select(Product.id).where(
         Product.id == product_id,
         Product.archived.is_(False),
-        Product.products_by_category.any(ProductByCategory.category_id.in_(scope)),
-    ))
+        Product.is_visible_in_app.is_(True),
+    )
+    if scope is not None:
+        statement = statement.where(
+            Product.products_by_category.any(ProductByCategory.category_id.in_(scope)),
+        )
+    visible = await db.scalar(statement)
     if visible is None:
         raise HTTPException(status_code=404, detail="Product not found")

@@ -2,7 +2,7 @@ from .base import T, AdminPage, CustomerCompact
 from .platform import DashboardMetrics, DashboardTrendPoint, DashboardResponse, AdminAnalyticsResponse, SearchResultItem, SearchResponse, SavedViewPayload, SavedViewRead, AdminSlaPolicyRead, AdminSlaPolicyUpdatePayload, AdminSlaSummaryItem, AdminAlertRead, AdminAlertPage, AdminDashboardPreferenceRead, AdminDashboardPreferencePayload, AdminReadinessCheck, AdminWorkerHeartbeatRead, AdminProductionReadinessRead
 from .orders import AdminOrderListItem, AdminOrderItemRead, AdminOrderDetail, AdminOrderTransitionPayload, AdminOrderOperationPayload
 from .customers import CustomerListItem, AdminNoteRead, AdminNoteCreate, CustomerMarketingProfileRead, CustomerDeviceRead, CustomerEventRead, CustomerConsentRead, CustomerAttributionRead, CustomerDetail, CustomerPushTestRead, CustomerDeletePayload, CustomerStatusPayload
-from .catalog import AdminVariantRead, AdminProductRead, AdminProductMerchandisePayload, AdminCatalogStockSettingsRead, AdminCatalogStockSettingsPayload, AdminCategoryPayload, AdminCategoryRead
+from .catalog import AdminVariantRead, AdminProductRead, AdminProductMerchandisePayload, AdminProductVisibilityPayload, AdminCatalogStockSettingsRead, AdminCatalogStockSettingsPayload, AdminCategoryPayload, AdminCategoryRead
 from .content import AdminReviewRead, AdminReviewModerationPayload, AdminProductQuestionRead, AdminProductQuestionModerationPayload, AdminReviewBulkModerationItem, AdminReviewBulkModerationPayload, AdminReviewModerationEventRead, AdminBannerPayload, AdminBannerRead, AdminBannerUpdatePayload, AdminBannerUploadRead, AdminBannerDailyStatRead, AdminBannerStatsRead, AdminBusinessContentPayload, AdminBusinessContentUpdatePayload, AdminBusinessContentRead, AdminBusinessContentVersionRead
 from .integrations import IntegrationStatusRead, IntegrationRunRead, IntegrationRetryPayload, IntegrationRunRetryPayload, IntegrationQueueHealthRead, AdminExportCreatePayload, AdminExportRead, AuditLogRead
 from .staff import StaffRead, StaffRolesPayload, StaffCreatePayload, StaffStatusPayload
@@ -50,6 +50,7 @@ __all__ = [
     'AdminVariantRead',
     'AdminProductRead',
     'AdminProductMerchandisePayload',
+    'AdminProductVisibilityPayload',
     'AdminCatalogStockSettingsRead',
     'AdminCatalogStockSettingsPayload',
     'AdminCategoryPayload',

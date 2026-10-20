@@ -535,6 +535,9 @@ def test_guest_can_submit_review_for_moderation(monkeypatch: pytest.MonkeyPatch)
     delivered_review_ids: list[int] = []
 
     class FakeDb:
+        async def scalar(self, statement):
+            return 91
+
         async def commit(self):
             return None
 

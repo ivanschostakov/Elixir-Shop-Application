@@ -62,6 +62,8 @@ async def create_my_basket_item(payload: BasketItemCreate, request: Request, db:
     variant = await _get_variant_for_update(db, payload.variant_id)
     if variant is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
     product = await _get_product_for_pricing(db, variant.product_id)
+    if product is None or getattr(product, "is_visible_in_app", True) is False:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
     stock_policy = await get_stock_visibility_policy(db)
 
     existing_item = await get_basket_item_by_basket_and_variant(db, basket.id, variant.id, user_id=current_user.id)

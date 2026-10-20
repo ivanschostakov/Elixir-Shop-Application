@@ -37,7 +37,7 @@ async def get_products_for_category(session: AsyncSession, category_id: int, *, 
     stmt = (
         select(Product)
         .join(ProductByCategory, ProductByCategory.product_id == Product.id)
-        .where(ProductByCategory.category_id == category_id)
+        .where(ProductByCategory.category_id == category_id, Product.is_visible_in_app.is_(True))
     )
 
     if not include_archived:

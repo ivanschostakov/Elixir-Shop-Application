@@ -235,10 +235,10 @@ async def prepare_plan(db, plan, existing=None):
     for item in value.items:
         if item.variant_id:
             variant = (await db.execute(select(Variant).options(selectinload(Variant.product)).where(Variant.id == item.variant_id, Variant.archived.is_(False)))).scalar_one_or_none()
-            if variant is None or variant.product.archived:
+            if variant is None or variant.product.archived or getattr(variant.product, "is_visible_in_app", True) is False:
                 if item.variant_id in previous:
                     item.package_source_name = previous[item.variant_id].get("package_source_name")
-                    continue  # Archived catalog rows must not destroy a user's course history.
+                    continue  # Unavailable catalog rows must not destroy a user's course history.
                 raise HTTPException(422, "Вариант товара не найден; сохраните позицию без привязки")
             parsed = parse_package(variant.product.name, variant.name)
             if item.package_amount is None and parsed["known"]:
@@ -248,7 +248,7 @@ async def prepare_plan(db, plan, existing=None):
 
 
 async def supply_for(db, user_id, days=30):
-    from src.database.models import Variant
+    from src.database.models import Product, Variant
     row = await current_plan(db, user_id)
     if row is None or row.status != "active":
         return {"available": False, "reason": "Нет активного курса."}
@@ -278,7 +278,12 @@ async def supply_for(db, user_id, days=30):
                     shortage_at = event.scheduled_at.isoformat()
                     break
             result["projected_shortage_at"] = shortage_at
-            variant = await db.get(Variant, item.variant_id) if item.variant_id else None
+            variant = (await db.execute(
+                select(Variant).where(
+                    Variant.id == item.variant_id,
+                    Variant.product.has(Product.is_visible_in_app.is_(True)),
+                )
+            )).scalar_one_or_none() if item.variant_id else None
             items.append({**result, "available": True, "required": str(required), "home_remaining": str(remaining), "unit": item.package_unit, "packages": count, "price": str(variant.price) if variant and not variant.archived else None, "stock": variant.stock if variant and not variant.archived else None, "estimated_cost": str(variant.price * count) if variant and not variant.archived else None})
         except ValueError as error:
             items.append({**result, "reason": str(error)})

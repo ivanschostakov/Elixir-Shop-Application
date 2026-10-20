@@ -14,6 +14,7 @@ from src.app.modules.admin.schemas import (
     AdminPage,
     AdminProductMerchandisePayload,
     AdminProductRead,
+    AdminProductVisibilityPayload,
 )
 from src.app.services.admin import AdminContext, add_admin_audit, require_permission
 from src.app.services.cache import get_cache_service
@@ -37,8 +38,18 @@ def _product_options():
     )
 
 
-async def _get_product(db: AsyncSession, product_id: int) -> Product:
-    product = (await db.execute(select(Product).options(*_product_options()).where(Product.id == product_id).execution_options(populate_existing=True))).scalar_one_or_none()
+async def _get_product(
+    db: AsyncSession, product_id: int, *, for_update: bool = False
+) -> Product:
+    statement = (
+        select(Product)
+        .options(*_product_options())
+        .where(Product.id == product_id)
+        .execution_options(populate_existing=True)
+    )
+    if for_update:
+        statement = statement.with_for_update()
+    product = (await db.execute(statement)).scalar_one_or_none()
     if product is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
     return product
@@ -178,6 +189,38 @@ async def get_product(
         await _get_product(db, product_id),
         stock_policy=await get_stock_visibility_policy(db),
     )
+
+
+@admin_catalog_router.patch("/products/{product_id}/visibility", response_model=AdminProductRead)
+async def update_product_visibility(
+    product_id: int,
+    payload: AdminProductVisibilityPayload,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("catalog.merchandise", write=True)),
+) -> AdminProductRead:
+    product = await _get_product(db, product_id, for_update=True)
+    ensure_not_stale(actual=product.updated_at, expected=payload.expected_updated_at)
+    stock_policy = await get_stock_visibility_policy(db)
+    before = serialize_admin_product(
+        request, product, stock_policy=stock_policy
+    ).model_dump(mode="json")
+    product.is_visible_in_app = payload.is_visible_in_app
+    await db.flush()
+    result = serialize_admin_product(request, product, stock_policy=stock_policy)
+    await add_admin_audit(
+        db,
+        request,
+        context,
+        action="product.visibility.update",
+        entity_type="product",
+        entity_id=product.id,
+        before=before,
+        after=result.model_dump(mode="json"),
+    )
+    await db.commit()
+    await _bump_catalog_cache()
+    return result
 
 
 @admin_catalog_router.patch("/products/{product_id}/merchandise", response_model=AdminProductRead)

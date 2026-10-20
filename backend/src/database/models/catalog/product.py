@@ -37,6 +37,7 @@ class Product(Base, SystemMixin):
     expiration: Mapped[str | None] = mapped_column(Text, nullable=True)
     in_stock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_visible_in_app: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     stock_reduction_override: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_new_manual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))

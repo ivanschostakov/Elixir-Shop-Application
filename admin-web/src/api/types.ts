@@ -345,6 +345,7 @@ export type Product = {
   expiration: string | null
   in_stock: boolean
   archived: boolean
+  is_visible_in_app: boolean
   priority: number
   is_new_manual: boolean
   is_new: boolean

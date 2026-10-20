@@ -38,7 +38,7 @@ async def get_favourite_products_for_user(session: AsyncSession, user_id: int, *
             selectinload(Product.products_by_category).selectinload(ProductByCategory.category),
         )
         .join(FavouredProduct, FavouredProduct.product_id == Product.id)
-        .where(FavouredProduct.user_id == user_id, Product.archived.is_(False))
+        .where(FavouredProduct.user_id == user_id, Product.archived.is_(False), Product.is_visible_in_app.is_(True))
     )
     if product_id is not None: stmt = stmt.where(FavouredProduct.product_id == product_id)
     if allowed_category_ids is not None:

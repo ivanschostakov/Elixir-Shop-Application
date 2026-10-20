@@ -211,7 +211,7 @@ async def _load_products(session: AsyncSession, product_ids: set[int]) -> dict[i
     stmt = (
         select(Product)
         .options(selectinload(Product.variants))
-        .where(Product.id.in_(product_ids))
+        .where(Product.id.in_(product_ids), Product.is_visible_in_app.is_(True))
     )
     products = list((await session.execute(stmt)).scalars().all())
     return {product.id: product for product in products}
@@ -223,7 +223,10 @@ async def _load_variants(session: AsyncSession, variant_ids: set[int]) -> dict[i
     stmt = (
         select(Variant)
         .options(selectinload(Variant.product))
-        .where(Variant.id.in_(variant_ids))
+        .where(
+            Variant.id.in_(variant_ids),
+            Variant.product.has(Product.is_visible_in_app.is_(True)),
+        )
     )
     variants = list((await session.execute(stmt)).scalars().all())
     return {variant.id: variant for variant in variants}

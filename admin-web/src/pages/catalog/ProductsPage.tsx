@@ -130,6 +130,26 @@ export function ProductsPage() {
     },
     onError: (error: Error) => void message.error(error.message),
   })
+  const updateVisibility = useMutation({
+    mutationFn: ({ product, visible }: { product: Product; visible: boolean }) => apiRequest<Product>(`/products/${product.id}/visibility`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_visible_in_app: visible, expected_updated_at: product.updated_at }),
+    }),
+    onSuccess: (product) => {
+      client.setQueryData(["product", product.id], product)
+      setSelected((current) => current?.id === product.id ? product : current)
+      void message.success(product.is_visible_in_app
+        ? locale === "ru" ? "Товар показывается в приложении" : "Product shown in app"
+        : locale === "ru" ? "Товар скрыт из приложения" : "Product hidden from app")
+    },
+    onError: (error: Error) => void message.error(error.message),
+    onSettled: async (_data, _error, { product }) => {
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["products"] }),
+        client.invalidateQueries({ queryKey: ["product", product.id] }),
+      ])
+    },
+  })
   const copy = locale === "ru"
     ? { title: "Товары", description: "Данные МойСклад и локальное оформление витрины", search: "Название или SKU", archived: "Показать архив", lowStock: "Только низкие остатки", product: "Товар", source: "Источник", stock: "Остаток", stockShown: "На витрине", stockActual: "Фактически", stockSettings: "Настройки каталога", stockSettingsHint: "Настройте отображаемые остатки. Данные МойСклад не изменяются.", stockEnabled: "Включить занижение", stockReduction: "Вычитать по умолчанию, шт.", stockOverride: "Индивидуально вычитать, шт.", stockOverrideHint: "Оставьте пустым, чтобы использовать общее значение. Укажите 0, чтобы отключить занижение только для этого товара.", price: "Цена", priority: "Приоритет", state: "Статус", edit: "Оформление", drawer: "Оформление товара", locked: "Название, SKU, цены и фактические остатки синхронизируются из МойСклад", descriptionField: "Описание", usage: "Применение", expiration: "Срок годности", categories: "Категории", newManual: "Пометить как «Новинка»", newManualHint: "Метка «Новинка» управляется только вручную.", discount: "Скидка на товар, %", discountHint: "Если у категории скидка выше, на витрине применяется более выгодная скидка.", save: "Сохранить", active: "Активен", out: "Нет в наличии", archivedState: "В архиве", newLabel: "Новинка", mainImage: "Основное изображение", variantImages: "Изображения вариантов", upload: "Загрузить", imageHint: "JPEG, PNG или WEBP до 10 МБ. Изображение будет сохранено в PNG." }
     : { title: "Products", description: "MoySklad data and local storefront content", search: "Name or SKU", archived: "Show archived", lowStock: "Low stock only", product: "Product", source: "Source", stock: "Stock", stockShown: "Storefront", stockActual: "Actual", stockSettings: "Catalog settings", stockSettingsHint: "Configure displayed stock. MoySklad data is not changed.", stockEnabled: "Enable reduction", stockReduction: "Default subtraction", stockOverride: "Custom subtraction, units", stockOverrideHint: "Leave empty to use the global value. Enter 0 to disable reduction for this product only.", price: "Price", priority: "Priority", state: "Status", edit: "Merchandising", drawer: "Product merchandising", locked: "Name, SKU, prices and actual stock are synchronized from MoySklad", descriptionField: "Description", usage: "Usage", expiration: "Expiration", categories: "Categories", newManual: "Mark as New", newManualHint: "The New label is controlled manually only.", discount: "Product discount, %", discountHint: "If a category discount is higher, the better discount is shown in the storefront.", save: "Save", active: "Active", out: "Out of stock", archivedState: "Archived", newLabel: "New", mainImage: "Main image", variantImages: "Variant images", upload: "Upload", imageHint: "JPEG, PNG or WEBP up to 10 MB. The image will be stored as PNG." }
@@ -141,14 +161,18 @@ export function ProductsPage() {
     setSelected(null)
     updateFilters({ product_id: undefined })
   }
+  const visibilityCopy = locale === "ru"
+    ? { title: "Показ в приложении", shown: "Показывается", hidden: "Скрыт" }
+    : { title: "Shown in app", shown: "Shown", hidden: "Hidden" }
   const tableColumns = [
     { title: copy.product, key: "product", render: (_: unknown, row: Product) => <Space><Avatar shape="square" size={48} src={resolveAdminMediaUrl(row.image_url)} icon={<ProductFallback />} /><div className="table-primary"><strong>{row.name}</strong><small>{row.sku}</small><Space size={4} wrap>{row.is_new ? <Tag color="cyan">{copy.newLabel}</Tag> : null}{Number(row.effective_discount_percent) > 0 ? <Tag color="volcano">−{Number(row.effective_discount_percent)}%</Tag> : null}</Space></div></Space> },
     { title: copy.source, key: "source", render: () => <Tag bordered={false}>МойСклад</Tag> },
     { title: copy.stock, key: "stock", render: (_: unknown, row: Product) => <div className="table-primary"><strong>{copy.stockShown}: {row.variants.reduce((sum, variant) => sum + variant.display_stock, 0)}</strong><small>{copy.stockActual}: {row.variants.reduce((sum, variant) => sum + variant.stock, 0)} · −{row.effective_stock_reduction}</small></div> },
     { title: copy.price, key: "price", render: (_: unknown, row: Product) => row.variants.length ? `${money(Math.min(...row.variants.map((variant) => Number(variant.price))), "RUB", locale)} — ${money(Math.max(...row.variants.map((variant) => Number(variant.price))), "RUB", locale)}` : "—" },
     { title: copy.priority, dataIndex: "priority", key: "priority", align: "center" as const },
+    { title: visibilityCopy.title, key: "visibility", render: (_: unknown, row: Product) => canManage ? <Space><Switch aria-label={`${visibilityCopy.title}: ${row.name}`} checked={row.is_visible_in_app} disabled={updateVisibility.isPending || update.isPending || uploadImage.isPending} loading={updateVisibility.isPending && updateVisibility.variables?.product.id === row.id} onChange={(visible) => updateVisibility.mutate({ product: row, visible })} /><span>{row.is_visible_in_app ? visibilityCopy.shown : visibilityCopy.hidden}</span></Space> : <Tag color={row.is_visible_in_app ? "green" : "default"}>{row.is_visible_in_app ? visibilityCopy.shown : visibilityCopy.hidden}</Tag> },
     { title: copy.state, key: "state", render: (_: unknown, row: Product) => <Space><Tag color={row.archived ? "default" : row.in_stock ? "green" : "orange"}>{row.archived ? copy.archivedState : row.in_stock ? copy.active : copy.out}</Tag></Space> },
-    { title: "", key: "edit", align: "right" as const, render: (_: unknown, row: Product) => canManage ? <Button icon={<EditOutlined />} onClick={() => openProduct(row)}>{copy.edit}</Button> : null },
+    { title: "", key: "edit", align: "right" as const, render: (_: unknown, row: Product) => canManage ? <Button icon={<EditOutlined />} disabled={updateVisibility.isPending} onClick={() => openProduct(row)}>{copy.edit}</Button> : null },
   ]
   const columnOptions: TableColumnOption[] = [
     { key: "product", label: copy.product, exportKeys: ["sku", "name"] },
@@ -156,6 +180,7 @@ export function ProductsPage() {
     { key: "stock", label: copy.stock, exportKeys: ["stock"] },
     { key: "price", label: copy.price, exportKeys: ["price"] },
     { key: "priority", label: copy.priority, exportKeys: ["priority"] },
+    { key: "visibility", label: visibilityCopy.title },
     { key: "state", label: copy.state, exportKeys: ["in_stock", "archived"] },
     { key: "edit", label: copy.edit },
   ]

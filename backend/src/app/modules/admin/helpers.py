@@ -148,6 +148,7 @@ def serialize_admin_product(
         expiration=product.expiration,
         in_stock=product.in_stock,
         archived=product.archived,
+        is_visible_in_app=product.is_visible_in_app,
         priority=product.priority,
         is_new_manual=product.is_new_manual,
         is_new=product_is_new(product),
