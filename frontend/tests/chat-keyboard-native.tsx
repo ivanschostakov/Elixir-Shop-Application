@@ -70,7 +70,7 @@ function Fixture() {
     }, [])
     return <ChatModeTransition mode={mode}>{mode === "ai" ? <ChatKeyboardLayout style={styles.screen}>
         <View ref={header} collapsable={false} style={[styles.header, { paddingTop: insets.top + 8 }]}>
-            <Text style={styles.title}>Наставник SEPTAID</Text><Text style={styles.status}>Native fixture · {stage}</Text>
+            <Text style={styles.title}>Наставник ElixirPeptide</Text><Text style={styles.status}>Native fixture · {stage}</Text>
             <View style={styles.navigation}><Pressable onPress={() => { setPage(null); scrolling.followLatest() }}><Text>Чат</Text></Pressable><Pressable onPress={() => { Keyboard.dismiss(); setPage("workouts") }}><Text>Тренировки</Text></Pressable><Pressable onPress={() => void report.current("manual")}><Text>Измерить</Text></Pressable></View>
             <View style={styles.modeToggle}><Text>Наставник</Text><Text>Скрыть наставника</Text></View>
         </View>

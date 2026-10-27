@@ -233,7 +233,7 @@ def test_admin_can_start_a_customer_conversation(
         )
         assert customer_inbox.status_code == 200, customer_inbox.text
         assert customer_inbox.json()["active"]["id"] == conversation_id
-        assert customer_inbox.json()["active"]["messages"][0]["author_name"] == "SEPTAID"
+        assert customer_inbox.json()["active"]["messages"][0]["author_name"] == "Elixir Peptide"
 
         customer_search = client.get(
             "/api/v1/admin/support/customers",
@@ -353,7 +353,7 @@ def test_support_to_crm_reply_lead_and_ai_visibility_flow(
         )
         assert customer_thread.status_code == 200, customer_thread.text
         visible_messages = customer_thread.json()["messages"]
-        assert visible_messages[-1]["author_name"] == "SEPTAID"
+        assert visible_messages[-1]["author_name"] == "Elixir Peptide"
         assert visible_messages[-1]["author_role"] is None
         assert all(not message["is_internal"] for message in visible_messages)
 

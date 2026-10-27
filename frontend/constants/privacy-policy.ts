@@ -2,7 +2,7 @@ import type { Language } from "@/i18n/translations"
 
 // This document describes the app's data flows, independently of the website offer.
 export const PRIVACY_POLICY: Record<Language, string> = {
-    ru: `# Конфиденциальность SEPTAID
+    ru: `# Конфиденциальность Elixir Peptide
 Редакция от 30 сентября 2026 года.
 
 ## Какие данные используются
@@ -20,7 +20,7 @@ https://developers.openai.com/api/docs/guides/your-data
 ## Удаление и связь
 Удалить аккаунт можно в профиле, в разделе личных данных. Связанные личные данные удаляются, а удаление ресурсов у ИИ-поставщика выполняется в очереди и может занять время. Сведения оформленных заказов могут сохраняться для исполнения заказа и учёта. Копии в Telegram и отдельный аккаунт сайта управляются отдельно. Для исправления данных и вопросов об обработке обратитесь в поддержку приложения или по адресу:
 elixirpeptide@yandex.ru`,
-    en: `# SEPTAID privacy
+    en: `# Elixir Peptide privacy
 Updated September 30, 2026.
 
 ## Data we use
@@ -38,7 +38,7 @@ Personal AI attachments require authenticated access by the owner or authorized 
 ## Deletion and contact
 Delete your account from Personal details in your profile. Linked personal data is deleted; removal of AI provider resources is queued and may take time. Submitted order records may remain for fulfillment and accounting. Telegram copies and a separate website account are managed separately. For corrections or privacy questions, use in-app support or email:
 elixirpeptide@yandex.ru`,
-    kz: `# SEPTAID құпиялылығы
+    kz: `# Elixir Peptide құпиялылығы
 2026 жылғы 30 қыркүйектегі нұсқа.
 
 ## Қолданылатын деректер

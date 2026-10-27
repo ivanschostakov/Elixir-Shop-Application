@@ -128,7 +128,7 @@ function AppShellContent() {
                             style={appShellStyles.brandLabelImage}
                         />
                         <Text numberOfLines={1} style={appShellStyles.brandLabelText}>
-                            SEPTAID
+                            ElixirPeptide
                         </Text>
                     </View>
                 </View>

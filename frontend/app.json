@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "SEPTAID",
+    "name": "Elixir Peptide",
     "slug": "elixir-shop",
     "version": "0.1.1",
     "orientation": "portrait",
@@ -28,8 +28,8 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Allow SEPTAID to access your location so the delivery map can center on you.",
-        "NSMicrophoneUsageDescription": "Allow SEPTAID to record voice messages for AI chat."
+        "NSLocationWhenInUseUsageDescription": "Allow Elixir Peptide to access your location so the delivery map can center on you.",
+        "NSMicrophoneUsageDescription": "Allow Elixir Peptide to record voice messages for AI chat."
       }
     },
     "android": {
@@ -91,14 +91,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow SEPTAID to access your photos so you can attach images to chat messages.",
-          "cameraPermission": "Allow SEPTAID to use your camera to take photos you choose to attach to support, community, or AI chat messages."
+          "photosPermission": "Allow Elixir Peptide to access your photos so you can attach images to chat messages.",
+          "cameraPermission": "Allow Elixir Peptide to use your camera to take photos you choose to attach to support, community, or AI chat messages."
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow SEPTAID to use your camera to take photos you choose to attach to support, community, or AI chat messages.",
+          "cameraPermission": "Allow Elixir Peptide to use your camera to take photos you choose to attach to support, community, or AI chat messages.",
           "recordAudioAndroid": false
         }
       ],
@@ -112,7 +112,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow SEPTAID to record voice messages for AI chat."
+          "microphonePermission": "Allow Elixir Peptide to record voice messages for AI chat."
         }
       ],
       "expo-asset"

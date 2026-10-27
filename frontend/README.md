@@ -1,4 +1,4 @@
-# SEPTAID App
+# Elixir Peptide App
 
 This project uses Expo, React Native, Expo Router, and TypeScript.
 

@@ -13,13 +13,12 @@ const dates = loadTs("screens/chat/companion-timezones.ts", { "@/i18n/mentor-tra
 test("mentor follows language changes without freezing module labels or altering entered values", () => {
     try {
         for (const [locale, title, goal, waist] of [
-            ["ru", "Наставник SEPTAID", "Снижение веса", "Талия, см"],
-            ["en", "SEPTAID Mentor", "Weight loss", "Waist, cm"],
-            ["kz", "SEPTAID тәлімгері", "Салмақ азайту", "Бел, см"],
+            ["ru", "Наставник ElixirPeptide", "Снижение веса", "Талия, см"],
+            ["en", "ElixirPeptide Mentor", "Weight loss", "Waist, cm"],
+            ["kz", "ElixirPeptide тәлімгері", "Салмақ азайту", "Бел, см"],
         ]) {
             language.setTranslationLanguage(locale)
             assert.equal(mentorText("Наставник ElixirPeptide"), title)
-            assert.equal(mentorText("Наставник SEPTAID"), title)
             assert.equal(data.goalLabels.weight_loss, goal)
             assert.equal(data.measurementLabels.waist_cm, waist)
             const meal = { kind: "meal", data: { kind: "meal", name: "Сегодня", note: "Моя запись {0}", occurred_at: "2026-09-29T12:00:00Z", nutrition: { kcal: "450" } } }
