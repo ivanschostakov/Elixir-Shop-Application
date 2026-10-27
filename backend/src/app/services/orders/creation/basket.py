@@ -8,6 +8,7 @@ from src.app.services.benefits.money import quantize_money
 from src.app.services.benefits.redemption import redeem_order_bonus_safe
 from src.app.services.discounts import discountable_subtotal_for_lines
 from src.app.services.catalog_merchandising import catalog_unit_price
+from src.app.services.catalog_access import require_catalog_products
 from src.app.services.delivery_quotes import calculate_authoritative_cdek_quote
 from src.app.services.recommendations import record_purchase
 from src.app.services.stock_visibility import get_stock_visibility_policy
@@ -30,6 +31,8 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     user_id = int(user.__dict__.get("id") or user.id)
     basket = await get_basket_by_user_id(session, user_id)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
+    await require_catalog_products(session, (item.product_id for item in basket.items),
+                                   user_id=user_id, client_platform=client_platform)
     if basket.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
 
     if basket.recipient is None:

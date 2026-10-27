@@ -25,9 +25,11 @@ def scoped_catalog(monkeypatch, register_verified_user):
     monkeypatch.setattr(config, "CATALOG_ACCESSORY_ONLY_USER_IDS", [str(limited["user"]["id"])])
     monkeypatch.setattr(config, "CATALOG_GUEST_ACCESSORIES_ONLY", True)
     monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+    monkeypatch.setattr(config, "IOS_COMMERCE_ENABLED", False)
     seed["limited"] = {"Authorization": f"Bearer {limited['access_token']}"}
     seed["regular"] = {"Authorization": f"Bearer {regular['access_token']}"}
     seed["limited_id"] = limited["user"]["id"]
+    seed["regular_id"] = regular["user"]["id"]
     try:
         yield seed
     finally:

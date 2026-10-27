@@ -14,7 +14,8 @@ from starlette import status
 from config import ufa_now
 from src.app.modules.guest.schemas import GuestBasketItemPayload, GuestBasketQuoteRead, GuestDeliveryAddressPayload, GuestOrderPayload
 from src.app.services.basket import _product_image_url, _variant_image_url
-from src.app.services.catalog_access import customer_category_scope
+from src.app.services.catalog_access import purchase_category_scope
+from src.app.services.platform_availability import is_ios_request
 from src.app.services.catalog_merchandising import (
     catalog_unit_price,
     product_catalog_discount_percent,
@@ -61,7 +62,7 @@ def _normalize_guest_items(items: list[GuestBasketItemPayload]) -> dict[int, int
     return normalized
 
 
-async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[int, int], *, lock: bool = False) -> dict[int, Variant]:
+async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[int, int], *, lock: bool = False, client_platform: str | None = None) -> dict[int, Variant]:
     if not items_by_variant_id: return {}
     stmt = (
         select(Variant)
@@ -75,7 +76,7 @@ async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[
             Variant.product.has(Product.is_visible_in_app.is_(True)),
         )
     )
-    scope = customer_category_scope(None)
+    scope = purchase_category_scope(None, client_platform=client_platform)
     if scope is not None:
         stmt = stmt.where(Variant.product.has(Product.products_by_category.any(ProductByCategory.category_id.in_(scope))))
     if lock: stmt = stmt.with_for_update()
@@ -131,7 +132,8 @@ def _guest_basket_item_read(
 async def quote_guest_basket(session: AsyncSession, request: Request, payload: list[GuestBasketItemPayload]) -> GuestBasketQuoteRead:
     now = ufa_now()
     items_by_variant_id = _normalize_guest_items(payload)
-    variants_by_id = await _load_guest_variants(session, items_by_variant_id)
+    variants_by_id = await _load_guest_variants(session, items_by_variant_id,
+                                              client_platform="ios" if is_ios_request(request.headers) else None)
     stock_policy = await get_stock_visibility_policy(session)
     _validate_guest_variants(items_by_variant_id, variants_by_id, stock_policy)
 
@@ -204,7 +206,8 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": "phone_exists", "message": "User with this phone already exists"})
 
     items_by_variant_id = _normalize_guest_items(payload.items)
-    variants_by_id = await _load_guest_variants(session, items_by_variant_id, lock=True)
+    variants_by_id = await _load_guest_variants(session, items_by_variant_id, lock=True,
+                                              client_platform="ios" if is_ios_request(request.headers) else None)
     stock_policy = await get_stock_visibility_policy(session)
     _validate_guest_variants(items_by_variant_id, variants_by_id, stock_policy)
 

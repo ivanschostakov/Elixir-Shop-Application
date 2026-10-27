@@ -17,6 +17,7 @@ from src.app.services.push_notifications import _build_push_messages
 @pytest.fixture(autouse=True)
 def restrictions_enabled(monkeypatch):
     monkeypatch.setattr(config, "APPLE_DEV_MODE", True)
+    monkeypatch.setattr(config, "IOS_COMMERCE_ENABLED", False)
 
 
 @pytest.mark.parametrize("path,method", [

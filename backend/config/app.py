@@ -1,7 +1,8 @@
 from .env import _bool_env, _csv_env, _env, _int_env
 
-# One operational switch for all native iOS users, never reviewer-specific.
+# Native iOS policy applies uniformly to all iOS users.
 APPLE_DEV_MODE = _bool_env("APPLE_DEV_MODE", True)
+IOS_COMMERCE_ENABLED = _bool_env("IOS_COMMERCE_ENABLED", False)
 
 # Customer catalog scope. Empty/default values leave existing access unchanged.
 CATALOG_ACCESSORY_CATEGORY_ID = _int_env("CATALOG_ACCESSORY_CATEGORY_ID", 0)

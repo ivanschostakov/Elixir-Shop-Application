@@ -1,4 +1,5 @@
 from decimal import Decimal
+from src.app.services.catalog_access import require_catalog_products
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +30,8 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
+    await require_catalog_products(session, (item.product_id for item in draft.items),
+                                   user_id=user_id, client_platform=client_platform)
 
     existing_order = await get_order_by_draft_id(session, draft.id, user_id=user_id)
     if existing_order is not None:

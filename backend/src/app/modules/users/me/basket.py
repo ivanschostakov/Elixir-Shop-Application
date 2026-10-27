@@ -8,7 +8,8 @@ from src.app.services.recommendations import record_cart_add
 from src.app.services.customer_intelligence import record_customer_event_safe
 from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.app.services.catalog_merchandising import catalog_unit_price
-from src.app.services.platform_availability import empty_basket_payload, is_commerce_blocked
+from src.app.services.catalog_access import require_catalog_products
+from src.app.services.platform_availability import empty_basket_payload, is_commerce_blocked, is_ios_request
 from src.app.modules.users.me.schemas import UpdateOrderDraftPayload
 from src.app.services.basket import (
     _ensure_basket,
@@ -64,6 +65,8 @@ async def create_my_basket_item(payload: BasketItemCreate, request: Request, db:
     product = await _get_product_for_pricing(db, variant.product_id)
     if product is None or getattr(product, "is_visible_in_app", True) is False:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    await require_catalog_products(db, [variant.product_id], user_id=current_user.id,
+                                   client_platform="ios" if is_ios_request(request.headers) else None)
     stock_policy = await get_stock_visibility_policy(db)
 
     existing_item = await get_basket_item_by_basket_and_variant(db, basket.id, variant.id, user_id=current_user.id)
@@ -102,6 +105,8 @@ async def update_my_basket_item(item_id: int, payload: BasketItemUpdate, request
     variant = await _get_variant_for_update(db, basket_item.variant_id)
     if variant is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
     product = await _get_product_for_pricing(db, variant.product_id)
+    await require_catalog_products(db, [variant.product_id], user_id=current_user.id,
+                                   client_platform="ios" if is_ios_request(request.headers) else None)
     stock_policy = await get_stock_visibility_policy(db)
     if payload.quantity > stock_policy.visible_stock(variant.stock, product):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")

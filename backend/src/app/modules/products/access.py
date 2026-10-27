@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.app.modules.auth.dependencies import get_optional_current_user
 from src.app.services.platform_availability import is_ios_request
-from src.app.services.catalog_access import CatalogScope, customer_category_scope
+from src.app.services.catalog_access import CatalogScope, customer_category_scope, purchase_category_scope
 from src.database import get_db
 from src.database.models import Product, ProductByCategory, User
 
@@ -30,6 +30,8 @@ async def get_catalog_scope(
     if scope is not None:
         return scope
     if config.APPLE_DEV_MODE and is_ios_request(request.headers):
+        if config.IOS_COMMERCE_ENABLED:
+            return purchase_category_scope(current_user.id if current_user else None, client_platform="ios")
         return ()
     return None
 

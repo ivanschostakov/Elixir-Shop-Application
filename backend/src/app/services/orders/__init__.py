@@ -4,6 +4,7 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Order, User
+from src.app.services.platform_availability import is_ios_request
 from src.database.models.orders.history import OrderHistoryBucket, OrderStatusCode
 from src.integrations.amocrm import get_amocrm_client
 
@@ -43,7 +44,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, request: Re
         session,
         user=user,
         draft_id=draft_id,
-        client_platform=request.headers.get("X-App-Platform"),
+        client_platform="ios" if is_ios_request(request.headers) else request.headers.get("X-App-Platform"),
         payment_method=payment_method,
         entered_code=entered_code,
         use_bonus_rubles=use_bonus_rubles,
@@ -56,7 +57,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, request: R
     return await _order_creation.create_order_from_basket_for_user(
         session,
         user=user,
-        client_platform=request.headers.get("X-App-Platform"),
+        client_platform="ios" if is_ios_request(request.headers) else request.headers.get("X-App-Platform"),
         payment_method=payment_method,
         entered_code=entered_code,
         use_bonus_rubles=use_bonus_rubles,

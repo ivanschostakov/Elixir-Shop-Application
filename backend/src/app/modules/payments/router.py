@@ -6,6 +6,8 @@ from starlette import status
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.users.me.schemas import CreatePaymentPayload, PaymentStatusRead
 from src.app.services.app_integrity import require_app_integrity
+from src.app.services.catalog_access import require_catalog_products
+from src.app.services.platform_availability import is_ios_request
 from src.app.services.orders import create_payment_for_order, get_order_for_user, get_payment_status_for_order
 from src.app.services.customer_intelligence import record_customer_event_safe
 from src.database import get_db
@@ -18,6 +20,8 @@ payments_router = APIRouter(prefix="/payments", tags=["payments"])
 async def create_payment(payload: CreatePaymentPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:create"))) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=payload.order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    await require_catalog_products(db, (item.product_id for item in order.items), user_id=current_user.id,
+                                   client_platform="ios" if is_ios_request(request.headers) else None)
     result = await create_payment_for_order(
         db,
         request=request,

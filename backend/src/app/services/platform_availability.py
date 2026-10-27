@@ -58,12 +58,14 @@ def is_ios_restricted_path(path: str, method: str = "GET") -> bool:
 
 
 def is_commerce_blocked(headers: Mapping[str, str], path: str, method: str) -> bool:
-    return config.APPLE_DEV_MODE and is_ios_request(headers) and is_commerce_path(path, method)
+    return config.APPLE_DEV_MODE and not config.IOS_COMMERCE_ENABLED and is_ios_request(headers) and is_commerce_path(path, method)
 
 
 def catalog_response(headers: Mapping[str, str], path: str, method: str) -> Response | None:
     """Empty catalog data, not a client feature flag or an alternative UI."""
     if not config.APPLE_DEV_MODE or method == "OPTIONS" or not (is_ios_request(headers) and is_ios_restricted_path(path, method)):
+        return None
+    if config.IOS_COMMERCE_ENABLED and is_commerce_path(path, method):
         return None
     path = path.rstrip("/")
     response_headers = {"Cache-Control": "no-store", "Vary": CATALOG_VARY}
