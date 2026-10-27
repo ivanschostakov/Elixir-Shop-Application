@@ -37,7 +37,7 @@ from src.database.models import (
 
 log = logging.getLogger(__name__)
 ACTIVE_CONVERSATION_STATUSES = ("new", "open", "waiting_customer", "waiting_team")
-SUPPORT_PUBLIC_AUTHOR_NAME = "Elixir Peptide"
+SUPPORT_PUBLIC_AUTHOR_NAME = "SEPTAID"
 SUPPORTED_IMAGE_MIME_TYPES = {
     "image/gif",
     "image/heic",
@@ -395,7 +395,7 @@ async def create_admin_support_conversation(
 
     conversation = CrmConversation(
         customer_user_id=user_id,
-        subject=(subject or "").strip()[:240] or normalized_body[:120] or "Сообщение от Elixir Peptide",
+        subject=(subject or "").strip()[:240] or normalized_body[:120] or "Сообщение от SEPTAID",
         status="new",
         priority="normal",
     )

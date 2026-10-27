@@ -36,7 +36,7 @@ async def lifespan(_: FastAPI):
         await get_cache_service().close()
 
 
-app = FastAPI(title="Elixir Peptide API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="SEPTAID API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ALLOWED_ORIGINS,
@@ -75,7 +75,7 @@ async def media_cache_control(request: Request, call_next):
 
 
 @app.get("/")
-async def read_root() -> dict[str, str]: return {"message": "Elixir Peptide API is running"}
+async def read_root() -> dict[str, str]: return {"message": "SEPTAID API is running"}
 
 
 @app.get("/health")

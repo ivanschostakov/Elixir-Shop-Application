@@ -199,7 +199,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
                 <View style={[styles.modalHeader, { backgroundColor: colors.surface }]}>
                     <View style={styles.modalBrandRow}>
                         <View style={[styles.modalAvatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={27} /></View>
-                        <Text style={[styles.modalBrand, { color: colors.green }]}>{mt("Наставник ElixirPeptide")}</Text>
+                        <Text style={[styles.modalBrand, { color: colors.green }]}>{mt("Наставник SEPTAID")}</Text>
                         {c.busy ? <ActivityIndicator color={colors.greenBright} /> : null}
                         <Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} onPress={() => c.setEditor(null)} style={({ pressed }) => [styles.modalClose, { backgroundColor: colors.soft, opacity: pressed ? 0.65 : 1 }]}><Text style={[styles.modalCloseText, { color: colors.green }]}>×</Text></Pressable>
                     </View>

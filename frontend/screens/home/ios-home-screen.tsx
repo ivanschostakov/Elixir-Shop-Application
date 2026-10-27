@@ -11,7 +11,7 @@ import { createIosHomeScreenStyles } from "@/screens/home/ios-home-screen.styles
 
 const COPY = {
     ru: {
-        eyebrow: "Elixir Peptide",
+        eyebrow: "SEPTAID",
         title: "Личный кабинет и поддержка",
         body: "Управляйте профилем, следите за статусом существующих заказов и обращайтесь в службу поддержки.",
         section: "Что доступно",
@@ -30,7 +30,7 @@ const COPY = {
         noticeBody: "Приложение не предоставляет диагнозы, схемы лечения, дозировки или индивидуальные медицинские рекомендации. Перед любыми медицинскими решениями обратитесь к квалифицированному врачу.",
     },
     en: {
-        eyebrow: "Elixir Peptide",
+        eyebrow: "SEPTAID",
         title: "Your account and support",
         body: "Manage your profile, follow existing order statuses, and contact the support team.",
         section: "Available here",
@@ -49,7 +49,7 @@ const COPY = {
         noticeBody: "The app does not provide diagnoses, treatment plans, dosages, or personalized medical recommendations. Consult a qualified doctor before making any medical decisions.",
     },
     kz: {
-        eyebrow: "Elixir Peptide",
+        eyebrow: "SEPTAID",
         title: "Жеке кабинет және қолдау",
         body: "Профильді басқарыңыз, бар тапсырыстардың күйін бақылаңыз және қолдау қызметіне хабарласыңыз.",
         section: "Қолжетімді бөлімдер",

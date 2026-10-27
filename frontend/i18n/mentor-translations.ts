@@ -794,9 +794,9 @@ export const mentorTranslations: Record<string, { en: string; kz: string }> = {
         "en": "My course · journal · progress",
         "kz": "Менің курсым · күнделік · прогресс"
     },
-    "Наставник ElixirPeptide": {
-        "en": "ElixirPeptide Mentor",
-        "kz": "ElixirPeptide тәлімгері"
+    "Наставник SEPTAID": {
+        "en": "SEPTAID Mentor",
+        "kz": "SEPTAID тәлімгері"
     },
     "Закрыть": {
         "en": "Close",
@@ -2701,6 +2701,8 @@ export const mentorTranslations: Record<string, { en: string; kz: string }> = {
 }
 
 export function mentorText(source: string, values: readonly unknown[] = [], language: Language = getTranslationLanguage()): string {
+    // Older API payloads may still use the previous interface title.
+    if (source.trim() === "Наставник ElixirPeptide") source = source.replace("Наставник ElixirPeptide", "Наставник SEPTAID")
     const key = source.trim()
     const phrase = language === "ru" ? source : mentorTranslations[key]?.[language]
     const translated = phrase === undefined ? source : language === "ru" ? phrase : source.slice(0, source.indexOf(key)) + phrase.trim() + source.slice(source.indexOf(key) + key.length)

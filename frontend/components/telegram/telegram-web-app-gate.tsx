@@ -56,7 +56,7 @@ function GatePanel({
     return (
         <View style={telegramWebAppGateStyles.screen}>
             <View style={telegramWebAppGateStyles.panel}>
-                <Text style={telegramWebAppGateStyles.eyebrow}>Elixir Peptide</Text>
+                <Text style={telegramWebAppGateStyles.eyebrow}>SEPTAID</Text>
                 <Text style={telegramWebAppGateStyles.title}>{title}</Text>
                 <Text style={telegramWebAppGateStyles.text}>{children}</Text>
                 {error ? <Text style={telegramWebAppGateStyles.errorText}>{error}</Text> : null}
@@ -201,7 +201,7 @@ export function TelegramWebAppGate({ children }: TelegramWebAppGateProps) {
     if (!isTelegramEnvironment || status === "notTelegram") {
         return (
             <GatePanel title="Open in Telegram">
-                This web version runs inside the Elixir Peptide Telegram app.
+                This web version runs inside the SEPTAID Telegram app.
             </GatePanel>
         )
     }

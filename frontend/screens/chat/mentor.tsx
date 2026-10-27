@@ -142,7 +142,7 @@ export function MentorWorkspace({ controller: c, onCompose, onPrompt, displayNam
         <View style={styles.header}>
             {page !== "today" ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Назад к сегодняшнему плану")} onPress={() => go("today")} hitSlop={8} style={{ minHeight: 36, justifyContent: "center" }}><MentorIcon name="back" size={18} color={colors.green} /></Pressable> : null}
             <View style={[styles.avatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={26} /></View>
-            <Text style={[styles.heading, { color: colors.green, fontSize: screenWidth < 360 ? 14 : 16 }]}>{mt("Наставник ElixirPeptide")}</Text>
+            <Text style={[styles.heading, { color: colors.green, fontSize: screenWidth < 360 ? 14 : 16 }]}>{mt("Наставник SEPTAID")}</Text>
             {page === "today" ? <Text style={[styles.time, { color: colors.muted }]}>{localTime(new Date().toISOString())}</Text> : null}
         </View>
         {c.error ? <View style={[styles.notice, { backgroundColor: colors.mint }]}><Copy>{c.error}</Copy><Button label={mt("Обновить данные")} onPress={() => void c.attempt(async () => { await c.refresh(); await load() })} /></View> : null}
