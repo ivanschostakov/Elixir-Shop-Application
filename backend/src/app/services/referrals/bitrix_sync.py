@@ -103,8 +103,8 @@ def apply_bitrix_program_profile(
     if bitrix_user_id and bitrix_user_id > 0:
         profile.bitrix_user_id = bitrix_user_id
     profile.referral_discount_base_total = purchase_total
-    refresh_profile_discount(profile, has_promo_code=is_partner_program or effective_promo is not None)
-    if is_partner_program:
+    refresh_profile_discount(profile, has_promo_code=is_partner_program if authoritative else effective_promo is not None)
+    if is_partner_program and not authoritative:
         profile.current_discount_percent = quantize_percent(
             max(profile.current_discount_percent, discount_percent)
         )

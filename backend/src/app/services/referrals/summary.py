@@ -171,7 +171,7 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
             raw_bitrix_user_id = int(partner_summary.get("user_id") or 0)
             if raw_bitrix_user_id > 0:
                 profile.bitrix_user_id = raw_bitrix_user_id
-            if partner_summary.get("personal_purchase_total") is not None:
+            if partner_summary.get("personal_purchase_total") is not None and not moysklad_program_is_authoritative(profile):
                 profile.referral_discount_base_total = max(
                     quantize_money(profile.referral_discount_base_total),
                     quantize_money(partner_summary.get("personal_purchase_total")),
@@ -195,7 +195,7 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
                 own_promo_code = partner_summary.get("own_promo") or own_promo_code
                 suggested_promo_code = partner_summary.get("suggested_promo") or suggested_promo_code
                 referrer_promo_code = partner_summary.get("referrer_promo") or referrer_promo_code
-                if partner_summary.get("personal_discount_percent") is not None:
+                if partner_summary.get("personal_discount_percent") is not None and not moysklad_program_is_authoritative(profile):
                     remote_discount_percent = quantize_percent(
                         partner_summary.get("personal_discount_percent")
                     )

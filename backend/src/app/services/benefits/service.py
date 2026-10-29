@@ -72,7 +72,8 @@ def _basket_subtotals(basket) -> tuple[Decimal, Decimal]:
 
 def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal) -> ResolvedDiscountOption | None:
     attached_promo = optional_str(user.promo_code)
-    if not attached_promo:
+    authoritative_partner = profile.reward_program_selection_source == "moysklad" and profile.reward_program == "partner"
+    if not attached_promo and not authoritative_partner:
         return None
     discount_percent = profile.current_discount_percent
     if discount_percent <= Decimal("0.00"):
@@ -262,7 +263,7 @@ async def resolve_benefits_for_user(
     del reward_mode
     effective_code = trimmed_code or optional_str(user.promo_code)
     active_reward_program = normalize_reward_program(referral_profile.reward_program) or "bonus"
-    resolved_reward_mode = REWARD_MODE_PROMO if effective_code else REWARD_MODE_CASHBACK
+    resolved_reward_mode = REWARD_MODE_PROMO if effective_code or active_reward_program == "partner" else REWARD_MODE_CASHBACK
     bitrix_option = None
     app_referral_option = (
         _build_app_referral_option(
@@ -271,7 +272,7 @@ async def resolve_benefits_for_user(
             subtotal=effective_subtotal,
             discountable_subtotal=effective_discountable_subtotal,
         )
-        if effective_code
+        if effective_code or active_reward_program == "partner"
         else None
     )
     if bitrix_promo_configured() and effective_code:

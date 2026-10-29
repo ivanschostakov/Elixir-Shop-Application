@@ -10,7 +10,7 @@ from uuid import UUID
 
 import httpx
 
-from src.app.modules.users.me.schemas.settlement import SettlementRead
+from .settlement_schemas import SettlementRead
 from src.app.services.cache import get_cache_service
 from src.integrations.moysklad.client import get_moysklad_client
 

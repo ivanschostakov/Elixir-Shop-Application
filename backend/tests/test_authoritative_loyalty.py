@@ -1,4 +1,6 @@
 import asyncio
+import subprocess
+import sys
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -11,8 +13,15 @@ from src.app.services.referrals import program, bitrix_sync
 from src.app.services.referrals.paid_orders import orders, reconciliation
 
 
+def test_settlement_can_be_imported_without_initializing_api_routes():
+    subprocess.run([sys.executable, "-c",
+        "from src.app.services.benefits.settlement import get_account_settlement; "
+        "from src.app.services.benefits.settlement_schemas import SettlementRead; "
+        "assert SettlementRead(status='unlinked').status == 'unlinked'"], check=True)
+
+
 def profile():
-    return SimpleNamespace(reward_program="bonus", reward_program_selection_source="system_default",
+    return SimpleNamespace(id=1, reward_program="bonus", reward_program_selection_source="system_default",
         reward_program_selected_at=None, reward_program_snapshot={},
         referral_discount_base_total=Decimal("0"), current_discount_percent=Decimal("0"),
         bitrix_user_id=None, partner_unlocked_at=None)
@@ -37,11 +46,12 @@ def test_moysklad_program_is_not_inferred_from_promo(monkeypatch, code, expected
         assert user.promo_code == promo
         bitrix_sync.apply_bitrix_program_profile(row, user=user, program_profile={
             "referrer_promo": "STALE-BITRIX", "order_sum": {"amount": 90000},
-            "stored_discount_percent": 0, "group_discount_percent": 0})
+            "stored_discount_percent": 20, "group_discount_percent": 20})
         assert row.reward_program == expected
         assert row.reward_program_selection_source == "moysklad"
         assert row.referral_discount_base_total == Decimal("43502.10")
         assert user.promo_code == promo
+        assert row.current_discount_percent == (Decimal("4.00") if code == 2 else Decimal("0.00"))
     if code == 0:
         assert row.current_discount_percent == 0
 
@@ -59,6 +69,19 @@ def test_remote_outage_preserves_existing_account_program(monkeypatch):
     asyncio.run(program.ensure_default_reward_program(SimpleNamespace(flush=AsyncMock()), user=user))
     assert row.reward_program == "partner"
     assert row.reward_program_selection_source == "moysklad"
+
+
+def test_accounting_partner_discount_does_not_require_a_referrer_promo():
+    from src.app.services.benefits.service import _build_app_referral_option
+    row = profile()
+    row.reward_program = "partner"
+    row.reward_program_selection_source = "moysklad"
+    row.current_discount_percent = Decimal("4.00")
+    option = _build_app_referral_option(row, user=SimpleNamespace(promo_code=None),
+        subtotal=Decimal("1000"), discountable_subtotal=Decimal("1000"))
+    assert option is not None and option.is_applicable
+    assert option.discount_percent == Decimal("4.00")
+    assert option.estimated_discount_amount == Decimal("40.00")
 
 
 @pytest.mark.parametrize("name", ["sync_paid_order_referral_to_app", "reverse_paid_order_reward",
