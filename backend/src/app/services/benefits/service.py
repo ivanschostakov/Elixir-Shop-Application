@@ -261,7 +261,7 @@ async def resolve_benefits_for_user(
     # builds. Promo availability and the selected program are authoritative.
     del reward_mode
     effective_code = trimmed_code or optional_str(user.promo_code)
-    active_reward_program = "partner" if effective_code else "bonus"
+    active_reward_program = normalize_reward_program(referral_profile.reward_program) or "bonus"
     resolved_reward_mode = REWARD_MODE_PROMO if effective_code else REWARD_MODE_CASHBACK
     bitrix_option = None
     app_referral_option = (
@@ -377,7 +377,8 @@ async def resolve_benefits_for_user(
         )
     cashback_earned_points = (
         cashback_points_for_amount(total_after_discounts)
-        if active_reward_program == "bonus"
+        if active_reward_program == "bonus" and not effective_code
+        and (referral_profile.reward_program_snapshot or {}).get("moysklad_program_code") != 0
         else 0
     )
     pending_bonus_points = await pending_loyalty_bonus_points(db, user_id=user.id)

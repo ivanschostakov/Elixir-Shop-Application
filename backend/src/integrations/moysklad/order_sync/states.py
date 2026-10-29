@@ -23,6 +23,17 @@ async def sync_moysklad_customerorder_state(order: Order, *, state_name: str) ->
         current_state_href = _href(current_meta.get("href")) if isinstance(current_meta, dict) else None
         target_state_href = _href((state.get("meta") or {}).get("href"))
         if current_state_href and target_state_href and current_state_href == target_state_href: return False
+        if isinstance(current_state, dict) and (
+            current_state.get("stateType") in {"Successful", "Unsuccessful"}
+            or (current_state.get("name") or "").strip().casefold() in {
+                "груз укомплектован", "груз отгружен", "груз отправлен",
+                "груз доставлен / успех", "груз доставлен", "наложенный платеж",
+                "наложенный платёж", "отменен", "отменён",
+            }
+        ):
+            log.info("Skipping automatic MoySklad state regression order_id=%s current=%s target=%s",
+                     order.id, current_state.get("name"), normalized_state_name)
+            return False
         await moysklad_client.update_customer_order_state(order.moysklad_customerorder_id, state)
         return True
     except Exception:

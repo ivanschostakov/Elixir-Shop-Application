@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any, Literal, cast
 
 import httpx
+from config import LOYALTY_USE_SETTLEMENT_BALANCE
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -45,13 +46,56 @@ def reward_program_selection_required(profile: ReferralProfile) -> bool:
     return False
 
 
+def moysklad_program_is_authoritative(profile: ReferralProfile) -> bool:
+    snapshot = profile.reward_program_snapshot or {}
+    return (profile.reward_program_selection_source == "moysklad"
+            and snapshot.get("moysklad_program_code") in {0, 1, 2})
+
+
+async def _refresh_moysklad_program(profile: ReferralProfile, *, user: User) -> bool:
+    counterparty_id = getattr(user, "moysklad_counterparty_id", None)
+    if not LOYALTY_USE_SETTLEMENT_BALANCE or counterparty_id is None:
+        return False
+    from src.app.services.benefits.settlement import get_account_settlement
+    value = await get_account_settlement(counterparty_id)
+    if value.status != "fresh" or value.loyalty_program not in {0, 1, 2}:
+        snapshot = profile.reward_program_snapshot or {}
+        if (moysklad_program_is_authoritative(profile)
+                and snapshot.get("moysklad_counterparty_id") == str(counterparty_id)):
+            return True
+        # Do not reinterpret an existing customer's program during an outage.
+        if value.status not in {"fresh", "unlinked"}:
+            raise HTTPException(status_code=503, detail="Программа лояльности временно недоступна / Loyalty program is temporarily unavailable")
+        return False
+    previous = profile.reward_program
+    profile.reward_program = "partner" if value.loyalty_program == 2 else "bonus"
+    profile.reward_program_selection_source = "moysklad"
+    if previous != profile.reward_program or profile.reward_program_selected_at is None:
+        profile.reward_program_selected_at = datetime.now(timezone.utc)
+    profile.referral_discount_base_total = quantize_money(value.total_purchases_rubles)
+    user.promo_code = optional_str(value.referrer_promo_code)
+    profile.reward_program_snapshot = dict(profile.reward_program_snapshot or {},
+        program_authority="moysklad", moysklad_program_code=value.loyalty_program,
+        moysklad_counterparty_id=str(counterparty_id),
+        moysklad_own_promo=value.own_promo_code,
+        moysklad_referrer_promo=value.referrer_promo_code,
+        moysklad_synced_at=value.fetched_at.isoformat() if value.fetched_at else None)
+    return True
+
+
 async def ensure_default_reward_program(
     db: AsyncSession,
     *,
     user: User,
 ) -> ReferralProfile:
-    """Keep the active program aligned with whether a promo is assigned."""
+    """Mirror the accounting program; promo presence is only a legacy default."""
     profile = await get_or_create_referral_profile(db, user=user)
+    if await _refresh_moysklad_program(profile, user=user):
+        refresh_profile_discount(profile, has_promo_code=profile.reward_program == "partner")
+        if profile.reward_program_snapshot.get("moysklad_program_code") == 0:
+            profile.current_discount_percent = Decimal("0.00")
+        await db.flush()
+        return profile
     existing_promo = optional_str(user.promo_code)
     desired_program: RewardProgram = "partner" if existing_promo else DEFAULT_REWARD_PROGRAM
     desired_source = "promo_attached" if existing_promo else "system_default"

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
+from config import LOYALTY_USE_SETTLEMENT_BALANCE
 from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.models import BonusProgramPurchase, Order, ReferralProfile, User
@@ -17,6 +18,8 @@ from .bonus import _record_bonus_program_purchase, _reverse_bonus_program_purcha
 
 
 async def reverse_paid_order_reward(db: AsyncSession, *, order: Order,) -> dict[str, Any] | None:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return {"storage": "moysklad", "outcome": "managed_by_moysklad"}
     order_id = order.id
     try: cashback_result = await reverse_order_cashback_safe(db, order=order)
     except Exception:
@@ -83,6 +86,10 @@ async def reverse_paid_order_reward(db: AsyncSession, *, order: Order,) -> dict[
 
 
 async def sync_paid_order_referral_to_app(db: AsyncSession, *, order: Order,) -> dict[str, Any] | None:
+    # Shipment automation owns progress and rewards in settlement mode. A
+    # repeated payment webhook must not also increment Bitrix purchase totals.
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return {"storage": "moysklad", "outcome": "managed_by_moysklad"}
     payment_status = (order.payment_status or "").strip().lower()
     if order.is_canceled or payment_status == "refunded": return await reverse_paid_order_reward(db, order=order)
     if not order.is_paid: return None

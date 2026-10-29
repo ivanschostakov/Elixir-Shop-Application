@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from config import LOYALTY_USE_SETTLEMENT_BALANCE
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,6 +12,8 @@ from .orders import sync_paid_order_referral_to_app
 
 
 async def retry_unsynced_app_referral_purchases(db: AsyncSession, *, limit: int = 50, retry_after_minutes: int = 5,) -> dict[str, int]:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return {"processed": 0, "synced": 0, "failed": 0}
     if not bitrix_promo_configured(): return {"processed": 0, "synced": 0, "failed": 0}
 
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=max(1, retry_after_minutes))
@@ -56,6 +59,8 @@ async def retry_unsynced_app_referral_purchases(db: AsyncSession, *, limit: int 
 
 
 async def backfill_missing_paid_order_rewards(db: AsyncSession, *, limit: int = 50,) -> dict[str, int]:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return {"processed": 0, "synced": 0, "failed": 0}
     orders = list((await db.execute(select(Order).outerjoin(AppReferralPurchase, AppReferralPurchase.order_id == Order.id,).outerjoin(BonusProgramPurchase, BonusProgramPurchase.order_id == Order.id,).where(Order.is_paid.is_(True), Order.is_canceled.is_(False), func.coalesce(Order.payment_status, "").notin_(("refunded", "canceled", "error")), AppReferralPurchase.id.is_(None), BonusProgramPurchase.id.is_(None),).order_by(Order.id).limit(max(1, min(limit, 500))))).scalars().all())
     synced = 0
     failed = 0
@@ -78,6 +83,8 @@ async def backfill_missing_paid_order_rewards(db: AsyncSession, *, limit: int = 
 
 
 async def finalize_closed_app_referral_accruals(db: AsyncSession, *, limit: int = 200,) -> dict[str, int]:
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        return {"processed": 0, "approved": 0, "rejected": 0, "failed": 0}
     if not bitrix_promo_configured(): return {"processed": 0, "approved": 0, "rejected": 0, "failed": 0}
 
     rows = list((await db.execute(select(AppReferralAccrual).join(AppReferralPurchase).options(selectinload(AppReferralAccrual.purchase)).where(AppReferralAccrual.status == "pending", AppReferralPurchase.period_end <= date.today(),).order_by(AppReferralAccrual.id).limit(max(1, min(limit, 1000))))).scalars().all())

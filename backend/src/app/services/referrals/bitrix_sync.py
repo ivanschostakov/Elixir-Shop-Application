@@ -16,7 +16,7 @@ from src.normalize import optional_str
 
 from .calculations import PARTNER_UNLOCK_SPEND, quantize_money, quantize_percent
 from .profile import refresh_profile_discount
-from .program import ensure_default_reward_program
+from .program import ensure_default_reward_program, moysklad_program_is_authoritative
 
 logger = logging.getLogger(__name__)
 
@@ -71,18 +71,23 @@ def apply_bitrix_program_profile(
     ):
         effective_promo = current_local_promo
     now = datetime.now(timezone.utc)
-    reward_program = "partner" if effective_promo else "bonus"
+    authoritative = moysklad_program_is_authoritative(profile)
+    if authoritative:
+        effective_promo = optional_str(profile.reward_program_snapshot.get("moysklad_referrer_promo"))
+        own_promo = optional_str(profile.reward_program_snapshot.get("moysklad_own_promo"))
+    reward_program = profile.reward_program if authoritative else "partner" if effective_promo else "bonus"
     previous_reward_program = str(getattr(profile, "reward_program", "") or "")
     profile.reward_program = reward_program
-    if effective_promo:
+    if not authoritative and effective_promo:
         if previous_reward_program != "partner" or profile.reward_program_selected_at is None:
             profile.reward_program_selected_at = now
-    else:
+    elif not authoritative:
         profile.reward_program_selected_at = None
-    profile.reward_program_selection_source = (
-        "promo_attached" if effective_promo else "system_default"
-    )
-    is_partner_program = effective_promo is not None
+    if not authoritative:
+        profile.reward_program_selection_source = (
+            "promo_attached" if effective_promo else "system_default"
+        )
+    is_partner_program = reward_program == "partner"
     participating_purchase_total = (
         remote_purchase_total if effective_promo is not None else Decimal("0.00")
     )
@@ -92,15 +97,19 @@ def apply_bitrix_program_profile(
             quantize_money(profile.referral_discount_base_total),
             remote_purchase_total,
         )
+    if authoritative:
+        purchase_total = quantize_money(profile.referral_discount_base_total)
 
     if bitrix_user_id and bitrix_user_id > 0:
         profile.bitrix_user_id = bitrix_user_id
     profile.referral_discount_base_total = purchase_total
-    refresh_profile_discount(profile, has_promo_code=effective_promo is not None)
-    if is_partner_program and effective_promo is not None:
+    refresh_profile_discount(profile, has_promo_code=is_partner_program or effective_promo is not None)
+    if is_partner_program:
         profile.current_discount_percent = quantize_percent(
             max(profile.current_discount_percent, discount_percent)
         )
+    if authoritative and profile.reward_program_snapshot.get("moysklad_program_code") == 0:
+        profile.current_discount_percent = Decimal("0.00")
     effective_discount_percent = profile.current_discount_percent
     profile.bitrix_sync_status = "synced"
     profile.bitrix_synced_at = now

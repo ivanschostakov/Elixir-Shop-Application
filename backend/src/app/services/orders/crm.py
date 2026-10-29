@@ -243,6 +243,9 @@ async def _move_lead_to_pending_payment(session: AsyncSession, order: Order) -> 
 
 
 async def _move_lead_to_payment_result_status(session: AsyncSession, order: Order, *, payment_status: str | None) -> Order:
+    if (order.is_shipped or order.is_canceled or not order.is_active) and payment_status in {"paid", "hold", "partial", "error"}:
+        log.info("Skipping late payment status update for completed order_id=%s payment_status=%s", order.id, payment_status)
+        return order
     target_status_id = _payment_status_to_amocrm_status_id(payment_status)
     if not order.amocrm_lead_id or target_status_id is None: return order
 

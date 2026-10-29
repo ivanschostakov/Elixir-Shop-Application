@@ -36,6 +36,7 @@ from .program import (
     normalize_reward_program,
     reward_program_selection_available,
     reward_program_selection_required,
+    moysklad_program_is_authoritative,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,6 +154,9 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         referrer_promo_code = program_profile.get("referrer_promo") or user.promo_code
     else:
         refresh_profile_discount(profile, has_promo_code=bool(referrer_promo_code))
+    if moysklad_program_is_authoritative(profile):
+        own_promo_code = profile.reward_program_snapshot.get("moysklad_own_promo")
+        referrer_promo_code = profile.reward_program_snapshot.get("moysklad_referrer_promo")
     reward_program = normalize_reward_program(profile.reward_program) or (
         "partner" if referrer_promo_code else "bonus"
     )
