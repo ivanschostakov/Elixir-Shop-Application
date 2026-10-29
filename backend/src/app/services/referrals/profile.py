@@ -35,6 +35,9 @@ def user_has_promo_code(user: User) -> bool:
 
 
 def refresh_profile_discount(profile: ReferralProfile, *, has_promo_code: bool | None = None) -> None:
+    if getattr(profile, "reward_program_selection_source", None) == "moysklad":
+        snapshot = getattr(profile, "reward_program_snapshot", None) or {}
+        has_promo_code = profile.reward_program == "partner" and snapshot.get("moysklad_program_code") != 0
     profile.current_discount_percent = calculate_personal_discount_percent(
         profile.referral_discount_base_total,
         has_promo_code=has_promo_code,

@@ -73,10 +73,13 @@ def test_remote_outage_preserves_existing_account_program(monkeypatch):
 
 def test_accounting_partner_discount_does_not_require_a_referrer_promo():
     from src.app.services.benefits.service import _build_app_referral_option
+    from src.app.services.referrals.profile import refresh_profile_discount
     row = profile()
     row.reward_program = "partner"
     row.reward_program_selection_source = "moysklad"
-    row.current_discount_percent = Decimal("4.00")
+    row.referral_discount_base_total = Decimal("43502.10")
+    refresh_profile_discount(row, has_promo_code=False)
+    assert row.current_discount_percent == Decimal("4.00")
     option = _build_app_referral_option(row, user=SimpleNamespace(promo_code=None),
         subtotal=Decimal("1000"), discountable_subtotal=Decimal("1000"))
     assert option is not None and option.is_applicable
