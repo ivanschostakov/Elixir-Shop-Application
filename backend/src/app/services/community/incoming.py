@@ -9,7 +9,7 @@ from config import TELEGRAM_COMMUNITY_CHAT_ID, TELEGRAM_COMMUNITY_ENABLED, TELEG
 from src.database.crud.auth.user import get_user_by_telegram_user_id
 from src.database.models import CommunityAttachment, CommunityMessage, CommunityNotificationEvent, CommunityTelegramPart, CommunityTelegramReaction, CommunityTelegramReactionCount, CommunityTopic
 from src.integrations.telegram import TelegramBotAPIError, TelegramBotClient, get_telegram_bot_client
-from .common import COMMUNITY_ATTACHMENTS_DIR
+from .common import COMMUNITY_ATTACHMENTS_DIR, lock_community_ingest
 from .reactions import _normalize_reaction_emoji, _telegram_reaction_actor_key, _telegram_reaction_emoji
 from .media import _safe_filename
 from .authors import _upsert_author
@@ -126,6 +126,10 @@ async def process_community_telegram_message(db: AsyncSession, payload: dict[str
     raw_text = str(message.get("text") or message.get("caption") or "")
     if bool(sender.get("is_bot")) and _is_telegram_app_reaction_notification(raw_text): return {"ok": True, "ignored": "app reaction notification"}
     telegram_message_id = int(message.get("message_id") or 0)
+    if telegram_message_id <= 0: return {"ok": True, "ignored": "invalid message id"}
+    # Bot polling, webhooks and the userbot can deliver the same message or
+    # album concurrently. Serialize before checking parts, topics and authors.
+    await lock_community_ingest(db, TELEGRAM_COMMUNITY_CHAT_ID)
     existing_part = (await db.execute(select(CommunityTelegramPart).where(CommunityTelegramPart.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID, CommunityTelegramPart.telegram_message_id == telegram_message_id,).options(selectinload(CommunityTelegramPart.message)))).scalar_one_or_none()
     if existing_part:
         if not is_edit: return {"ok": True, "ignored": "duplicate"}

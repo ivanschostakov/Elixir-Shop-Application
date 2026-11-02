@@ -1,8 +1,13 @@
 import logging
+from sqlalchemy import func, select
 from config import COMMUNITY_MEDIA_DIR
 
 
 log = logging.getLogger(__name__)
+
+
+async def lock_community_ingest(db, chat_id: int) -> None:
+    await db.execute(select(func.pg_advisory_xact_lock(1129270612, func.hashtext(str(chat_id)))))
 
 
 COMMUNITY_REACTION_EMOJIS = ("👍", "❤️", "🔥", "😂", "👏", "😮", "😢", "🙏")

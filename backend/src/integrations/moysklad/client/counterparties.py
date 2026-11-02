@@ -7,6 +7,14 @@ from .common import logger
 
 
 class CounterpartiesMixin:
+    @staticmethod
+    def _phone_identity(phone: Any) -> str | None:
+        value = normalize_phone(phone)
+        if not value: return None
+        digits = value.removeprefix("+")
+        if not digits.isascii() or not digits.isdigit() or not 7 <= len(digits) <= 15: return None
+        return digits
+
     async def _find_counterparty(self, search: str) -> dict[str, Any] | None:
         normalized = optional_str(search)
         if not normalized: return None
@@ -20,7 +28,9 @@ class CounterpartiesMixin:
 
     @staticmethod
     def _counterparty_phone_matches(row: dict[str, Any], normalized_phone: str) -> bool:
-        if normalize_phone(row.get("phone")) == normalized_phone: return True
+        expected = CounterpartiesMixin._phone_identity(normalized_phone)
+        if expected is None: return False
+        if CounterpartiesMixin._phone_identity(row.get("phone")) == expected: return True
 
         contactpersons = row.get("contactpersons")
         if isinstance(contactpersons, dict): contactpersons = contactpersons.get("rows")
@@ -28,7 +38,7 @@ class CounterpartiesMixin:
         if not isinstance(contactpersons, list): return False
 
         for contactperson in contactpersons:
-            if isinstance(contactperson, dict) and normalize_phone(contactperson.get("phone")) == normalized_phone: return True
+            if isinstance(contactperson, dict) and CounterpartiesMixin._phone_identity(contactperson.get("phone")) == expected: return True
 
         return False
 

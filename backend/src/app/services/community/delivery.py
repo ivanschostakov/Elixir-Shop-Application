@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from config import TELEGRAM_COMMUNITY_CHAT_ID, TELEGRAM_COMMUNITY_ENABLED, ufa_now
 from src.database.models import CommunityMessage, CommunityReaction, CommunityTelegramPart, User
 from src.integrations.telegram import TelegramBotAPIError, TelegramBotClient, get_telegram_bot_client
-from .common import COMMUNITY_ATTACHMENTS_DIR
+from .common import COMMUNITY_ATTACHMENTS_DIR, lock_community_ingest
 from .telegram_helpers import _reply_parameters, _telegram_app_header, _telegram_app_reaction_notification, _telegram_author_entities, _telegram_bot_thread_id, _telegram_retry_delay_seconds, _telegram_text_chunks
 
 
@@ -54,6 +54,7 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
     async def send_text_parts(value: str) -> None:
         for chunk in _telegram_text_chunks(value):
             if sent_results: await asyncio.sleep(3)
+            await lock_community_ingest(db, TELEGRAM_COMMUNITY_CHAT_ID)
             result = await client.call("sendMessage", data={**common, "text": chunk, "entities": _telegram_author_entities(chunk, author_name)})
             await store_result(result)
             common["reply_parameters"] = None
@@ -72,6 +73,7 @@ async def relay_next_community_message(db: AsyncSession, *, telegram_client: Tel
                 method = "sendPhoto" if attachment.kind == "image" else "sendDocument"
                 field = "photo" if attachment.kind == "image" else "document"
                 rendered_caption = "" if prefix_sent or index else caption
+                await lock_community_ingest(db, TELEGRAM_COMMUNITY_CHAT_ID)
                 result = await client.call(method, data={**common, "caption": rendered_caption, "caption_entities": _telegram_author_entities(rendered_caption, author_name)}, files={field: (attachment.original_filename or attachment.filename, path.read_bytes(), attachment.mime_type or "application/octet-stream")}, timeout=60.0)
                 if isinstance(result, dict): attachment.telegram_message_id = int(result.get("message_id") or 0) or None
                 await store_result(result)

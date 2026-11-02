@@ -34,6 +34,10 @@ REWARD_MODE_CASHBACK = "cashback"
 REWARD_MODE_PROMO = "promo"
 
 
+class LoyaltyIdentityReviewRequired(RuntimeError):
+    pass
+
+
 def normalize_reward_mode(value: str | None, *, has_entered_code: bool = False) -> str:
     normalized = optional_str(value)
     if normalized in {REWARD_MODE_CASHBACK, REWARD_MODE_PROMO}:
@@ -199,7 +203,7 @@ async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, 
                 candidates = await client.get_page("/entity/counterparty", limit=100, search=email, expand="contactpersons")
                 rows = candidates.get("rows", [])
                 if len(rows) >= 100 or any(client._counterparty_email_matches(row, email) for row in rows):
-                    raise RuntimeError("Existing MoySklad contacts require manual identity reconciliation")
+                    raise LoyaltyIdentityReviewRequired("Existing MoySklad contacts require manual identity reconciliation")
             external_code = build_counterparty_external_code(user_id=user.id)
             result = await client.resolve_or_sync_counterparty(
                 existing_counterparty_id=None, external_code=external_code,
@@ -258,10 +262,13 @@ async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, 
         await db.rollback()
         persisted = await db.get(LoyaltyBonusCredit, credit_id)
         if persisted is not None:
-            persisted.status = "failed"
+            persisted.status = "identity_review" if isinstance(error, LoyaltyIdentityReviewRequired) else "failed"
             persisted.sync_error = _sync_error_message(error)
             await db.commit()
-        logger.exception("Could not post loyalty incoming payment credit_id=%s: %s", credit_id, _sync_error_message(error))
+        if isinstance(error, LoyaltyIdentityReviewRequired):
+            logger.warning("Loyalty credit requires identity review credit_id=%s; no payment created", credit_id)
+        else:
+            logger.exception("Could not post loyalty incoming payment credit_id=%s: %s", credit_id, _sync_error_message(error))
         return False
 
 
@@ -282,7 +289,8 @@ async def create_loyalty_bonus_credit(
         return None
     existing = await _credit_by_key(db, idempotency_key)
     if existing is not None:
-        if sync_immediately and existing.status in {"pending", "failed"}:
+        if sync_immediately and (existing.status in {"pending", "failed"} or
+                                 existing.status == "identity_review" and user.moysklad_counterparty_id is not None):
             await sync_loyalty_bonus_credit(db, credit=existing)
         return existing
 
@@ -513,7 +521,7 @@ async def pending_loyalty_bonus_points(db: AsyncSession, *, user_id: int) -> int
         await db.execute(
             select(func.coalesce(func.sum(LoyaltyBonusCredit.points), 0)).where(
                 LoyaltyBonusCredit.user_id == user_id,
-                LoyaltyBonusCredit.status.in_(("pending", "failed")),
+                LoyaltyBonusCredit.status.in_(("pending", "failed", "identity_review")),
                 or_(LoyaltyBonusCredit.expires_at.is_(None), LoyaltyBonusCredit.expires_at > ufa_now()),
                 *([LoyaltyBonusCredit.source_kind.in_(APP_BALANCE_CREDIT_KINDS)] if LOYALTY_USE_SETTLEMENT_BALANCE else []),
             )
@@ -574,7 +582,11 @@ async def sync_pending_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 1
         (
             await db.execute(
                 select(LoyaltyBonusCredit.id)
-                .where(LoyaltyBonusCredit.status.in_(("pending", "failed", "reversal_pending")))
+                .where(or_(
+                    LoyaltyBonusCredit.status.in_(("pending", "failed", "reversal_pending")),
+                    (LoyaltyBonusCredit.status == "identity_review") &
+                    LoyaltyBonusCredit.user.has(User.moysklad_counterparty_id.is_not(None)),
+                ))
                 .where(*([LoyaltyBonusCredit.source_kind.in_(APP_BALANCE_CREDIT_KINDS), LoyaltyBonusCredit.status != "reversal_pending"] if LOYALTY_USE_SETTLEMENT_BALANCE else []))
                 .order_by(LoyaltyBonusCredit.id.asc())
                 .limit(max(1, min(limit, 500)))
@@ -586,7 +598,7 @@ async def sync_pending_loyalty_bonus_credits(db: AsyncSession, *, limit: int = 1
     # A failed credit rolls back the session and expires every loaded ORM object.
     for credit_id in rows:
         credit = await db.get(LoyaltyBonusCredit, credit_id, populate_existing=True)
-        if credit is None or credit.status not in {"pending", "failed", "reversal_pending"}:
+        if credit is None or credit.status not in {"pending", "failed", "reversal_pending", "identity_review"}:
             continue
         if credit.status == "reversal_pending":
             success = await reverse_loyalty_bonus_credit(db, credit=credit)

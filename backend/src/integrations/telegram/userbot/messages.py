@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from config import TELEGRAM_COMMUNITY_CHAT_ID, ufa_now
 from src.app.services.community import COMMUNITY_ATTACHMENTS_DIR, _is_telegram_app_reaction_notification, _safe_filename, _upsert_author
+from src.app.services.community.common import lock_community_ingest
 from src.database.crud.auth.user import get_user_by_telegram_user_id
 from src.database.models import CommunityAttachment, CommunityMessage, CommunityTelegramPart, CommunityTopic
 from .common import log
@@ -67,6 +68,7 @@ async def _store_telethon_attachment(db: Any, *, client: Any, telegram_message: 
 async def _upsert_telethon_message(db: Any, *, client: Any, topic: CommunityTopic, telegram_message: Any,) -> tuple[CommunityMessage | None, bool]:
     telegram_message_id = int(getattr(telegram_message, "id", 0) or 0)
     if telegram_message_id <= 0: return None, False
+    await lock_community_ingest(db, TELEGRAM_COMMUNITY_CHAT_ID)
     existing_part = (await db.execute(select(CommunityTelegramPart).where(CommunityTelegramPart.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID, CommunityTelegramPart.telegram_message_id == telegram_message_id,).options(selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.attachments), selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.telegram_parts), selectinload(CommunityTelegramPart.message).selectinload(CommunityMessage.author),))).scalar_one_or_none()
     if existing_part:
         logical = existing_part.message
