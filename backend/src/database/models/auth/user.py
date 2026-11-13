@@ -32,6 +32,7 @@ class User(Base, IdPkMixin, TimestampMixin):
     username: Mapped[str | None] = mapped_column(String(length=USERNAME_MAX_LENGTH), nullable=True)
     email: Mapped[str | None] = mapped_column(String(length=EMAIL_MAX_LENGTH), nullable=True, unique=True)
     password_hash: Mapped[str] = mapped_column(String(length=PASSWORD_HASH_MAX_LENGTH), nullable=False)
+    app_password_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     name: Mapped[str] = mapped_column(String(length=PERSON_NAME_MAX_LENGTH), nullable=False)
     surname: Mapped[str] = mapped_column(String(length=PERSON_NAME_MAX_LENGTH), nullable=False)

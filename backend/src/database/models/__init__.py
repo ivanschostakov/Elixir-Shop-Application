@@ -35,6 +35,7 @@ from .auth.app_attest_key import AppAttestKey
 from .auth.app_integrity_challenge import AppIntegrityChallenge
 from .auth.email_verification_code import EmailVerificationCode
 from .auth.user import User
+from .auth.user_password_reset import UserPasswordReset
 from .auth.user_push_token import UserPushToken
 from .auth.user_session import UserSession
 from .basket.basket import Basket

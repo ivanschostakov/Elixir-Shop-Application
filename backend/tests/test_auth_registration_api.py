@@ -32,6 +32,9 @@ class _DummyDbSession:
     async def flush(self):
         self.flushed = True
 
+    async def execute(self, _statement):
+        return SimpleNamespace(scalar_one=lambda: self.locked_user)
+
     async def commit(self):
         self.committed = True
 
@@ -115,12 +118,15 @@ async def test_local_login_refreshes_assigned_referrer_promo_from_website(monkey
         username="customer",
         email="customer@example.com",
         password_hash="local-hash",
+        app_password_reset_at=None,
+        id=98,
         name="Customer",
         surname="User",
         is_active=True,
         is_verified=True,
         promo_code="OLD-CODE",
     )
+    db.locked_user = user
     captured: dict[str, object] = {}
 
     async def fake_get_user_by_email(_db, _email):
@@ -175,12 +181,15 @@ async def test_local_login_clears_referrer_promo_removed_on_website(monkeypatch:
         username="customer",
         email="customer@example.com",
         password_hash="local-hash",
+        app_password_reset_at=None,
+        id=98,
         name="Customer",
         surname="User",
         is_active=True,
         is_verified=True,
         promo_code="STALE-REFERRER",
     )
+    db.locked_user = user
 
     async def fake_get_user_by_email(_db, _email):
         return user

@@ -133,6 +133,14 @@ export async function resendLoginCode(payload: LoginCredentials): Promise<LoginV
     )
 }
 
+export async function requestPasswordReset(email: string): Promise<void> {
+    await apiPost(authPath("/password-reset/request"), { email }, { auth: false, retryOnUnauthorized: false })
+}
+
+export async function confirmPasswordReset(email: string, code: string, password: string): Promise<void> {
+    await apiPost(authPath("/password-reset/confirm"), { email, code, password }, { auth: false, retryOnUnauthorized: false })
+}
+
 export async function registerAccount(payload: RegistrationPayload): Promise<RegistrationStartedResponse> {
     return apiPost<RegistrationStartedResponse, RegistrationPayload>(
         authPath("/register"),

@@ -29,6 +29,11 @@ async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
         if local_authenticated and user.is_verified: return user
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
+    if user is not None and user.app_password_reset_at is not None:
+        if local_authenticated:
+            return user
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+
     website_login_enabled = (AUTH_LOGIN_WEBSITE_FIRST_ENABLED and website_identity_configured())
     if not website_login_enabled:
         if local_authenticated:
@@ -51,8 +56,8 @@ async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Website login is temporarily unavailable",) from error
 
     try: return await _sync_user_from_website_identity(identity=identity, requested_login=requested_login, requested_email=requested_email, password=payload.password, db=db, user=user,)
-    except HTTPException:
-        if local_authenticated:
+    except HTTPException as error:
+        if local_authenticated and error.status_code != status.HTTP_401_UNAUTHORIZED:
             assert user is not None
             logger.warning(
                 "Website identity returned invalid data during promo refresh; using the local account",

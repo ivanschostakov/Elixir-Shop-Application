@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -15,11 +15,13 @@ from src.app.services.auth import (
     verify_registration_user,
 )
 from src.database import get_db
+from src.app.services.auth.service.password_reset import confirm_password_reset, request_password_reset
 from src.database.models.auth.user import User
 
 from .dependencies import get_current_user
 from .schemas.login import UserLoginPayload, UserLoginVerifyPayload
 from .schemas.logout import UserLogoutPayload
+from .schemas.password_reset import UserPasswordResetConfirm, UserPasswordResetRequest, UserPasswordResetResponse
 from .schemas.register import (
     UserRegisterPayload,
     UserRegisterVerifyPayload,
@@ -68,6 +70,22 @@ async def verify_login(request: Request, payload: UserLoginVerifyPayload, db: As
 @auth_router.post("/login/resend-code", response_model=AuthVerificationRequiredResponse, status_code=status.HTTP_200_OK)
 async def resend_login_code(request: Request, payload: UserLoginPayload, db: AsyncSession = Depends(get_db)) -> AuthVerificationRequiredResponse:
     return await resend_login_verification_code(request, payload, db)
+
+
+@auth_router.post("/password-reset/request", response_model=UserPasswordResetResponse)
+async def password_reset_request(
+    request: Request, payload: UserPasswordResetRequest, tasks: BackgroundTasks, db: AsyncSession = Depends(get_db),
+) -> UserPasswordResetResponse:
+    await request_password_reset(db, request, tasks, email=str(payload.email))
+    return UserPasswordResetResponse()
+
+
+@auth_router.post("/password-reset/confirm", response_model=UserPasswordResetResponse)
+async def password_reset_confirm(
+    request: Request, payload: UserPasswordResetConfirm, db: AsyncSession = Depends(get_db),
+) -> UserPasswordResetResponse:
+    await confirm_password_reset(db, request, email=str(payload.email), code=payload.code, password=payload.password)
+    return UserPasswordResetResponse()
 
 
 @auth_router.post("/telegram/session", response_model=AuthTokensWithUserResponse | TelegramAuthContactRequiredResponse, status_code=status.HTTP_200_OK)

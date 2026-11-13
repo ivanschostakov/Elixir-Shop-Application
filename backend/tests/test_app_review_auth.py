@@ -16,6 +16,7 @@ def review_user(monkeypatch):
     return SimpleNamespace(
         id=42, username="app-review", email="review@example.com",
         is_active=True, is_verified=True,
+        app_password_reset_at=None,
         password_hash=hash_password("test-review-password-only"),
     )
 

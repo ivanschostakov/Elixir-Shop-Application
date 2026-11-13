@@ -1,7 +1,8 @@
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
-from src.app.services.security import hash_password
+from src.app.services.security import hash_password, verify_password
 from src.database.crud.auth.user import create_user, get_user_by_email, get_user_by_username
 from src.database.limits import PERSON_NAME_MAX_LENGTH, USERNAME_MAX_LENGTH
 from src.database.models.auth.user import User
@@ -22,6 +23,15 @@ async def _sync_user_from_website_identity(*, identity: dict, requested_login: s
 
     if user is None: user = await get_user_by_email(db, website_email)
     if user is None: user = await get_user_by_username(db, website_login)
+
+    if user is not None:
+        user = (await db.execute(
+            select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True)
+        )).scalar_one()
+        if user.app_password_reset_at is not None:
+            if user.is_active and verify_password(password, user.password_hash):
+                return user
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     website_name = optional_str(website_user.get("name")) or "Customer"
     website_surname = optional_str(website_user.get("last_name")) or "Customer"

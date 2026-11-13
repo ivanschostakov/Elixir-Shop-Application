@@ -9,10 +9,11 @@ import AuthFormLayout from "@/screens/auth/auth-form-layout"
 import { createAuthSharedStyles } from "@/screens/auth/auth-shared.styles"
 import EmailVerificationStep from "@/screens/auth/email-verification-step"
 import PasswordField from "@/screens/auth/password-field"
+import PasswordResetScreen from "@/screens/auth/password-reset-screen"
 import { useAuthFormScroll } from "@/screens/auth/use-auth-form-scroll"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 
-type LoginStep = "credentials" | "verification"
+type LoginStep = "credentials" | "verification" | "reset"
 
 export default function LoginScreen() {
     const { resendLoginCode, signIn, verifyLogin } = useAuth()
@@ -111,6 +112,21 @@ export default function LoginScreen() {
         }
     }
 
+    if (step === "reset") {
+        return (
+            <PasswordResetScreen
+                initialEmail={login.includes("@") ? login.trim() : ""}
+                onBack={() => setStep("credentials")}
+                onSuccess={(email) => {
+                    setLogin(email)
+                    setPassword("")
+                    setStatusMessage(t("auth.reset.success"))
+                    setStep("credentials")
+                }}
+            />
+        )
+    }
+
     if (step === "verification") {
         return (
             <AuthFormLayout error={error} scrollRef={scrollRef} title={t("auth.verify.title")}>
@@ -133,6 +149,7 @@ export default function LoginScreen() {
 
     return (
         <AuthFormLayout error={error} scrollRef={scrollRef} title={t("auth.login.title")}>
+            {statusMessage ? <Text style={authSharedStyles.helperText}>{statusMessage}</Text> : null}
             <View onLayout={handleFieldLayout("login")} style={authSharedStyles.formGroup}>
                 <Text style={authSharedStyles.fieldLabel}>{t("auth.login.username")}</Text>
                 <TextInput
@@ -173,6 +190,20 @@ export default function LoginScreen() {
                 ) : (
                     <Text style={authSharedStyles.primaryButtonText}>{t("auth.login.submit")}</Text>
                 )}
+            </Pressable>
+
+            <Pressable
+                accessibilityRole="button"
+                disabled={isSubmitting}
+                onPress={() => {
+                    setError("")
+                    setStatusMessage("")
+                    setPassword("")
+                    setStep("reset")
+                }}
+                style={authSharedStyles.helperRow}
+            >
+                <Text style={authSharedStyles.helperLink}>{t("auth.reset.forgot")}</Text>
             </Pressable>
 
             <View style={authSharedStyles.helperRow}>

@@ -10,6 +10,7 @@ from sqlalchemy.orm import joinedload
 from src.app.services.referrals.calculations import (
     PARTNER_UNLOCK_SPEND,
     quantize_money,
+    quantize_percent,
 )
 from src.app.services.referrals.program import normalize_reward_program
 from src.database.crud.referrals import list_referral_profiles as list_referral_profile_rows
@@ -340,7 +341,7 @@ async def referral_summary(db: AsyncSession) -> dict[str, Any]:
     return {
         "profiles_count": int(totals[0] or 0),
         "total_discount_base": quantize_money(totals[1] or 0),
-        "average_discount_percent": totals[2] or 0,
+        "average_discount_percent": quantize_percent(totals[2]),
         "max_discount_percent": totals[3] or 0,
         "active_referrers_count": int(totals[4] or 0),
         "discount_bands": [{"band": str(band), "count": int(count)} for band, count in band_rows],
