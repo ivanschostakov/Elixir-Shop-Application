@@ -36,3 +36,4 @@ class PaymentStatusRead(BaseModel):
     expires_at: datetime | str | None = None
     is_paid: bool
     can_retry: bool
+    awaiting_settlement: bool = False

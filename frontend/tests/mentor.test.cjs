@@ -62,7 +62,7 @@ test("mentor preserves native gate and separates real summaries from display sam
     const mentor = readFileSync(join(__dirname, "../screens/chat/mentor.tsx"), "utf8")
     const chat = readFileSync(join(__dirname, "../screens/chat/chat-screen.tsx"), "utf8")
     const progress = readFileSync(join(__dirname, "../screens/chat/mentor-progress.tsx"), "utf8")
-    assert.match(chat, /mentorEnabled = Platform.OS !== "web"/)
+    assert.match(chat, /mentorEnabled = mentorAvailable/)
     assert.match(chat, /mentorVisible = mentorEnabled && !!companion.mentorPage/)
     assert.match(mentor, /getCompanionSummary/)
     assert.match(progress, /summary\.nutrition\.kcal/)

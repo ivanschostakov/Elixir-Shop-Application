@@ -3,7 +3,9 @@ from config import AMOCRM_BASE_URL, MOY_SKLAD_SALES_CHANNEL_HREF, MOY_SKLAD_IOS_
 from src.database.models import Order
 from src.normalize import extract_dict, lower_optional_str, optional_str
 from src.integrations.moysklad.client import MoySkladClient
+from src.integrations.moysklad.client.common import CUSTOMER_ORDER_ATTR_IDS
 from src.integrations.moysklad.idempotency import build_customerorder_external_code
+from src.integrations.moysklad.settlement_checkout import order_bonus_consent
 from .common import MOY_SKLAD_DEFAULT_DELIVERY_METHOD_NAMES, MOY_SKLAD_PAYMENT_INTELLECT, MOY_SKLAD_PAYMENT_LATER, MOY_SKLAD_REQUIRED_STORE_NAME, MOY_SKLAD_STATE_NEW_ORDER
 from .address import _delivery_cost_value
 
@@ -75,6 +77,8 @@ def _moysklad_attr_values(order: Order) -> dict[str, Any]:
         "delivery_cost": optional_str(raw_values.get("delivery_cost")) or _delivery_cost_value(order),
         "created_by_widget": True,
     }
+    if "balance_consent" in CUSTOMER_ORDER_ATTR_IDS:
+        values["balance_consent"] = order_bonus_consent(order)
 
     promo_code = optional_str(raw_values.get("promo_code")) or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code"))
     if promo_code: values["promo_code"] = promo_code

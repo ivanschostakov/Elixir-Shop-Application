@@ -73,6 +73,7 @@ function mapUser(user: BackendAuthUser): AuthUser {
         isActive: user.is_active,
         isVerified: user.is_verified,
         promoCode: user.promo_code,
+        iosPrivateFeatures: user.ios_private_features === true,
         displayName: displayName || user.username || user.email || user.phone_number || `User #${user.id}`,
     }
 }

@@ -15,6 +15,7 @@ from src.app.services.ai.companion.timezones import normalize_timezone, timezone
 from src.app.services.ai.security import ensure_app_ai_access
 from src.app.services.ai.data_consent import require_ai_data_consent
 from src.app.services.app_integrity.service import verify_app_integrity_request
+from src.app.services.platform_availability import ios_private_feature_allowed, skip_ios_app_attest
 from src.database import get_db
 from src.database.models import User
 
@@ -34,10 +35,12 @@ def device_timezone(request):
 
 
 async def native_access(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    if request.method != "DELETE" and not ios_private_feature_allowed(request.headers, user):
+        raise HTTPException(403, "Mentor is unavailable on iOS")
     if not config.AI_COMPANION_ENABLED and request.method != "DELETE":
         raise HTTPException(404, "Сопровождение пока недоступно")
     platform = (request.headers.get("x-app-integrity-platform") or "").lower()
-    if platform not in {"ios", "android"}:
+    if platform not in {"ios", "android"} and not skip_ios_app_attest(request.headers, user):
         raise HTTPException(403, "Сопровождение доступно только в мобильном приложении")
     await verify_app_integrity_request(request, action="ai-companion", db=db, current_user=user, force_enforce=True)
     await ensure_app_ai_access(db, request=request, user=user)
@@ -48,8 +51,8 @@ async def native_access(request: Request, db: AsyncSession = Depends(get_db), us
 
 
 @companion_router.get("/availability")
-async def availability(user: User = Depends(get_current_user)):
-    return {"available": config.AI_COMPANION_ENABLED, "consent_version": config.AI_COMPANION_CONSENT_VERSION}
+async def availability(request: Request, user: User = Depends(get_current_user)):
+    return {"available": config.AI_COMPANION_ENABLED and ios_private_feature_allowed(request.headers, user), "consent_version": config.AI_COMPANION_CONSENT_VERSION}
 
 
 @companion_router.get("")

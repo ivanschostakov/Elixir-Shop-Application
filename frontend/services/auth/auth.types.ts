@@ -66,6 +66,7 @@ export type BackendAuthUser = {
     is_active: boolean
     is_verified: boolean
     promo_code: string | null
+    ios_private_features?: boolean
 }
 
 export type BackendAuthTokens = {
@@ -113,6 +114,7 @@ export type AuthUser = {
     isActive: boolean
     isVerified: boolean
     promoCode: string | null
+    iosPrivateFeatures?: boolean
     displayName: string
 }
 

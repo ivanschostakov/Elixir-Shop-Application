@@ -62,6 +62,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { spacing } from "@/theme/spacing"
 import { createChatScreenStyles } from "./chat-screen.styles"
 import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switcher"
+import { isCommunityChatAvailable, isMentorAvailable, resolveChatMode } from "@/screens/chat/chat-mode-policy"
 import { ChatModePane, ChatModeTransition } from "@/screens/chat/chat-mode-transition"
 import { MentorModeToggle } from "@/screens/chat/mentor-mode-toggle"
 import { CommunityChatScreen } from "@/screens/chat/community-chat-screen"
@@ -103,12 +104,12 @@ function nativeBuildNumber() {
 
 const CHAT_MODE_STORAGE_KEY = "elixirpeptide-chat-mode"
 
-async function readStoredChatMode(): Promise<ChatMode | null> {
+async function readStoredChatMode(privateIosFeatures: boolean): Promise<ChatMode | null> {
     try {
         const value = Platform.OS === "web"
             ? (typeof window !== "undefined" ? window.localStorage?.getItem(CHAT_MODE_STORAGE_KEY) : null)
             : await SecureStore.getItemAsync(CHAT_MODE_STORAGE_KEY)
-        return value === "ai" || value === "community" || value === "support" ? value : null
+        return resolveChatMode(value, Platform.OS, privateIosFeatures)
     } catch {
         return null
     }
@@ -128,7 +129,7 @@ async function persistChatMode(mode: ChatMode) {
 
 export default function ChatScreen() {
     const { user } = useAuth()
-    return <ChatScreenContent key={user?.id ?? "guest"} />
+    return <ChatScreenContent key={`${user?.id ?? "guest"}:${user?.iosPrivateFeatures === true}`} />
 }
 
 function ChatScreenContent() {
@@ -170,20 +171,25 @@ function ChatScreenContent() {
     const requestedConversationId = Number.isInteger(parsedRequestedConversationId) && parsedRequestedConversationId > 0
         ? parsedRequestedConversationId
         : null
-    const communityRequestedByRoute = requestedMode === "community" || requestedTopicId !== null
+    const privateIosFeatures = user?.iosPrivateFeatures === true
+    const communityAvailable = isCommunityChatAvailable(Platform.OS, privateIosFeatures)
+    const mentorAvailable = isMentorAvailable(Platform.OS, privateIosFeatures)
+    const communityRoute = requestedMode === "community" || requestedTopicId !== null
+    const communityRequestedByRoute = communityAvailable && communityRoute
+    const blockedCommunityRoute = !communityAvailable && communityRoute
     const supportRequestedByRoute = requestedMode === "support" || requestedConversationId !== null
-    const chatModeRequestedByRoute = communityRequestedByRoute || supportRequestedByRoute || requestedMode === "ai"
+    const chatModeRequestedByRoute = communityRoute || supportRequestedByRoute || requestedMode === "ai"
     const aiAllowed = useAiChatEntryConsent(modeReady && chatMode === "ai")
-    const companion = useCompanion(aiAllowed)
+    const companion = useCompanion(aiAllowed && mentorAvailable)
     const mentorMode = useMentorMode(companion.resolveEnabled)
     const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(mentorMode.resolveEnabled, companion.resolveProtocol, aiAllowed)
     const initialMessageIds = useRef<Set<number> | null>(null)
     if (chat && !initialMessageIds.current) initialMessageIds.current = new Set((chat.chat?.messages ?? []).map(message => message.id))
     const scrollRef = useRef<ScrollView | null>(null)
     const mentorInputRef = useRef<TextInput | null>(null)
-    const mentorEnabled = Platform.OS !== "web" && companion.state?.dialogue_protocol === 2 && "mentor" in companion.state && companion.enabled
+    const mentorEnabled = mentorAvailable && companion.state?.dialogue_protocol === 2 && "mentor" in companion.state && companion.enabled
     const mentorVisible = mentorEnabled && !!companion.mentorPage && mentorMode.shown
-    const aiContentReady = (chat !== null || error !== null) && (Platform.OS === "web" || companion.initialized)
+    const aiContentReady = (chat !== null || error !== null) && (!mentorAvailable || companion.initialized)
     const mentorTopSpace = companion.mentorPage === "today" ? Math.max(20, Math.min(76, (screenHeight - 660) * 0.45)) : 12
     const chatScroll = useChatScroll(scrollRef, mentorVisible ? companion.mentorPage : null)
     const { setMentorPage } = companion
@@ -197,10 +203,10 @@ function ChatScreenContent() {
         else setMentorPage(current => current ?? "today")
     }, [mentorShown, setMentorShown, setMentorPage, followLatest])
     useEffect(() => {
-        if (routeParams.companion !== "1") return
+        if (!mentorAvailable || routeParams.companion !== "1") return
         setMentorShown(true)
         setMentorPage("today")
-    }, [routeParams.companion, setMentorShown, setMentorPage])
+    }, [mentorAvailable, routeParams.companion, setMentorShown, setMentorPage])
     const cameraPermissionPromptedRef = useRef(false)
     const topBarOffset = topInset + 8
     const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottomInset, spacing.sm)
@@ -218,13 +224,13 @@ function ChatScreenContent() {
 
     useEffect(() => {
         let mounted = true
-        void readStoredChatMode().then((storedMode) => {
+        void readStoredChatMode(privateIosFeatures).then((storedMode) => {
             if (!mounted) return
             if (storedMode && !chatModeRequestedByRoute) setChatMode(storedMode)
             setModeReady(true)
         })
         return () => { mounted = false }
-    }, [chatModeRequestedByRoute])
+    }, [chatModeRequestedByRoute, privateIosFeatures])
 
     useEffect(() => {
         if (!communityRequestedByRoute) return
@@ -239,14 +245,18 @@ function ChatScreenContent() {
     }, [requestedConversationId, supportRequestedByRoute])
 
     useEffect(() => {
-        if (requestedMode === "ai" && !communityRequestedByRoute && !supportRequestedByRoute) setChatMode("ai")
-    }, [requestedMode, communityRequestedByRoute, supportRequestedByRoute])
+        if ((requestedMode === "ai" || blockedCommunityRoute) && !communityRequestedByRoute && !supportRequestedByRoute) {
+            setChatMode("ai")
+            if (blockedCommunityRoute) void persistChatMode("ai")
+        }
+    }, [requestedMode, communityRequestedByRoute, supportRequestedByRoute, blockedCommunityRoute])
 
     const handleChatModeChange = useCallback((nextMode: ChatMode) => {
         Keyboard.dismiss()
-        setChatMode(nextMode)
-        void persistChatMode(nextMode)
-    }, [])
+        const availableMode = resolveChatMode(nextMode, Platform.OS, privateIosFeatures) ?? "ai"
+        setChatMode(availableMode)
+        void persistChatMode(availableMode)
+    }, [privateIosFeatures])
 
     const handleCommunityUnreadChange = useCallback((count: number) => {
         setCommunityUnread(count)
@@ -743,7 +753,7 @@ function ChatScreenContent() {
                             />
                         </Svg>
                     </Pressable>
-                    {chatMode === "community" && topicNavigation ? <View style={chatScreenStyles.topicHeaderPill}><Text numberOfLines={1} style={chatScreenStyles.topicHeaderText}>{topicNavigation.title}</Text></View> : <ChatModeSwitcher mode={chatMode} mentorStyle onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
+                    {chatMode === "community" && topicNavigation ? <View style={chatScreenStyles.topicHeaderPill}><Text numberOfLines={1} style={chatScreenStyles.topicHeaderText}>{topicNavigation.title}</Text></View> : <ChatModeSwitcher mode={chatMode} mentorStyle privateIosFeatures={privateIosFeatures} onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
                 </View>
                 </View>
 
@@ -879,7 +889,7 @@ function ChatScreenContent() {
                                                             {getMessageMeta(message)}
                                                         </Text>
                                                     </Pressable>
-                                                    {!isUserMessage && mentorShown ? <CompanionCards controller={companion} message={message} onChanged={refresh} /> : null}
+                                                    {!isUserMessage && mentorAvailable && mentorShown ? <CompanionCards controller={companion} message={message} onChanged={refresh} /> : null}
                                                     {!isUserMessage && message.interactive ? (
                                                         <AIInteractiveContent
                                                             activeActionId={activeActionId}
@@ -942,7 +952,7 @@ function ChatScreenContent() {
                                 },
                             ]}
                         >
-                            {Platform.OS !== "web" && (companion.state?.available || !companion.initialized) ? <View style={chatScreenStyles.composerShortcuts}>
+                            {mentorAvailable && (companion.state?.available || !companion.initialized) ? <View style={chatScreenStyles.composerShortcuts}>
                                 <MentorModeToggle shown={mentorShown} onToggle={toggleMentor} disabled={!aiAllowed || !aiContentReady || sending || companion.busy || voiceRecording || voiceTranscribing} />
                                 {mentorShown ? <View style={chatScreenStyles.mentorShortcutPanel}><CompanionPanel navigationVisible={!keyboardVisible} controller={companion} workspaceVisible={mentorVisible} onChanged={refresh} openRequested={routeParams.companion === "1"} sending={sending} onPrompt={async text => { showConversation(); await sendMessage(text); await companion.refresh() }} /></View> : null}
                             </View> : null}
@@ -1025,7 +1035,7 @@ function ChatScreenContent() {
                 />
                 </View>
             </ChatModePane>
-            <ChatModePane mode="community" active={chatMode === "community"}>
+            {communityAvailable ? <ChatModePane mode="community" active={chatMode === "community"}>
             <CommunityChatScreen
                 embedded
                 onTopicNavigationChange={setTopicNavigation}
@@ -1038,7 +1048,7 @@ function ChatScreenContent() {
                 supportUnreadCount={supportUnread}
                 unreadCount={communityUnread}
             />
-            </ChatModePane>
+            </ChatModePane> : null}
             <ChatModePane mode="support" active={chatMode === "support"}>
             <SupportChatScreen
                 embedded

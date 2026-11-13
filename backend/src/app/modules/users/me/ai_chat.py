@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from config import AI_CHAT_MAX_AUDIO_BYTES
-from src.app.services.platform_availability import is_commerce_blocked
+from src.app.services.platform_availability import ios_private_feature_allowed, is_commerce_blocked
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.users.me.schemas import (
     AIChatActionPayload,
@@ -62,7 +62,7 @@ async def get_my_ai_chat(db: AsyncSession = Depends(get_db), current_user: User 
 async def send_my_ai_chat_message(request: Request, text: str = Form(...), attachments: list[UploadFile] | None = File(default=None), chat_mode: Literal["ordinary"] | None = Form(default=None), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), professor_client: "ProfessorClient" = Depends(get_professor_client), _app_integrity: None = Depends(require_app_integrity("ai-chat:send"))) -> AIChatResponse:
     await require_ai_data_consent(db, current_user.id)
     import config
-    if config.AI_COMPANION_ENABLED and chat_mode != "ordinary":
+    if config.AI_COMPANION_ENABLED and chat_mode != "ordinary" and ios_private_feature_allowed(request.headers, current_user):
         from src.app.services.ai.companion.service import profile_for
         profile = await profile_for(db, current_user.id)
         if profile and profile.enabled:

@@ -12,7 +12,8 @@ from test_settlement_checkout import CID, CURRENCY, IID, OID, ORG, documents, re
 from src.app.services.orders import settlement_payment as service
 from src.app.services.benefits import moysklad_bonus
 from src.integrations.moysklad.settlement_checkout import (
-    SOURCE_KIND, SettlementNotReady, check_open_settlement_orders, verify_ruble_currency,
+    INVOICE_SPENT_ATTRIBUTE, ORDER_SPENT_ATTRIBUTE, SOURCE_KIND, SettlementNotReady,
+    check_open_settlement_orders, verify_ruble_currency,
 )
 
 
@@ -127,3 +128,32 @@ def test_paid_orders_do_not_recalculate_balance(monkeypatch):
     run(service.confirm_settlement_invoice(session, order=order, client=client))
     client.get_customer_order.assert_not_awaited()
     session.commit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("consent,source,cash,active,blocked", [
+    (False, "order", 618000, True, True),
+    (False, "invoice", 618000, True, True),
+    (False, None, 518008, True, True),
+    (False, None, 518008, False, False),
+    (False, None, 618000, True, False),
+    (True, "order", 518008, True, False),
+    (None, "order", 518008, True, False),
+])
+def test_payment_checks_for_unapproved_balance(monkeypatch, consent, source, cash, active, blocked):
+    monkeypatch.setattr("config.LOYALTY_USE_SETTLEMENT_BALANCE", True)
+    order = SimpleNamespace(id=42, moysklad_customerorder_id=OID, moysklad_invoiceout_id=None,
+        checkout_snapshot={"benefits": {"use_bonus_rubles": consent}})
+    remote = {"id": str(OID), "sum": 618000, "invoicesOut": [ref(IID)], "attributes": [
+        {"id": ORDER_SPENT_ATTRIBUTE, "value": 1000 if source == "order" else 0}]}
+    invoice = {"id": str(IID), "sum": cash, "applicable": active, "attributes": [
+        {"id": INVOICE_SPENT_ATTRIBUTE, "value": 1000 if source == "invoice" else 0}]}
+    client = SimpleNamespace(get_customer_order=AsyncMock(return_value=remote),
+        get_invoiceout=AsyncMock(return_value=invoice))
+    if blocked:
+        with pytest.raises(HTTPException) as error:
+            run(service.verify_no_unapproved_balance(order, client=client))
+        assert error.value.status_code == 409
+    else:
+        run(service.verify_no_unapproved_balance(order, client=client))
+    if consent is not False:
+        client.get_customer_order.assert_not_awaited()

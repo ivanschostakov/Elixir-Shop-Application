@@ -68,7 +68,7 @@ export function useCompanion(enabled = true) {
     useEffect(() => { if (focused && enabled) void refresh() }, [focused, enabled, refresh, clock])
     useEffect(() => () => { refreshSequence.current++ }, [enabled])
     const resolveEnabled = async () => {
-        if (Platform.OS === "web") return false
+        if (!enabled || Platform.OS === "web") return false
         if (state?.profile) return state.profile.enabled
         if (state?.available === false) return false
         const next = await refresh()

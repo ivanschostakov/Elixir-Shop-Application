@@ -23,6 +23,22 @@ def is_ios_request(headers: Mapping[str, str]) -> bool:
     return platform == "ios" or (not platform and ("iphone" in agent or "ipad" in agent))
 
 
+def is_private_app_user(user) -> bool:
+    return bool(config.IOS_PRIVATE_FEATURES_USER_ID > 0
+                and user is not None and user.id == config.IOS_PRIVATE_FEATURES_USER_ID
+                and user.is_active and user.is_verified)
+
+
+def ios_private_feature_allowed(headers: Mapping[str, str], user) -> bool:
+    proof_platform = (headers.get("x-app-integrity-platform") or "").strip().lower()
+    return not (is_ios_request(headers) or proof_platform == "ios") or is_private_app_user(user)
+
+
+def skip_ios_app_attest(headers: Mapping[str, str], user) -> bool:
+    proof_platform = (headers.get("x-app-integrity-platform") or "").strip().lower()
+    return proof_platform in {"", "ios"} and is_ios_request(headers) and is_private_app_user(user)
+
+
 def is_commerce_path(path: str, method: str = "GET") -> bool:
     path = path.rstrip("/")
     roots = (
@@ -114,7 +130,10 @@ def empty_basket_payload(*, user_id: int, basket_id: int = 0, created_at=None, u
     }
 
 
-def allow_push_for_platform(platform: str | None, data: dict) -> bool:
+def allow_push_for_platform(platform: str | None, data: dict, *, user_id: int | None = None) -> bool:
+    if (platform or "").lower() == "ios" and data.get("type") in {"community_message", "ai_companion", "ai_companion_supply"}:
+        if not (config.IOS_PRIVATE_FEATURES_USER_ID > 0 and user_id == config.IOS_PRIVATE_FEATURES_USER_ID):
+            return False
     if not config.APPLE_DEV_MODE or (platform or "").lower() != "ios":
         return True
     # A custom campaign must not evade the restriction by omitting its type.

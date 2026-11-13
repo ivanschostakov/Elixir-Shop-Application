@@ -65,7 +65,7 @@ def test_device_header_sync_is_after_native_verification_and_uses_only_current_u
     monkeypatch.setattr(api.service, "sync_device_timezone", sync)
     db = SimpleNamespace(commit=AsyncMock())
     user = SimpleNamespace(id=42)
-    def request(platform=b"ios", zone=b"Asia/Kathmandu", method="POST"):
+    def request(platform=b"android", zone=b"Asia/Kathmandu", method="POST"):
         return Request({"type": "http", "method": method, "headers": [(b"x-app-integrity-platform", platform), (b"x-device-timezone", zone)]})
     async def run():
         with pytest.raises(HTTPException):

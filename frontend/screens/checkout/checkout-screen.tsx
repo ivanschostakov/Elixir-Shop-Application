@@ -70,9 +70,8 @@ import {
     getSelfRecipient,
     getDraftUpdateErrorMessage,
     getRecipientFormFromRecipient,
+    getRecipientFormErrors,
     hasRecipientErrors,
-    isValidEmail,
-    isValidPhone,
     normalizePhoneValue,
     normalizeTextInputValue,
     parseDraftId,
@@ -322,13 +321,13 @@ export default function CheckoutScreen() {
     }, [activeEnteredPromoCode, isAuthenticated, loadBenefitCheck, orderDraft])
 
     useEffect(() => {
-        if (!orderDraft) {
+        if (!orderDraft || isRecipientEditorOpen) {
             return
         }
 
         setRecipientForm(getRecipientFormFromRecipient(getDraftRecipient(orderDraft)))
         setRecipientFormErrors({})
-    }, [orderDraft])
+    }, [isRecipientEditorOpen, orderDraft])
 
     useFocusEffect(
         useCallback(() => (
@@ -369,6 +368,9 @@ export default function CheckoutScreen() {
         : null
     const hasDeliveryAddress = Boolean(orderDraft?.delivery_address)
     const hasRecipient = Boolean(currentRecipient)
+    const selectedRecipientForm = getRecipientFormFromRecipient(currentRecipient)
+    const selectedRecipientErrors = getRecipientFormErrors(selectedRecipientForm, t)
+    const needsRecipientCorrection = hasRecipient && hasRecipientErrors(selectedRecipientErrors)
     const payCtaLabel = grandTotal
         ? `${t("checkout.payCta")} ${grandTotal}`
         : t("checkout.payCta")
@@ -376,7 +378,9 @@ export default function CheckoutScreen() {
         ? t("checkout.openDelivery")
         : !hasRecipient
             ? t("checkout.selectRecipient")
-            : payCtaLabel
+            : needsRecipientCorrection
+                ? t("checkout.correctRecipient")
+                : payCtaLabel
     const checkoutFooterCtaLabel = isCheckingPromoCode
         ? t("checkout.promoCodeChecking")
         : hasUnappliedPromoCode
@@ -386,7 +390,7 @@ export default function CheckoutScreen() {
                 : paymentFooterCtaLabel
     const isCheckoutFooterCtaDisabled =
         isCheckingPromoCode
-        || (!hasUnappliedPromoCode && (!isPromoRewardReady || !hasDeliveryAddress || !hasRecipient))
+        || (!hasUnappliedPromoCode && !isPromoRewardReady)
     const [isUpdatingPositions, setIsUpdatingPositions] = useState(false)
     const isPositionsBusy = isRestoringDraft || isUpdatingPositions
     const isAddProductsBusy = isRestoringDraft
@@ -460,7 +464,7 @@ export default function CheckoutScreen() {
         }
     }, [appliedPromoCode])
     const openPaymentFlow = useCallback((paymentMethod: "later" | "sbp") => {
-        if (!orderDraft) {
+        if (!orderDraft || !hasDeliveryAddress || !hasRecipient || needsRecipientCorrection) {
             return
         }
 
@@ -474,7 +478,7 @@ export default function CheckoutScreen() {
                 rewardMode,
             },
         })
-    }, [activeEnteredPromoCode, isBasketCheckout, orderDraft, rewardMode, useBonusRubles])
+    }, [activeEnteredPromoCode, hasDeliveryAddress, hasRecipient, isBasketCheckout, needsRecipientCorrection, orderDraft, rewardMode, useBonusRubles])
 
     const handlePressPay = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
@@ -496,14 +500,29 @@ export default function CheckoutScreen() {
             },
         ])
     }, [openPaymentFlow, t])
-    const handleCheckoutFooterCtaPress = useCallback(() => {
+    const handleCheckoutFooterCtaPress = () => {
         if (hasUnappliedPromoCode) {
             void handleApplyPromoCode()
             return
         }
 
+        if (!orderDraft || !isPromoRewardReady || isSavingRecipient) return
+        if (!hasDeliveryAddress || !hasRecipient) {
+            handleOpenPicker(hasDeliveryAddress ? "recipient" : "address")
+            return
+        }
+
+        if (needsRecipientCorrection) {
+            Keyboard.dismiss()
+            focusedRecipientInputRef.current = null
+            setRecipientForm(selectedRecipientForm)
+            setRecipientFormErrors(selectedRecipientErrors)
+            setIsRecipientEditorOpen(true)
+            return
+        }
+
         handlePressPay()
-    }, [handleApplyPromoCode, handlePressPay, hasUnappliedPromoCode])
+    }
 
     const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         if (!hasMoreRecommendationRail || recommendationRailLoadingMore) {
@@ -607,20 +626,7 @@ export default function CheckoutScreen() {
     const availableAddresses = useMemo(() => {
         return orderDraft ? buildAvailableAddresses(orderDraft, checkoutOptions) : []
     }, [checkoutOptions, orderDraft])
-    const firstNameInput = normalizeTextInputValue(recipientForm.firstName)
-    const lastNameInput = normalizeTextInputValue(recipientForm.lastName)
-    const phoneInput = normalizeTextInputValue(recipientForm.phone)
-    const emailInput = normalizeTextInputValue(recipientForm.email)
-    const recipientFormValidationErrors: RecipientFormErrors = {
-        firstName: firstNameInput ? undefined : t("checkout.recipientFirstNameRequired"),
-        lastName: lastNameInput ? undefined : t("checkout.recipientLastNameRequired"),
-        phone: !phoneInput
-            ? t("checkout.recipientPhoneRequired")
-            : (isValidPhone(phoneInput) ? undefined : t("checkout.recipientPhoneInvalid")),
-        email: !emailInput
-            ? t("checkout.recipientEmailRequired")
-            : (isValidEmail(emailInput) ? undefined : t("checkout.recipientEmailInvalid")),
-    }
+    const recipientFormValidationErrors = getRecipientFormErrors(recipientForm, t)
     const isRecipientFormValid = !hasRecipientErrors(recipientFormValidationErrors)
 
     useEffect(() => {
@@ -1056,10 +1062,10 @@ export default function CheckoutScreen() {
             return
         }
 
-        const firstName = firstNameInput as string
-        const lastName = lastNameInput as string
-        const phone = normalizePhoneValue(phoneInput as string)
-        const email = (emailInput as string).trim().toLowerCase()
+        const firstName = recipientForm.firstName.trim()
+        const lastName = recipientForm.lastName.trim()
+        const phone = normalizePhoneValue(recipientForm.phone)
+        const email = recipientForm.email.trim().toLowerCase()
 
         setIsSavingRecipient(true)
 

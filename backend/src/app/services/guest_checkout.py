@@ -300,6 +300,7 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
         selected_delivery_service=selected_delivery_service,
         selected_delivery_payload=selected_delivery_payload,
         resolved_benefits=None,
+        client_platform="ios" if is_ios_request(request.headers) else request.headers.get("X-App-Platform"),
     )
     delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
     order_code = await _generate_order_code(session)

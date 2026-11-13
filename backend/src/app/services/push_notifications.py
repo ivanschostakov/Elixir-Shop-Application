@@ -117,7 +117,7 @@ def _build_push_messages(push_tokens, *, title: str, body: str, data: dict[str, 
         "data": data,
         "sound": "default",
         "channelId": channel_id,
-    } for push_token in push_tokens if allow_push_for_platform(getattr(push_token, "platform", None), data)]
+    } for push_token in push_tokens if allow_push_for_platform(getattr(push_token, "platform", None), data, user_id=getattr(push_token, "user_id", None))]
 
 
 async def _send_expo_push_messages(messages: list[dict[str, Any]]) -> ExpoPushBatchResult:

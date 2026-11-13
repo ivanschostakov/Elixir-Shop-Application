@@ -13,7 +13,7 @@ def _json_money(value: Any) -> float:
 
 
 def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, Any]:
-    if resolved_benefits is None: return {}
+    if resolved_benefits is None: return {"use_bonus_rubles": False}
 
     return {
         "entered_code": resolved_benefits.get("entered_code"),

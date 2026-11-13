@@ -1,12 +1,16 @@
 from pydantic import Field
 from .common import AmoBaseSchema, AmoCustomFieldById
 
+class LeadTagPayload(AmoBaseSchema):
+    name: str
+
 class LeadCreatePayload(AmoBaseSchema):
     name: str
     pipeline_id: int
     status_id: int
     price: int | None = None
     custom_fields_values: list[AmoCustomFieldById] = Field(default_factory=list)
+    tags_to_add: list[LeadTagPayload] | None = None
 
 class LeadStatusUpdatePayload(AmoBaseSchema):
     id: int

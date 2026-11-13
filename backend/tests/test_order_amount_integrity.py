@@ -87,6 +87,18 @@ def test_checkout_accepts_formatted_phone():
     assert _require_recipient_phone("+7 (913) 537-23-98") == "+79135372398"
 
 
+@pytest.mark.parametrize("field,value", [("name", " "), ("surname", ""), ("email", ""), ("email", "invalid")])
+def test_checkout_rejects_missing_or_invalid_recipient_fields(field, value):
+    from src.app.services.orders.common import validate_checkout_recipient
+
+    recipient = SimpleNamespace(name="Anna", surname="Tester", phone="+7 (913) 537-23-98", email="anna@example.com")
+    setattr(recipient, field, value)
+    with pytest.raises(HTTPException) as error:
+        validate_checkout_recipient(recipient)
+    assert error.value.status_code == 422
+    assert recipient.phone == "+7 (913) 537-23-98"
+
+
 @pytest.mark.parametrize("source", ["basket", "draft"])
 def test_phone_is_checked_before_stock_quotes_and_order_creation(monkeypatch, source):
     value = SimpleNamespace(id=1, items=[object()], recipient=SimpleNamespace(phone=""), delivery_address=object())

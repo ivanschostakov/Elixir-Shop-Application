@@ -23,7 +23,7 @@ from src.integrations.moysklad.order_sync import MOY_SKLAD_INVOICEOUT_STATE_PAID
 from .crm import _move_lead_to_payment_result_status, _move_lead_to_pending_payment
 from src.app.services.referrals.paid_orders import sync_paid_order_referral_to_app_safe
 from .payment_qr_storage import build_order_payment_qr_url, find_order_payment_qr_path, save_order_payment_qr
-from .settlement_payment import prepare_settlement_payment, settlement_lock
+from .settlement_payment import prepare_settlement_payment, settlement_lock, verify_no_unapproved_balance
 from src.integrations.moysklad.settlement_checkout import order_settlement
 
 log = logging.getLogger(__name__)
@@ -123,6 +123,12 @@ def _detect_request_ip(request: Request) -> str:
 def _payment_status_payload(order: Order, *, payment_step: str | None = None, qr_url: str | None = None, qr_image: str | None = None, expires_at: datetime | None = None) -> dict[str, Any]:
     payload = {"status": "success", "order_id": order.id, "order_code": order.order_code, "order_number": order.order_number, "payment_method": order.payment_method, "payment_status": order.payment_status, "payment_step": payment_step, "invoice_id": order.payment_invoice_id, "qr_url": qr_url, "qr_image": qr_image, "is_paid": bool(order.is_paid or order.payment_status == "paid"), "can_retry": order.payment_status in {"canceled", "error"}, }
     payload["amount_rubles"] = float(order.grand_total)
+    payload["awaiting_settlement"] = (
+        (order.payment_method or "").lower() == "sbp"
+        and order.payment_status == "draft"
+        and not (order.payment_invoice_id or order.is_paid or order.is_canceled)
+        and order_settlement(order) is not None
+    )
     if expires_at is not None: payload["expires_at"] = expires_at.replace(microsecond=0).isoformat()
     return payload
 
@@ -285,7 +291,7 @@ async def create_payment_for_order(
 ) -> dict[str, Any]:
     settlement = order_settlement(order)
     if settlement:
-        async with settlement_lock(settlement["counterparty_id"]):
+        async with settlement_lock(settlement["counterparty_id"], payment=True):
             await session.refresh(order, attribute_names=["payment_invoice_id", "payment_status", "payment_provider",
                 "is_paid", "is_canceled", "checkout_snapshot", "grand_total", "moysklad_customerorder_id", "moysklad_invoiceout_id"])
             return await _create_payment_for_order(session, request=request, order=order, payment_method=payment_method)
@@ -335,8 +341,15 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         )
         return _payment_status_payload(order)
 
-    await prepare_settlement_payment(session, order=order)
-    if order_settlement(order) and order.grand_total == 0:
+    settlement = order_settlement(order)
+    if (settlement and order.payment_provider == "intellectmoney" and not order.payment_invoice_id
+            and order.payment_status in {"created", "error"}):
+        raise HTTPException(409, "Не удалось подтвердить статус предыдущей попытки оплаты. Обратитесь в поддержку, чтобы не создать второй счёт.")
+    if settlement:
+        await prepare_settlement_payment(session, order=order)
+    else:
+        await verify_no_unapproved_balance(order)
+    if settlement and order.grand_total == 0:
         order = await update_order(session, order, OrderUpdate(
             payment_method="sbp", payment_provider="moysklad_balance", payment_invoice_id=None), commit=True)
         order = await reconcile_sbp_payment(session, order, payment_status_code=5)

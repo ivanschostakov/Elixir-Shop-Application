@@ -1,22 +1,25 @@
 import { useEffect, useRef, useState } from "react"
-import { Animated, type LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native"
+import { Animated, type LayoutChangeEvent, Platform, Pressable, StyleSheet, Text, View } from "react-native"
 
 import { useLanguage } from "@/providers/language-provider"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createCommunityChatStyles } from "@/screens/chat/community-chat-screen.styles"
 import { useChatReducedMotion } from "@/screens/chat/chat-mode-transition"
+import { isCommunityChatAvailable, type ChatMode } from "@/screens/chat/chat-mode-policy"
 
-export type ChatMode = "ai" | "community" | "support"
+export type { ChatMode } from "@/screens/chat/chat-mode-policy"
 
 export function ChatModeSwitcher({
     mode,
     mentorStyle = false,
+    privateIosFeatures = false,
     onChange,
     supportUnreadCount = 0,
     unreadCount,
 }: {
     mode: ChatMode
     mentorStyle?: boolean
+    privateIosFeatures?: boolean
     onChange: (mode: ChatMode) => void
     supportUnreadCount?: number
     unreadCount: number
@@ -24,14 +27,16 @@ export function ChatModeSwitcher({
     const themeStyles = useThemeStyles(createCommunityChatStyles)
     const styles = mentorStyle ? mentorSwitcherStyles : themeStyles
     const { t } = useLanguage()
-    const modeIndex = mode === "community" ? 1 : mode === "support" ? 2 : 0
+    const communityAvailable = isCommunityChatAvailable(Platform.OS, privateIosFeatures)
+    const modeIndex = mode === "support" ? (communityAvailable ? 2 : 1) : mode === "community" && communityAvailable ? 1 : 0
     const reducedMotion = useChatReducedMotion()
     const progress = useRef(new Animated.Value(modeIndex)).current
     const [switcherWidth, setSwitcherWidth] = useState(0)
     const availableWidth = Math.max(0, switcherWidth - (mentorStyle ? 8 : 6))
-    const shares = mentorStyle ? (switcherWidth < 300 ? [0.20, 0.48, 0.32] : [0.30, 0.40, 0.30]) : [1 / 3, 1 / 3, 1 / 3]
-    const indicatorWidth = progress.interpolate({ inputRange: [0, 1, 2], outputRange: shares.map((share) => availableWidth * share) })
-    const indicatorPosition = progress.interpolate({ inputRange: [0, 1, 2], outputRange: [0, availableWidth * shares[0], availableWidth * (shares[0] + shares[1])] })
+    const shares = !communityAvailable ? [0.5, 0.5] : mentorStyle ? (switcherWidth < 300 ? [0.20, 0.48, 0.32] : [0.30, 0.40, 0.30]) : [1 / 3, 1 / 3, 1 / 3]
+    const inputRange = shares.map((_, index) => index)
+    const indicatorWidth = progress.interpolate({ inputRange, outputRange: shares.map((share) => availableWidth * share) })
+    const indicatorPosition = progress.interpolate({ inputRange, outputRange: shares.map((_, index) => availableWidth * shares.slice(0, index).reduce((sum, share) => sum + share, 0)) })
 
     const handleLayout = (event: LayoutChangeEvent) => {
         const nextWidth = event.nativeEvent.layout.width
@@ -55,11 +60,11 @@ export function ChatModeSwitcher({
             <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "ai" }} onPress={() => onChange("ai")} style={[styles.modeButton, { flex: shares[0] }]}>
                 <Text style={[styles.modeText, mode === "ai" ? styles.modeTextActive : null]}>{t("chat.modeAi")}</Text>
             </Pressable>
-            <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "community" }} onPress={() => onChange("community")} style={[styles.modeButton, { flex: shares[1] }]}>
+            {communityAvailable ? <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "community" }} onPress={() => onChange("community")} style={[styles.modeButton, { flex: shares[1] }]}>
                 <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "community" ? styles.modeTextActive : null]}>{t("chat.modeGroup")}</Text>
                 {unreadCount > 0 ? <View style={styles.modeBadge}><Text style={styles.modeBadgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text></View> : null}
-            </Pressable>
-            <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "support" }} onPress={() => onChange("support")} style={[styles.modeButton, { flex: shares[2] }]}>
+            </Pressable> : null}
+            <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "support" }} onPress={() => onChange("support")} style={[styles.modeButton, { flex: shares[shares.length - 1] }]}>
                 <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "support" ? styles.modeTextActive : null]}>{t("chat.modeSupport")}</Text>
                 {supportUnreadCount > 0 ? <View style={styles.modeBadge}><Text style={styles.modeBadgeText}>{supportUnreadCount > 99 ? "99+" : supportUnreadCount}</Text></View> : null}
             </Pressable>

@@ -1560,16 +1560,18 @@ export default function DeliveryScreen() {
                         accessibilityLabel={translate("nav.closeSearch")}
                         accessibilityRole="button"
                         onPress={handleDismissSearchFocus}
-                        style={deliveryScreenStyles.searchOverlayDismiss}
+                        style={[
+                            deliveryScreenStyles.searchOverlayDismiss,
+                            Platform.OS === "android" && deliveryScreenStyles.searchMapDim,
+                        ]}
                     >
-                        <BlurView
-                            intensity={45}
-                            style={deliveryScreenStyles.searchMapBlur}
-                            tint="light"
-                            {...(Platform.OS === "android"
-                                ? { experimentalBlurMethod: "dimezisBlurView" as const }
-                                : {})}
-                        />
+                        {Platform.OS !== "android" ? (
+                            <BlurView
+                                intensity={45}
+                                style={deliveryScreenStyles.searchMapBlur}
+                                tint="light"
+                            />
+                        ) : null}
                     </Pressable>
                 ) : null}
             </View>

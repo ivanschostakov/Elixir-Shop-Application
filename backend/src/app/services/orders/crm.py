@@ -218,6 +218,7 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
         status_id=amocrm_client.STATUS_IDS["main"],
         delivery_sum=order.delivery_total,
         contact_id=int(contact_id) if contact_id else None,
+        source_tag="заказ с приложения" if (order.checkout_snapshot or {}).get("client_platform") in {"ios", "android"} else None,
     )
     order.amocrm_lead_id = int(lead["id"])
     await session.flush()

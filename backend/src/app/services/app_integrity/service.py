@@ -20,6 +20,7 @@ from starlette import status
 from config import ufa_now
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.auth.service import verify_telegram_init_data_for_user
+from src.app.services.platform_availability import skip_ios_app_attest
 from src.database import get_db
 from src.database.models import AppAttestKey, AppIntegrityChallenge, User
 
@@ -211,6 +212,7 @@ async def _verify_with_remote_service(request: Request, *, action: str, token: s
 async def verify_app_integrity_request(request: Request, *, action: str, db: AsyncSession | None = None, current_user: User | None = None, force_enforce: bool = False) -> None:
     app_integrity_mode = "enforce" if force_enforce else mode()
     if app_integrity_mode == "off": return
+    if skip_ios_app_attest(request.headers, current_user): return
 
     token = (request.headers.get(APP_INTEGRITY_TOKEN_HEADER) or "").strip()
     platform = (request.headers.get(APP_INTEGRITY_PLATFORM_HEADER) or "").strip().lower()

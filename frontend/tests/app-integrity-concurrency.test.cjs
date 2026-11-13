@@ -89,11 +89,44 @@ test("request client preserves device verification failures instead of inventing
     const api = loadTs("services/api/client.ts", {
         "@/services/api/constants": { API_BASE_URL: "https://example.test" },
         "@/services/app-integrity": { AppIntegrityUnavailableError: IntegrityError, getAppIntegrityHeaders: async () => { throw failure } },
-        "@/services/auth/session": { getAuthTokens: () => null },
+        "@/services/auth/session": { getAuthTokens: () => null, skipsIosAppAttest: () => false },
         "react-native": { Platform: { OS: "ios" } },
         "@/services/api/request-deadline": { RequestDeadlineError: class extends Error {}, fetchTextWithDeadline: async () => { fetched = true } },
         "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
     })
     await assert.rejects(api.apiGet("/mentor", undefined, { appIntegrityAction: "ai-companion" }), error => error === failure)
     assert.equal(fetched, false)
+})
+
+test("only the signed-in private iOS session omits App Attest", async () => {
+    for (const [platform, granted, auth, expectProof] of [
+        ["ios", true, true, false],
+        ["ios", false, true, true],
+        ["ios", true, false, true],
+        ["android", true, true, true],
+    ]) {
+        let askedForProof = false
+        let headers
+        const api = loadTs("services/api/client.ts", {
+            "@/services/api/constants": { API_BASE_URL: "https://example.test" },
+            "@/services/app-integrity": { getAppIntegrityHeaders: async () => {
+                askedForProof = true
+                return { "X-App-Integrity-Token": "proof" }
+            } },
+            "@/services/auth/session": {
+                getAuthTokens: () => ({ accessToken: "access" }),
+                skipsIosAppAttest: () => granted,
+            },
+            "react-native": { Platform: { OS: platform } },
+            "@/services/api/request-deadline": { fetchTextWithDeadline: async (_url, options) => {
+                headers = options.headers
+                return { response: new Response(null, { status: 200 }), text: "{}" }
+            } },
+            "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
+        })
+        await api.apiGet("/mentor", undefined, { auth, appIntegrityAction: "ai-companion" })
+        assert.equal(askedForProof, expectProof)
+        assert.equal(headers.get("Authorization"), auth ? "Bearer access" : null)
+        assert.equal(headers.get("X-App-Platform"), platform)
+    }
 })

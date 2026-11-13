@@ -18,4 +18,5 @@ export type PaymentStatusRead = {
     expires_at: string | null
     is_paid: boolean
     can_retry: boolean
+    awaiting_settlement?: boolean
 }

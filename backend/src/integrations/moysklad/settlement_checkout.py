@@ -51,6 +51,24 @@ def attributes(row: dict) -> dict:
     return {attr.get("id"): attr.get("value") for attr in row.get("attributes", [])}
 
 
+def order_bonus_consent(order) -> bool | None:
+    value = ((getattr(order, "checkout_snapshot", None) or {}).get("benefits") or {}).get("use_bonus_rubles")
+    return value if isinstance(value, bool) else None
+
+
+def has_unapproved_balance(order: dict, invoices: list[dict]) -> bool:
+    order_spent = attributes(order).get(ORDER_SPENT_ATTRIBUTE)
+    if order_spent not in (None, "") and money(order_spent) > 0:
+        return True
+    for invoice in invoices:
+        invoice_spent = attributes(invoice).get(INVOICE_SPENT_ATTRIBUTE)
+        if invoice_spent not in (None, "") and money(invoice_spent) > 0:
+            return True
+        if money(invoice.get("sum")) < money(order.get("sum")):
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class SettlementInvoice:
     invoice_id: UUID

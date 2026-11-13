@@ -22,7 +22,7 @@ from test_orders_api import (
 
 
 @pytest.mark.parametrize("scenario", ["exact", "rounded", "full", "full_exact_balance", "partial_delivery", "wrong_invoice",
-    "balance_changed", "not_ready", "cancelled", "retry", "other_open_order"])
+    "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order"])
 def test_balance_checkout_api_uses_only_mocked_external_services(
     client, registered_user, variant_factory, stub_amocrm, monkeypatch, scenario,
 ):
@@ -92,16 +92,36 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     if scenario == "balance_changed":
         moysklad_bonus.get_moysklad_settlement_wallet.return_value = SimpleNamespace(balance_rubles=Decimal("0"))
     if scenario == "not_ready": remote["invoicesOut"] = []
+    if scenario == "ambiguous_gateway": gateway.return_value = {"Result": {}}
     if scenario == "cancelled": _update_order(order_id, is_canceled=True)
     if scenario == "other_open_order":
         ms.get_page.return_value = {"rows": [{"id": str(CID), "sum": 10000, "shippedSum": 0}]}
     response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
-    if scenario in {"wrong_invoice", "balance_changed", "not_ready", "cancelled", "other_open_order"}:
+    if scenario == "ambiguous_gateway":
+        assert response.status_code >= 500, response.text
+        assert _get_order(order_id).payment_invoice_id is None
+        retry = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
+        assert retry.status_code == 409, retry.text
+        gateway.assert_awaited_once()
+        return
+    if scenario == "not_ready":
+        assert response.status_code == 409, response.text
+        assert response.json()["detail"]["code"] == "settlement_pending"
+        status_response = client.get("/api/v1/payments/status", headers=headers, params={"order_id": order_id})
+        assert status_response.status_code == 200, status_response.text
+        assert status_response.json()["awaiting_settlement"] is True
+        assert _get_order(order_id).payment_invoice_id is None
+        gateway.assert_not_awaited()
+        remote["invoicesOut"] = [ref(IID)]
+        response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
+    if scenario in {"wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
         assert response.status_code == 409, response.text
         gateway.assert_not_awaited()
         assert _get_order(order_id).payment_invoice_id is None
         return
     assert response.status_code == 200, response.text
+    assert response.json()["order_id"] == order_id
+    assert response.json()["awaiting_settlement"] is False
     assert Decimal(str(response.json()["amount_rubles"])) == cash
     assert _get_order(order_id).grand_total == cash
     if scenario in {"full", "full_exact_balance"}:
@@ -114,7 +134,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         gateway.assert_not_awaited()
     else:
         assert gateway.call_args.kwargs["amount_rub"] == cash
-        if scenario == "retry":
+        if scenario in {"retry", "not_ready"}:
             retry = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
             assert retry.status_code == 200, retry.text
             assert retry.json()["invoice_id"] == "mock-invoice-1"

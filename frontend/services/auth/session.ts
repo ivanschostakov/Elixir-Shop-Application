@@ -73,6 +73,7 @@ async function persistNativeAuthUser(user: AuthUser | null) {
 }
 
 export function cacheAuthUser(user: AuthUser | null) {
+    privateIosFeatureSessionId = user?.iosPrivateFeatures === true ? currentTokens?.sessionId ?? null : null
     if (Platform.OS === "web") {
         try {
             if (typeof window === "undefined" || !window.localStorage) return
@@ -130,6 +131,7 @@ async function persistAuthTokens(tokens: AuthTokens | null) {
 }
 
 let currentTokens: AuthTokens | null = null
+let privateIosFeatureSessionId: number | null = null
 let hasHydratedTokens = false
 let refreshHandler: RefreshHandler | null = null
 let refreshRequest: Promise<AuthTokens | null> | null = null
@@ -158,10 +160,15 @@ export async function hydrateAuthTokens() {
 }
 
 export function setAuthTokens(tokens: AuthTokens | null) {
+    if (tokens?.sessionId !== currentTokens?.sessionId) privateIosFeatureSessionId = null
     currentTokens = tokens
     hasHydratedTokens = true
     void persistAuthTokens(tokens)
     notifyListeners()
+}
+
+export function skipsIosAppAttest(): boolean {
+    return privateIosFeatureSessionId !== null && privateIosFeatureSessionId === currentTokens?.sessionId
 }
 
 export function clearAuthTokens() {

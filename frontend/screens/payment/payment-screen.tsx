@@ -40,7 +40,7 @@ import { createGuestOrder, isGuestPhoneExistsError } from "@/services/api/guest"
 import type { GuestOrderPayload } from "@/services/api/guest.types"
 import { createOrder, getOrder, repeatOrder } from "@/services/api/orders"
 import type { OrderItemRead, OrderRead } from "@/services/api/orders.types"
-import { createPayment, getPaymentStatus } from "@/services/api/payments"
+import { createPayment, createPaymentWhenReady, getPaymentStatus } from "@/services/api/payments"
 import type { PaymentStatusRead } from "@/services/api/payments.types"
 import { clearGuestCart } from "@/services/guest-cart"
 import { syncOrderStatusNotifications } from "@/services/notifications/order-status-notifications"
@@ -198,6 +198,7 @@ export default function PaymentScreen() {
     const [order, setOrder] = useState<OrderRead | null>(null)
     const [payment, setPayment] = useState<PaymentStatusRead | null>(null)
     const [submitting, setSubmitting] = useState(false)
+    const [awaitingSettlement, setAwaitingSettlement] = useState(false)
     const [isRepeating, setIsRepeating] = useState(false)
     const [phase, setPhase] = useState<PaymentPhase>("select")
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -213,6 +214,7 @@ export default function PaymentScreen() {
     const scrollRef = useRef<ScrollView>(null)
     const confettiProgress = useRef(new Animated.Value(0)).current
     const paymentStatusRequestIdRef = useRef(0)
+    const startingPaymentRef = useRef(false)
     const sectionPositionsRef = useRef<Record<SummarySection, number>>({
         contact: 0,
         items: 0,
@@ -437,16 +439,19 @@ export default function PaymentScreen() {
 
     const handleStartPayment = useCallback(async (methodOverride?: PaymentMethod) => {
         const effectiveMethod = methodOverride ?? selectedMethod
-        if (!orderDraft && !order) {
+        if (startingPaymentRef.current || (!orderDraft && !order)) {
             return
         }
 
+        startingPaymentRef.current = true
+        const requestId = ++paymentStatusRequestIdRef.current
+        const isActive = () => paymentStatusRequestIdRef.current === requestId
         setSubmitting(true)
         setPhase("processing")
         setErrorMessage(null)
+        let nextOrder = order
 
         try {
-            let nextOrder = order
             if (!nextOrder) {
                 if (!orderDraft) {
                     throw new Error(t("payment.orderMissingMessage"))
@@ -456,16 +461,8 @@ export default function PaymentScreen() {
                     const guestOrderResponse = await createGuestOrder(buildGuestOrderPayload(orderDraft, effectiveMethod))
                     acceptSession(guestOrderResponse)
                     nextOrder = guestOrderResponse.order
-                    await clearGuestCart({ updateSnapshot: false })
                     clearBasketSnapshot()
-
-                    router.replace({
-                        pathname: ROUTES.payment,
-                        params: {
-                            orderId: String(nextOrder.id),
-                            paymentMethod: effectiveMethod,
-                        },
-                    })
+                    void clearGuestCart({ updateSnapshot: false }).catch(() => undefined)
                 } else {
                     nextOrder = await createOrder({
                         ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
@@ -476,23 +473,23 @@ export default function PaymentScreen() {
                     })
                     if (isBasketCheckout) {
                         clearBasketSnapshot()
-                        router.replace({
-                            pathname: ROUTES.payment,
-                            params: {
-                                orderId: String(nextOrder.id),
-                                paymentMethod: effectiveMethod,
-                            },
-                        })
                     }
                 }
+                if (!isActive()) return
                 setOrder(nextOrder)
+                router.setParams({ orderId: String(nextOrder.id), paymentMethod: effectiveMethod })
                 void syncOrderStatusNotifications({ requestPermissions: true })
             }
 
-            const nextPayment = await createPayment({
+            const nextPayment = await createPaymentWhenReady({
                 order_id: nextOrder.id,
                 payment_method: effectiveMethod,
+            }, {
+                isActive,
+                onPending: () => setAwaitingSettlement(true),
+                timeoutMessage: t("payment.settlementWaitingTimeout"),
             })
+            if (!nextPayment) return
             setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
             if (typeof nextPayment.amount_rubles === "number" && Number.isFinite(nextPayment.amount_rubles)) {
                 setOrder({ ...nextOrder, grand_total: String(nextPayment.amount_rubles) })
@@ -520,7 +517,8 @@ export default function PaymentScreen() {
 
             setPhase("sbp")
         } catch (paymentError) {
-            const fallback = order ? t("payment.paymentCreateFailed") : t("payment.orderCreateFailed")
+            if (!isActive()) return
+            const fallback = nextOrder ? t("payment.paymentCreateFailed") : t("payment.orderCreateFailed")
             const message = getErrorMessage(paymentError, fallback)
 
             if (isGuestPhoneExistsError(paymentError)) {
@@ -552,7 +550,11 @@ export default function PaymentScreen() {
             showBackendErrorAlert(paymentError, message)
             setPhase("failure")
         } finally {
-            setSubmitting(false)
+            startingPaymentRef.current = false
+            if (isActive()) {
+                setAwaitingSettlement(false)
+                setSubmitting(false)
+            }
         }
     }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t, useBonusRubles])
 
@@ -590,7 +592,9 @@ export default function PaymentScreen() {
         }
 
         if (submitting || phase === "processing") {
-            const label = !order
+            const label = awaitingSettlement
+                ? t("payment.settlementWaiting")
+                : !order
                 ? t("payment.processingOrder")
                 : resolvedPaymentMethod === "later"
                     ? t("payment.processingLater")
@@ -676,6 +680,7 @@ export default function PaymentScreen() {
             onPress: null as (() => void) | null,
         }
     }, [
+        awaitingSettlement,
         canRetry,
         handleRepeatOrder,
         handleRetryPayment,
@@ -897,9 +902,22 @@ export default function PaymentScreen() {
 
         void (async () => {
             try {
-                const nextPayment = await getPaymentStatus(order.id)
-                if (paymentStatusRequestIdRef.current !== requestId) {
-                    return
+                let nextPayment = await getPaymentStatus(order.id)
+                const isActive = () => paymentStatusRequestIdRef.current === requestId
+                if (!isActive()) return
+                if (nextPayment.awaiting_settlement) {
+                    setAwaitingSettlement(true)
+                    const resumedPayment = await createPaymentWhenReady({ order_id: order.id, payment_method: "sbp" }, {
+                        isActive,
+                        onPending: () => setAwaitingSettlement(true),
+                        timeoutMessage: t("payment.settlementWaitingTimeout"),
+                    })
+                    if (!resumedPayment) return
+                    nextPayment = resumedPayment
+                }
+                if (typeof nextPayment.amount_rubles === "number" && Number.isFinite(nextPayment.amount_rubles)) {
+                    const amount = String(nextPayment.amount_rubles)
+                    setOrder((current) => current?.id === order.id ? { ...current, grand_total: amount } : current)
                 }
                 setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
 
@@ -923,6 +941,8 @@ export default function PaymentScreen() {
                 const message = getErrorMessage(resumeError, t("payment.statusCheckFailed"))
                 setErrorMessage(message)
                 showBackendErrorAlert(resumeError, message)
+            } finally {
+                if (paymentStatusRequestIdRef.current === requestId) setAwaitingSettlement(false)
             }
         })()
     }, [order, payment, phase, submitting, t])

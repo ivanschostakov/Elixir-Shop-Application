@@ -83,6 +83,9 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         ...StyleSheet.absoluteFillObject,
         backgroundColor: colors.veilSoft,
     },
+    searchMapDim: {
+        backgroundColor: "rgba(0,0,0,0.25)",
+    },
     pickupMarkersLoadingOverlay: {
         ...StyleSheet.absoluteFillObject,
         alignItems: "center",

@@ -1,6 +1,6 @@
 import logging
-from config import MOY_SKLAD_BASE_URL
-from src.normalize import optional_str
+from config import MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID, MOY_SKLAD_BASE_URL
+from src.normalize import coerce_uuid, optional_str
 
 
 logger = logging.getLogger(__name__)
@@ -26,3 +26,6 @@ CUSTOMER_ORDER_ATTR_IDS: dict[str, str] = {
 
 
 CUSTOMER_ORDER_CUSTOMENTITY_ATTR_KEYS = frozenset(("payment_method", "delivery_method", "responsible", "counterparty_group"))
+
+if consent_attribute_id := coerce_uuid(MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID):
+    CUSTOMER_ORDER_ATTR_IDS["balance_consent"] = str(consent_attribute_id)

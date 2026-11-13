@@ -14,7 +14,7 @@ from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.database.crud import create_order, delete_order_draft, get_order_by_draft_id, get_order_by_id, get_order_draft_by_id
 from src.database.models import Order, User, Variant
 from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
-from src.app.services.orders.common import _delivery_string, _require_recipient_phone
+from src.app.services.orders.common import _delivery_string, validate_checkout_recipient
 from src.app.services.orders.crm import ensure_order_has_amocrm_lead
 from src.app.services.orders.fulfillment_payloads import normalize_address_for_cf
 from src.app.services.orders.settlement_payment import serialized_settlement_checkout
@@ -51,7 +51,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
 
     if draft.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
     if not draft.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft is empty")
-    draft.recipient.phone = _require_recipient_phone(draft.recipient.phone)
+    validate_checkout_recipient(draft.recipient)
     current_variants = list((await session.execute(select(Variant).options(selectinload(Variant.product)).where(Variant.id.in_([item.variant_id for item in draft.items])).with_for_update())).scalars().all())
     variants_by_id = {variant.id: variant for variant in current_variants}
     stock_policy = await get_stock_visibility_policy(session)

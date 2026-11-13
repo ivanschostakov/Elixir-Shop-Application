@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { usePathname } from "expo-router"
-import { AppState, type AppStateStatus } from "react-native"
+import { AppState, Platform, type AppStateStatus } from "react-native"
+import { isMentorAvailable } from "@/screens/chat/chat-mode-policy"
 
 import {
     authenticate,
@@ -99,10 +100,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [isReady, setIsReady] = useState(false)
     const pathname = usePathname()
     const timezoneUserId = user?.id
+    const mentorAvailable = isMentorAvailable(Platform.OS, user?.iosPrivateFeatures === true)
 
     useEffect(() => {
-        if (timezoneUserId != null) return startCompanionTimezoneSync()
-    }, [timezoneUserId])
+        if (timezoneUserId != null && mentorAvailable) return startCompanionTimezoneSync()
+    }, [timezoneUserId, mentorAvailable])
 
     useEffect(() => {
         return subscribeAuthSession((tokens) => {

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -18,6 +18,7 @@ from src.database.schemas.community import (
     CommunityTopicListRead,
 )
 from src.app.services.app_integrity import require_app_integrity
+from src.app.services.platform_availability import ios_private_feature_allowed
 from src.app.services.community_reports import report_community_message
 from src.database.schemas.community import CommunityReportPayload, CommunityReportReceipt
 from src.app.services.community import (
@@ -36,7 +37,14 @@ from src.app.services.community import (
 from src.database import get_db
 from src.database.models import User
 
-community_router = APIRouter(prefix="/community", tags=["community"])
+async def require_community_access(request: Request, user: User = Depends(get_current_user)) -> None:
+    if not ios_private_feature_allowed(request.headers, user):
+        raise HTTPException(403, "Community is unavailable on iOS")
+
+
+community_router = APIRouter(
+    prefix="/community", tags=["community"], dependencies=[Depends(require_community_access)],
+)
 
 
 @community_router.post("/topics/{topic_id}/messages/{message_id}/reports", response_model=CommunityReportReceipt, status_code=status.HTTP_201_CREATED)

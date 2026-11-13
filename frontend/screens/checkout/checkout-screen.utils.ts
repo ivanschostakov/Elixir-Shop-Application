@@ -13,6 +13,7 @@ import {
     calculateYandexDelivery,
 } from "@/services/api/delivery"
 import type { CdekDeliveryCalculation } from "@/services/api/delivery.types"
+import type { TranslationKey } from "@/i18n/translations"
 import { buildOrderDraftCalculationPayload } from "@/utils/order-drafts"
 
 import type {
@@ -39,10 +40,10 @@ export function getRecipientFormFromRecipient(recipient: DeliveryRecipientRead |
     }
 
     return {
-        firstName: recipient.name,
-        lastName: recipient.surname,
-        phone: recipient.phone,
-        email: recipient.email,
+        firstName: recipient.name ?? "",
+        lastName: recipient.surname ?? "",
+        phone: recipient.phone ?? "",
+        email: recipient.email ?? "",
     }
 }
 
@@ -115,6 +116,19 @@ export function isValidEmail(value: string) {
 
 export function hasRecipientErrors(errors: RecipientFormErrors) {
     return Object.values(errors).some(Boolean)
+}
+
+export function getRecipientFormErrors(form: RecipientFormState, t: (key: TranslationKey) => string): RecipientFormErrors {
+    const phone = form.phone.trim()
+    const email = form.email.trim()
+    return {
+        firstName: form.firstName.trim() ? undefined : t("checkout.recipientFirstNameRequired"),
+        lastName: form.lastName.trim() ? undefined : t("checkout.recipientLastNameRequired"),
+        phone: !phone ? t("checkout.recipientPhoneRequired")
+            : isValidPhone(phone) ? undefined : t("checkout.recipientPhoneInvalid"),
+        email: !email ? t("checkout.recipientEmailRequired")
+            : isValidEmail(email) ? undefined : t("checkout.recipientEmailInvalid"),
+    }
 }
 
 export function normalizeTextInputValue(value: string) {
