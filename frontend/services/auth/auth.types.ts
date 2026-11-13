@@ -14,6 +14,7 @@ export type LoginVerificationRequiredResponse = {
     email: string
     verification_required: boolean
     message: string
+    ios_private_features?: boolean
 }
 
 export type LoginResult =
@@ -25,6 +26,7 @@ export type LoginResult =
           verificationRequired: true
           email: string
           message: string
+          iosPrivateFeatures: boolean
       }
 
 export type RegistrationPayload = {

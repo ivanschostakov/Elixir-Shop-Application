@@ -17,12 +17,15 @@ export default function EmailVerificationStep({
     onResend,
     onVerify,
     statusMessage,
+    headerBack = false,
 }: EmailVerificationStepProps) {
     const authSharedStyles = useThemeStyles(createAuthSharedStyles)
     const { palette } = useTheme()
     const { t } = useLanguage()
     const [verificationCode, setVerificationCode] = useState("")
     const verificationInputRef = useRef<TextInput>(null)
+    const verifying = useRef(false)
+    const resending = useRef(false)
 
     useEffect(() => {
         const focusTimeout = setTimeout(() => {
@@ -36,13 +39,19 @@ export default function EmailVerificationStep({
         const nextCode = value.replace(/\D/g, "").slice(0, 6)
         setVerificationCode(nextCode)
 
-        if (nextCode.length === 6 && !isChecking) {
+        if (nextCode.length === 6 && !isChecking && !verifying.current && !resending.current) {
             void handleVerify(nextCode)
         }
     }
 
     const handleVerify = async (code: string) => {
-        const verified = await onVerify(code)
+        verifying.current = true
+        let verified = false
+        try {
+            verified = await onVerify(code)
+        } finally {
+            verifying.current = false
+        }
 
         if (!verified) {
             setVerificationCode("")
@@ -54,7 +63,7 @@ export default function EmailVerificationStep({
 
     return (
         <View style={authSharedStyles.verificationStep}>
-            <Pressable
+            {!headerBack ? <Pressable
                 accessibilityLabel={t("auth.verify.editEmail")}
                 accessibilityRole="button"
                 hitSlop={10}
@@ -67,9 +76,9 @@ export default function EmailVerificationStep({
                 <Svg width={24} height={24} viewBox="0 0 24 24" fill="none">
                     <Path d={BACK_ARROW_PATH} fill={palette.text} />
                 </Svg>
-            </Pressable>
+            </Pressable> : null}
 
-            <View style={authSharedStyles.verificationPanel}>
+            <View style={[authSharedStyles.verificationPanel, headerBack && authSharedStyles.verificationPanelWithHeader]}>
                 <Text style={authSharedStyles.verificationText}>
                     {t("auth.verify.description")}
                     {email ? (
@@ -91,13 +100,14 @@ export default function EmailVerificationStep({
                         accessibilityLabel={t("auth.verify.code")}
                         accessibilityRole="button"
                         onPress={() => verificationInputRef.current?.focus()}
-                        style={authSharedStyles.codeCells}
+                        style={[authSharedStyles.codeCells, headerBack && authSharedStyles.codeCellsWithHeader]}
                     >
                         {codeDigits.map((digit, index) => (
                             <View
                                 key={index}
                                 style={[
                                     authSharedStyles.codeCell,
+                                    headerBack && authSharedStyles.codeCellWithHeader,
                                     digit ? authSharedStyles.codeCellFilled : null,
                                     verificationCode.length === index ? authSharedStyles.codeCellActive : null,
                                 ]}
@@ -111,6 +121,7 @@ export default function EmailVerificationStep({
                         autoCapitalize="none"
                         autoCorrect={false}
                         caretHidden
+                        editable={!headerBack || (!isChecking && !isResending)}
                         keyboardType="number-pad"
                         maxLength={6}
                         onChangeText={handleCodeChange}
@@ -128,9 +139,19 @@ export default function EmailVerificationStep({
                     </View>
                 ) : null}
 
-                <View style={authSharedStyles.helperRow}>
+                <View style={[authSharedStyles.helperRow, headerBack && authSharedStyles.verificationResendRow]}>
                     <Text style={authSharedStyles.helperText}>{t("auth.verify.resendHint")}</Text>
-                    <Pressable disabled={isResending} onPress={() => void onResend()}>
+                    <Pressable disabled={isResending || isChecking} onPress={() => {
+                        if (verifying.current || resending.current) return
+                        resending.current = true
+                        void onResend().finally(() => {
+                            resending.current = false
+                            if (headerBack) {
+                                setVerificationCode("")
+                                requestAnimationFrame(() => verificationInputRef.current?.focus())
+                            }
+                        })
+                    }}>
                         <Text
                             style={[
                                 authSharedStyles.helperLink,

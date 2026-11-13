@@ -6,4 +6,5 @@ export type EmailVerificationStepProps = {
     onResend: () => Promise<void>
     onVerify: (code: string) => Promise<boolean>
     statusMessage?: string
+    headerBack?: boolean
 }

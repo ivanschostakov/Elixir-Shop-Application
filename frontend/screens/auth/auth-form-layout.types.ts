@@ -6,4 +6,5 @@ export type AuthFormLayoutProps = {
     error?: string | null
     scrollRef?: RefObject<ScrollView | null>
     title: string
+    backAction?: { label: string; onPress: () => void; disabled?: boolean }
 }

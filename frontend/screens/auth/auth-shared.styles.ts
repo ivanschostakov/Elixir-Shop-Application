@@ -162,6 +162,28 @@ export const createAuthSharedStyles = (colors: ThemePalette) => StyleSheet.creat
         gap: spacing.lg,
         paddingTop: 44,
     },
+    verificationHeader: {
+        alignItems: "center",
+        flexDirection: "row",
+        gap: spacing.sm,
+    },
+    verificationHeaderTitle: {
+        flex: 1,
+        marginBottom: 0,
+    },
+    verificationPanelWithHeader: {
+        paddingTop: 0,
+    },
+    verificationResendRow: {
+        flexWrap: "wrap",
+    },
+    headerBackButton: {
+        alignItems: "center",
+        borderRadius: 22,
+        height: 44,
+        justifyContent: "center",
+        width: 44,
+    },
     verificationStep: {
         minHeight: 44,
         position: "relative",
@@ -202,6 +224,10 @@ export const createAuthSharedStyles = (colors: ThemePalette) => StyleSheet.creat
         justifyContent: "center",
         marginHorizontal: -4,
     },
+    codeCellsWithHeader: {
+        maxWidth: "100%",
+        marginHorizontal: 0,
+    },
     codeCell: {
         alignItems: "center",
         backgroundColor: colors.surface,
@@ -214,6 +240,10 @@ export const createAuthSharedStyles = (colors: ThemePalette) => StyleSheet.creat
         minWidth: 44,
         paddingHorizontal: 2,
         width: 44,
+    },
+    codeCellWithHeader: {
+        flexShrink: 1,
+        minWidth: 32,
     },
     codeCellActive: {
         borderColor: colors.primary,

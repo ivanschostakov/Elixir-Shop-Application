@@ -3,7 +3,11 @@ import type { NativeScrollEvent, NativeSyntheticEvent, ScrollView, TextInput } f
 import { CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD } from "@/screens/chat/chat-screen.constants"
 
 /** Follow the latest message only while the reader is already at the bottom. */
-export function useChatScroll(scrollRef: RefObject<ScrollView | null>, workspacePage: string | null) {
+export function useChatScroll(
+    scrollRef: RefObject<ScrollView | null>,
+    workspacePage: string | null,
+    onFollowingChange?: (following: boolean) => void,
+) {
     const page = useRef(workspacePage)
     const following = useRef(true)
     const resetting = useRef(false)
@@ -52,17 +56,30 @@ export function useChatScroll(scrollRef: RefObject<ScrollView | null>, workspace
         page.current = workspacePage
         pendingTop.current = !!workspacePage
         following.current = true
+        onFollowingChange?.(true)
         settle()
         return cancel
-    }, [workspacePage, settle, cancel])
+    }, [workspacePage, settle, cancel, onFollowingChange])
     useEffect(() => () => { cancel(); if (focusFrame.current != null) cancelAnimationFrame(focusFrame.current) }, [cancel])
     const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         scrollOffset.current = event.nativeEvent.contentOffset.y
         if (page.current || resetting.current) return
         const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
-        following.current = contentSize.height - contentOffset.y - layoutMeasurement.height <= CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD
-    }, [])
-    const followLatest = useCallback(() => { following.current = true; settle() }, [settle])
+        const nextFollowing = contentSize.height - contentOffset.y - layoutMeasurement.height <= CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD
+        if (following.current === nextFollowing) return
+        following.current = nextFollowing
+        onFollowingChange?.(nextFollowing)
+    }, [onFollowingChange])
+    const followLatest = useCallback((animated = false) => {
+        if (animated && !page.current) {
+            cancel()
+            scrollRef.current?.scrollToEnd({ animated: true })
+            return
+        }
+        following.current = true
+        onFollowingChange?.(true)
+        settle()
+    }, [cancel, onFollowingChange, scrollRef, settle])
     const onFieldFocus = useCallback((input: TextInput | null) => { focusedField.current = input; if (input) revealField() }, [revealField])
     const onLayout = useCallback(() => { settle(); revealField() }, [settle, revealField])
     return { onScroll, onScrollBeginDrag: cancel, onContentSizeChange: onLayout, onLayout, followLatest, onFieldFocus }

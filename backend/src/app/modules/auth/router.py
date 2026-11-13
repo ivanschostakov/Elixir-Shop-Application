@@ -15,13 +15,16 @@ from src.app.services.auth import (
     verify_registration_user,
 )
 from src.database import get_db
-from src.app.services.auth.service.password_reset import confirm_password_reset, request_password_reset
+from src.app.services.auth.service.password_reset import confirm_password_reset, request_password_reset, verify_private_password_reset
 from src.database.models.auth.user import User
 
 from .dependencies import get_current_user
 from .schemas.login import UserLoginPayload, UserLoginVerifyPayload
 from .schemas.logout import UserLogoutPayload
-from .schemas.password_reset import UserPasswordResetConfirm, UserPasswordResetRequest, UserPasswordResetResponse
+from .schemas.password_reset import (
+    UserPasswordResetComplete, UserPasswordResetConfirm, UserPasswordResetRequest,
+    UserPasswordResetResponse, UserPasswordResetVerified, UserPasswordResetVerify,
+)
 from .schemas.register import (
     UserRegisterPayload,
     UserRegisterVerifyPayload,
@@ -85,6 +88,22 @@ async def password_reset_confirm(
     request: Request, payload: UserPasswordResetConfirm, db: AsyncSession = Depends(get_db),
 ) -> UserPasswordResetResponse:
     await confirm_password_reset(db, request, email=str(payload.email), code=payload.code, password=payload.password)
+    return UserPasswordResetResponse()
+
+
+@auth_router.post("/password-reset/verify", response_model=UserPasswordResetVerified)
+async def password_reset_verify(
+    request: Request, payload: UserPasswordResetVerify, db: AsyncSession = Depends(get_db),
+) -> UserPasswordResetVerified:
+    token = await verify_private_password_reset(db, request, email=str(payload.email), code=payload.code)
+    return UserPasswordResetVerified(reset_token=token)
+
+
+@auth_router.post("/password-reset/complete", response_model=UserPasswordResetResponse)
+async def password_reset_complete(
+    request: Request, payload: UserPasswordResetComplete, db: AsyncSession = Depends(get_db),
+) -> UserPasswordResetResponse:
+    await confirm_password_reset(db, request, email=str(payload.email), reset_token=payload.reset_token, password=payload.password)
     return UserPasswordResetResponse()
 
 

@@ -21,7 +21,7 @@ test("Android and web retain all existing chat modes", () => {
     }
 })
 
-function renderSwitcher(platform, mode, onChange, privateIosFeatures = false) {
+function renderSwitcher(platform, mode, onChange, privateIosFeatures = false, glass = false) {
     class Value {
         interpolate(config) { return config }
     }
@@ -29,12 +29,13 @@ function renderSwitcher(platform, mode, onChange, privateIosFeatures = false) {
         react: { useEffect: () => {}, useRef: value => ({ current: value }), useState: () => [320, () => {}] },
         "react-native": { Animated: { Value, View: "AnimatedView" }, Platform: { OS: platform }, Pressable: "Pressable", StyleSheet: { create: value => value }, Text: "Text", View: "View" },
         "@/providers/language-provider": { useLanguage: () => ({ t: key => key }) },
+        "expo-blur": { BlurView: "BlurView" },
         "@/hooks/use-theme-styles": { useThemeStyles: () => ({}) },
         "@/screens/chat/community-chat-screen.styles": { createCommunityChatStyles: () => ({}) },
         "@/screens/chat/chat-mode-transition": { useChatReducedMotion: () => true },
         "@/screens/chat/chat-mode-policy": policy,
     })
-    return ChatModeSwitcher({ mode, onChange, unreadCount: 5, mentorStyle: true, privateIosFeatures })
+    return ChatModeSwitcher({ mode, onChange, unreadCount: 5, mentorStyle: true, privateIosFeatures, glassTint: glass ? "systemThinMaterial" : undefined })
 }
 
 function elements(tree) {
@@ -59,6 +60,17 @@ test("iOS switcher has only AI and support with equal-width working tabs", () =>
     assert.deepEqual(indicator.props.style.at(-1).width.inputRange, [0, 1])
     assert.deepEqual(indicator.props.style.at(-1).width.outputRange, [156, 156])
     assert.deepEqual(indicator.props.style.at(-1).transform[0].translateX.outputRange, [0, 156])
+})
+
+test("the glass selector retains the admin tabs and switches modes", () => {
+    const changes = []
+    const nodes = elements(renderSwitcher("ios", "community", mode => changes.push(mode), true, true))
+    const tabs = nodes.filter(node => node.props?.accessibilityRole === "tab")
+    assert.equal(tabs.length, 3)
+    assert.equal(tabs[1].props.accessibilityState.selected, true)
+    assert.ok(nodes.some(node => node.type === "BlurView"))
+    tabs[2].props.onPress()
+    assert.deepEqual(changes, ["support"])
 })
 
 test("Android switcher still exposes the community tab", () => {

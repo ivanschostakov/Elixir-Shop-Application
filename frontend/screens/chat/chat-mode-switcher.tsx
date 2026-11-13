@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Animated, type LayoutChangeEvent, Platform, Pressable, StyleSheet, Text, View } from "react-native"
+import { BlurView, type BlurTint } from "expo-blur"
 
 import { useLanguage } from "@/providers/language-provider"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
@@ -11,6 +12,7 @@ export type { ChatMode } from "@/screens/chat/chat-mode-policy"
 
 export function ChatModeSwitcher({
     mode,
+    glassTint,
     mentorStyle = false,
     privateIosFeatures = false,
     onChange,
@@ -18,6 +20,7 @@ export function ChatModeSwitcher({
     unreadCount,
 }: {
     mode: ChatMode
+    glassTint?: BlurTint
     mentorStyle?: boolean
     privateIosFeatures?: boolean
     onChange: (mode: ChatMode) => void
@@ -27,6 +30,7 @@ export function ChatModeSwitcher({
     const themeStyles = useThemeStyles(createCommunityChatStyles)
     const styles = mentorStyle ? mentorSwitcherStyles : themeStyles
     const { t } = useLanguage()
+    const glass = glassTint !== undefined
     const communityAvailable = isCommunityChatAvailable(Platform.OS, privateIosFeatures)
     const modeIndex = mode === "support" ? (communityAvailable ? 2 : 1) : mode === "community" && communityAvailable ? 1 : 0
     const reducedMotion = useChatReducedMotion()
@@ -55,17 +59,18 @@ export function ChatModeSwitcher({
     }, [modeIndex, progress, reducedMotion])
 
     return (
-        <View accessibilityRole="tablist" onLayout={handleLayout} style={[themeStyles.modeSwitcher, mentorStyle ? mentorSwitcherStyles.modeSwitcher : null]}>
-            {availableWidth > 0 ? <Animated.View pointerEvents="none" style={[styles.modeIndicator, { width: indicatorWidth, transform: [{ translateX: indicatorPosition }] }]} /> : null}
+        <View accessibilityRole="tablist" onLayout={handleLayout} style={[themeStyles.modeSwitcher, mentorStyle ? mentorSwitcherStyles.modeSwitcher : null, glass && themeStyles.glassModeSwitcher]}>
+            {glass ? <BlurView pointerEvents="none" intensity={60} tint={glassTint} style={StyleSheet.absoluteFill} /> : null}
+            {availableWidth > 0 ? <Animated.View pointerEvents="none" style={[styles.modeIndicator, glass && themeStyles.glassModeIndicator, { width: indicatorWidth, transform: [{ translateX: indicatorPosition }] }]} /> : null}
             <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "ai" }} onPress={() => onChange("ai")} style={[styles.modeButton, { flex: shares[0] }]}>
-                <Text style={[styles.modeText, mode === "ai" ? styles.modeTextActive : null]}>{t("chat.modeAi")}</Text>
+                <Text style={[styles.modeText, mode === "ai" ? styles.modeTextActive : null, glass && themeStyles.glassModeText]}>{t("chat.modeAi")}</Text>
             </Pressable>
             {communityAvailable ? <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "community" }} onPress={() => onChange("community")} style={[styles.modeButton, { flex: shares[1] }]}>
-                <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "community" ? styles.modeTextActive : null]}>{t("chat.modeGroup")}</Text>
+                <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "community" ? styles.modeTextActive : null, glass && themeStyles.glassModeText]}>{t("chat.modeGroup")}</Text>
                 {unreadCount > 0 ? <View style={styles.modeBadge}><Text style={styles.modeBadgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text></View> : null}
             </Pressable> : null}
             <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "support" }} onPress={() => onChange("support")} style={[styles.modeButton, { flex: shares[shares.length - 1] }]}>
-                <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "support" ? styles.modeTextActive : null]}>{t("chat.modeSupport")}</Text>
+                <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "support" ? styles.modeTextActive : null, glass && themeStyles.glassModeText]}>{t("chat.modeSupport")}</Text>
                 {supportUnreadCount > 0 ? <View style={styles.modeBadge}><Text style={styles.modeBadgeText}>{supportUnreadCount > 99 ? "99+" : supportUnreadCount}</Text></View> : null}
             </Pressable>
         </View>

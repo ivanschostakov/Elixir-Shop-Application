@@ -35,6 +35,7 @@ class AuthVerificationRequiredResponse(BaseModel):
     email: EmailStr
     verification_required: bool = True
     message: str
+    ios_private_features: bool = False
 
 
 class AuthRefreshResponse(AuthTokensBase):

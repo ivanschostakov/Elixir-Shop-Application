@@ -94,6 +94,7 @@ export async function authenticate(credentials: LoginCredentials): Promise<Login
             verificationRequired: true,
             email: response.email,
             message: response.message,
+            iosPrivateFeatures: response.ios_private_features === true,
         }
     }
 
@@ -140,6 +141,17 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
 export async function confirmPasswordReset(email: string, code: string, password: string): Promise<void> {
     await apiPost(authPath("/password-reset/confirm"), { email, code, password }, { auth: false, retryOnUnauthorized: false })
+}
+
+export async function verifyPrivatePasswordReset(email: string, code: string): Promise<string> {
+    const response = await apiPost<{ reset_token: string }, { email: string; code: string }>(
+        authPath("/password-reset/verify"), { email, code }, { auth: false, retryOnUnauthorized: false },
+    )
+    return response.reset_token
+}
+
+export async function completePrivatePasswordReset(email: string, resetToken: string, password: string): Promise<void> {
+    await apiPost(authPath("/password-reset/complete"), { email, reset_token: resetToken, password }, { auth: false, retryOnUnauthorized: false })
 }
 
 export async function registerAccount(payload: RegistrationPayload): Promise<RegistrationStartedResponse> {

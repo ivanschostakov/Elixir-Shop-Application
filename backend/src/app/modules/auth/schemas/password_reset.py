@@ -16,8 +16,11 @@ class UserPasswordResetRequest(BaseModel):
         return normalized
 
 
-class UserPasswordResetConfirm(UserPasswordResetRequest):
+class UserPasswordResetVerify(UserPasswordResetRequest):
     code: str = Field(pattern=r"^[0-9]{6}$")
+
+
+class UserPasswordResetNewPassword(UserPasswordResetRequest):
     password: str = Field(min_length=8, max_length=100)
 
     @field_validator("password")
@@ -26,6 +29,18 @@ class UserPasswordResetConfirm(UserPasswordResetRequest):
         if not value.strip():
             raise ValueError("Password cannot be blank")
         return value
+
+
+class UserPasswordResetConfirm(UserPasswordResetNewPassword, UserPasswordResetVerify):
+    pass
+
+
+class UserPasswordResetComplete(UserPasswordResetNewPassword):
+    reset_token: str = Field(pattern=r"^[A-Za-z0-9_-]{43}$")
+
+
+class UserPasswordResetVerified(BaseModel):
+    reset_token: str
 
 
 class UserPasswordResetResponse(BaseModel):
