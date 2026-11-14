@@ -24,6 +24,13 @@ def _order_payment_method_name(order: Order) -> str | None:
     return MOY_SKLAD_PAYMENT_LATER if lower_optional_str(order.payment_method) == "later" else MOY_SKLAD_PAYMENT_INTELLECT
 
 
+_STANDARD_CHANNEL_IDS = {
+    "ios": "52d06030-bbe7-11f1-0a80-016f000f8af5",
+    "android": "58234296-bbe7-11f1-0a80-14c400102f30",
+    "web": "2d64fbda-1887-11f1-0a80-07dd000e3c8f",
+}
+
+
 def _is_intellectmoney_payment(order: Order) -> bool:
     payment_method = lower_optional_str(order.payment_method)
     payment_provider = lower_optional_str(order.payment_provider)
@@ -118,7 +125,10 @@ async def _resolve_customerorder_refs(moysklad_client: MoySkladClient, order: Or
         "ios": MOY_SKLAD_IOS_SALES_CHANNEL_HREF,
         "android": MOY_SKLAD_ANDROID_SALES_CHANNEL_HREF,
         "web": MOY_SKLAD_TELEGRAM_SALES_CHANNEL_HREF,
-    }.get(platform) or MOY_SKLAD_SALES_CHANNEL_HREF
+    }.get(platform)
+    if not channel_href and extract_dict(order.checkout_snapshot).get("order_export_version") and platform in _STANDARD_CHANNEL_IDS:
+        channel_href = moysklad_client.entity_href("saleschannel", _STANDARD_CHANNEL_IDS[platform])
+    channel_href = channel_href or MOY_SKLAD_SALES_CHANNEL_HREF
     sales_channel = _maybe_meta_row(channel_href, entity_type="saleschannel")
 
     return {"store": store, "state": state, "sales_channel": sales_channel}

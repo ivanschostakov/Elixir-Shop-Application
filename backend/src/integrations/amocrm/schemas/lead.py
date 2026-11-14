@@ -4,6 +4,12 @@ from .common import AmoBaseSchema, AmoCustomFieldById
 class LeadTagPayload(AmoBaseSchema):
     name: str
 
+class LeadContact(AmoBaseSchema):
+    id: int
+
+class LeadEmbedded(AmoBaseSchema):
+    contacts: list[LeadContact]
+
 class LeadCreatePayload(AmoBaseSchema):
     name: str
     pipeline_id: int
@@ -11,6 +17,7 @@ class LeadCreatePayload(AmoBaseSchema):
     price: int | None = None
     custom_fields_values: list[AmoCustomFieldById] = Field(default_factory=list)
     tags_to_add: list[LeadTagPayload] | None = None
+    embedded: LeadEmbedded | None = Field(default=None, serialization_alias="_embedded")
 
 class LeadStatusUpdatePayload(AmoBaseSchema):
     id: int

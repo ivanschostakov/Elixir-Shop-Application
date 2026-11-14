@@ -36,7 +36,27 @@ CF = {
     "cdek_number": 751951,
     "address": 752435,
     "delivery_sum": 752929,
+    "shipment_address": 755035,
+    "delivery_method": 755099,
+    "checkout_payment_method": 755097,
+    "payment_status": 754985,
+    "sales_channel": 755041,
+    "composition": 755019,
+    "order_comment": 755027,
+    "order_budget": 755765,
+    "cash_due": 756131,
+    "balance_spent": 756209,
+    "ms_order_url": 755037,
+    "ms_order_id": 755005,
+    "ms_order_number": 755013,
+    "ms_invoice_id": 755009,
+    "ms_invoice_number": 755017,
+    "ms_invoice_url": 755001,
 }
+
+CHECKOUT_CHANNEL_ENUMS = {"ios": 1234871, "android": 1234873, "web": 1234867}
+CHECKOUT_PAYMENT_ENUMS = {"sbp": 1233749, "later": 1233175}
+CHECKOUT_DELIVERY_ENUMS = {"CDEK": 1233181, "YANDEX": 1233183}
 
 PAID_STATUS_IDS = [
     STATUS_IDS["check_paid"],

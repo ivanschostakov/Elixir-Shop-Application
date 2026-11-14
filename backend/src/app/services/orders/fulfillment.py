@@ -82,6 +82,17 @@ async def _create_cdek_delivery(order: Order) -> dict[str, Any]:
     log.info("CDEK create_order request order_number=%s", order.order_number)
     response = await cdek_client.create_order(order_body)
     log.info("CDEK create_order response order_number=%s", order.order_number)
+    tracking = str((response.get("entity") or {}).get("cdek_number") or "").strip()
+    if tracking.isdigit() and order.amocrm_lead_id:
+        from .crm import amocrm_client
+        from src.integrations.amocrm.constants import CF
+        try:
+            await amocrm_client.update_lead_order_fields(int(order.amocrm_lead_id), {
+                CF["cdek_number"]: tracking,
+                CF["cdek_tracking_url"]: f"https://www.cdek.ru/ru/tracking/?order_id={tracking}",
+            })
+        except Exception:
+            log.warning("Could not send CDEK tracking to amoCRM order_id=%s", order.id, exc_info=True)
     return {"delivery_provider_ref": _extract_cdek_provider_ref(response, order)}
 
 

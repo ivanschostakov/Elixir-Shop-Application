@@ -10,7 +10,7 @@ from fastapi import HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from config import APP_PAYMENT_RETURN_BASE_URL, INTELLECTMONEY_IP_ADDRESS
+from config import APP_PAYMENT_RETURN_BASE_URL, INTELLECTMONEY_IP_ADDRESS, MOY_SKLAD_ORDER_SYNC_ENABLED
 from src.app.services.external_errors import external_service_http_exception
 from src.app.services.customer_intelligence import record_customer_event_safe
 from src.app.services.benefits.redemption import reverse_order_bonus_safe
@@ -23,7 +23,7 @@ from src.integrations.moysklad.order_sync import MOY_SKLAD_INVOICEOUT_STATE_PAID
 from .crm import _move_lead_to_payment_result_status, _move_lead_to_pending_payment
 from src.app.services.referrals.paid_orders import sync_paid_order_referral_to_app_safe
 from .payment_qr_storage import build_order_payment_qr_url, find_order_payment_qr_path, save_order_payment_qr
-from .settlement_payment import prepare_settlement_payment, settlement_lock, verify_no_unapproved_balance
+from .settlement_payment import prepare_settlement_payment, settlement_lock, verify_no_unapproved_balance, verify_standard_sbp_invoice
 from src.integrations.moysklad.settlement_checkout import order_settlement
 
 log = logging.getLogger(__name__)
@@ -290,12 +290,17 @@ async def create_payment_for_order(
     payment_method: str | None = None,
 ) -> dict[str, Any]:
     settlement = order_settlement(order)
-    if settlement:
-        async with settlement_lock(settlement["counterparty_id"], payment=True):
-            await session.refresh(order, attribute_names=["payment_invoice_id", "payment_status", "payment_provider",
+    if settlement or _uses_standard_document_export(order):
+        lock_key = settlement["counterparty_id"] if settlement else f"order:{order.id}"
+        async with settlement_lock(lock_key, payment=True):
+            await session.refresh(order, attribute_names=["payment_invoice_id", "payment_status", "payment_provider", "payment_method",
                 "is_paid", "is_canceled", "checkout_snapshot", "grand_total", "moysklad_customerorder_id", "moysklad_invoiceout_id"])
             return await _create_payment_for_order(session, request=request, order=order, payment_method=payment_method)
     return await _create_payment_for_order(session, request=request, order=order, payment_method=payment_method)
+
+
+def _uses_standard_document_export(order: Order) -> bool:
+    return MOY_SKLAD_ORDER_SYNC_ENABLED and (order.checkout_snapshot or {}).get("order_export_version") == 1
 
 
 async def _create_payment_for_order(session: AsyncSession, *, request: Request, order: Order,
@@ -326,7 +331,12 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         if not provider_confirmed_dead:
             return existing_payload
 
+    if _uses_standard_document_export(order) and order.payment_method and requested_payment_method != order.payment_method:
+        raise HTTPException(409, "Заказ оформлен с другим способом оплаты. Для его изменения обратитесь в поддержку.")
+
     if requested_payment_method == "later":
+        if _uses_standard_document_export(order) and order_settlement(order):
+            await prepare_settlement_payment(session, order=order)
         order = await update_order(
             session,
             order,
@@ -342,13 +352,15 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         return _payment_status_payload(order)
 
     settlement = order_settlement(order)
-    if (settlement and order.payment_provider == "intellectmoney" and not order.payment_invoice_id
+    if ((settlement or _uses_standard_document_export(order))
+            and order.payment_provider == "intellectmoney" and not order.payment_invoice_id
             and order.payment_status in {"created", "error"}):
         raise HTTPException(409, "Не удалось подтвердить статус предыдущей попытки оплаты. Обратитесь в поддержку, чтобы не создать второй счёт.")
     if settlement:
         await prepare_settlement_payment(session, order=order)
     else:
         await verify_no_unapproved_balance(order)
+        await verify_standard_sbp_invoice(order)
     if settlement and order.grand_total == 0:
         order = await update_order(session, order, OrderUpdate(
             payment_method="sbp", payment_provider="moysklad_balance", payment_invoice_id=None), commit=True)

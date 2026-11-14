@@ -95,6 +95,7 @@ class MoySkladCustomerOrderSyncResult:
     customerorder_id: uuid.UUID
     external_code: str
     created: bool = False
+    name: str | None = None
 
 
 @dataclass
@@ -102,6 +103,7 @@ class MoySkladInvoiceOutSyncResult:
     invoiceout_id: uuid.UUID
     external_code: str
     created: bool = False
+    name: str | None = None
 
 
 @dataclass

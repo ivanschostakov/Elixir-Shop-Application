@@ -13,6 +13,8 @@ from src.database.crud import get_order_by_id, update_order
 from src.database.models import Order, User
 from src.database.schemas import OrderUpdate
 from src.integrations.amocrm import get_amocrm_client
+from src.integrations.amocrm.constants import CF, CHECKOUT_CHANNEL_ENUMS, CHECKOUT_DELIVERY_ENUMS, CHECKOUT_PAYMENT_ENUMS
+from src.integrations.amocrm.schemas.common import AmoValue
 from src.integrations.moysklad.order_sync import MOY_SKLAD_INVOICEOUT_STATE_PAID, MOY_SKLAD_STATE_INVOICE_PAID, sync_moysklad_customerorder_state, sync_moysklad_invoiceout_state
 from src.app.services.referrals.paid_orders import sync_paid_order_referral_to_app_safe
 from src.app.services.benefits.redemption import reverse_order_bonus_safe
@@ -31,6 +33,61 @@ def _amocrm_payment_label(payment_method: str | None) -> str:
     if method == "sbp": return "IntellectMoney"
     if method == "later": return "Оплата позже"
     return payment_method or "Не указан"
+
+
+def _format_order_items(items: list[dict[str, Any]]) -> str:
+    lines: list[str] = []
+    for idx, item in enumerate(items, start=1):
+        name = str(item.get("name") or item.get("product_name") or item.get("feature_name") or "Товар").strip()
+        quantity = int(item.get("qty") or 1)
+        variant = str(item.get("feature_name") or "").strip()
+        if variant and variant != name:
+            name = f"{name} ({variant})"
+        subtotal = Decimal(str(item.get("subtotal") or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        lines.append(f"{idx}. {name} {quantity}шт. — {subtotal:.2f}руб.")
+    return "\n".join(lines) or "Товары не указаны."
+
+
+def _checkout_lead_fields(order: Order, address: str) -> dict[int, object]:
+    snapshot = order.checkout_snapshot or {}
+    settlement = order_settlement(order)
+    result: dict[int, object] = {
+        CF["shipment_address"]: address,
+        CF["composition"]: _format_order_items((snapshot.get("checkout_data") or {}).get("items") or []),
+        CF["order_comment"]: order.comment or None,
+        CF["order_budget"]: float(settlement["gross_rubles"] if settlement else order.grand_total),
+        CF["cash_due"]: float(order.grand_total) if not settlement or settlement.get("status") == "confirmed" else None,
+        CF["payment_status"]: AmoValue(enum_id=1233115),
+    }
+    for key, enum_id in (
+        ("sales_channel", CHECKOUT_CHANNEL_ENUMS.get(snapshot.get("client_platform"))),
+        ("checkout_payment_method", CHECKOUT_PAYMENT_ENUMS.get(order.payment_method)),
+        ("delivery_method", CHECKOUT_DELIVERY_ENUMS.get((order.selected_delivery_service or "").upper())),
+    ):
+        if enum_id is not None:
+            result[CF[key]] = AmoValue(enum_id=enum_id)
+    return result
+
+
+async def sync_moysklad_document_links(order: Order, *, customerorder_name: str | None = None, invoice_name: str | None = None) -> None:
+    if not (order.checkout_snapshot or {}).get("order_export_version") or not order.amocrm_lead_id:
+        return
+    fields: dict[int, object] = {}
+    if order_id := order.moysklad_customerorder_id:
+        fields.update({
+            CF["ms_order_id"]: str(order_id),
+            CF["ms_order_url"]: f"https://online.moysklad.ru/app/#customerorder/edit?id={order_id}",
+            CF["ms_order_number"]: customerorder_name,
+        })
+    if invoice_id := order.moysklad_invoiceout_id:
+        fields.update({
+            CF["ms_invoice_id"]: str(invoice_id),
+            CF["ms_invoice_url"]: f"https://online.moysklad.ru/app/#invoiceout/edit?id={invoice_id}",
+            CF["ms_invoice_number"]: invoice_name,
+        })
+    if fields:
+        await amocrm_client.update_lead_order_fields(int(order.amocrm_lead_id), fields)
+
 
 def _order_state_patch_for_amocrm_status(status_id: int) -> dict[str, Any]:
     paid_status_ids = getattr(amocrm_client, "PAID_STATUS_IDS", {amocrm_client.STATUS_IDS.get("check_paid")})
@@ -71,15 +128,7 @@ def _format_order_for_amocrm(order_number: str, payload: dict[str, Any], deliver
     address_data = delivery.get("address") or {}
     date_text = (order_date or datetime.now()).strftime("%d.%m.%Y")
 
-    lines_items: list[str] = []
-    for idx, item in enumerate(items, start=1):
-        name = str(item.get("name") or item.get("product_name") or item.get("feature_name") or "Товар").strip()
-        quantity = int(item.get("qty") or 1)
-        variant = str(item.get("feature_name") or "").strip()
-        if variant and variant != name: name = f"{name} ({variant})"
-        subtotal = Decimal(str(item.get("subtotal") or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        lines_items.append(f"{idx}. {name} {quantity}шт. — {subtotal:.2f}руб.")
-    items_block = "\n".join(lines_items) if lines_items else "Товары не указаны."
+    items_block = _format_order_items(items)
 
     items_total = Decimal(str(checkout.get("total") or 0))
     benefits = payload.get("benefits") or {}
@@ -160,7 +209,16 @@ async def sync_settlement_amount_to_crm(session: AsyncSession, order: Order) -> 
     marker = f"{settlement['invoice_id']}:{settlement['cash_rubles']}:{settlement['balance_rubles']}"
     if settlement.get("crm_calculation") == marker:
         return
-    await amocrm_client.update_lead_price(int(order.amocrm_lead_id), int(order.grand_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP)))
+    price = int(order.grand_total.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    if (order.checkout_snapshot or {}).get("order_export_version"):
+        await amocrm_client.update_lead_order_fields(int(order.amocrm_lead_id), {
+            CF["order_budget"]: float(settlement["gross_rubles"]),
+            CF["cash_due"]: float(settlement["cash_rubles"]),
+            CF["balance_spent"]: int(settlement["displayed_spent_rubles"]),
+        }, price=price)
+        await sync_moysklad_document_links(order, invoice_name=settlement.get("invoice_name"))
+    else:
+        await amocrm_client.update_lead_price(int(order.amocrm_lead_id), price)
     await amocrm_client.add_lead_note(int(order.amocrm_lead_id),
         f"Окончательный расчёт по счёту МойСклад {settlement['invoice_id']}\n"
         f"Заказ {order.order_code} с доставкой: {settlement['gross_rubles']} руб.\n"
@@ -185,7 +243,16 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
     lead_name = " ".join(part for part in [order.recipient.name, order.recipient.surname] if part).strip() or f"Заказ #{order.order_number}"
     phone = _normalize_phone(order.recipient.phone) or _normalize_phone(user.phone_number) or order.recipient.phone
     email = (order.recipient.email or user.email or "").strip().lower() or None
-    contact = await amocrm_client.find_or_create_contact(lead_name=lead_name, phone=phone, email=email, contact_id=user.contact_id)
+    buyer_name = " ".join(filter(None, (getattr(user, "name", None), getattr(user, "surname", None)))).strip()
+    buyer_email = (user.email or "").strip().lower() or None
+    buyer_phone = _normalize_phone(user.phone_number)
+    is_buyer_recipient = bool((buyer_email and buyer_email == email) or (buyer_phone and buyer_phone == phone))
+    contact = await amocrm_client.find_or_create_contact(
+        lead_name=buyer_name or lead_name,
+        phone=buyer_phone or (phone if is_buyer_recipient else None),
+        email=buyer_email or (email if is_buyer_recipient else None),
+        contact_id=user.contact_id,
+    )
     contact_id = contact.get("id") if isinstance(contact, dict) else None
     if contact_id and contact_id != user.contact_id: user.contact_id = int(contact_id)
 
@@ -219,6 +286,7 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
         delivery_sum=order.delivery_total,
         contact_id=int(contact_id) if contact_id else None,
         source_tag="заказ с приложения" if (order.checkout_snapshot or {}).get("client_platform") in {"ios", "android"} else None,
+        order_fields=_checkout_lead_fields(order, address_str),
     )
     order.amocrm_lead_id = int(lead["id"])
     await session.flush()

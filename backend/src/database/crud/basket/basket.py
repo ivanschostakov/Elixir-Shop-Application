@@ -29,8 +29,10 @@ async def get_basket_by_id(session: AsyncSession, basket_id: int) -> Basket | No
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_basket_by_user_id(session: AsyncSession, user_id: int) -> Basket | None:
+async def get_basket_by_user_id(session: AsyncSession, user_id: int, *, lock: bool = False) -> Basket | None:
     stmt = select(Basket).options(*_basket_load_options()).where(Basket.user_id == user_id).execution_options(populate_existing=True)
+    if lock:
+        stmt = stmt.with_for_update()
     return (await session.execute(stmt)).scalar_one_or_none()
 
 

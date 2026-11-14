@@ -13,7 +13,7 @@ from src.integrations.moysklad.idempotency import build_counterparty_external_co
 from src.integrations.moysklad.schemas import MoySkladOrderSyncResult, MoySkladCounterpartySyncResult
 from src.integrations.moysklad.settlement_checkout import order_settlement, entity_id
 from .common import log
-from .contacts import _counterparty_address, _counterparty_email, _counterparty_phone, _full_name
+from .contacts import _counterparty_email, _counterparty_phone, _full_name
 from .organization import _resolve_organization_id
 from .positions import _build_customerorder_positions, _load_assortment_refs
 from .description import _build_order_description
@@ -45,7 +45,7 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         snapshot["settlement_payment"]["organization_id"] = str(organization_id)
         order.checkout_snapshot = snapshot
         await session.commit()
-    else: counterparty_result = await moysklad_client.resolve_or_sync_counterparty(existing_counterparty_id=user.moysklad_counterparty_id, external_code=counterparty_external_code, sync_id=counterparty_sync_id, name=_full_name(user, order), email=_counterparty_email(user, order), phone=_counterparty_phone(user, order), actual_address=_counterparty_address(order),)
+    else: counterparty_result = await moysklad_client.resolve_or_sync_counterparty(existing_counterparty_id=user.moysklad_counterparty_id, external_code=counterparty_external_code, sync_id=counterparty_sync_id, name=_full_name(user, order), email=_counterparty_email(user, order), phone=_counterparty_phone(user, order), actual_address=None,)
 
     if user.moysklad_counterparty_id != counterparty_result.counterparty_id:
         user.moysklad_counterparty_id = counterparty_result.counterparty_id
@@ -69,9 +69,10 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         counterparty=counterparty_result,
     )
 
-    if settlement and Decimal(order.delivery_total) > 0:
+    standard_export = (order.checkout_snapshot or {}).get("order_export_version") == 1
+    if (settlement or standard_export) and Decimal(order.delivery_total) > 0:
         delivery_services = await moysklad_client.get_all("/entity/service", filter="name=Доставка заказа;archived=false")
-        if len(delivery_services) != 1 or entity_id(delivery_services[0]) is None: raise ValueError("A unique delivery service is required for settlement checkout")
+        if len(delivery_services) != 1 or entity_id(delivery_services[0]) is None: raise ValueError("A unique MoySklad delivery service is required")
         positions.append(moysklad_client.build_customerorder_position(assortment_entity_type="service", assortment_id=entity_id(delivery_services[0]), quantity=1, unit_price=Decimal(order.delivery_total), discount=Decimal("0")))
 
     customerorder_external_code = build_customerorder_external_code(order_id=order.id)
@@ -80,20 +81,31 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     if refs["store"] is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="store_not_configured", counterparty=counterparty_result)
     if refs["state"] is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="state_not_configured", counterparty=counterparty_result)
     if refs["sales_channel"] is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="sales_channel_not_configured", counterparty=counterparty_result)
-    attributes = moysklad_client.build_customerorder_attributes(values=_moysklad_attr_values(order), custom_refs=await _moysklad_custom_attr_refs(moysklad_client, order))
+    custom_refs = await _moysklad_custom_attr_refs(moysklad_client, order)
+    if standard_export and ("payment_method" not in custom_refs or "delivery_method" not in custom_refs):
+        raise ValueError("MoySklad payment or delivery method is missing from the order directory")
+    attributes = moysklad_client.build_customerorder_attributes(values=_moysklad_attr_values(order), custom_refs=custom_refs)
     customerorder_result = await moysklad_client.resolve_or_sync_customerorder(existing_customerorder_id=order.moysklad_customerorder_id, external_code=customerorder_external_code, sync_id=customerorder_sync_id, organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, moment=order.created_at, description=_build_order_description(order), shipment_address=_shipment_address(order), shipment_address_full=await _shipment_address_full(order, moysklad_client=moysklad_client), attributes=attributes, store=refs["store"], state=refs["state"], sales_channel=refs["sales_channel"],)
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:
         order.moysklad_customerorder_id = customerorder_result.customerorder_id
         await session.flush()
         await session.commit()
     invoiceout_result = None
-    if _is_intellectmoney_payment(order) and not settlement:
+    if not settlement and (_is_intellectmoney_payment(order) or standard_export):
         await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
         await session.refresh(order, attribute_names=["moysklad_invoiceout_id"])
         order_id = int(order.__dict__.get("id") or order.id)
         invoiceout_external_code = _invoiceout_external_code(order_id)
         invoiceout_sync_id = build_sync_id(scope="invoiceout", key=invoiceout_external_code)
-        invoiceout_result = await moysklad_client.resolve_or_sync_invoiceout(existing_invoiceout_id=order.moysklad_invoiceout_id, external_code=invoiceout_external_code, sync_id=invoiceout_sync_id, name=_invoiceout_name(order), organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, customerorder_id=customerorder_result.customerorder_id, moment=order.created_at, description=_build_order_description(order), store=refs["store"], sales_channel=refs["sales_channel"],)
+        invoice_attributes = [
+            {"meta": {"href": moysklad_client.entity_href("invoiceout/metadata/attributes", attr_id),
+                      "type": "attributemetadata", "mediaType": "application/json"},
+             "value": {"meta": {"href": custom_refs[key], "type": "customentity", "mediaType": "application/json"}}}
+            for key, attr_id in (("payment_method", "5e19b6f1-9237-11f1-0a80-165d0006d805"),
+                                 ("delivery_method", "c30a00ec-9238-11f1-0a80-1e970007bc2a"))
+            if key in custom_refs
+        ] if standard_export else None
+        invoiceout_result = await moysklad_client.resolve_or_sync_invoiceout(existing_invoiceout_id=order.moysklad_invoiceout_id, external_code=invoiceout_external_code, sync_id=invoiceout_sync_id, name=_invoiceout_name(order), organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, customerorder_id=customerorder_result.customerorder_id, moment=order.created_at, description=_build_order_description(order), store=refs["store"], sales_channel=refs["sales_channel"], attributes=invoice_attributes, create_if_missing=_is_intellectmoney_payment(order))
 
     needs_commit = False
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:
@@ -105,6 +117,11 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     if needs_commit:
         await session.flush()
         await session.commit()
+
+    if standard_export:
+        from src.app.services.orders.crm import sync_moysklad_document_links
+        await sync_moysklad_document_links(order, customerorder_name=customerorder_result.name,
+                                            invoice_name=invoiceout_result.name if invoiceout_result else None)
 
     return MoySkladOrderSyncResult(enabled=True, counterparty=counterparty_result, customerorder=customerorder_result, invoiceout=invoiceout_result,)
 

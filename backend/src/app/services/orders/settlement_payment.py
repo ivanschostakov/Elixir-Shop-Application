@@ -158,6 +158,8 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
     snapshot["settlement_payment"].update({"status": "confirmed", "invoice_id": str(result.invoice_id),
         "cash_rubles": str(result.cash_rubles), "balance_rubles": str(result.balance_rubles),
         "displayed_spent_rubles": result.displayed_spent_rubles})
+    if invoice_name := invoices[0].get("name"):
+        snapshot["settlement_payment"]["invoice_name"] = invoice_name
     benefits = snapshot["benefits"]
     previous = money(benefits.get("bonus_applied_rubles", 0))
     benefits["bonus_applied_rubles"] = float(result.balance_rubles)
@@ -233,3 +235,33 @@ async def verify_no_unapproved_balance(order, *, client=None):
         raise HTTPException(503, "Не удалось сверить счёт с МойСклад. Оплата не создана.") from exc
     if unapproved:
         raise HTTPException(409, "В МойСклад сумма счёта изменилась без согласия на списание бонусов. Оплата не создана; обратитесь в поддержку.")
+
+
+async def verify_standard_sbp_invoice(order, *, client=None):
+    from config import MOY_SKLAD_ORDER_SYNC_ENABLED
+    if (not MOY_SKLAD_ORDER_SYNC_ENABLED or
+            (order.checkout_snapshot or {}).get("order_export_version") != 1):
+        return
+    order_id = order.moysklad_customerorder_id
+    invoice_id = order.moysklad_invoiceout_id
+    if not order_id or not invoice_id:
+        raise settlement_pending()
+    client = client or get_moysklad_client()
+    try:
+        remote = await client.get_customer_order(order_id)
+        invoice = await client.get_invoiceout(invoice_id)
+    except Exception as exc:
+        raise HTTPException(503, "Не удалось проверить счёт в МойСклад. Оплата не создана.") from exc
+    try:
+        expected = money(order.grand_total) * 100
+        linked = {entity_id(ref) for ref in (remote.get("invoicesOut") or [])}
+        if (entity_id(remote) != order_id or entity_id(invoice) != invoice_id
+                or linked != {invoice_id} or entity_id(invoice.get("customerOrder")) != order_id
+                or any(entity_id(remote.get(field)) != entity_id(invoice.get(field)) for field in ("agent", "organization"))
+                or any(row.get("applicable") is not True or row.get("deleted")
+                       or (row.get("state") or {}).get("stateType") == "Unsuccessful"
+                       or money(row.get("payedSum", 0)) > 0 or money(row.get("sum")) != expected
+                       for row in (remote, invoice))):
+            raise ValueError("MoySklad order or invoice is inconsistent")
+    except (AttributeError, ValueError) as exc:
+        raise HTTPException(409, "Сумма или связь счёта в МойСклад не совпадает с заказом. Оплата не создана; обратитесь в поддержку.") from exc

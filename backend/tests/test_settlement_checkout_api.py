@@ -29,6 +29,8 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     monkeypatch.setattr(config, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
     monkeypatch.setattr(config, "LOYALTY_SETTLEMENT_CHECKOUT_ENABLED", True)
     monkeypatch.setattr(crm.amocrm_client, "update_lead_price", AsyncMock(), raising=False)
+    crm_fields = AsyncMock()
+    monkeypatch.setattr(crm.amocrm_client, "update_lead_order_fields", crm_fields, raising=False)
     monkeypatch.setattr(crm.amocrm_client, "add_lead_note", AsyncMock(), raising=False)
     balance = Decimal("300") if scenario == "partial_delivery" else Decimal("399") if scenario == "full_exact_balance" else Decimal("1000")
     wallet = moysklad_bonus.MoySkladBonusWallet(is_loaded=True, is_settlement=True,
@@ -120,6 +122,10 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         assert _get_order(order_id).payment_invoice_id is None
         return
     assert response.status_code == 200, response.text
+    fields, document_links = [call.args[1] for call in crm_fields.await_args_list[:2]]
+    assert fields[crm.CF["cash_due"]] == float(cash)
+    assert fields[crm.CF["balance_spent"]] == display_spent_rubles(applied)
+    assert document_links[crm.CF["ms_invoice_id"]] == str(IID)
     assert response.json()["order_id"] == order_id
     assert response.json()["awaiting_settlement"] is False
     assert Decimal(str(response.json()["amount_rubles"])) == cash

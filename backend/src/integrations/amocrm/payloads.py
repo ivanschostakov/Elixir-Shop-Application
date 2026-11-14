@@ -29,7 +29,8 @@ def build_lead_custom_fields(custom_fields: dict[int, object] | None) -> list[Am
     result: list[AmoCustomFieldById] = []
     for field_id, value in custom_fields.items():
         if value is None:continue
-        result.append(AmoCustomFieldById(field_id=field_id, values=[AmoValue(value=str(value))]))
+        field_value = value if isinstance(value, AmoValue) else AmoValue(value=value if isinstance(value, (str, int, float)) else str(value))
+        result.append(AmoCustomFieldById(field_id=field_id, values=[field_value]))
         
     return result
 
@@ -49,8 +50,6 @@ def build_order_lead_custom_fields(*, cf: dict[str, int], address_str: str, orde
     delivery_service_normalized = (delivery_service or "").strip().upper()
     if delivery_service_normalized == "CDEK":
         result[cf["delivery_cdek"]] = "СДЭК"
-        result[cf["cdek_number"]] = order_number
-        result[cf["cdek_tracking_url"]] = f"https://www.cdek.ru/ru/tracking/?order_id={order_number}"
 
     elif delivery_service_normalized == "YANDEX": result[cf["delivery_yandex"]] = "Яндекс"
     result[cf["payment"]] = payment_method

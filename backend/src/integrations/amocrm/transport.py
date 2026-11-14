@@ -41,4 +41,4 @@ class AmoCRMTransport:
     async def patch(self, endpoint: str, **kwargs: Any) -> dict[str, Any]: return await self.request("PATCH", endpoint, **kwargs)
 
     @staticmethod
-    def dump_payload(model: BaseModel) -> dict[str, Any]: return model.model_dump(mode="json", exclude_none=True)
+    def dump_payload(model: BaseModel) -> dict[str, Any]: return model.model_dump(mode="json", exclude_none=True, by_alias=True)

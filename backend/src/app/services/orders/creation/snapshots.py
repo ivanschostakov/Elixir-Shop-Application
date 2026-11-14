@@ -66,6 +66,7 @@ def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected
     items = [_checkout_snapshot_item(item) for item in draft.items]
     snapshot = {
         "source": "shop_application",
+        "order_export_version": 1,
         "client_platform": client_platform if client_platform in {"ios", "android", "web"} else "unknown",
         "payment_method": payment_method,
         "contact_info": {

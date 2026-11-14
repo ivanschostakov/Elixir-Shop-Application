@@ -48,7 +48,7 @@ async def update_order_draft(session: AsyncSession, draft: OrderDraft, data: Ord
     return draft
 
 
-async def get_order_draft_by_id(session: AsyncSession, draft_id: int, *, user_id: int | None = None) -> OrderDraft | None:
+async def get_order_draft_by_id(session: AsyncSession, draft_id: int, *, user_id: int | None = None, lock: bool = False) -> OrderDraft | None:
     stmt = (
         select(OrderDraft)
         .options(*_order_draft_load_options())
@@ -57,6 +57,8 @@ async def get_order_draft_by_id(session: AsyncSession, draft_id: int, *, user_id
     )
     if user_id is not None:
         stmt = stmt.where(OrderDraft.user_id == user_id)
+    if lock:
+        stmt = stmt.with_for_update()
 
     return (await session.execute(stmt)).scalar_one_or_none()
 

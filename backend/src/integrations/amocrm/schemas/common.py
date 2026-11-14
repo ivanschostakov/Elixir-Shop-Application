@@ -11,8 +11,9 @@ class AmoBaseSchema(BaseModel):
 
 
 class AmoValue(AmoBaseSchema):
-    value: str
+    value: str | int | float | None = None
     enum_code: str | None = None
+    enum_id: int | None = None
 
 
 class AmoCustomFieldByCode(AmoBaseSchema):

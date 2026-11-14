@@ -175,6 +175,10 @@ def test_first_retry_deadline_is_persisted_so_queue_recovery_does_not_skip_delay
 
 def test_customerorder_id_is_committed_before_invoice_failure_and_reused(monkeypatch):
     order = make_order(["4890"], [2], "8902.52", "415.92")
+    order.checkout_snapshot["order_export_version"] = 1
+    order.amocrm_lead_id = 123
+    links = AsyncMock()
+    monkeypatch.setattr("src.app.services.orders.crm.sync_moysklad_document_links", links)
     user = SimpleNamespace(id=47, moysklad_counterparty_id=ENTITY_ID, name="Test", surname="User", email="test@example.test", phone_number="+79990000000")
     committed = []
     class Session:
@@ -190,17 +194,24 @@ def test_customerorder_id_is_committed_before_invoice_failure_and_reused(monkeyp
         async def resolve_or_sync_customerorder(self, **kwargs):
             exists = kwargs["existing_customerorder_id"] is not None
             if not exists: self.customer_creates += 1
-            return MoySkladCustomerOrderSyncResult(customerorder_id=ENTITY_ID, external_code="app_order:22", created=not exists)
+            assert sum(p["price"] * p["quantity"] for p in kwargs["positions"]) == 890252
+            assert kwargs["positions"][-1]["price"] == 41592
+            return MoySkladCustomerOrderSyncResult(customerorder_id=ENTITY_ID, external_code="app_order:22", created=not exists, name="123")
         async def resolve_or_sync_invoiceout(self, **kwargs):
             assert committed[0] == (ENTITY_ID, None)
             if self.fail_invoice: raise TimeoutError("invoice failed")
-            return MoySkladInvoiceOutSyncResult(invoiceout_id=INVOICE_ID, external_code="app_order:22:invoiceout", created=True)
+            assert [a["meta"]["href"].rsplit("/", 1)[-1] for a in kwargs["attributes"]] == [
+                "5e19b6f1-9237-11f1-0a80-165d0006d805", "c30a00ec-9238-11f1-0a80-1e970007bc2a"]
+            return MoySkladInvoiceOutSyncResult(invoiceout_id=INVOICE_ID, external_code="app_order:22:invoiceout", created=True, name="456")
+        async def get_all(self, *args, **kwargs):
+            return [{"id": str(INVOICE_ID)}]
         def build_customerorder_attributes(self, **kwargs): return []
     client = Client(token="test")
     async def organization(*args): return ENTITY_ID
     async def assortment(*args, **kwargs): return {1: ("variant", ENTITY_ID)}
     async def refs(*args): return {"store": {}, "state": {}, "sales_channel": {}}
-    async def empty(*args, **kwargs): return {}
+    async def empty(*args, **kwargs):
+        return {"payment_method": "https://example.test/payment", "delivery_method": "https://example.test/delivery"}
     _patched_value_190 = True
     for target in ('src.integrations.moysklad.order_sync.service.MOY_SKLAD_ORDER_SYNC_ENABLED', 'src.integrations.moysklad.order_sync.states.MOY_SKLAD_ORDER_SYNC_ENABLED',):
         monkeypatch.setattr(target, _patched_value_190)
@@ -228,6 +239,7 @@ def test_customerorder_id_is_committed_before_invoice_failure_and_reused(monkeyp
     asyncio.run(order_sync.sync_order_to_moysklad(Session(), order=order, user=user))
     assert client.customer_creates == 1
     assert committed[-1] == (ENTITY_ID, INVOICE_ID)
+    links.assert_awaited_once_with(order, customerorder_name="123", invoice_name="456")
 
 
 def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monkeypatch):

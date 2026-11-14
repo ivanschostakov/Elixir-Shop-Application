@@ -6,8 +6,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from .constants import CF, PAID_STATUS_IDS, PIPELINE_ID, STATUS_IDS, STATUS_WORDS
-from .payloads import build_contact_create_payload, build_contact_update_payload, build_lead_create_payload, build_lead_link_payload, build_lead_note_payload, build_order_lead_custom_fields
-from .schemas.lead import LeadStatusUpdatePayload, LeadTagPayload
+from .payloads import build_contact_create_payload, build_contact_update_payload, build_lead_create_payload, build_lead_custom_fields, build_lead_link_payload, build_lead_note_payload, build_order_lead_custom_fields
+from .schemas.lead import LeadContact, LeadEmbedded, LeadStatusUpdatePayload, LeadTagPayload
 from .transport import AmoCRMTransport
 from .utils import extract_email_from_contact_obj, extract_phone_from_contact_obj, normalize_phone
 from config import AMOCRM_ACCESS_TOKEN, AMOCRM_BASE_URL
@@ -79,7 +79,8 @@ class AsyncAmoCRM:
         normalized_email = email.strip().lower() if email else None
         if contact_id:
             existing_contact = await self.get_contact(contact_id)
-            if existing_contact: await self.update_contact(contact_id, name=lead_name, phone=normalized_phone, email=normalized_email); refreshed_contact = await self.get_contact(contact_id); return refreshed_contact or existing_contact
+            if existing_contact:
+                return await self._fill_missing_contact_details(existing_contact, normalized_phone, normalized_email)
 
         candidates: dict[int, dict[str, Any]] = {}
         queries = [candidate for candidate in [normalized_phone, phone, normalized_email] if candidate]
@@ -88,15 +89,34 @@ class AsyncAmoCRM:
                 raw_id = candidate.get("id")
                 if raw_id: candidates[int(raw_id)] = candidate
 
+        matches = []
+        conflicting = False
         for candidate_id, candidate in candidates.items():
             full_contact = candidate if candidate.get("custom_fields_values") else await self.get_contact(candidate_id)
             if not full_contact: continue
             candidate_phone = extract_phone_from_contact_obj(full_contact)
             candidate_email = extract_email_from_contact_obj(full_contact)
-            if normalized_phone and candidate_phone == normalized_phone: await self.update_contact(candidate_id, name=lead_name, phone=normalized_phone, email=normalized_email); refreshed_contact = await self.get_contact(candidate_id); return refreshed_contact or full_contact
-            if normalized_email and candidate_email == normalized_email: await self.update_contact(candidate_id, name=lead_name, phone=normalized_phone, email=normalized_email); refreshed_contact = await self.get_contact(candidate_id); return refreshed_contact or full_contact
+            matches_phone = normalized_phone and candidate_phone == normalized_phone
+            matches_email = normalized_email and candidate_email == normalized_email
+            if matches_phone or matches_email:
+                if ((normalized_phone and candidate_phone and not matches_phone)
+                        or (normalized_email and candidate_email and not matches_email)):
+                    conflicting = True
+                    continue
+                matches.append(full_contact)
 
+        if len(matches) == 1:
+            return await self._fill_missing_contact_details(matches[0], normalized_phone, normalized_email)
+        if matches or conflicting:
+            raise HTTPException(409, "Найдены неоднозначные контакты покупателя в amoCRM. Обратитесь в поддержку.")
         return await self.create_contact(name=lead_name, phone=normalized_phone, email=normalized_email)
+
+    async def _fill_missing_contact_details(self, contact: dict[str, Any], phone: str | None, email: str | None) -> dict[str, Any]:
+        phone = None if extract_phone_from_contact_obj(contact) else phone
+        email = None if extract_email_from_contact_obj(contact) else email
+        if phone or email:
+            await self.update_contact(int(contact["id"]), phone=phone, email=email)
+        return contact
 
     async def find_lead_by_order_number(self, order_number: str | int) -> dict[str, Any] | None:
         needle, pattern = self._order_lead_search(order_number)
@@ -116,10 +136,12 @@ class AsyncAmoCRM:
             page += 1
         return None
 
-    async def create_lead(self, *, name: str, status_id: int, price: int | None = None, custom_fields: dict[int, object] | None = None, source_tag: str | None = None) -> dict[str, Any]:
+    async def create_lead(self, *, name: str, status_id: int, price: int | None = None, custom_fields: dict[int, object] | None = None, source_tag: str | None = None, contact_id: int | None = None) -> dict[str, Any]:
         payload = build_lead_create_payload(name=name, pipeline_id=self.PIPELINE_ID, status_id=status_id, price=price, custom_fields=custom_fields)
         if source_tag:
             payload.tags_to_add = [LeadTagPayload(name=source_tag)]
+        if contact_id is not None:
+            payload.embedded = LeadEmbedded(contacts=[LeadContact(id=contact_id)])
         data = await self._post("/api/v4/leads", json=[self.transport.dump_payload(payload)])
         return ((data.get("_embedded") or {}).get("leads") or [{}])[0]
 
@@ -135,16 +157,25 @@ class AsyncAmoCRM:
     async def update_lead_price(self, lead_id: int, price: int) -> dict[str, Any]:
         return await self._patch(f"/api/v4/leads/{lead_id}", json={"price": price})
 
+    async def update_lead_order_fields(self, lead_id: int, fields: dict[int, object], *, price: int | None = None) -> dict[str, Any]:
+        payload = {"custom_fields_values": [self.transport.dump_payload(field) for field in build_lead_custom_fields(fields)]}
+        if price is not None:
+            payload["price"] = price
+        return await self._patch(f"/api/v4/leads/{lead_id}", json=payload)
+
     async def link_contact_to_lead(self, lead_id: int, contact_id: int) -> dict[str, Any]:
         payload = build_lead_link_payload(contact_id=contact_id)
         return await self._post(f"/api/v4/leads/{lead_id}/link", json=[self.transport.dump_payload(payload)])
 
-    async def create_lead_with_contact_and_note(self, *, lead_name: str, price: int, address_str: str, phone: str, email: str | None, order_number: str, delivery_service: str, note_text: str, payment_method: str, tg_nick: str | None = None, status_id: int | None = None, delivery_sum: Decimal | float | int | None = None, contact_id: int | None = None, source_tag: str | None = None) -> dict[str, Any]:
+    async def create_lead_with_contact_and_note(self, *, lead_name: str, price: int, address_str: str, phone: str | None, email: str | None, order_number: str, delivery_service: str, note_text: str, payment_method: str, tg_nick: str | None = None, status_id: int | None = None, delivery_sum: Decimal | float | int | None = None, contact_id: int | None = None, source_tag: str | None = None, order_fields: dict[int, object] | None = None) -> dict[str, Any]:
         lead_custom_fields = build_order_lead_custom_fields(cf=self.CF, address_str=address_str, order_number=order_number, delivery_service=delivery_service, payment_method=payment_method, tg_nick=tg_nick, delivery_sum=delivery_sum)
-        lead = await self.create_lead(name=f"Заказ №{order_number} с Приложения", price=price, custom_fields=lead_custom_fields, status_id=status_id or self.STATUS_IDS["main"], source_tag=source_tag)
+        lead_custom_fields.update(order_fields or {})
+        lead = await self.create_lead(name=f"Заказ №{order_number} с Приложения", price=price, custom_fields=lead_custom_fields, status_id=status_id or self.STATUS_IDS["main"], source_tag=source_tag, contact_id=contact_id)
         lead_id = int(lead["id"])
-        if contact_id: await self.link_contact_to_lead(lead_id, contact_id)
-        await self.add_lead_note(lead_id, note_text)
+        try:
+            await self.add_lead_note(lead_id, note_text)
+        except Exception:
+            self.logger.warning("Could not add checkout note to existing lead_id=%s", lead_id, exc_info=True)
         return lead
 
 amocrm_client = AsyncAmoCRM()
