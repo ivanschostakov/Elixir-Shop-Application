@@ -8,7 +8,7 @@ from src.app.modules.auth.schemas.responses import AuthUserRead
 from src.app.modules.users.me.schemas import PersonalDataUpdatePayload
 from src.app.services.security import hash_password
 from src.database import get_db
-from src.database.crud.auth.user import get_user_by_email
+from src.database.crud.auth.user import get_user_by_email, get_user_by_phone_number
 from src.database.models import User
 
 my_profile_router = APIRouter(prefix="/profile", tags=["my_profile"])
@@ -28,12 +28,17 @@ async def update_my_personal_data(payload: PersonalDataUpdatePayload, db: AsyncS
     if payload.name is not None: current_user.name = payload.name
     if payload.surname is not None: current_user.surname = payload.surname
     if "phone_number" in payload.model_fields_set:
+        owner = await get_user_by_phone_number(db, payload.phone_number)
+        if owner is not None and owner.id != current_user.id:
+            raise HTTPException(status_code=409, detail="Этот телефон уже привязан к другому аккаунту.")
         current_user.phone_number = payload.phone_number
     if payload.password is not None: current_user.password_hash = hash_password(payload.password)
 
     try: await db.commit()
     except IntegrityError as exc:
         await db.rollback()
+        if "phone_number" in payload.model_fields_set and payload.email is None:
+            raise HTTPException(status_code=409, detail="Этот телефон уже привязан к другому аккаунту.") from exc
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this email already exists") from exc
 
     await db.refresh(current_user)

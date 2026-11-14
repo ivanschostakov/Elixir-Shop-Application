@@ -5,10 +5,11 @@ from starlette import status
 from .schemas.benefits import BenefitCheckPayload, BenefitCheckRead
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.benefits.service import resolve_benefits_for_user
+from src.app.services.catalog_merchandising import catalog_unit_price
 from src.app.services.delivery_quotes import build_bitrix_delivery_items
 from src.app.services.discounts import discountable_subtotal_for_lines
 from src.database import get_db
-from src.database.crud import get_order_draft_by_id
+from src.database.crud import get_basket_by_user_id, get_order_draft_by_id
 from src.database.models.auth.user import User
 
 my_benefits_router = APIRouter(prefix="/benefits", tags=["my_benefits"])
@@ -21,6 +22,9 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
     currency = payload.currency
     quote_items = None
     delivery_total = None
+
+    if payload.use_basket and payload.draft_id is not None:
+        raise HTTPException(status_code=422, detail="Choose the basket or a draft")
 
     if payload.draft_id is not None:
         draft = await get_order_draft_by_id(db, payload.draft_id, user_id=current_user.id)
@@ -43,6 +47,21 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
         currency = draft.currency
         delivery_total = draft.delivery_total
         quote_items = await build_bitrix_delivery_items(db, draft.items)
+    elif payload.use_basket:
+        basket = await get_basket_by_user_id(db, current_user.id)
+        if basket is None or not basket.items:
+            raise HTTPException(status_code=409, detail="Корзина пуста / Basket is empty")
+        lines = [(item.product_id, catalog_unit_price(item.variant.price, item.product) * item.quantity) for item in basket.items]
+        subtotal = sum(amount for _, amount in lines)
+        discountable_subtotal = await discountable_subtotal_for_lines(db, lines)
+        currency = basket.currency
+        delivery_total = basket.delivery_total
+        quote_items = [{
+            "variant_system_id": str(item.variant.system_id),
+            "product_system_id": str(item.product.system_id),
+            "sku": item.variant.sku or item.product.sku,
+            "quantity": item.quantity,
+        } for item in basket.items]
 
     resolved = await resolve_benefits_for_user(
         db,

@@ -1,4 +1,6 @@
 import re
+from html import unescape
+from html.parser import HTMLParser
 
 _INLINE_WHITESPACE_RE = re.compile(r"[ \t\u00a0]+")
 _PARAGRAPH_SPLIT_RE = re.compile(r"\n{2,}")
@@ -8,12 +10,59 @@ _NEXT_WORD_RE = re.compile(r"^([A-Za-zА-Яа-яЁё]+)")
 
 _ATTACHED_PUNCTUATION = ",.;:!?%)]}"
 _SENTENCE_ENDINGS = ".!?:;"
+_HIDDEN_TAGS = frozenset({"script", "style", "template", "noscript"})
+_ENCODED_HIDDEN_TAG_RE = re.compile(r"&lt;/?(?:script|style|template|noscript)\b.*?&gt;", re.I | re.S)
+_FAQ_SCRIPT_RE = re.compile(r"\(\s*function\s*\(\s*\)\s*\{\s*var\s+items\s*=\s*document\.querySelectorAll\s*\([\s\S]*?\}\s*\)\s*\(\s*\)\s*;?", re.I)
+
+
+class _ProductMarkup(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.hidden: list[str] = []
+        self.parts: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _HIDDEN_TAGS:
+            self.hidden.append(tag)
+        elif not self.hidden:
+            self.parts.append(self.get_starttag_text())
+
+    def handle_startendtag(self, tag, attrs):
+        if not self.hidden and tag not in _HIDDEN_TAGS:
+            self.parts.append(self.get_starttag_text())
+
+    def handle_endtag(self, tag):
+        if self.hidden:
+            if self.hidden[-1] == tag:
+                self.hidden.pop()
+        elif tag not in _HIDDEN_TAGS:
+            self.parts.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if not self.hidden:
+            self.parts.append(data)
+
+    def handle_entityref(self, name):
+        self.handle_data(f"&{name};")
+
+    def handle_charref(self, name):
+        self.handle_data(f"&#{name};")
+
+
+def strip_product_code(value: str) -> str:
+    value = _ENCODED_HIDDEN_TAG_RE.sub(lambda match: unescape(match[0]), value)
+    if re.search(r"<[/!]?[a-z]|<!--", value, re.I):
+        parser = _ProductMarkup()
+        parser.feed(value)
+        parser.close()
+        value = "".join(parser.parts)
+    return _FAQ_SCRIPT_RE.sub("", value)
 
 
 def normalize_product_text(value: str | None) -> str | None:
     if value is None: return None
 
-    text = str(value).replace("\r\n", "\n").replace("\r", "\n").replace("\u00a0", " ")
+    text = strip_product_code(str(value)).replace("\r\n", "\n").replace("\r", "\n").replace("\u00a0", " ")
     text = _INLINE_WHITESPACE_RE.sub(" ", text)
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()

@@ -376,12 +376,9 @@ async def resolve_benefits_for_user(
         stacked_discount_amount = (
             quantize_money(stacked_discount_amount + bonus_rubles) or Decimal("0.00")
         )
-    cashback_earned_points = (
-        cashback_points_for_amount(total_after_discounts)
-        if active_reward_program == "bonus" and not effective_code
-        and (referral_profile.reward_program_snapshot or {}).get("moysklad_program_code") != 0
-        else 0
-    )
+    cashback_eligible = (active_reward_program == "bonus" and not effective_code
+        and (referral_profile.reward_program_snapshot or {}).get("moysklad_program_code") != 0)
+    cashback_earned_points = cashback_points_for_amount(total_after_discounts) if cashback_eligible else 0
     pending_bonus_points = await pending_loyalty_bonus_points(db, user_id=user.id)
     pending_bonus_rubles = (
         quantize_money(
@@ -427,7 +424,7 @@ async def resolve_benefits_for_user(
         "use_bonus_rubles": use_bonus_rubles,
         "bonus_applied_points": bonus_points if use_bonus_rubles else 0,
         "bonus_applied_rubles": bonus_rubles if use_bonus_rubles else Decimal("0.00"),
-        "cashback_percent": Decimal(str(max(0, min(100, int(LOYALTY_ORDER_CASHBACK_PERCENT))))),
+        "cashback_percent": Decimal(str(max(0, min(100, int(LOYALTY_ORDER_CASHBACK_PERCENT))))) if cashback_eligible else Decimal("0"),
         "cashback_earned_points": cashback_earned_points,
         "cashback_expires_in_days": 0 if LOYALTY_USE_SETTLEMENT_BALANCE else max(1, int(LOYALTY_BONUS_LIFETIME_DAYS)),
     }

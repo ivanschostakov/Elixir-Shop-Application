@@ -1,5 +1,6 @@
 export type BenefitCheckPayload = {
     draft_id?: number | null
+    use_basket?: boolean
     code?: string | null
     subtotal?: string | null
     discountable_subtotal?: string | null

@@ -22,5 +22,5 @@ export function useProduct(productId: number): UseProductResult {
         resetOnLoad: true,
     })
 
-    return { product, loading, error }
+    return { product, loading: !isReady || loading, error }
 }

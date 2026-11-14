@@ -302,13 +302,15 @@ export default function PaymentScreen() {
         ?? resolvePaymentMethod(order?.payment_method)
         ?? selectedMethod
     const totalLabel = useMemo(() => {
-        const total = payment?.amount_rubles ?? order?.grand_total ?? orderDraft?.grand_total
+        const settlement = order?.checkout_snapshot.settlement_payment as { status?: string } | undefined
+        const waitingForBalance = settlement?.status === "awaiting_invoice" && (!payment || payment.awaiting_settlement)
+        const total = waitingForBalance ? null : payment?.amount_rubles ?? order?.grand_total
         const currency = order?.currency ?? orderDraft?.currency
         if (total == null || !currency) {
             return null
         }
         return formatMoney(Number(total), currency)
-    }, [payment?.amount_rubles, order?.currency, order?.grand_total, orderDraft?.currency, orderDraft?.grand_total])
+    }, [payment, order, orderDraft?.currency])
     const basketSubtotalLabel = useMemo(() => {
         const subtotal = order?.basket_subtotal ?? orderDraft?.basket_subtotal
         const currency = order?.currency ?? orderDraft?.currency

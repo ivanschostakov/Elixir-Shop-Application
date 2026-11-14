@@ -1,7 +1,6 @@
-import { QuietLoading } from "@/components/ui/quiet-loading"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as ScreenCapture from "expo-screen-capture"
-import { Animated, Image, Platform, Pressable, ScrollView, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
+import { ActivityIndicator, Animated, Image, Platform, Pressable, ScrollView, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native"
 import { Path, Svg } from "react-native-svg"
 
 import { ContentRail } from "@/components/content/content-rail"
@@ -274,7 +273,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
         return (
             <DetailTemplate chromeTemplate={chromeTemplate} style={productScreenStyle.screen}>
                 <View style={productScreenStyle.stateContainer}>
-                    <QuietLoading loading={loading} kind="content" />
+                    <ActivityIndicator accessibilityLabel={t("common.loading")} color={palette.primary} />
                 </View>
             </DetailTemplate>
         )

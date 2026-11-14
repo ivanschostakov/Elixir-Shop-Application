@@ -27,6 +27,7 @@ import {
 } from "@/hooks/delivery/delivery-address-selection-store"
 import { clearBasketSnapshot, setBasketSnapshot } from "@/hooks/basket/basket-store"
 import { useBasket } from "@/hooks/basket/use-basket"
+import { useOrderBenefits } from "@/hooks/basket/use-order-benefits"
 import { setBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { setSelectedDeliveryCountry } from "@/hooks/delivery/delivery-country-selection-store"
@@ -78,7 +79,6 @@ import {
 } from "@/screens/checkout/checkout-screen.utils"
 import { getBasketCheckoutOptions, restoreDraftToBasket, updateBasketCheckout, updateBasketItem } from "@/services/api/basket"
 import { checkMyBenefits } from "@/services/api/benefits"
-import type { BenefitCheckResponse, BenefitOptionResponse } from "@/services/api/benefits.types"
 import { checkGuestPhone } from "@/services/api/guest"
 import { createOrderDraft, getOrderDraftOptions, updateOrderDraft } from "@/services/api/order-drafts"
 import type {
@@ -91,32 +91,19 @@ import { attachMyReferrerCode, getMyReferralProfile } from "@/services/api/users
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { updateGuestBasketCheckout, updateGuestCartItemQuantity } from "@/services/guest-cart"
 import { spacing } from "@/theme/spacing"
-
-function formatBenefitTitle(option: BenefitOptionResponse) {
-    if (option.source_kind === "moysklad_bonus") {
-        return "Бонусные рубли"
-    }
-
-    if (option.source_kind === "app_referral") {
-        return "Промокод"
-    }
-
-    return "Скидка"
-}
-
-type RewardMode = "cashback" | "promo"
+import { formatAppliedDiscount } from "@/utils/discount-display"
 
 export default function CheckoutScreen() {
     const contentStyles = useThemeStyles(createContentStyles)
     const checkoutScreenStyles = useThemeStyles(createCheckoutScreenStyles)
     const { palette } = useTheme()
-    const { isAuthenticated, user } = useAuth()
+    const { isAuthenticated, isReady, updatePersonalData, user } = useAuth()
     const { t } = useLanguage()
     const { bottom: bottomInset } = useSafeAreaInsets()
     const params = useLocalSearchParams<{ code?: string | string[], draftId?: string | string[] }>()
     const draftId = parseDraftId(params.draftId)
     const routePromoCode = normalizeTextInputValue((Array.isArray(params.code) ? params.code[0] : params.code) ?? "")
-    const { basket, loading: basketLoading, reload: reloadBasket } = useBasket()
+    const { basket, error: basketLoadError, loading: basketLoading, reload: reloadBasket } = useBasket()
     const { error: basketError, restoreDraft, updating: isRestoringDraft } = useBasketMutations()
     const isBasketCheckout = draftId === null
     const { orderDraft: savedOrderDraft, error, loading, reload } = useOrderDraft(draftId)
@@ -155,8 +142,8 @@ export default function CheckoutScreen() {
     const recommendationRailLoadingMore = isAuthenticated ? recommendationsLoadingMore : guestCatalogLoadingMore
     const hasMoreRecommendationRail = isAuthenticated ? hasMoreRecommendations : hasMoreGuestCatalog
     const loadMoreRecommendationRail = isAuthenticated ? loadMoreRecommendations : loadMoreGuestCatalog
-    const { data: checkoutOptions, loading: optionsLoading, reload: reloadCheckoutOptions } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
-        deps: [isBasketCheckout, isAuthenticated, orderDraft?.id ?? null],
+    const { data: checkoutOptions, error: optionsError, loading: optionsLoading, reload: reloadCheckoutOptions } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
+        deps: [isBasketCheckout, user?.id ?? null, orderDraft?.id ?? null],
         enabled: Boolean(orderDraft?.id),
         fetcher: async () => {
             if (isBasketCheckout) {
@@ -181,17 +168,19 @@ export default function CheckoutScreen() {
     })
     const {
         data: referralProfile,
+        error: referralError,
         reload: reloadReferralProfile,
         setData: setReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
-        deps: [orderDraft?.id ?? null, isBasketCheckout],
-        enabled: Boolean(orderDraft && isAuthenticated),
+        deps: [user?.id ?? null, orderDraft?.id ?? null, isBasketCheckout],
+        enabled: Boolean(orderDraft?.items.length && isAuthenticated),
         fetcher: getMyReferralProfile,
         initialData: null,
         resetOnLoad: true,
     })
     const [openPickerSection, setOpenPickerSection] = useState<ExpandedSection>(null)
     const [isRecipientEditorOpen, setIsRecipientEditorOpen] = useState(false)
+    const [editingOwnPhone, setEditingOwnPhone] = useState(false)
     const [isSavingRecipient, setIsSavingRecipient] = useState(false)
     const [isSavingAddress, setIsSavingAddress] = useState(false)
     const [selectedRecipientKey, setSelectedRecipientKey] = useState<number | typeof SELF_RECIPIENT_VALUE | typeof ADD_NEW_RECIPIENT_VALUE | null>(null)
@@ -202,8 +191,6 @@ export default function CheckoutScreen() {
     const [recipientFormErrors, setRecipientFormErrors] = useState<RecipientFormErrors>({})
     const [promoCode, setPromoCode] = useState(routePromoCode ?? "")
     const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(routePromoCode ?? null)
-    const [benefitCheck, setBenefitCheck] = useState<BenefitCheckResponse | null>(null)
-    const rewardMode: RewardMode = referralProfile?.promo_code || appliedPromoCode ? "promo" : "cashback"
     const [useBonusRubles, setUseBonusRubles] = useState(false)
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const appliedRoutePromoCodeRef = useRef<string | null>(routePromoCode ?? null)
@@ -273,27 +260,18 @@ export default function CheckoutScreen() {
     const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
     const isPromoRewardReady = !normalizedPromoCode || hasAttachedPromoCode || Boolean(appliedPromoCode)
     const activeEnteredPromoCode = !hasAttachedPromoCode ? appliedPromoCode : null
-    const loadBenefitCheck = useCallback(async (code: string | null, mode: RewardMode = rewardMode) => {
-        if (!orderDraft || !isAuthenticated) {
-            setBenefitCheck(null)
-            return null
-        }
-
-        try {
-            const nextBenefitCheck = await checkMyBenefits({
-                draft_id: isBasketCheckout ? null : orderDraft.id,
-                code,
-                currency: orderDraft.currency,
-                subtotal: orderDraft.basket_subtotal,
-                use_bonus_rubles: useBonusRubles,
-                reward_mode: mode,
-            })
-            setBenefitCheck(nextBenefitCheck)
-            return nextBenefitCheck
-        } catch {
-            return null
-        }
-    }, [isAuthenticated, isBasketCheckout, orderDraft, rewardMode, useBonusRubles])
+    const quoteSource = { use_basket: isBasketCheckout, draft_id: isBasketCheckout ? null : orderDraft?.id }
+    const needsQuote = Boolean(orderDraft?.items.length && isAuthenticated)
+    const { data: benefitCheck, error: quoteError, reload: reloadQuote } = useOrderBenefits(
+        [user?.id, attachedPromoCode, orderDraft?.id, orderDraft?.delivery_total, orderDraft?.currency,
+            orderDraft?.items.map(item => [item.variant_id, item.quantity, item.line_total])],
+        needsQuote && referralProfile !== null,
+        { ...quoteSource, code: activeEnteredPromoCode, use_bonus_rubles: useBonusRubles },
+    )
+    const rewardMode = benefitCheck?.reward_mode
+    const pricingError = needsQuote && (referralError || quoteError)
+    const waitingForPricing = needsQuote && !pricingError && !benefitCheck
+    const waitingForCheckout = !isReady || waitingForPricing || Boolean(orderDraft && optionsLoading && !checkoutOptions)
 
     useEffect(() => {
         if (!routePromoCode || appliedRoutePromoCodeRef.current === routePromoCode) {
@@ -304,21 +282,6 @@ export default function CheckoutScreen() {
         setPromoCode(routePromoCode)
         setAppliedPromoCode(routePromoCode)
     }, [routePromoCode])
-
-    useEffect(() => {
-        if (!orderDraft || !isAuthenticated) {
-            setBenefitCheck(null)
-            return
-        }
-
-        const timeoutId = setTimeout(() => {
-            void loadBenefitCheck(activeEnteredPromoCode)
-        }, 300)
-
-        return () => {
-            clearTimeout(timeoutId)
-        }
-    }, [activeEnteredPromoCode, isAuthenticated, loadBenefitCheck, orderDraft])
 
     useEffect(() => {
         if (!orderDraft || isRecipientEditorOpen) {
@@ -350,7 +313,7 @@ export default function CheckoutScreen() {
     const selfRecipient = getSelfRecipient(user)
     const hasSelfRecipient = Boolean(selfRecipient)
     const currentRecipient = savedRecipient ?? selfRecipient
-    const deliveryCost = orderDraft
+    const deliveryCost = orderDraft?.delivery_address
         ? formatMoney(Number(orderDraft.delivery_total), orderDraft.currency)
         : null
     const basketSubtotal = orderDraft
@@ -401,13 +364,10 @@ export default function CheckoutScreen() {
 
         setIsCheckingPromoCode(true)
         try {
-            const nextBenefitCheck = await loadBenefitCheck(normalizedPromoCode, "promo")
-
-            if (!nextBenefitCheck) {
-                setAppliedPromoCode(null)
-                Alert.alert(t("checkout.promoCodeUnavailable"), t("checkout.promoCodeUnavailableMessage"))
-                return
-            }
+            const nextBenefitCheck = await checkMyBenefits({
+                use_basket: isBasketCheckout, draft_id: isBasketCheckout ? null : orderDraft.id,
+                code: normalizedPromoCode, use_bonus_rubles: useBonusRubles,
+            })
 
             const hasCodeMatch = Boolean(
                 !nextBenefitCheck.unresolved_code_reason && nextBenefitCheck.entered_code_matches.length,
@@ -424,11 +384,8 @@ export default function CheckoutScreen() {
                     setReferralProfile(nextReferralProfile)
                     setPromoCode("")
                     setAppliedPromoCode(null)
-                    await loadBenefitCheck(null, "promo")
-                    Alert.alert(t("checkout.promoCodeAppliedTitle"), t("checkout.promoCodeAppliedMessage"))
                 } catch {
                     setAppliedPromoCode(null)
-                    await loadBenefitCheck(activeEnteredPromoCode, "promo")
                     Alert.alert(t("checkout.promoCodeNotFound"), t("checkout.promoCodeNotFoundMessage"))
                 }
                 return
@@ -436,26 +393,27 @@ export default function CheckoutScreen() {
 
             if (!isApplicable || !hasDiscount) {
                 setAppliedPromoCode(null)
-                await loadBenefitCheck(activeEnteredPromoCode, "promo")
                 Alert.alert(t("checkout.promoCodeUnavailable"), t("checkout.promoCodeUnavailableMessage"))
                 return
             }
 
             setAppliedPromoCode(normalizedPromoCode)
-            Alert.alert(t("checkout.promoCodeAppliedTitle"), t("checkout.promoCodeAppliedMessage"))
+        } catch {
+            setAppliedPromoCode(null)
+            Alert.alert(t("checkout.promoCodeUnavailable"), t("checkout.promoCodeUnavailableMessage"))
         } finally {
             setIsCheckingPromoCode(false)
         }
     }, [
-        activeEnteredPromoCode,
         hasAttachedPromoCode,
         isAuthenticated,
         isCheckingPromoCode,
-        loadBenefitCheck,
+        isBasketCheckout,
         normalizedPromoCode,
         orderDraft,
         setReferralProfile,
         t,
+        useBonusRubles,
     ])
     const handlePromoCodeChange = useCallback((value: string) => {
         setPromoCode(value)
@@ -464,7 +422,7 @@ export default function CheckoutScreen() {
         }
     }, [appliedPromoCode])
     const openPaymentFlow = useCallback((paymentMethod: "later" | "sbp") => {
-        if (!orderDraft || !hasDeliveryAddress || !hasRecipient || needsRecipientCorrection) {
+        if (!orderDraft || !hasDeliveryAddress || !hasRecipient || needsRecipientCorrection || waitingForCheckout || pricingError || optionsError) {
             return
         }
 
@@ -475,10 +433,10 @@ export default function CheckoutScreen() {
                 ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
                 ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
                 ...(useBonusRubles ? { useBonus: "1" } : {}),
-                rewardMode,
+                ...(rewardMode ? { rewardMode } : {}),
             },
         })
-    }, [activeEnteredPromoCode, hasDeliveryAddress, hasRecipient, isBasketCheckout, needsRecipientCorrection, orderDraft, rewardMode, useBonusRubles])
+    }, [activeEnteredPromoCode, hasDeliveryAddress, hasRecipient, isBasketCheckout, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, useBonusRubles, waitingForCheckout])
 
     const handlePressPay = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
@@ -515,6 +473,7 @@ export default function CheckoutScreen() {
         if (needsRecipientCorrection) {
             Keyboard.dismiss()
             focusedRecipientInputRef.current = null
+            setEditingOwnPhone(isAuthenticated && !savedRecipient && Boolean(selfRecipient) && Boolean(selectedRecipientErrors.phone) && Boolean(user?.email))
             setRecipientForm(selectedRecipientForm)
             setRecipientFormErrors(selectedRecipientErrors)
             setIsRecipientEditorOpen(true)
@@ -539,7 +498,7 @@ export default function CheckoutScreen() {
     }, [hasMoreRecommendationRail, loadMoreRecommendationRail, recommendationRailLoadingMore])
 
     const checkoutChromeTemplate = useMemo(() => {
-        if (!orderDraft) {
+        if (!orderDraft || waitingForCheckout || pricingError || optionsError) {
             return null
         }
 
@@ -561,18 +520,12 @@ export default function CheckoutScreen() {
                                     <Text style={checkoutScreenStyles.totalValue}>{deliveryCost}</Text>
                                 </View>
                             ) : null}
-                            {grandTotal ? (
-                                <View style={[checkoutScreenStyles.totalRow, checkoutScreenStyles.totalRowGrandTotal]}>
-                                    <Text style={checkoutScreenStyles.totalLabelStrong}>{t("checkout.grandTotalLabel")}</Text>
-                                    <Text style={checkoutScreenStyles.totalValueStrong}>{grandTotal}</Text>
-                                </View>
-                            ) : null}
-                            {benefitCheck?.stacked_discount_options.map((option) => (
+                            {benefitCheck?.stacked_discount_options.filter(option => Number(option.applied_discount_amount) > 0).map((option) => (
                                 <View
                                     key={`${option.source_kind}-${option.source_record_id ?? option.code ?? option.sequence}`}
                                     style={checkoutScreenStyles.totalRow}
                                 >
-                                    <Text style={checkoutScreenStyles.totalLabel}>{formatBenefitTitle(option)}</Text>
+                                    <Text style={[checkoutScreenStyles.totalLabel, { flex: 1 }]}>{formatAppliedDiscount(option, t)}</Text>
                                     <Text style={[checkoutScreenStyles.totalValue, checkoutScreenStyles.totalValueDiscount]}>
                                         {option.applied_discount_amount
                                             ? `−${formatMoney(Number(option.applied_discount_amount), option.currency ?? benefitCheck.currency)}`
@@ -580,6 +533,12 @@ export default function CheckoutScreen() {
                                     </Text>
                                 </View>
                             ))}
+                            {grandTotal ? (
+                                <View style={[checkoutScreenStyles.totalRow, checkoutScreenStyles.totalRowGrandTotal]}>
+                                    <Text style={checkoutScreenStyles.totalLabelStrong}>{t("checkout.grandTotalLabel")}</Text>
+                                    <Text style={checkoutScreenStyles.totalValueStrong}>{grandTotal}</Text>
+                                </View>
+                            ) : null}
                         </View>
 
                         <Pressable
@@ -616,7 +575,10 @@ export default function CheckoutScreen() {
         handleCheckoutFooterCtaPress,
         isCheckoutFooterCtaDisabled,
         orderDraft,
+        optionsError,
+        pricingError,
         t,
+        waitingForCheckout,
     ])
     useApplyScreenTemplate("feed", checkoutChromeTemplate)
     const recipientPrimaryText = currentRecipient ? formatRecipientName(currentRecipient) : t("checkout.selectRecipient")
@@ -627,7 +589,10 @@ export default function CheckoutScreen() {
         return orderDraft ? buildAvailableAddresses(orderDraft, checkoutOptions) : []
     }, [checkoutOptions, orderDraft])
     const recipientFormValidationErrors = getRecipientFormErrors(recipientForm, t)
-    const isRecipientFormValid = !hasRecipientErrors(recipientFormValidationErrors)
+    const isRecipientFormValid = editingOwnPhone
+        ? !recipientFormValidationErrors.phone
+        : !hasRecipientErrors(recipientFormValidationErrors)
+    const recipientSaveLabel = t(editingOwnPhone ? "checkout.saveOwnPhoneAction" : "checkout.recipientCreateAction")
 
     useEffect(() => {
         if (!orderDraft) {
@@ -682,28 +647,32 @@ export default function CheckoutScreen() {
     )
 
     const checkoutLoading = isBasketCheckout ? basketLoading : loading
-    const checkoutError = isBasketCheckout ? null : error
+    const checkoutError = isBasketCheckout ? basketLoadError : error
 
-    if (checkoutLoading && !orderDraft) {
+    if ((checkoutLoading && !orderDraft) || waitingForCheckout) {
         return renderStateScreen(
             <View style={checkoutScreenStyles.stateLoadingRow}>
-                <ActivityIndicator />
-                <Text style={checkoutScreenStyles.loadingText}>{t("checkout.title")}</Text>
+                <ActivityIndicator accessibilityLabel={t("common.loading")} color={palette.primary} />
+                <Text style={checkoutScreenStyles.loadingText}>{t("common.loading")}</Text>
             </View>,
         )
     }
 
-    if (checkoutError && !orderDraft) {
+    if ((checkoutError && !orderDraft) || pricingError || optionsError) {
         return renderStateScreen(
             <>
                 <Text style={checkoutScreenStyles.sectionTitle}>{t("checkout.loadFailedTitle")}</Text>
-                <Text style={checkoutScreenStyles.stateText}>{t("checkout.loadFailedMessage")}</Text>
+                <Text style={checkoutScreenStyles.stateText}>{pricingError || optionsError || t("checkout.loadFailedMessage")}</Text>
                 <View style={[checkoutScreenStyles.actionRow, checkoutScreenStyles.actionRowSingle]}>
                     <Pressable
                         accessibilityLabel={t("checkout.retry")}
                         accessibilityRole="button"
                         onPress={() => {
-                            void reload()
+                            if (referralError) void reloadReferralProfile()
+                            else if (quoteError) void reloadQuote()
+                            else if (optionsError) void reloadCheckoutOptions()
+                            else if (isBasketCheckout) void reloadBasket()
+                            else void reload()
                         }}
                         style={({ pressed }) => [
                             checkoutScreenStyles.secondaryButton,
@@ -773,11 +742,8 @@ export default function CheckoutScreen() {
     const handleOpenRecipientEditor = () => {
         Keyboard.dismiss()
         focusedRecipientInputRef.current = null
-        setRecipientForm(
-            savedRecipient
-                ? createEmptyRecipientForm()
-                : getRecipientFormFromRecipient(selfRecipient),
-        )
+        setEditingOwnPhone(false)
+        setRecipientForm(createEmptyRecipientForm())
         setRecipientFormErrors({})
         setIsRecipientEditorOpen(true)
     }
@@ -1031,6 +997,14 @@ export default function CheckoutScreen() {
                 await updateCheckoutMeta({
                     recipient_id: null,
                 })
+                const form = getRecipientFormFromRecipient(selfRecipient)
+                if (isAuthenticated && selfRecipient && user?.email && getRecipientFormErrors(form, t).phone) {
+                    focusedRecipientInputRef.current = null
+                    setEditingOwnPhone(true)
+                    setRecipientForm(form)
+                    setRecipientFormErrors({})
+                    setIsRecipientEditorOpen(true)
+                }
             } catch (saveError) {
                 Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
             } finally {
@@ -1057,6 +1031,22 @@ export default function CheckoutScreen() {
     }
 
     const handleSaveRecipient = async () => {
+        if (editingOwnPhone) {
+            if (recipientFormValidationErrors.phone) {
+                setRecipientFormErrors({ phone: recipientFormValidationErrors.phone })
+                return
+            }
+            setIsSavingRecipient(true)
+            try {
+                await updatePersonalData({ phone_number: normalizePhoneValue(recipientForm.phone) })
+                setIsRecipientEditorOpen(false)
+            } catch (saveError) {
+                Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
+            } finally {
+                setIsSavingRecipient(false)
+            }
+            return
+        }
         if (!isRecipientFormValid) {
             setRecipientFormErrors(recipientFormValidationErrors)
             return
@@ -1207,20 +1197,16 @@ export default function CheckoutScreen() {
                         {isAuthenticated ? (
                             <>
                                 <View style={checkoutScreenStyles.detailsSheetDivider} />
-                                <View style={checkoutScreenStyles.rewardModeSection}>
+                                {Number(benefitCheck?.cashback_percent) > 0 ? <View style={checkoutScreenStyles.rewardModeSection}>
                                     <Text style={checkoutScreenStyles.rewardModeTitle}>
-                                        {rewardMode === "cashback"
-                                            ? t("checkout.rewardCashbackTitle")
-                                            : t("checkout.rewardPromoTitle")}
+                                        {t("checkout.rewardCashbackTitle").replace("{percent}", String(Number(benefitCheck?.cashback_percent)))}
                                     </Text>
                                     <Text style={checkoutScreenStyles.rewardModeOptionHint}>
-                                        {rewardMode === "cashback" && benefitCheck
+                                        {benefitCheck && benefitCheck.cashback_earned_points > 0
                                             ? t("checkout.rewardCashbackPreview").replace("{points}", String(benefitCheck.cashback_earned_points))
-                                            : rewardMode === "cashback"
-                                                ? t("checkout.rewardCashbackHint")
-                                                : t("checkout.rewardPromoHint")}
+                                            : t("checkout.rewardCashbackHint")}
                                     </Text>
-                                </View>
+                                </View> : null}
                                 {isAuthenticated ? (
                                     <>
                                         <View style={checkoutScreenStyles.detailsSheetDivider} />
@@ -1243,13 +1229,6 @@ export default function CheckoutScreen() {
                                                     </View>
                                                 </View>
                                         </View>
-                                        {hasAttachedPromoCode ? (
-                                            <View style={checkoutScreenStyles.detailsSheetHintRow}>
-                                                <Text style={[checkoutScreenStyles.detailsSheetHintText, checkoutScreenStyles.detailsSheetHintTextSuccess]}>
-                                                    {t("checkout.promoCodeAlreadyApplied")}
-                                                </Text>
-                                            </View>
-                                        ) : null}
                                     </>
                                 ) : null}
                                 {Number(benefitCheck?.bonus_balance_rubles ?? 0) > 0 ? (
@@ -1591,7 +1570,7 @@ export default function CheckoutScreen() {
                         >
                             <View style={checkoutScreenStyles.recipientEditorHeader}>
                                 <Text numberOfLines={2} style={checkoutScreenStyles.recipientEditorTitle}>
-                                    {t("checkout.recipientAddNew")}
+                                    {t(editingOwnPhone ? "checkout.saveOwnPhoneTitle" : "checkout.recipientAddNew")}
                                 </Text>
 
                                 <Pressable
@@ -1620,7 +1599,7 @@ export default function CheckoutScreen() {
                                 style={checkoutScreenStyles.recipientEditorScroll}
                             >
                                 <View style={checkoutScreenStyles.recipientEditorFields}>
-                                    <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                    {!editingOwnPhone ? <><View style={checkoutScreenStyles.recipientEditorFieldWrap}>
                                         <TextInput
                                             autoCapitalize="words"
                                             onChangeText={(value) => {
@@ -1670,6 +1649,7 @@ export default function CheckoutScreen() {
                                             </Text>
                                         ) : null}
                                     </View>
+                                    </> : null}
                                     <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
                                         <TextInput
                                             autoComplete="tel"
@@ -1697,7 +1677,7 @@ export default function CheckoutScreen() {
                                             </Text>
                                         ) : null}
                                     </View>
-                                    <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                    {!editingOwnPhone ? <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
                                         <TextInput
                                             autoCapitalize="none"
                                             autoComplete="email"
@@ -1724,11 +1704,11 @@ export default function CheckoutScreen() {
                                                 {recipientFormErrors.email}
                                             </Text>
                                         ) : null}
-                                    </View>
+                                    </View> : null}
                                 </View>
 
                                 <Pressable
-                                    accessibilityLabel={t("checkout.recipientCreateAction")}
+                                    accessibilityLabel={recipientSaveLabel}
                                     accessibilityRole="button"
                                     disabled={!isRecipientFormValid || isSavingRecipient}
                                     onPress={() => {
@@ -1751,7 +1731,7 @@ export default function CheckoutScreen() {
                                                 && checkoutScreenStyles.recipientEditorSubmitButtonTextDisabled,
                                         ]}
                                     >
-                                        {t("checkout.recipientCreateAction")}
+                                        {recipientSaveLabel}
                                     </Text>
                                 </Pressable>
                             </ScrollView>

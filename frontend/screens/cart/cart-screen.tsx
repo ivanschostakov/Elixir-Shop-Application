@@ -1,7 +1,7 @@
-import { QuietLoading } from "@/components/ui/quiet-loading"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
     Alert,
+    ActivityIndicator,
     type NativeScrollEvent,
     type NativeSyntheticEvent,
     Pressable,
@@ -22,6 +22,7 @@ import { useApplyScreenTemplate } from "@/components/templates/screen-template.h
 import { getProductRoute, ROUTES } from "@/constants/routes"
 import { STICKERS } from "@/constants/stickers"
 import { useBasket } from "@/hooks/basket/use-basket"
+import { useOrderBenefits } from "@/hooks/basket/use-order-benefits"
 import {
     clearBasketDraftEditingId,
     setBasketDraftEditingId,
@@ -59,12 +60,12 @@ import {
 import { DOOR_DELIVERY_ENABLED } from "@/screens/delivery/delivery-screen.constants"
 import { ApiError } from "@/services/api/client"
 import { checkMyBenefits } from "@/services/api/benefits"
-import type { BenefitCheckResponse } from "@/services/api/benefits.types"
 import { createOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
 import type { CreateOrderDraftPayload } from "@/services/api/order-drafts.types"
 import { attachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import type { BasketItemRead } from "@/types/basket"
+import { formatAppliedDiscount } from "@/utils/discount-display"
 
 export default function CartScreen() {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
@@ -72,7 +73,7 @@ export default function CartScreen() {
     const { palette } = useTheme()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()
-    const { isAuthenticated } = useAuth()
+    const { isAuthenticated, isReady, user } = useAuth()
     const { basket, error: basketLoadError, loading, reload } = useBasket()
     const { clear, error: basketActionError, removeItem, updateItemQuantity, updating } = useBasketMutations()
     const basketDraftEditingId = useBasketDraftEditingId()
@@ -81,7 +82,6 @@ export default function CartScreen() {
     const selectedDeliveryCountry = useSelectedDeliveryCountry()
     const [promoCode, setPromoCode] = useState("")
     const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(null)
-    const [benefitCheck, setBenefitCheck] = useState<BenefitCheckResponse | null>(null)
     const [isSavingDraft, setIsSavingDraft] = useState(false)
     const [isOpeningCheckout, setIsOpeningCheckout] = useState(false)
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
@@ -90,10 +90,11 @@ export default function CartScreen() {
     const { orderDrafts: recentOrderDrafts, loading: recentOrderDraftsLoading } = useRecentOrderDrafts(1, isAuthenticated)
     const {
         data: referralProfile,
+        error: referralError,
         reload: reloadReferralProfile,
         setData: setReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
-        deps: [basket?.items.length ?? 0],
+        deps: [user?.id ?? null],
         enabled: Boolean(isAuthenticated && basket?.items.length),
         fetcher: getMyReferralProfile,
         initialData: null,
@@ -134,6 +135,15 @@ export default function CartScreen() {
     const displayedPromoCode = attachedPromoCode ?? promoCode
     const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
     const activeEnteredPromoCode = !hasAttachedPromoCode ? appliedPromoCode : null
+    const needsQuote = Boolean(isAuthenticated && basket?.items.length)
+    const { data: benefitCheck, error: quoteError, reload: reloadQuote } = useOrderBenefits(
+        [user?.id, attachedPromoCode, basket?.id, basket?.delivery_total, basket?.currency,
+            basket?.items.map(item => [item.variant_id, item.quantity, item.line_total])],
+        needsQuote && referralProfile !== null,
+        { use_basket: true, code: activeEnteredPromoCode },
+    )
+    const pricingError = needsQuote && (referralError || quoteError)
+    const waitingForPricing = needsQuote && !pricingError && !benefitCheck
 
     useFocusEffect(
         useCallback(() => {
@@ -156,34 +166,6 @@ export default function CartScreen() {
             clearBasketDraftEditingId()
         }
     }, [basketDraftEditingId, routeDraftIdParam])
-
-    const loadCartBenefitCheck = useCallback(async (code: string | null) => {
-        if (!basket || !isAuthenticated) {
-            setBenefitCheck(null)
-            return null
-        }
-
-        try {
-            const nextBenefitCheck = await checkMyBenefits({
-                code,
-                currency: basket.currency,
-                subtotal: basket.total_amount,
-            })
-            setBenefitCheck(nextBenefitCheck)
-            return nextBenefitCheck
-        } catch {
-            return null
-        }
-    }, [basket, isAuthenticated])
-
-    useEffect(() => {
-        if (!basket?.items.length || !isAuthenticated) {
-            setBenefitCheck(null)
-            return
-        }
-
-        void loadCartBenefitCheck(activeEnteredPromoCode)
-    }, [activeEnteredPromoCode, basket?.items.length, isAuthenticated, loadCartBenefitCheck])
 
     const handleRemoveItem = async (itemId: number) => {
         try {
@@ -381,8 +363,8 @@ export default function CartScreen() {
     const originalGrandTotalLabel = originalGrandTotalAmount !== null ? formatProductPrice(originalGrandTotalAmount) : null
     const grandTotalAmount = basket
         ? (
-            hasAppliedDiscount && benefitCheck
-                ? Number(benefitCheck.total_after_discounts) + deliveryAmount
+            benefitCheck
+                ? (benefitCheck.cash_total != null ? Number(benefitCheck.cash_total) : Number(benefitCheck.total_after_discounts) + deliveryAmount)
                 : Number(basket.grand_total)
         )
         : null
@@ -395,12 +377,7 @@ export default function CartScreen() {
         setIsCheckingPromoCode(true)
 
         try {
-            const nextBenefitCheck = await loadCartBenefitCheck(normalizedPromoCode)
-            if (!nextBenefitCheck) {
-                setAppliedPromoCode(null)
-                Alert.alert(t("cart.promoCodeUnavailable"), t("cart.promoCodeUnavailableMessage"))
-                return
-            }
+            const nextBenefitCheck = await checkMyBenefits({ use_basket: true, code: normalizedPromoCode })
             const hasCodeMatch = Boolean(
                 !nextBenefitCheck.unresolved_code_reason && nextBenefitCheck.entered_code_matches.length,
             )
@@ -416,11 +393,8 @@ export default function CartScreen() {
                     setReferralProfile(nextReferralProfile)
                     setPromoCode("")
                     setAppliedPromoCode(null)
-                    await loadCartBenefitCheck(null)
-                    Alert.alert(t("cart.promoCodeAppliedTitle"), t("cart.promoCodeAppliedMessage"))
                 } catch {
                     setAppliedPromoCode(null)
-                    await loadCartBenefitCheck(activeEnteredPromoCode)
                     Alert.alert(t("cart.promoCodeNotFound"), t("cart.promoCodeNotFoundMessage"))
                 }
                 return
@@ -428,27 +402,22 @@ export default function CartScreen() {
 
             if (!isApplicable || !hasDiscount) {
                 setAppliedPromoCode(null)
-                await loadCartBenefitCheck(activeEnteredPromoCode)
                 Alert.alert(t("cart.promoCodeUnavailable"), t("cart.promoCodeUnavailableMessage"))
                 return
             }
 
             setAppliedPromoCode(normalizedPromoCode)
-            Alert.alert(t("cart.promoCodeAppliedTitle"), t("cart.promoCodeAppliedMessage"))
         } catch {
             setAppliedPromoCode(null)
-            await loadCartBenefitCheck(activeEnteredPromoCode)
             Alert.alert(t("cart.promoCodeUnavailable"), t("cart.promoCodeUnavailableMessage"))
         } finally {
             setIsCheckingPromoCode(false)
         }
     }, [
-        activeEnteredPromoCode,
         basket,
         hasAttachedPromoCode,
         isAuthenticated,
         isCheckingPromoCode,
-        loadCartBenefitCheck,
         normalizedPromoCode,
         setReferralProfile,
         t,
@@ -457,13 +426,11 @@ export default function CartScreen() {
         setPromoCode(value)
         if (appliedPromoCode && value.trim() !== appliedPromoCode) {
             setAppliedPromoCode(null)
-            setBenefitCheck(null)
         }
     }, [appliedPromoCode])
     const handleClearPromoCode = useCallback(() => {
         setPromoCode("")
         setAppliedPromoCode(null)
-        setBenefitCheck(null)
     }, [])
     const checkoutCtaLabel = grandTotalLabel
         ? `${t("cart.checkoutCta")} ${grandTotalLabel}`
@@ -476,7 +443,7 @@ export default function CartScreen() {
     const isFooterCtaDisabled = isOpeningCheckout || isCheckingPromoCode
 
     const cartChromeTemplate = useMemo(() => {
-        if (!basket?.items.length) {
+        if (!isReady || !basket?.items.length || waitingForPricing || pricingError) {
             return null
         }
 
@@ -498,6 +465,12 @@ export default function CartScreen() {
                                     <Text style={cartScreenStyles.totalValue}>{deliveryLabel}</Text>
                                 </View>
                             ) : null}
+                            {benefitCheck?.stacked_discount_options.filter(option => Number(option.applied_discount_amount) > 0).map((option, idx) => (
+                                <View key={idx} style={cartScreenStyles.totalRow}>
+                                    <Text style={[cartScreenStyles.totalLabel, { flex: 1 }]}>{formatAppliedDiscount(option, t)}</Text>
+                                    <Text style={cartScreenStyles.totalValue}>−{formatProductPrice(option.applied_discount_amount)}</Text>
+                                </View>
+                            ))}
                             {grandTotalLabel ? (
                                 <View style={[cartScreenStyles.totalRow, cartScreenStyles.totalRowGrandTotal]}>
                                     <Text style={cartScreenStyles.totalLabelStrong}>{t("checkout.grandTotalLabel")}</Text>
@@ -578,6 +551,7 @@ export default function CartScreen() {
         }
     }, [
         basket?.items.length,
+        benefitCheck,
         cartScreenStyles,
         deliveryLabel,
         footerCtaLabel,
@@ -592,8 +566,11 @@ export default function CartScreen() {
         isFooterCtaDisabled,
         isAuthenticated,
         isSavingDraft,
+        isReady,
         originalGrandTotalLabel,
         subtotalLabel,
+        pricingError,
+        waitingForPricing,
         t,
     ])
     useApplyScreenTemplate("feed", cartChromeTemplate)
@@ -610,24 +587,27 @@ export default function CartScreen() {
         </View>
     )
 
-    if (loading && !basket) {
+    if (!isReady || (loading && !basket) || waitingForPricing) {
         return renderStateScreen(
             <View style={cartScreenStyles.stateLoadingRow}>
-                <QuietLoading loading={loading} kind="content" />
+                <ActivityIndicator accessibilityLabel={t("common.loading")} color={palette.primary} />
+                <Text style={cartScreenStyles.errorText}>{t("common.loading")}</Text>
             </View>,
         )
     }
 
-    if (basketLoadError && !basket) {
+    if ((basketLoadError && !basket) || pricingError) {
         return renderStateScreen(
             <>
                 <Text style={cartScreenStyles.errorTitle}>{t("cart.loadFailedTitle")}</Text>
-                <Text style={cartScreenStyles.errorText}>{t("cart.loadFailedMessage")}</Text>
+                <Text style={cartScreenStyles.errorText}>{pricingError || t("cart.loadFailedMessage")}</Text>
                 <Pressable
                     accessibilityLabel={t("cart.retry")}
                     accessibilityRole="button"
                     onPress={() => {
-                        void reload()
+                        if (referralError) void reloadReferralProfile()
+                        else if (quoteError) void reloadQuote()
+                        else void reload()
                     }}
                     style={({ pressed }) => [
                         cartScreenStyles.retryButton,
@@ -730,11 +710,6 @@ export default function CartScreen() {
                                         </Pressable>
                                     ) : null}
                                 </View>
-                                {hasAttachedPromoCode ? (
-                                    <Text style={[cartScreenStyles.promoStatusText, cartScreenStyles.promoStatusTextSuccess]}>
-                                        {t("cart.promoCodeAlreadyApplied")}
-                                    </Text>
-                                ) : null}
                             </View>
                         ) : null}
 

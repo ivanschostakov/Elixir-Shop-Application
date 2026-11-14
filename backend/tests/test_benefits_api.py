@@ -232,7 +232,10 @@ def test_benefit_check_applies_personal_discount_to_discountable_subtotal_only(c
     assert _decimal(payload["total_after_discounts"]) == Decimal("197.00")
 
 
-def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(client: TestClient, registered_user):
+def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(client: TestClient, registered_user, monkeypatch):
+    from src.app.services.benefits import service
+
+    monkeypatch.setattr(service, "bitrix_promo_configured", lambda: False)
     response = client.post(
         "/api/v1/users/me/benefits/check",
         headers=registered_user["headers"],
@@ -244,9 +247,10 @@ def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(clie
     assert payload["entered_code"] == "Огонь26"
     assert payload["entered_code_matches"] == []
     assert payload["unresolved_code_reason"] == "Промокод не найден или неактивен / Promo code was not found or is not active"
-    assert payload["reward_program"] == "partner"
+    assert payload["reward_program"] == "bonus"  # An invalid code doesn't change the account's program.
     assert payload["reward_mode"] == "promo"
     assert payload["cashback_earned_points"] == 0
+    assert _decimal(payload["cashback_percent"]) == 0
     assert _decimal(payload["stacked_discount_amount"]) == Decimal("0.00")
     assert _decimal(payload["total_after_discounts"]) == Decimal("200.00")
 
@@ -334,3 +338,53 @@ def test_benefit_check_uses_owned_order_draft_context(monkeypatch):
     assert captured["currency"] == "RUB"
     assert captured["quote_items"] is quote_items
     assert db.committed is True
+
+
+def test_basket_quote_uses_real_lines_and_keeps_delivery_outside_promo(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    basket = SimpleNamespace(currency="RUB", delivery_total=Decimal("352.10"), items=[
+        SimpleNamespace(product_id=11, quantity=1,
+                        product=SimpleNamespace(system_id=uuid.uuid4(), sku="PRODUCT", discount_percent=0),
+                        variant=SimpleNamespace(system_id=uuid.uuid4(), sku="VARIANT", price=Decimal("10890.00"))),
+        SimpleNamespace(product_id=12, quantity=1,
+                        product=SimpleNamespace(system_id=uuid.uuid4(), sku="EXCLUDED", discount_percent=0),
+                        variant=SimpleNamespace(system_id=uuid.uuid4(), sku=None, price=Decimal("100.00"))),
+    ])
+    get_basket = AsyncMock(return_value=basket)
+    discountable = AsyncMock(return_value=Decimal("10890.00"))
+    resolve = AsyncMock(side_effect=lambda _, **kwargs: {
+        "subtotal_source": "request", "basket_subtotal": kwargs["subtotal"], "currency": kwargs["currency"],
+        "stacked_discount_amount": kwargs["discountable_subtotal"] * Decimal("0.03"),
+        "total_after_discounts": kwargs["subtotal"] - kwargs["discountable_subtotal"] * Decimal("0.03"),
+        "cash_total": kwargs["subtotal"] - kwargs["discountable_subtotal"] * Decimal("0.03") + kwargs["delivery_total"],
+    })
+    monkeypatch.setattr(benefits_module, "get_basket_by_user_id", get_basket)
+    monkeypatch.setattr(benefits_module, "discountable_subtotal_for_lines", discountable)
+    monkeypatch.setattr(benefits_module, "resolve_benefits_for_user", resolve)
+    db = SimpleNamespace(commit=AsyncMock())
+    result = asyncio.run(benefits_module.check_my_benefits(
+        BenefitCheckPayload(use_basket=True, code="ROMANI", subtotal=Decimal("1"), currency="USD"),
+        db, SimpleNamespace(id=7),
+    ))
+    get_basket.assert_awaited_once_with(db, 7)
+    discountable.assert_awaited_once_with(db, [(11, Decimal("10890.00")), (12, Decimal("100.00"))])
+    assert result.basket_subtotal == Decimal("10990.00")
+    assert result.stacked_discount_amount == Decimal("326.70")
+    assert result.cash_total == Decimal("11015.40")  # Goods less promo, plus full delivery.
+    assert [item["sku"] for item in resolve.call_args.kwargs["quote_items"]] == ["VARIANT", "EXCLUDED"]
+
+
+def test_own_checkout_phone_uses_the_persisted_profile(client, registered_user):
+    headers = registered_user["headers"]
+    digits = str(uuid.uuid4().int)[-10:]
+    phone = f"+7{digits}"
+    response = client.patch("/api/v1/users/me/profile/personal-data", headers=headers,
+                            json={"phone_number": f"+7 ({digits[:3]}) {digits[3:]}"})
+    assert response.status_code == 200, response.text
+    assert response.json()["phone_number"] == phone
+    reloaded = client.get("/api/v1/auth/me", headers=headers)
+    assert reloaded.status_code == 200, reloaded.text
+    assert reloaded.json()["phone_number"] == phone
+    invalid = client.patch("/api/v1/users/me/profile/personal-data", headers=headers, json={"phone_number": "123"})
+    assert invalid.status_code == 422

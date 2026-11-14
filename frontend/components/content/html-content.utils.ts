@@ -1,5 +1,10 @@
 import { HTML_TAG_PATTERN } from "@/components/content/html-content.const"
 
+export const stripEmbeddedProductCode = (value: string) => value
+    .replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?(?:<\/\1\s*>|$)/gi, "")
+    .replace(/&lt;(script|style|template|noscript)\b[\s\S]*?&gt;[\s\S]*?(?:&lt;\/\1\s*&gt;|$)/gi, "")
+    .replace(/\(\s*function\s*\(\s*\)\s*\{\s*var\s+items\s*=\s*document\.querySelectorAll\s*\([\s\S]*?\}\s*\)\s*\(\s*\)\s*;?/gi, "")
+
 const escapeHtml = (value: string) =>
     value
         .replaceAll("&", "&amp;")
@@ -9,9 +14,7 @@ const escapeHtml = (value: string) =>
         .replaceAll("'", "&#39;")
 
 const stripHtml = (value: string) =>
-    value
-        .replace(/<script[\s\S]*?<\/script>/gi, " ")
-        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    stripEmbeddedProductCode(value)
         .replace(/<[^>]+>/g, " ")
         .replace(/&nbsp;/gi, " ")
         .replace(/\s+/g, " ")
@@ -21,7 +24,7 @@ export const hasRenderableHtmlContent = (value?: string | null) =>
     Boolean(value && stripHtml(value).length > 0)
 
 export const normalizeHtml = (value: string) => {
-    const trimmedValue = value.trim()
+    const trimmedValue = stripEmbeddedProductCode(value).trim()
 
     if (!HTML_TAG_PATTERN.test(trimmedValue)) {
         return `<div><p>${escapeHtml(trimmedValue).replace(/\r?\n/g, "<br />")}</p></div>`

@@ -1,4 +1,5 @@
 import type { ProductRead, ProductVariantRead, ProductWithVariantsRead } from "@/types/product"
+import { stripEmbeddedProductCode } from "@/components/content/html-content.utils"
 
 const decodeHtmlEntities = (value: string) =>
     value
@@ -15,9 +16,7 @@ export const getPlainTextContent = (value?: string | null) => {
     }
 
     const plainText = decodeHtmlEntities(
-        value
-            .replace(/<script[\s\S]*?<\/script>/gi, " ")
-            .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        stripEmbeddedProductCode(value)
             .replace(/<[^>]+>/g, " ")
             .replace(/\s+/g, " ")
             .trim()
