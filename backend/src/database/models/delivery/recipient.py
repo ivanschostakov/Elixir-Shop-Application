@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, ForeignKey, String, text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from src.database import Base
@@ -15,6 +15,7 @@ class DeliveryRecipient(Base, IdPkMixin, TimestampMixin):
     surname: Mapped[str] = mapped_column(String(length=PERSON_NAME_MAX_LENGTH), nullable=False)
     phone: Mapped[str] = mapped_column(String(length=WEBSITE_PHONE_MAX_LENGTH), nullable=False, default="", server_default=text("''"))
     email: Mapped[str] = mapped_column(String(length=EMAIL_MAX_LENGTH), nullable=False, default="", server_default=text("''"))
+    is_profile_snapshot: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="delivery_recipients")
     baskets: Mapped[list["Basket"]] = relationship(back_populates="recipient")

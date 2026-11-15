@@ -81,7 +81,7 @@ async def send_my_ai_chat_message(request: Request, text: str = Form(...), attac
         db, user=current_user, text=normalized_text, attachments=attachments, professor_client=professor_client,
         allow_commerce=not is_commerce_blocked(request.headers, "/api/v1/products", "GET"),
     )
-    basket = await _get_serialized_basket(request, db, current_user.id) if result.basket_updated else None
+    basket = await _get_serialized_basket(request, db, current_user) if result.basket_updated else None
     return AIChatResponse(chat=result.chat, last_turn=AIChatTurnMetaRead(**result.turn_meta), basket=basket)
 
 
@@ -96,7 +96,7 @@ async def perform_my_ai_chat_action(payload: AIChatActionPayload, request: Reque
         details={"message_id": payload.message_id, "action_id": payload.action_id},
     )
     result = await perform_user_ai_chat_action(db, user=current_user, message_id=payload.message_id, action_id=payload.action_id, action_token=payload.action_token, quantity=payload.quantity)
-    basket = await _get_serialized_basket(request, db, current_user.id) if result.basket_updated else None
+    basket = await _get_serialized_basket(request, db, current_user) if result.basket_updated else None
     return AIChatActionResponse(chat=result.chat, last_turn=None, basket=basket, basket_item_id=result.basket_item_id)
 
 

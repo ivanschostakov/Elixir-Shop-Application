@@ -101,7 +101,7 @@ def test_checkout_rejects_missing_or_invalid_recipient_fields(field, value):
 
 @pytest.mark.parametrize("source", ["basket", "draft"])
 def test_phone_is_checked_before_stock_quotes_and_order_creation(monkeypatch, source):
-    value = SimpleNamespace(id=1, items=[object()], recipient=SimpleNamespace(phone=""), delivery_address=object())
+    value = SimpleNamespace(id=1, items=[object()], recipient=SimpleNamespace(phone="", is_profile_snapshot=False), delivery_address=object())
     user = SimpleNamespace(id=44)
     async def get(*args, **kwargs): return value
     async def no_existing(*args, **kwargs): return None

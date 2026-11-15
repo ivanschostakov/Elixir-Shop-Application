@@ -11,10 +11,10 @@ from starlette import status
 from src.app.services.stock_visibility import get_stock_visibility_policy
 from src.app.services.catalog_merchandising import catalog_unit_price
 from src.app.services.delivery_quotes import calculate_authoritative_cdek_quote
-from src.database.crud import create_delivery_address, create_delivery_recipient, create_order_draft, delete_order_draft, get_delivery_address_by_fields, get_delivery_address_by_id, get_delivery_addresses, get_delivery_recipient_by_fields, get_delivery_recipient_by_id, get_delivery_recipients, get_latest_named_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
+from src.database.crud import create_delivery_address, create_order_draft, delete_order_draft, get_delivery_address_by_fields, get_delivery_address_by_id, get_delivery_addresses, get_latest_named_order_draft_for_user, get_order_draft_by_id, get_order_drafts_for_user, update_order_draft
 from src.database.limits import ORDER_DRAFT_COMMENT_MAX_LENGTH, ORDER_DRAFT_NAME_MAX_LENGTH
 from src.database.models import BasketItem, OrderDraft, OrderDraftItem, Product, ProductByCategory, User, Variant
-from src.database.schemas import DeliveryAddressCreate, DeliveryAddressRead, DeliveryRecipientCreate, DeliveryRecipientRead, OrderDraftCheckoutOptionsRead, OrderDraftCreate, OrderDraftUpdate
+from src.database.schemas import DeliveryAddressCreate, DeliveryAddressRead, OrderDraftCheckoutOptionsRead, OrderDraftCreate, OrderDraftUpdate
 
 from .draft_items import (
     _build_draft_items_from_basket,
@@ -31,16 +31,9 @@ from .draft_normalization import (
     REQUIRED_CREATE_ORDER_DRAFT_DELIVERY_FIELDS,
     _build_create_delivery_address_data,
     _build_new_delivery_address_data,
-    _build_new_recipient_data,
     _normalize_order_draft_text,
 )
-from .common import _normalize_phone
-
-
-async def _get_or_create_delivery_recipient(session: AsyncSession, *, data: DeliveryRecipientCreate):
-    recipient = await get_delivery_recipient_by_fields(session, user_id=data.user_id, name=data.name, surname=data.surname, phone=data.phone, email=data.email)
-    if recipient is not None: return recipient
-    return await create_delivery_recipient(session, data, commit=False)
+from .recipients import get_checkout_recipients, resolve_checkout_recipient_selection
 
 
 async def _get_or_create_delivery_address(session: AsyncSession, *, data: DeliveryAddressCreate):
@@ -58,24 +51,6 @@ async def _get_or_create_delivery_address(session: AsyncSession, *, data: Delive
     )
     if address is not None: return address
     return await create_delivery_address(session, data, commit=False)
-
-
-def _is_self_like_recipient(*, recipient, user: User) -> bool:
-    recipient_name = str(recipient.name or "").strip().lower()
-    recipient_surname = str(recipient.surname or "").strip().lower()
-    recipient_phone = _normalize_phone(recipient.phone) or ""
-    user_name = str(user.name or "").strip().lower()
-    user_surname = str(user.surname or "").strip().lower()
-    user_phone = _normalize_phone(user.phone_number) or ""
-    return (
-        recipient_name == user_name
-        and recipient_surname == user_surname
-        and recipient_phone == user_phone
-    )
-
-
-def _filter_self_like_recipients(*, recipients: list, user: User) -> list:
-    return [recipient for recipient in recipients if not _is_self_like_recipient(recipient=recipient, user=user)]
 
 
 async def create_order_draft_for_user(session: AsyncSession, *, user: User, payload) -> OrderDraft:
@@ -272,43 +247,24 @@ async def get_order_draft_checkout_options_for_user(session: AsyncSession, *, us
     if draft is None: return None
 
     addresses = await get_delivery_addresses(session, user_id=user.id, limit=limit)
-    recipients = _filter_self_like_recipients(
-        recipients=await get_delivery_recipients(session, user.id, limit=limit),
-        user=user,
-    )
-    if (
-        draft.recipient is not None
-        and not _is_self_like_recipient(recipient=draft.recipient, user=user)
-        and not any(recipient.id == draft.recipient.id for recipient in recipients)
-    ):
-        recipients.insert(0, draft.recipient)
-
     return OrderDraftCheckoutOptionsRead(
         addresses=[DeliveryAddressRead.model_validate(address) for address in addresses],
-        recipients=[DeliveryRecipientRead.model_validate(recipient) for recipient in recipients],
+        recipients=await get_checkout_recipients(session, user=user, selected=draft.recipient, limit=limit),
     )
 
 
-async def update_order_draft_for_user(session: AsyncSession, *, user_id: int, draft_id: int, payload) -> OrderDraft | None:
+async def update_order_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payload) -> OrderDraft | None:
+    user_id = user.id
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id)
     if draft is None: return None
 
-    if "recipient_id" in payload.model_fields_set and payload.new_recipient is not None: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing recipient or create a new one")
     if payload.delivery_address_id is not None and payload.new_delivery_address is not None: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing address or create a new one")
 
     update_data: dict[str, Decimal | int | str | None] = {}
     if "draft_name" in payload.model_fields_set: update_data["draft_name"] = _normalize_order_draft_text(payload.draft_name, max_length=ORDER_DRAFT_NAME_MAX_LENGTH)
     if "comment" in payload.model_fields_set: update_data["comment"] = _normalize_order_draft_text(payload.comment, max_length=ORDER_DRAFT_COMMENT_MAX_LENGTH)
-    if "recipient_id" in payload.model_fields_set:
-        if payload.recipient_id is None: update_data["recipient_id"] = None
-        else:
-            recipient = await get_delivery_recipient_by_id(session, payload.recipient_id, user_id=user_id)
-            if recipient is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery recipient not found")
-            update_data["recipient_id"] = recipient.id
-
-    if payload.new_recipient is not None:
-        created_recipient = await _get_or_create_delivery_recipient(session, data=_build_new_recipient_data(user_id, payload.new_recipient))
-        update_data["recipient_id"] = created_recipient.id
+    if "recipient_id" in payload.model_fields_set or payload.new_recipient is not None:
+        update_data["recipient_id"] = await resolve_checkout_recipient_selection(session, user=user, payload=payload)
 
     effective_delivery_address = draft.delivery_address
     delivery_address_changed = False

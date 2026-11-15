@@ -24,7 +24,7 @@ async def get_delivery_recipient_by_id(session: AsyncSession, recipient_id: int,
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_delivery_recipient_by_fields(session: AsyncSession, *, user_id: int, name: str, surname: str, phone: str, email: str) -> DeliveryRecipient | None:
+async def get_delivery_recipient_by_fields(session: AsyncSession, *, user_id: int, name: str, surname: str, phone: str, email: str, is_profile_snapshot: bool = False) -> DeliveryRecipient | None:
     stmt = (
         select(DeliveryRecipient)
         .where(DeliveryRecipient.user_id == user_id)
@@ -32,6 +32,8 @@ async def get_delivery_recipient_by_fields(session: AsyncSession, *, user_id: in
         .where(func.lower(DeliveryRecipient.surname) == surname.lower())
         .where(DeliveryRecipient.phone == phone)
         .where(DeliveryRecipient.email == email)
+        .where(DeliveryRecipient.is_profile_snapshot.is_(is_profile_snapshot))
+        .order_by(DeliveryRecipient.id)
         .limit(1)
     )
     return (await session.execute(stmt)).scalar_one_or_none()
@@ -41,6 +43,7 @@ async def get_delivery_recipients(session: AsyncSession, user_id: int, *, limit:
     stmt = (
         select(DeliveryRecipient)
         .where(DeliveryRecipient.user_id == user_id)
+        .where(DeliveryRecipient.is_profile_snapshot.is_not(True))
         .order_by(DeliveryRecipient.updated_at.desc(), DeliveryRecipient.id.desc())
         .limit(limit)
     )

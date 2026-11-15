@@ -45,7 +45,7 @@ async def get_my_basket(request: Request, db: AsyncSession = Depends(get_db), cu
         return await _empty_basket_view(db, current_user.id)
     await refresh_assigned_referrer_promo(db, user=current_user)
     await db.commit()
-    return await _get_serialized_basket(request, db, current_user.id)
+    return await _get_serialized_basket(request, db, current_user)
 
 
 @my_basket_router.post("", response_model=BasketRead, status_code=status.HTTP_200_OK)
@@ -54,7 +54,7 @@ async def create_my_basket(request: Request, db: AsyncSession = Depends(get_db),
         return await _empty_basket_view(db, current_user.id)
     await refresh_assigned_referrer_promo(db, user=current_user)
     await db.commit()
-    return await _get_serialized_basket(request, db, current_user.id)
+    return await _get_serialized_basket(request, db, current_user)
 
 
 @my_basket_router.post("/items", response_model=BasketRead, status_code=status.HTTP_200_OK)
@@ -93,7 +93,7 @@ async def create_my_basket_item(payload: BasketItemCreate, request: Request, db:
         properties={"variant_id": variant.id, "quantity": payload.quantity},
         commit=True,
     )
-    return await _get_serialized_basket(request, db, current_user.id)
+    return await _get_serialized_basket(request, db, current_user)
 
 
 @my_basket_router.patch("/items/{item_id}", response_model=BasketRead)
@@ -142,7 +142,7 @@ async def update_my_basket_item(item_id: int, payload: BasketItemUpdate, request
             properties={"variant_id": variant.id, "quantity": abs(quantity_delta)},
             commit=True,
         )
-    return await _get_serialized_basket(request, db, current_user.id)
+    return await _get_serialized_basket(request, db, current_user)
 
 
 @my_basket_router.delete("/items/{item_id}", response_model=BasketRead)
@@ -163,7 +163,7 @@ async def delete_my_basket_item(item_id: int, request: Request, db: AsyncSession
         properties={"variant_id": variant_id, "quantity": quantity},
         commit=True,
     )
-    return await _get_serialized_basket(request, db, current_user.id)
+    return await _get_serialized_basket(request, db, current_user)
 
 
 @my_basket_router.delete("/items", response_model=BasketRead)
@@ -179,7 +179,7 @@ async def clear_my_basket(request: Request, db: AsyncSession = Depends(get_db), 
             properties={"quantity": removed_quantity, "scope": "basket"},
             commit=True,
         )
-    return await _get_serialized_basket(request, db, current_user.id)
+    return await _get_serialized_basket(request, db, current_user)
 
 
 @my_basket_router.get("/checkout/options", response_model=OrderDraftCheckoutOptionsRead, status_code=status.HTTP_200_OK)
@@ -191,4 +191,4 @@ async def update_my_basket_checkout(payload: UpdateOrderDraftPayload, request: R
 
 
 @my_basket_router.post("/restore-draft/{draft_id}", response_model=BasketRead, status_code=status.HTTP_200_OK)
-async def restore_my_basket_from_draft(draft_id: int, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead: return await restore_order_draft_to_basket(request, db, user_id=current_user.id, draft_id=draft_id)
+async def restore_my_basket_from_draft(draft_id: int, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead: return await restore_order_draft_to_basket(request, db, user=current_user, draft_id=draft_id)

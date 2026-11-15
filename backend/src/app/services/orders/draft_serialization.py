@@ -1,9 +1,10 @@
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import OrderDraft, OrderDraftItem, Product, Variant
+from src.database.models import OrderDraft, OrderDraftItem, Product, User, Variant
 from src.database.schemas import DeliveryAddressRead, DeliveryRecipientRead, OrderDraftItemRead, OrderDraftRead
 from .serialization_utils import build_order_item_image_url, get_products_by_id, get_variants_by_id
+from .recipients import saved_checkout_recipient
 
 
 def _serialize_order_draft_item(request: Request, item: OrderDraftItem, *, products_by_id: dict[int, Product], variants_by_id: dict[int, Variant]) -> OrderDraftItemRead:
@@ -29,7 +30,7 @@ def _serialize_order_draft_item(request: Request, item: OrderDraftItem, *, produ
     )
 
 
-async def serialize_order_drafts(request: Request, session: AsyncSession, drafts: list[OrderDraft]) -> list[OrderDraftRead]:
+async def serialize_order_drafts(request: Request, session: AsyncSession, drafts: list[OrderDraft], *, user: User) -> list[OrderDraftRead]:
     if not drafts: return []
 
     product_ids = {item.product_id for draft in drafts for item in draft.items}
@@ -39,12 +40,13 @@ async def serialize_order_drafts(request: Request, session: AsyncSession, drafts
 
     serialized_drafts: list[OrderDraftRead] = []
     for draft in drafts:
+        recipient = saved_checkout_recipient(draft.recipient, user)
         serialized_drafts.append(
             OrderDraftRead(
                 id=draft.id,
                 user_id=draft.user_id,
                 delivery_address_id=draft.delivery_address_id,
-                recipient_id=draft.recipient_id,
+                recipient_id=recipient.id if recipient is not None else None,
                 status=draft.status,
                 items_count=draft.items_count,
                 total_quantity=draft.total_quantity,
@@ -57,7 +59,7 @@ async def serialize_order_drafts(request: Request, session: AsyncSession, drafts
                 draft_name=draft.draft_name,
                 comment=draft.comment,
                 delivery_address=DeliveryAddressRead.model_validate(draft.delivery_address) if draft.delivery_address is not None else None,
-                recipient=DeliveryRecipientRead.model_validate(draft.recipient) if draft.recipient is not None else None,
+                recipient=DeliveryRecipientRead.model_validate(recipient) if recipient is not None else None,
                 items=[
                     _serialize_order_draft_item(request, item, products_by_id=products_by_id, variants_by_id=variants_by_id)
                     for item in draft.items
@@ -70,6 +72,6 @@ async def serialize_order_drafts(request: Request, session: AsyncSession, drafts
     return serialized_drafts
 
 
-async def serialize_order_draft(request: Request, session: AsyncSession, draft: OrderDraft) -> OrderDraftRead:
-    serialized_drafts = await serialize_order_drafts(request, session, [draft])
+async def serialize_order_draft(request: Request, session: AsyncSession, draft: OrderDraft, *, user: User) -> OrderDraftRead:
+    serialized_drafts = await serialize_order_drafts(request, session, [draft], user=user)
     return serialized_drafts[0]

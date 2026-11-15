@@ -15,6 +15,7 @@ from src.database.crud import create_order, delete_order_draft, get_order_by_dra
 from src.database.models import Order, User, Variant
 from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
 from src.app.services.orders.common import _delivery_string, validate_checkout_recipient
+from src.app.services.orders.recipients import is_profile_recipient
 from src.app.services.orders.crm import ensure_order_has_amocrm_lead
 from src.app.services.orders.fulfillment_payloads import normalize_address_for_cf
 from src.app.services.orders.settlement_payment import serialized_settlement_checkout
@@ -43,7 +44,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
         if refreshed_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load existing order")
         return refreshed_order
 
-    if draft.recipient is None:
+    if draft.recipient is None or is_profile_recipient(draft.recipient, user):
         recipient = await _get_or_create_self_recipient(session, user=user)
         draft.recipient_id = recipient.id
         draft.recipient = recipient

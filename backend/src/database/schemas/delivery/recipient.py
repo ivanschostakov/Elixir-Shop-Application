@@ -24,7 +24,7 @@ class DeliveryRecipientBase(BaseModel):
 
 
 class DeliveryRecipientCreate(DeliveryRecipientBase):
-    pass
+    is_profile_snapshot: bool = False
 
 
 class DeliveryRecipientRead(DeliveryRecipientBase):

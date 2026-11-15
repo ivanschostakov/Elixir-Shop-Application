@@ -16,6 +16,7 @@ from src.database.crud import create_order, get_basket_by_user_id, get_order_by_
 from src.database.models import BasketItem, Order, User
 from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
 from src.app.services.orders.common import _delivery_string, validate_checkout_recipient
+from src.app.services.orders.recipients import is_profile_recipient
 from src.app.services.orders.crm import ensure_order_has_amocrm_lead
 from src.app.services.orders.fulfillment_payloads import normalize_address_for_cf
 from src.app.services.orders.settlement_payment import serialized_settlement_checkout
@@ -35,7 +36,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
                                    user_id=user_id, client_platform=client_platform)
     if basket.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
 
-    if basket.recipient is None:
+    if basket.recipient is None or is_profile_recipient(basket.recipient, user):
         recipient = await _get_or_create_self_recipient(session, user=user)
         basket.recipient_id = recipient.id
         basket.recipient = recipient

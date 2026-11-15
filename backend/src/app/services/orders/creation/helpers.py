@@ -1,4 +1,6 @@
 import secrets
+from types import SimpleNamespace
+
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +8,7 @@ from starlette import status
 from src.database.crud import create_delivery_recipient, get_delivery_recipient_by_fields, get_order_by_code
 from src.database.models import Order, User
 from src.database.schemas import DeliveryRecipientCreate
-from src.app.services.orders.common import _normalize_phone
+from src.app.services.orders.common import _normalize_phone, validate_checkout_recipient
 from .common import ORDER_CODE_ALPHABET
 
 
@@ -21,9 +23,16 @@ async def _generate_order_code(session: AsyncSession) -> str:
 async def _get_or_create_self_recipient(session: AsyncSession, *, user: User):
     phone = _normalize_phone(user.phone_number) or ""
     email = (user.email or "").strip().lower()
-    recipient = await get_delivery_recipient_by_fields(session, user_id=user.id, name=user.name, surname=user.surname, phone=phone, email=email)
+    validate_checkout_recipient(SimpleNamespace(name=user.name, surname=user.surname, phone=phone, email=email))
+    data = DeliveryRecipientCreate(
+        user_id=user.id, name=user.name, surname=user.surname, phone=phone, email=email, is_profile_snapshot=True,
+    )
+    recipient = await get_delivery_recipient_by_fields(
+        session, user_id=user.id, name=data.name, surname=data.surname, phone=data.phone, email=data.email,
+        is_profile_snapshot=True,
+    )
     if recipient is not None: return recipient
-    return await create_delivery_recipient(session, DeliveryRecipientCreate(user_id=user.id, name=user.name, surname=user.surname, phone=phone, email=email), commit=False)
+    return await create_delivery_recipient(session, data, commit=False)
 
 
 async def _clear_order_draft_references(session: AsyncSession, *, draft_id: int) -> None:

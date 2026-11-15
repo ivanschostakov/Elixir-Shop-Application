@@ -30,7 +30,9 @@ from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT,
 from src.integrations.amocrm import amocrm_client
 from src.database.models import (
     AppReferralPurchase,
+    Basket,
     BonusProgramPurchase,
+    DeliveryRecipient,
     LoyaltyBonusCredit,
     Order,
     OrderDraft,
@@ -461,6 +463,122 @@ def test_create_final_order_uses_self_recipient_when_draft_recipient_is_missing(
     assert payload["recipient"]["surname"] == "Tester"
     assert payload["recipient"]["email"] == registered_user["email"]
     assert payload["recipient"]["phone"] == "+79990000000"
+
+
+@pytest.mark.parametrize("checkout", ["basket", "draft"])
+def test_checkout_replaces_legacy_self_selection_with_current_profile(
+    client, registered_user, variant_factory, stub_amocrm, checkout,
+):
+    headers = registered_user["headers"]
+    user_id = registered_user["user_id"]
+    email = registered_user["email"]
+    variant = variant_factory()
+    response = client.post("/api/v1/users/me/basket/items", headers=headers, json={
+        "variant_id": variant["variant_id"], "quantity": 1,
+    })
+    assert response.status_code == 200, response.text
+    basket_id = response.json()["id"]
+    draft_path = "/api/v1/users/me/order-drafts"
+    if checkout == "draft":
+        response = client.post(draft_path, headers=headers, json=_build_pickup_payload())
+        assert response.status_code == 201, response.text
+        checkout_id = response.json()["id"]
+        path = f"{draft_path}/{checkout_id}"
+        read_path = path
+        order_payload = {"draft_id": checkout_id}
+        checkout_model = OrderDraft
+    else:
+        checkout_id = basket_id
+        path = "/api/v1/users/me/basket/checkout"
+        read_path = "/api/v1/users/me/basket"
+        order_payload = {}
+        checkout_model = Basket
+        response = client.patch(path, headers=headers, json={"new_delivery_address": _build_pickup_payload()})
+        assert response.status_code == 200, response.text
+
+    with Session(sync_engine) as session:
+        legacy = DeliveryRecipient(user_id=user_id, name="Orders", surname="Tester", phone="", email=email)
+        session.add(legacy)
+        session.flush()
+        legacy_id = legacy.id
+        session.get(checkout_model, checkout_id).recipient_id = legacy_id
+        session.commit()
+
+    def selected():
+        result = client.get(read_path, headers=headers)
+        assert result.status_code == 200, result.text
+        return result.json()["recipient"]
+
+    def recipient_ids():
+        result = client.get(f"{path}/options", headers=headers)
+        assert result.status_code == 200, result.text
+        return [recipient["id"] for recipient in result.json()["recipients"]]
+
+    assert selected() is None
+    assert recipient_ids() == []
+
+    phone = "+79990000109"
+    response = client.patch("/api/v1/users/me/profile/personal-data", headers=headers, json={"phone_number": phone})
+    assert response.status_code == 200, response.text
+    assert selected() is None
+    assert recipient_ids() == []
+
+    # A real alternate recipient with the same name remains distinct.
+    other_data = {"name": "Orders", "surname": "Tester", "phone": "+79990000110", "email": "other@example.com"}
+    response = client.patch(path, headers=headers, json={"new_recipient": other_data})
+    assert response.status_code == 200, response.text
+    other_id = response.json()["recipient_id"]
+    assert selected()["id"] == other_id
+    assert recipient_ids() == [other_id]
+    retry = client.patch(path, headers=headers, json={"new_recipient": other_data})
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["recipient_id"] == other_id
+    response = client.patch(path, headers=headers, json={"recipient_id": None})
+    assert response.status_code == 200, response.text
+    assert response.json()["recipient"] is None
+    assert recipient_ids() == [other_id]
+    response = client.patch(path, headers=headers, json={"recipient_id": other_id})
+    assert response.status_code == 200, response.text
+    assert selected()["id"] == other_id
+    response = client.patch(path, headers=headers, json={"new_recipient": {**other_data, "phone": phone, "email": email}})
+    assert response.status_code == 200, response.text
+    assert response.json()["recipient"] is None
+    assert recipient_ids() == [other_id]
+
+    with Session(sync_engine) as session:
+        session.get(checkout_model, checkout_id).recipient_id = legacy_id
+        session.commit()
+
+    response = client.post("/api/v1/users/me/orders", headers=headers, json={**order_payload, "payment_method": "later"})
+    assert response.status_code == 200, response.text
+    order = response.json()
+    snapshot_id = order["recipient"]["id"]
+    assert snapshot_id != legacy_id
+    assert order["recipient"]["phone"] == phone
+    assert order["checkout_snapshot"]["contact_info"]["email"] == email
+    with Session(sync_engine) as session:
+        assert session.get(DeliveryRecipient, snapshot_id).is_profile_snapshot is True
+        assert session.get(DeliveryRecipient, legacy_id).phone == ""
+
+    replacement = "+79990000111"
+    response = client.patch("/api/v1/users/me/profile/personal-data", headers=headers, json={"phone_number": replacement})
+    assert response.status_code == 200, response.text
+    options = client.get("/api/v1/users/me/basket/checkout/options", headers=headers)
+    assert options.status_code == 200, options.text
+    assert [row["id"] for row in options.json()["recipients"]] == [other_id]
+    response = client.get(f"/api/v1/users/me/orders/{order['id']}", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["recipient"]["phone"] == phone
+    _mark_order_completed(order["id"])
+    response = client.post(f"/api/v1/users/me/orders/{order['id']}/repeat", headers=headers)
+    assert response.status_code == 201, response.text
+    repeated = response.json()
+    assert repeated["recipient_id"] is None
+    response = client.post("/api/v1/users/me/orders", headers=headers, json={
+        "draft_id": repeated["id"], "payment_method": "later",
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["recipient"]["phone"] == replacement
 
 
 def test_create_final_order_persists_snapshot_and_amocrm_link(client: TestClient, registered_user, variant_factory, stub_amocrm):

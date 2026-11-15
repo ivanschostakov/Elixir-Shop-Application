@@ -52,7 +52,7 @@ async def list_my_orders(request: Request, limit: int = Query(default=20, ge=1, 
 async def repeat_my_order(order_id: int, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("orders:repeat"))) -> OrderDraftRead:
     draft = await repeat_order_as_draft_for_user(db, user_id=current_user.id, order_id=order_id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    return await serialize_order_draft(request, db, draft)
+    return await serialize_order_draft(request, db, draft, user=current_user)
 
 
 @my_orders_router.get("/{order_id}", response_model=OrderRead)

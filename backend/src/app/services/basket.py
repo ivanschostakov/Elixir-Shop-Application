@@ -19,15 +19,11 @@ from src.app.services.delivery_quotes import calculate_authoritative_cdek_quote
 from src.database.crud import (
     create_basket_item,
     create_delivery_address,
-    create_delivery_recipient,
     get_basket_by_id,
     get_basket_by_user_id,
     get_delivery_address_by_fields,
     get_delivery_address_by_id,
     get_delivery_addresses,
-    get_delivery_recipient_by_fields,
-    get_delivery_recipient_by_id,
-    get_delivery_recipients,
     get_order_draft_by_id,
     update_basket,
 )
@@ -42,14 +38,13 @@ from src.database.schemas import (
     BasketVariantSummaryRead,
     DeliveryAddressCreate,
     DeliveryAddressRead,
-    DeliveryRecipientCreate,
     DeliveryRecipientRead,
     OrderDraftCheckoutOptionsRead,
 )
 from src.product_media import build_products_media_url
 
-from .orders.draft_normalization import _build_new_delivery_address_data, _build_new_recipient_data
-from .orders.common import _normalize_phone
+from .orders.draft_normalization import _build_new_delivery_address_data
+from .orders.recipients import get_checkout_recipients, resolve_checkout_recipient_selection, saved_checkout_recipient
 
 
 def _product_image_url(request: Request, product) -> str: return build_products_media_url(str(request.base_url), product.image_path)
@@ -57,28 +52,11 @@ def _variant_image_url(request: Request, variant) -> str: return build_products_
 def _basket_conflict(detail: str) -> HTTPException: return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
-def _is_self_like_recipient(*, recipient, user: User) -> bool:
-    recipient_name = str(recipient.name or "").strip().lower()
-    recipient_surname = str(recipient.surname or "").strip().lower()
-    recipient_phone = _normalize_phone(recipient.phone) or ""
-    user_name = str(user.name or "").strip().lower()
-    user_surname = str(user.surname or "").strip().lower()
-    user_phone = _normalize_phone(user.phone_number) or ""
-    return (
-        recipient_name == user_name
-        and recipient_surname == user_surname
-        and recipient_phone == user_phone
-    )
-
-
-def _filter_self_like_recipients(*, recipients: list, user: User) -> list:
-    return [recipient for recipient in recipients if not _is_self_like_recipient(recipient=recipient, user=user)]
-
-
 def serialize_basket(
     request: Request,
     basket: Basket,
     *,
+    user: User,
     stock_policy: StockVisibilityPolicy | None = None,
 ) -> BasketRead:
     policy = stock_policy or StockVisibilityPolicy()
@@ -116,14 +94,15 @@ def serialize_basket(
             image_url=_variant_image_url(request, item.variant),
         ), created_at=item.created_at, updated_at=item.updated_at))
 
+    recipient = saved_checkout_recipient(basket.recipient, user)
     return BasketRead(
         id=basket.id,
         user_id=basket.user_id,
         items=items,
         delivery_address_id=basket.delivery_address_id,
-        recipient_id=basket.recipient_id,
+        recipient_id=recipient.id if recipient is not None else None,
         delivery_address=DeliveryAddressRead.model_validate(basket.delivery_address) if basket.delivery_address is not None else None,
-        recipient=DeliveryRecipientRead.model_validate(basket.recipient) if basket.recipient is not None else None,
+        recipient=DeliveryRecipientRead.model_validate(recipient) if recipient is not None else None,
         items_count=len(items),
         total_quantity=total_quantity,
         total_amount=total_amount,
@@ -166,11 +145,12 @@ async def _get_product_for_pricing(db: AsyncSession, product_id: int) -> Product
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-async def _get_serialized_basket(request: Request, db: AsyncSession, user_id: int) -> BasketRead:
-    basket = await _ensure_basket(db, user_id)
+async def _get_serialized_basket(request: Request, db: AsyncSession, user: User) -> BasketRead:
+    basket = await _ensure_basket(db, user.id)
     return serialize_basket(
         request,
         basket,
+        user=user,
         stock_policy=await get_stock_visibility_policy(db),
     )
 
@@ -178,24 +158,12 @@ async def _get_serialized_basket(request: Request, db: AsyncSession, user_id: in
 async def get_basket_checkout_options_for_user(db: AsyncSession, *, user: User, limit: int = 20) -> OrderDraftCheckoutOptionsRead:
     basket = await _ensure_basket(db, user.id)
     addresses = await get_delivery_addresses(db, user_id=user.id, limit=limit)
-    recipients = _filter_self_like_recipients(recipients=await get_delivery_recipients(db, user.id, limit=limit), user=user)
     if basket.delivery_address is not None and not any(address.id == basket.delivery_address.id for address in addresses): addresses.insert(0, basket.delivery_address)
-    if (
-        basket.recipient is not None
-        and not _is_self_like_recipient(recipient=basket.recipient, user=user)
-        and not any(recipient.id == basket.recipient.id for recipient in recipients)
-    ): recipients.insert(0, basket.recipient)
 
     return OrderDraftCheckoutOptionsRead(
         addresses=[DeliveryAddressRead.model_validate(address) for address in addresses],
-        recipients=[DeliveryRecipientRead.model_validate(recipient) for recipient in recipients],
+        recipients=await get_checkout_recipients(db, user=user, selected=basket.recipient, limit=limit),
     )
-
-
-async def _get_or_create_delivery_recipient(db: AsyncSession, *, data: DeliveryRecipientCreate):
-    recipient = await get_delivery_recipient_by_fields(db, user_id=data.user_id, name=data.name, surname=data.surname, phone=data.phone, email=data.email)
-    if recipient is not None: return recipient
-    return await create_delivery_recipient(db, data, commit=False)
 
 
 async def _get_or_create_delivery_address(db: AsyncSession, *, data: DeliveryAddressCreate):
@@ -218,21 +186,12 @@ async def _get_or_create_delivery_address(db: AsyncSession, *, data: DeliveryAdd
 async def update_basket_checkout_for_user(request: Request, db: AsyncSession, *, user: User, payload) -> BasketRead:
     basket = await _ensure_basket(db, user.id)
 
-    if "recipient_id" in payload.model_fields_set and payload.new_recipient is not None: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing recipient or create a new one")
     if payload.delivery_address_id is not None and payload.new_delivery_address is not None: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Choose an existing address or create a new one")
 
     update_data: dict[str, Decimal | int | str | None] = {}
 
-    if "recipient_id" in payload.model_fields_set:
-        if payload.recipient_id is None: update_data["recipient_id"] = None
-        else:
-            recipient = await get_delivery_recipient_by_id(db, payload.recipient_id, user_id=user.id)
-            if recipient is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Delivery recipient not found")
-            update_data["recipient_id"] = recipient.id
-
-    if payload.new_recipient is not None:
-        recipient = await _get_or_create_delivery_recipient(db, data=_build_new_recipient_data(user.id, payload.new_recipient))
-        update_data["recipient_id"] = recipient.id
+    if "recipient_id" in payload.model_fields_set or payload.new_recipient is not None:
+        update_data["recipient_id"] = await resolve_checkout_recipient_selection(db, user=user, payload=payload)
 
     address_for_quote = None
     if payload.delivery_address_id is not None:
@@ -287,6 +246,7 @@ async def update_basket_checkout_for_user(request: Request, db: AsyncSession, *,
     return serialize_basket(
         request,
         updated_basket,
+        user=user,
         stock_policy=await get_stock_visibility_policy(db),
     )
 
@@ -345,7 +305,8 @@ async def add_variant_to_basket_for_user(db: AsyncSession, *, user_id: int, vari
     return basket_item
 
 
-async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, user_id: int, draft_id: int) -> BasketRead:
+async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, user: User, draft_id: int) -> BasketRead:
+    user_id = user.id
     draft = await get_order_draft_by_id(db, draft_id, user_id=user_id)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
     if not draft.items: raise _basket_conflict("Order draft is empty")
@@ -397,5 +358,6 @@ async def restore_order_draft_to_basket(request: Request, db: AsyncSession, *, u
     return serialize_basket(
         request,
         restored_basket,
+        user=user,
         stock_policy=stock_policy,
     )
