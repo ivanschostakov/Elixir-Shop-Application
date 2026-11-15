@@ -45,9 +45,11 @@ import { getBasketErrorMessage } from "@/screens/cart/cart-screen.utils"
 import {
     ADD_NEW_ADDRESS_VALUE,
     ADD_NEW_RECIPIENT_VALUE,
+    NO_RECIPIENT_VALUE,
     SELF_RECIPIENT_VALUE,
 } from "@/screens/checkout/checkout-screen.constants"
 import { createCheckoutScreenStyles } from "@/screens/checkout/checkout-screen.styles"
+import { useCheckoutRecipientSelection } from "@/screens/checkout/use-checkout-recipient-selection"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useTheme } from "@/providers/theme-provider"
 import type {
@@ -69,13 +71,17 @@ import {
     formatSavedCartDraftName,
     getDraftRecipient,
     getSelfRecipient,
+    getProfileRecipientUpdate,
     getDraftUpdateErrorMessage,
     getRecipientFormFromRecipient,
     getRecipientFormErrors,
+    getRecipientPickerValue,
     hasRecipientErrors,
     normalizePhoneValue,
     normalizeTextInputValue,
     parseDraftId,
+    resolveRecipientPickerAction,
+    updateSavedRecipientOptions,
 } from "@/screens/checkout/checkout-screen.utils"
 import { getBasketCheckoutOptions, restoreDraftToBasket, updateBasketCheckout, updateBasketItem } from "@/services/api/basket"
 import { checkMyBenefits } from "@/services/api/benefits"
@@ -142,7 +148,10 @@ export default function CheckoutScreen() {
     const recommendationRailLoadingMore = isAuthenticated ? recommendationsLoadingMore : guestCatalogLoadingMore
     const hasMoreRecommendationRail = isAuthenticated ? hasMoreRecommendations : hasMoreGuestCatalog
     const loadMoreRecommendationRail = isAuthenticated ? loadMoreRecommendations : loadMoreGuestCatalog
-    const { data: checkoutOptions, error: optionsError, loading: optionsLoading, reload: reloadCheckoutOptions } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
+    const {
+        data: checkoutOptions, error: optionsError, loading: optionsLoading,
+        reload: reloadCheckoutOptions, setData: setCheckoutOptions,
+    } = useAsyncData<OrderDraftCheckoutOptionsRead | null>({
         deps: [isBasketCheckout, user?.id ?? null, orderDraft?.id ?? null],
         enabled: Boolean(orderDraft?.id),
         fetcher: async () => {
@@ -180,15 +189,15 @@ export default function CheckoutScreen() {
     })
     const [openPickerSection, setOpenPickerSection] = useState<ExpandedSection>(null)
     const [isRecipientEditorOpen, setIsRecipientEditorOpen] = useState(false)
-    const [editingOwnPhone, setEditingOwnPhone] = useState(false)
+    const [profileFieldsToComplete, setProfileFieldsToComplete] = useState<RecipientFormErrors | null>(null)
+    const [isCorrectingRecipient, setIsCorrectingRecipient] = useState(false)
     const [isSavingRecipient, setIsSavingRecipient] = useState(false)
     const [isSavingAddress, setIsSavingAddress] = useState(false)
-    const [selectedRecipientKey, setSelectedRecipientKey] = useState<number | typeof SELF_RECIPIENT_VALUE | typeof ADD_NEW_RECIPIENT_VALUE | null>(null)
     const [selectedAddressValue, setSelectedAddressValue] = useState<number | typeof ADD_NEW_ADDRESS_VALUE | null>(null)
-    const [draftRecipientKey, setDraftRecipientKey] = useState<number | typeof SELF_RECIPIENT_VALUE | typeof ADD_NEW_RECIPIENT_VALUE | null>(null)
     const [draftAddressValue, setDraftAddressValue] = useState<number | typeof ADD_NEW_ADDRESS_VALUE | null>(null)
     const [recipientForm, setRecipientForm] = useState<RecipientFormState>(createEmptyRecipientForm())
     const [recipientFormErrors, setRecipientFormErrors] = useState<RecipientFormErrors>({})
+    const [recipientSaveError, setRecipientSaveError] = useState<string | null>(null)
     const [promoCode, setPromoCode] = useState(routePromoCode ?? "")
     const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(routePromoCode ?? null)
     const [useBonusRubles, setUseBonusRubles] = useState(false)
@@ -283,15 +292,6 @@ export default function CheckoutScreen() {
         setAppliedPromoCode(routePromoCode)
     }, [routePromoCode])
 
-    useEffect(() => {
-        if (!orderDraft || isRecipientEditorOpen) {
-            return
-        }
-
-        setRecipientForm(getRecipientFormFromRecipient(getDraftRecipient(orderDraft)))
-        setRecipientFormErrors({})
-    }, [isRecipientEditorOpen, orderDraft])
-
     useFocusEffect(
         useCallback(() => (
             () => {
@@ -309,10 +309,14 @@ export default function CheckoutScreen() {
         }, [isAuthenticated, orderDraft, reloadReferralProfile]),
     )
 
-    const savedRecipient = getDraftRecipient(orderDraft)
-    const selfRecipient = getSelfRecipient(user)
-    const hasSelfRecipient = Boolean(selfRecipient)
+    const recipientScope = `${isBasketCheckout ? "basket" : "draft"}:${user?.id ?? "guest"}:${orderDraft?.id ?? ""}`
+    const snapshotRecipient = useMemo(() => getDraftRecipient(orderDraft), [orderDraft])
+    const { recipient: savedRecipient, confirmRecipient } = useCheckoutRecipientSelection(
+        recipientScope, snapshotRecipient,
+    )
+    const selfRecipient = useMemo(() => getSelfRecipient(user), [user])
     const currentRecipient = savedRecipient ?? selfRecipient
+    const isSelfSelected = !savedRecipient && Boolean(selfRecipient)
     const deliveryCost = orderDraft?.delivery_address
         ? formatMoney(Number(orderDraft.delivery_total), orderDraft.currency)
         : null
@@ -329,20 +333,22 @@ export default function CheckoutScreen() {
             orderDraft.currency,
         )
         : null
+    const activeAddressId = orderDraft?.delivery_address?.id
     const hasDeliveryAddress = Boolean(orderDraft?.delivery_address)
     const hasRecipient = Boolean(currentRecipient)
-    const selectedRecipientForm = getRecipientFormFromRecipient(currentRecipient)
-    const selectedRecipientErrors = getRecipientFormErrors(selectedRecipientForm, t)
+    const selectedRecipientForm = useMemo(() => getRecipientFormFromRecipient(currentRecipient), [currentRecipient])
+    const selectedRecipientErrors = useMemo(() => getRecipientFormErrors(selectedRecipientForm, t), [selectedRecipientForm, t])
     const needsRecipientCorrection = hasRecipient && hasRecipientErrors(selectedRecipientErrors)
     const payCtaLabel = grandTotal
         ? `${t("checkout.payCta")} ${grandTotal}`
         : t("checkout.payCta")
+    const recipientCorrectionLabel = isSelfSelected ? t("checkout.completeProfile") : t("checkout.correctRecipient")
     const paymentFooterCtaLabel = !hasDeliveryAddress
         ? t("checkout.openDelivery")
         : !hasRecipient
             ? t("checkout.selectRecipient")
             : needsRecipientCorrection
-                ? t("checkout.correctRecipient")
+                ? recipientCorrectionLabel
                 : payCtaLabel
     const checkoutFooterCtaLabel = isCheckingPromoCode
         ? t("checkout.promoCodeChecking")
@@ -353,6 +359,7 @@ export default function CheckoutScreen() {
                 : paymentFooterCtaLabel
     const isCheckoutFooterCtaDisabled =
         isCheckingPromoCode
+        || isSavingRecipient
         || (!hasUnappliedPromoCode && !isPromoRewardReady)
     const [isUpdatingPositions, setIsUpdatingPositions] = useState(false)
     const isPositionsBusy = isRestoringDraft || isUpdatingPositions
@@ -458,7 +465,32 @@ export default function CheckoutScreen() {
             },
         ])
     }, [openPaymentFlow, t])
-    const handleCheckoutFooterCtaPress = () => {
+    const handleOpenPicker = useCallback((section: Exclude<ExpandedSection, null>) => {
+        Keyboard.dismiss()
+
+        if (section === "address") {
+            setDraftAddressValue(selectedAddressValue ?? activeAddressId ?? ADD_NEW_ADDRESS_VALUE)
+        }
+        setOpenPickerSection(section)
+    }, [activeAddressId, selectedAddressValue])
+
+    const handleOpenRecipientEditor = useCallback((
+        form = createEmptyRecipientForm(),
+        profileFields: RecipientFormErrors | null = null,
+        errors: RecipientFormErrors = {},
+    ) => {
+        Keyboard.dismiss()
+        focusedRecipientInputRef.current = null
+        setOpenPickerSection(null)
+        setProfileFieldsToComplete(profileFields)
+        setIsCorrectingRecipient(hasRecipientErrors(errors))
+        setRecipientForm(form)
+        setRecipientFormErrors(errors)
+        setRecipientSaveError(null)
+        setIsRecipientEditorOpen(true)
+    }, [])
+
+    const handleCheckoutFooterCtaPress = useCallback(() => {
         if (hasUnappliedPromoCode) {
             void handleApplyPromoCode()
             return
@@ -471,17 +503,17 @@ export default function CheckoutScreen() {
         }
 
         if (needsRecipientCorrection) {
-            Keyboard.dismiss()
-            focusedRecipientInputRef.current = null
-            setEditingOwnPhone(isAuthenticated && !savedRecipient && Boolean(selfRecipient) && Boolean(selectedRecipientErrors.phone) && Boolean(user?.email))
-            setRecipientForm(selectedRecipientForm)
-            setRecipientFormErrors(selectedRecipientErrors)
-            setIsRecipientEditorOpen(true)
+            handleOpenRecipientEditor(selectedRecipientForm, isSelfSelected ? selectedRecipientErrors : null, selectedRecipientErrors)
             return
         }
 
         handlePressPay()
-    }
+    }, [
+        handleApplyPromoCode, handleOpenPicker, handleOpenRecipientEditor, handlePressPay,
+        hasDeliveryAddress, hasRecipient, hasUnappliedPromoCode, isPromoRewardReady,
+        isSavingRecipient, isSelfSelected, needsRecipientCorrection, orderDraft,
+        selectedRecipientErrors, selectedRecipientForm,
+    ])
 
     const handleRecommendationsScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         if (!hasMoreRecommendationRail || recommendationRailLoadingMore) {
@@ -581,35 +613,24 @@ export default function CheckoutScreen() {
         waitingForCheckout,
     ])
     useApplyScreenTemplate("feed", checkoutChromeTemplate)
-    const recipientPrimaryText = currentRecipient ? formatRecipientName(currentRecipient) : t("checkout.selectRecipient")
-    const availableRecipients = useMemo(() => {
-        return orderDraft ? buildAvailableRecipients(orderDraft, checkoutOptions) : []
-    }, [checkoutOptions, orderDraft])
+    const recipientPrimaryText = isSelfSelected
+        ? t("checkout.recipientForMyself")
+        : currentRecipient ? formatRecipientName(currentRecipient) : t("checkout.selectRecipient")
+    const recipientEditorTitle = profileFieldsToComplete
+        ? t("checkout.completeProfile")
+        : isCorrectingRecipient
+            ? t("checkout.correctRecipient")
+            : t("checkout.recipientAddNew")
+    const availableRecipients = !isAuthenticated && savedRecipient
+        ? [savedRecipient]
+        : buildAvailableRecipients(savedRecipient, checkoutOptions)
+    const recipientPickerValue = getRecipientPickerValue(savedRecipient, Boolean(selfRecipient))
     const availableAddresses = useMemo(() => {
         return orderDraft ? buildAvailableAddresses(orderDraft, checkoutOptions) : []
     }, [checkoutOptions, orderDraft])
-    const recipientFormValidationErrors = getRecipientFormErrors(recipientForm, t)
-    const isRecipientFormValid = editingOwnPhone
-        ? !recipientFormValidationErrors.phone
-        : !hasRecipientErrors(recipientFormValidationErrors)
-    const recipientSaveLabel = t(editingOwnPhone ? "checkout.saveOwnPhoneAction" : "checkout.recipientCreateAction")
-
-    useEffect(() => {
-        if (!orderDraft) {
-            return
-        }
-
-        if (!savedRecipient) {
-            const selfRecipientKey = hasSelfRecipient ? SELF_RECIPIENT_VALUE : ADD_NEW_RECIPIENT_VALUE
-            setSelectedRecipientKey(selfRecipientKey)
-            setDraftRecipientKey(selfRecipientKey)
-            return
-        }
-
-        const activeRecipient = availableRecipients.find((option) => option.id === savedRecipient.id)
-        setSelectedRecipientKey(activeRecipient?.id ?? savedRecipient.id)
-        setDraftRecipientKey(activeRecipient?.id ?? savedRecipient.id)
-    }, [availableRecipients, hasSelfRecipient, orderDraft, savedRecipient])
+    const showRecipientField = (field: keyof RecipientFormState) =>
+        profileFieldsToComplete === null || Boolean(profileFieldsToComplete[field])
+    const recipientSaveLabel = t(profileFieldsToComplete ? "checkout.saveToProfile" : "checkout.recipientCreateAction")
 
     useEffect(() => {
         if (!orderDraft) {
@@ -724,34 +745,15 @@ export default function CheckoutScreen() {
         )
     }
 
-    const handleOpenPicker = (section: Exclude<ExpandedSection, null>) => {
-        Keyboard.dismiss()
-
-        if (section === "recipient") {
-            setDraftRecipientKey(selectedRecipientKey ?? savedRecipient?.id ?? SELF_RECIPIENT_VALUE)
-        } else {
-            setDraftAddressValue(selectedAddressValue ?? orderDraft.delivery_address?.id ?? ADD_NEW_ADDRESS_VALUE)
-        }
-        setOpenPickerSection(section)
-    }
-
     const closeCheckoutPicker = () => {
         setOpenPickerSection(null)
-    }
-
-    const handleOpenRecipientEditor = () => {
-        Keyboard.dismiss()
-        focusedRecipientInputRef.current = null
-        setEditingOwnPhone(false)
-        setRecipientForm(createEmptyRecipientForm())
-        setRecipientFormErrors({})
-        setIsRecipientEditorOpen(true)
     }
 
     const handleCloseRecipientEditor = () => {
         Keyboard.dismiss()
         focusedRecipientInputRef.current = null
         setRecipientFormErrors({})
+        setRecipientSaveError(null)
         setIsRecipientEditorOpen(false)
     }
 
@@ -766,16 +768,29 @@ export default function CheckoutScreen() {
     }
 
     const updateCheckoutMeta = async (payload: Parameters<typeof updateOrderDraft>[1]) => {
+        const updatesRecipient = "recipient_id" in payload || "new_recipient" in payload
         if (isBasketCheckout) {
             const nextBasket = isAuthenticated
                 ? await updateBasketCheckout(payload)
                 : await updateGuestBasketCheckout(payload)
-            await applyUpdatedBasket(nextBasket)
+            if (updatesRecipient) {
+                confirmRecipient(nextBasket.recipient)
+                setBasketSnapshot(nextBasket)
+                setCheckoutOptions((options) => updateSavedRecipientOptions(options, nextBasket.recipient))
+            } else {
+                await applyUpdatedBasket(nextBasket)
+            }
             return
         }
 
         const updatedDraft = await updateOrderDraft(orderDraft.id, payload)
-        await applyUpdatedDraft(updatedDraft)
+        if (updatesRecipient) {
+            confirmRecipient(updatedDraft.recipient)
+            setOrderDraftSnapshot(updatedDraft)
+            setCheckoutOptions((options) => updateSavedRecipientOptions(options, updatedDraft.recipient))
+        } else {
+            await applyUpdatedDraft(updatedDraft)
+        }
     }
 
     const syncDraftItemsFromBasket = async () => {
@@ -982,46 +997,16 @@ export default function CheckoutScreen() {
     }
 
     const handleSelectRecipient = async (option: DeliveryRecipientRead | null) => {
-        if (isSavingRecipient) {
-            return
-        }
-
-        if (option === null) {
-            if (orderDraft.recipient_id === null && currentRecipient === null) {
-                return
-            }
-
-            setIsSavingRecipient(true)
-
-            try {
-                await updateCheckoutMeta({
-                    recipient_id: null,
-                })
-                const form = getRecipientFormFromRecipient(selfRecipient)
-                if (isAuthenticated && selfRecipient && user?.email && getRecipientFormErrors(form, t).phone) {
-                    focusedRecipientInputRef.current = null
-                    setEditingOwnPhone(true)
-                    setRecipientForm(form)
-                    setRecipientFormErrors({})
-                    setIsRecipientEditorOpen(true)
-                }
-            } catch (saveError) {
-                Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
-            } finally {
-                setIsSavingRecipient(false)
-            }
-            return
-        }
-
-        if (option.id <= 0) {
-            return
-        }
+        if (isSavingRecipient) return
+        const recipientId = option?.id ?? null
+        closeCheckoutPicker()
+        if (recipientId === (savedRecipient?.id ?? null)) return
 
         setIsSavingRecipient(true)
 
         try {
             await updateCheckoutMeta({
-                recipient_id: option.id,
+                recipient_id: recipientId,
             })
         } catch (saveError) {
             Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
@@ -1031,27 +1016,36 @@ export default function CheckoutScreen() {
     }
 
     const handleSaveRecipient = async () => {
-        if (editingOwnPhone) {
-            if (recipientFormValidationErrors.phone) {
-                setRecipientFormErrors({ phone: recipientFormValidationErrors.phone })
-                return
-            }
+        if (isSavingRecipient) return
+        setRecipientSaveError(null)
+        const errors = getRecipientFormErrors(recipientForm, t)
+        const fields = [
+            ["firstName", recipientFirstNameInputRef],
+            ["lastName", recipientLastNameInputRef],
+            ["phone", recipientPhoneInputRef],
+            ["email", recipientEmailInputRef],
+        ] as const
+        const invalidField = fields.find(([field]) => showRecipientField(field) && errors[field])
+        if (invalidField) {
+            setRecipientFormErrors(errors)
+            invalidField[1].current?.focus()
+            return
+        }
+
+        Keyboard.dismiss()
+        if (profileFieldsToComplete) {
             setIsSavingRecipient(true)
             try {
-                await updatePersonalData({ phone_number: normalizePhoneValue(recipientForm.phone) })
-                setIsRecipientEditorOpen(false)
+                await updatePersonalData(getProfileRecipientUpdate(recipientForm, profileFieldsToComplete))
+                handleCloseRecipientEditor()
+                void reloadCheckoutOptions({ showLoading: false })
             } catch (saveError) {
-                Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
+                setRecipientSaveError(getDraftUpdateErrorMessage(saveError, t("checkout.recipientSaveFailed")))
             } finally {
                 setIsSavingRecipient(false)
             }
             return
         }
-        if (!isRecipientFormValid) {
-            setRecipientFormErrors(recipientFormValidationErrors)
-            return
-        }
-
         const firstName = recipientForm.firstName.trim()
         const lastName = recipientForm.lastName.trim()
         const phone = normalizePhoneValue(recipientForm.phone)
@@ -1096,9 +1090,9 @@ export default function CheckoutScreen() {
                     email,
                 },
             })
-            setIsRecipientEditorOpen(false)
+            handleCloseRecipientEditor()
         } catch (saveError) {
-            Alert.alert(getDraftUpdateErrorMessage(saveError, t("checkout.saveDraftMetaFailed")))
+            setRecipientSaveError(getDraftUpdateErrorMessage(saveError, t("checkout.recipientSaveFailed")))
         } finally {
             setIsSavingRecipient(false)
         }
@@ -1388,11 +1382,11 @@ export default function CheckoutScreen() {
 
                 <Modal
                     animationType="fade"
-                    onRequestClose={closeCheckoutPicker}
+                    onRequestClose={isRecipientEditorOpen ? handleCloseRecipientEditor : closeCheckoutPicker}
                     transparent
-                    visible={openPickerSection !== null}
+                    visible={openPickerSection !== null || isRecipientEditorOpen}
                 >
-                    <View style={contentStyles.browsePickerBackdrop}>
+                    {!isRecipientEditorOpen ? <View style={contentStyles.browsePickerBackdrop}>
                         <Pressable
                             accessibilityRole="button"
                             onPress={closeCheckoutPicker}
@@ -1436,71 +1430,34 @@ export default function CheckoutScreen() {
                                 </View>
                             ) : openPickerSection === "recipient" ? (
                                 <Picker
-                                    selectedValue={draftRecipientKey}
+                                    key="checkout-recipient"
+                                    accessibilityLabel={t("checkout.recipientTitle")}
+                                    selectedValue={recipientPickerValue}
+                                    enabled={!isSavingRecipient}
                                     onValueChange={(value) => {
-                                        const nextValue =
-                                            value === ADD_NEW_RECIPIENT_VALUE
-                                                ? ADD_NEW_RECIPIENT_VALUE
-                                                : value === SELF_RECIPIENT_VALUE
-                                                    ? SELF_RECIPIENT_VALUE
-                                                : Number(value)
-                                        setDraftRecipientKey(nextValue)
-
-                                        if (nextValue === ADD_NEW_RECIPIENT_VALUE) {
-                                            closeCheckoutPicker()
-                                            setTimeout(() => {
-                                                handleOpenRecipientEditor()
-                                            }, 0)
-                                            return
-                                        }
-
-                                        if (nextValue === SELF_RECIPIENT_VALUE) {
-                                            setSelectedRecipientKey(SELF_RECIPIENT_VALUE)
-                                            closeCheckoutPicker()
-                                            setTimeout(() => {
-                                                void handleSelectRecipient(null)
-                                            }, 0)
-                                            return
-                                        }
-
-                                        const selectedRecipient = availableRecipients.find(
-                                            (option) => option.id === nextValue,
+                                        if (isSavingRecipient) return
+                                        const action = resolveRecipientPickerAction(
+                                            value, recipientPickerValue, availableRecipients, Boolean(selfRecipient),
                                         )
-                                        if (!selectedRecipient) {
-                                            return
-                                        }
-
-                                        setSelectedRecipientKey(nextValue)
-                                        closeCheckoutPicker()
-                                        setTimeout(() => {
-                                            void handleSelectRecipient(selectedRecipient)
-                                        }, 0)
+                                        if (action?.type === "add") handleOpenRecipientEditor()
+                                        if (action?.type === "select") void handleSelectRecipient(action.recipient)
                                     }}
                                     style={contentStyles.browsePicker}
                                 >
-                                    {hasSelfRecipient ? (
-                                        <Picker.Item
-                                            key={SELF_RECIPIENT_VALUE}
-                                            label={t("checkout.recipientForMyself")}
-                                            value={SELF_RECIPIENT_VALUE}
-                                        />
+                                    {!selfRecipient && !savedRecipient ? (
+                                        <Picker.Item label={t("checkout.selectRecipient")} value={NO_RECIPIENT_VALUE} />
                                     ) : null}
-                                    {availableRecipients.map((option) => {
-                                        return (
-                                            <Picker.Item
-                                                key={option.id}
-                                                label={formatRecipientName(option)}
-                                                value={option.id}
-                                            />
-                                        )
-                                    })}
-                                    <Picker.Item
-                                        label={t("checkout.recipientAddNew")}
-                                        value={ADD_NEW_RECIPIENT_VALUE}
-                                    />
+                                    {selfRecipient ? (
+                                        <Picker.Item label={t("checkout.recipientForMyself")} value={SELF_RECIPIENT_VALUE} />
+                                    ) : null}
+                                    {availableRecipients.map((option) => (
+                                        <Picker.Item key={option.id} label={formatRecipientName(option)} value={option.id} />
+                                    ))}
+                                    <Picker.Item label={t("checkout.recipientAddNew")} value={ADD_NEW_RECIPIENT_VALUE} />
                                 </Picker>
                             ) : (
                                 <Picker
+                                    key="checkout-address"
                                     selectedValue={draftAddressValue}
                                     onValueChange={(value) => {
                                         const nextValue =
@@ -1541,15 +1498,7 @@ export default function CheckoutScreen() {
                                 </Picker>
                             )}
                         </View>
-                    </View>
-                </Modal>
-
-                <Modal
-                    animationType="fade"
-                    onRequestClose={handleCloseRecipientEditor}
-                    transparent
-                    visible={isRecipientEditorOpen}
-                >
+                    </View> : (
                     <KeyboardAvoidingView
                         behavior={Platform.OS === "ios" ? "padding" : "height"}
                         keyboardVerticalOffset={0}
@@ -1570,7 +1519,7 @@ export default function CheckoutScreen() {
                         >
                             <View style={checkoutScreenStyles.recipientEditorHeader}>
                                 <Text numberOfLines={2} style={checkoutScreenStyles.recipientEditorTitle}>
-                                    {t(editingOwnPhone ? "checkout.saveOwnPhoneTitle" : "checkout.recipientAddNew")}
+                                    {recipientEditorTitle}
                                 </Text>
 
                                 <Pressable
@@ -1589,7 +1538,7 @@ export default function CheckoutScreen() {
                             <ScrollView
                                 contentContainerStyle={checkoutScreenStyles.recipientEditorScrollContent}
                                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-                                keyboardShouldPersistTaps="handled"
+                                keyboardShouldPersistTaps="always"
                                 onScroll={(event) => {
                                     recipientEditorScrollOffsetRef.current = event.nativeEvent.contentOffset.y
                                 }}
@@ -1599,7 +1548,7 @@ export default function CheckoutScreen() {
                                 style={checkoutScreenStyles.recipientEditorScroll}
                             >
                                 <View style={checkoutScreenStyles.recipientEditorFields}>
-                                    {!editingOwnPhone ? <><View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                    {showRecipientField("firstName") ? <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
                                         <TextInput
                                             autoCapitalize="words"
                                             onChangeText={(value) => {
@@ -1623,8 +1572,8 @@ export default function CheckoutScreen() {
                                                 {recipientFormErrors.firstName}
                                             </Text>
                                         ) : null}
-                                    </View>
-                                    <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                    </View> : null}
+                                    {showRecipientField("lastName") ? <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
                                         <TextInput
                                             autoCapitalize="words"
                                             onChangeText={(value) => {
@@ -1648,9 +1597,8 @@ export default function CheckoutScreen() {
                                                 {recipientFormErrors.lastName}
                                             </Text>
                                         ) : null}
-                                    </View>
-                                    </> : null}
-                                    <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                    </View> : null}
+                                    {showRecipientField("phone") ? <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
                                         <TextInput
                                             autoComplete="tel"
                                             keyboardType="phone-pad"
@@ -1676,8 +1624,8 @@ export default function CheckoutScreen() {
                                                 {recipientFormErrors.phone}
                                             </Text>
                                         ) : null}
-                                    </View>
-                                    {!editingOwnPhone ? <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
+                                    </View> : null}
+                                    {showRecipientField("email") ? <View style={checkoutScreenStyles.recipientEditorFieldWrap}>
                                         <TextInput
                                             autoCapitalize="none"
                                             autoComplete="email"
@@ -1707,36 +1655,35 @@ export default function CheckoutScreen() {
                                     </View> : null}
                                 </View>
 
+                                {recipientSaveError ? (
+                                    <Text accessibilityRole="alert" style={checkoutScreenStyles.recipientEditorFieldError}>
+                                        {recipientSaveError}
+                                    </Text>
+                                ) : null}
                                 <Pressable
                                     accessibilityLabel={recipientSaveLabel}
                                     accessibilityRole="button"
-                                    disabled={!isRecipientFormValid || isSavingRecipient}
+                                    accessibilityState={{ busy: isSavingRecipient, disabled: isSavingRecipient }}
+                                    disabled={isSavingRecipient}
                                     onPress={() => {
                                         void handleSaveRecipient()
                                     }}
                                     style={({ pressed }) => [
                                         checkoutScreenStyles.recipientEditorSubmitButton,
-                                        (!isRecipientFormValid || isSavingRecipient)
-                                            && checkoutScreenStyles.recipientEditorSubmitButtonDisabled,
-                                        pressed
-                                            && isRecipientFormValid
-                                            && !isSavingRecipient
-                                            && checkoutScreenStyles.recipientEditorSubmitButtonPressed,
+                                        isSavingRecipient && checkoutScreenStyles.recipientEditorSubmitButtonDisabled,
+                                        pressed && !isSavingRecipient && checkoutScreenStyles.recipientEditorSubmitButtonPressed,
                                     ]}
                                 >
-                                    <Text
-                                        style={[
-                                            checkoutScreenStyles.recipientEditorSubmitButtonText,
-                                            (!isRecipientFormValid || isSavingRecipient)
-                                                && checkoutScreenStyles.recipientEditorSubmitButtonTextDisabled,
-                                        ]}
-                                    >
-                                        {recipientSaveLabel}
-                                    </Text>
+                                    {isSavingRecipient ? <ActivityIndicator color={palette.mutedText} /> : (
+                                        <Text style={checkoutScreenStyles.recipientEditorSubmitButtonText}>
+                                            {recipientSaveLabel}
+                                        </Text>
+                                    )}
                                 </Pressable>
                             </ScrollView>
                         </View>
                     </KeyboardAvoidingView>
+                    )}
                 </Modal>
             </View>
     )

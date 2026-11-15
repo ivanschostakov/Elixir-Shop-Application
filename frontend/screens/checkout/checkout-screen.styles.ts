@@ -321,9 +321,6 @@ export const createCheckoutScreenStyles = (colors: ThemePalette) => StyleSheet.c
         fontWeight: "700",
         lineHeight: 20,
     },
-    recipientEditorSubmitButtonTextDisabled: {
-        color: "#8ea4bd",
-    },
     compactSection: {
         gap: spacing.sm,
     },

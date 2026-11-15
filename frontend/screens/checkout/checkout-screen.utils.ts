@@ -6,7 +6,7 @@ import type {
     OrderDraftCheckoutOptionsRead,
     OrderDraftRead,
 } from "@/services/api/order-drafts.types"
-import type { AuthUser } from "@/services/auth/auth.types"
+import type { AuthUser, PersonalDataUpdatePayload } from "@/services/auth/auth.types"
 import type { BasketRead } from "@/types/basket"
 import {
     calculateCdekDelivery,
@@ -15,6 +15,7 @@ import {
 import type { CdekDeliveryCalculation } from "@/services/api/delivery.types"
 import type { TranslationKey } from "@/i18n/translations"
 import { buildOrderDraftCalculationPayload } from "@/utils/order-drafts"
+import { ADD_NEW_RECIPIENT_VALUE, NO_RECIPIENT_VALUE, SELF_RECIPIENT_VALUE } from "@/screens/checkout/checkout-screen.constants"
 
 import type {
     OrderDraftWithLegacyRecipientFields,
@@ -131,6 +132,15 @@ export function getRecipientFormErrors(form: RecipientFormState, t: (key: Transl
     }
 }
 
+export function getProfileRecipientUpdate(form: RecipientFormState, fields: RecipientFormErrors): PersonalDataUpdatePayload {
+    return {
+        ...(fields.firstName ? { name: form.firstName.trim() } : {}),
+        ...(fields.lastName ? { surname: form.lastName.trim() } : {}),
+        ...(fields.phone ? { phone_number: normalizePhoneValue(form.phone.trim()) } : {}),
+        ...(fields.email ? { email: form.email.trim().toLowerCase() } : {}),
+    }
+}
+
 export function normalizeTextInputValue(value: string) {
     const normalized = value.trim()
     return normalized ? normalized : null
@@ -157,17 +167,47 @@ export function formatRecipientName(recipient: DeliveryRecipientRead | null | un
 }
 
 export function buildAvailableRecipients(
-    orderDraft: OrderDraftRead,
+    selectedRecipient: DeliveryRecipientRead | null,
     checkoutOptions: OrderDraftCheckoutOptionsRead | null,
 ) {
     const recipients = checkoutOptions?.recipients?.length ? [...checkoutOptions.recipients] : []
-    const currentRecipient = getDraftRecipient(orderDraft)
 
-    if (currentRecipient && !recipients.some((option) => option.id === currentRecipient.id)) {
-        recipients.unshift(currentRecipient)
+    if (selectedRecipient && selectedRecipient.id > 0 && !recipients.some((option) => option.id === selectedRecipient.id)) {
+        recipients.unshift(selectedRecipient)
     }
 
     return recipients
+}
+
+export function getRecipientPickerValue(
+    selected: DeliveryRecipientRead | null,
+    hasSelfRecipient: boolean,
+) {
+    return selected?.id ?? (hasSelfRecipient ? SELF_RECIPIENT_VALUE : NO_RECIPIENT_VALUE)
+}
+
+export function updateSavedRecipientOptions(
+    options: OrderDraftCheckoutOptionsRead | null,
+    recipient: DeliveryRecipientRead | null,
+): OrderDraftCheckoutOptionsRead | null {
+    if (!options || !recipient || recipient.id <= 0) return options
+    return {
+        ...options,
+        recipients: [recipient, ...options.recipients.filter((option) => option.id !== recipient.id)],
+    }
+}
+
+export function resolveRecipientPickerAction(
+    value: string | number,
+    selected: string | number,
+    available: readonly DeliveryRecipientRead[],
+    hasSelfRecipient: boolean,
+) {
+    if (value === NO_RECIPIENT_VALUE || String(value) === String(selected)) return null
+    if (value === ADD_NEW_RECIPIENT_VALUE) return { type: "add" } as const
+    if (value === SELF_RECIPIENT_VALUE) return hasSelfRecipient ? { type: "select", recipient: null } as const : null
+    const recipient = available.find((option) => String(option.id) === String(value))
+    return recipient ? { type: "select", recipient } as const : null
 }
 
 export function buildAvailableAddresses(orderDraft: OrderDraftRead, checkoutOptions: OrderDraftCheckoutOptionsRead | null) {
