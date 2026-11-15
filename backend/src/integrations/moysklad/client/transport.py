@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_INCLUDED_PRODUCT_IDS, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, UFA_TZ
 from src.normalize import coerce_uuid, optional_str
 from .common import MOY_SKLAD_API_BASE_URL, logger
-from .utils import moysklad_money
+from .utils import moysklad_money, moysklad_retry_after_seconds
 
 
 class TransportMixin:
@@ -99,9 +99,21 @@ class TransportMixin:
 
 
     async def _find_entity_by_external_code(self, entity_type: str, external_code: str) -> dict[str, Any] | None:
+        async def lookup(**params):
+            try:
+                return await self.get_page(f"/entity/{entity_type}", limit=100, **params)
+            except httpx.HTTPStatusError as exc:
+                if entity_type != "customerorder" or exc.response.status_code != 429:
+                    raise
+                delay = moysklad_retry_after_seconds(exc.response, default=0.5)
+                if delay > 3:
+                    raise
+                await asyncio.sleep(delay)
+                return await self.get_page(f"/entity/{entity_type}", limit=100, **params)
+
         rows: list[dict[str, Any]] = []
         try:
-            filtered = await self.get_page(f"/entity/{entity_type}", limit=100, filter=f"externalCode={external_code}")
+            filtered = await lookup(filter=f"externalCode={external_code}")
             candidate_rows = filtered.get("rows")
             if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
         except httpx.HTTPStatusError as exc:
@@ -109,7 +121,7 @@ class TransportMixin:
             logger.debug("MoySklad %s filter lookup failed: %s", entity_type, exc)
 
         if not rows:
-            searched = await self.get_page(f"/entity/{entity_type}", limit=100, search=external_code)
+            searched = await lookup(search=external_code)
             candidate_rows = searched.get("rows")
             if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
 

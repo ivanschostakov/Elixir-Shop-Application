@@ -3,6 +3,9 @@ import { ENDPOINTS } from "@/services/api/constants"
 import type { CreatePaymentPayload, PaymentStatusRead } from "@/services/api/payments.types"
 
 const paymentsEndpoint = ENDPOINTS.PAYMENTS
+const PAYMENT_PREPARATION_TIMEOUT_MS = 180_000
+
+export class PaymentPreparationPendingError extends Error {}
 
 export function createPayment(payload: CreatePaymentPayload): Promise<PaymentStatusRead> {
     return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, payload, { appIntegrityAction: "payments:create" })
@@ -16,7 +19,7 @@ export async function createPaymentWhenReady(
         timeoutMessage: string
     },
 ): Promise<PaymentStatusRead | null> {
-    const deadline = Date.now() + 120_000
+    const deadline = Date.now() + PAYMENT_PREPARATION_TIMEOUT_MS
     while (isActive()) {
         try {
             const payment = await createPayment(payload)
@@ -24,13 +27,18 @@ export async function createPaymentWhenReady(
         } catch (error) {
             if (!isActive()) return null
             const detail = error instanceof ApiError && error.status === 409
-                ? (error.body as { detail?: { code?: string } } | null)?.detail
+                ? (error.body as { detail?: { code?: string; retry_after_seconds?: number } } | null)?.detail
                 : null
             // Only this response guarantees that this request did not start a payment.
             if (detail?.code !== "settlement_pending") throw error
-            if (Date.now() >= deadline) throw new Error(timeoutMessage)
+            const timeLeft = deadline - Date.now()
+            if (timeLeft <= 0) throw new PaymentPreparationPendingError(timeoutMessage)
             onPending()
-            await new Promise((resolve) => setTimeout(resolve, 4_000))
+            const retryDelay = typeof detail.retry_after_seconds === "number" && Number.isFinite(detail.retry_after_seconds)
+                ? Math.max(4_000, detail.retry_after_seconds * 1_000)
+                : 4_000
+            await new Promise((resolve) => setTimeout(resolve, Math.min(retryDelay, timeLeft)))
+            if (isActive() && Date.now() >= deadline) throw new PaymentPreparationPendingError(timeoutMessage)
         }
     }
     return null

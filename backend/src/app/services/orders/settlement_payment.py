@@ -7,13 +7,16 @@ from decimal import Decimal
 import hashlib
 import logging
 from functools import wraps
+from math import ceil
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
 from src.database import engine
 from src.database.models import Order, OrderBenefitApplication, User
 from src.integrations.moysklad.client import get_moysklad_client
+from src.integrations.moysklad.client.utils import moysklad_retry_after_seconds
 from src.integrations.moysklad.settlement_checkout import (
     SOURCE_KIND, SettlementNotReady, entity_id, has_unapproved_balance, money, order_bonus_consent, order_settlement,
     validate_settlement_invoice, check_open_settlement_orders, verify_ruble_currency,
@@ -23,10 +26,11 @@ from src.normalize import coerce_uuid
 logger = logging.getLogger(__name__)
 
 
-def settlement_pending() -> HTTPException:
+def settlement_pending(*, rate_limit: httpx.Response | None = None) -> HTTPException:
     return HTTPException(409, {
         "code": "settlement_pending",
         "message": "Рассчитываем оплату. Пожалуйста, подождите",
+        **({"retry_after_seconds": ceil(moysklad_retry_after_seconds(rate_limit, default=4))} if rate_limit is not None else {}),
     })
 
 
@@ -201,6 +205,8 @@ async def prepare_settlement_payment(session, *, order):
     except HTTPException:
         raise
     except Exception as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            raise settlement_pending(rate_limit=exc.response) from exc
         logger.exception("Settlement invoice validation failed order_id=%s", order.id)
         raise HTTPException(409, "Не удалось сверить счёт с МойСклад. Оплата не создана; обратитесь в поддержку.") from exc
 
@@ -231,6 +237,8 @@ async def verify_no_unapproved_balance(order, *, client=None):
                 invoices.append(invoice)
         unapproved = has_unapproved_balance(remote, invoices)
     except Exception as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            raise settlement_pending(rate_limit=exc.response) from exc
         logger.exception("MoySklad invoice verification failed order_id=%s", order.id)
         raise HTTPException(503, "Не удалось сверить счёт с МойСклад. Оплата не создана.") from exc
     if unapproved:
@@ -251,6 +259,8 @@ async def verify_standard_sbp_invoice(order, *, client=None):
         remote = await client.get_customer_order(order_id)
         invoice = await client.get_invoiceout(invoice_id)
     except Exception as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            raise settlement_pending(rate_limit=exc.response) from exc
         raise HTTPException(503, "Не удалось проверить счёт в МойСклад. Оплата не создана.") from exc
     try:
         expected = money(order.grand_total) * 100

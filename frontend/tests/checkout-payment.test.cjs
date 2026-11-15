@@ -125,3 +125,60 @@ test("does not retry mismatches or ambiguous gateway errors", async () => {
         assert.equal(calls, 1)
     }
 })
+
+test("a wait deadline is recoverable and only repeats the same unpaid order", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
+    const payload = { order_id: 42, payment_method: "sbp" }
+    const calls = []
+    const { createPaymentWhenReady, PaymentPreparationPendingError } = loadPayments(async (_path, body) => {
+        calls.push(body)
+        throw pending()
+    })
+    const result = createPaymentWhenReady(payload, {
+        isActive: () => true, onPending: () => {}, timeoutMessage: "Still preparing",
+    })
+    const check = assert.rejects(result, { constructor: PaymentPreparationPendingError, message: "Still preparing" })
+    await Promise.resolve()
+    t.mock.timers.tick(180_000)
+    await check
+    assert.deepEqual(calls, [payload])
+})
+
+test("waits out the provider cooldown before starting the same payment again", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
+    const payload = { order_id: 42, payment_method: "sbp" }
+    const calls = []
+    const { createPaymentWhenReady } = loadPayments(async (_path, body) => {
+        calls.push(body)
+        if (calls.length === 1) {
+            throw new ApiError(409, { detail: { code: "settlement_pending", retry_after_seconds: 11 } })
+        }
+        return { order_id: 42, invoice_id: "invoice" }
+    })
+    const result = createPaymentWhenReady(payload, {
+        isActive: () => true, onPending: () => {}, timeoutMessage: "Still preparing",
+    })
+    await Promise.resolve()
+    t.mock.timers.tick(10_999)
+    await Promise.resolve()
+    assert.deepEqual(calls, [payload])
+    t.mock.timers.tick(1)
+    assert.equal((await result).invoice_id, "invoice")
+    assert.deepEqual(calls, [payload, payload])
+})
+
+const { mergePaymentState, resolvePaymentPhase } = loadTs("screens/payment/payment-state.ts")
+
+test("a pending or late QR keeps SBP open while offline payment still closes checkout", () => {
+    const pendingSbp = { order_id: 42, invoice_id: "first", payment_method: "sbp", payment_status: "pending",
+        is_paid: false, qr_url: null, qr_image: null, expires_at: null }
+    assert.equal(resolvePaymentPhase(pendingSbp, "sbp"), "sbp")
+    assert.equal(resolvePaymentPhase({ ...pendingSbp, payment_method: "later" }, "sbp"), "pending")
+    const qr = mergePaymentState(pendingSbp, { ...pendingSbp, qr_url: "https://example.test/pay" })
+    assert.equal(resolvePaymentPhase(qr, "sbp"), "sbp")
+    assert.equal(qr.qr_url, "https://example.test/pay")
+    assert.equal(mergePaymentState(qr, pendingSbp).qr_url, qr.qr_url)
+    assert.equal(mergePaymentState(qr, { ...pendingSbp, invoice_id: "second" }).qr_url, null)
+    assert.equal(resolvePaymentPhase({ ...pendingSbp, is_paid: true }, "sbp"), "success")
+    assert.equal(resolvePaymentPhase({ ...pendingSbp, payment_status: "canceled" }, "sbp"), "failure")
+})

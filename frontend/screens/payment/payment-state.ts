@@ -1,0 +1,26 @@
+import type { PaymentStatusRead } from "@/services/api/payments.types"
+
+type PaymentMethod = "later" | "sbp"
+
+const FINAL_STOP_STATUSES = new Set(["error", "canceled", "refunded", "hold", "partial"])
+
+export function resolvePaymentPhase(payment: PaymentStatusRead, requestedMethod: PaymentMethod) {
+    if (payment.is_paid || payment.payment_status === "paid") return "success"
+    if (payment.payment_status && FINAL_STOP_STATUSES.has(payment.payment_status)) return "failure"
+    const method = payment.payment_method === "later" || payment.payment_method === "sbp"
+        ? payment.payment_method
+        : requestedMethod
+    return method === "later" ? "pending" : "sbp"
+}
+
+export function mergePaymentState(previous: PaymentStatusRead | null, next: PaymentStatusRead) {
+    if (!previous || previous.order_id !== next.order_id || previous.invoice_id !== next.invoice_id) {
+        return next
+    }
+    return {
+        ...next,
+        qr_url: next.qr_url ?? previous.qr_url,
+        qr_image: next.qr_image ?? previous.qr_image,
+        expires_at: next.expires_at ?? previous.expires_at,
+    }
+}

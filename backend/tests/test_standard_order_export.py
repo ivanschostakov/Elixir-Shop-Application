@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import UUID
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -168,3 +169,42 @@ async def test_conflicting_sbp_invoice_blocks_the_gateway(monkeypatch):
         await payments._create_payment_for_order(None, request=None, order=order)
     verify.assert_awaited_once_with(order)
     gateway.assert_not_awaited()
+
+
+@pytest.mark.parametrize("headers,repeat", [
+    ({"X-Lognex-Retry-After": "750"}, True),
+    ({"Retry-After": "60", "X-Lognex-Retry-After": "750"}, False),
+])
+async def test_moysklad_order_lookup_respects_rate_limit_without_creating_documents(monkeypatch, headers, repeat):
+    client = MoySkladClient(token="test")
+    request = httpx.Request("GET", "https://example.test/entity/customerorder")
+    response = httpx.Response(429, headers=headers, request=request)
+    error = httpx.HTTPStatusError("rate limit", request=request, response=response)
+    row = {"id": str(OID), "externalCode": "app_order:22"}
+    page = AsyncMock(side_effect=[error, {"rows": [row]}])
+    sleep = AsyncMock()
+    monkeypatch.setattr(client, "get_page", page)
+    monkeypatch.setattr("src.integrations.moysklad.client.transport.asyncio.sleep", sleep)
+    if repeat:
+        assert await client._find_entity_by_external_code("customerorder", "app_order:22") == row
+        assert page.await_count == 2
+        sleep.assert_awaited_once_with(0.75)
+    else:
+        with pytest.raises(httpx.HTTPStatusError):
+            await client._find_entity_by_external_code("customerorder", "app_order:22")
+        page.assert_awaited_once()
+        sleep.assert_not_awaited()
+
+
+async def test_rate_limit_on_invoice_validation_keeps_payment_in_preparation(monkeypatch):
+    monkeypatch.setattr(config, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
+    request = httpx.Request("GET", "https://example.test/entity/customerorder")
+    response = httpx.Response(429, headers={"X-Lognex-Retry-After": "10500"}, request=request)
+    lookup = AsyncMock(side_effect=httpx.HTTPStatusError("rate limit", request=request, response=response))
+    order = SimpleNamespace(moysklad_customerorder_id=OID, moysklad_invoiceout_id=IID,
+                            checkout_snapshot={"order_export_version": 1})
+    with pytest.raises(HTTPException) as error:
+        await settlement_payment.verify_standard_sbp_invoice(order, client=SimpleNamespace(get_customer_order=lookup))
+    assert error.value.status_code == 409
+    assert error.value.detail["code"] == "settlement_pending"
+    assert error.value.detail["retry_after_seconds"] == 11
