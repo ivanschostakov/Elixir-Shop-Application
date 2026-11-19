@@ -53,6 +53,12 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         paddingBottom: 8,
         backgroundColor: "transparent",
     },
+    headerOverlay: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+    },
     mentorBackButton: {
         width: 44,
         height: 44,
@@ -177,14 +183,20 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         minHeight: 0,
         backgroundColor: "transparent",
     },
+    hiddenMessageHistory: {
+        opacity: 0,
+    },
+    mentorScrollOverlay: {
+        ...StyleSheet.absoluteFillObject,
+    },
     messagesContent: {
         flexGrow: 1,
         paddingHorizontal: spacing.sm,
         justifyContent: "flex-end",
     },
     mentorMessagesContent: {
+        flexGrow: 1,
         paddingHorizontal: 16,
-        justifyContent: "flex-start",
     },
     messageList: {
         gap: spacing.sm,
@@ -748,6 +760,9 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         marginBottom: 8,
         minHeight: 48,
     },
+    hiddenComposerShortcuts: {
+        display: "none",
+    },
     mentorShortcutPanel: {
         flex: 1,
         minWidth: 0,
@@ -778,10 +793,18 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
     },
     composerDockOverlay: {
         position: "absolute",
+        left: 0,
+        right: 0,
+        paddingHorizontal: spacing.sm,
     },
-    composerBlur: {
+    composerMaterial: {
         ...StyleSheet.absoluteFillObject,
-        overflow: "hidden",
+        top: -10,
+    },
+    nativeChatButton: {
+        width: 44,
+        height: 44,
+        flexShrink: 0,
     },
     jumpToLatest: {
         position: "absolute",
@@ -795,6 +818,10 @@ export const createChatScreenStyles = (colors: ThemePalette) => StyleSheet.creat
         overflow: "hidden",
         alignItems: "center",
         justifyContent: "center",
+    },
+    nativeJumpToLatest: {
+        borderWidth: 0,
+        overflow: "visible",
     },
     composerRow: {
         flexDirection: "row",

@@ -14,7 +14,6 @@ export type LoginVerificationRequiredResponse = {
     email: string
     verification_required: boolean
     message: string
-    ios_private_features?: boolean
 }
 
 export type LoginResult =
@@ -26,7 +25,6 @@ export type LoginResult =
           verificationRequired: true
           email: string
           message: string
-          iosPrivateFeatures: boolean
       }
 
 export type RegistrationPayload = {
@@ -68,7 +66,6 @@ export type BackendAuthUser = {
     is_active: boolean
     is_verified: boolean
     promo_code: string | null
-    ios_private_features?: boolean
 }
 
 export type BackendAuthTokens = {
@@ -116,7 +113,6 @@ export type AuthUser = {
     isActive: boolean
     isVerified: boolean
     promoCode: string | null
-    iosPrivateFeatures?: boolean
     displayName: string
 }
 

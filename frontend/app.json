@@ -8,11 +8,8 @@
     "scheme": "elixirpeptide",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "updates": {
-      "url": "https://u.expo.dev/32dfb6b0-55a1-4dcc-aeab-91b3633cfed6"
+      "enabled": false
     },
     "ios": {
       "supportsTablet": true,
@@ -73,6 +70,7 @@
         }
       ],
       "./plugins/with-yandex-mapkit",
+      "./plugins/with-ios-pod-deployment-target",
       "./plugins/with-app-attest-environment",
       "./plugins/with-android-play-policy-permissions",
       [

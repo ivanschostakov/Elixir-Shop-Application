@@ -100,7 +100,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const [isReady, setIsReady] = useState(false)
     const pathname = usePathname()
     const timezoneUserId = user?.id
-    const mentorAvailable = isMentorAvailable(Platform.OS, user?.iosPrivateFeatures === true)
+    const mentorAvailable = isMentorAvailable(Platform.OS)
 
     useEffect(() => {
         if (timezoneUserId != null && mentorAvailable) return startCompanionTimezoneSync()

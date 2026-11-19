@@ -39,7 +39,7 @@ type UseAiChatResult = {
 const AI_REPLY_POLL_INTERVAL_MS = 1500
 const AI_REPLY_POLL_MAX_ATTEMPTS = 30
 
-export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false, companionProtocol: () => 1 | 2 = () => 1, enabled = true): UseAiChatResult {
+export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false, companionProtocol: () => 1 | 2 = () => 2, enabled = true): UseAiChatResult {
     const focused = useIsFocused()
     const isFocused = focused && enabled
     const [refreshing, setRefreshing] = useState(false)

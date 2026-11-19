@@ -1,14 +1,14 @@
 export type ChatMode = "ai" | "community" | "support"
 
-export function isCommunityChatAvailable(platform: string, privateIosFeatures = false): boolean {
-    return platform !== "ios" || privateIosFeatures
+export function isCommunityChatAvailable(platform: string): boolean {
+    return platform === "ios" || platform === "android" || platform === "web"
 }
 
-export function isMentorAvailable(platform: string, privateIosFeatures = false): boolean {
-    return platform !== "web" && isCommunityChatAvailable(platform, privateIosFeatures)
+export function isMentorAvailable(platform: string): boolean {
+    return platform === "ios" || platform === "android"
 }
 
-export function resolveChatMode(value: unknown, platform: string, privateIosFeatures = false): ChatMode | null {
+export function resolveChatMode(value: unknown, platform: string): ChatMode | null {
     if (value !== "ai" && value !== "community" && value !== "support") return null
-    return value === "community" && !isCommunityChatAvailable(platform, privateIosFeatures) ? "ai" : value
+    return value === "community" && !isCommunityChatAvailable(platform) ? "ai" : value
 }

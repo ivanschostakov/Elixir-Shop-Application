@@ -73,7 +73,6 @@ function mapUser(user: BackendAuthUser): AuthUser {
         isActive: user.is_active,
         isVerified: user.is_verified,
         promoCode: user.promo_code,
-        iosPrivateFeatures: user.ios_private_features === true,
         displayName: displayName || user.username || user.email || user.phone_number || `User #${user.id}`,
     }
 }
@@ -94,7 +93,6 @@ export async function authenticate(credentials: LoginCredentials): Promise<Login
             verificationRequired: true,
             email: response.email,
             message: response.message,
-            iosPrivateFeatures: response.ios_private_features === true,
         }
     }
 
@@ -143,14 +141,14 @@ export async function confirmPasswordReset(email: string, code: string, password
     await apiPost(authPath("/password-reset/confirm"), { email, code, password }, { auth: false, retryOnUnauthorized: false })
 }
 
-export async function verifyPrivatePasswordReset(email: string, code: string): Promise<string> {
+export async function verifyPasswordReset(email: string, code: string): Promise<string> {
     const response = await apiPost<{ reset_token: string }, { email: string; code: string }>(
         authPath("/password-reset/verify"), { email, code }, { auth: false, retryOnUnauthorized: false },
     )
     return response.reset_token
 }
 
-export async function completePrivatePasswordReset(email: string, resetToken: string, password: string): Promise<void> {
+export async function completePasswordReset(email: string, resetToken: string, password: string): Promise<void> {
     await apiPost(authPath("/password-reset/complete"), { email, reset_token: resetToken, password }, { auth: false, retryOnUnauthorized: false })
 }
 

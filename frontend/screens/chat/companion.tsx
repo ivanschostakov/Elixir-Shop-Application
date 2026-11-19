@@ -43,7 +43,6 @@ export function useCompanion(enabled = true) {
     const [editor, setEditor] = useState<Editor | null>(null)
     const [mentorPage, setMentorPage] = useState<MentorPage | null>("today")
     const refreshSequence = useRef(0)
-    const protocolRef = useRef<1 | 2>(1)
     const refresh = useCallback(async () => {
         if (!enabled || Platform.OS === "web") return
         const sequence = ++refreshSequence.current
@@ -54,8 +53,8 @@ export function useCompanion(enabled = true) {
                 setState(previous => previous ?? availability)
                 const next = await getCompanion()
                 if (sequence !== refreshSequence.current) return
+                if (next.dialogue_protocol !== 2) throw new Error(mt("Не удалось загрузить чат. Попробуйте ещё раз."))
                 setState(next)
-                protocolRef.current = next.dialogue_protocol ?? 1
                 setError("")
                 return next
             }
@@ -97,7 +96,7 @@ export function useCompanion(enabled = true) {
     const attempt = async (operation: () => Promise<unknown>) => {
         try { await operation() } catch (e) { if (!(e instanceof CompanionActionCancelled)) setError(getErrorMessage(e)) }
     }
-    return { state, initialized, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => protocolRef.current, busy, error, setError, editor, setEditor, mentorPage, setMentorPage, refresh, perform, attempt }
+    return { state, initialized, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => 2 as const, busy, error, setError, editor, setEditor, mentorPage, setMentorPage, refresh, perform, attempt }
 }
 
 function Copy({ children }: { children: React.ReactNode }) {

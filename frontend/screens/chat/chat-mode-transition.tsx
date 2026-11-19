@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react"
-import { AccessibilityInfo, Animated, StyleSheet, View } from "react-native"
+import { AccessibilityInfo, Animated, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native"
 
 import { motion } from "@/theme/motion"
 import type { ChatMode } from "@/screens/chat/chat-mode-switcher"
@@ -25,8 +25,8 @@ export function useChatReducedMotion() {
 }
 
 /** The shell and wallpaper stay still; only retained screen content crossfades. */
-export function ChatModeTransition({ children }: { children: ReactNode; mode: ChatMode }) {
-    return <View testID="chat-mode-transition" style={styles.container}>{children}</View>
+export function ChatModeTransition({ children, style }: { children: ReactNode; mode: ChatMode; style?: StyleProp<ViewStyle> }) {
+    return <View testID="chat-mode-transition" style={[styles.container, style]}>{children}</View>
 }
 
 export function ChatModePane({ children, active, mode }: { children: ReactNode; active: boolean; mode: ChatMode }) {

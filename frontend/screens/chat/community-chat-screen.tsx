@@ -37,6 +37,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Path } from "react-native-svg"
 
 import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
+import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ROUTES } from "@/constants/routes"
 import { useCommunityChat } from "@/hooks/chat/use-community-chat"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
@@ -82,6 +83,7 @@ import { spacing } from "@/theme/spacing"
 
 type CommunityChatScreenProps = {
     embedded?: boolean
+    headerInset?: number
     onTopicNavigationChange?: (navigation: { title: string; onBack: () => void } | null) => void
     active: boolean
     mode: ChatMode
@@ -121,7 +123,7 @@ function nativeBuildNumber() {
     return Number.isFinite(parsedBuild) ? parsedBuild : 0
 }
 
-export function CommunityChatScreen({ embedded = false, onTopicNavigationChange, active, mode, onEnabledChange, onModeChange, onUnreadChange, requestedTopicId, supportUnreadCount, unreadCount }: CommunityChatScreenProps) {
+export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopicNavigationChange, active, mode, onEnabledChange, onModeChange, onUnreadChange, requestedTopicId, supportUnreadCount, unreadCount }: CommunityChatScreenProps) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const chatStyles = useThemeStyles(createChatScreenStyles)
     const { isDark, palette, themeName } = useTheme()
@@ -161,7 +163,8 @@ export function CommunityChatScreen({ embedded = false, onTopicNavigationChange,
     }, [onTopicNavigationChange, selectTopic, topicTitle])
     const markRead = chat.markRead
     const headerTop = top + 8
-    const contentTop = embedded ? 0 : headerTop + 58
+    const contentTop = embedded ? headerInset : headerTop + 58
+    const iosChat = Platform.OS === "ios"
     const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottom, spacing.sm)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
@@ -514,13 +517,13 @@ export function CommunityChatScreen({ embedded = false, onTopicNavigationChange,
                 </View> : null}
 
                 {chat.status?.access !== "granted" || !chat.selectedTopic ? (
-                    <View style={[styles.content, { paddingTop: contentTop }]}>
+                    <View style={[styles.content, (!iosChat || chat.status?.access !== "granted") && { paddingTop: contentTop }]}>
                         <QuietLoading loading={!chat.status && !chat.error} />
                         {!chat.loading && chat.status?.access !== "granted" ? (
                             <CommunityAccessState actionUrl={chat.status?.action_url ?? null} enabled={chat.status?.enabled ?? false} onRefresh={() => { void chat.refresh() }} state={chat.status?.access ?? "temporarily_unavailable"} />
                         ) : null}
                         {chat.status?.access === "granted" && !chat.selectedTopic ? (
-                            <TopicList onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} onOpenBlocks={() => { void loadBlocks() }} />
+                            <TopicList headerInset={iosChat ? contentTop : 0} onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} onOpenBlocks={() => { void loadBlocks() }} />
                         ) : null}
                     </View>
                 ) : null}
@@ -529,7 +532,7 @@ export function CommunityChatScreen({ embedded = false, onTopicNavigationChange,
                     <>
                         <KeyboardAvoidingView enabled={!embedded} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.topicKeyboardLayer}>
                             <View style={chatStyles.keyboardContent}>
-                                <ScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + spacing.sm, paddingBottom: composerHeight + spacing.sm }]} keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} style={styles.messageScroll}>
+                                <ScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + spacing.sm, paddingBottom: composerHeight + spacing.sm }]} keyboardDismissMode={iosChat ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} automaticallyAdjustsScrollIndicatorInsets={iosChat ? false : undefined} scrollIndicatorInsets={iosChat ? { top: contentTop, bottom: composerHeight } : undefined} style={styles.messageScroll}>
                                     {chat.hasMore ? <Pressable disabled={chat.loadingOlder} onPress={() => { void chat.loadOlder() }} style={styles.loadOlder}>{chat.loadingOlder ? <ActivityIndicator color={palette.primary} size="small" /> : <Text style={styles.loadOlderText}>{t("chat.communityLoadOlder")}</Text>}</Pressable> : null}
                                     {!chat.messages.length && !chat.loading ? <View style={styles.stateCenter}><View style={styles.stateIcon}><Text style={styles.stateIconText}>✦</Text></View><Text style={styles.stateTitle}>{t("chat.communityNoMessagesTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoMessagesMessage")}</Text></View> : null}
                                     {chat.messages.map((message) => (
@@ -545,7 +548,8 @@ export function CommunityChatScreen({ embedded = false, onTopicNavigationChange,
                                     ))}
                                 </ScrollView>
                                 {chat.error ? <Pressable onPress={() => { void chat.refresh() }} style={styles.inlineError}><Text style={styles.inlineErrorText}>{chat.error} · {t("chat.retry")}</Text></Pressable> : null}
-                                <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} style={[chatStyles.composerDock, { paddingBottom: composerBottomInset }]}>
+                                <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} pointerEvents={iosChat ? "box-none" : "auto"} style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay, { paddingBottom: composerBottomInset }]}>
+                                    {iosChat ? <ChatEdgeBlur dark={isDark} style={chatStyles.composerMaterial} /> : null}
                                     {editingMessage ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityEditingMessage")}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{editingMessage.text}</Text></View><Pressable onPress={() => { setEditingMessage(null); setDraft("") }}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {replyTo ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityReplyingTo")} {replyTo.author.full_name}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{replyTo.text || t("chat.attachmentFallbackMessage")}</Text></View><Pressable onPress={() => setReplyTo(null)}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {voiceStatusVisible ? <View style={chatStyles.voiceStatusPill}>{voiceTranscribing ? <ActivityIndicator color={palette.primary} size="small" /> : <View style={chatStyles.voiceStatusDot} />}<Text style={chatStyles.voiceStatusText}>{voiceTranscribing ? t("chat.voiceTranscribing") : `${t("chat.voiceRecording")} ${formatVoiceDuration(audioRecorderState.durationMillis)}`}</Text></View> : null}
@@ -556,6 +560,7 @@ export function CommunityChatScreen({ embedded = false, onTopicNavigationChange,
                         </KeyboardAvoidingView>
                     </>
                 ) : null}
+                {!embedded && iosChat ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
                 <AttachmentSheet activeMode={attachmentMode} bottomInset={bottom} onClose={closeAttachmentSheet} onOpenCamera={() => { void openCamera() }} onOpenNativeGallery={() => { void openGallery() }} onPickFiles={() => { void pickFiles() }} onSelectMode={setAttachmentMode} visible={attachmentSheetVisible} />
                 <Modal visible={blocksVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setBlocksVisible(false)}>
                     <View style={{ flex: 1, paddingTop: Math.max(top, spacing.md), backgroundColor: palette.background }}>
@@ -599,12 +604,12 @@ function CommunityAccessState({ actionUrl, enabled, onRefresh, state }: { action
     return <View style={styles.stateCenter}><View style={styles.stateIcon}><Text style={styles.stateIconText}>{copy.icon}</Text></View><Text style={styles.stateTitle}>{copy.title}</Text><Text style={styles.stateBody}>{copy.body}</Text>{copy.action && actionUrl ? <Pressable onPress={() => { void Linking.openURL(actionUrl) }} style={styles.primaryButton}><Text style={styles.primaryButtonText}>{copy.action}</Text></Pressable> : null}<Pressable onPress={onRefresh} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityRefresh")}</Text></Pressable></View>
 }
 
-function TopicList({ onOpen, onOpenBlocks, onRefresh, refreshing, status, topics }: { onOpenBlocks: () => void; onOpen: (topicId: number) => void; onRefresh: () => void; refreshing: boolean; status: { group: { title: string; image_url: string | null } | null }; topics: CommunityTopic[] }) {
+function TopicList({ headerInset, onOpen, onOpenBlocks, onRefresh, refreshing, status, topics }: { headerInset: number; onOpenBlocks: () => void; onOpen: (topicId: number) => void; onRefresh: () => void; refreshing: boolean; status: { group: { title: string; image_url: string | null } | null }; topics: CommunityTopic[] }) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const { palette } = useTheme()
     const { t } = useLanguage()
     const title = status.group?.title ?? t("chat.modeGroup")
-    return <ScrollView contentContainerStyle={styles.topicsContent} refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={palette.primary} />}><View style={styles.groupHero}><CommunityGroupAvatar name={title} uri={status.group?.image_url} /><View style={styles.groupCopy}><Text style={styles.groupTitle}>{title}</Text><Text style={styles.groupSubtitle}>{t("chat.communityTopicsSubtitle")}</Text></View></View><Pressable accessibilityRole="button" onPress={onOpenBlocks} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityBlockedAuthors")}</Text></Pressable><Text style={styles.sectionLabel}>{t("chat.communityTopicsTitle")}</Text>{!topics.length ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.communityNoTopicsTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoTopicsMessage")}</Text></View> : topics.map((topic) => <Pressable key={topic.id} onPress={() => onOpen(topic.id)} style={({ pressed }) => [styles.topicCard, pressed ? styles.topicCardPressed : null]}><View style={[styles.topicIcon, { backgroundColor: topicColor(topic) }]}><Text style={styles.topicIconText}>#</Text></View><View style={styles.topicCopy}><View style={styles.topicTitleRow}><Text numberOfLines={1} style={styles.topicTitle}>{topic.name}</Text>{topic.is_closed ? <View style={styles.closedPill}><Text style={styles.closedText}>{t("chat.communityClosed")}</Text></View> : null}</View><Text numberOfLines={1} style={styles.topicPreview}>{topic.last_message ? `${topic.last_message.author.full_name}: ${topic.last_message.is_deleted ? t("chat.communityDeletedMessage") : topic.last_message.text || t("chat.attachmentFallbackMessage")}` : t("chat.communityNoActivity")}</Text></View><View style={styles.topicMeta}><Text style={styles.topicTime}>{formatTopicTime(topic.last_message?.created_at)}</Text>{topic.unread_count ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{topic.unread_count > 99 ? "99+" : topic.unread_count}</Text></View> : null}</View></Pressable>)}</ScrollView>
+    return <ScrollView contentContainerStyle={[styles.topicsContent, headerInset > 0 && { paddingTop: headerInset + spacing.sm }]} automaticallyAdjustsScrollIndicatorInsets={headerInset > 0 ? false : undefined} scrollIndicatorInsets={headerInset > 0 ? { top: headerInset } : undefined} refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={palette.primary} />}><View style={styles.groupHero}><CommunityGroupAvatar name={title} uri={status.group?.image_url} /><View style={styles.groupCopy}><Text style={styles.groupTitle}>{title}</Text><Text style={styles.groupSubtitle}>{t("chat.communityTopicsSubtitle")}</Text></View></View><Pressable accessibilityRole="button" onPress={onOpenBlocks} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityBlockedAuthors")}</Text></Pressable><Text style={styles.sectionLabel}>{t("chat.communityTopicsTitle")}</Text>{!topics.length ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.communityNoTopicsTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoTopicsMessage")}</Text></View> : topics.map((topic) => <Pressable key={topic.id} onPress={() => onOpen(topic.id)} style={({ pressed }) => [styles.topicCard, pressed ? styles.topicCardPressed : null]}><View style={[styles.topicIcon, { backgroundColor: topicColor(topic) }]}><Text style={styles.topicIconText}>#</Text></View><View style={styles.topicCopy}><View style={styles.topicTitleRow}><Text numberOfLines={1} style={styles.topicTitle}>{topic.name}</Text>{topic.is_closed ? <View style={styles.closedPill}><Text style={styles.closedText}>{t("chat.communityClosed")}</Text></View> : null}</View><Text numberOfLines={1} style={styles.topicPreview}>{topic.last_message ? `${topic.last_message.author.full_name}: ${topic.last_message.is_deleted ? t("chat.communityDeletedMessage") : topic.last_message.text || t("chat.attachmentFallbackMessage")}` : t("chat.communityNoActivity")}</Text></View><View style={styles.topicMeta}><Text style={styles.topicTime}>{formatTopicTime(topic.last_message?.created_at)}</Text>{topic.unread_count ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{topic.unread_count > 99 ? "99+" : topic.unread_count}</Text></View> : null}</View></Pressable>)}</ScrollView>
 }
 
 function CommunityGroupAvatar({ name, uri }: { name: string; uri: string | null | undefined }) {

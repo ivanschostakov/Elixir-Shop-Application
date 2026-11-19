@@ -65,7 +65,7 @@ export const mentorStyles = StyleSheet.create({
     tab: { flex: 1, minWidth: 0, minHeight: 46, borderRadius: 14, paddingVertical: 10, paddingHorizontal: 5, justifyContent: "center" },
     metric: { flexGrow: 1, minWidth: 85, gap: 4, paddingVertical: 8 },
     notice: { padding: 16, borderRadius: 18, gap: 10 },
-    header: { flexDirection: "row", alignItems: "center", gap: 9 },
+    header: { flexDirection: "row", alignItems: "center", gap: 9, minHeight: 36 },
     avatar: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
     heading: { fontSize: 16, lineHeight: 23, fontWeight: "600", flex: 1 },
     time: { fontSize: 12, lineHeight: 18 },

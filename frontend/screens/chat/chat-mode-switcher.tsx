@@ -1,28 +1,28 @@
 import { useEffect, useRef, useState } from "react"
 import { Animated, type LayoutChangeEvent, Platform, Pressable, StyleSheet, Text, View } from "react-native"
-import { BlurView, type BlurTint } from "expo-blur"
 
 import { useLanguage } from "@/providers/language-provider"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createCommunityChatStyles } from "@/screens/chat/community-chat-screen.styles"
 import { useChatReducedMotion } from "@/screens/chat/chat-mode-transition"
 import { isCommunityChatAvailable, type ChatMode } from "@/screens/chat/chat-mode-policy"
+import { NativeChatModeControl } from "@/screens/chat/native-chat-controls"
 
 export type { ChatMode } from "@/screens/chat/chat-mode-policy"
 
 export function ChatModeSwitcher({
     mode,
-    glassTint,
+    solidStyle = false,
+    nativeDark,
     mentorStyle = false,
-    privateIosFeatures = false,
     onChange,
     supportUnreadCount = 0,
     unreadCount,
 }: {
     mode: ChatMode
-    glassTint?: BlurTint
+    solidStyle?: boolean
+    nativeDark?: boolean
     mentorStyle?: boolean
-    privateIosFeatures?: boolean
     onChange: (mode: ChatMode) => void
     supportUnreadCount?: number
     unreadCount: number
@@ -30,8 +30,7 @@ export function ChatModeSwitcher({
     const themeStyles = useThemeStyles(createCommunityChatStyles)
     const styles = mentorStyle ? mentorSwitcherStyles : themeStyles
     const { t } = useLanguage()
-    const glass = glassTint !== undefined
-    const communityAvailable = isCommunityChatAvailable(Platform.OS, privateIosFeatures)
+    const communityAvailable = isCommunityChatAvailable(Platform.OS)
     const modeIndex = mode === "support" ? (communityAvailable ? 2 : 1) : mode === "community" && communityAvailable ? 1 : 0
     const reducedMotion = useChatReducedMotion()
     const progress = useRef(new Animated.Value(modeIndex)).current
@@ -48,6 +47,7 @@ export function ChatModeSwitcher({
     }
 
     useEffect(() => {
+        if (solidStyle) return
         progress.stopAnimation()
         if (reducedMotion) {
             progress.setValue(modeIndex)
@@ -56,21 +56,37 @@ export function ChatModeSwitcher({
         const animation = Animated.spring(progress, { toValue: modeIndex, damping: 20, stiffness: 220, mass: 0.7, useNativeDriver: false })
         animation.start()
         return () => animation.stop()
-    }, [modeIndex, progress, reducedMotion])
+    }, [modeIndex, progress, reducedMotion, solidStyle])
+
+    if (nativeDark !== undefined && NativeChatModeControl) {
+        const modes: ChatMode[] = ["ai", "community", "support"]
+        const unreadLabel = (label: string, count: number) => count > 0 ? `${label} · ${count > 99 ? "99+" : count}` : label
+        return (
+            <NativeChatModeControl
+                dark={nativeDark}
+                labels={[t("chat.modeAi"), unreadLabel(t("chat.modeGroup"), unreadCount), unreadLabel(t("chat.modeSupport"), supportUnreadCount)]}
+                onSelect={({ nativeEvent }) => {
+                    const selected = modes[nativeEvent.index]
+                    if (selected) onChange(selected)
+                }}
+                selectedIndex={modeIndex}
+                style={mentorSwitcherStyles.nativeControl}
+            />
+        )
+    }
 
     return (
-        <View accessibilityRole="tablist" onLayout={handleLayout} style={[themeStyles.modeSwitcher, mentorStyle ? mentorSwitcherStyles.modeSwitcher : null, glass && themeStyles.glassModeSwitcher]}>
-            {glass ? <BlurView pointerEvents="none" intensity={60} tint={glassTint} style={StyleSheet.absoluteFill} /> : null}
-            {availableWidth > 0 ? <Animated.View pointerEvents="none" style={[styles.modeIndicator, glass && themeStyles.glassModeIndicator, { width: indicatorWidth, transform: [{ translateX: indicatorPosition }] }]} /> : null}
-            <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "ai" }} onPress={() => onChange("ai")} style={[styles.modeButton, { flex: shares[0] }]}>
-                <Text style={[styles.modeText, mode === "ai" ? styles.modeTextActive : null, glass && themeStyles.glassModeText]}>{t("chat.modeAi")}</Text>
+        <View accessibilityRole="tablist" onLayout={handleLayout} style={[themeStyles.modeSwitcher, mentorStyle ? mentorSwitcherStyles.modeSwitcher : null, solidStyle && themeStyles.solidModeSwitcher]}>
+            {!solidStyle && availableWidth > 0 ? <Animated.View pointerEvents="none" style={[styles.modeIndicator, { width: indicatorWidth, transform: [{ translateX: indicatorPosition }] }]} /> : null}
+            <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "ai" }} onPress={() => onChange("ai")} style={[styles.modeButton, solidStyle && mode === "ai" && themeStyles.solidModeSelection, { flex: shares[0] }]}>
+                <Text style={[styles.modeText, mode === "ai" ? styles.modeTextActive : null, solidStyle && themeStyles.solidModeText]}>{t("chat.modeAi")}</Text>
             </Pressable>
-            {communityAvailable ? <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "community" }} onPress={() => onChange("community")} style={[styles.modeButton, { flex: shares[1] }]}>
-                <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "community" ? styles.modeTextActive : null, glass && themeStyles.glassModeText]}>{t("chat.modeGroup")}</Text>
+            {communityAvailable ? <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "community" }} onPress={() => onChange("community")} style={[styles.modeButton, solidStyle && mode === "community" && themeStyles.solidModeSelection, { flex: shares[1] }]}>
+                <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "community" ? styles.modeTextActive : null, solidStyle && themeStyles.solidModeText]}>{t("chat.modeGroup")}</Text>
                 {unreadCount > 0 ? <View style={styles.modeBadge}><Text style={styles.modeBadgeText}>{unreadCount > 99 ? "99+" : unreadCount}</Text></View> : null}
             </Pressable> : null}
-            <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "support" }} onPress={() => onChange("support")} style={[styles.modeButton, { flex: shares[shares.length - 1] }]}>
-                <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "support" ? styles.modeTextActive : null, glass && themeStyles.glassModeText]}>{t("chat.modeSupport")}</Text>
+            <Pressable accessibilityRole="tab" accessibilityState={{ selected: mode === "support" }} onPress={() => onChange("support")} style={[styles.modeButton, solidStyle && mode === "support" && themeStyles.solidModeSelection, { flex: shares[shares.length - 1] }]}>
+                <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.modeText, mentorStyle && switcherWidth < 300 ? { fontSize: 10.5 } : null, mode === "support" ? styles.modeTextActive : null, solidStyle && themeStyles.solidModeText]}>{t("chat.modeSupport")}</Text>
                 {supportUnreadCount > 0 ? <View style={styles.modeBadge}><Text style={styles.modeBadgeText}>{supportUnreadCount > 99 ? "99+" : supportUnreadCount}</Text></View> : null}
             </Pressable>
         </View>
@@ -78,6 +94,7 @@ export function ChatModeSwitcher({
 }
 
 const mentorSwitcherStyles = StyleSheet.create({
+    nativeControl: { flex: 1, minWidth: 0, height: 42 },
     modeSwitcher: { flex: 1, minWidth: 0, height: 42, padding: 3, borderRadius: 23, flexDirection: "row", overflow: "hidden", shadowOpacity: 0, elevation: 0 },
     modeIndicator: { position: "absolute", left: 3, top: 3, height: 34, borderRadius: 19, backgroundColor: "#078AFF" },
     modeButton: { flex: 1, minWidth: 0, height: 34, paddingHorizontal: 4, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, zIndex: 1 },

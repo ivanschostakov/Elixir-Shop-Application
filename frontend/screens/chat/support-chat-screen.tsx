@@ -28,6 +28,7 @@ import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
+import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ROUTES } from "@/constants/routes"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
 import { useSupportChat } from "@/hooks/chat/use-support-chat"
@@ -64,6 +65,7 @@ import { createUuid } from "@/utils/uuid"
 
 type SupportChatScreenProps = {
     embedded?: boolean
+    headerInset?: number
     active: boolean
     communityUnreadCount: number
     mode: ChatMode
@@ -97,6 +99,7 @@ function nativeBuildNumber() {
 
 export function SupportChatScreen({
     embedded = false,
+    headerInset = 0,
     active,
     communityUnreadCount,
     mode,
@@ -140,8 +143,11 @@ export function SupportChatScreen({
         sending,
     } = useSupportChat(active, onUnreadChange)
     const headerTop = top + 8
+    const contentTop = embedded ? headerInset : headerTop + 52
+    const iosChat = Platform.OS === "ios"
     const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottom, spacing.sm)
     const isHistorical = Boolean(conversation && conversation.id !== inbox?.active?.id)
+    const contentBottom = isHistorical ? 0 : composerHeight
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const voiceInputEnabled = Platform.OS !== "ios"
@@ -399,7 +405,7 @@ export function SupportChatScreen({
 
                 <KeyboardAvoidingView
                     enabled={!embedded}
-                    behavior={Platform.OS === "ios" ? "position" : "height"}
+                    behavior={iosChat ? "padding" : "height"}
                     contentContainerStyle={chatStyles.keyboardContent}
                     keyboardVerticalOffset={0}
                     style={styles.keyboard}
@@ -409,12 +415,14 @@ export function SupportChatScreen({
                             contentContainerStyle={[
                                 styles.messagesContent,
                                 {
-                                    paddingTop: embedded ? spacing.sm : headerTop + 60,
-                                    paddingBottom: isHistorical ? spacing.md : composerHeight + spacing.md,
+                                    paddingTop: contentTop + spacing.sm,
+                                    paddingBottom: contentBottom + spacing.md,
                                 },
                             ]}
                             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                             keyboardShouldPersistTaps="handled"
+                            automaticallyAdjustsScrollIndicatorInsets={iosChat ? false : undefined}
+                            scrollIndicatorInsets={iosChat ? { top: contentTop, bottom: contentBottom } : undefined}
                             ref={scrollRef}
                             onScroll={chatScroll.onScroll}
                             onScrollBeginDrag={chatScroll.onScrollBeginDrag}
@@ -490,8 +498,10 @@ export function SupportChatScreen({
                         {!isHistorical ? (
                             <View
                                 onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
-                                style={[chatStyles.composerDock, { paddingBottom: composerBottomInset }]}
+                                pointerEvents={iosChat ? "box-none" : "auto"}
+                                style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay, { paddingBottom: composerBottomInset }]}
                             >
+                                {iosChat ? <ChatEdgeBlur dark={isDark} style={chatStyles.composerMaterial} /> : null}
                                 {voiceStatusVisible ? (
                                     <View style={chatStyles.voiceStatusPill}>
                                         {voiceTranscribing
@@ -555,6 +565,7 @@ export function SupportChatScreen({
                         ) : null}
                     </View>
                 </KeyboardAvoidingView>
+                {!embedded && iosChat ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
                 <AttachmentSheet
                     activeMode={attachmentMode}
                     allowFiles={false}

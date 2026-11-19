@@ -49,6 +49,15 @@ test("simultaneous mentor, chat and background requests do not rotate or race th
     assert.ok(results.every(headers => headers["X-App-Integrity-Key-Id"] === "key-1"))
 })
 
+test("development builds still obtain real device proof", async t => {
+    const api = setup(t)
+    global.__DEV__ = true
+    const headers = await api.getAppIntegrityHeaders("ai-companion")
+    assert.equal(headers["X-App-Integrity-Key-Id"], "key-1")
+    assert.match(headers["X-App-Integrity-Token"], /^assertion-/)
+    assert.equal(api.stats().generated, 1)
+})
+
 test("a temporary Apple service error retries with the same key", async t => {
     const keys = []
     const api = setup(t, { attestKeyAsync: async key => {
@@ -89,7 +98,7 @@ test("request client preserves device verification failures instead of inventing
     const api = loadTs("services/api/client.ts", {
         "@/services/api/constants": { API_BASE_URL: "https://example.test" },
         "@/services/app-integrity": { AppIntegrityUnavailableError: IntegrityError, getAppIntegrityHeaders: async () => { throw failure } },
-        "@/services/auth/session": { getAuthTokens: () => null, skipsIosAppAttest: () => false },
+        "@/services/auth/session": { getAuthTokens: () => null },
         "react-native": { Platform: { OS: "ios" } },
         "@/services/api/request-deadline": { RequestDeadlineError: class extends Error {}, fetchTextWithDeadline: async () => { fetched = true } },
         "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
@@ -98,12 +107,11 @@ test("request client preserves device verification failures instead of inventing
     assert.equal(fetched, false)
 })
 
-test("only the signed-in private iOS session omits App Attest", async () => {
-    for (const [platform, granted, auth, expectProof] of [
-        ["ios", true, true, false],
-        ["ios", false, true, true],
-        ["ios", true, false, true],
-        ["android", true, true, true],
+test("device verification is required for every session and platform", async () => {
+    for (const [platform, auth] of [
+        ["ios", true],
+        ["ios", false],
+        ["android", true],
     ]) {
         let askedForProof = false
         let headers
@@ -115,7 +123,6 @@ test("only the signed-in private iOS session omits App Attest", async () => {
             } },
             "@/services/auth/session": {
                 getAuthTokens: () => ({ accessToken: "access" }),
-                skipsIosAppAttest: () => granted,
             },
             "react-native": { Platform: { OS: platform } },
             "@/services/api/request-deadline": { fetchTextWithDeadline: async (_url, options) => {
@@ -125,7 +132,7 @@ test("only the signed-in private iOS session omits App Attest", async () => {
             "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
         })
         await api.apiGet("/mentor", undefined, { auth, appIntegrityAction: "ai-companion" })
-        assert.equal(askedForProof, expectProof)
+        assert.equal(askedForProof, true)
         assert.equal(headers.get("Authorization"), auth ? "Bearer access" : null)
         assert.equal(headers.get("X-App-Platform"), platform)
     }

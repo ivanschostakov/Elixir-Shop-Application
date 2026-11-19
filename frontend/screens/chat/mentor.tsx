@@ -1,6 +1,5 @@
 import { mentorText as mt, mentorLocale } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
-import { QuietLoading } from "@/components/ui/quiet-loading"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, Text, useWindowDimensions, View } from "react-native"
 import { Calendar, LocaleConfig } from "react-native-calendars"
@@ -52,7 +51,7 @@ export function MentorNavigation({ controller: c }: { controller: Controller }) 
 }
 
 export function MentorWorkspace({ controller: c, onCompose, onPrompt, displayName, photoMessages = [], renderPhotoAttachments = () => null }: { controller: Controller; displayName?: string | null; onCompose: (mode: MentorComposeMode, text: string) => void; onPrompt: (text: string) => Promise<unknown>; photoMessages?: AIMessageRead[]; renderPhotoAttachments?: (attachments: AIAttachmentRead[]) => React.ReactNode }) {
-    useLanguage()
+    const { t } = useLanguage()
     const { palette } = useTheme()
     const colors = useMentorPalette()
     const { width: screenWidth } = useWindowDimensions()
@@ -138,15 +137,15 @@ export function MentorWorkspace({ controller: c, onCompose, onPrompt, displayNam
     const numberLabel = (value: unknown) => numeric(value)?.toLocaleString(mentorLocale(), { maximumFractionDigits: 1 }) ?? "—"
     const page = c.mentorPage
     if (!page) return null
-    return <View testID="mentor-workspace" style={[styles.body, { backgroundColor: colors.surface }, page === "today" ? { gap: 12, padding: 14 } : null]}>
+    return <View testID="mentor-workspace" style={[styles.body, { backgroundColor: colors.surface }, page === "today" ? { gap: 12 } : null]}>
         <View style={styles.header}>
             {page !== "today" ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Назад к сегодняшнему плану")} onPress={() => go("today")} hitSlop={8} style={{ minHeight: 36, justifyContent: "center" }}><MentorIcon name="back" size={18} color={colors.green} /></Pressable> : null}
             <View style={[styles.avatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={26} /></View>
             <Text style={[styles.heading, { color: colors.green, fontSize: screenWidth < 360 ? 14 : 16 }]}>{mt("Наставник ElixirPeptide")}</Text>
             {page === "today" ? <Text style={[styles.time, { color: colors.muted }]}>{localTime(new Date().toISOString())}</Text> : null}
+            {loading && (page === "nutrition" || page === "workouts") ? <ActivityIndicator accessibilityLabel={t("common.loading")} accessibilityRole="progressbar" color={colors.greenBright} /> : null}
         </View>
         {c.error ? <View style={[styles.notice, { backgroundColor: colors.mint }]}><Copy>{c.error}</Copy><Button label={mt("Обновить данные")} onPress={() => void c.attempt(async () => { await c.refresh(); await load() })} /></View> : null}
-        <QuietLoading loading={loading && !entries.length && (page === "nutrition" || page === "workouts")} />
         {page === "today" ? <>
             <Copy style={styles.greeting}>{mt("Добрый день")}{displayName?.trim() ? `, ${displayName.trim().split(" ")[0]}` : ""}!</Copy>
             <View style={styles.plan}>

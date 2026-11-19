@@ -1,11 +1,10 @@
 # Read-only MoySklad account view
 
-The opt-in account view reads `GET /api/v1/users/me/referral-profile/settlement`.
-Deploy the backend endpoint before enabling the view. Set
-`EXPO_PUBLIC_MS_ACCOUNT_VIEW_ENABLED=true` in the frontend build environment and
-rebuild the application. The default is false; the existing discounts screen and
-promo-code management remain unchanged when disabled. This is a build-time flag,
-not a remotely controlled runtime switch.
+The profile always uses the account view backed by
+`GET /api/v1/users/me/referral-profile/settlement`. There is no environment selector
+and no legacy discounts screen. Deploy the matching backend endpoint before
+releasing a new application binary. The signed MoySklad balance, program,
+purchases, promo codes and data freshness are displayed without guessing.
 
 ## Data contract
 

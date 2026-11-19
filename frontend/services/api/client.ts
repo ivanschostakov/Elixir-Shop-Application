@@ -1,7 +1,7 @@
 import { API_BASE_URL } from "@/services/api/constants"
 import type { QueryParams, RequestOptions } from "@/services/api/client.types"
 import { AppIntegrityUnavailableError, getAppIntegrityHeaders, resetAppIntegrityState } from "@/services/app-integrity"
-import { getAuthTokens, refreshAuthTokens, skipsIosAppAttest } from "@/services/auth/session"
+import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 import { Platform } from "react-native"
 import { fetchTextWithDeadline, RequestDeadlineError } from "@/services/api/request-deadline"
 import { deviceCompanionTimezone } from "@/screens/chat/companion-timezones"
@@ -68,9 +68,7 @@ async function buildHeaders(init?: RequestInit, auth = true, options?: RequestOp
         headers.set("Authorization", `Bearer ${tokens.accessToken}`)
     }
 
-    const appIntegrityHeaders = auth && Platform.OS === "ios" && skipsIosAppAttest()
-        ? {}
-        : await getAppIntegrityHeaders(options?.appIntegrityAction)
+    const appIntegrityHeaders = await getAppIntegrityHeaders(options?.appIntegrityAction)
     for (const [key, value] of Object.entries(appIntegrityHeaders)) {
         headers.set(key, value)
     }

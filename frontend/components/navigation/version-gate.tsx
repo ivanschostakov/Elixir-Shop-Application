@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react"
 import * as Application from "expo-application"
-import * as Updates from "expo-updates"
 import { ActivityIndicator, AppState, Linking, Platform, Pressable, Text, View, type AppStateStatus } from "react-native"
 
-import { APP_JS_VERSION } from "@/config/env"
 import { getAppVersionPolicy } from "@/services/api/app-version"
 import type { AppVersionPolicy } from "@/services/api/app-version.types"
 import { useTheme } from "@/providers/theme-provider"
 import { darkColors, lightColors } from "@/theme/colors"
 import { versionGateStyles } from "@/components/navigation/version-gate.styles"
 
-type VersionBlockReason = "native" | "javascript"
-
 type VersionBlock = {
-    reason: VersionBlockReason
     storeUrl: string
 }
 
@@ -30,10 +25,7 @@ function resolveVersionBlock(policy: AppVersionPolicy): VersionBlock | null {
     if (Platform.OS === "ios") {
         const nativeBuild = numericVersion(Application.nativeBuildVersion)
         if (nativeBuild < policy.ios.minimumBuild) {
-            return { reason: "native", storeUrl: policy.ios.storeUrl }
-        }
-        if (APP_JS_VERSION < policy.ios.minimumJsBundleVersion) {
-            return { reason: "javascript", storeUrl: policy.ios.storeUrl }
+            return { storeUrl: policy.ios.storeUrl }
         }
         return null
     }
@@ -41,10 +33,7 @@ function resolveVersionBlock(policy: AppVersionPolicy): VersionBlock | null {
     if (Platform.OS === "android") {
         const versionCode = numericVersion(Application.nativeBuildVersion)
         if (versionCode < policy.android.minimumVersionCode) {
-            return { reason: "native", storeUrl: policy.android.storeUrl }
-        }
-        if (APP_JS_VERSION < policy.android.minimumJsBundleVersion) {
-            return { reason: "javascript", storeUrl: policy.android.storeUrl }
+            return { storeUrl: policy.android.storeUrl }
         }
     }
 
@@ -122,14 +111,6 @@ export function VersionGate({ children }: VersionGateProps) {
         setUpdateError(null)
 
         try {
-            if (block.reason === "javascript" && Updates.isEnabled) {
-                const fetchResult = await Updates.fetchUpdateAsync()
-                if (fetchResult.isNew || fetchResult.isRollBackToEmbedded) {
-                    await Updates.reloadAsync()
-                    return
-                }
-            }
-
             const didOpenStore = await openStoreUrl(block.storeUrl)
             if (!didOpenStore) {
                 setUpdateError("Update link is not configured yet. Please contact support.")
@@ -160,9 +141,7 @@ export function VersionGate({ children }: VersionGateProps) {
         return <>{children}</>
     }
 
-    const bodyText = block.reason === "javascript"
-        ? "A newer app update is required to continue. We will try to install it now."
-        : "A newer App Store or Google Play version is required to continue."
+    const bodyText = "A newer App Store or Google Play version is required to continue."
 
     return (
         <View style={[versionGateStyles.screen, { backgroundColor: palette.pageBackground }]}>

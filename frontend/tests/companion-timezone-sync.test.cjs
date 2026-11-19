@@ -34,7 +34,7 @@ test("every native API call reads fresh timezone metadata, including multipart c
     const api = loadTs("services/api/client.ts", {
         "@/services/api/constants": { API_BASE_URL: "https://example.test/api" },
         "@/services/app-integrity": { getAppIntegrityHeaders: async () => ({}), resetAppIntegrityState: async () => {} },
-        "@/services/auth/session": { getAuthTokens: () => null, refreshAuthTokens: async () => null, skipsIosAppAttest: () => false },
+        "@/services/auth/session": { getAuthTokens: () => null, refreshAuthTokens: async () => null },
         "react-native": { Platform: platform },
         "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => zone },
         "@/services/api/request-deadline": { RequestDeadlineError: class extends Error {}, fetchTextWithDeadline: async (url, init) => { requests.push(init); return { response: { status: 200, ok: true }, text: "{}" } } },

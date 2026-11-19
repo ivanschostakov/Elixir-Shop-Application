@@ -83,7 +83,7 @@ export const companionDialogue = (kind: "intro" | "course" | "nutrition" | "prog
 export async function getCompanionAvailability(): Promise<CompanionState> {
     try { return await apiGet<CompanionState>(`${endpoint}/availability`) }
     catch (error) {
-        // A compatible OTA may arrive before the backend rollout, or survive its rollback.
+        // A temporary unavailable backend must not be confused with an authentication failure.
         if (error instanceof ApiError && error.status === 404) return { available: false, consent_version: "" }
         throw error
     }

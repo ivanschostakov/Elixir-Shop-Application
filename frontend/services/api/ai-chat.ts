@@ -13,12 +13,15 @@ export function getMyAiChat(): Promise<AIChatResponse> {
     return apiGet<AIChatResponse>(aiChatEndpoint, undefined, { appIntegrityAction: "ai-chat:read" })
 }
 
-export async function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = [], companionRequestId?: string, dialogueProtocol: 1 | 2 = 1, ordinaryChat = false): Promise<AIChatResponse> {
+export async function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = [], companionRequestId?: string, dialogueProtocol: 1 | 2 = 2, ordinaryChat = false): Promise<AIChatResponse> {
     await ensureAiDataConsent()
     const formData = new FormData()
     formData.append("text", text)
     if (companionRequestId) formData.append("client_request_id", companionRequestId)
-    if (companionRequestId) formData.append("dialogue_protocol", String(dialogueProtocol))
+    if (companionRequestId) {
+        if (dialogueProtocol !== 2) throw new Error("Обновите клиент наставника: требуется протокол 2.")
+        formData.append("dialogue_protocol", "2")
+    }
     if (ordinaryChat && !companionRequestId) formData.append("chat_mode", "ordinary")
 
     for (const attachment of attachments) {

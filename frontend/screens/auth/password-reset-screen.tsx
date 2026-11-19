@@ -9,16 +9,15 @@ import EmailVerificationStep from "@/screens/auth/email-verification-step"
 import PasswordField from "@/screens/auth/password-field"
 import { useAuthFormScroll } from "@/screens/auth/use-auth-form-scroll"
 import { ApiError } from "@/services/api/client"
-import { completePrivatePasswordReset, confirmPasswordReset, getAuthErrorMessage, requestPasswordReset, verifyPrivatePasswordReset } from "@/services/auth/auth"
+import { completePasswordReset, confirmPasswordReset, getAuthErrorMessage, requestPasswordReset, verifyPasswordReset } from "@/services/auth/auth"
 
 type Props = {
     initialEmail: string
-    privateRecovery: boolean
     onBack: () => void
     onSuccess: (email: string) => void
 }
 
-export default function PasswordResetScreen({ initialEmail, privateRecovery, onBack, onSuccess }: Props) {
+export default function PasswordResetScreen({ initialEmail, onBack, onSuccess }: Props) {
     const { t } = useLanguage()
     const styles = useThemeStyles(createAuthSharedStyles)
     const { handleFieldLayout, scrollRef, scrollToField } = useAuthFormScroll(["email", "code", "password", "repeat"] as const)
@@ -86,7 +85,7 @@ export default function PasswordResetScreen({ initialEmail, privateRecovery, onB
         }
         await runRequest(async () => {
             if (confirm) {
-                if (resetToken) await completePrivatePasswordReset(address, resetToken, password)
+                if (resetToken) await completePasswordReset(address, resetToken, password)
                 else await confirmPasswordReset(address, code, password)
                 onSuccess(address)
             } else {
@@ -128,7 +127,7 @@ export default function PasswordResetScreen({ initialEmail, privateRecovery, onB
         </Pressable>
     )
 
-    if (privateRecovery && sent && !legacyRecovery) {
+    if (sent && !legacyRecovery) {
         const backAction = { label: t("nav.back"), onPress: editEmail, disabled: busy }
         return resetToken ? (
             <AuthFormLayout key="password" backAction={backAction} error={error} scrollRef={scrollRef} title={t("auth.reset.newPassword")}>
@@ -146,7 +145,7 @@ export default function PasswordResetScreen({ initialEmail, privateRecovery, onB
                     onResend={() => submit(true)}
                     onVerify={(value) => runRequest(async () => {
                         try {
-                            const token = await verifyPrivatePasswordReset(address, value)
+                            const token = await verifyPasswordReset(address, value)
                             Keyboard.dismiss()
                             setResetToken(token)
                         } catch (failure) {

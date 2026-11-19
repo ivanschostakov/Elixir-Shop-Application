@@ -31,9 +31,11 @@ test("account display does not call the legacy mutating referral summary", () =>
     assert.ok(screen.includes("key={user.id}"))
 })
 
-test("new account view is opt-in without removing the legacy view", () => {
-    const screen = fs.readFileSync(path.join(__dirname, "../screens/profile/profile-discounts-screen.tsx"), "utf8")
-    assert.ok(screen.includes('process.env.EXPO_PUBLIC_MS_ACCOUNT_VIEW_ENABLED === "true"'))
-    assert.ok(screen.includes("<LegacyProfileDiscountsScreen />"))
-    assert.ok(screen.includes("attachMyReferrerCode"))
+test("the profile route always opens the authoritative account view", () => {
+    const loadTs = require("./load-ts.cjs")
+    const AccountView = () => null
+    const route = loadTs("screens/profile/profile-discounts-screen.tsx", {
+        "@/screens/profile/profile-settlement-screen": { __esModule: true, default: AccountView },
+    })
+    assert.equal(route.default, AccountView)
 })

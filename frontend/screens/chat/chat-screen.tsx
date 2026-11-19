@@ -9,6 +9,7 @@ import {
     Pressable,
     RefreshControl,
     ScrollView,
+    StyleSheet,
     Text,
     TextInput,
     useWindowDimensions,
@@ -24,7 +25,6 @@ import {
     useAudioRecorderState,
 } from "expo-audio"
 import * as Application from "expo-application"
-import { BlurView } from "expo-blur"
 import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
 import * as SecureStore from "expo-secure-store"
@@ -48,11 +48,13 @@ import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import { CompanionPanel, CompanionCards, useCompanion } from "@/screens/chat/companion"
 import { MentorWorkspace } from "@/screens/chat/mentor"
 import { ChatBackdrop } from "@/screens/chat/chat-backdrop"
+import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ContentReveal, QuietLoading } from "@/components/ui/quiet-loading"
 import { ChatKeyboardLayout } from "@/screens/chat/chat-keyboard-layout"
 import { ChatFormFocusProvider } from "@/screens/chat/chat-form-focus"
 import { ChatComposerInput } from "@/screens/chat/chat-composer-input"
 import { AdminComposerAction } from "@/screens/chat/admin-composer-action"
+import { NativeChatAction, NativeComposerMaterial } from "@/screens/chat/native-chat-controls"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
 import { trackCustomerEvent } from "@/services/customer-intelligence"
 import type {
@@ -108,12 +110,12 @@ function nativeBuildNumber() {
 
 const CHAT_MODE_STORAGE_KEY = "elixirpeptide-chat-mode"
 
-async function readStoredChatMode(privateIosFeatures: boolean): Promise<ChatMode | null> {
+async function readStoredChatMode(): Promise<ChatMode | null> {
     try {
         const value = Platform.OS === "web"
             ? (typeof window !== "undefined" ? window.localStorage?.getItem(CHAT_MODE_STORAGE_KEY) : null)
             : await SecureStore.getItemAsync(CHAT_MODE_STORAGE_KEY)
-        return resolveChatMode(value, Platform.OS, privateIosFeatures)
+        return resolveChatMode(value, Platform.OS)
     } catch {
         return null
     }
@@ -133,7 +135,7 @@ async function persistChatMode(mode: ChatMode) {
 
 export default function ChatScreen() {
     const { user } = useAuth()
-    return <ChatScreenContent key={`${user?.id ?? "guest"}:${user?.iosPrivateFeatures === true}`} />
+    return <ChatScreenContent key={user?.id ?? "guest"} />
 }
 
 function ChatScreenContent() {
@@ -143,7 +145,7 @@ function ChatScreenContent() {
     const { t } = useLanguage()
     const { user } = useAuth()
     const { isDark, palette } = useTheme()
-    const { width: screenWidth, height: screenHeight } = useWindowDimensions()
+    const { width: screenWidth } = useWindowDimensions()
     const { top: topInset, bottom: bottomInset } = useSafeAreaInsets()
     const [cameraPermission, requestCameraPermission] = useCameraPermissions()
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
@@ -155,6 +157,7 @@ function ChatScreenContent() {
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [keyboardVisible, setKeyboardVisible] = useState(false)
+    const [composerFocused, setComposerFocused] = useState(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const [chatMode, setChatMode] = useState<ChatMode>("ai")
@@ -175,12 +178,14 @@ function ChatScreenContent() {
     const requestedConversationId = Number.isInteger(parsedRequestedConversationId) && parsedRequestedConversationId > 0
         ? parsedRequestedConversationId
         : null
-    const privateIosFeatures = user?.iosPrivateFeatures === true
-    const privateIosChat = Platform.OS === "ios" && privateIosFeatures
+    const iosChat = Platform.OS === "ios"
+    const hideMentorShortcuts = iosChat && (keyboardVisible || composerFocused)
+    const nativeIosChat = iosChat && NativeChatAction !== null && NativeComposerMaterial !== null
+    const simpleIosChat = iosChat && !nativeIosChat
     const [composerDockHeight, setComposerDockHeight] = useState(0)
     const [followingLatest, setFollowingLatest] = useState(true)
-    const communityAvailable = isCommunityChatAvailable(Platform.OS, privateIosFeatures)
-    const mentorAvailable = isMentorAvailable(Platform.OS, privateIosFeatures)
+    const communityAvailable = isCommunityChatAvailable(Platform.OS)
+    const mentorAvailable = isMentorAvailable(Platform.OS)
     const communityRoute = requestedMode === "community" || requestedTopicId !== null
     const communityRequestedByRoute = communityAvailable && communityRoute
     const blockedCommunityRoute = !communityAvailable && communityRoute
@@ -193,13 +198,22 @@ function ChatScreenContent() {
     const initialMessageIds = useRef<Set<number> | null>(null)
     if (chat && !initialMessageIds.current) initialMessageIds.current = new Set((chat.chat?.messages ?? []).map(message => message.id))
     const scrollRef = useRef<ScrollView | null>(null)
+    const mentorScrollRef = useRef<ScrollView | null>(null)
     const mentorInputRef = useRef<TextInput | null>(null)
     const mentorEnabled = mentorAvailable && companion.state?.dialogue_protocol === 2 && "mentor" in companion.state && companion.enabled
-    const mentorVisible = mentorEnabled && !!companion.mentorPage && mentorMode.shown
-    const overlaysMessages = privateIosChat && !mentorVisible
+    const mentorPage = mentorEnabled && mentorMode.shown ? companion.mentorPage : null
+    const mentorVisible = mentorPage !== null
+    const overlaysChatChrome = Platform.OS === "ios"
+    const topBarOffset = topInset + 8
+    const headerHeight = topBarOffset + 52
+    const scrollTopInset = overlaysChatChrome ? headerHeight : 0
+    const scrollBottomInset = overlaysChatChrome ? composerDockHeight : 0
     const aiContentReady = (chat !== null || error !== null) && (!mentorAvailable || companion.initialized)
-    const mentorTopSpace = companion.mentorPage === "today" ? Math.max(20, Math.min(76, (screenHeight - 660) * 0.45)) : 12
-    const chatScroll = useChatScroll(scrollRef, mentorVisible ? companion.mentorPage : null, privateIosChat ? setFollowingLatest : undefined)
+    const chatScroll = useChatScroll(scrollRef, null, iosChat ? setFollowingLatest : undefined)
+    const mentorScroll = useChatScroll(mentorScrollRef, mentorPage, undefined, {
+        top: scrollTopInset,
+        bottom: scrollBottomInset,
+    })
     const { setMentorPage } = companion
     const { followLatest } = chatScroll
     const showConversation = useCallback(() => { setMentorPage(null); followLatest() }, [setMentorPage, followLatest])
@@ -207,16 +221,14 @@ function ChatScreenContent() {
     const toggleMentor = useCallback(() => {
         Keyboard.dismiss()
         setMentorShown(!mentorShown)
-        if (mentorShown) followLatest()
-        else setMentorPage(current => current ?? "today")
-    }, [mentorShown, setMentorShown, setMentorPage, followLatest])
+        if (!mentorShown) setMentorPage(current => current ?? "today")
+    }, [mentorShown, setMentorShown, setMentorPage])
     useEffect(() => {
         if (!mentorAvailable || routeParams.companion !== "1") return
         setMentorShown(true)
         setMentorPage("today")
     }, [mentorAvailable, routeParams.companion, setMentorShown, setMentorPage])
     const cameraPermissionPromptedRef = useRef(false)
-    const topBarOffset = topInset + 8
     const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottomInset, spacing.sm)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
@@ -232,13 +244,13 @@ function ChatScreenContent() {
 
     useEffect(() => {
         let mounted = true
-        void readStoredChatMode(privateIosFeatures).then((storedMode) => {
+        void readStoredChatMode().then((storedMode) => {
             if (!mounted) return
             if (storedMode && !chatModeRequestedByRoute) setChatMode(storedMode)
             setModeReady(true)
         })
         return () => { mounted = false }
-    }, [chatModeRequestedByRoute, privateIosFeatures])
+    }, [chatModeRequestedByRoute])
 
     useEffect(() => {
         if (!communityRequestedByRoute) return
@@ -261,10 +273,10 @@ function ChatScreenContent() {
 
     const handleChatModeChange = useCallback((nextMode: ChatMode) => {
         Keyboard.dismiss()
-        const availableMode = resolveChatMode(nextMode, Platform.OS, privateIosFeatures) ?? "ai"
+        const availableMode = resolveChatMode(nextMode, Platform.OS) ?? "ai"
         setChatMode(availableMode)
         void persistChatMode(availableMode)
-    }, [privateIosFeatures])
+    }, [])
 
     const handleCommunityUnreadChange = useCallback((count: number) => {
         setCommunityUnread(count)
@@ -307,8 +319,7 @@ function ChatScreenContent() {
         const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow"
         const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide"
 
-        const showSubscription = Keyboard.addListener(showEvent, (event) => {
-            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
+        const showSubscription = Keyboard.addListener(showEvent, () => {
             setKeyboardVisible(true)
         })
         const hideSubscription = Keyboard.addListener(hideEvent, (event) => {
@@ -740,17 +751,16 @@ function ChatScreenContent() {
     const reduceMotion = useChatReducedMotion()
     const sendJoined = useRef(new Animated.Value(0)).current
     useEffect(() => {
-        if (!privateIosChat || reduceMotion) {
+        if (!nativeIosChat || reduceMotion) {
             sendJoined.setValue(composerActive ? 1 : 0)
             return
         }
         const animation = Animated.timing(sendJoined, { toValue: composerActive ? 1 : 0, duration: motion.duration.standard, easing: motion.easing.standard, useNativeDriver: false })
         animation.start()
         return () => animation.stop()
-    }, [composerActive, privateIosChat, reduceMotion, sendJoined])
+    }, [composerActive, nativeIosChat, reduceMotion, sendJoined])
     const inputBackgroundRight = sendJoined.interpolate({ inputRange: [0, 1], outputRange: [51, 0] })
-    const inputBackgroundColor = isDark ? "rgba(30,41,56,0.58)" : "rgba(255,255,255,0.64)"
-    const composerTint = isDark ? "systemThinMaterialDark" : "systemThinMaterialLight"
+    const inputBackgroundColor = isDark ? "#263040" : "#F2FAF5"
     const handleComposerAction = () => {
         if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress()
         else void handleSend()
@@ -759,41 +769,63 @@ function ChatScreenContent() {
         if (chatMode === "community" && topicNavigation) topicNavigation.onBack()
         else router.push(ROUTES.discover)
     }
+    const scrollInsets = { paddingTop: scrollTopInset + spacing.sm, paddingBottom: scrollBottomInset + spacing.sm }
+    const scrollProps = {
+        automaticallyAdjustKeyboardInsets: false,
+        automaticallyAdjustContentInsets: false,
+        automaticallyAdjustsScrollIndicatorInsets: overlaysChatChrome ? false : undefined,
+        contentInsetAdjustmentBehavior: "never" as const,
+        keyboardDismissMode: Platform.OS === "ios" ? "interactive" as const : "on-drag" as const,
+        keyboardShouldPersistTaps: "handled" as const,
+        scrollEventThrottle: 16,
+        scrollIndicatorInsets: overlaysChatChrome ? { top: scrollTopInset, bottom: scrollBottomInset } : undefined,
+    }
+    const refreshControl = <RefreshControl
+        onRefresh={() => { void refresh() }}
+        refreshing={refreshing}
+        tintColor={palette.primary}
+    />
 
     return (
         <View style={chatScreenStyles.container}>
             <ChatBackdrop />
             <ChatKeyboardLayout style={chatScreenStyles.content}>
-                <View testID="ai-chat-fixed-header" style={[chatScreenStyles.fixedHeader, chatScreenStyles.mentorHeader, { paddingTop: topBarOffset }]}>
-                <View style={chatScreenStyles.topBarRow}>
-                    <Pressable
-                        accessibilityLabel={t("nav.back")}
-                        accessibilityRole="button"
-                        onPress={handleBack}
-                        style={({ pressed }) => [chatScreenStyles.topBackButton, chatScreenStyles.mentorBackButton, privateIosChat && [chatScreenStyles.privateChatButton, { backgroundColor: inputBackgroundColor }], privateIosChat && pressed && chatScreenStyles.circleButtonPressed]}
-                    >
-                        {privateIosChat ? <BlurView pointerEvents="none" intensity={60} tint={composerTint} style={chatScreenStyles.composerBlur} /> : null}
-                        <Svg fill="none" height={20} viewBox="0 0 24 24" width={20}>
-                            <Path
-                                d="M15.5 5.5 9 12l6.5 6.5"
-                                stroke={privateIosChat ? palette.text : "#12161A"}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2.2}
-                            />
-                        </Svg>
-                    </Pressable>
-                    {chatMode === "community" && topicNavigation ? <View style={chatScreenStyles.topicHeaderPill}><Text numberOfLines={1} style={chatScreenStyles.topicHeaderText}>{topicNavigation.title}</Text></View> : <ChatModeSwitcher mode={chatMode} glassTint={privateIosChat ? composerTint : undefined} mentorStyle privateIosFeatures={privateIosFeatures} onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
-                </View>
-                </View>
-
-            <ChatModeTransition mode={chatMode}>
+        <View
+            testID="ai-chat-fixed-header"
+            pointerEvents={overlaysChatChrome ? "box-none" : "auto"}
+            style={[chatScreenStyles.fixedHeader, chatScreenStyles.mentorHeader, overlaysChatChrome && chatScreenStyles.headerOverlay, { paddingTop: topBarOffset }]}
+        >
+        <View pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={chatScreenStyles.topBarRow}>
+            {nativeIosChat && NativeChatAction ? (
+                <NativeChatAction action="back" dark={isDark} label={t("nav.back")} onAction={handleBack} style={chatScreenStyles.nativeChatButton} />
+            ) : <Pressable
+                accessibilityLabel={t("nav.back")}
+                accessibilityRole="button"
+                onPress={handleBack}
+                style={({ pressed }) => [chatScreenStyles.topBackButton, chatScreenStyles.mentorBackButton, iosChat && [chatScreenStyles.privateChatButton, { backgroundColor: inputBackgroundColor }], iosChat && pressed && chatScreenStyles.circleButtonPressed]}
+            >
+                <Svg fill="none" height={20} viewBox="0 0 24 24" width={20}>
+                    <Path
+                        d="M15.5 5.5 9 12l6.5 6.5"
+                        stroke={iosChat ? palette.text : "#12161A"}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2.2}
+                    />
+                </Svg>
+            </Pressable>}
+            {chatMode === "community" && topicNavigation ? <View style={[chatScreenStyles.topicHeaderPill, iosChat && { backgroundColor: inputBackgroundColor }]}><Text numberOfLines={1} style={chatScreenStyles.topicHeaderText}>{topicNavigation.title}</Text></View> : <ChatModeSwitcher mode={chatMode} solidStyle={simpleIosChat} nativeDark={nativeIosChat ? isDark : undefined} mentorStyle onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
+        </View>
+        </View>
+            <ChatModeTransition mode={chatMode} style={overlaysChatChrome ? { zIndex: 1 } : undefined}>
             <ChatModePane mode="ai" active={chatMode === "ai"}>
                 <View style={chatScreenStyles.content}>
                 <View testID="ai-chat-scroll-body" style={chatScreenStyles.chatBody}>
+                {chatMode === "ai" && !aiContentReady ? <View style={overlaysChatChrome && { paddingTop: headerHeight }}>
                 <QuietLoading loading={chatMode === "ai" && !aiContentReady} />
+                </View> : null}
                 {aiContentReady && error && !chat && chatMode === "ai" ? (
-                    <View style={chatScreenStyles.initialStateOverlay}>
+                    <View style={[chatScreenStyles.initialStateOverlay, overlaysChatChrome && { top: headerHeight }]}>
                         <EmptyState
                             title={t("chat.loadFailedTitle")}
                             description={error || t("chat.loadFailedMessage")}
@@ -807,43 +839,23 @@ function ChatScreenContent() {
                 ) : null}
 
                         <ContentReveal ready={aiContentReady} style={{ flex: 1, minHeight: 0 }}>
+                        <View style={chatScreenStyles.content}>
                         <ScrollView
-                            contentContainerStyle={[
-                                chatScreenStyles.messagesContent,
-                                mentorVisible ? chatScreenStyles.mentorMessagesContent : null,
-                                {
-                                    paddingTop: mentorVisible ? mentorTopSpace : spacing.sm,
-                                    paddingBottom: spacing.sm + (overlaysMessages ? composerDockHeight : 0),
-                                },
-                            ]}
+                            {...scrollProps}
+                            testID="ai-chat-message-history"
+                            contentContainerStyle={[chatScreenStyles.messagesContent, scrollInsets]}
                             ref={scrollRef}
-                            keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-                            keyboardShouldPersistTaps="handled"
+                            pointerEvents={mentorVisible ? "none" : "auto"}
+                            accessibilityElementsHidden={mentorVisible}
+                            importantForAccessibility={mentorVisible ? "no-hide-descendants" : "auto"}
                             onScroll={chatScroll.onScroll}
                             onScrollBeginDrag={chatScroll.onScrollBeginDrag}
                             onContentSizeChange={chatScroll.onContentSizeChange}
                             onLayout={chatScroll.onLayout}
-                            automaticallyAdjustKeyboardInsets={false}
-                            automaticallyAdjustContentInsets={false}
-                            contentInsetAdjustmentBehavior="never"
-                            scrollEventThrottle={16}
-                            refreshControl={(
-                                <RefreshControl
-                                    onRefresh={() => {
-                                        void refresh()
-                                    }}
-                                    refreshing={refreshing}
-                                    tintColor={palette.primary}
-                                />
-                            )}
-                            style={chatScreenStyles.messagesScroll}
+                            refreshControl={refreshControl}
+                            style={[chatScreenStyles.messagesScroll, mentorVisible && chatScreenStyles.hiddenMessageHistory]}
                         >
-                            {aiContentReady && mentorVisible ? <ChatFormFocusProvider value={chatScroll.onFieldFocus}><MentorWorkspace controller={companion} displayName={user?.name} onPrompt={async text => { showConversation(); if (text) await sendMessage(text); await refresh(); await companion.refresh() }} onCompose={(mode, text) => {
-                                if (text) setDraft(current => current.trim() ? `${text}\n${current}` : text)
-                                if (mode === "photo") handleOpenAttachmentSheet()
-                                else if (mode === "voice") void handleVoiceButtonPress()
-                                else requestAnimationFrame(() => mentorInputRef.current?.focus())
-                            }} photoMessages={messages} renderPhotoAttachments={photoAttachments => <MessageAttachmentList attachments={photoAttachments} isUserMessage mediaWidth={messageMediaWidth} />} /></ChatFormFocusProvider> : aiContentReady && messages.length ? (
+                            {aiContentReady && messages.length ? (
                                 <View style={chatScreenStyles.messageList}>
                                     {messages.map((message, messageIndex) => {
                                         const isUserMessage = message.sender === "user"
@@ -955,6 +967,28 @@ function ChatScreenContent() {
                                 </View>
                             ) : null}
                         </ScrollView>
+                        {aiContentReady && mentorVisible ? <ScrollView
+                            {...scrollProps}
+                            testID="ai-chat-mentor-workspace"
+                            contentContainerStyle={[chatScreenStyles.mentorMessagesContent, scrollInsets]}
+                            ref={mentorScrollRef}
+                            onScroll={mentorScroll.onScroll}
+                            onScrollBeginDrag={mentorScroll.onScrollBeginDrag}
+                            onContentSizeChange={mentorScroll.onContentSizeChange}
+                            onLayout={mentorScroll.onLayout}
+                            refreshControl={refreshControl}
+                            style={chatScreenStyles.mentorScrollOverlay}
+                        >
+                            <ChatFormFocusProvider value={mentorScroll.onFieldFocus}>
+                                <MentorWorkspace controller={companion} displayName={user?.name} onPrompt={async text => { showConversation(); if (text) await sendMessage(text); await refresh(); await companion.refresh() }} onCompose={(mode, text) => {
+                                    if (text) setDraft(current => current.trim() ? `${text}\n${current}` : text)
+                                    if (mode === "photo") handleOpenAttachmentSheet()
+                                    else if (mode === "voice") void handleVoiceButtonPress()
+                                    else requestAnimationFrame(() => mentorInputRef.current?.focus())
+                                }} photoMessages={messages} renderPhotoAttachments={photoAttachments => <MessageAttachmentList attachments={photoAttachments} isUserMessage mediaWidth={messageMediaWidth} />} />
+                            </ChatFormFocusProvider>
+                        </ScrollView> : null}
+                        </View>
                         {aiContentReady && !mentorVisible && !messages.length && !(loading && !chat) && !(error && !chat) ? (
                             <View pointerEvents="none" style={chatScreenStyles.emptyCenterOverlay}>
                                 <View style={chatScreenStyles.emptyBubble}>
@@ -963,7 +997,7 @@ function ChatScreenContent() {
                             </View>
                         ) : null}
 
-                        {error && chat && !overlaysMessages ? (
+                        {error && chat && !overlaysChatChrome ? (
                             <View style={chatScreenStyles.composerError}>
                                 <Text style={chatScreenStyles.inlineError}>{error}</Text>
                             </View>
@@ -971,8 +1005,16 @@ function ChatScreenContent() {
 
                         </ContentReveal>
 
-                        {overlaysMessages && !followingLatest && aiContentReady && messages.length > 0 ? (
-                            <Pressable
+                        {iosChat && !mentorVisible && !followingLatest && aiContentReady && messages.length > 0 ? (
+                            nativeIosChat && NativeChatAction ? (
+                                <NativeChatAction
+                                    action="latest"
+                                    dark={isDark}
+                                    label={t("chat.jumpToLatest")}
+                                    onAction={() => followLatest(!reduceMotion)}
+                                    style={[chatScreenStyles.jumpToLatest, chatScreenStyles.nativeJumpToLatest, { bottom: composerDockHeight + 8 }]}
+                                />
+                            ) : <Pressable
                                 accessibilityLabel={t("chat.jumpToLatest")}
                                 accessibilityRole="button"
                                 onPress={() => followLatest(!reduceMotion)}
@@ -982,7 +1024,6 @@ function ChatScreenContent() {
                                     pressed && chatScreenStyles.circleButtonPressed,
                                 ]}
                             >
-                                <BlurView pointerEvents="none" intensity={60} tint={composerTint} style={chatScreenStyles.composerBlur} />
                                 <Svg fill="none" width={21} height={21} viewBox="0 0 24 24">
                                     <Path d="m5 9 7 7 7-7" stroke={palette.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                                 </Svg>
@@ -991,34 +1032,26 @@ function ChatScreenContent() {
 
                         <View
                             testID="ai-chat-composer-dock"
-                            onLayout={overlaysMessages ? (event) => setComposerDockHeight(event.nativeEvent.layout.height) : undefined}
-                            pointerEvents={overlaysMessages ? "box-none" : "auto"}
+                            onLayout={overlaysChatChrome ? (event) => setComposerDockHeight(event.nativeEvent.layout.height) : undefined}
+                            pointerEvents={overlaysChatChrome ? "box-none" : "auto"}
                             style={[
                                 chatScreenStyles.composerDock,
                                 mentorEnabled ? chatScreenStyles.mentorComposerDock : null,
                                 chatScreenStyles.composerDockInFlow,
-                                overlaysMessages ? chatScreenStyles.composerDockOverlay : null,
-                                {
-                                    paddingBottom: composerBottomInset,
-                                },
+                                overlaysChatChrome ? chatScreenStyles.composerDockOverlay : null,
                             ]}
                         >
-                            {overlaysMessages ? (
-                                <BlurView
-                                    intensity={66}
-                                    pointerEvents="none"
-                                    style={chatScreenStyles.composerBlur}
-                                    tint={composerTint}
-                                />
-                            ) : null}
-                            {error && chat && overlaysMessages ? (
+                            {overlaysChatChrome ? <ChatEdgeBlur dark={isDark} style={chatScreenStyles.composerMaterial} /> : null}
+                            {error && chat && overlaysChatChrome ? (
                                 <View style={chatScreenStyles.composerError}>
                                     <Text style={chatScreenStyles.inlineError}>{error}</Text>
                                 </View>
                             ) : null}
-                            {mentorAvailable && (companion.state?.available || !companion.initialized) ? <View style={chatScreenStyles.composerShortcuts}>
+                            {mentorAvailable && (companion.state?.available || !companion.initialized) ? <View
+                                style={[chatScreenStyles.composerShortcuts, hideMentorShortcuts && chatScreenStyles.hiddenComposerShortcuts]}
+                            >
                                 <MentorModeToggle shown={mentorShown} onToggle={toggleMentor} disabled={!aiAllowed || !aiContentReady || sending || companion.busy || voiceRecording || voiceTranscribing} />
-                                {mentorShown ? <View style={chatScreenStyles.mentorShortcutPanel}><CompanionPanel navigationVisible={!keyboardVisible} controller={companion} workspaceVisible={mentorVisible} onChanged={refresh} openRequested={routeParams.companion === "1"} sending={sending} onPrompt={async text => { showConversation(); await sendMessage(text); await companion.refresh() }} /></View> : null}
+                                {mentorShown ? <View style={chatScreenStyles.mentorShortcutPanel}><CompanionPanel navigationVisible={iosChat || !keyboardVisible} controller={companion} workspaceVisible={mentorVisible} onChanged={refresh} openRequested={routeParams.companion === "1"} sending={sending} onPrompt={async text => { showConversation(); await sendMessage(text); await companion.refresh() }} /></View> : null}
                             </View> : null}
                             {voiceStatusVisible ? (
                                 <View style={chatScreenStyles.voiceStatusPill}>
@@ -1035,55 +1068,71 @@ function ChatScreenContent() {
                                 </View>
                             ) : null}
                             <QueuedAttachmentStrip attachments={attachments} onRemove={handleRemoveAttachment} />
-                            <View pointerEvents={overlaysMessages ? "box-none" : "auto"} style={chatScreenStyles.composerRow}>
-                                <Pressable
-                                    accessibilityLabel={t("chat.attachmentFallbackMessage")}
-                                    accessibilityRole="button"
-                                    disabled={voiceRecording || voiceTranscribing}
-                                    onPress={handleOpenAttachmentSheet}
-                                    style={({ pressed }) => [
-                                        chatScreenStyles.circleButton,
-                                        privateIosChat && [chatScreenStyles.privateChatButton, { backgroundColor: inputBackgroundColor }],
-                                        privateIosChat && pressed && chatScreenStyles.circleButtonPressed,
-                                        voiceStatusVisible ? chatScreenStyles.sendButtonDisabled : null,
-                                    ]}
-                                >
-                                    <AttachmentSvgIcon color={privateIosChat ? palette.text : "#12161A"} height={privateIosChat ? 24 : 28} width={privateIosChat ? 24 : 28} />
-                                </Pressable>
+                            <View pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={{ paddingBottom: composerBottomInset }}>
+                                <View pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={chatScreenStyles.composerRow}>
+                                    {nativeIosChat && NativeChatAction ? (
+                                        <NativeChatAction action="attachment" dark={isDark} disabled={voiceStatusVisible} label={t("chat.attachmentFallbackMessage")} onAction={handleOpenAttachmentSheet} style={chatScreenStyles.nativeChatButton} />
+                                    ) : <Pressable
+                                        accessibilityLabel={t("chat.attachmentFallbackMessage")}
+                                        accessibilityRole="button"
+                                        disabled={voiceRecording || voiceTranscribing}
+                                        onPress={handleOpenAttachmentSheet}
+                                        style={({ pressed }) => [
+                                            chatScreenStyles.circleButton,
+                                            iosChat && [chatScreenStyles.privateChatButton, { backgroundColor: inputBackgroundColor }],
+                                            iosChat && pressed && chatScreenStyles.circleButtonPressed,
+                                            voiceStatusVisible ? chatScreenStyles.sendButtonDisabled : null,
+                                        ]}
+                                    >
+                                        <AttachmentSvgIcon color={iosChat ? palette.text : "#12161A"} height={iosChat ? 24 : 28} width={iosChat ? 24 : 28} />
+                                    </Pressable>}
 
-                                <View pointerEvents={overlaysMessages ? "box-none" : "auto"} style={chatScreenStyles.composerEntry}>
-                                    {privateIosChat ? <Animated.View pointerEvents="none" style={[chatScreenStyles.privateComposerBackground, { backgroundColor: inputBackgroundColor, right: inputBackgroundRight }]} /> : null}
-                                    <View style={[chatScreenStyles.composerInputWrap, privateIosChat && chatScreenStyles.privateComposerInputWrap]}>
-                                        <ChatComposerInput
-                                            inputRef={mentorInputRef}
-                                            accessibilityLabel={t("chat.inputPlaceholder")}
-                                            editable={!voiceRecording && !voiceTranscribing}
-                                            onChangeText={setDraft}
-                                            placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.inputPlaceholder")}
-                                            placeholderTextColor={privateIosChat ? palette.mutedText : isDark ? "#9BB0BF" : "#8B9092"}
-                                            style={[chatScreenStyles.composerInput, privateIosChat && chatScreenStyles.privateComposerInput]}
-                                            value={draft}
-                                        />
-                                    </View>
+                                    <View pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={chatScreenStyles.composerEntry}>
+                                        {nativeIosChat ? <Animated.View pointerEvents="none" style={[chatScreenStyles.privateComposerBackground, { backgroundColor: inputBackgroundColor, right: inputBackgroundRight }]} /> : null}
+                                        <View style={[chatScreenStyles.composerInputWrap, iosChat && chatScreenStyles.privateComposerInputWrap, simpleIosChat && { backgroundColor: inputBackgroundColor, borderWidth: StyleSheet.hairlineWidth, borderColor: palette.border }]}>
+                                            <ChatComposerInput
+                                                inputRef={mentorInputRef}
+                                                accessibilityLabel={t("chat.inputPlaceholder")}
+                                                editable={!voiceRecording && !voiceTranscribing}
+                                                onBlur={() => setComposerFocused(false)}
+                                                onChangeText={setDraft}
+                                                onFocus={() => setComposerFocused(true)}
+                                                placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.inputPlaceholder")}
+                                                placeholderTextColor={iosChat ? palette.mutedText : isDark ? "#9BB0BF" : "#8B9092"}
+                                                style={[chatScreenStyles.composerInput, iosChat && chatScreenStyles.privateComposerInput]}
+                                                value={draft}
+                                            />
+                                        </View>
 
-                                    {privateIosChat ? (
-                                        <AdminComposerAction
-                                            active={composerActive}
-                                            busy={sending || voiceTranscribing}
+                                        {nativeIosChat && NativeChatAction ? (
+                                            <NativeChatAction
+                                                action={sending || voiceTranscribing ? "busy" : voiceRecording ? "stop" : composerActive ? "send" : "microphone"}
+                                                dark={isDark}
+                                                disabled={composerDisabled}
+                                                label={voiceTranscribing ? t("chat.voiceTranscribing") : sending ? t("chat.sending") : voiceRecording ? t("chat.voiceStopAction") : composerActive ? t("chat.sendAction") : t("chat.voiceRecordAction")}
+                                                onAction={handleComposerAction}
+                                                style={chatScreenStyles.nativeChatButton}
+                                            />
+                                        ) : iosChat ? (
+                                            <AdminComposerAction
+                                                active={composerActive}
+                                                backgroundColor={inputBackgroundColor}
+                                                busy={sending || voiceTranscribing}
+                                                disabled={composerDisabled}
+                                                onPress={handleComposerAction}
+                                                recording={voiceRecording}
+                                                transcribing={voiceTranscribing}
+                                            />
+                                        ) : <SendActionButton
                                             disabled={composerDisabled}
+                                            isDark={isDark}
+                                            isActive={composerActive}
                                             onPress={handleComposerAction}
                                             recording={voiceRecording}
+                                            sending={sending}
                                             transcribing={voiceTranscribing}
-                                        />
-                                    ) : <SendActionButton
-                                        disabled={composerDisabled}
-                                        isDark={isDark}
-                                        isActive={composerActive}
-                                        onPress={handleComposerAction}
-                                        recording={voiceRecording}
-                                        sending={sending}
-                                        transcribing={voiceTranscribing}
-                                    />}
+                                        />}
+                                    </View>
                                 </View>
                             </View>
                         </View>
@@ -1109,6 +1158,7 @@ function ChatScreenContent() {
             {communityAvailable ? <ChatModePane mode="community" active={chatMode === "community"}>
             <CommunityChatScreen
                 embedded
+                headerInset={scrollTopInset}
                 onTopicNavigationChange={setTopicNavigation}
                 active={chatMode === "community"}
                 mode={chatMode}
@@ -1123,6 +1173,7 @@ function ChatScreenContent() {
             <ChatModePane mode="support" active={chatMode === "support"}>
             <SupportChatScreen
                 embedded
+                headerInset={scrollTopInset}
                 active={chatMode === "support"}
                 communityUnreadCount={communityUnread}
                 mode={chatMode}
@@ -1133,6 +1184,7 @@ function ChatScreenContent() {
             />
             </ChatModePane>
             </ChatModeTransition>
+            {overlaysChatChrome ? <ChatEdgeBlur dark={isDark} topEdge style={[chatScreenStyles.dialogTopBlur, { height: headerHeight + 10 }]} /> : null}
             </ChatKeyboardLayout>
         </View>
     )

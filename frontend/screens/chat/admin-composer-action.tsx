@@ -7,8 +7,9 @@ import { useTheme } from "@/providers/theme-provider"
 import { useChatReducedMotion } from "@/screens/chat/chat-mode-transition"
 import { motion } from "@/theme/motion"
 
-export function AdminComposerAction({ active, busy, disabled, onPress, recording, transcribing }: {
+export function AdminComposerAction({ active, backgroundColor, busy, disabled, onPress, recording, transcribing }: {
     active: boolean
+    backgroundColor: string
     busy: boolean
     disabled: boolean
     onPress: () => void
@@ -58,7 +59,7 @@ export function AdminComposerAction({ active, busy, disabled, onPress, recording
             onPress={onPress}
             style={({ pressed }) => [styles.button, { opacity: pressed ? 0.82 : disabled && !busy ? 0.5 : 1 }]}
         >
-            <View pointerEvents="none" style={[styles.background, { backgroundColor: palette.veilSoft, borderColor: palette.border }]} />
+            <View pointerEvents="none" style={[styles.background, { backgroundColor, borderColor: palette.border }]} />
             <Animated.View pointerEvents="none" style={[styles.layer, { opacity: values.mic, transform: [{ scale: values.mic.interpolate({ inputRange: [0, 1], outputRange: [0.76, 1] }) }] }]}>
                 <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
                     <Path d="M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3ZM5.5 11.5v.5a6.5 6.5 0 0 0 13 0v-.5M12 18.5V22m-3 0h6" stroke={palette.text} strokeWidth={1.8} strokeLinecap="round" />

@@ -61,3 +61,15 @@ test("AI-recommended courses are visibly distinguished from user-supplied plans"
     assert.match(api, /"ai_recommended_plan"/)
     assert.match(dialogue, /Рекомендация ИИ, а не медицинское назначение/)
 })
+
+
+test("the mentor client refuses the previous request format", async () => {
+    let submitted = false
+    const api = loadTs("services/api/ai-chat.ts", {
+        "@/services/api/client": { apiPostMultipart: async () => { submitted = true } },
+        "@/services/api/ai-chat.constants": { aiChatEndpoint: "/v1/users/me/ai-chat" },
+        "@/services/api/ai-data-consent": { ensureAiDataConsent: async () => undefined },
+    })
+    await assert.rejects(api.sendMyAiChatMessage("mentor", [], "request-old-001", 1), /протокол 2/)
+    assert.equal(submitted, false)
+})

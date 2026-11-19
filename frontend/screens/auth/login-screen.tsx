@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActivityIndicator, Alert, Platform, Pressable, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "react-native"
 import { router } from "expo-router"
 
 import { ROUTES } from "@/constants/routes"
@@ -24,15 +24,10 @@ export default function LoginScreen() {
     const [login, setLogin] = useState("")
     const [password, setPassword] = useState("")
     const [pendingEmail, setPendingEmail] = useState("")
-    const [privateVerification, setPrivateVerification] = useState(false)
     const [error, setError] = useState("")
     const [statusMessage, setStatusMessage] = useState("")
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [isResending, setIsResending] = useState(false)
-    const normalizedLogin = login.trim().toLowerCase()
-    const privateRecovery = Platform.OS === "ios" && (
-        normalizedLogin === "admin" || (privateVerification && normalizedLogin === pendingEmail.toLowerCase())
-    )
 
     const showAuthAlert = (message: string) => {
         Alert.alert(t("auth.error.alertTitle"), message)
@@ -54,7 +49,6 @@ export default function LoginScreen() {
             })
             if (result.verificationRequired) {
                 setPendingEmail(result.email)
-                setPrivateVerification(Platform.OS === "ios" && result.iosPrivateFeatures)
                 setStatusMessage("")
                 setStep("verification")
                 return
@@ -122,10 +116,9 @@ export default function LoginScreen() {
         return (
             <PasswordResetScreen
                 initialEmail={login.includes("@") ? login.trim() : ""}
-                privateRecovery={privateRecovery}
                 onBack={() => setStep("credentials")}
                 onSuccess={(email) => {
-                    if (!privateRecovery || normalizedLogin !== "admin") setLogin(email)
+                    setLogin(email)
                     setPassword("")
                     setStatusMessage(t("auth.reset.success"))
                     setStep("credentials")
@@ -145,10 +138,10 @@ export default function LoginScreen() {
             },
         }
         return (
-            <AuthFormLayout backAction={privateVerification ? backAction : undefined} error={error} scrollRef={scrollRef} title={t("auth.verify.title")}>
+            <AuthFormLayout backAction={backAction} error={error} scrollRef={scrollRef} title={t("auth.verify.title")}>
                 <EmailVerificationStep
                     email={pendingEmail}
-                    headerBack={privateVerification}
+                    headerBack
                     isChecking={isSubmitting}
                     isResending={isResending}
                     onEditEmail={backAction.onPress}
