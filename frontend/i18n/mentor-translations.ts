@@ -2,6 +2,14 @@ import { getTranslationLanguage, type Language } from "@/i18n/translations"
 
 // Source phrases belong to the interface; user-entered names and notes are never passed here.
 export const mentorTranslations: Record<string, { en: string; kz: string }> = {
+    "Наставник временно недоступен. Попробуйте ещё раз.": {
+        "en": "Your mentor is temporarily unavailable. Please try again.",
+        "kz": "Тәлімгер уақытша қолжетімсіз. Қайталап көріңіз."
+    },
+    "Питание, тренировки, вес и ваш курс — всё в одном месте.": {
+        "en": "Nutrition, workouts, weight and your course — all in one place.",
+        "kz": "Тамақтану, жаттығулар, салмақ және курсыңыз — барлығы бір жерде."
+    },
     "мг": {
         "en": "mg",
         "kz": "мг"

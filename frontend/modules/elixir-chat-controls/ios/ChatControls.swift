@@ -25,6 +25,7 @@ final class ChatActionButton: UIButton {
     var next: UIButton.Configuration
     if #available(iOS 26.0, *) {
       next = action == .send ? .prominentGlass() : .glass()
+      if action == .send { next.baseBackgroundColor = .systemBlue }
     } else {
       next = action == .send ? .filled() : .tinted()
       next.baseBackgroundColor = action == .send ? .systemBlue : .secondarySystemFill
@@ -40,7 +41,9 @@ final class ChatActionButton: UIButton {
     next.showsActivityIndicator = action == .busy
 
     layer.cornerRadius = min(bounds.width, bounds.height) / 2
-    let fill = action == .send ? UIColor.systemBlue : chatControlFill
+    let fill: UIColor
+    if #available(iOS 26.0, *) { fill = .clear }
+    else { fill = action == .send ? .systemBlue : chatControlFill }
     if displayedAction != nil && window != nil && !UIAccessibility.isReduceMotionEnabled {
       UIView.transition(with: self, duration: 0.22, options: [.transitionCrossDissolve, .allowUserInteraction, .beginFromCurrentState]) {
         self.configuration = next

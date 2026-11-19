@@ -1,15 +1,14 @@
+import { requestChatRecordingPermission } from "@/screens/chat/chat-recording-permission"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
     ActivityIndicator,
     Alert,
-    Animated,
     Keyboard,
     Linking,
     Platform,
     Pressable,
     RefreshControl,
     ScrollView,
-    StyleSheet,
     Text,
     TextInput,
     useWindowDimensions,
@@ -19,19 +18,16 @@ import * as Clipboard from "expo-clipboard"
 import { useCameraPermissions } from "expo-camera"
 import {
     RecordingPresets,
-    requestRecordingPermissionsAsync,
     setAudioModeAsync,
     useAudioRecorder,
     useAudioRecorderState,
 } from "expo-audio"
-import * as Application from "expo-application"
 import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
 import * as SecureStore from "expo-secure-store"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import Svg, { Path } from "react-native-svg"
 
-import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
 import { EmptyState } from "@/components/content/empty-state"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
 import { ROUTES, getProductRoute } from "@/constants/routes"
@@ -47,13 +43,13 @@ import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import { CompanionPanel, CompanionCards, useCompanion } from "@/screens/chat/companion"
 import { MentorWorkspace } from "@/screens/chat/mentor"
+import { MentorEntry } from "@/screens/chat/mentor-entry"
 import { ChatBackdrop } from "@/screens/chat/chat-backdrop"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ContentReveal, QuietLoading } from "@/components/ui/quiet-loading"
 import { ChatKeyboardLayout } from "@/screens/chat/chat-keyboard-layout"
 import { ChatFormFocusProvider } from "@/screens/chat/chat-form-focus"
-import { ChatComposerInput } from "@/screens/chat/chat-composer-input"
-import { AdminComposerAction } from "@/screens/chat/admin-composer-action"
+import { ChatComposer } from "@/screens/chat/chat-composer"
 import { NativeChatAction, NativeComposerMaterial } from "@/screens/chat/native-chat-controls"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
 import { trackCustomerEvent } from "@/services/customer-intelligence"
@@ -65,7 +61,6 @@ import type {
 import type { BasketItemRead } from "@/types/basket"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { spacing } from "@/theme/spacing"
-import { motion } from "@/theme/motion"
 import { createChatScreenStyles } from "./chat-screen.styles"
 import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switcher"
 import { isCommunityChatAvailable, isMentorAvailable, resolveChatMode } from "@/screens/chat/chat-mode-policy"
@@ -84,7 +79,6 @@ import {
     AiTypingBubble,
     AnimatedMessageBlock,
     MessageMarkdown,
-    SendActionButton,
 } from "@/screens/chat/chat-screen.core-components"
 import {
     createAttachmentFromImagePickerAsset,
@@ -97,16 +91,11 @@ import {
     type AttachmentMode,
     CHAT_IDLE_AUDIO_MODE,
     CHAT_RECORDING_AUDIO_MODE,
-    IOS_MINIMUM_VOICE_RECORDING_BUILD,
     INTERNAL_PRODUCT_LINK_PATTERN,
     MESSAGE_IMAGE_MAX_WIDTH,
     SAFE_LINK_PROTOCOL_PATTERN,
 } from "@/screens/chat/chat-screen.constants"
 
-function nativeBuildNumber() {
-    const parsedBuild = Number(Application.nativeBuildVersion)
-    return Number.isFinite(parsedBuild) ? parsedBuild : 0
-}
 
 const CHAT_MODE_STORAGE_KEY = "elixirpeptide-chat-mode"
 
@@ -158,11 +147,10 @@ function ChatScreenContent() {
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [keyboardVisible, setKeyboardVisible] = useState(false)
     const [composerFocused, setComposerFocused] = useState(false)
+    const voiceStarting = useRef(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const [chatMode, setChatMode] = useState<ChatMode>("ai")
-    const keyboardAnimationActive = useRef(chatMode === "ai")
-    keyboardAnimationActive.current = chatMode === "ai"
     const [modeReady, setModeReady] = useState(false)
     const [topicNavigation, setTopicNavigation] = useState<{ title: string; onBack: () => void } | null>(null)
     const [communityUnread, setCommunityUnread] = useState(0)
@@ -201,7 +189,7 @@ function ChatScreenContent() {
     const mentorScrollRef = useRef<ScrollView | null>(null)
     const mentorInputRef = useRef<TextInput | null>(null)
     const mentorEnabled = mentorAvailable && companion.state?.dialogue_protocol === 2 && "mentor" in companion.state && companion.enabled
-    const mentorPage = mentorEnabled && mentorMode.shown ? companion.mentorPage : null
+    const mentorPage = mentorAvailable && mentorMode.shown ? companion.mentorPage : null
     const mentorVisible = mentorPage !== null
     const overlaysChatChrome = Platform.OS === "ios"
     const topBarOffset = topInset + 8
@@ -233,8 +221,6 @@ function ChatScreenContent() {
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
     const messageTextWidth = Math.max(180, Math.min(screenWidth * 0.74, 330))
-    const voiceRecordingSupported =
-        __DEV__ || Platform.OS !== "ios" || nativeBuildNumber() >= IOS_MINIMUM_VOICE_RECORDING_BUILD
     const { basket } = useBasket()
     const {
         addItem: addBasketItem,
@@ -322,8 +308,7 @@ function ChatScreenContent() {
         const showSubscription = Keyboard.addListener(showEvent, () => {
             setKeyboardVisible(true)
         })
-        const hideSubscription = Keyboard.addListener(hideEvent, (event) => {
-            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
+        const hideSubscription = Keyboard.addListener(hideEvent, () => {
             setKeyboardVisible(false)
         })
 
@@ -442,23 +427,15 @@ function ChatScreenContent() {
     }, [])
 
     const startVoiceRecording = useCallback(async () => {
-        if (sending || voiceTranscribing) {
+        if (voiceStarting.current || sending || voiceTranscribing) {
             return
         }
 
-        if (!voiceRecordingSupported) {
-            Alert.alert(t("chat.voiceUpdateRequiredTitle"), t("chat.voiceUpdateRequiredMessage"))
-            return
-        }
-
+        voiceStarting.current = true
         Keyboard.dismiss()
 
         try {
-            const permission = await requestRecordingPermissionsAsync()
-            if (!permission.granted) {
-                Alert.alert(t("chat.voicePermissionTitle"), t("chat.voicePermissionMessage"))
-                return
-            }
+            if (!await requestChatRecordingPermission(t)) return
 
             await setAudioModeAsync(CHAT_RECORDING_AUDIO_MODE)
             await audioRecorder.prepareToRecordAsync()
@@ -468,8 +445,10 @@ function ChatScreenContent() {
             setVoiceRecording(false)
             Alert.alert(t("chat.voiceTranscriptionFailedTitle"), t("chat.voiceTranscriptionFailedMessage"))
             await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined)
+        } finally {
+            voiceStarting.current = false
         }
-    }, [audioRecorder, sending, t, voiceRecordingSupported, voiceTranscribing])
+    }, [audioRecorder, sending, t, voiceTranscribing])
 
     const stopVoiceRecording = useCallback(async () => {
         if (!voiceRecording || voiceTranscribing) {
@@ -746,20 +725,8 @@ function ChatScreenContent() {
 
     const hasDraft = Boolean(draft.trim())
     const hasComposerContent = hasDraft || attachments.length > 0
-    const composerDisabled = !aiAllowed || !aiContentReady || sending || voiceTranscribing
-    const composerActive = hasComposerContent && !voiceRecording
     const reduceMotion = useChatReducedMotion()
-    const sendJoined = useRef(new Animated.Value(0)).current
-    useEffect(() => {
-        if (!nativeIosChat || reduceMotion) {
-            sendJoined.setValue(composerActive ? 1 : 0)
-            return
-        }
-        const animation = Animated.timing(sendJoined, { toValue: composerActive ? 1 : 0, duration: motion.duration.standard, easing: motion.easing.standard, useNativeDriver: false })
-        animation.start()
-        return () => animation.stop()
-    }, [composerActive, nativeIosChat, reduceMotion, sendJoined])
-    const inputBackgroundRight = sendJoined.interpolate({ inputRange: [0, 1], outputRange: [51, 0] })
+    const composerDisabled = !aiAllowed || !aiContentReady || sending || voiceTranscribing
     const inputBackgroundColor = isDark ? "#263040" : "#F2FAF5"
     const handleComposerAction = () => {
         if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress()
@@ -980,12 +947,14 @@ function ChatScreenContent() {
                             style={chatScreenStyles.mentorScrollOverlay}
                         >
                             <ChatFormFocusProvider value={mentorScroll.onFieldFocus}>
+                                <MentorEntry controller={companion}>
                                 <MentorWorkspace controller={companion} displayName={user?.name} onPrompt={async text => { showConversation(); if (text) await sendMessage(text); await refresh(); await companion.refresh() }} onCompose={(mode, text) => {
                                     if (text) setDraft(current => current.trim() ? `${text}\n${current}` : text)
                                     if (mode === "photo") handleOpenAttachmentSheet()
                                     else if (mode === "voice") void handleVoiceButtonPress()
                                     else requestAnimationFrame(() => mentorInputRef.current?.focus())
                                 }} photoMessages={messages} renderPhotoAttachments={photoAttachments => <MessageAttachmentList attachments={photoAttachments} isUserMessage mediaWidth={messageMediaWidth} />} />
+                                </MentorEntry>
                             </ChatFormFocusProvider>
                         </ScrollView> : null}
                         </View>
@@ -1069,71 +1038,22 @@ function ChatScreenContent() {
                             ) : null}
                             <QueuedAttachmentStrip attachments={attachments} onRemove={handleRemoveAttachment} />
                             <View pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={{ paddingBottom: composerBottomInset }}>
-                                <View pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={chatScreenStyles.composerRow}>
-                                    {nativeIosChat && NativeChatAction ? (
-                                        <NativeChatAction action="attachment" dark={isDark} disabled={voiceStatusVisible} label={t("chat.attachmentFallbackMessage")} onAction={handleOpenAttachmentSheet} style={chatScreenStyles.nativeChatButton} />
-                                    ) : <Pressable
-                                        accessibilityLabel={t("chat.attachmentFallbackMessage")}
-                                        accessibilityRole="button"
-                                        disabled={voiceRecording || voiceTranscribing}
-                                        onPress={handleOpenAttachmentSheet}
-                                        style={({ pressed }) => [
-                                            chatScreenStyles.circleButton,
-                                            iosChat && [chatScreenStyles.privateChatButton, { backgroundColor: inputBackgroundColor }],
-                                            iosChat && pressed && chatScreenStyles.circleButtonPressed,
-                                            voiceStatusVisible ? chatScreenStyles.sendButtonDisabled : null,
-                                        ]}
-                                    >
-                                        <AttachmentSvgIcon color={iosChat ? palette.text : "#12161A"} height={iosChat ? 24 : 28} width={iosChat ? 24 : 28} />
-                                    </Pressable>}
-
-                                    <View pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={chatScreenStyles.composerEntry}>
-                                        {nativeIosChat ? <Animated.View pointerEvents="none" style={[chatScreenStyles.privateComposerBackground, { backgroundColor: inputBackgroundColor, right: inputBackgroundRight }]} /> : null}
-                                        <View style={[chatScreenStyles.composerInputWrap, iosChat && chatScreenStyles.privateComposerInputWrap, simpleIosChat && { backgroundColor: inputBackgroundColor, borderWidth: StyleSheet.hairlineWidth, borderColor: palette.border }]}>
-                                            <ChatComposerInput
-                                                inputRef={mentorInputRef}
-                                                accessibilityLabel={t("chat.inputPlaceholder")}
-                                                editable={!voiceRecording && !voiceTranscribing}
-                                                onBlur={() => setComposerFocused(false)}
-                                                onChangeText={setDraft}
-                                                onFocus={() => setComposerFocused(true)}
-                                                placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.inputPlaceholder")}
-                                                placeholderTextColor={iosChat ? palette.mutedText : isDark ? "#9BB0BF" : "#8B9092"}
-                                                style={[chatScreenStyles.composerInput, iosChat && chatScreenStyles.privateComposerInput]}
-                                                value={draft}
-                                            />
-                                        </View>
-
-                                        {nativeIosChat && NativeChatAction ? (
-                                            <NativeChatAction
-                                                action={sending || voiceTranscribing ? "busy" : voiceRecording ? "stop" : composerActive ? "send" : "microphone"}
-                                                dark={isDark}
-                                                disabled={composerDisabled}
-                                                label={voiceTranscribing ? t("chat.voiceTranscribing") : sending ? t("chat.sending") : voiceRecording ? t("chat.voiceStopAction") : composerActive ? t("chat.sendAction") : t("chat.voiceRecordAction")}
-                                                onAction={handleComposerAction}
-                                                style={chatScreenStyles.nativeChatButton}
-                                            />
-                                        ) : iosChat ? (
-                                            <AdminComposerAction
-                                                active={composerActive}
-                                                backgroundColor={inputBackgroundColor}
-                                                busy={sending || voiceTranscribing}
-                                                disabled={composerDisabled}
-                                                onPress={handleComposerAction}
-                                                recording={voiceRecording}
-                                                transcribing={voiceTranscribing}
-                                            />
-                                        ) : <SendActionButton
-                                            disabled={composerDisabled}
-                                            isDark={isDark}
-                                            isActive={composerActive}
-                                            onPress={handleComposerAction}
-                                            recording={voiceRecording}
-                                            sending={sending}
-                                            transcribing={voiceTranscribing}
-                                        />}
-                                    </View>
-                                </View>
+                                <ChatComposer
+                                    value={draft}
+                                    onChangeText={setDraft}
+                                    inputRef={mentorInputRef}
+                                    onFocus={() => setComposerFocused(true)}
+                                    onBlur={() => setComposerFocused(false)}
+                                    placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.inputPlaceholder")}
+                                    onAttachment={handleOpenAttachmentSheet}
+                                    onAction={handleComposerAction}
+                                    hasContent={hasComposerContent}
+                                    disabled={composerDisabled}
+                                    attachmentDisabled={voiceStatusVisible}
+                                    recording={voiceRecording}
+                                    busy={sending || voiceTranscribing}
+                                    transcribing={voiceTranscribing}
+                                />
                             </View>
                         </View>
                 </View>

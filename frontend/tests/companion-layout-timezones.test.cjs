@@ -27,8 +27,8 @@ test("stationary chat chrome sits above retained content with an in-flow keyboar
     assert.ok(ancestors(panel).includes(composer), "Mentor navigation stays inside the composer when conditionally shown")
     assert.ok(!ancestors(panel).includes(header))
     assert.ok(!ancestors(panel).some(node => tag(node) === "ScrollView"))
-    const input = nodes.find(node => tag(node) === "ChatComposerInput")
-    assert.ok(input, "Use the bounded production composer input")
+    const input = nodes.find(node => tag(node) === "ChatComposer")
+    assert.ok(input, "Use the shared bounded composer in every chat")
     assert.ok(panel.end < input.pos)
     const toggle = nodes.find(node => tag(node) === "MentorModeToggle")
     assert.ok(toggle && ancestors(toggle).includes(composer), "Mentor toggle stays in the shortcut row above the input")
@@ -92,9 +92,17 @@ test("stationary chat chrome sits above retained content with an in-flow keyboar
 test("iOS keyboard avoidance resizes the screen instead of translating its scroll area", () => {
     const renderShell = platform => {
         const { ChatKeyboardLayout } = loadTs("screens/chat/chat-keyboard-layout.tsx", {
-            "react-native": { KeyboardAvoidingView: "KeyboardAvoidingView", Platform: { OS: platform }, StyleSheet: { create: value => value } },
+            react: { useEffect: () => {}, useRef: value => ({ current: value }) },
+            "react-native": { Animated: { Value: class {}, View: "AnimatedView" }, View: "View", KeyboardAvoidingView: "KeyboardAvoidingView", Platform: { OS: platform }, StyleSheet: { create: value => value } },
+            "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
+            "@/screens/chat/chat-edge-blur": { ChatEdgeBlur: "ChatEdgeBlur" },
+            "@/screens/chat/native-chat-controls": { NativeChatKeyboardMaterial: "NativeChatKeyboardMaterial" },
         })
-        return ChatKeyboardLayout({ children: "chat content" })
+        const tree = ChatKeyboardLayout({ children: "chat content" })
+        const [backing, avoidance] = tree.props.children
+        assert.equal(backing.type, "NativeChatKeyboardMaterial")
+        assert.equal(backing.props.pointerEvents, "none", "Keyboard corners are filled outside the resized conversation without intercepting touches")
+        return avoidance
     }
     const ios = renderShell("ios")
     assert.equal(ios.type, "KeyboardAvoidingView")

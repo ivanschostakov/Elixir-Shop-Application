@@ -1,8 +1,10 @@
 import { getAuthTokens } from "@/services/auth/session"
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import {
     Image,
+    ActionSheetIOS,
     Modal,
+    Platform,
     Pressable,
     ScrollView,
     Text,
@@ -54,8 +56,23 @@ export function AttachmentSheet({
     const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const { t } = useLanguage()
     const { height } = useWindowDimensions()
+    const { isDark } = useTheme()
+    const nativeSheetOpen = useRef(false)
+    useEffect(() => {
+        if (Platform.OS !== "ios" || !visible || nativeSheetOpen.current) return
+        nativeSheetOpen.current = true
+        const actions = [onOpenNativeGallery, onOpenCamera, ...(allowFiles ? [onPickFiles] : [])]
+        const options = [t("chat.attachmentsSelectGallery"), t("chat.attachmentsCameraTitle"), ...(allowFiles ? [t("chat.attachmentsFileTitle")] : []), t("common.cancel")]
+        ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, userInterfaceStyle: isDark ? "dark" : "light" }, index => {
+            nativeSheetOpen.current = false
+            onClose()
+            actions[index]?.()
+        })
+    }, [allowFiles, isDark, onClose, onOpenCamera, onOpenNativeGallery, onPickFiles, t, visible])
     const sheetHeight = Math.min(height * 0.72, 620)
     const bottomControlOffset = Math.max(bottomInset, spacing.sm)
+
+    if (Platform.OS === "ios") return null
 
     return (
         <Modal

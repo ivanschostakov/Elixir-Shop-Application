@@ -1,3 +1,4 @@
+import { requestChatRecordingPermission } from "@/screens/chat/chat-recording-permission"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
     ActivityIndicator,
@@ -11,14 +12,11 @@ import {
     RefreshControl,
     ScrollView,
     Text,
-    TextInput,
     View,
 } from "react-native"
-import * as Application from "expo-application"
 import { useCameraPermissions } from "expo-camera"
 import {
     RecordingPresets,
-    requestRecordingPermissionsAsync,
     setAudioModeAsync,
     useAudioRecorder,
     useAudioRecorderState,
@@ -27,7 +25,6 @@ import * as ImagePicker from "expo-image-picker"
 import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
-import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ROUTES } from "@/constants/routes"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
@@ -53,9 +50,9 @@ import {
     CHAT_BACKGROUND_LIGHT,
     CHAT_IDLE_AUDIO_MODE,
     CHAT_RECORDING_AUDIO_MODE,
-    IOS_MINIMUM_VOICE_RECORDING_BUILD,
 } from "@/screens/chat/chat-screen.constants"
-import { SendActionButton } from "@/screens/chat/chat-screen.core-components"
+import { ChatComposer } from "@/screens/chat/chat-composer"
+import { NativeChatMenu } from "@/screens/chat/native-chat-controls"
 import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switcher"
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { createSupportChatStyles } from "@/screens/chat/support-chat-screen.styles"
@@ -92,10 +89,6 @@ function attachmentSource(path: string) {
     }
 }
 
-function nativeBuildNumber() {
-    const parsedBuild = Number(Application.nativeBuildVersion)
-    return Number.isFinite(parsedBuild) ? parsedBuild : 0
-}
 
 export function SupportChatScreen({
     embedded = false,
@@ -125,8 +118,7 @@ export function SupportChatScreen({
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(74)
     const [keyboardVisible, setKeyboardVisible] = useState(false)
-    const keyboardAnimationActive = useRef(active)
-    keyboardAnimationActive.current = active
+    const voiceStarting = useRef(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const {
@@ -150,9 +142,6 @@ export function SupportChatScreen({
     const contentBottom = isHistorical ? 0 : composerHeight
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
     const voiceStatusVisible = voiceRecording || voiceTranscribing
-    const voiceInputEnabled = Platform.OS !== "ios"
-    const voiceRecordingSupported =
-        __DEV__ || Platform.OS !== "ios" || nativeBuildNumber() >= IOS_MINIMUM_VOICE_RECORDING_BUILD
 
     useEffect(() => {
         if (!active || !requestedConversationId || conversation?.id === requestedConversationId) return
@@ -168,12 +157,10 @@ export function SupportChatScreen({
     useEffect(() => {
         const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow"
         const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide"
-        const showSubscription = Keyboard.addListener(showEvent, (event) => {
-            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
+        const showSubscription = Keyboard.addListener(showEvent, () => {
             setKeyboardVisible(true)
         })
-        const hideSubscription = Keyboard.addListener(hideEvent, (event) => {
-            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
+        const hideSubscription = Keyboard.addListener(hideEvent, () => {
             setKeyboardVisible(false)
         })
         return () => {
@@ -301,18 +288,11 @@ export function SupportChatScreen({
     ])
 
     const startVoiceRecording = useCallback(async () => {
-        if (sending || voiceTranscribing) return
-        if (!voiceRecordingSupported) {
-            Alert.alert(t("chat.voiceUpdateRequiredTitle"), t("chat.voiceUpdateRequiredMessage"))
-            return
-        }
+        if (voiceStarting.current || sending || voiceTranscribing) return
+        voiceStarting.current = true
         Keyboard.dismiss()
         try {
-            const permission = await requestRecordingPermissionsAsync()
-            if (!permission.granted) {
-                Alert.alert(t("chat.voicePermissionTitle"), t("chat.voicePermissionMessage"))
-                return
-            }
+            if (!await requestChatRecordingPermission(t)) return
             await setAudioModeAsync(CHAT_RECORDING_AUDIO_MODE)
             await audioRecorder.prepareToRecordAsync()
             audioRecorder.record()
@@ -321,8 +301,10 @@ export function SupportChatScreen({
             setVoiceRecording(false)
             Alert.alert(t("chat.voiceTranscriptionFailedTitle"), t("chat.voiceTranscriptionFailedMessage"))
             await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined)
+        } finally {
+            voiceStarting.current = false
         }
-    }, [audioRecorder, sending, t, voiceRecordingSupported, voiceTranscribing])
+    }, [audioRecorder, sending, t, voiceTranscribing])
 
     const stopVoiceRecording = useCallback(async () => {
         if (!voiceRecording || voiceTranscribing) return
@@ -374,6 +356,8 @@ export function SupportChatScreen({
         resolved: t("chat.supportStatusResolved"),
         spam: t("chat.supportStatusSpam"),
     }
+
+    const historyItems = [...(inbox?.active ? [inbox.active] : []), ...(inbox?.previous ?? [])]
 
     if (!active && !embedded) {
         return null
@@ -432,7 +416,22 @@ export function SupportChatScreen({
                             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} tintColor={palette.primary} />}
                             style={styles.messages}
                         >
-                        {inbox?.previous.length ? (
+                        {NativeChatMenu && inbox?.previous.length ? (
+                            <NativeChatMenu
+                                dark={isDark}
+                                label={t("chat.supportHistory")}
+                                labels={historyItems.map(item => item.id === inbox.active?.id ? t("chat.supportCurrent") : item.subject || `#${item.id}`)}
+                                details={historyItems.map(item => `${statusLabels[item.status]} · ${historyDate(item.last_message_at)}`)}
+                                selectedIndex={historyItems.findIndex(item => item.id === conversation?.id)}
+                                onSelect={({ nativeEvent: { index } }) => {
+                                    const item = historyItems[index]
+                                    if (!item) return
+                                    if (item.id === inbox.active?.id) closePrevious()
+                                    else void openPrevious(item.id)
+                                }}
+                                style={{ height: 44, marginBottom: spacing.md }}
+                            />
+                        ) : inbox?.previous.length ? (
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
                                 {inbox.active && isHistorical ? (
                                     <Pressable onPress={closePrevious} style={styles.historyCard}>
@@ -520,47 +519,19 @@ export function SupportChatScreen({
                                         setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))
                                     }}
                                 />
-                                <View style={chatStyles.composerRow}>
-                                    <Pressable
-                                        accessibilityLabel={t("chat.communityAddAttachment")}
-                                        disabled={voiceStatusVisible}
-                                        onPress={openAttachmentSheet}
-                                        style={[
-                                            chatStyles.circleButton,
-                                            voiceStatusVisible ? chatStyles.sendButtonDisabled : null,
-                                        ]}
-                                    >
-                                        <AttachmentSvgIcon color="#12161A" height={28} width={28} />
-                                    </Pressable>
-                                    <View style={chatStyles.composerInputWrap}>
-                                        <TextInput
-                                            editable={!voiceStatusVisible}
-                                            multiline
-                                            onChangeText={setDraft}
-                                            placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.supportInputPlaceholder")}
-                                            placeholderTextColor={isDark ? "#9BB0BF" : "#8B9092"}
-                                            style={chatStyles.composerInput}
-                                            textAlignVertical="top"
-                                            value={draft}
-                                        />
-                                    </View>
-                                    <SendActionButton
-                                        disabled={sending || voiceTranscribing || (!hasComposerContent && !voiceInputEnabled)}
-                                        isDark={isDark}
-                                        isActive={(hasComposerContent || !voiceInputEnabled) && !voiceRecording}
-                                        onPress={() => {
-                                            if (!hasComposerContent && !voiceInputEnabled) return
-                                            if (voiceRecording || !hasComposerContent) {
-                                                void handleVoiceButtonPress()
-                                                return
-                                            }
-                                            void handleSend()
-                                        }}
-                                        recording={voiceRecording}
-                                        sending={sending}
-                                        transcribing={voiceTranscribing}
-                                    />
-                                </View>
+                                <ChatComposer
+                                    value={draft}
+                                    onChangeText={setDraft}
+                                    placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.supportInputPlaceholder")}
+                                    onAttachment={openAttachmentSheet}
+                                    onAction={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }}
+                                    hasContent={hasComposerContent}
+                                    disabled={sending || voiceTranscribing}
+                                    attachmentDisabled={voiceStatusVisible}
+                                    recording={voiceRecording}
+                                    busy={sending || voiceTranscribing}
+                                    transcribing={voiceTranscribing}
+                                />
                             </View>
                         ) : null}
                     </View>

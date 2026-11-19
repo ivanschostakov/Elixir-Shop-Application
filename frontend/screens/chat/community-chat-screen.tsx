@@ -1,3 +1,5 @@
+import { requestChatRecordingPermission } from "@/screens/chat/chat-recording-permission"
+import { ChatComposer } from "@/screens/chat/chat-composer"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
     ActivityIndicator,
@@ -16,16 +18,13 @@ import {
     RefreshControl,
     ScrollView,
     Text,
-    TextInput,
     View,
 } from "react-native"
-import * as Application from "expo-application"
 import { BlurView } from "expo-blur"
 import { useCameraPermissions } from "expo-camera"
 import * as Clipboard from "expo-clipboard"
 import {
     RecordingPresets,
-    requestRecordingPermissionsAsync,
     setAudioModeAsync,
     useAudioRecorder,
     useAudioRecorderState,
@@ -36,7 +35,6 @@ import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Path } from "react-native-svg"
 
-import AttachmentSvgIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ROUTES } from "@/constants/routes"
 import { useCommunityChat } from "@/hooks/chat/use-community-chat"
@@ -64,9 +62,8 @@ import {
     CHAT_BACKGROUND_LIGHT,
     CHAT_IDLE_AUDIO_MODE,
     CHAT_RECORDING_AUDIO_MODE,
-    IOS_MINIMUM_VOICE_RECORDING_BUILD,
 } from "@/screens/chat/chat-screen.constants"
-import { SendActionButton } from "@/screens/chat/chat-screen.core-components"
+
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { createCommunityChatStyles } from "@/screens/chat/community-chat-screen.styles"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
@@ -118,10 +115,6 @@ function topicColor(topic: CommunityTopic) {
     return colors[topic.id % colors.length]
 }
 
-function nativeBuildNumber() {
-    const parsedBuild = Number(Application.nativeBuildVersion)
-    return Number.isFinite(parsedBuild) ? parsedBuild : 0
-}
 
 export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopicNavigationChange, active, mode, onEnabledChange, onModeChange, onUnreadChange, requestedTopicId, supportUnreadCount, unreadCount }: CommunityChatScreenProps) {
     const styles = useThemeStyles(createCommunityChatStyles)
@@ -142,8 +135,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(110)
     const [keyboardVisible, setKeyboardVisible] = useState(false)
-    const keyboardAnimationActive = useRef(active)
-    keyboardAnimationActive.current = active
+    const voiceStarting = useRef(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const [replyTo, setReplyTo] = useState<CommunityMessage | null>(null)
@@ -168,7 +160,6 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottom, spacing.sm)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
-    const voiceRecordingSupported = __DEV__ || Platform.OS !== "ios" || nativeBuildNumber() >= IOS_MINIMUM_VOICE_RECORDING_BUILD
     const newestMessageId = chat.messages.at(-1)?.id ?? null
 
     useEffect(() => {
@@ -221,15 +212,13 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     useEffect(() => {
         const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow"
         const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide"
-        const showSubscription = Keyboard.addListener(showEvent, (event) => {
-            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
+        const showSubscription = Keyboard.addListener(showEvent, () => {
             setKeyboardVisible(true)
             if (shouldAutoScrollRef.current) {
                 requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
             }
         })
-        const hideSubscription = Keyboard.addListener(hideEvent, (event) => {
-            if (keyboardAnimationActive.current) Keyboard.scheduleLayoutAnimation(event)
+        const hideSubscription = Keyboard.addListener(hideEvent, () => {
             setKeyboardVisible(false)
         })
         return () => {
@@ -303,18 +292,11 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     }, [appendAttachments, closeAttachmentSheet, t])
 
     const startVoiceRecording = useCallback(async () => {
-        if (chat.sending || voiceTranscribing) return
-        if (!voiceRecordingSupported) {
-            Alert.alert(t("chat.voiceUpdateRequiredTitle"), t("chat.voiceUpdateRequiredMessage"))
-            return
-        }
+        if (voiceStarting.current || chat.sending || voiceTranscribing) return
+        voiceStarting.current = true
         Keyboard.dismiss()
         try {
-            const permission = await requestRecordingPermissionsAsync()
-            if (!permission.granted) {
-                Alert.alert(t("chat.voicePermissionTitle"), t("chat.voicePermissionMessage"))
-                return
-            }
+            if (!await requestChatRecordingPermission(t)) return
             await setAudioModeAsync(CHAT_RECORDING_AUDIO_MODE)
             await audioRecorder.prepareToRecordAsync()
             audioRecorder.record()
@@ -323,8 +305,10 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
             setVoiceRecording(false)
             Alert.alert(t("chat.voiceTranscriptionFailedTitle"), t("chat.voiceTranscriptionFailedMessage"))
             await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined)
+        } finally {
+            voiceStarting.current = false
         }
-    }, [audioRecorder, chat.sending, t, voiceRecordingSupported, voiceTranscribing])
+    }, [audioRecorder, chat.sending, t, voiceTranscribing])
 
     const stopVoiceRecording = useCallback(async () => {
         if (!voiceRecording || voiceTranscribing) return
@@ -519,8 +503,9 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                 {chat.status?.access !== "granted" || !chat.selectedTopic ? (
                     <View style={[styles.content, (!iosChat || chat.status?.access !== "granted") && { paddingTop: contentTop }]}>
                         <QuietLoading loading={!chat.status && !chat.error} />
-                        {!chat.loading && chat.status?.access !== "granted" ? (
-                            <CommunityAccessState actionUrl={chat.status?.action_url ?? null} enabled={chat.status?.enabled ?? false} onRefresh={() => { void chat.refresh() }} state={chat.status?.access ?? "temporarily_unavailable"} />
+                        {!chat.status && chat.error ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.loadFailedTitle")}</Text><Text style={styles.stateBody}>{chat.error}</Text><Pressable accessibilityRole="button" onPress={() => { void chat.refresh() }} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.retry")}</Text></Pressable></View> : null}
+                        {chat.status && chat.status.access !== "granted" ? (
+                            <CommunityAccessState actionUrl={chat.status.action_url} enabled={chat.status.enabled} onRefresh={() => { void chat.refresh() }} state={chat.status.access} />
                         ) : null}
                         {chat.status?.access === "granted" && !chat.selectedTopic ? (
                             <TopicList headerInset={iosChat ? contentTop : 0} onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} onOpenBlocks={() => { void loadBlocks() }} />
@@ -554,7 +539,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                                     {replyTo ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityReplyingTo")} {replyTo.author.full_name}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{replyTo.text || t("chat.attachmentFallbackMessage")}</Text></View><Pressable onPress={() => setReplyTo(null)}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {voiceStatusVisible ? <View style={chatStyles.voiceStatusPill}>{voiceTranscribing ? <ActivityIndicator color={palette.primary} size="small" /> : <View style={chatStyles.voiceStatusDot} />}<Text style={chatStyles.voiceStatusText}>{voiceTranscribing ? t("chat.voiceTranscribing") : `${t("chat.voiceRecording")} ${formatVoiceDuration(audioRecorderState.durationMillis)}`}</Text></View> : null}
                                     <QueuedAttachmentStrip attachments={attachments} onRemove={(index) => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
-                                    {chat.selectedTopic.is_closed ? <View style={styles.replyComposer}><Text style={styles.replyComposerText}>{t("chat.communityClosedMessage")}</Text></View> : <View style={chatStyles.composerRow}><Pressable accessibilityLabel={t("chat.communityAddAttachment")} disabled={Boolean(editingMessage) || voiceStatusVisible} onPress={openAttachmentSheet} style={[chatStyles.circleButton, editingMessage || voiceStatusVisible ? chatStyles.sendButtonDisabled : null]}><AttachmentSvgIcon color="#12161A" height={28} width={28} /></Pressable><View style={chatStyles.composerInputWrap}><TextInput editable={!voiceStatusVisible} multiline onChangeText={setDraft} placeholder={voiceRecording ? t("chat.voiceRecording") : editingMessage ? t("chat.communityEditingMessage") : t("chat.communityInputPlaceholder")} placeholderTextColor={isDark ? "#9BB0BF" : "#8B9092"} style={chatStyles.composerInput} textAlignVertical="top" value={draft} /></View><SendActionButton disabled={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} isDark={isDark} isActive={hasComposerContent && !voiceRecording} onPress={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }} recording={voiceRecording} sending={chat.sending || Boolean(chat.mutatingMessageId)} transcribing={voiceTranscribing} /></View>}
+                                    {chat.selectedTopic.is_closed ? <View style={styles.replyComposer}><Text style={styles.replyComposerText}>{t("chat.communityClosedMessage")}</Text></View> : <ChatComposer value={draft} onChangeText={setDraft} placeholder={voiceRecording ? t("chat.voiceRecording") : editingMessage ? t("chat.communityEditingMessage") : t("chat.communityInputPlaceholder")} onAttachment={openAttachmentSheet} onAction={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }} hasContent={hasComposerContent} disabled={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} attachmentDisabled={Boolean(editingMessage) || voiceStatusVisible} recording={voiceRecording} busy={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} transcribing={voiceTranscribing} />}
                                 </View>
                             </View>
                         </KeyboardAvoidingView>
