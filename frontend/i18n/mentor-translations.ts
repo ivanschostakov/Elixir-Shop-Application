@@ -85,6 +85,7 @@ export const mentorTranslations: Record<string, { en: string; kz: string }> = {
     "см": { en: "cm", kz: "см" },
     "Выберите цель.": { en: "Choose a goal.", kz: "Мақсатты таңдаңыз." },
     "Расскажите о своей цели.": { en: "Describe your goal.", kz: "Мақсатыңызды сипаттаңыз." },
+    "Вернуться к вариантам": { en: "Back to choices", kz: "Нұсқаларға оралу" },
     "Укажите возраст от 18 до 120 полных лет.": { en: "Enter your age between 18 and 120 years.", kz: "Жасыңызды 18 бен 120 жас аралығында көрсетіңіз." },
     "Выберите пол.": { en: "Choose your sex.", kz: "Жынысыңызды таңдаңыз." },
     "Укажите рост от 50 до 260 см.": { en: "Enter your height between 50 and 260 cm.", kz: "Бойыңызды 50 мен 260 см аралығында көрсетіңіз." },

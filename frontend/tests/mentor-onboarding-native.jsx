@@ -8,10 +8,13 @@ import { MentorOptionalOnboarding } from "@/screens/chat/mentor-onboarding-optio
 import { MentorNutritionResult } from "@/screens/chat/mentor-nutrition-result"
 import { MentorDevelopmentNotice } from "@/screens/chat/mentor-development-notice"
 import { mentorFormFromState, mentorOptionalFormFromState } from "@/screens/chat/mentor-onboarding-data"
-import { lightColors } from "@/theme/colors"
+import { darkColors, lightColors } from "@/theme/colors"
 import { translate } from "@/i18n/translations"
 
-export const useTheme = () => ({ palette: lightColors, isDark: false, themeName: "light" })
+export const useTheme = () => {
+    const isDark = globalThis.__MENTOR_PREVIEW_DARK__ === true
+    return { palette: isDark ? darkColors : lightColors, isDark, themeName: isDark ? "dark" : "light" }
+}
 export const useLanguage = () => ({ language: "ru", t: key => translate(key, "ru") })
 export const requestKey = () => "synthetic-preview-key"
 export const syncPushNotifications = async () => "synthetic-notification-token"

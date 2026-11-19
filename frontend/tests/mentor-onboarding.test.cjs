@@ -28,6 +28,7 @@ function harness(file, overrides = {}) {
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false, palette: { surface: "#FFFFFF" } }) },
         "@/screens/chat/mentor-ui": { MentorIcon: "Icon", useMentorPalette: () => ({ surface: "#FFFFFF" }) },
         "@/screens/chat/mentor-choice-card": { MentorChoiceCard: "ChoiceCard" },
+        "@/screens/chat/mentor-custom-answer": { MentorCustomAnswer: "CustomAnswer" },
         "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "QuestionIcon" },
         "@/screens/chat/mentor-reminder-time": { MentorReminderTime: "NativeTime" },
         "@/screens/chat/chat-mode-transition": { useChatReducedMotion: () => false },
@@ -203,7 +204,7 @@ test("new optional answers transition immediately and a failed save returns to t
     assert.equal(page().props.step, 0); assert.equal(page().props.value.lifestyle, "Evening walks"); assert.equal(page().props.error, "offline")
 })
 
-test("training questions use real selectors and preserve a custom answer while switching choices", () => {
+test("custom training answers replace all choices and the close control restores them without losing the draft", () => {
     const h = harness("screens/chat/mentor-onboarding-optional.tsx")
     let value = data.mentorOptionalFormFromState(null)
     let step = 3
@@ -212,13 +213,25 @@ test("training questions use real selectors and preserve a custom answer while s
     const choices = nodes(page).filter(node => node.type === "ChoiceCard")
     assert.equal(choices.length, 4); assert.ok(choices.every(node => node.props.description && node.props.icon))
     label(page, "Свой вариант").props.onPress()
-    nodes(pane(render(), 3)).find(node => node.type === "TextInput").props.onChangeText("Плаваю дважды в неделю")
+    assert.equal(nodes(pane(render(), 3)).filter(node => node.type === "ChoiceCard").length, 0)
+    nodes(pane(render(), 3)).find(node => node.type === "CustomAnswer").props.onChange("Плаваю дважды в неделю")
     assert.equal(data.mentorOptionalAction(value, 3, false, state(), "custom-experience").onboarding_details.training_experience, "Плаваю дважды в неделю")
+    nodes(pane(render(), 3)).find(node => node.type === "CustomAnswer").props.onCancel()
+    assert.equal(nodes(pane(render(), 3)).filter(node => node.type === "ChoiceCard").length, 4)
     label(pane(render(), 3), "Начинаю").props.onPress()
-    assert.equal(nodes(pane(render(), 3)).filter(node => node.type === "TextInput").length, 0)
+    assert.equal(nodes(pane(render(), 3)).filter(node => node.type === "CustomAnswer").length, 0)
     label(pane(render(), 3), "Свой вариант").props.onPress()
-    assert.equal(nodes(pane(render(), 3)).find(node => node.type === "TextInput").props.value, "Плаваю дважды в неделю")
+    assert.equal(nodes(pane(render(), 3)).find(node => node.type === "CustomAnswer").props.value, "Плаваю дважды в неделю")
     step = 4; page = pane(render(), 4)
+    label(page, "Свой вариант").props.onPress()
+    page = pane(render(), 4)
+    assert.equal(nodes(page).filter(node => node.type === "ChoiceCard").length, 0)
+    const custom = nodes(page).find(node => node.type === "CustomAnswer")
+    custom.props.onChange("В бассейне")
+    nodes(pane(render(), 4)).find(node => node.type === "CustomAnswer").props.onCancel()
+    assert.equal(value.conditionsCustom, "В бассейне")
+    page = pane(render(), 4)
+    assert.equal(nodes(page).filter(node => node.type === "ChoiceCard").length, 4)
     label(page, "В зале").props.onPress()
     assert.equal(data.mentorOptionalAction(value, 4, false, state(), "gym-conditions").onboarding_details.training_conditions, "В зале")
     for (step of [0, 1, 2]) {
@@ -226,6 +239,28 @@ test("training questions use real selectors and preserve a custom answer while s
         assert.equal(nodes(page).filter(node => node.type === "ChoiceCard").length, 0)
         assert.equal(nodes(page).filter(node => node.type === "TextInput").length, 1)
     }
+})
+
+test("a custom goal also replaces the choices and keeps its draft when returning to them", () => {
+    const h = harness("screens/chat/mentor-onboarding.tsx")
+    let value = data.mentorFormFromState(null)
+    const render = () => h.render("MentorOnboarding", { visible: true, value, onChange: next => { value = next }, onClose() {}, onSave: async () => {}, saving: false, error: "" })
+    const goalPage = () => nodes(render()).find(node => node.props.testID === "mentor-onboarding-step-1")
+    label(goalPage(), "Своя цель").props.onPress()
+    assert.equal(nodes(goalPage()).filter(node => node.type === "ChoiceCard").length, 0)
+    nodes(goalPage()).find(node => node.type === "CustomAnswer").props.onChange("Больше энергии")
+    nodes(goalPage()).find(node => node.type === "CustomAnswer").props.onCancel()
+    assert.equal(nodes(goalPage()).filter(node => node.type === "ChoiceCard").length, 4)
+    label(goalPage(), "Своя цель").props.onPress()
+    assert.equal(nodes(goalPage()).find(node => node.type === "CustomAnswer").props.value, "Больше энергии")
+})
+
+test("the custom answer cross dismisses the keyboard and returns to the choices", () => {
+    let dismissed = 0, cancelled = 0
+    const h = harness("screens/chat/mentor-custom-answer.tsx", { "react-native": { View: "View", Text: "Text", TextInput: "TextInput", Pressable: "Pressable", Keyboard: { dismiss() { dismissed++ } }, StyleSheet: { create: value => value } } })
+    const tree = h.render("MentorCustomAnswer", { label: "Свой вариант", placeholder: "Ваш ответ", value: "Черновик", onChange() {}, onCancel() { cancelled++ }, disabled: false })
+    label(tree, "Вернуться к вариантам").props.onPress()
+    assert.equal(dismissed, 1); assert.equal(cancelled, 1)
 })
 
 test("each reminder has an independently editable time while disabled and weekly reports use Monday", () => {

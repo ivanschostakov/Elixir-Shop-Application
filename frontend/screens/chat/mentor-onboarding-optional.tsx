@@ -7,6 +7,7 @@ import { optionalMentorFields, type MentorOptionalForm } from "@/screens/chat/me
 import { MentorFlowButton, MentorFlowHeader, flowStyles } from "@/screens/chat/mentor-onboarding-layout"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import { MentorChoiceCard } from "@/screens/chat/mentor-choice-card"
+import { MentorCustomAnswer } from "@/screens/chat/mentor-custom-answer"
 import { MentorQuestionIcon, type MentorQuestionIconName } from "@/screens/chat/mentor-question-icon"
 import { MentorReminderTime } from "@/screens/chat/mentor-reminder-time"
 
@@ -20,10 +21,11 @@ export function MentorReminderRow({ label, icon, enabled, time, busy, onToggle, 
     return <View style={[styles.reminder, { borderBottomColor: colors.border }]}>
         <View style={[styles.reminderIcon, { backgroundColor: enabled ? colors.mint : colors.soft }]}><MentorQuestionIcon name={icon} size={24} color={enabled ? colors.green : colors.muted} /></View>
         <View style={styles.reminderCopy}>
-            <View style={styles.reminderHeader}><Text style={[styles.reminderLabel, { color: colors.text }]}>{label}</Text>
-                <Switch accessibilityLabel={label} disabled={busy} value={enabled} onValueChange={onToggle} trackColor={{ false: colors.border, true: colors.greenBright }} thumbColor="#FFFFFF" ios_backgroundColor={colors.border} />
-            </View>
+            <Text style={[styles.reminderLabel, { color: colors.text }]}>{label}</Text>
             {detail ? <Text style={[styles.reminderDetail, { color: colors.muted }]}>{detail}</Text> : null}
+        </View>
+        <View style={styles.reminderControls}>
+            <Switch accessibilityLabel={label} disabled={busy} value={enabled} onValueChange={onToggle} trackColor={{ false: colors.border, true: colors.greenBright }} thumbColor="#FFFFFF" ios_backgroundColor={colors.border} style={styles.reminderSwitch} />
             <MentorReminderTime label={label} value={time} onChange={onTime} disabled={busy} />
         </View>
     </View>
@@ -65,13 +67,15 @@ export function MentorOptionalOnboarding({ value, onChange, step, onBack, onClos
                     <Text accessibilityRole="header" style={[flowStyles.title, { color: colors.text }]}>{titles[index]}</Text>
                     {index < 3 ? <>
                         <TextInput accessibilityLabel={titles[index]} placeholder={placeholders[index]} placeholderTextColor={colors.muted} value={value[optionalMentorFields[index]]} onChangeText={text => change({ [optionalMentorFields[index]]: text })} multiline textAlignVertical="top" maxLength={2000} editable={!editingLocked && step === index} selectionColor={colors.greenBright} style={[styles.textarea, { color: colors.text, backgroundColor: colors.soft, borderColor: colors.border }]} />
-                    </> : index === 3 || index === 4 ? <>
+                    </> : index === 3 || index === 4 ? (index === 3 ? value.experienceChoice : value.conditionsChoice) === "custom" ?
+                        <MentorCustomAnswer label={mt("Свой вариант")} placeholder={placeholders[index]} value={index === 3 ? value.experienceCustom : value.conditionsCustom}
+                            onChange={text => index === 3 ? change({ experienceCustom: text }) : change({ conditionsCustom: text })}
+                            onCancel={() => index === 3 ? change({ experienceChoice: null }) : change({ conditionsChoice: null })} disabled={editingLocked || step !== index} /> :
                         <View accessibilityRole="radiogroup" style={styles.choices}>
                             {(index === 3 ? experienceChoices : conditionsChoices).map(item => <MentorChoiceCard key={item.id} title={item.title} description={item.description} icon={item.icon} selected={(index === 3 ? value.experienceChoice : value.conditionsChoice) === item.id} disabled={editingLocked || step !== index}
                                 onPress={() => index === 3 ? change({ experienceChoice: item.id as MentorOptionalForm["experienceChoice"] }) : change({ conditionsChoice: item.id as MentorOptionalForm["conditionsChoice"] })} />)}
                         </View>
-                        {(index === 3 ? value.experienceChoice : value.conditionsChoice) === "custom" ? <TextInput accessibilityLabel={mt("Свой вариант")} placeholder={placeholders[index]} placeholderTextColor={colors.muted} value={index === 3 ? value.experienceCustom : value.conditionsCustom} onChangeText={text => index === 3 ? change({ experienceCustom: text }) : change({ conditionsCustom: text })} multiline textAlignVertical="top" maxLength={2000} editable={!editingLocked && step === index} selectionColor={colors.greenBright} style={[styles.textarea, { color: colors.text, backgroundColor: colors.soft, borderColor: colors.border }]} /> : null}
-                    </> : <View>
+                    : <View>
                         <MentorReminderRow label={mt("Отметить вес")} icon="weight" enabled={value.weightEnabled} time={value.weightTime} busy={editingLocked || step !== index} onToggle={weightEnabled => change({ weightEnabled })} onTime={weightTime => change({ weightTime })} />
                         <MentorReminderRow label={mt("Подвести итог дня")} icon="summary" enabled={value.dailyEnabled} time={value.dailyTime} busy={editingLocked || step !== index} onToggle={dailyEnabled => change({ dailyEnabled })} onTime={dailyTime => change({ dailyTime })} />
                         <MentorReminderRow label={mt("Итоги недели")} detail={mt("Каждый понедельник")} icon="weekly" enabled={value.weeklyEnabled} time={value.weeklyTime} busy={editingLocked || step !== index} onToggle={weeklyEnabled => change({ weeklyEnabled })} onTime={weeklyTime => change({ weeklyTime })} />
@@ -90,7 +94,7 @@ export function MentorOptionalOnboarding({ value, onChange, step, onBack, onClos
 const styles = StyleSheet.create({
     textarea: { minHeight: 196, borderRadius: 22, borderWidth: 1, padding: 19, fontSize: 18, lineHeight: 28 },
     choices: { gap: 12 },
-    reminder: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingVertical: 20, borderBottomWidth: StyleSheet.hairlineWidth }, reminderIcon: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center" },
-    reminderCopy: { flex: 1, gap: 13 }, reminderHeader: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 36 }, reminderLabel: { flex: 1, fontSize: 17, lineHeight: 24, fontWeight: "600" },
-    reminderDetail: { fontSize: 13, lineHeight: 19, marginTop: -8 },
+    reminder: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingVertical: 20, borderBottomWidth: StyleSheet.hairlineWidth }, reminderIcon: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+    reminderCopy: { flex: 1, minWidth: 0, gap: 6, paddingTop: 6 }, reminderLabel: { fontSize: 17, lineHeight: 24, fontWeight: "600" },
+    reminderControls: { alignItems: "flex-end", gap: 10 }, reminderSwitch: { alignSelf: "flex-end" }, reminderDetail: { fontSize: 13, lineHeight: 19 },
 })

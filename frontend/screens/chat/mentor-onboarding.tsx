@@ -8,6 +8,7 @@ import { mentorStepError, type MentorForm } from "@/screens/chat/mentor-onboardi
 import { MentorFlowButton, MentorFlowHeader, flowStyles } from "@/screens/chat/mentor-onboarding-layout"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import { MentorChoiceCard } from "@/screens/chat/mentor-choice-card"
+import { MentorCustomAnswer } from "@/screens/chat/mentor-custom-answer"
 import type { MentorQuestionIconName } from "@/screens/chat/mentor-question-icon"
 
 type Props = {
@@ -90,9 +91,9 @@ export function MentorOnboarding({ visible, value, onChange, onClose, onSave, sa
                             transform: [{ translateX: progress.interpolate({ inputRange: [index - 1, index, index + 1], outputRange: [18, 0, -18], extrapolate: "clamp" }) }] }]}>
                         <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={styles.stepBody}>
                             <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{mentorStepTitles[index]}</Text>
-                            {index === 0 ? <View accessibilityRole="radiogroup" style={styles.choices}>{mentorGoalChoices.map(item => choice(item.label, value.goal === item.value, () => change({ goal: item.value }), disabled, item.icon))}
-                                {value.goal === "custom" ? <TextInput accessibilityLabel={mt("Своя цель")} value={value.customGoal} onChangeText={customGoal => change({ customGoal })} editable={!disabled} maxLength={500} multiline style={[styles.customInput, { color: colors.text, borderColor: colors.border }]} /> : null}
-                            </View> : null}
+                            {index === 0 ? value.goal === "custom" ? <MentorCustomAnswer label={mt("Своя цель")} placeholder={mt("Расскажите о своей цели.")} value={value.customGoal}
+                                onChange={customGoal => change({ customGoal })} onCancel={() => change({ goal: null })} disabled={disabled} maxLength={500} /> :
+                                <View accessibilityRole="radiogroup" style={styles.choices}>{mentorGoalChoices.map(item => choice(item.label, value.goal === item.value, () => change({ goal: item.value }), disabled, item.icon))}</View> : null}
                             {index === 1 ? <View style={styles.groups}>{field(mt("Возраст"), "age", mt("лет"), active)}<View style={styles.field}><Text style={[styles.label, { color: colors.text }]}>{mt("Пол")}</Text><View accessibilityRole="radiogroup" style={styles.sexChoices}>
                                 {choice(mt("Женский"), value.sex === "female", () => change({ sex: "female" }), disabled)}
                                 {choice(mt("Мужской"), value.sex === "male", () => change({ sex: "male" }), disabled)}
@@ -124,7 +125,7 @@ const styles = StyleSheet.create({
     title: { ...flowStyles.title, marginBottom: 28 }, choices: { gap: 13 }, groups: { gap: 28 }, field: { gap: 10 }, label: { fontSize: 17, fontWeight: "600" },
     targetCard: { minHeight: 160, borderRadius: 28, borderWidth: 1, padding: 24, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 }, targetInput: { minWidth: 120, maxWidth: "80%", fontSize: 62, fontWeight: "600", textAlign: "center", paddingVertical: 12, fontVariant: ["tabular-nums"] }, targetUnit: { fontSize: 22, alignSelf: "center" },
     inputWrap: { borderWidth: 1.5, borderRadius: 16, minHeight: 74, flexDirection: "row", alignItems: "center", paddingHorizontal: 18 }, input: { flex: 1, minWidth: 0, fontSize: 28, paddingVertical: 15 }, unit: { fontSize: 18, paddingLeft: 10 },
-    customInput: { minHeight: 100, borderWidth: 1.5, borderRadius: 16, padding: 16, fontSize: 17, textAlignVertical: "top" }, sexChoices: { flexDirection: "row", gap: 10 },
+    sexChoices: { flexDirection: "row", gap: 10 },
     footer: { width: "100%", maxWidth: 560, alignSelf: "center", paddingHorizontal: 24, paddingTop: 12, paddingBottom: 12, gap: 12 },
     error: { color: "#B55353", fontSize: 14, lineHeight: 20 },
 })

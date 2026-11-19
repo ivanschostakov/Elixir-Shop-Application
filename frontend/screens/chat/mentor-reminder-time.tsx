@@ -31,7 +31,7 @@ export function MentorReminderTime({ label, value, onChange, disabled }: { label
 }
 
 const styles = StyleSheet.create({
-    nativeContainer: { alignSelf: "flex-start", minHeight: 44, justifyContent: "center" }, nativePicker: { minWidth: 104, height: 44 },
-    button: { alignSelf: "flex-start", minWidth: 132, minHeight: 46, paddingHorizontal: 14, borderWidth: 1, borderRadius: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 16 },
-    time: { fontSize: 22, fontWeight: "600", fontVariant: ["tabular-nums"] },
+    nativeContainer: { alignSelf: "flex-end", minHeight: 44, justifyContent: "center" }, nativePicker: { height: 44 },
+    button: { alignSelf: "flex-end", minHeight: 44, paddingHorizontal: 10, borderWidth: 1, borderRadius: 13, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 7 },
+    time: { fontSize: 18, fontWeight: "600", fontVariant: ["tabular-nums"] },
 })
