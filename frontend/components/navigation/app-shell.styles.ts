@@ -10,6 +10,7 @@ export const createAppShellStyles = (colors: ThemePalette) => StyleSheet.create(
     },
     safeArea: {
         flex: 1,
+        backgroundColor: colors.background,
     },
     discoverTopGradient: {
         left: 0,
