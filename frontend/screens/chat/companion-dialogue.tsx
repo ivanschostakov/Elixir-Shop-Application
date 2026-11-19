@@ -111,7 +111,9 @@ export function DialoguePanel({ controller: c, onChanged, onPrompt, sending }: {
 }
 
 function displayNumber(value: string | number) {
-    const decimal = new Intl.NumberFormat(mentorLocale()).formatToParts(1.1).find(part => part.type === "decimal")?.value ?? "."
+    // Hermes supports format(), but not NumberFormat.formatToParts(). Derive
+    // only the separator so saved doses keep their precision and trailing zeros.
+    const decimal = new Intl.NumberFormat(mentorLocale()).format(1.1).replace(/\d/g, "") || "."
     return String(value).replace(".", decimal)
 }
 
