@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import warnings
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from alembic.script import ScriptDirectory
 from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import BigInteger, Column, MetaData, Table, create_engine, delete, event, func, select
@@ -119,7 +121,7 @@ def test_settings_payload_cannot_override_another_account(payload):
 
 
 def test_migration_generates_postgres_constraints_and_partial_index():
-    path = Path(__file__).parents[1] / "migrations/versions/b1d3f5a7c9e0_community_notification_mutes.py"
+    path = Path(__file__).parents[1] / "migrations/versions/f5b7d9e1a3c6_community_notification_mutes.py"
     spec = importlib.util.spec_from_file_location("community_notification_mute_migration", path)
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
@@ -130,3 +132,13 @@ def test_migration_generates_postgres_constraints_and_partial_index():
     assert "WHERE topic_id IS NULL" in sql
     assert "UNIQUE (user_id, topic_id)" in sql
     assert "REFERENCES users (id) ON DELETE CASCADE" in sql
+
+
+def test_migration_revision_is_unique_and_extends_existing_chain():
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        revisions = list(ScriptDirectory(str(Path(__file__).parents[1] / "migrations")).walk_revisions())
+    ids = [revision.revision for revision in revisions]
+    assert len(ids) == len(set(ids))
+    notification_revision = next(revision for revision in revisions if revision.revision == "f5b7d9e1a3c6")
+    assert notification_revision.down_revision == "e4a6c8e0f2b4"
