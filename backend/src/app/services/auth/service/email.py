@@ -2,14 +2,11 @@ from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
-from config import AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA
 from src.app.modules.auth.schemas.login import UserLoginPayload, UserLoginVerifyPayload
 from src.app.modules.auth.schemas.register import UserRegisterPayload, UserRegisterVerifyPayload, UserRegistrationStartedResponse, UserVerificationCodeResendPayload, UserVerificationCodeSentResponse
 from src.app.modules.auth.schemas.responses import AuthTokensWithUserResponse, AuthVerificationRequiredResponse
 from src.app.services.email_verification import EmailVerificationConfigError, EmailVerificationDeliveryError
-from src.app.services.platform_availability import is_ios_request, is_private_app_user
 from src.app.services.security import hash_password
-from src.database.crud.auth.admin import is_admin_user
 from src.database.crud.auth.user import create_user, get_user_by_email
 from src.database.schemas.auth.user import UserCreate
 from src.normalize import optional_str
@@ -88,8 +85,6 @@ async def login_user(request: Request, payload: UserLoginPayload, db: AsyncSessi
         logger.info("App Review customer password login user_id=%s", user.id)
         return await _build_auth_tokens_response(user, db)
 
-    if AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA and await is_admin_user(db, user.id): return await _build_auth_tokens_response(user, db)
-
     try:
         await _create_and_send_verification_code(user, db)
         await db.commit()
@@ -99,7 +94,6 @@ async def login_user(request: Request, payload: UserLoginPayload, db: AsyncSessi
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Could not send verification email") from error
     return AuthVerificationRequiredResponse(
         email=user.email, message="Verification code sent",
-        ios_private_features=is_private_app_user(user) and is_ios_request(request.headers),
     )
 
 

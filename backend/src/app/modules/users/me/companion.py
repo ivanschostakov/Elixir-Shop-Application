@@ -15,7 +15,6 @@ from src.app.services.ai.companion.timezones import normalize_timezone, timezone
 from src.app.services.ai.security import ensure_app_ai_access
 from src.app.services.ai.data_consent import require_ai_data_consent
 from src.app.services.app_integrity.service import verify_app_integrity_request
-from src.app.services.platform_availability import ios_private_feature_allowed, skip_ios_app_attest
 from src.database import get_db
 from src.database.models import User
 
@@ -35,14 +34,12 @@ def device_timezone(request):
 
 
 async def native_access(request: Request, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    if request.method != "DELETE" and not ios_private_feature_allowed(request.headers, user):
-        raise HTTPException(403, "Mentor is unavailable on iOS")
     if not config.AI_COMPANION_ENABLED and request.method != "DELETE":
         raise HTTPException(404, "Сопровождение пока недоступно")
     platform = (request.headers.get("x-app-integrity-platform") or "").lower()
-    if platform not in {"ios", "android"} and not skip_ios_app_attest(request.headers, user):
+    if platform not in {"ios", "android"}:
         raise HTTPException(403, "Сопровождение доступно только в мобильном приложении")
-    await verify_app_integrity_request(request, action="ai-companion", db=db, current_user=user, force_enforce=True)
+    await verify_app_integrity_request(request, action="ai-companion", db=db, current_user=user)
     await ensure_app_ai_access(db, request=request, user=user)
     if request.method != "DELETE" and (zone := device_timezone(request)) is not None:
         await service.sync_device_timezone(db, user.id, zone)
@@ -52,7 +49,7 @@ async def native_access(request: Request, db: AsyncSession = Depends(get_db), us
 
 @companion_router.get("/availability")
 async def availability(request: Request, user: User = Depends(get_current_user)):
-    return {"available": config.AI_COMPANION_ENABLED and ios_private_feature_allowed(request.headers, user), "consent_version": config.AI_COMPANION_CONSENT_VERSION}
+    return {"available": config.AI_COMPANION_ENABLED, "consent_version": config.AI_COMPANION_CONSENT_VERSION}
 
 
 @companion_router.get("")
@@ -71,13 +68,12 @@ async def sync_timezone(user: User = Depends(native_access)):
 
 @companion_router.post("/actions")
 async def action(payload: Action, request: Request, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
-    from src.app.services.platform_availability import is_commerce_blocked
     if payload.kind.startswith("dialogue_") and not config.AI_COMPANION_DIALOGUE_ENABLED:
         raise HTTPException(404, "Обновление диалога пока недоступно")
     try:
         if payload.settings is not None and (zone := device_timezone(request)) is not None:
             payload.settings.timezone = zone  # A stale open form cannot undo travel.
-        result = await service.apply_action(db, user.id, payload, allow_commerce=not is_commerce_blocked(request.headers, "/api/v1/products", "GET"))
+        result = await service.apply_action(db, user.id, payload, allow_commerce=True)
         await db.commit()
     except (ValidationError, ValueError) as error:
         await db.rollback()
@@ -145,12 +141,13 @@ async def nutrition(user: User = Depends(native_access), db: AsyncSession = Depe
 
 
 @companion_router.post("/messages")
-async def message(request: Request, text: str = Form(...), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), dialogue_protocol: int = Form(1, ge=1, le=2), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+async def message(request: Request, text: str = Form(...), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), dialogue_protocol: int | None = Form(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    if dialogue_protocol != 2:
+        raise HTTPException(426, detail={"code": "mentor_client_update_required", "message": "Обновите приложение для работы с наставником."})
     await require_ai_data_consent(db, user.id)
     import asyncio
     from src.app.services.cache import get_cache_service
     from src.app.services.ai.chat import send_user_chat_message
-    from src.app.services.platform_availability import is_commerce_blocked
     from src.integrations.ai import get_professor_client
     from .schemas.ai_chat import AIChatResponse, AIChatTurnMetaRead
     from src.app.services.rate_limit import enforce_rate_limit
@@ -179,8 +176,7 @@ async def message(request: Request, text: str = Form(...), client_request_id: st
     try:
         await record_app_ai_activity(db, request=request, user=user, event_type="message_requested", details={"message_length": len(text), "attachments_count": len(attachments or []), "mode": "companion"})
         async with asyncio.timeout(540):
-            kwargs = {"dialogue_protocol": 2} if dialogue_protocol == 2 and config.AI_COMPANION_DIALOGUE_ENABLED else {}
-            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=not is_commerce_blocked(request.headers, "/api/v1/products", "GET"), companion_profile=profile, client_request_id=client_request_id, **kwargs)
+            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=True, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2)
         return AIChatResponse(chat=result.chat, last_turn=AIChatTurnMetaRead(**result.turn_meta) if result.turn_meta else None)
     finally:
         try:
@@ -192,9 +188,6 @@ async def message(request: Request, text: str = Form(...), client_request_id: st
 
 @companion_router.get("/supply")
 async def supply(request: Request, days: int = Query(default=30, ge=1, le=90), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
-    from src.app.services.platform_availability import is_commerce_blocked
-    if is_commerce_blocked(request.headers, "/api/v1/products", "GET"):
-        raise HTTPException(403, "Каталог и покупки недоступны на этой платформе")
     return await service.supply_for(db, user.id, days)
 
 

@@ -1,23 +1,18 @@
-# Private iOS access
+# iOS feature access
 
-The iOS Mentor and Community are not available to public customer accounts.
-Android access and the standard AI and support chats are unchanged. The store
-catalog is controlled separately.
+Mentor and Community are ordinary features of the iOS release. Every authenticated
+customer, including the App Review demo customer, uses the same feature access
+policy. No customer ID, username or remotely supplied account flag grants access
+to additional screens.
 
-Provision the single app-only customer in the deployed API environment:
+Mentor requires the standard AI consent and native device verification. No account
+can skip App Attest. Community retains the normal authentication, moderation and
+consent requirements. Native chat controls are selected only by platform and the
+native modules included in the installed application.
 
-```sh
-python -m src.scripts.bootstrap_ios_private_features owner@example.com
-```
+Password recovery uses the same verified-email, single-use token flow for every
+customer. Do not provision a separate account to unlock hidden functionality.
 
-The script refuses to overwrite existing customers or staff. Set
-`IOS_PRIVATE_FEATURES_USER_ID` to the returned customer ID for the API and
-notification worker. Use **Forgot password?** with that email to set the first
-password, then sign in as `admin` or with the email. Sign-in email verification
-is required; the customer has no staff permissions or website identity.
-
-The server skips only iOS App Attest for the configured active and verified
-customer. Other iOS customers and Android verification are unaffected. Reset
-the configured ID to `0` to remove access, or disable the customer and revoke
-their sessions to retire the account. Keep the account private and separate
-from App Review credentials.
+For review, provide a working demo customer and navigation instructions for AI,
+Mentor/Today, nutrition, workouts, progress, Community and support. Public metadata
+and screenshots must describe the features included in the submitted release.

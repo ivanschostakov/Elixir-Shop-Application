@@ -1,4 +1,3 @@
-import hmac
 import logging
 import secrets
 import time
@@ -20,18 +19,16 @@ from starlette import status
 from config import ufa_now
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.auth.service import verify_telegram_init_data_for_user
-from src.app.services.platform_availability import skip_ios_app_attest
 from src.database import get_db
 from src.database.models import AppAttestKey, AppIntegrityChallenge, User
 
-from .common import csv_values, is_truthy_verdict, mode
+from .common import csv_values, is_truthy_verdict
 from .constants import (
     APP_INTEGRITY_ACTION_HEADER,
     APP_INTEGRITY_ANDROID_ALLOWED_DEVICE_VERDICTS,
     APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS,
     APP_INTEGRITY_ANDROID_PACKAGE_NAME,
     APP_INTEGRITY_CHALLENGE_TTL_SECONDS,
-    APP_INTEGRITY_DEV_TOKEN,
     APP_INTEGRITY_IOS_BUNDLE_ID,
     APP_INTEGRITY_IOS_TEAM_ID,
     APP_INTEGRITY_KEY_ID_HEADER,
@@ -209,11 +206,7 @@ async def _verify_with_remote_service(request: Request, *, action: str, token: s
         return is_truthy_verdict(response.json())
 
 
-async def verify_app_integrity_request(request: Request, *, action: str, db: AsyncSession | None = None, current_user: User | None = None, force_enforce: bool = False) -> None:
-    app_integrity_mode = "enforce" if force_enforce else mode()
-    if app_integrity_mode == "off": return
-    if skip_ios_app_attest(request.headers, current_user): return
-
+async def verify_app_integrity_request(request: Request, *, action: str, db: AsyncSession | None = None, current_user: User | None = None) -> None:
     token = (request.headers.get(APP_INTEGRITY_TOKEN_HEADER) or "").strip()
     platform = (request.headers.get(APP_INTEGRITY_PLATFORM_HEADER) or "").strip().lower()
     header_action = (request.headers.get(APP_INTEGRITY_ACTION_HEADER) or "").strip()
@@ -230,7 +223,6 @@ async def verify_app_integrity_request(request: Request, *, action: str, db: Asy
         if current_user is None: reason = "missing telegram user context"
         else: verified, reason = verify_telegram_init_data_for_user(token, current_user)
     elif not request_hash: reason = "missing request hash"
-    elif APP_INTEGRITY_DEV_TOKEN and hmac.compare_digest(token, APP_INTEGRITY_DEV_TOKEN): verified = True
     else:
         try:
             if platform == "android" and APP_INTEGRITY_ANDROID_PACKAGE_NAME: verified, reason = await _verify_android_play_integrity(token, request_hash)
@@ -244,12 +236,11 @@ async def verify_app_integrity_request(request: Request, *, action: str, db: Asy
 
         except (AppIntegrityVerifierUnavailable, httpx.HTTPError):
             log.exception("App integrity verifier unavailable action=%s path=%s", action, request.url.path)
-            if app_integrity_mode == "enforce": raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="App integrity verifier is unavailable")
-            reason = "verifier unavailable"
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="App integrity verifier is unavailable")
 
     if verified: return
-    log.warning("App integrity check failed mode=%s action=%s path=%s platform=%s reason=%s", app_integrity_mode, action, request.url.path, platform or None, reason)
-    if app_integrity_mode == "enforce": raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="App integrity check failed")
+    log.warning("App integrity check failed action=%s path=%s platform=%s reason=%s", action, request.url.path, platform or None, reason)
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="App integrity check failed")
 
 
 def require_app_integrity(action: str):

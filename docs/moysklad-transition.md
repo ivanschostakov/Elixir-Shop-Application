@@ -73,5 +73,4 @@ Use the single shared versioned backend image and production overrides described
 in `docs/backend-release-consistency.md`. No database schema migration is needed
 for this preparation. Deploy API and all Python workers consistently, verify
 `/api/v1/health/ready`, and retain the previous image for rollback. Financial
-settings and `EXPO_PUBLIC_MS_ACCOUNT_VIEW_ENABLED` must stay unchanged/off until
-the cutover acceptance above is complete.
+provider settings and the cutover acceptance above must be verified before deployment.

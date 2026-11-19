@@ -91,7 +91,6 @@ async def test_website_username_login_creates_app_user_with_bitrix_login(monkeyp
     _patched_value_86 = fake_get_user_by_email
     for target in ('src.app.services.auth.service.email.get_user_by_email', 'src.app.services.auth.service.login.get_user_by_email', 'src.app.services.auth.service.phone.get_user_by_email', 'src.app.services.auth.service.website.get_user_by_email',):
         monkeypatch.setattr(target, _patched_value_86)
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_LOGIN_WEBSITE_FIRST_ENABLED', True)
     monkeypatch.setattr('src.app.services.auth.service.login.website_identity_configured', lambda: True)
     monkeypatch.setattr('src.app.services.auth.service.login.WebsiteIdentityClient', FakeWebsiteIdentityClient)
     _patched_value_90 = lambda _password: "hashed-password"
@@ -154,7 +153,6 @@ async def test_local_login_refreshes_assigned_referrer_promo_from_website(monkey
     _patched_value_140 = fake_get_user_by_email
     for target in ('src.app.services.auth.service.email.get_user_by_email', 'src.app.services.auth.service.login.get_user_by_email', 'src.app.services.auth.service.phone.get_user_by_email', 'src.app.services.auth.service.website.get_user_by_email',):
         monkeypatch.setattr(target, _patched_value_140)
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_LOGIN_WEBSITE_FIRST_ENABLED', True)
     monkeypatch.setattr('src.app.services.auth.service.login.website_identity_configured', lambda: True)
     monkeypatch.setattr('src.app.services.auth.service.login.WebsiteIdentityClient', FakeWebsiteIdentityClient)
     _patched_value_144 = lambda _password, _hash: True
@@ -215,7 +213,6 @@ async def test_local_login_clears_referrer_promo_removed_on_website(monkeypatch:
     _patched_value_192 = fake_get_user_by_email
     for target in ('src.app.services.auth.service.email.get_user_by_email', 'src.app.services.auth.service.login.get_user_by_email', 'src.app.services.auth.service.phone.get_user_by_email', 'src.app.services.auth.service.website.get_user_by_email',):
         monkeypatch.setattr(target, _patched_value_192)
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_LOGIN_WEBSITE_FIRST_ENABLED', True)
     monkeypatch.setattr('src.app.services.auth.service.login.website_identity_configured', lambda: True)
     monkeypatch.setattr('src.app.services.auth.service.login.WebsiteIdentityClient', FakeWebsiteIdentityClient)
     _patched_value_196 = lambda _password, _hash: True

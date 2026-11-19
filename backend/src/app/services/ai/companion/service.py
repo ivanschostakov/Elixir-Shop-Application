@@ -174,7 +174,7 @@ async def summary_for(db, user_id, start, end):
 async def get_state(db, user_id):
     from .mentor import dashboard
     from .photos import serialize_entries
-    base = {"available": config.AI_COMPANION_ENABLED, "consent_version": config.AI_COMPANION_CONSENT_VERSION, "dialogue_protocol": 2 if config.AI_COMPANION_DIALOGUE_ENABLED else 1}
+    base = {"available": True, "consent_version": config.AI_COMPANION_CONSENT_VERSION, "dialogue_protocol": 2}
     if not base["available"]:
         return base
     profile = await profile_for(db, user_id)
@@ -221,7 +221,7 @@ async def nutrition_suggestion(db, user_id):
     if not profile or not weights:
         return {"available": False, "reason": "Заполните профиль и внесите вес за последние 30 дней."}
     try:
-        return calculate_nutrition(ProfileData.model_validate(profile.data), Decimal(weights.data["weight_kg"]), config.AI_COMPANION_NUTRITION_RULES_JSON, eligibility_confirmed=Settings.model_validate(profile.settings).nutrition_auto_eligible)
+        return calculate_nutrition(ProfileData.model_validate(profile.data), Decimal(weights.data["weight_kg"]), eligibility_confirmed=Settings.model_validate(profile.settings).nutrition_auto_eligible)
     except (ValueError, KeyError, TypeError):
         return {"available": False, "reason": "Правила питания недоступны. Используйте ручной ввод."}
 

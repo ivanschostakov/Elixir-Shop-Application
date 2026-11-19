@@ -45,7 +45,6 @@ async def erase_data(payload: EraseData, db: AsyncSession = Depends(get_db)):
 
 @router.post("/nutrition/preview")
 async def nutrition_preview(payload: NutritionPreview, db: AsyncSession = Depends(get_db)):
-    from config.companion import AI_COMPANION_NUTRITION_RULES_JSON
     from src.app.services.ai.companion.nutrition import calculate_nutrition
     from src.app.services.ai.companion.schemas import ProfileData
     require_section("food")
@@ -57,4 +56,4 @@ async def nutrition_preview(payload: NutritionPreview, db: AsyncSession = Depend
     if missing: return {"available": False, "missing": missing, "reason": "Дозаполните профиль для расчёта КБЖУ."}
     if saved["age"] < 18: return {"available": False, "reason": "Авторасчёт доступен только совершеннолетним. Нужны индивидуальные рекомендации специалиста."}
     profile = ProfileData(**{k: saved[k] for k in fields if saved.get(k) is not None}, activity=activity)
-    return calculate_nutrition(profile, Decimal(str(saved["current_weight_kg"])), AI_COMPANION_NUTRITION_RULES_JSON, eligibility_confirmed=payload.eligibility_confirmed)
+    return calculate_nutrition(profile, Decimal(str(saved["current_weight_kg"])), eligibility_confirmed=payload.eligibility_confirmed)

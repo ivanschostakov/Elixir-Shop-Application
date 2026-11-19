@@ -191,7 +191,6 @@ def test_opt_out_before_any_consent_is_remembered(monkeypatch):
 
 def test_nutrition_eligibility_confirmation_history_and_stale_draft(monkeypatch):
     monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
-    monkeypatch.setattr(config, "AI_COMPANION_NUTRITION_RULES_JSON", "")
     async def run():
         async with database() as (db, user):
             profile = await enable(db, user)
@@ -222,7 +221,6 @@ def test_nutrition_eligibility_confirmation_history_and_stale_draft(monkeypatch)
 
 def test_nutrition_requires_recent_weight_and_excludes_future_measurements(monkeypatch):
     monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
-    monkeypatch.setattr(config, "AI_COMPANION_NUTRITION_RULES_JSON", "")
     async def run():
         async with database() as (db, user):
             profile = await enable(db, user)

@@ -11,7 +11,6 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 TEST_ENV = {
-    "LOYALTY_USE_SETTLEMENT_BALANCE": "false",
     "POSTGRES_DB": "test",
     "POSTGRES_USER": "test",
     "POSTGRES_HOST": "localhost",
@@ -75,11 +74,23 @@ def stub_email_verification(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr('src.app.services.auth.service.verification.send_user_verification_code_email', fake_send_user_verification_code_email)
 
 
-@pytest.fixture(autouse=True)
-def disable_app_integrity_by_default(monkeypatch: pytest.MonkeyPatch):
-    import src.app.services.app_integrity.common as app_integrity_common
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_app_integrity: exercise real device-verification guards")
 
-    monkeypatch.setattr(app_integrity_common, "APP_INTEGRITY_MODE", "off")
+
+@pytest.fixture(autouse=True)
+def stub_app_integrity_for_unrelated_tests(request, monkeypatch: pytest.MonkeyPatch):
+    if request.node.get_closest_marker("real_app_integrity"):
+        return
+    from unittest.mock import AsyncMock
+    from src.app.services.app_integrity import service
+    from src.app.modules.users.me import companion
+
+    # Isolate unrelated API tests at the dependency boundary, never through a
+    # production setting that can disable device verification.
+    verify = AsyncMock()
+    monkeypatch.setattr(service, "verify_app_integrity_request", verify)
+    monkeypatch.setattr(companion, "verify_app_integrity_request", verify)
 
 
 @pytest.fixture(autouse=True)

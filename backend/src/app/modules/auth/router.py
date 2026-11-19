@@ -15,7 +15,7 @@ from src.app.services.auth import (
     verify_registration_user,
 )
 from src.database import get_db
-from src.app.services.auth.service.password_reset import confirm_password_reset, request_password_reset, verify_private_password_reset
+from src.app.services.auth.service.password_reset import confirm_password_reset, request_password_reset, verify_password_reset
 from src.database.models.auth.user import User
 
 from .dependencies import get_current_user
@@ -95,7 +95,7 @@ async def password_reset_confirm(
 async def password_reset_verify(
     request: Request, payload: UserPasswordResetVerify, db: AsyncSession = Depends(get_db),
 ) -> UserPasswordResetVerified:
-    token = await verify_private_password_reset(db, request, email=str(payload.email), code=payload.code)
+    token = await verify_password_reset(db, request, email=str(payload.email), code=payload.code)
     return UserPasswordResetVerified(reset_token=token)
 
 

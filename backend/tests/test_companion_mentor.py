@@ -117,7 +117,8 @@ def test_gain_custom_and_existing_nutrition_safety():
     for updates in ({"goal": "custom"}, {"target_weight_kg": 65}, {"target_weight_kg": 85}):
         assert not calculate_nutrition(profile.model_copy(update=updates), Decimal(70), eligibility_confirmed=True)["available"]
     old_rules = DEFAULT_NUTRITION_RULES.model_dump_json(exclude={"gain_surplus_kcal"})
-    assert not calculate_nutrition(profile, Decimal(70), old_rules, eligibility_confirmed=True)["available"]
+    with pytest.raises(TypeError):
+        calculate_nutrition(profile, Decimal(70), old_rules, eligibility_confirmed=True)
 
 
 @db_test

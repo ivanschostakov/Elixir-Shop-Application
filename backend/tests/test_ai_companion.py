@@ -139,24 +139,25 @@ def test_nutrition_does_not_encourage_underweight_or_unneeded_deficit():
 
 
 @pytest.mark.parametrize("raw", ['{"enabled":false}', '{"approved":false}', '{', 'null', '[]', '{"version":"incomplete"}'])
-def test_nutrition_invalid_override_fails_closed(raw):
+def test_nutrition_does_not_accept_external_rule_overrides(raw):
     profile = ProfileData(age=30, sex="male", height_cm=180, activity="low")
-    assert not calculate_nutrition(profile, Decimal(90), raw, eligibility_confirmed=True)["available"]
+    with pytest.raises(TypeError):
+        calculate_nutrition(profile, Decimal(90), raw, eligibility_confirmed=True)
 
 
-def test_nutrition_versioned_override_and_macro_consistency():
-    from src.app.services.ai.companion.nutrition import DEFAULT_NUTRITION_RULES
+def test_nutrition_uses_fixed_version_and_consistent_macronutrients():
+    from src.app.services.ai.companion.nutrition import DEFAULT_NUTRITION_RULES, NutritionRules
     profile = ProfileData(age=30, sex="male", height_cm=180, activity="low")
     rules = DEFAULT_NUTRITION_RULES.model_dump(mode="json")
-    rules.update(version="balanced-adult-v2-test", loss_fraction="0.10")
-    result = calculate_nutrition(profile, Decimal(90), json.dumps(rules), eligibility_confirmed=True)
-    assert result["nutrition"]["kcal"] == "2031" and result["rule_version"] == rules["version"]
+    result = calculate_nutrition(profile, Decimal(90), eligibility_confirmed=True)
+    assert result["rule_version"] == DEFAULT_NUTRITION_RULES.version
     for weight in (85, 90, 110, 140):
         n = nutrition_result(weight)["nutrition"]
         energy = Decimal(n["protein"]) * 4 + Decimal(n["fat"]) * 9 + Decimal(n["carbs"]) * 4
         assert abs(energy - Decimal(n["kcal"])) <= 1
     for patch in ({"loss_fraction": "0.50"}, {"max_deficit_kcal": 1000}, {"fat_fraction": "0.1"}, {"activity": {"low": "NaN"}}, {"kcal_floor": {"female": 500, "male": 500}}):
-        assert not calculate_nutrition(profile, Decimal(90), json.dumps({**rules, **patch}), eligibility_confirmed=True)["available"]
+        with pytest.raises(ValueError):
+            NutritionRules.model_validate({**rules, **patch})
 
 
 def test_strict_schema_and_ordinary_chat_isolation():
@@ -215,7 +216,7 @@ def test_native_guard_cannot_be_bypassed_by_platform_header(monkeypatch):
         assert error.value.status_code == 403
         native = Request({"type": "http", "method": "GET", "headers": [(b"x-app-integrity-platform", b"android")]})
         await module.native_access(native, db=None, user=user)
-        assert verify.await_args.kwargs["force_enforce"] is True
+        verify.assert_awaited_once_with(native, action="ai-companion", db=None, current_user=user)
     asyncio.run(run())
 
 

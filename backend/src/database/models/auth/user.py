@@ -34,12 +34,6 @@ class User(Base, IdPkMixin, TimestampMixin):
     password_hash: Mapped[str] = mapped_column(String(length=PASSWORD_HASH_MAX_LENGTH), nullable=False)
     app_password_reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    @property
-    def ios_private_features(self) -> bool:
-        from src.app.services.platform_availability import is_private_app_user
-
-        return is_private_app_user(self)
-
     name: Mapped[str] = mapped_column(String(length=PERSON_NAME_MAX_LENGTH), nullable=False)
     surname: Mapped[str] = mapped_column(String(length=PERSON_NAME_MAX_LENGTH), nullable=False)
 

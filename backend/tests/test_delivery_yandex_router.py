@@ -14,10 +14,11 @@ class FakeYandexClient:
         return []
 
 
-def test_yandex_delivery_point_markers_returns_empty_when_toggle_disabled(monkeypatch):
+def test_yandex_delivery_point_markers_stay_disabled_in_code_even_if_environment_enables_them(monkeypatch):
     fake_yandex_client = FakeYandexClient()
     app.dependency_overrides[get_yandex_delivery_client] = lambda: fake_yandex_client
-    monkeypatch.setattr(yandex_router_module, "YANDEX_DELIVERY_POINTS_ENABLED", False)
+    monkeypatch.setenv("YANDEX_DELIVERY_POINTS_ENABLED", "true")
+    assert yandex_router_module.YANDEX_DELIVERY_POINTS_ENABLED is False
     try:
         with TestClient(app) as test_client:
             response = test_client.get("/api/v1/delivery/yandex/delivery-point-markers")

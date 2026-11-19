@@ -10,9 +10,7 @@ from src.app.services.security import hash_password
 
 
 @pytest.fixture
-def review_user(monkeypatch):
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_APP_REVIEW_USER_ID', 42)
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_APP_REVIEW_EMAIL', "review@example.com")
+def review_user():
     return SimpleNamespace(
         id=42, username="app-review", email="review@example.com",
         is_active=True, is_verified=True,
@@ -21,22 +19,16 @@ def review_user(monkeypatch):
     )
 
 
-@pytest.mark.parametrize("user_id,email,configured_id,configured_email,expected", [
-    (42, "review@example.com", 42, "review@example.com", True),
-    (42, "review@example.com", 42, " REVIEW@EXAMPLE.COM ", True),
-    (43, "review@example.com", 42, "review@example.com", False),
-    (42, "customer@example.com", 42, "review@example.com", False),
-    (42, "review@example.com", 0, "review@example.com", False),
-    (42, "review@example.com", -1, "review@example.com", False),
-    (42, "review@example.com", 42, "", False),
-    (42, None, 42, "review@example.com", False),
+@pytest.mark.parametrize("username,expected", [
+    ("app-review", True),
+    ("customer", False),
+    ("admin", False),
+    ("App-Review", False),
+    ("app-review-extra", False),
+    (None, False),
 ])
-def test_review_exception_is_pinned_and_disabled_by_default(
-    monkeypatch, user_id, email, configured_id, configured_email, expected,
-):
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_APP_REVIEW_USER_ID', configured_id)
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_APP_REVIEW_EMAIL', configured_email)
-    assert auth._is_app_review_identity(SimpleNamespace(id=user_id, email=email)) is expected
+def test_review_exception_matches_only_the_reserved_login(username, expected):
+    assert auth._is_app_review_identity(SimpleNamespace(username=username)) is expected
     assert auth._is_app_review_identity(None) is False
 
 
@@ -62,7 +54,6 @@ async def test_review_login_still_checks_password_and_returns_customer_tokens(mo
     _patched_value_53 = AsyncMock(return_value=review_user)
     for target in ('src.app.services.auth.service.login.get_user_by_username', 'src.app.services.auth.service.website.get_user_by_username',):
         monkeypatch.setattr(target, _patched_value_53)
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_LOGIN_WEBSITE_FIRST_ENABLED', True)
     monkeypatch.setattr('src.app.services.auth.service.login.website_identity_configured', lambda: True)
     monkeypatch.setattr('src.app.services.auth.service.login.WebsiteIdentityClient', lambda: SimpleNamespace(authenticate=website))
     db = object()
@@ -97,7 +88,6 @@ async def test_review_rejects_invalid_credentials_without_site_fallback(
     _patched_value_80 = AsyncMock(return_value=review_user)
     for target in ('src.app.services.auth.service.login.get_user_by_username', 'src.app.services.auth.service.website.get_user_by_username',):
         monkeypatch.setattr(target, _patched_value_80)
-    monkeypatch.setattr('src.app.services.auth.service.login.AUTH_LOGIN_WEBSITE_FIRST_ENABLED', True)
     monkeypatch.setattr('src.app.services.auth.service.login.website_identity_configured', lambda: True)
     monkeypatch.setattr('src.app.services.auth.service.login.WebsiteIdentityClient', lambda: SimpleNamespace(authenticate=website))
     with pytest.raises(HTTPException) as exc:
@@ -109,9 +99,10 @@ async def test_review_rejects_invalid_credentials_without_site_fallback(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("user_id,email", [(43, "review@example.com"), (42, "customer@example.com")])
-async def test_other_customers_still_require_otp(monkeypatch, review_user, user_id, email):
-    review_user.id, review_user.email = user_id, email
+@pytest.mark.parametrize("username", ["customer", "admin", "App-Review"])
+async def test_other_customers_still_require_otp(monkeypatch, review_user, username):
+    review_user.username = username
+    email = review_user.email
     tokens, email_code = AsyncMock(), AsyncMock()
     db = SimpleNamespace(commit=AsyncMock())
     _patched_value_98 = AsyncMock()
@@ -126,9 +117,26 @@ async def test_other_customers_still_require_otp(monkeypatch, review_user, user_
     _patched_value_101 = email_code
     for target in ('src.app.services.auth.service.email._create_and_send_verification_code', 'src.app.services.auth.service.phone._create_and_send_verification_code', 'src.app.services.auth.service.verification._create_and_send_verification_code',):
         monkeypatch.setattr(target, _patched_value_101)
-    monkeypatch.setattr('src.app.services.auth.service.email.AUTH_LOGIN_ADMIN_BYPASS_EMAIL_2FA', True)
     response = await auth.login_user(object(), UserLoginPayload(login=email, password="test-review-password-only"), db)
     assert response.verification_required is True
     email_code.assert_awaited_once_with(review_user, db)
     db.commit.assert_awaited_once()
     tokens.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_website_identity_cannot_overwrite_the_reserved_review_customer(monkeypatch, review_user):
+    from src.app.services.auth.service import website
+    monkeypatch.setattr(website, "get_user_by_email", AsyncMock(return_value=None))
+    monkeypatch.setattr(website, "get_user_by_username", AsyncMock(return_value=review_user))
+    db = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(scalar_one=lambda: review_user)))
+    original_hash = review_user.password_hash
+    with pytest.raises(HTTPException) as error:
+        await website._sync_user_from_website_identity(
+            identity={"user": {"login": "app-review", "email": "another@example.com"}},
+            requested_login="another@example.com", requested_email="another@example.com",
+            password="website-password", db=db, user=None,
+        )
+    assert error.value.status_code == 401
+    assert review_user.password_hash == original_hash
+    assert review_user.email == "review@example.com"

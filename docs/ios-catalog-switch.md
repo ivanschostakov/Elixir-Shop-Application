@@ -1,65 +1,42 @@
-# Доступность функций на iOS
+# iOS release scope and updates
 
-Нативное приложение iPhone/iPad имеет постоянный пользовательский scope: личный
-кабинет, статусы существующих заказов, поддержка, контакты и реквизиты компании.
-Каталог, рекомендации, избранное, корзина, оформление новых заказов, новые платежи,
-промо-уведомления и медицинский AI в iOS недоступны.
+The iOS release includes the catalog and checkout, AI chat, Mentor, Community,
+profile, order history and support. These features use the same access policy
+for ordinary customers and the App Review demo customer. Standard sign-in,
+consent, device verification and product visibility restrictions still apply.
 
-Политика не зависит от аккаунта, IP-адреса или времени проверки. На сервере
-ограничения управляются единым флагом `APPLE_DEV_MODE` для всех iOS-пользователей:
-`true` включает ограничения, `false` снимает серверные ограничения. Значение
-по умолчанию: `true`. Флаг не открывает скрытые экраны нативного клиента и не
-заменяет публикацию новой версии при изменении заявленной функциональности.
+The full published catalog is available to all platforms, guests and customers.
+Archived or unpublished products remain unavailable. There are no category scopes
+selected by account, platform or environment, and no review-mode commerce switch.
 
-## Переключение на сервере
+Companion and Community are fixed parts of this release. Mentor accepts protocol 2
+only; older companion requests receive HTTP 426 and must update. Nutrition rules
+and the current consent version are defined in code. Consent and confirmation are
+still required. The profile always shows the authoritative MoySklad account view.
+MoySklad order synchronization, settlement-balance accounting, balance checkout,
+Telegram user-session synchronization is fixed on. Yandex delivery points are
+temporarily disabled in code, without an environment override.
+Provider credentials, authorized Telegram sessions and the standard financial
+validation are still required; no external services were deployed by this change.
 
-Изменить `APPLE_DEV_MODE` в `backend/.env`, затем из папки проекта выполнить:
+iOS entitlements derive the App Attest environment from the Xcode configuration:
+Debug uses development and Release uses production. The release API accepts only
+production attestations, without an environment override.
 
-```bash
-docker compose up -d --no-deps --force-recreate backend-api worker-notifications worker-admin-jobs worker-admin-automation
-```
+The application does not download or execute replacement application code.
+The OTA client dependency, update service URL, runtime targeting, EAS channels
+and JavaScript-bundle version gate have been removed. `updates.enabled` is false.
+The version endpoint contains only installed store-build versions and store links.
+Updating application code requires a new App Store or Google Play submission.
 
-Нужен именно пересозданный контейнер, поскольку окружение загружается при старте.
-Флаг действует на API, пустое представление корзины и фильтрацию push. Android и
-веб не ограничиваются. Существующие заказы и товары корзины не удаляются.
+Before the next submission:
 
-## Серверная защита
+1. Run frontend type checking, regression tests and the backend access-policy tests.
+2. Confirm the effective Expo config disables updates and has no update URL/runtime.
+3. Confirm release autolinking excludes the OTA client module.
+4. Create a new store binary and verify its contents; configuration checks alone
+   do not verify the contents of a previously submitted binary.
+5. Give App Review a working demo login and disclose navigation to all features.
 
-Приложение передаёт заголовок `X-App-Platform: ios`. Backend применяет ограничения
-во всех путях доступа, включая списки, прямые ссылки, рекомендации, сохранённые
-черновики, корзину, checkout, повтор заказа, создание платежа и AI actions.
-Старые нативные клиенты без заголовка распознаются по iPhone/iPad в User-Agent.
-
-Запросы чтения каталога получают пустые коллекции или обычный `404` для прямой
-ссылки. Запросы записи получают `403`; заказ, платёж или изменение корзины при этом
-не создаются. Существующие данные пользователя в базе не удаляются. Ответы имеют
-`Cache-Control: no-store` и `Vary` по платформе.
-
-AI chat и companion endpoints на iOS заблокированы. Транскрибация голосового
-сообщения поддержки остаётся доступной, поскольку она не выдаёт медицинский ответ.
-Маркетинговые push-сообщения на iOS отфильтровываются; ответы поддержки и статусы
-существующих заказов сохраняются.
-
-## Клиентская защита
-
-В iOS показываются три основных раздела: главная, поддержка и профиль. Прямые
-ссылки на товарные и платёжные экраны перенаправляются на главную. Главная страница
-содержит законченный набор действий и напоминание обращаться к врачу перед
-медицинскими решениями. Экран чата открывает только поддержку; AI и общий чат в
-iOS-навигации отсутствуют.
-
-## Развёртывание и проверка
-
-1. Опубликовать JavaScript-клиент через production OTA для runtime `0.1.1`.
-2. Развернуть backend с `APPLE_DEV_MODE=true` и одинаковой политикой для всех iOS-пользователей.
-3. Проверить API с `X-App-Platform: ios` и `android`, прямые product links,
-   корзину, checkout, AI, companion и payment creation.
-4. Проверить iPhone и iPad без сохранённой сессии и с обычным customer account.
-5. Заменить все App Store screenshots изображениями новой iOS версии.
-6. В Review Notes описать постоянный iOS scope и не обещать функциональность,
-   которой нет в опубликованной версии.
-
-Новый бинарный build нужен только при изменении native-кода, entitlements или
-permission descriptions. Текущая ремедиация не меняет эти части приложения:
-голосовой ввод на iOS отключён в JavaScript, поэтому существующий текст разрешения
-микрофона не показывается пользователю.
+The current changes do not modify an already-uploaded binary. No new binary was
+built or submitted while preparing this change, and no backend was deployed.

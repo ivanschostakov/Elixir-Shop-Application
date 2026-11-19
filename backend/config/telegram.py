@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from .env import _bool_env, _env, _float_env, _int_env
+from .env import _env, _float_env, _int_env
 from .paths import WORKING_DIR
 
 
@@ -11,7 +11,7 @@ TELEGRAM_API_BASE_URL = _env("TELEGRAM_API_BASE_URL", "https://api.telegram.org"
 TELEGRAM_PROXY_URL = (_env("TELEGRAM_PROXY_URL") or "").strip().strip('"').strip("'") or None
 TELEGRAM_POLLING_INTERVAL_SECONDS = _float_env("TELEGRAM_POLLING_INTERVAL_SECONDS", 1.0)
 TELEGRAM_POLLING_TIMEOUT_SECONDS = _int_env("TELEGRAM_POLLING_TIMEOUT_SECONDS", 30)
-TELEGRAM_COMMUNITY_ENABLED = _bool_env("TELEGRAM_COMMUNITY_ENABLED", False)
+TELEGRAM_COMMUNITY_ENABLED = True
 TELEGRAM_COMMUNITY_CHAT_ID = _int_env("TELEGRAM_COMMUNITY_CHAT_ID", 0)
 TELEGRAM_COMMUNITY_JOIN_URL = (_env("TELEGRAM_COMMUNITY_JOIN_URL") or "").strip() or None
 TELEGRAM_BOT_USERNAME = (_env("TELEGRAM_BOT_USERNAME") or "").strip().lstrip("@") or None
@@ -42,7 +42,7 @@ TELEGRAM_COMMUNITY_MEDIA_SIGNING_SECRET = (
 
 # This user-authorized MTProto client is used only for authoritative forum
 # topic metadata. Bot API polling remains the real-time message transport.
-TELEGRAM_USERBOT_ENABLED = _bool_env("TELEGRAM_USERBOT_ENABLED", False)
+TELEGRAM_USERBOT_ENABLED = True
 TELEGRAM_USERBOT_API_ID = _int_env("TELEGRAM_USERBOT_API_ID", 0)
 TELEGRAM_USERBOT_API_HASH = (_env("TELEGRAM_USERBOT_API_HASH") or "").strip() or None
 TELEGRAM_USERBOT_PHONE = (_env("TELEGRAM_USERBOT_PHONE") or "").strip() or None

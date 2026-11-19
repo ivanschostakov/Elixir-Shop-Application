@@ -6,16 +6,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from .constants import (
-    APP_INTEGRITY_IOS_ALLOWED_ENVIRONMENTS,
     APP_INTEGRITY_IOS_BUNDLE_ID,
     APP_INTEGRITY_IOS_TEAM_ID,
-    APP_INTEGRITY_MODE,
-    APP_INTEGRITY_MODES,
     APPLE_APP_ATTEST_AAGUIDS,
 )
 
 
-def mode() -> str: return APP_INTEGRITY_MODE if APP_INTEGRITY_MODE in APP_INTEGRITY_MODES else "enforce"
 def csv_values(value: str | None) -> set[str]:
     if not value: return set()
     return {item.strip() for item in value.split(",") if item.strip()}
@@ -44,7 +40,7 @@ def ios_app_id() -> str | None:
     return f"{APP_INTEGRITY_IOS_TEAM_ID}.{APP_INTEGRITY_IOS_BUNDLE_ID}"
 
 
-def ios_allowed_environments() -> set[str]: return csv_values(APP_INTEGRITY_IOS_ALLOWED_ENVIRONMENTS) or {"production"}
+def ios_allowed_environments() -> set[str]: return {"production"}
 def ios_environment_from_aaguid(aaguid: bytes) -> str | None:
     for environment, expected_aaguid in APPLE_APP_ATTEST_AAGUIDS.items():
         if hmac_compare_digest(aaguid, expected_aaguid): return environment

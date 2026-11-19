@@ -16,7 +16,6 @@ from test_products_advanced_search_api import sync_engine
 
 @pytest.fixture
 def ios_catalog(scoped_catalog, monkeypatch):
-    monkeypatch.setattr(config, "IOS_COMMERCE_ENABLED", True)
     try:
         yield scoped_catalog
     finally:
@@ -46,14 +45,14 @@ def payment_provider(monkeypatch):
 
 
 @pytest.mark.parametrize("identity", ["guest", "limited", "regular"])
-def test_ios_catalog_quote_and_hidden_products(client, ios_catalog, identity):
+def test_ios_full_catalog_quote_and_unknown_products(client, ios_catalog, identity):
     s = ios_catalog
     headers = _headers(s, identity)
     response = client.get("/api/v1/products", headers=headers)
     assert response.status_code == 200, response.text
-    assert {row["id"] for row in response.json()} == {s["en_product_id"], s["noise_product_id"]}
+    assert {row["id"] for row in response.json()} >= {s["ru_product_id"], s["en_product_id"], s["noise_product_id"]}
     assert client.get(f"/api/v1/products/{s['en_product_id']}", headers=headers).status_code == 200
-    assert client.get(f"/api/v1/products/{s['ru_product_id']}", headers=headers).status_code == 404
+    assert client.get(f"/api/v1/products/{s['ru_product_id']}", headers=headers).status_code == 200
     variant_id = _variant(s["en_product_id"])
     quote = client.post("/api/v1/guest/basket/quote", headers=headers,
                         json={"items": [{"variant_id": variant_id, "quantity": 2}]})
@@ -61,7 +60,7 @@ def test_ios_catalog_quote_and_hidden_products(client, ios_catalog, identity):
     assert quote.json()["total_quantity"] == 2
     assert Decimal(quote.json()["grand_total"]) == Decimal("40.00")
     hidden = client.post("/api/v1/guest/basket/quote", headers=headers,
-                         json={"items": [{"variant_id": _variant(s["ru_product_id"]), "quantity": 1}]})
+                         json={"items": [{"variant_id": 999999999, "quantity": 1}]})
     assert hidden.status_code == 404, hidden.text
 
 
@@ -81,7 +80,7 @@ def test_ios_basket_add_read_update_remove(client, ios_catalog, identity):
     removed = client.delete(f"/api/v1/users/me/basket/items/{item_id}", headers=headers)
     assert removed.status_code == 200 and removed.json()["items"] == []
     hidden = client.post("/api/v1/users/me/basket/items", headers=headers,
-                         json={"variant_id": _variant(s["ru_product_id"]), "quantity": 1})
+                         json={"variant_id": 999999999, "quantity": 1})
     assert hidden.status_code == 404, hidden.text
 
 
@@ -144,7 +143,7 @@ def test_ios_guest_checkout_to_sbp(client, ios_catalog, stub_amocrm, payment_pro
 def test_ios_rejects_hidden_items_already_in_basket(client, ios_catalog, stub_amocrm):
     s = ios_catalog
     added = client.post("/api/v1/users/me/basket/items", headers=s["regular"],
-                        json={"variant_id": _variant(s["ru_product_id"]), "quantity": 1})
+                        json={"variant_id": 999999999, "quantity": 1})
     assert added.status_code == 200, added.text
     order = client.post("/api/v1/users/me/orders", headers=_headers(s, "regular"), json={"payment_method": "sbp"})
     assert order.status_code == 404, order.text

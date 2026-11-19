@@ -14,6 +14,8 @@ from src.database.schemas.auth.user import UserCreate
 
 
 async def bootstrap_app_review(*, email: str, username: str, password: str) -> int:
+    if username.strip() != "app-review":
+        raise ValueError("The App Review customer must use the app-review username")
     if len(password) < 16:
         raise ValueError("Use a unique password of at least 16 characters")
     data = UserCreate(
@@ -42,13 +44,12 @@ async def bootstrap_app_review(*, email: str, username: str, password: str) -> i
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("email")
-    parser.add_argument("--username", required=True)
+    parser.add_argument("--username", default="app-review", choices=["app-review"])
     args = parser.parse_args()
     password = getpass("New unique App Review password (at least 16 characters): ")
     user_id = await bootstrap_app_review(email=args.email, username=args.username, password=password)
-    print("Customer created. Set these in backend/.env and recreate backend-api:")
-    print(f"AUTH_APP_REVIEW_USER_ID={user_id}")
-    print(f"AUTH_APP_REVIEW_EMAIL={args.email.strip().lower()}")
+    print(f"App Review customer created: username=app-review, customer_id={user_id}")
+    print("No feature flags or environment overrides are required.")
 
 
 if __name__ == "__main__":

@@ -9,8 +9,7 @@ from uvicorn import Config, Server
 
 from config import CORS_ALLOWED_ORIGINS
 from src.app.services.cache import get_cache_service
-from src.app.modules.products.access import scoped_catalog_read
-from src.app.services.platform_availability import CATALOG_VARY, catalog_response, is_ios_restricted_path
+from src.app.services.platform_availability import CATALOG_VARY
 from .router import api_router
 from ..integrations.ai import get_professor_client
 from ..integrations.delivery.geo import get_geo_client
@@ -50,12 +49,11 @@ app.include_router(api_router)
 
 @app.middleware("http")
 async def media_cache_control(request: Request, call_next):
-    restricted_response = None if scoped_catalog_read(request.url.path, request.method) else catalog_response(request.headers, request.url.path, request.method)
-    if restricted_response is not None:
-        return restricted_response
     response = await call_next(request)
-    if is_ios_restricted_path(request.url.path, request.method):
-        response.headers["Cache-Control"] = "no-store"
+    if request.url.path.startswith("/api/v1/"):
+        cache_control = response.headers.get("Cache-Control", "")
+        if "no-store" not in {part.strip().lower() for part in cache_control.split(",")}:
+            response.headers["Cache-Control"] = f"{cache_control}, no-store" if cache_control else "no-store"
         existing_vary = response.headers.get("Vary")
         response.headers["Vary"] = f"{existing_vary}, {CATALOG_VARY}" if existing_vary else CATALOG_VARY
     if request.url.path == "/api/v1/app-version":

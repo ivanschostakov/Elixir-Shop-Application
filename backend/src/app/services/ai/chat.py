@@ -301,6 +301,8 @@ async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_cli
 
 
 async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1, telegram_transport: bool = False, bot_model_override: BotModel | None = None) -> AIChatSendResult:
+    if companion_profile is not None and dialogue_protocol != 2:
+        raise HTTPException(426, detail={"code": "mentor_client_update_required", "message": "Обновите клиент наставника."})
     if not telegram_transport:
         await require_ai_data_consent(db, user.id)
     chat = await get_or_create_user_chat(db, user=user, professor_client=professor_client)

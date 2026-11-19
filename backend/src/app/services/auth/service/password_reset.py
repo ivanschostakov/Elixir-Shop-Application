@@ -16,7 +16,6 @@ from src.app.services.email_verification import (
     verify_email_verification_code,
 )
 from src.app.services.rate_limit import enforce_rate_limit
-from src.app.services.platform_availability import is_ios_request, is_private_app_user
 from src.app.services.security import hash_password
 from src.database.models import EmailVerificationCode, User, UserPasswordReset, UserSession
 from .common import logger
@@ -92,10 +91,10 @@ def _reset_token_hash(token: str) -> str:
     return _RESET_TOKEN_PREFIX + sha256(token.encode()).hexdigest()
 
 
-async def verify_private_password_reset(db: AsyncSession, request: Request, *, email: str, code: str) -> str:
+async def verify_password_reset(db: AsyncSession, request: Request, *, email: str, code: str) -> str:
     await enforce_rate_limit(request, scope="auth:password_reset:verify", limit=20, window_seconds=900)
     user = await _active_verified_user(db, email)
-    if user is None or not is_ios_request(request.headers) or not is_private_app_user(user):
+    if user is None:
         raise _invalid_code()
     pending = await _pending_reset(db, user, email)
     await _check_code(db, pending, code)
@@ -118,8 +117,7 @@ async def confirm_password_reset(
         raise _invalid_code()
     pending = await _pending_reset(db, user, email)
     if reset_token is not None:
-        if (not is_ios_request(request.headers) or not is_private_app_user(user)
-                or not compare_digest(pending.code_hash, _reset_token_hash(reset_token))):
+        if not compare_digest(pending.code_hash, _reset_token_hash(reset_token)):
             raise _invalid_code()
     elif code is not None:
         await _check_code(db, pending, code)

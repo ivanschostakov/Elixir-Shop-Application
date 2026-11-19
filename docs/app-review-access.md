@@ -1,37 +1,33 @@
 # App Review customer access
 
-Apple Review uses a dedicated **customer** identity, never an admin-panel login.
-Only its email OTP is skipped. A valid password, active/verified account, normal
-rate limits, customer permissions and device-integrity checks still apply.
-The account uses normal application features and loyalty rules.
+Apple Review uses the reserved customer username `app-review`, never an admin-panel
+login. The login code checks that username directly, with no environment flag,
+customer-ID override or email override.
 
-## Provision and enable
+Only the email OTP step is skipped. The existing account must be active and verified,
+and the password must be valid. Rate limits, normal customer permissions, consent
+requirements and mandatory device verification apply. No extra features are unlocked.
+Other customers, including administrators using the customer app, require email OTP.
 
-Run inside the backend environment (password is prompted, not stored in Git):
+## Provision
+
+Run inside the backend environment (password is prompted, never stored in Git):
 
 ```sh
-python -m src.scripts.bootstrap_app_review app-review@example.com --username app-review
+python -m src.scripts.bootstrap_app_review app-review@example.com
 ```
 
-The command refuses to overwrite an existing customer or reuse an admin email.
-Save its printed `AUTH_APP_REVIEW_USER_ID` and `AUTH_APP_REVIEW_EMAIL` values in
-the production `backend/.env`, then recreate only `backend-api`. Both values
-must match the same customer; the default ID `0` disables the exception.
-The review customer authenticates locally, not through Bitrix website login.
+The command creates only the `app-review` username and refuses to overwrite an
+existing customer or reuse an administrator email. No environment changes enable
+this login exception. Website identity synchronization cannot overwrite the reserved
+customer's credentials.
 
 Provide the username and password in App Store Connect's App Review Information.
-Verify `/api/v1/auth/login` returns customer tokens without
-`verification_required`, a wrong password returns 401, and the same credentials
-cannot sign into the admin panel. Do not store the password in this document.
+Verify that a valid password returns ordinary customer tokens, an incorrect password
+returns 401, and device verification remains mandatory for protected operations.
 
 ## Disable or rotate
 
-- Set `AUTH_APP_REVIEW_USER_ID=0` and recreate `backend-api` to restore OTP.
-- Disabling the customer prevents new login; revoke its sessions too when
-  withdrawing access. OTP configuration alone does not revoke existing tokens.
-- Rotate the customer password and revoke its sessions before sharing replacement
-  credentials. Update App Review Information with the new password.
-- Deleting and re-registering the same email does **not** inherit the exception:
-  the newly created customer has a different ID.
-
-No Bitrix website files, admin identities or public registration rules are changed.
+Disable the customer and revoke its sessions to withdraw access. To rotate access,
+change the password, revoke existing sessions, and update App Review Information.
+Do not reassign the reserved `app-review` username to another customer.

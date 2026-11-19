@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from config import EMAIL_VERIFICATION_MAX_ATTEMPTS, ufa_now
 from src.app.services.auth.service import login, password_reset
-from src.app.services import platform_availability
 from src.app.services.security import hash_password
 from src.database.models import EmailVerificationCode, User, UserPasswordReset
 from src.integrations.website_identity import WebsiteIdentityError
@@ -49,7 +48,6 @@ def test_reset_invalidates_old_sessions_and_login_codes_and_blocks_site_password
     website = AsyncMock(side_effect=WebsiteIdentityError(
         status_code=401, code="invalid", message="Invalid", message_ru="Invalid", message_en="Invalid",
     ))
-    monkeypatch.setattr(login, "AUTH_LOGIN_WEBSITE_FIRST_ENABLED", True)
     monkeypatch.setattr(login, "website_identity_configured", lambda: True)
     monkeypatch.setattr(login, "WebsiteIdentityClient", lambda: SimpleNamespace(authenticate=website))
     login_path = "/api/v1/auth/login"
@@ -116,8 +114,8 @@ def test_reset_request_response_does_not_disclose_unknown_or_ineligible_email(cl
 
 
 @pytest.mark.anyio
-async def test_private_ios_recovery_exchanges_the_code_for_a_single_use_token(monkeypatch):
-    email = "private@example.com"
+async def test_customer_recovery_exchanges_the_code_for_a_single_use_token(monkeypatch):
+    email = "customer@example.com"
     user = SimpleNamespace(id=42, is_active=True, is_verified=True, password_hash=hash_password(OLD))
     pending = UserPasswordReset(
         user_id=user.id, email=email, password_fingerprint=password_reset._password_fingerprint(user),
@@ -135,22 +133,17 @@ async def test_private_ios_recovery_exchanges_the_code_for_a_single_use_token(mo
     android = SimpleNamespace(headers={"x-app-platform": "android"})
     monkeypatch.setattr(password_reset, "enforce_rate_limit", AsyncMock())
     monkeypatch.setattr(password_reset, "_active_verified_user", AsyncMock(return_value=user))
-    monkeypatch.setattr(platform_availability.config, "IOS_PRIVATE_FEATURES_USER_ID", 43)
     with pytest.raises(HTTPException, match="Invalid or expired verification code"):
-        await password_reset.verify_private_password_reset(db, ios, email=email, code="345678")
-
-    monkeypatch.setattr(platform_availability.config, "IOS_PRIVATE_FEATURES_USER_ID", user.id)
-    with pytest.raises(HTTPException, match="Invalid or expired verification code"):
-        await password_reset.verify_private_password_reset(db, ios, email=email, code="345679")
+        await password_reset.verify_password_reset(db, ios, email=email, code="345679")
     assert pending.attempt_count == 1
-    token = await password_reset.verify_private_password_reset(db, ios, email=email, code="345678")
+    token = await password_reset.verify_password_reset(db, ios, email=email, code="345678")
     assert token not in pending.code_hash
     assert password_reset._password_fingerprint(user) == pending.password_fingerprint
 
     with pytest.raises(HTTPException, match="Invalid or expired verification code"):
         await password_reset.confirm_password_reset(db, ios, email=email, code="345678", password=NEW)
     with pytest.raises(HTTPException, match="Invalid or expired verification code"):
-        await password_reset.confirm_password_reset(db, android, email=email, reset_token=token, password=NEW)
+        await password_reset.confirm_password_reset(db, android, email=email, reset_token="wrong-token", password=NEW)
     await password_reset.confirm_password_reset(db, ios, email=email, reset_token=token, password=NEW)
     assert user.app_password_reset_at is not None
     assert password_reset._password_fingerprint(user) != pending.password_fingerprint

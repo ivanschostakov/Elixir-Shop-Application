@@ -2,7 +2,6 @@
 
 Rationale and source links: docs/ai-companion-implementation.md#правила-питания.
 """
-import json
 from decimal import Decimal, DecimalException, ROUND_CEILING, ROUND_HALF_UP
 from typing import Annotated, Literal
 
@@ -57,7 +56,7 @@ def display_number(value, places=1):
     return f"{Decimal(str(value)):.{places}f}".rstrip("0").rstrip(".").replace(".", ",")
 
 
-def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: str = "", *, eligibility_confirmed: bool = False) -> dict:
+def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, *, eligibility_confirmed: bool = False) -> dict:
     if profile.goal == "custom":
         return unavailable("Для индивидуальной цели автоматический расчёт недоступен. Внесите согласованные со специалистом КБЖУ вручную.")
     if not eligibility_confirmed:
@@ -67,16 +66,7 @@ def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, rules_json: st
     if not weight_kg.is_finite() or not 0 < weight_kg <= 500:
         return unavailable("Проверьте текущий вес.")
     try:
-        if rules_json.strip():
-            data = json.loads(rules_json)
-            # A short explicit opt-out is allowed; malformed overrides never use defaults.
-            if isinstance(data, dict) and (data.get("enabled") is False or data.get("approved") is False):
-                return unavailable("Авторасчёт отключён. Можно внести готовые КБЖУ вручную.")
-            rules = NutritionRules.model_validate(data)
-        else:
-            rules = DEFAULT_NUTRITION_RULES
-        if not rules.enabled:
-            return unavailable("Авторасчёт отключён. Можно внести готовые КБЖУ вручную.")
+        rules = DEFAULT_NUTRITION_RULES
 
         height_m2 = (profile.height_cm / 100) ** 2
         bmi = weight_kg / height_m2
