@@ -72,6 +72,7 @@
       "./plugins/with-yandex-mapkit",
       "./plugins/with-ios-pod-deployment-target",
       "./plugins/with-app-attest-environment",
+      "./plugins/with-ios-scene-lifecycle",
       "./plugins/with-android-play-policy-permissions",
       [
         "expo-splash-screen",
