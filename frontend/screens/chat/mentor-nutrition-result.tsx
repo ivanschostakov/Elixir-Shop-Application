@@ -2,7 +2,8 @@ import { StyleSheet, Text, View } from "react-native"
 import { mentorText as mt, mentorLocale } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { MentorFlowBody, MentorFlowButton, MentorFlowHeader, flowStyles } from "@/screens/chat/mentor-onboarding-layout"
-import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
+import { useMentorPalette } from "@/screens/chat/mentor-ui"
+import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 import type { CompanionState } from "@/services/api/companion"
 
 export function MentorNutritionResult({ state, onContinue, onDecline, onBack, onClose }: { state: CompanionState | null; onContinue: () => void; onDecline: () => void; onBack: () => void; onClose: () => void }) {
@@ -17,7 +18,7 @@ export function MentorNutritionResult({ state, onContinue, onDecline, onBack, on
             <Text accessibilityRole="header" style={[flowStyles.title, { color: colors.text }]}>{mt("Ваш ориентир питания")}</Text>
             {nutrition ? <>
                 <View style={[styles.calorieCard, { backgroundColor: colors.mint }]}>
-                    <View style={[styles.foodIcon, { backgroundColor: colors.surface }]}><MentorIcon name="food" size={29} color={colors.green} /></View>
+                    <View style={[styles.foodIcon, { backgroundColor: colors.surface }]}><MentorQuestionIcon name="food" size={29} color={colors.green} /></View>
                     <Text adjustsFontSizeToFit minimumFontScale={0.65} numberOfLines={1} style={[styles.calories, { color: colors.green }]}>{number(nutrition.kcal)}</Text>
                     <Text style={[styles.calorieUnit, { color: colors.green }]}>{mt("ккал в день")}</Text>
                 </View>
@@ -30,7 +31,7 @@ export function MentorNutritionResult({ state, onContinue, onDecline, onBack, on
                 </View>
                 <Text style={[styles.explanation, { color: colors.muted }]}>{mt("Начнём с этого ориентира и посмотрим на самочувствие и динамику.")}</Text>
             </> : <View style={[styles.unavailable, { backgroundColor: colors.soft }]}>
-                <MentorIcon name="food" size={36} color={colors.green} />
+                <MentorQuestionIcon name="food" size={36} color={colors.green} />
                 <Text style={[styles.explanation, { color: colors.text }]}>{mt("Для ваших параметров нужен индивидуальный ориентир питания.")}</Text>
             </View>}
             <View style={styles.invitation}>

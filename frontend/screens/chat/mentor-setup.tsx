@@ -6,7 +6,7 @@ import type { useCompanion } from "@/screens/chat/companion"
 import { CompanionActionCancelled } from "@/screens/chat/companion-consent"
 import { MentorDevelopmentNotice } from "@/screens/chat/mentor-development-notice"
 import { MentorOnboarding } from "@/screens/chat/mentor-onboarding"
-import { mentorFormFromState, mentorOnboardingAction, mentorOptionalAction, mentorOptionalFormFromState, mentorOptionalResumeStep, mentorProfileComplete, type MentorForm, type MentorOptionalForm } from "@/screens/chat/mentor-onboarding-data"
+import { mentorFormFromState, mentorOnboardingAction, mentorOptionalAction, mentorOptionalFormFromState, mentorOptionalResumeStep, mentorProfileComplete, optionalMentorFields, type MentorForm, type MentorOptionalForm } from "@/screens/chat/mentor-onboarding-data"
 import { MentorOptionalOnboarding } from "@/screens/chat/mentor-onboarding-optional"
 import { MentorNutritionResult } from "@/screens/chat/mentor-nutrition-result"
 import { MentorStageTransition } from "@/screens/chat/mentor-onboarding-layout"
@@ -30,6 +30,7 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
     const [saving, setSaving] = useState(false)
     const active = useRef(true)
     const savingRef = useRef(false)
+    const pendingOptionalStep = useRef<number | null>(null)
     const submission = useRef<CompanionAction | null>(null)
     useEffect(() => { active.current = true; return () => { active.current = false } }, [])
 
@@ -42,9 +43,9 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
         setView(mentorProfileComplete(c.state) ? "placeholder" : "form")
     }, [c.state])
     const change = (next: MentorForm) => { submission.current = null; setError(""); setForm(next) }
-    const changeOptional = (next: MentorOptionalForm) => { submission.current = null; setError(""); setOptional(next) }
+    const changeOptional = (next: MentorOptionalForm) => { if (!savingRef.current) submission.current = null; setError(""); setOptional(next) }
     const currentState = savedState && savedState.profile?.id === c.state?.profile?.id && (savedState.profile?.version ?? 0) >= (c.state?.profile?.version ?? 0) ? savedState : c.state
-    const submit = async (build: () => CompanionAction | Promise<CompanionAction>, success: (state: CompanionState) => void) => {
+    const submit = async (build: () => CompanionAction | Promise<CompanionAction>, success: (state: CompanionState) => void, failure?: () => void) => {
         if (savingRef.current || !c.state) return
         savingRef.current = true; setSaving(true); setError("")
         try {
@@ -56,6 +57,7 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
                 setSavedState(next); submission.current = null; success(next)
             }
         } catch (e) {
+            if (active.current) failure?.()
             if (active.current && !(e instanceof CompanionActionCancelled)) {
                 setError(getErrorMessage(e))
                 const state = await c.refresh()
@@ -63,6 +65,7 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
             }
         } finally {
             savingRef.current = false
+            pendingOptionalStep.current = null
             if (active.current) setSaving(false)
         }
     }
@@ -74,17 +77,30 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
         setOptionalStep(mentorOptionalResumeStep(currentState)); setView("optional")
     }
     const saveOptional = (skipped: boolean) => {
+        if (savingRef.current || !c.state) return
+        const sourceStep = optionalStep
+        let action: CompanionAction
+        try { action = mentorOptionalAction(optional, sourceStep, skipped, c.state, requestKey()) }
+        catch (e) { setError(getErrorMessage(e)); return }
+        setError("")
+        if (sourceStep < 5) {
+            const field = optionalMentorFields[sourceStep]
+            const alreadySaved = (c.state.profile?.data.onboarding_optional_step ?? 0) >= sourceStep + 1
+            if (alreadySaved && (skipped || (c.state.profile?.data[field] ?? "").trim() === action.onboarding_details?.[field])) {
+                submission.current = null; setOptionalStep(sourceStep + 1); return
+            }
+            // Start the visual transition immediately. A failed save returns to
+            // this question with the same answer; persisted answers remain intact.
+            setOptionalStep(sourceStep + 1)
+        }
+        pendingOptionalStep.current = sourceStep
         void submit(async () => {
-            const action = mentorOptionalAction(optional, optionalStep, skipped, c.state!, requestKey())
-            if (optionalStep === 5 && !skipped && (optional.weightEnabled || optional.dailyEnabled || optional.weeklyEnabled)) {
+            if (sourceStep === 5 && !skipped && (optional.weightEnabled || optional.dailyEnabled || optional.weeklyEnabled)) {
                 const token = await syncPushNotifications({ requestPermissions: true })
                 if (!token) throw new Error(mt("Разрешите уведомления на телефоне или продолжите без напоминаний."))
             }
             return action
-        }, saved => {
-            if (optionalStep === 5) setView("placeholder")
-            else setOptionalStep(mentorOptionalResumeStep(saved, optionalStep + 1))
-        })
+        }, () => { if (sourceStep === 5) setView("placeholder") }, () => { if (sourceStep < 5) setOptionalStep(sourceStep) })
     }
     const close = () => { if (!savingRef.current) onClose() }
     const stage = readyContent()
@@ -92,7 +108,7 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
     function readyContent() {
         if (view === "placeholder") return <MentorDevelopmentNotice onChat={close} onContinue={openOptional} />
         if (view === "nutrition") return <MentorNutritionResult state={currentState} onContinue={openOptional} onDecline={() => setView("placeholder")} onBack={() => { submission.current = null; setView("form") }} onClose={close} />
-        if (view === "optional") return <MentorOptionalOnboarding value={optional} onChange={changeOptional} step={optionalStep} onBack={() => { submission.current = null; setError(""); if (optionalStep) setOptionalStep(optionalStep - 1); else setView("nutrition") }} onClose={close} onNext={saveOptional} saving={saving} error={error} />
+        if (view === "optional") return <MentorOptionalOnboarding value={optional} onChange={changeOptional} step={optionalStep} onBack={() => { if (savingRef.current) return; submission.current = null; setError(""); if (optionalStep) setOptionalStep(optionalStep - 1); else setView("nutrition") }} onClose={close} onNext={saveOptional} saving={saving} editingLocked={saving && pendingOptionalStep.current === optionalStep} error={error} />
         return undefined
     }
 

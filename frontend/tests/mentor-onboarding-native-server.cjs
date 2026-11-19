@@ -1,7 +1,8 @@
 /* Local-only synthetic iOS preview; never imported by application routes.
  * node tests/mentor-onboarding-native-server.cjs
  * Open exp+elixir-shop://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8104%3Fscreen%3Dresult
- * Screens: required, result, optional, reminders. No account or network mutations.
+ * Screens: required, activity, result, optional, experience, conditions, reminders.
+ * No account or network mutations.
  */
 /* global __dirname */
 const path = require("node:path")
@@ -15,7 +16,7 @@ config.resolver.resolveRequest = (context, name, platform) => context.resolveReq
 config.server = { ...config.server, port, enhanceMiddleware: middleware => (req, res, next) => {
     const url = new URL(req.url, base)
     if (url.pathname === "/" || url.pathname === "/manifest") {
-        const screen = ["required", "result", "optional", "reminders"].includes(url.searchParams.get("screen")) ? url.searchParams.get("screen") : "required"
+        const screen = ["required", "activity", "result", "optional", "experience", "conditions", "reminders"].includes(url.searchParams.get("screen")) ? url.searchParams.get("screen") : "required"
         res.setHeader("Content-Type", "application/json")
         res.setHeader("expo-protocol-version", "0")
         res.setHeader("expo-sfv-version", "0")

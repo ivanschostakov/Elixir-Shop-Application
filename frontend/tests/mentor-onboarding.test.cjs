@@ -5,7 +5,8 @@ const data = loadTs("screens/chat/mentor-onboarding-data.ts")
 const complete = { goal: "maintain", customGoal: "", age: "32", sex: "female", height: "170", weight: "78,5", targetWeight: "75", activity: "moderate" }
 const state = () => ({ available: true, consent_required: false, profile: { version: 1, enabled: true, data: {} }, mentor: { latest_weight: null } })
 const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)]
-const label = (tree, name) => nodes(tree).find(node => node.props.accessibilityLabel === name)
+const label = (tree, name) => nodes(tree).find(node => (node.props.accessibilityLabel ?? node.props.title) === name)
+const pane = (tree, index) => nodes(tree).find(node => node.props.testID === `mentor-optional-step-${index + 1}`)
 
 function harness(file, overrides = {}) {
     const slots = [], effects = [], animations = []
@@ -15,6 +16,7 @@ function harness(file, overrides = {}) {
         useRef(initial) { const i = cursor++; if (!(i in slots)) slots[i] = { current: initial }; return slots[i] },
         useEffect(callback, deps) { const i = cursor++; if (!slots[i] || deps.some((value, j) => value !== slots[i].deps[j])) effects.push(() => { slots[i]?.cleanup?.(); slots[i] = { deps, cleanup: callback() } }) },
     }
+    react.useLayoutEffect = react.useEffect
     const jsx = (type, props, key) => ({ type, props, key })
     class Value { constructor(value) { this.value = value } setValue(value) { this.value = value } interpolate(options) { return options } }
     const module = loadTs(file, {
@@ -25,6 +27,9 @@ function harness(file, overrides = {}) {
         "@/providers/language-provider": { useLanguage() {} },
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false, palette: { surface: "#FFFFFF" } }) },
         "@/screens/chat/mentor-ui": { MentorIcon: "Icon", useMentorPalette: () => ({ surface: "#FFFFFF" }) },
+        "@/screens/chat/mentor-choice-card": { MentorChoiceCard: "ChoiceCard" },
+        "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "QuestionIcon" },
+        "@/screens/chat/mentor-reminder-time": { MentorReminderTime: "NativeTime" },
         "@/screens/chat/chat-mode-transition": { useChatReducedMotion: () => false },
         "@/screens/chat/mentor-onboarding-data": data,
         "@/screens/chat/mentor-onboarding": { MentorOnboarding: "MentorOnboarding" },
@@ -70,10 +75,9 @@ test("five retained pages animate in both directions and save after goal weight"
     const render = () => h.render("MentorOnboarding", { visible: true, value, onChange: next => { value = next }, onClose() {}, onSave: async () => { saves++ }, saving: false, error: "" })
     const next = () => nodes(render()).find(node => node.props.testID === "mentor-onboarding-next").props.onPress()
     let tree = render()
-    nodes(tree).find(node => node.props.testID === "mentor-onboarding-transition").props.onLayout({ nativeEvent: { layout: { width: 390 } } })
     next(); assert.ok(nodes(render()).some(node => node.props.accessibilityRole === "alert"))
     label(render(), "Поддерживать форму").props.onPress(); next(); tree = render()
-    assert.equal(h.animations.at(-1).toValue, 1); assert.equal(h.animations.at(-1).useNativeDriver, true); assert.equal(h.animations.at(-1).duration, 320)
+    assert.equal(h.animations.at(-1).toValue, 1); assert.equal(h.animations.at(-1).useNativeDriver, true); assert.equal(h.animations.at(-1).duration, 170)
     label(tree, "Возраст").props.onChangeText("32"); label(render(), "Женский").props.onPress(); next()
     label(render(), "Рост").props.onChangeText("170"); label(render(), "Текущий вес").props.onChangeText("78,5"); next()
     nodes(render()).find(node => node.type === "FlowHeader").props.onBack(); tree = render()
@@ -141,6 +145,7 @@ test("optional answers preserve skip/resume progress and leave unrelated reminde
     assert.equal(data.mentorOptionalResumeStep(saved), 2)
     const form = data.mentorOptionalFormFromState(saved)
     assert.equal(form.weightEnabled, false); assert.equal(form.dailyEnabled, false); assert.equal(form.weeklyEnabled, false)
+    assert.deepEqual([form.weightTime, form.dailyTime, form.weeklyTime], ["08:00", "21:00", "08:00"])
     const skip = data.mentorOptionalAction(form, 2, true, saved, "skip-one")
     assert.deepEqual(skip.onboarding_details, { next_step: 3 }); assert.equal(skip.settings, undefined)
     const decline = data.mentorOptionalAction(form, 5, true, saved, "no-reminders")
@@ -148,6 +153,113 @@ test("optional answers preserve skip/resume progress and leave unrelated reminde
     assert.equal(decline.settings.weight_time, null); assert.equal(decline.settings.daily_time, null); assert.equal(decline.settings.weekly_time, null)
     const yes = data.mentorOptionalAction({ ...form, weightEnabled: true, weightTime: "08:15" }, 5, false, saved, "yes-reminders")
     assert.equal(yes.settings.weight_time, "08:15"); assert.equal(yes.settings.nutrition_auto_eligible, false)
+    assert.equal(yes.settings.weekly_day, 0)
+})
+
+test("backtracking through completed mandatory questions always advances one screen at a time", () => {
+    const h = harness("screens/chat/mentor-onboarding.tsx")
+    let saves = 0
+    const props = { visible: true, value: complete, onChange() {}, onClose() {}, onSave: async () => { saves++ }, saving: false, error: "" }
+    const render = () => h.render("MentorOnboarding", props)
+    const header = () => nodes(render()).find(node => node.type === "FlowHeader")
+    render(); assert.equal(header().props.step, 4)
+    for (let index = 3; index >= 0; index--) { header().props.onBack(); assert.equal(header().props.step, index) }
+    for (let index = 1; index <= 4; index++) {
+        nodes(render()).find(node => node.props.testID === "mentor-onboarding-next").props.onPress()
+        assert.equal(header().props.step, index); assert.equal(saves, 0)
+    }
+    nodes(render()).find(node => node.props.testID === "mentor-onboarding-next").props.onPress()
+    assert.equal(saves, 1)
+    const page = nodes(render()).find(node => node.props.testID === "mentor-onboarding-step-5")
+    assert.deepEqual(page.props.style[1].transform[0].translateX.outputRange, [18, 0, -18])
+})
+
+test("backtracking through saved optional questions stays sequential without redundant writes", () => {
+    const h = harness("screens/chat/mentor-setup.tsx"), saved = state()
+    saved.profile.data = { goal: "maintain", age: 32, sex: "female", height_cm: "170", activity: "moderate", target_weight_kg: "75", lifestyle: "Office", preferences: "Vegetarian", restrictions: "None", training_experience: "Регулярно", training_conditions: "Дома", onboarding_optional_step: 5 }
+    saved.mentor.latest_weight = { data: { weight_kg: "78.5" } }
+    let writes = 0
+    const c = { state: saved, initialized: true, perform: async () => { writes++; return saved } }
+    const render = () => h.render("MentorSetup", { controller: c, onClose() {} })
+    const page = () => nodes(render()).find(node => node.type === "OptionalOnboarding")
+    nodes(render()).find(node => node.type === "MentorDevelopmentNotice").props.onContinue()
+    for (let index = 4; index >= 0; index--) { page().props.onBack(); assert.equal(page().props.step, index) }
+    for (let index = 1; index <= 5; index++) { page().props.onNext(false); assert.equal(page().props.step, index) }
+    assert.equal(writes, 0)
+})
+
+test("new optional answers transition immediately and a failed save returns to the same answer", async () => {
+    const h = harness("screens/chat/mentor-setup.tsx"), saved = state()
+    saved.profile.data = { goal: "maintain", age: 32, sex: "female", height_cm: "170", activity: "moderate", target_weight_kg: "75" }; saved.mentor.latest_weight = { data: { weight_kg: "78.5" } }
+    let rejectSave
+    const c = { state: saved, initialized: true, refresh: async () => saved, perform: () => new Promise((resolve, reject) => { rejectSave = reject }) }
+    const render = () => h.render("MentorSetup", { controller: c, onClose() {} })
+    const page = () => nodes(render()).find(node => node.type === "OptionalOnboarding")
+    nodes(render()).find(node => node.type === "MentorDevelopmentNotice").props.onContinue()
+    page().props.onChange({ ...page().props.value, lifestyle: "Evening walks" })
+    page().props.onNext(false); assert.equal(page().props.step, 1); assert.equal(page().props.editingLocked, false)
+    await new Promise(resolve => setImmediate(resolve)); rejectSave(Error("offline"))
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(page().props.step, 0); assert.equal(page().props.value.lifestyle, "Evening walks"); assert.equal(page().props.error, "offline")
+})
+
+test("training questions use real selectors and preserve a custom answer while switching choices", () => {
+    const h = harness("screens/chat/mentor-onboarding-optional.tsx")
+    let value = data.mentorOptionalFormFromState(null)
+    let step = 3
+    const render = () => h.render("MentorOptionalOnboarding", { value, onChange: next => { value = next }, step, onBack() {}, onClose() {}, onNext() {}, saving: false, error: "" })
+    let page = pane(render(), 3)
+    const choices = nodes(page).filter(node => node.type === "ChoiceCard")
+    assert.equal(choices.length, 4); assert.ok(choices.every(node => node.props.description && node.props.icon))
+    label(page, "Свой вариант").props.onPress()
+    nodes(pane(render(), 3)).find(node => node.type === "TextInput").props.onChangeText("Плаваю дважды в неделю")
+    assert.equal(data.mentorOptionalAction(value, 3, false, state(), "custom-experience").onboarding_details.training_experience, "Плаваю дважды в неделю")
+    label(pane(render(), 3), "Начинаю").props.onPress()
+    assert.equal(nodes(pane(render(), 3)).filter(node => node.type === "TextInput").length, 0)
+    label(pane(render(), 3), "Свой вариант").props.onPress()
+    assert.equal(nodes(pane(render(), 3)).find(node => node.type === "TextInput").props.value, "Плаваю дважды в неделю")
+    step = 4; page = pane(render(), 4)
+    label(page, "В зале").props.onPress()
+    assert.equal(data.mentorOptionalAction(value, 4, false, state(), "gym-conditions").onboarding_details.training_conditions, "В зале")
+    for (step of [0, 1, 2]) {
+        page = pane(render(), step)
+        assert.equal(nodes(page).filter(node => node.type === "ChoiceCard").length, 0)
+        assert.equal(nodes(page).filter(node => node.type === "TextInput").length, 1)
+    }
+})
+
+test("each reminder has an independently editable time while disabled and weekly reports use Monday", () => {
+    const h = harness("screens/chat/mentor-onboarding-optional.tsx")
+    const props = { label: "Отметить вес", icon: "weight", enabled: false, time: "08:00", busy: false, onToggle() {}, onTime() {} }
+    const row = h.render("MentorReminderRow", props)
+    assert.equal(nodes(row).find(node => node.type === "NativeTime").props.disabled, false)
+    let value = data.mentorOptionalFormFromState(null)
+    const render = () => h.render("MentorOptionalOnboarding", { value, onChange: next => { value = next }, step: 5, onBack() {}, onClose() {}, onNext() {}, saving: false, error: "" })
+    for (const [name, time, field] of [["Отметить вес", "18:45", "weightTime"], ["Подвести итог дня", "06:30", "dailyTime"], ["Итоги недели", "13:15", "weeklyTime"]]) {
+        nodes(pane(render(), 5)).find(node => node.props.label === name).props.onTime(time)
+        assert.equal(value[field], time)
+    }
+    value = { ...value, weightEnabled: true, dailyEnabled: true, weeklyEnabled: true }
+    const settings = data.mentorOptionalAction(value, 5, false, state(), "independent-times").settings
+    assert.deepEqual([settings.weight_time, settings.daily_time, settings.weekly_time, settings.weekly_day], ["18:45", "06:30", "13:15", 0])
+})
+
+test("time selection uses UIDatePicker on iOS and the system time dialog on Android", () => {
+    let saved, opened
+    const picker = { default: "SystemTimePicker", DateTimePickerAndroid: { open: options => { opened = options } } }
+    const props = { label: "Отметить вес", value: "08:00", onChange: value => { saved = value }, disabled: false }
+    const ios = harness("screens/chat/mentor-reminder-time.tsx", { "@react-native-community/datetimepicker": picker })
+    const view = ios.render("MentorReminderTime", props)
+    const native = nodes(view).find(node => node.type === "SystemTimePicker")
+    assert.equal(native.props.mode, "time"); assert.equal(native.props.display, "compact"); assert.equal(native.props.value.getHours(), 8)
+    const picked = new Date(); picked.setHours(17, 35, 0, 0)
+    native.props.onChange({ type: "dismissed" }, picked); assert.equal(saved, undefined)
+    native.props.onChange({ type: "set" }, picked); assert.equal(saved, "17:35")
+    const android = harness("screens/chat/mentor-reminder-time.tsx", { "@react-native-community/datetimepicker": picker,
+        "react-native": { View: "View", Text: "Text", Pressable: "Pressable", Keyboard: { dismiss() {} }, Platform: { OS: "android" }, StyleSheet: { create: v => v } } })
+    android.render("MentorReminderTime", props).props.onPress()
+    assert.equal(opened.mode, "time"); assert.equal(opened.is24Hour, true)
+    opened.onChange({ type: "set" }, picked); assert.equal(saved, "17:35")
 })
 
 test("the placeholder resumes optional setup and notification denial can be skipped without enabling reminders", async () => {

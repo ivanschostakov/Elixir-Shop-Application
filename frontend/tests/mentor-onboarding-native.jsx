@@ -20,11 +20,11 @@ const saved = { available: true, consent_required: false, profile: { id: 1, vers
 function Preview() {
     const source = NativeModules.SourceCode?.getConstants?.().scriptURL ?? ""
     const [screen, setScreen] = useState(globalThis.__MENTOR_PREVIEW_SCREEN__ ?? new URL(source || "http://127.0.0.1").searchParams.get("previewScreen") ?? "required")
-    const [form, setForm] = useState(mentorFormFromState(saved))
-    const [optional, setOptional] = useState({ ...mentorOptionalFormFromState(saved), weightEnabled: true, dailyEnabled: true })
-    const [step, setStep] = useState(screen === "reminders" ? 5 : 0)
+    const [form, setForm] = useState({ ...mentorFormFromState(saved), ...(screen === "activity" ? { activity: null } : {}) })
+    const [optional, setOptional] = useState(mentorOptionalFormFromState(saved))
+    const [step, setStep] = useState(screen === "reminders" ? 5 : screen === "experience" ? 3 : screen === "conditions" ? 4 : 0)
     const close = () => setScreen("placeholder")
-    const content = screen === "result" ? <MentorNutritionResult state={saved} onContinue={() => { setScreen("optional"); setStep(0) }} onDecline={close} onBack={() => setScreen("required")} onClose={close} /> : screen === "optional" || screen === "reminders" ? <MentorOptionalOnboarding value={optional} onChange={setOptional} step={step} onBack={() => step ? setStep(step - 1) : setScreen("result")} onClose={close} onNext={() => step === 5 ? close() : setStep(step + 1)} saving={false} error="" /> : screen === "placeholder" ? <MentorDevelopmentNotice onChat={() => setScreen("required")} onContinue={() => { setScreen("optional"); setStep(0) }} /> : undefined
+    const content = screen === "result" ? <MentorNutritionResult state={saved} onContinue={() => { setScreen("optional"); setStep(0) }} onDecline={close} onBack={() => setScreen("required")} onClose={close} /> : ["optional", "experience", "conditions", "reminders"].includes(screen) ? <MentorOptionalOnboarding value={optional} onChange={setOptional} step={step} onBack={() => step ? setStep(step - 1) : setScreen("result")} onClose={close} onNext={() => step === 5 ? close() : setStep(step + 1)} saving={false} error="" /> : screen === "placeholder" ? <MentorDevelopmentNotice onChat={() => setScreen("required")} onContinue={() => { setScreen("optional"); setStep(0) }} /> : undefined
     return <SafeAreaProvider><View style={{ flex: 1, backgroundColor: "white" }}><MentorOnboarding visible value={form} onChange={setForm} onClose={close} onSave={async () => setScreen("result")} saving={false} error="">{content}</MentorOnboarding></View></SafeAreaProvider>
 }
 registerRootComponent(Preview)

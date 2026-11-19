@@ -77,19 +77,37 @@ export function mentorOnboardingAction(form: MentorForm, state: CompanionState, 
 
 export const optionalMentorFields = ["lifestyle", "preferences", "restrictions", "training_experience", "training_conditions"] as const
 export type OptionalMentorField = typeof optionalMentorFields[number]
+export type MentorExperienceChoice = "beginner" | "occasional" | "regular" | "custom"
+export type MentorConditionsChoice = "home" | "gym" | "mixed" | "custom"
+const experiencePresets = { beginner: "Начинаю", occasional: "Иногда", regular: "Регулярно" } as const
+const conditionsPresets = { home: "Дома", gym: "В зале", mixed: "Дома и в зале" } as const
 export type MentorOptionalForm = Record<OptionalMentorField, string> & {
     weightEnabled: boolean; weightTime: string; dailyEnabled: boolean; dailyTime: string
-    weeklyEnabled: boolean; weeklyTime: string; weeklyDay: number
+    weeklyEnabled: boolean; weeklyTime: string
+    experienceChoice: MentorExperienceChoice | null; experienceCustom: string
+    conditionsChoice: MentorConditionsChoice | null; conditionsCustom: string
+}
+
+function savedChoice<T extends string>(text: string, presets: Record<T, string>): T | "custom" | null {
+    if (!text.trim()) return null
+    for (const choice of Object.keys(presets) as T[]) {
+        if ((["ru", "en", "kz"] as const).some(language => mt(presets[choice], [], language) === text)) return choice
+    }
+    return "custom"
 }
 
 export function mentorOptionalFormFromState(state: CompanionState | null): MentorOptionalForm {
     const data = state?.profile?.data, settings = state?.profile?.settings
+    const experienceChoice = savedChoice(data?.training_experience ?? "", experiencePresets)
+    const conditionsChoice = savedChoice(data?.training_conditions ?? "", conditionsPresets)
     return {
         lifestyle: data?.lifestyle ?? "", preferences: data?.preferences ?? "", restrictions: data?.restrictions ?? "",
         training_experience: data?.training_experience ?? "", training_conditions: data?.training_conditions ?? "",
         weightEnabled: !!settings?.weight_time, weightTime: settings?.weight_time?.slice(0, 5) ?? "08:00",
-        dailyEnabled: !!settings?.daily_time, dailyTime: settings?.daily_time?.slice(0, 5) ?? "20:00",
-        weeklyEnabled: !!settings?.weekly_time, weeklyTime: settings?.weekly_time?.slice(0, 5) ?? "19:00", weeklyDay: settings?.weekly_day ?? 6,
+        dailyEnabled: !!settings?.daily_time, dailyTime: settings?.daily_time?.slice(0, 5) ?? "21:00",
+        weeklyEnabled: !!settings?.weekly_time, weeklyTime: settings?.weekly_time?.slice(0, 5) ?? "08:00",
+        experienceChoice, experienceCustom: experienceChoice === "custom" ? data?.training_experience ?? "" : "",
+        conditionsChoice, conditionsCustom: conditionsChoice === "custom" ? data?.training_conditions ?? "" : "",
     }
 }
 
@@ -103,9 +121,15 @@ export function mentorOptionalResumeStep(state: CompanionState | null, minimum =
 }
 
 export function mentorOptionalError(form: MentorOptionalForm, step: number): string {
+    if (step === 3 || step === 4) {
+        const choice = step === 3 ? form.experienceChoice : form.conditionsChoice
+        const custom = step === 3 ? form.experienceCustom : form.conditionsCustom
+        if (!choice) return mt("Выберите вариант или пропустите шаг.")
+        if (choice === "custom" && !custom.trim()) return mt("Опишите свой вариант или пропустите шаг.")
+    }
     if (step !== 5) return ""
     const validTime = (time: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)
-    if ((form.weightEnabled && !validTime(form.weightTime)) || (form.dailyEnabled && !validTime(form.dailyTime)) || (form.weeklyEnabled && (!validTime(form.weeklyTime) || !Number.isInteger(form.weeklyDay) || form.weeklyDay < 0 || form.weeklyDay > 6))) return mt("Укажите время напоминаний.")
+    if ((form.weightEnabled && !validTime(form.weightTime)) || (form.dailyEnabled && !validTime(form.dailyTime)) || (form.weeklyEnabled && !validTime(form.weeklyTime))) return mt("Укажите время напоминаний.")
     return ""
 }
 
@@ -113,16 +137,21 @@ export function mentorOptionalAction(form: MentorOptionalForm, step: number, ski
     const error = skipped ? "" : mentorOptionalError(form, step)
     if (error) throw new Error(error)
     const action: CompanionAction = { kind: "onboarding_details", expected_version: state.profile?.version, request_key: key, onboarding_details: { next_step: step + 1 } }
-    if (step < 5 && !skipped) action.onboarding_details![optionalMentorFields[step]] = form[optionalMentorFields[step]].trim()
+    if (step < 5 && !skipped) {
+        let text = form[optionalMentorFields[step]].trim()
+        if (step === 3) text = form.experienceChoice === "custom" ? form.experienceCustom.trim() : mt(experiencePresets[form.experienceChoice as keyof typeof experiencePresets])
+        if (step === 4) text = form.conditionsChoice === "custom" ? form.conditionsCustom.trim() : mt(conditionsPresets[form.conditionsChoice as keyof typeof conditionsPresets])
+        action.onboarding_details![optionalMentorFields[step]] = text
+    }
     if (step === 5) {
         const settings: CompanionSettings = {
             timezone: "UTC", nutrition_auto_eligible: false, course_reminders: false, daily_time: null, weight_time: null,
-            weekly_time: null, weekly_day: 6, supply_reminders: false, supply_days: 7, ...state.profile?.settings,
+            weekly_time: null, weekly_day: 0, supply_reminders: false, supply_days: 7, ...state.profile?.settings,
         }
         action.settings = { ...settings,
             weight_time: !skipped && form.weightEnabled ? form.weightTime : null,
             daily_time: !skipped && form.dailyEnabled ? form.dailyTime : null,
-            weekly_time: !skipped && form.weeklyEnabled ? form.weeklyTime : null, weekly_day: form.weeklyDay,
+            weekly_time: !skipped && form.weeklyEnabled ? form.weeklyTime : null, weekly_day: 0,
         }
     }
     return action

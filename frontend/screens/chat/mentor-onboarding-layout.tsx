@@ -1,19 +1,20 @@
-import { useEffect, useRef, type ReactNode } from "react"
+import { useLayoutEffect, useRef, type ReactNode } from "react"
 import { ActivityIndicator, Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useChatReducedMotion } from "@/screens/chat/chat-mode-transition"
-import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
+import { useMentorPalette } from "@/screens/chat/mentor-ui"
+import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 
 export function MentorStageTransition({ children }: { children: ReactNode }) {
     const reduced = useChatReducedMotion()
     const opacity = useRef(new Animated.Value(reduced ? 1 : 0)).current
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (reduced) { opacity.setValue(1); return }
-        const animation = Animated.timing(opacity, { toValue: 1, duration: 320, easing: Easing.bezier(0.22, 1, 0.36, 1), useNativeDriver: true })
+        const animation = Animated.timing(opacity, { toValue: 1, duration: 170, easing: Easing.bezier(0.2, 0, 0, 1), useNativeDriver: true })
         animation.start()
         return () => animation.stop()
     }, [opacity, reduced])
-    return <Animated.View style={[flowStyles.fill, { opacity, transform: [{ translateY: opacity.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }]}>{children}</Animated.View>
+    return <Animated.View style={[flowStyles.fill, { opacity, transform: [{ translateY: opacity.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] }]}>{children}</Animated.View>
 }
 
 export function MentorFlowHeader({ section, step, total, onBack, onClose, busy = false }: { section?: string; step?: number; total?: number; onBack?: () => void; onClose: () => void; busy?: boolean }) {
@@ -21,13 +22,13 @@ export function MentorFlowHeader({ section, step, total, onBack, onClose, busy =
     return <>
         <View style={flowStyles.header}>
             <Pressable accessibilityRole="button" accessibilityLabel={mt("Назад")} disabled={!onBack || busy} onPress={onBack} style={[flowStyles.iconButton, !onBack && { opacity: 0 }]} accessibilityElementsHidden={!onBack}>
-                <MentorIcon name="back" size={26} color={colors.text} />
+                <MentorQuestionIcon name="back" size={26} color={colors.text} />
             </Pressable>
             <View style={flowStyles.headerCenter}>
-                {section ? <Text style={[flowStyles.section, { color: colors.green }]}>{section}</Text> : <MentorIcon name="leaf" size={25} />}
+                {section ? <Text style={[flowStyles.section, { color: colors.green }]}>{section}</Text> : <MentorQuestionIcon name="leaf" size={25} color={colors.green} />}
                 {step !== undefined && total ? <Text style={[flowStyles.count, { color: colors.muted }]}>{mt("Шаг {0} из {1}", [step + 1, total])}</Text> : null}
             </View>
-            <Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} disabled={busy} onPress={onClose} style={flowStyles.iconButton}><Text style={[flowStyles.close, { color: colors.muted }]}>×</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} disabled={busy} onPress={onClose} style={flowStyles.iconButton}><MentorQuestionIcon name="close" size={24} color={colors.muted} /></Pressable>
         </View>
         {step !== undefined && total ? <View testID="mentor-section-progress" accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: total, now: step + 1 }} style={flowStyles.progress}>
             {Array.from({ length: total }, (_, index) => <View key={index} style={[flowStyles.segment, { backgroundColor: index <= step ? colors.greenBright : colors.border }]} />)}
