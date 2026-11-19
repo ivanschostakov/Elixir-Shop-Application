@@ -10,9 +10,10 @@ export function useMentorPalette() {
         ? { green: "#8AD4AF", greenBright: "#31855E", text: "#EDF7F0", muted: "#A3B8AB", soft: "#203B30", mint: "#1C3D2E", surface: "#142A21", border: "#355144", blue: "#64B7FF" }
         : { green: "#1C694B", greenBright: "#38976A", text: "#202923", muted: "#7D8781", soft: "#F0F6F1", mint: "#E8F5EC", surface: "#FFFFFF", border: "#DDE6DF", blue: "#138DE5" }
 }
-export type MentorIconName = "leaf" | "plus" | "workout" | "book" | "smile" | "progress" | "adjust" | "calendar" | "food" | "more" | "back" | "chat" | "profile" | "settings" | "clock" | "camera" | "search"
+export type MentorIconName = "leaf" | "plus" | "workout" | "book" | "smile" | "progress" | "adjust" | "calendar" | "food" | "more" | "back" | "chat" | "profile" | "settings" | "clock" | "camera" | "search" | "scale"
 export function MentorIcon({ name, size = 22, color = "#1C694B" }: { name: MentorIconName; size?: number; color?: string }) {
     const paths: Partial<Record<MentorIconName, string>> = {
+        scale: "M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM8 7a5 5 0 0 1 8 0l-4 5Z",
         plus: "M12 3v18M3 12h18", workout: "M8 12h8M5 6v12M8 5v14M16 5v14M19 6v12M2 9v6M22 9v6",
         book: "M12 5v16M12 5C8 2 4 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-2-1-6-2-10 1Z",
         smile: "M8 14c2 3 6 3 8 0M8 9h.01M16 9h.01", adjust: "M2 5h5m4 0h11M2 12h11m4 0h5M2 19h3m4 0h13",

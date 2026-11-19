@@ -61,6 +61,26 @@ def calculate_nutrition(profile: ProfileData, weight_kg: Decimal, *, eligibility
         return unavailable("Для индивидуальной цели автоматический расчёт недоступен. Внесите согласованные со специалистом КБЖУ вручную.")
     if not eligibility_confirmed:
         return unavailable("В разделе КБЖУ подтвердите отсутствие ограничений для авторасчёта. При беременности, ГВ, РПП или необходимости лечебного питания используйте ориентир специалиста.")
+    return _calculate_nutrition(profile, weight_kg)
+
+
+def calculate_onboarding_nutrition(profile: ProfileData, weight_kg: Decimal) -> dict:
+    """An immediate starting reference; never records a medical-eligibility answer."""
+    reference = profile.model_copy(update={"goal": "maintain"}) if profile.goal == "custom" else profile
+    result = _calculate_nutrition(reference, weight_kg)
+    if not result["available"] and reference.goal != "maintain":
+        # If a deficit/surplus is outside the existing product rules, offer the
+        # maintenance reference instead. The current-weight and calorie bounds
+        # remain authoritative; invalid inputs never produce invented numbers.
+        maintenance = _calculate_nutrition(reference.model_copy(update={"goal": "maintain", "target_weight_kg": None}), weight_kg)
+        if maintenance["available"]:
+            result = maintenance
+    if result["available"]:
+        result["rule_version"] += ":onboarding-v1"
+    return result
+
+
+def _calculate_nutrition(profile: ProfileData, weight_kg: Decimal) -> dict:
     if any(v is None for v in (profile.age, profile.sex, profile.height_cm, profile.activity)):
         return unavailable("Нужны возраст, пол, рост и активность.")
     if not weight_kg.is_finite() or not 0 < weight_kg <= 500:

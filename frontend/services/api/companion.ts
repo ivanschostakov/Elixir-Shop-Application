@@ -8,6 +8,8 @@ export type ProfileData = {
     goal?: "weight_loss" | "weight_gain" | "custom" | "maintain" | "course"; custom_goal?: string; workout_plan?: WorkoutPlan | null; age?: number | null; sex?: "male" | "female" | null
     height_cm?: Numeric | null; target_weight_kg?: Numeric | null; activity?: "low" | "light" | "moderate" | "high" | null
     preferences?: string; restrictions?: string; nutrition?: Nutrition | null
+    lifestyle?: string; training_experience?: string; training_conditions?: string
+    onboarding_optional_step?: number; onboarding_nutrition_reason?: string
     nutrition_source?: "manual" | "calculated"; nutrition_rule_version?: string | null
 }
 export type CompanionSettings = {
@@ -54,8 +56,9 @@ export type MentorDashboard = {
     week: { from_date: string; to_date: string; summary: Summary & ProgressTotals }
 }
 export type CompanionAction = {
-    request_key?: string; kind: "enable" | "disable" | "onboard" | "profile" | "settings" | "plan" | "plan_status" | "entry" | "delete_entry" | "event" | "confirm" | "cancel" | "nutrition" | "dialogue_confirm" | "dialogue_cancel" | "dialogue_edit" | "dialogue_undo" | "workout_plan"
-    onboarding?: { goal: "weight_loss" | "weight_gain" | "maintain" | "custom"; custom_goal: string; age: number; sex: "male" | "female"; height_cm: Numeric; current_weight_kg: Numeric; activity: "low" | "light" | "moderate" | "high" }
+    request_key?: string; kind: "enable" | "disable" | "onboard" | "onboarding_details" | "profile" | "settings" | "plan" | "plan_status" | "entry" | "delete_entry" | "event" | "confirm" | "cancel" | "nutrition" | "dialogue_confirm" | "dialogue_cancel" | "dialogue_edit" | "dialogue_undo" | "workout_plan"
+    onboarding?: { goal: "weight_loss" | "weight_gain" | "maintain" | "custom"; custom_goal: string; age: number; sex: "male" | "female"; height_cm: Numeric; current_weight_kg: Numeric; target_weight_kg: Numeric; activity: "low" | "light" | "moderate" | "high" }
+    onboarding_details?: { next_step: number; lifestyle?: string; preferences?: string; restrictions?: string; training_experience?: string; training_conditions?: string }
     workout_plan?: WorkoutPlan | null
     expected_version?: number; resource_id?: number; profile?: ProfileData; settings?: CompanionSettings; plan?: PlanData
     entry?: EntryData; nutrition?: Nutrition; nutrition_rule_version?: string; status?: string; message_id?: number; action_id?: string; action_token?: string

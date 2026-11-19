@@ -124,6 +124,11 @@ class ProfileData(StrictModel):
     activity: Literal["low", "light", "moderate", "high"] | None = None
     preferences: str = Field(default="", max_length=2000)
     restrictions: str = Field(default="", max_length=2000)
+    lifestyle: str = Field(default="", max_length=2000)
+    training_experience: str = Field(default="", max_length=2000)
+    training_conditions: str = Field(default="", max_length=2000)
+    onboarding_optional_step: int = Field(default=0, ge=0, le=6)
+    onboarding_nutrition_reason: str = Field(default="", max_length=2000)
     nutrition: Nutrition | None = None
     nutrition_source: Literal["manual", "calculated"] = "manual"
     nutrition_rule_version: str | None = Field(default=None, max_length=80)
@@ -136,6 +141,7 @@ class OnboardingData(StrictModel):
     sex: Literal["male", "female"]
     height_cm: Decimal = Field(ge=50, le=260)
     current_weight_kg: Decimal = Field(gt=0, le=500)
+    target_weight_kg: Decimal = Field(gt=0, le=500)
     activity: Literal["low", "light", "moderate", "high"]
     custom_goal: str = Field(default="", max_length=500)
 
@@ -144,7 +150,20 @@ class OnboardingData(StrictModel):
         self.custom_goal = self.custom_goal.strip()
         if self.goal == "custom" and not self.custom_goal:
             raise ValueError("Расскажите о своей цели")
+        if self.goal == "weight_loss" and self.target_weight_kg >= self.current_weight_kg:
+            raise ValueError("Для снижения веса желаемый вес должен быть ниже текущего")
+        if self.goal == "weight_gain" and self.target_weight_kg <= self.current_weight_kg:
+            raise ValueError("Для набора веса желаемый вес должен быть выше текущего")
         return self
+
+
+class OnboardingDetails(StrictModel):
+    next_step: int = Field(ge=1, le=6)
+    lifestyle: str | None = Field(default=None, max_length=2000)
+    preferences: str | None = Field(default=None, max_length=2000)
+    restrictions: str | None = Field(default=None, max_length=2000)
+    training_experience: str | None = Field(default=None, max_length=2000)
+    training_conditions: str | None = Field(default=None, max_length=2000)
 
 
 class Settings(StrictModel):
@@ -296,11 +315,12 @@ class Proposal(StrictModel):
 
 class Action(StrictModel):
     request_key: str = Field(min_length=8, max_length=64)
-    kind: Literal["enable", "disable", "onboard", "profile", "settings", "plan", "plan_status", "workout_plan", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]
+    kind: Literal["enable", "disable", "onboard", "onboarding_details", "profile", "settings", "plan", "plan_status", "workout_plan", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]
     expected_version: int | None = Field(default=None, ge=1)
     resource_id: int | None = Field(default=None, gt=0)
     profile: ProfileData | None = None
     onboarding: OnboardingData | None = None
+    onboarding_details: OnboardingDetails | None = None
     settings: Settings | None = None
     plan: PlanData | None = None
     workout_plan: WorkoutPlan | None = None

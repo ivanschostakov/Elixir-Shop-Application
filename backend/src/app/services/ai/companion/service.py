@@ -13,6 +13,7 @@ import config
 from src.database.models import AIChat, AIMessage, Attachment, CustomerConsent, User
 from src.database.models.ai.companion import AICompanionDialogue, AICompanionEntry, AICompanionEvent, AICompanionOperation, AICompanionPlan, AICompanionProfile, AICompanionReminder, AIProviderResource
 from .domain import calculate_nutrition, convert_amount, package_count, parse_package, schedule_events
+from .nutrition import calculate_onboarding_nutrition
 from .schemas import Action, EntryData, Nutrition, PlanData, ProfileData, Proposal, Settings
 from .timezones import normalize_timezone, timezone_info
 
@@ -315,7 +316,7 @@ async def apply_action(db: AsyncSession, user_id: int, action: Action, *, allow_
     await db.execute(select(User.id).where(User.id == user_id).with_for_update())
     # Consent metadata can disappear after a successful but timed-out first save.
     # It is not a different v2 operation on a retry with the same request key.
-    fingerprint = hashlib.sha256(action.model_dump_json(exclude={"consent_version", "adult_confirmed"} if action.kind.startswith("dialogue_") else None).encode()).hexdigest()
+    fingerprint = hashlib.sha256(action.model_dump_json(exclude={"consent_version", "adult_confirmed"} if action.kind.startswith("dialogue_") or action.kind == "onboard" else None).encode()).hexdigest()
     receipt = (await db.execute(select(AICompanionOperation).where(AICompanionOperation.user_id == user_id, AICompanionOperation.request_key == action.request_key))).scalar_one_or_none()
     if receipt:
         if receipt.fingerprint != fingerprint:
@@ -361,7 +362,7 @@ async def apply_action(db: AsyncSession, user_id: int, action: Action, *, allow_
         else:
             await apply_payload(db, user_id, profile, action)
     profile.version += 1
-    if action.kind in {"enable", "settings", "plan", "plan_status", "disable", "confirm", "event"}:
+    if action.kind in {"enable", "settings", "plan", "plan_status", "disable", "confirm", "event"} or action.kind == "onboarding_details" and action.settings is not None:
         await sync_course_reminders(db, profile)
     result = {"ok": True, "profile_version": profile.version}
     db.add(AICompanionOperation(user_id=user_id, request_key=action.request_key, fingerprint=fingerprint, result=result))
@@ -370,17 +371,42 @@ async def apply_action(db: AsyncSession, user_id: int, action: Action, *, allow_
 
 
 async def apply_payload(db, user_id, profile, action, source_message_id=None):
-    if action.kind in {"onboard", "profile", "settings", "plan", "plan_status", "nutrition", "workout_plan"}:
+    if action.kind in {"onboard", "onboarding_details", "profile", "settings", "plan", "plan_status", "nutrition", "workout_plan"}:
         require_version(profile.version, action.expected_version)
     if action.kind == "onboard":
         if action.onboarding is None:
             raise HTTPException(422, "Нет данных анкеты")
         values = action.onboarding.model_dump(exclude={"current_weight_kg"})
         data = ProfileData.model_validate({**profile.data, **values})
+        reference = calculate_onboarding_nutrition(data, action.onboarding.current_weight_kg)
+        data.onboarding_nutrition_reason = reference.get("reason", "")
+        if reference["available"]:
+            new_nutrition = Nutrition.model_validate(reference["nutrition"])
+            if data.nutrition is not None and data.nutrition != new_nutrition:
+                profile.target_history = [*profile.target_history, {"changed_at": now_utc().isoformat(), "previous": data.nutrition.model_dump(mode="json")}]
+            data.nutrition = new_nutrition
+            data.nutrition_source = "calculated"
+            data.nutrition_rule_version = reference["rule_version"]
         weight = await latest_weight(db, user_id)
         if weight is None or Decimal(str(weight.data["weight_kg"])) != action.onboarding.current_weight_kg:
             entry = EntryData(kind="weight", occurred_at=now_utc(), weight_kg=action.onboarding.current_weight_kg)
             db.add(AICompanionEntry(user_id=user_id, kind="weight", occurred_at=entry.occurred_at, data=entry.model_dump(mode="json"), source="manual"))
+        profile.data = data.model_dump(mode="json")
+    elif action.kind == "onboarding_details":
+        if action.onboarding_details is None:
+            raise HTTPException(422, "Нет дополнительных ответов анкеты")
+        data = ProfileData.model_validate(profile.data)
+        if any(getattr(data, key) is None for key in ("age", "sex", "height_cm", "activity", "target_weight_kg")):
+            raise HTTPException(409, "Сначала заполните обязательную часть анкеты")
+        details = action.onboarding_details
+        for field, value in details.model_dump(exclude={"next_step"}, exclude_none=True).items():
+            setattr(data, field, value.strip())
+        data.onboarding_optional_step = max(data.onboarding_optional_step, details.next_step)
+        if action.settings is not None:
+            if details.next_step != 6:
+                raise HTTPException(422, "Напоминания настраиваются в последнем шаге")
+            await cancel_reminders(db, user_id)
+            profile.settings = action.settings.model_dump(mode="json")
         profile.data = data.model_dump(mode="json")
     elif action.kind == "profile":
         if action.profile is None:
@@ -396,6 +422,9 @@ async def apply_payload(db, user_id, profile, action, source_message_id=None):
                 raise HTTPException(422, "Укажите текущий вес")
         old = ProfileData.model_validate(profile.data)
         new = ProfileData.model_validate({**profile.data, **action.profile.model_dump(exclude_unset=True)}) if source_message_id is not None else action.profile.model_copy(deep=True)
+        for field in ("lifestyle", "training_experience", "training_conditions", "onboarding_optional_step", "onboarding_nutrition_reason"):
+            if field not in action.profile.model_fields_set:
+                setattr(new, field, getattr(old, field))
         # Older clients and AI profile cards do not own the workout schedule.
         if new.workout_plan is None:
             new.workout_plan = old.workout_plan
