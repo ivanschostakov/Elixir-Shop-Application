@@ -1,41 +1,23 @@
 import { useEffect, useMemo, useState } from "react"
-import { Stack, usePathname, useRouter } from "expo-router"
+import { usePathname } from "expo-router"
 import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from "@react-navigation/native"
 import { Image, Platform, Text, View } from "react-native"
-import {
-    PanGestureHandler,
-    State,
-    type PanGestureHandlerStateChangeEvent,
-} from "react-native-gesture-handler"
-import { SafeAreaView } from "react-native-safe-area-context"
-
-import StickyFooter from "@/components/footer/sticky-footer"
-import AppHeader from "@/components/header/app-header"
+import { AppStack } from "@/components/navigation/app-stack"
 import { createAppShellStyles } from "@/components/navigation/app-shell.styles"
-import {
-    getDefaultScreenChromeTemplate,
-    mergeScreenChromeTemplate,
-} from "@/components/navigation/screen-template-registry"
-import { PRIMARY_APP_ROUTES, ROUTES } from "@/constants/routes"
-import { ScreenChromeTemplateProvider, useScreenChromeTemplate } from "@/providers/screen-chrome-template-provider"
+import { RouteTransitionContext, type RouteAnimation } from "@/components/navigation/route-transition-context"
+import { ROUTES } from "@/constants/routes"
 import { useTheme } from "@/providers/theme-provider"
-import { useAuth } from "@/providers/auth-provider"
-import { ScreenTemplateProvider } from "@/providers/screen-template-provider"
 import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { setTelegramChromeColors } from "@/services/telegram/telegram-web-app"
 import { darkColors, lightColors } from "@/theme/colors"
-import { motion } from "@/theme/motion"
 
 function AppShellContent() {
     const appShellStyles = useThemeStyles(createAppShellStyles)
     const pathname = usePathname()
-    const router = useRouter()
     const { top: topInset } = useAppSafeAreaInsets()
     const { accentPalette, isDark } = useTheme()
-    const { isAuthenticated, isReady } = useAuth()
-    const { screenChromeTemplate } = useScreenChromeTemplate()
-    const [routeAnimation, setRouteAnimation] = useState<"slide_from_left" | "slide_from_right">("slide_from_right")
+    const [routeAnimation, setRouteAnimation] = useState<RouteAnimation>("slide_from_right")
     const palette = isDark ? darkColors : lightColors
     const navigationTheme = useMemo(
         () => ({
@@ -53,28 +35,9 @@ function AppShellContent() {
         [isDark, palette],
     )
 
-    const chromeTemplate = mergeScreenChromeTemplate(
-        getDefaultScreenChromeTemplate(pathname, isReady && isAuthenticated),
-        screenChromeTemplate,
-    )
-
-    const shellEdges: ("top" | "bottom" | "left" | "right")[] =
-        chromeTemplate.mode === "fullscreen"
-            ? []
-            : pathname === ROUTES.home
-              ? []
-              : ["top"]
-    const safeAreaEdges = Platform.OS === "web" ? [] : shellEdges
-    const webSafeAreaStyle =
-        Platform.OS === "web" && shellEdges.includes("top")
-            ? { paddingTop: topInset }
-            : null
+    const transitionContext = useMemo(() => ({ animation: routeAnimation, setAnimation: setRouteAnimation }), [routeAnimation])
     const shouldShowBrandOverlay = Platform.OS === "ios"
     const brandLabelTop = Math.max(2, topInset - 44)
-    const primaryAppRoutes = PRIMARY_APP_ROUTES
-    const currentPrimaryRouteIndex = primaryAppRoutes.findIndex((route) => route === pathname)
-    const canSwipePrimaryRoutes = currentPrimaryRouteIndex >= 0
-
     useEffect(() => {
         if (Platform.OS !== "web") {
             return
@@ -86,33 +49,6 @@ function AppShellContent() {
             headerColor: pathname === ROUTES.home ? accentPalette.primary : palette.background,
         })
     }, [accentPalette.primary, palette.background, palette.pageBackground, pathname])
-
-    const handlePrimaryRouteSwipe = (event: PanGestureHandlerStateChangeEvent) => {
-        if (!canSwipePrimaryRoutes || event.nativeEvent.state !== State.END) {
-            return
-        }
-
-        const { translationX, velocityX } = event.nativeEvent
-        const isSwipeLeft = translationX < -70 || velocityX < -650
-        const isSwipeRight = translationX > 70 || velocityX > 650
-
-        if (!isSwipeLeft && !isSwipeRight) {
-            return
-        }
-
-        const nextRouteIndex = isSwipeLeft
-            ? Math.min(currentPrimaryRouteIndex + 1, primaryAppRoutes.length - 1)
-            : Math.max(currentPrimaryRouteIndex - 1, 0)
-
-        if (nextRouteIndex === currentPrimaryRouteIndex) {
-            return
-        }
-
-        setRouteAnimation(isSwipeLeft ? "slide_from_right" : "slide_from_left")
-        requestAnimationFrame(() => {
-            router.replace(primaryAppRoutes[nextRouteIndex])
-        })
-    }
 
     return (
         <View style={appShellStyles.container}>
@@ -134,42 +70,15 @@ function AppShellContent() {
                 </View>
             ) : null}
 
-            <SafeAreaView style={[appShellStyles.safeArea, webSafeAreaStyle]} edges={safeAreaEdges}>
-                {chromeTemplate.header !== "none" ? <AppHeader template={chromeTemplate} /> : null}
-
-                <PanGestureHandler
-                    activeOffsetX={[-40, 40]}
-                    enabled={canSwipePrimaryRoutes}
-                    failOffsetY={[-24, 24]}
-                    onHandlerStateChange={handlePrimaryRouteSwipe}
-                >
-                    <View style={appShellStyles.content}>
-                        <NavigationThemeProvider value={navigationTheme}>
-                            <Stack
-                                screenOptions={{
-                                    animation: routeAnimation,
-                                    animationDuration: motion.duration.route,
-                                    contentStyle: { backgroundColor: palette.pageBackground },
-                                    gestureEnabled: true,
-                                    headerShown: false,
-                                }}
-                            />
-                        </NavigationThemeProvider>
-                    </View>
-                </PanGestureHandler>
-
-                {chromeTemplate.footer !== "none" ? <StickyFooter template={chromeTemplate} /> : null}
-            </SafeAreaView>
+            <RouteTransitionContext.Provider value={transitionContext}>
+                <NavigationThemeProvider value={navigationTheme}>
+                    <AppStack />
+                </NavigationThemeProvider>
+            </RouteTransitionContext.Provider>
         </View>
     )
 }
 
 export default function AppShell() {
-    return (
-        <ScreenTemplateProvider>
-            <ScreenChromeTemplateProvider>
-                <AppShellContent />
-            </ScreenChromeTemplateProvider>
-        </ScreenTemplateProvider>
-    )
+    return <AppShellContent />
 }

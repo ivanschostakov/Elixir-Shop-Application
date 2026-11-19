@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Alert, Animated, Pressable, Text, View, useWindowDimensions } from "react-native"
 import { BlurView } from "expo-blur"
-import { useLocalSearchParams, usePathname, useRouter } from "expo-router"
+import { useLocalSearchParams, useRouter } from "expo-router"
 import { Path, Svg } from "react-native-svg"
 
 import { ContentTabBar } from "@/components/content/content-tab-bar"
@@ -26,8 +26,7 @@ import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 
-export default function AppHeader({ template }: AppHeaderProps) {
-    const pathname = usePathname()
+export default function AppHeader({ template, pathname }: AppHeaderProps) {
     const params = useLocalSearchParams<{ q?: string | string[] }>()
     const router = useRouter()
     const topInset = useAppSafeAreaInsets().top

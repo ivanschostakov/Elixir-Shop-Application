@@ -1,3 +1,4 @@
+/* global __dirname */
 const assert = require("node:assert/strict")
 const { readFileSync } = require("node:fs")
 const { join } = require("node:path")
@@ -37,7 +38,7 @@ test("iOS chat uses the shared consent-aware chat screen", () => {
 test("navigation no longer redirects or hides commerce and chat modes on iOS", () => {
     const shell = source("components/navigation/app-shell.tsx")
     assert.doesNotMatch(shell, /isRestrictedIosRoute|isIosRestrictedRoute|IOS_PRIMARY_APP_ROUTES/)
-    assert.match(shell, /primaryAppRoutes = PRIMARY_APP_ROUTES/)
+    assert.match(source("components/navigation/route-screen.tsx"), /primaryAppRoutes = PRIMARY_APP_ROUTES/)
     for (const file of [
         "components/footer/bottom-nav-template.tsx",
         "screens/chat/chat-mode-switcher.tsx",

@@ -9,7 +9,6 @@ import {
     type KeyboardEvent,
     type LayoutChangeEvent,
 } from "react-native"
-import { usePathname } from "expo-router"
 
 import { BottomActionTemplate } from "@/components/footer/bottom-action-template"
 import { BottomNavTemplate } from "@/components/footer/bottom-nav-template"
@@ -163,9 +162,8 @@ export function StickyFooterSurface({
     )
 }
 
-export default function StickyFooter({ template }: StickyFooterProps) {
+export default function StickyFooter({ template, pathname }: StickyFooterProps) {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
-    const pathname = usePathname()
     const { basket } = useBasket()
     const entranceStyle = useEntranceAnimation({ translateY: 10 })
     const footerSafeAreaStyle = useFooterSafeAreaStyle()
@@ -203,7 +201,7 @@ export default function StickyFooter({ template }: StickyFooterProps) {
                             <View style={stickyFooterStyles.actionSection}>
                                 {showCustomAction
                                     ? template.slots?.footer
-                                    : <BottomActionTemplate variant={showProductAction ? "product" : "basket"} />}
+                                    : <BottomActionTemplate pathname={pathname} variant={showProductAction ? "product" : "basket"} />}
                             </View>
                         </View>
                         <BottomNavTemplate pathname={pathname} />

@@ -1,11 +1,11 @@
-import { Slot } from "expo-router"
+import { AppStack } from "@/components/navigation/app-stack"
 
 import { GuestRoute } from "@/components/navigation/route-guard"
 
 export default function GuestLayout() {
     return (
         <GuestRoute>
-            <Slot />
+            <AppStack />
         </GuestRoute>
     )
 }

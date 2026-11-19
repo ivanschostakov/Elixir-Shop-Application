@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Alert, Pressable, Text, View } from "react-native"
-import { useLocalSearchParams, usePathname, useRouter } from "expo-router"
+import { useLocalSearchParams, useRouter } from "expo-router"
 
 import type { BottomActionTemplateProps } from "@/components/footer/bottom-action-template.types"
 import { parseDraftId } from "@/components/footer/bottom-action-template.utils"
@@ -20,9 +20,8 @@ import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { updateOrderDraft } from "@/services/api/order-drafts"
 
-export function BottomActionTemplate({ variant }: BottomActionTemplateProps) {
+export function BottomActionTemplate({ variant, pathname }: BottomActionTemplateProps) {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
-    const pathname = usePathname()
     const router = useRouter()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()

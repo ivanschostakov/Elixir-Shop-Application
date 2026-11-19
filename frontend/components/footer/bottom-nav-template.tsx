@@ -1,3 +1,4 @@
+import { useContext } from "react"
 import { Platform, Pressable, View } from "react-native"
 import { router } from "expo-router"
 
@@ -12,13 +13,14 @@ import type { BottomNavTemplateProps } from "@/components/footer/bottom-nav-temp
 import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styles"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { showAuthRequiredAlert } from "@/components/navigation/auth-required-alert"
-import { ROUTES, isAccountRequiredRoute } from "@/constants/routes"
+import { PRIMARY_APP_ROUTES, ROUTES, isAccountRequiredRoute } from "@/constants/routes"
 import { useBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
 import { useBasket } from "@/hooks/basket/use-basket"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { isMentorAvailable } from "@/screens/chat/chat-mode-policy"
+import { RouteTransitionContext } from "@/components/navigation/route-transition-context"
 
 export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
@@ -27,6 +29,7 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
     const basketDraftEditingId = useBasketDraftEditingId()
     const { t } = useLanguage()
     const { accentPalette, palette } = useTheme()
+    const { setAnimation } = useContext(RouteTransitionContext)
     const hasBasketItems = (basket?.total_quantity ?? 0) > 0
     const basketRoute =
         basketDraftEditingId !== null ? `${ROUTES.basket}?draftId=${basketDraftEditingId}` : ROUTES.basket
@@ -92,6 +95,9 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
                                     return
                                 }
 
+                                const current = PRIMARY_APP_ROUTES.findIndex(route => route === pathname)
+                                const next = PRIMARY_APP_ROUTES.findIndex(route => route === item.key)
+                                setAnimation(next < current ? "slide_from_left" : "slide_from_right")
                                 router.replace(item.route as never)
                             }
                         }}

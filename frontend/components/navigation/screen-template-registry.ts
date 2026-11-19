@@ -36,7 +36,7 @@ export function getDefaultScreenChromeTemplate(
         }
     }
 
-    if (pathname === ROUTES.delivery) {
+    if (pathname === ROUTES.delivery || pathname === ROUTES.chat) {
         return {
             footer: "none",
             header: "none",
