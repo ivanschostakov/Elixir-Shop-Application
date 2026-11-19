@@ -34,6 +34,24 @@ npm run lint
 
 If you add a library with native code or change app config, run `npm run prebuild:clean` and rebuild the dev client so the native projects stay in sync.
 
+## iOS device builds with Xcode 27
+
+Xcode 27 replaces Simulator with Device Hub. The Expo SDK 54 CLI still checks for
+Simulator before listing devices, even when building for a physical iPhone. Our
+`postinstall` script patches the CLI's app discovery, simulator opening, and window
+focus to support Device Hub while preserving support for older Xcode versions.
+
+For an existing dependency installation, apply the patch once, then retry the build:
+
+```bash
+node scripts/patch-expo-device-hub.cjs
+npx expo run:ios --device --configuration Release
+```
+
+Run these commands from `frontend`. No additional clean prebuild is needed for this
+CLI fix. If `xcode-select -p` already points to the intended Xcode, switching it again
+will not fix the missing Simulator app error.
+
 ## Store Builds
 
 Android testing build:

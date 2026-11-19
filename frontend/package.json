@@ -10,7 +10,7 @@
     "web:export": "node scripts/expo-cli.cjs export --platform web",
     "web:serve:dist": "python3 -m http.server 3000 --directory dist",
     "tunnel:elixirshop": "cloudflared tunnel --config cloudflared/elixirshop.local.yml run 6513940a-5450-480c-8d7d-7960c27bd310",
-    "postinstall": "node scripts/patch-react-native-yamap.cjs",
+    "postinstall": "node scripts/patch-react-native-yamap.cjs && node scripts/patch-expo-device-hub.cjs",
     "prebuild:clean": "node scripts/expo-cli.cjs prebuild --clean",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
