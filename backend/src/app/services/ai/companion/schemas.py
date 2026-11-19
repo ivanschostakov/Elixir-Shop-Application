@@ -130,6 +130,23 @@ class ProfileData(StrictModel):
     workout_plan: WorkoutPlan | None = None
 
 
+class OnboardingData(StrictModel):
+    goal: Literal["weight_loss", "weight_gain", "maintain", "custom"]
+    age: int = Field(ge=18, le=120)
+    sex: Literal["male", "female"]
+    height_cm: Decimal = Field(ge=50, le=260)
+    current_weight_kg: Decimal = Field(gt=0, le=500)
+    activity: Literal["low", "light", "moderate", "high"]
+    custom_goal: str = Field(default="", max_length=500)
+
+    @model_validator(mode="after")
+    def custom_goal_has_text(self):
+        self.custom_goal = self.custom_goal.strip()
+        if self.goal == "custom" and not self.custom_goal:
+            raise ValueError("Расскажите о своей цели")
+        return self
+
+
 class Settings(StrictModel):
     timezone: str = "Europe/Moscow"
     nutrition_auto_eligible: bool = False
@@ -279,10 +296,11 @@ class Proposal(StrictModel):
 
 class Action(StrictModel):
     request_key: str = Field(min_length=8, max_length=64)
-    kind: Literal["enable", "disable", "profile", "settings", "plan", "plan_status", "workout_plan", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]
+    kind: Literal["enable", "disable", "onboard", "profile", "settings", "plan", "plan_status", "workout_plan", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]
     expected_version: int | None = Field(default=None, ge=1)
     resource_id: int | None = Field(default=None, gt=0)
     profile: ProfileData | None = None
+    onboarding: OnboardingData | None = None
     settings: Settings | None = None
     plan: PlanData | None = None
     workout_plan: WorkoutPlan | None = None

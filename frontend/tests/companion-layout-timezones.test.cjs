@@ -36,10 +36,11 @@ test("stationary chat chrome and retained conversations share keyboard motion wi
     assert.ok(ancestors(composer).includes(body))
     assert.ok(!ancestors(composer).some(node => tag(node) === "ScrollView"))
     const history = byTestId("ai-chat-message-history")
-    const mentor = byTestId("ai-chat-mentor-workspace")
     assert.equal(tag(history), "ChatMessageScrollView")
-    assert.equal(tag(mentor), "View")
-    assert.ok(history.parent === ancestors(mentor).find(node => tag(node) === "View"), "The scroll views are siblings in the same viewport")
+    assert.equal(byTestId("ai-chat-mentor-workspace"), undefined, "No intermediate mentor page replaces the chat")
+    const shortcut = nodes.find(node => tag(node) === "MentorShortcut")
+    assert.ok(shortcut && ancestors(shortcut).some(node => tag(node) === "ChatKeyboardFloating"), "The leaf floats above the composer using native keyboard motion")
+    assert.ok(!ancestors(shortcut).includes(composer), "The leaf sits above the input rather than inside it")
     assert.match(history.openingElement.getText(source), /ref=\{scrollRef\}/)
     assert.ok(!nodes.some(node => tag(node) === "KeyboardAvoidingView"), "Do not add a second keyboard avoidance layer")
     const composerStyle = composer.openingElement.attributes.properties.find(attr => attr.name?.text === "style").getText(source)
@@ -50,7 +51,7 @@ test("stationary chat chrome and retained conversations share keyboard motion wi
     const panes = nodes.find(node => tag(node) === "ChatModeTransition")
     assert.ok(panes.end < blurLayers[0].pos && ancestors(blurLayers[0]).includes(keyboard), "The top material stays outside moving conversations")
     assert.ok(!input.attributes.properties.some(attr => ["onFocus", "onBlur"].includes(attr.name?.text)), "Input focus must not cause a JS layout commit before the native keyboard animation")
-    assert.ok(nodes.some(node => tag(node) === "MentorDevelopmentNotice"), "Mentor opens a development notice while the ordinary chat remains available")
+    assert.ok(nodes.some(node => tag(node) === "MentorSetup"), "The leaf opens the questionnaire or placeholder over the retained chat")
     const { createChatScreenStyles } = loadTs("screens/chat/chat-screen.styles.ts", {
         "react-native": { StyleSheet: { create: value => value, absoluteFillObject: { position: "absolute" } } },
         "@/theme/spacing": { spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 } },

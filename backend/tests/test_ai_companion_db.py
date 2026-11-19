@@ -161,7 +161,8 @@ def test_auto_start_preserves_data_and_explicit_opt_out_even_after_erasure(monke
         async with database() as (db, user):
             profile = await service.ensure_default_profile(db, user.id)
             await db.commit()
-            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(age=30, goal="course"), consent_version=config.AI_COMPANION_CONSENT_VERSION, adult_confirmed=True)
+            await act(db, user, "entry", entry=EntryData(kind="weight", weight_kg=80, occurred_at=datetime.now(timezone.utc)), consent_version=config.AI_COMPANION_CONSENT_VERSION, adult_confirmed=True)
+            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(age=30, goal="course", sex="male", height_cm=180, activity="low"))
             fields = ("id", "version", "enabled", "data", "settings", "target_history")
             original = {field: getattr(profile, field) for field in fields}
             reloaded = await service.ensure_default_profile(db, user.id)
@@ -194,8 +195,8 @@ def test_nutrition_eligibility_confirmation_history_and_stale_draft(monkeypatch)
     async def run():
         async with database() as (db, user):
             profile = await enable(db, user)
-            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(age=30, sex="male", height_cm=180, activity="low"))
             await act(db, user, "entry", entry=EntryData(kind="weight", weight_kg=90, occurred_at=datetime.now(timezone.utc)))
+            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(goal="weight_loss", age=30, sex="male", height_cm=180, activity="low"))
             assert not (await service.nutrition_suggestion(db, user.id))["available"]
             await act(db, user, "settings", expected_version=profile.version, settings=Settings(nutrition_auto_eligible=True))
             result = await service.nutrition_suggestion(db, user.id)
@@ -224,11 +225,11 @@ def test_nutrition_requires_recent_weight_and_excludes_future_measurements(monke
     async def run():
         async with database() as (db, user):
             profile = await enable(db, user)
-            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(age=30, sex="male", height_cm=180, activity="low"))
-            await act(db, user, "settings", expected_version=profile.version, settings=Settings(nutrition_auto_eligible=True))
             now = datetime.now(timezone.utc)
             for at in (now - timedelta(days=31), now + timedelta(minutes=4)):
                 await act(db, user, "entry", entry=EntryData(kind="weight", weight_kg=100, occurred_at=at))
+            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(goal="weight_loss", age=30, sex="male", height_cm=180, activity="low"))
+            await act(db, user, "settings", expected_version=profile.version, settings=Settings(nutrition_auto_eligible=True))
             assert not (await service.nutrition_suggestion(db, user.id))["available"]
             await act(db, user, "entry", entry=EntryData(kind="weight", weight_kg=90, occurred_at=now))
             assert (await service.nutrition_suggestion(db, user.id))["nutrition"]["kcal"] == "1918"
@@ -473,7 +474,8 @@ def test_pause_cancels_future_and_stale_profile_card_is_rejected(monkeypatch):
             await service.attach_proposals(db, user.id, message, [Proposal(kind="profile", summary="profile", profile=ProfileData(age=30))], profile)
             await db.commit()
             card = message.companion_cards[0]
-            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(age=40))
+            await act(db, user, "entry", entry=EntryData(kind="weight", weight_kg=80, occurred_at=datetime.now(timezone.utc)))
+            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(goal="maintain", age=40, sex="male", height_cm=180, activity="low"))
             with pytest.raises(HTTPException) as error:
                 await act(db, user, "confirm", message_id=message.id, action_id=card["id"], action_token=card["action_token"])
             assert error.value.status_code == 409

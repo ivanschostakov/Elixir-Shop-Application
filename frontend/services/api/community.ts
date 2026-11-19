@@ -1,5 +1,5 @@
 import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart } from "@/services/api/client"
-import type { CommunityAuthor, CommunityMessage, CommunityMessagePage, CommunityReaction, CommunityStatus, CommunityTopicList, SendCommunityMessagePayload } from "@/services/api/community.types"
+import type { CommunityAuthor, CommunityMessage, CommunityMessagePage, CommunityNotificationSettings, CommunityReaction, CommunityStatus, CommunityTopicList, SendCommunityMessagePayload } from "@/services/api/community.types"
 
 const communityEndpoint = "/v1/users/me/community"
 const readOptions = { appIntegrityAction: "community:read" }
@@ -19,6 +19,11 @@ export function getCommunityStatus(refresh = false) {
 
 export function getCommunityTopics() {
     return apiGet<CommunityTopicList>(`${communityEndpoint}/topics`, undefined, readOptions)
+}
+
+export function setCommunityNotificationsMuted(muted: boolean, topicId?: number) {
+    const path = topicId == null ? `${communityEndpoint}/notifications` : `${communityEndpoint}/topics/${topicId}/notifications`
+    return apiPatch<CommunityNotificationSettings, { muted: boolean }>(path, { muted }, readOptions)
 }
 
 export function getCommunityMessages(topicId: number, options: { beforeId?: number; afterId?: number; changedAfter?: string; changedAfterId?: number; limit?: number } = {}) {

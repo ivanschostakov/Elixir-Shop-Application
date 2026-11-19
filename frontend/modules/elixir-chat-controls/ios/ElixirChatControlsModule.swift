@@ -4,7 +4,7 @@ import UIKit
 public final class ElixirChatControlsModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ElixirChatControls")
-    Constant("interfaceVersion") { 4 }
+    Constant("interfaceVersion") { 5 }
 
     View(ChatModeControl.self) {
       ViewName("ModeControl")

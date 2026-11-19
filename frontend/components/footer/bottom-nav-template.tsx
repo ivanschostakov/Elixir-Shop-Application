@@ -54,7 +54,7 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
             accessibilityLabel: t("nav.chat"),
             icon: <SmileBubbleIcon color={pathname === ROUTES.chat ? accentPalette.primary : palette.mutedText} />,
             isActive: pathname === ROUTES.chat,
-            route: isMentorAvailable(Platform.OS) ? `${ROUTES.chat}?mode=ai&companion=1` : ROUTES.chat,
+            route: isMentorAvailable(Platform.OS) ? `${ROUTES.chat}?mode=ai` : ROUTES.chat,
         },
         {
             key: ROUTES.basket,

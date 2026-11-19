@@ -69,7 +69,8 @@ export type CommunityTopic = {
     unread_count: number
 }
 
-export type CommunityTopicList = { blocked_author_ids?: number[]; topics: CommunityTopic[]; total_unread: number }
+export type CommunityNotificationSettings = { muted: boolean; muted_topic_ids: number[] }
+export type CommunityTopicList = { notifications?: CommunityNotificationSettings; blocked_author_ids?: number[]; topics: CommunityTopic[]; total_unread: number }
 export type CommunityMessagePage = { blocked_author_ids?: number[]; messages: CommunityMessage[]; has_more: boolean; oldest_id: number | null; newest_id: number | null; sync_cursor: string; sync_cursor_id: number }
 
 export type SendCommunityMessagePayload = {

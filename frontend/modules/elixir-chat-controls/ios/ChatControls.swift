@@ -1,13 +1,14 @@
 import UIKit
 
 enum ChatAction: String {
-  case back, attachment, latest, microphone, send, stop, busy
+  case back, attachment, latest, mentor, microphone, send, stop, busy
 
   var symbol: String? {
     switch self {
     case .back: return "chevron.left"
     case .attachment: return "paperclip"
     case .latest: return "chevron.down"
+    case .mentor: return "leaf"
     case .microphone: return "mic"
     case .send: return "paperplane.fill"
     case .stop: return "stop.fill"
@@ -33,7 +34,7 @@ final class ChatActionButton: UIButton {
     tintColor = .systemBlue
     next.cornerStyle = .capsule
     next.contentInsets = .zero
-    next.baseForegroundColor = action == .send ? .white : (action == .stop ? .systemRed : .label)
+    next.baseForegroundColor = action == .send ? .white : (action == .stop ? .systemRed : (action == .mentor ? .systemGreen : .label))
     next.preferredSymbolConfigurationForImage = .init(pointSize: 18, weight: .semibold)
     if let symbol = action.symbol, let image = UIImage(systemName: symbol) {
       next.image = action == .send ? image.withTintColor(.white, renderingMode: .alwaysOriginal) : image

@@ -14,7 +14,7 @@ type ModeControlProps = ViewProps & {
 }
 
 type ActionControlProps = ViewProps & {
-    action: "back" | "attachment" | "latest" | "microphone" | "send" | "stop" | "busy"
+    action: "back" | "attachment" | "latest" | "mentor" | "microphone" | "send" | "stop" | "busy"
     dark: boolean
     disabled?: boolean
     label: string
@@ -23,6 +23,7 @@ type ActionControlProps = ViewProps & {
 
 export const NativeChatModeControl = nativeModuleAvailable ? requireNativeView<ModeControlProps>(moduleName, "ModeControl") : null
 export const nativeChatInlineBadgesAvailable = (nativeModule?.interfaceVersion ?? 1) >= 4
+export const nativeChatMentorActionAvailable = (nativeModule?.interfaceVersion ?? 1) >= 5
 export const NativeChatAction = nativeModuleAvailable ? requireNativeView<ActionControlProps>(moduleName, "ActionControl") : null
 export const NativeComposerMaterial = nativeModuleAvailable ? requireNativeView<ViewProps & { dark: boolean; topEdge?: boolean }>(moduleName, "ComposerMaterial") : null
 export const NativeChatInputMaterial = (nativeModule?.interfaceVersion ?? 1) >= 2 ? requireNativeView<ViewProps & { dark: boolean; joined: boolean }>(moduleName, "InputMaterial") : null

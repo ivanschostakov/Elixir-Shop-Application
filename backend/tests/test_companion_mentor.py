@@ -145,7 +145,8 @@ def test_durable_session_versions_idempotency_isolation_and_plan_preservation():
             with pytest.raises(HTTPException) as error:
                 await act(db, user, "entry", resource_id=row.id, expected_version=1, entry=action.entry)
             assert error.value.status_code == 409
-            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(goal="custom", preferences="Vegetarian"))
+            await act(db, user, "entry", entry=EntryData(kind="weight", occurred_at=NOW, weight_kg=80))
+            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(goal="custom", age=30, sex="male", height_cm=180, activity="low", preferences="Vegetarian"))
             assert profile.data["workout_plan"]["name"] == "Week"
             await act(db, user, "workout_plan", expected_version=profile.version, workout_plan=None)
             for exercise in updated["exercises"]:
@@ -176,10 +177,10 @@ def test_dashboard_context_and_course_off_days_do_not_invent_actuals():
             profile = await enable(db, user)
             await act(db, user, "settings", expected_version=profile.version, settings=Settings(timezone="UTC"))
             nutrition = Nutrition(kcal=2000, protein=100, fat=60, carbs=250)
-            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(preferences="Vegetarian", nutrition=nutrition))
-            await act(db, user, "workout_plan", expected_version=profile.version, workout_plan=workout_plan())
             for at, weight in ((NOW - timedelta(days=60), 70), (NOW + timedelta(minutes=4), 99)):
                 await act(db, user, "entry", entry=EntryData(kind="weight", occurred_at=at, weight_kg=weight))
+            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(goal="maintain", age=30, sex="male", height_cm=180, activity="low", preferences="Vegetarian", nutrition=nutrition))
+            await act(db, user, "workout_plan", expected_version=profile.version, workout_plan=workout_plan())
             await act(db, user, "entry", entry=EntryData(kind="meal", occurred_at=NOW, name="Breakfast", favorite=True, nutrition=Nutrition(kcal=500, protein=20, fat=10, carbs=80)))
             await act(db, user, "entry", entry=EntryData(kind="measurement", occurred_at=NOW, measurement=MeasurementData(waist_cm=80)))
             await act(db, user, "entry", entry=EntryData(kind="wellbeing", occurred_at=NOW, wellbeing=4, energy=3))
@@ -202,7 +203,7 @@ def test_dashboard_context_and_course_off_days_do_not_invent_actuals():
             assert context["recent_wellbeing"][0]["data"]["wellbeing"] == 4
             assert context["recent_measurements"][0]["data"]["measurement"]["waist_cm"] == "80"
             assert context["active_plan"]["data"]["items"][0]["stages"][0]["interval_days"] == 2
-            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(goal="custom"))
+            await act(db, user, "profile", expected_version=profile.version, profile=ProfileData.model_validate({**profile.data, "goal": "custom"}))
             assert profile.data["nutrition"]["kcal"] == "2000"
             await service.revoke_consent(db, user.id)
             await db.commit()

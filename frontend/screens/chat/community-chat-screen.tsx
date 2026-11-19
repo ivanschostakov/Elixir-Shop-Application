@@ -37,7 +37,8 @@ import Svg, { Path } from "react-native-svg"
 
 import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock } from "@/screens/chat/chat-keyboard-motion"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
-import { ChatTopicTitle } from "@/screens/chat/chat-topic-title"
+import { ChatTopicTitle, type ChatTopicNavigation } from "@/screens/chat/chat-topic-title"
+import { CommunityGroupNotificationSwitch, CommunityNotificationButton } from "@/screens/chat/community-notifications"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ROUTES } from "@/constants/routes"
 import { useCommunityChat } from "@/hooks/chat/use-community-chat"
@@ -73,7 +74,7 @@ import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
 import { resolveApiMediaUri } from "@/services/api/media"
 import { getBlockedCommunityAuthors } from "@/services/api/community"
-import type { CommunityAuthor, CommunityAttachment, CommunityMessage, CommunityTopic } from "@/services/api/community.types"
+import type { CommunityAuthor, CommunityAttachment, CommunityMessage, CommunityNotificationSettings, CommunityTopic } from "@/services/api/community.types"
 import {
     setPushNotificationCurrentPath,
     syncPushNotifications,
@@ -84,7 +85,7 @@ import { spacing } from "@/theme/spacing"
 type CommunityChatScreenProps = {
     embedded?: boolean
     headerInset?: number
-    onTopicNavigationChange?: (navigation: { title: string; onBack: () => void } | null) => void
+    onTopicNavigationChange?: (navigation: ChatTopicNavigation | null) => void
     active: boolean
     mode: ChatMode
     onEnabledChange: (enabled: boolean) => void
@@ -153,10 +154,21 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     const [activeMedia, setActiveMedia] = useState<CommunityMediaSource | null>(null)
     const chat = useCommunityChat(active, onUnreadChange, requestedTopicId)
     const selectTopic = chat.selectTopic
+    const setNotificationsMuted = chat.setNotificationsMuted
     const topicTitle = chat.selectedTopic?.name
+    const hasNotificationSettings = chat.notificationSettings !== null
+    const groupMuted = chat.notificationSettings?.muted ?? false
+    const topicMuted = groupMuted || !!chat.selectedTopicId && !!chat.notificationSettings?.muted_topic_ids.includes(chat.selectedTopicId)
+    const notificationDisabled = chat.notificationsBusy || groupMuted
+    const changeNotifications = useCallback((muted: boolean, topicId?: number) => {
+        void setNotificationsMuted(muted, topicId).catch(error => Alert.alert(t("chat.communityNotifications"), error instanceof Error ? error.message : t("chat.communityNotificationSaveFailed")))
+    }, [setNotificationsMuted, t])
+    const toggleTopicNotifications = useCallback(() => {
+        if (chat.selectedTopicId) changeNotifications(!topicMuted, chat.selectedTopicId)
+    }, [changeNotifications, chat.selectedTopicId, topicMuted])
     useEffect(() => {
-        onTopicNavigationChange?.(topicTitle ? { title: topicTitle, onBack: () => selectTopic(null) } : null)
-    }, [onTopicNavigationChange, selectTopic, topicTitle])
+        onTopicNavigationChange?.(topicTitle ? { title: topicTitle, onBack: () => selectTopic(null), notifications: hasNotificationSettings ? { muted: topicMuted, disabled: notificationDisabled, onPress: toggleTopicNotifications } : undefined } : null)
+    }, [onTopicNavigationChange, selectTopic, topicTitle, hasNotificationSettings, topicMuted, notificationDisabled, toggleTopicNotifications])
     const markRead = chat.markRead
     const headerTop = top + 8
     const contentTop = embedded ? headerInset : headerTop + 58
@@ -479,7 +491,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                         <Text style={styles.backText}>‹</Text>
                     </Pressable>
                     {chat.selectedTopic ? (
-                        <ChatTopicTitle title={chat.selectedTopic.name} />
+                        <ChatTopicTitle title={chat.selectedTopic.name} notifications={hasNotificationSettings ? { muted: topicMuted, disabled: notificationDisabled, onPress: toggleTopicNotifications } : undefined} />
                     ) : (
                         <ChatModeSwitcher mode={mode} nativeDark={iosChat ? isDark : undefined} onChange={onModeChange} supportUnreadCount={supportUnreadCount} unreadCount={unreadCount} />
                     )}
@@ -493,7 +505,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                             <CommunityAccessState actionUrl={chat.status.action_url} enabled={chat.status.enabled} onRefresh={() => { void chat.refresh() }} state={chat.status.access} />
                         ) : null}
                         {chat.status?.access === "granted" && !chat.selectedTopic ? (
-                            <TopicList headerInset={iosChat ? contentTop : 0} onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} onOpenBlocks={() => { void loadBlocks() }} />
+                            <TopicList headerInset={iosChat ? contentTop : 0} onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} onOpenBlocks={() => { void loadBlocks() }} notifications={chat.notificationSettings} notificationsBusy={chat.notificationsBusy} onNotificationChange={changeNotifications} />
                         ) : null}
                     </View>
                 ) : null}
@@ -573,12 +585,38 @@ function CommunityAccessState({ actionUrl, enabled, onRefresh, state }: { action
     return <View style={styles.stateCenter}><View style={styles.stateIcon}><Text style={styles.stateIconText}>{copy.icon}</Text></View><Text style={styles.stateTitle}>{copy.title}</Text><Text style={styles.stateBody}>{copy.body}</Text>{copy.action && actionUrl ? <Pressable onPress={() => { void Linking.openURL(actionUrl) }} style={styles.primaryButton}><Text style={styles.primaryButtonText}>{copy.action}</Text></Pressable> : null}<Pressable onPress={onRefresh} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityRefresh")}</Text></Pressable></View>
 }
 
-function TopicList({ headerInset, onOpen, onOpenBlocks, onRefresh, refreshing, status, topics }: { headerInset: number; onOpenBlocks: () => void; onOpen: (topicId: number) => void; onRefresh: () => void; refreshing: boolean; status: { group: { title: string; image_url: string | null } | null }; topics: CommunityTopic[] }) {
+function TopicList({ headerInset, onOpen, onOpenBlocks, onRefresh, refreshing, status, topics, notifications, notificationsBusy, onNotificationChange }: { headerInset: number; onOpenBlocks: () => void; onOpen: (topicId: number) => void; onRefresh: () => void; refreshing: boolean; status: { group: { title: string; image_url: string | null } | null }; topics: CommunityTopic[]; notifications: CommunityNotificationSettings | null; notificationsBusy: boolean; onNotificationChange: (muted: boolean, topicId?: number) => void }) {
     const styles = useThemeStyles(createCommunityChatStyles)
     const { palette } = useTheme()
     const { t } = useLanguage()
     const title = status.group?.title ?? t("chat.modeGroup")
-    return <ScrollView contentContainerStyle={[styles.topicsContent, headerInset > 0 && { paddingTop: headerInset + spacing.sm }]} automaticallyAdjustsScrollIndicatorInsets={headerInset > 0 ? false : undefined} scrollIndicatorInsets={headerInset > 0 ? { top: headerInset } : undefined} refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={palette.primary} />}><View style={styles.groupHero}><CommunityGroupAvatar name={title} uri={status.group?.image_url} /><View style={styles.groupCopy}><Text style={styles.groupTitle}>{title}</Text><Text style={styles.groupSubtitle}>{t("chat.communityTopicsSubtitle")}</Text></View></View><Pressable accessibilityRole="button" onPress={onOpenBlocks} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityBlockedAuthors")}</Text></Pressable><Text style={styles.sectionLabel}>{t("chat.communityTopicsTitle")}</Text>{!topics.length ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.communityNoTopicsTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoTopicsMessage")}</Text></View> : topics.map((topic) => <Pressable key={topic.id} onPress={() => onOpen(topic.id)} style={({ pressed }) => [styles.topicCard, pressed ? styles.topicCardPressed : null]}><View style={[styles.topicIcon, { backgroundColor: topicColor(topic) }]}><Text style={styles.topicIconText}>#</Text></View><View style={styles.topicCopy}><View style={styles.topicTitleRow}><Text numberOfLines={1} style={styles.topicTitle}>{topic.name}</Text>{topic.is_closed ? <View style={styles.closedPill}><Text style={styles.closedText}>{t("chat.communityClosed")}</Text></View> : null}</View><Text numberOfLines={1} style={styles.topicPreview}>{topic.last_message ? `${topic.last_message.author.full_name}: ${topic.last_message.is_deleted ? t("chat.communityDeletedMessage") : topic.last_message.text || t("chat.attachmentFallbackMessage")}` : t("chat.communityNoActivity")}</Text></View><View style={styles.topicMeta}><Text style={styles.topicTime}>{formatTopicTime(topic.last_message?.created_at)}</Text>{topic.unread_count ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{topic.unread_count > 99 ? "99+" : topic.unread_count}</Text></View> : null}</View></Pressable>)}</ScrollView>
+    return <ScrollView
+        contentContainerStyle={[styles.topicsContent, headerInset > 0 && { paddingTop: headerInset + spacing.sm }]}
+        automaticallyAdjustsScrollIndicatorInsets={headerInset > 0 ? false : undefined}
+        scrollIndicatorInsets={headerInset > 0 ? { top: headerInset } : undefined}
+        refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={palette.primary} />}>
+        <View style={styles.groupHero}>
+            <CommunityGroupAvatar name={title} uri={status.group?.image_url} />
+            <View style={styles.groupCopy}><Text style={styles.groupTitle}>{title}</Text><Text style={styles.groupSubtitle}>{t("chat.communityTopicsSubtitle")}</Text></View>
+        </View>
+        {notifications ? <CommunityGroupNotificationSwitch muted={notifications.muted} busy={notificationsBusy} onChange={muted => onNotificationChange(muted)} /> : null}
+        <Pressable accessibilityRole="button" onPress={onOpenBlocks} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.communityBlockedAuthors")}</Text></Pressable>
+        <Text style={styles.sectionLabel}>{t("chat.communityTopicsTitle")}</Text>
+        {!topics.length ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.communityNoTopicsTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoTopicsMessage")}</Text></View> : topics.map(topic => <View key={topic.id} style={styles.topicCard}>
+            <Pressable accessibilityRole="button" onPress={() => onOpen(topic.id)} style={({ pressed }) => [{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 }, pressed && styles.topicCardPressed]}>
+                <View style={[styles.topicIcon, { backgroundColor: topicColor(topic) }]}><Text style={styles.topicIconText}>#</Text></View>
+                <View style={styles.topicCopy}>
+                    <View style={styles.topicTitleRow}><Text numberOfLines={1} style={styles.topicTitle}>{topic.name}</Text>{topic.is_closed ? <View style={styles.closedPill}><Text style={styles.closedText}>{t("chat.communityClosed")}</Text></View> : null}</View>
+                    <Text numberOfLines={1} style={styles.topicPreview}>{topic.last_message ? `${topic.last_message.author.full_name}: ${topic.last_message.is_deleted ? t("chat.communityDeletedMessage") : topic.last_message.text || t("chat.attachmentFallbackMessage")}` : t("chat.communityNoActivity")}</Text>
+                </View>
+                <View style={styles.topicMeta}>
+                    <Text style={styles.topicTime}>{formatTopicTime(topic.last_message?.created_at)}</Text>
+                    {topic.unread_count ? <View style={styles.unreadBadge}><Text style={styles.unreadText}>{topic.unread_count > 99 ? "99+" : topic.unread_count}</Text></View> : null}
+                </View>
+            </Pressable>
+            {notifications ? <CommunityNotificationButton muted={notifications.muted || notifications.muted_topic_ids.includes(topic.id)} disabled={notificationsBusy || notifications.muted} onPress={() => onNotificationChange(!notifications.muted_topic_ids.includes(topic.id), topic.id)} /> : null}
+        </View>)}
+    </ScrollView>
 }
 
 function CommunityGroupAvatar({ name, uri }: { name: string; uri: string | null | undefined }) {

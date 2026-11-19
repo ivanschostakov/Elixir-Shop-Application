@@ -2,6 +2,30 @@ import { getTranslationLanguage, type Language } from "@/i18n/translations"
 
 // Source phrases belong to the interface; user-entered names and notes are never passed here.
 export const mentorTranslations: Record<string, { en: string; kz: string }> = {
+    "Какая у вас цель?": { en: "What is your goal?", kz: "Мақсатыңыз қандай?" },
+    "Немного о вас": { en: "A little about you", kz: "Өзіңіз туралы" },
+    "Рост и текущий вес": { en: "Height and current weight", kz: "Бойыңыз бен қазіргі салмағыңыз" },
+    "Как проходит ваш день?": { en: "How active is your day?", kz: "Күніңіз қаншалықты белсенді өтеді?" },
+    "Снизить вес": { en: "Lose weight", kz: "Салмақ азайту" },
+    "Набрать вес": { en: "Gain weight", kz: "Салмақ қосу" },
+    "Поддерживать форму": { en: "Stay in shape", kz: "Дене қалпын сақтау" },
+    "Лёгкая активность": { en: "Light activity", kz: "Жеңіл белсенділік" },
+    "Умеренная активность": { en: "Moderate activity", kz: "Орташа белсенділік" },
+    "Высокая активность": { en: "High activity", kz: "Жоғары белсенділік" },
+    "Назад": { en: "Back", kz: "Артқа" },
+    "Дальше": { en: "Next", kz: "Келесі" },
+    "Шаг {0} из {1}": { en: "Step {0} of {1}", kz: "{1} қадамның {0}-қадамы" },
+    "лет": { en: "years", kz: "жас" },
+    "Рост": { en: "Height", kz: "Бой" },
+    "см": { en: "cm", kz: "см" },
+    "Выберите цель.": { en: "Choose a goal.", kz: "Мақсатты таңдаңыз." },
+    "Расскажите о своей цели.": { en: "Describe your goal.", kz: "Мақсатыңызды сипаттаңыз." },
+    "Укажите возраст от 18 до 120 полных лет.": { en: "Enter your age between 18 and 120 years.", kz: "Жасыңызды 18 бен 120 жас аралығында көрсетіңіз." },
+    "Выберите пол.": { en: "Choose your sex.", kz: "Жынысыңызды таңдаңыз." },
+    "Укажите рост от 50 до 260 см.": { en: "Enter your height between 50 and 260 cm.", kz: "Бойыңызды 50 мен 260 см аралығында көрсетіңіз." },
+    "Укажите текущий вес больше 0 и не больше 500 кг.": { en: "Enter your current weight above 0 and up to 500 kg.", kz: "Қазіргі салмағыңызды 0-ден жоғары және 500 кг-нан аспайтын етіп көрсетіңіз." },
+    "Выберите уровень активности.": { en: "Choose an activity level.", kz: "Белсенділік деңгейін таңдаңыз." },
+    "Открыть наставника": { en: "Open mentor", kz: "Тәлімгерді ашу" },
     "Наставник временно недоступен. Попробуйте ещё раз.": {
         "en": "Your mentor is temporarily unavailable. Please try again.",
         "kz": "Тәлімгер уақытша қолжетімсіз. Қайталап көріңіз."

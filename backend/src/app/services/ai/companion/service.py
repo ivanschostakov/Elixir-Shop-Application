@@ -322,7 +322,15 @@ async def apply_action(db: AsyncSession, user_id: int, action: Action, *, allow_
             raise HTTPException(409, "Ключ запроса уже использован для другого действия")
         return receipt.result
     profile = await profile_for(db, user_id)
-    if action.kind == "enable":
+    if action.kind == "onboard":
+        if profile is None:
+            raise HTTPException(409, "Откройте анкету заново")
+        if action.consent_version is not None:
+            await grant_consent(db, user_id, action)
+        await require_consent(db, user_id)
+        await apply_payload(db, user_id, profile, action)
+        profile.enabled = True
+    elif action.kind == "enable":
         await grant_consent(db, user_id, action)
         if profile is None:
             profile = AICompanionProfile(user_id=user_id, data={}, settings=(action.settings or Settings()).model_dump(mode="json"), target_history=[])
@@ -362,13 +370,32 @@ async def apply_action(db: AsyncSession, user_id: int, action: Action, *, allow_
 
 
 async def apply_payload(db, user_id, profile, action, source_message_id=None):
-    if action.kind in {"profile", "settings", "plan", "plan_status", "nutrition", "workout_plan"}:
+    if action.kind in {"onboard", "profile", "settings", "plan", "plan_status", "nutrition", "workout_plan"}:
         require_version(profile.version, action.expected_version)
-    if action.kind == "profile":
+    if action.kind == "onboard":
+        if action.onboarding is None:
+            raise HTTPException(422, "Нет данных анкеты")
+        values = action.onboarding.model_dump(exclude={"current_weight_kg"})
+        data = ProfileData.model_validate({**profile.data, **values})
+        weight = await latest_weight(db, user_id)
+        if weight is None or Decimal(str(weight.data["weight_kg"])) != action.onboarding.current_weight_kg:
+            entry = EntryData(kind="weight", occurred_at=now_utc(), weight_kg=action.onboarding.current_weight_kg)
+            db.add(AICompanionEntry(user_id=user_id, kind="weight", occurred_at=entry.occurred_at, data=entry.model_dump(mode="json"), source="manual"))
+        profile.data = data.model_dump(mode="json")
+    elif action.kind == "profile":
         if action.profile is None:
             raise HTTPException(422, "Нет данных профиля")
+        # A submitted form must be complete. Conversation turns can still save
+        # confirmed facts one at a time, as in Telegram onboarding.
+        if source_message_id is None:
+            required = {"goal": "цель", "age": "возраст", "sex": "пол", "height_cm": "рост", "activity": "активность"}
+            missing = [label for field, label in required.items() if field not in action.profile.model_fields_set or getattr(action.profile, field) is None]
+            if missing:
+                raise HTTPException(422, "Заполните обязательные поля профиля: " + ", ".join(missing) + ".")
+            if await latest_weight(db, user_id) is None:
+                raise HTTPException(422, "Укажите текущий вес")
         old = ProfileData.model_validate(profile.data)
-        new = action.profile.model_copy(deep=True)
+        new = ProfileData.model_validate({**profile.data, **action.profile.model_dump(exclude_unset=True)}) if source_message_id is not None else action.profile.model_copy(deep=True)
         # Older clients and AI profile cards do not own the workout schedule.
         if new.workout_plan is None:
             new.workout_plan = old.workout_plan
@@ -376,7 +403,10 @@ async def apply_payload(db, user_id, profile, action, source_message_id=None):
             new.nutrition, new.nutrition_source, new.nutrition_rule_version = old.nutrition, old.nutrition_source, old.nutrition_rule_version
         if old.nutrition != new.nutrition:
             profile.target_history = [*profile.target_history, {"changed_at": now_utc().isoformat(), "previous": old.nutrition.model_dump(mode="json") if old.nutrition else None}]
-        profile.data = new.model_dump(mode="json")
+        data = new.model_dump(mode="json")
+        if "goal" not in action.profile.model_fields_set and "goal" not in profile.data:
+            data.pop("goal", None)  # An unanswered goal must not become weight loss by default.
+        profile.data = data
     elif action.kind == "workout_plan":
         if "workout_plan" not in action.model_fields_set:
             raise HTTPException(422, "Нет плана тренировок")

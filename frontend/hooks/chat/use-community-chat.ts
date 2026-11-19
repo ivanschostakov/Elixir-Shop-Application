@@ -11,11 +11,13 @@ import {
     getCommunityStatus,
     getCommunityTopics,
     markCommunityTopicRead,
+    setCommunityNotificationsMuted,
     sendCommunityMessage,
     toggleCommunityMessageReaction,
 } from "@/services/api/community"
 import type {
     CommunityMessage,
+    CommunityNotificationSettings,
     CommunityStatus,
     CommunityTopic,
     SendCommunityMessagePayload,
@@ -62,6 +64,10 @@ export function useCommunityChat(
     const isFocused = useIsFocused()
     const [status, setStatus] = useState<CommunityStatus | null>(null)
     const [topics, setTopics] = useState<CommunityTopic[]>([])
+    const [notificationSettings, setNotificationSettings] = useState<CommunityNotificationSettings | null>(null)
+    const [notificationsBusy, setNotificationsBusy] = useState(false)
+    const notificationRevisionRef = useRef(0)
+    const notificationMutationRef = useRef(false)
     const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null)
     const [blockedAuthorIds, setBlockedAuthorIds] = useState<number[]>([])
     const blockRevisionRef = useRef(0)
@@ -118,11 +124,13 @@ export function useCommunityChat(
     const loadTopics = useCallback(async () => {
         if (topicRequestRef.current) return topicRequestRef.current
         const revision = blockRevisionRef.current
+        const notificationRevision = notificationRevisionRef.current
         const request = getCommunityTopics()
             .then((response) => {
                 if (!mountedRef.current || blockRevisionRef.current !== revision) return response
                 setBlockedAuthorIds(response.blocked_author_ids ?? [])
                 setTopics(response.topics)
+                if (notificationRevisionRef.current === notificationRevision && !notificationMutationRef.current) setNotificationSettings(response.notifications ?? null)
                 onUnreadChange?.(response.total_unread)
                 return response
             })
@@ -522,6 +530,21 @@ export function useCommunityChat(
         if (topicId) void syncMessages(topicId, { full: true, replace: true }).catch(() => undefined)
     }, [loadTopics, syncMessages])
 
+    const setNotificationsMuted = useCallback(async (muted: boolean, topicId?: number) => {
+        if (notificationMutationRef.current) return
+        notificationMutationRef.current = true
+        notificationRevisionRef.current += 1
+        setNotificationsBusy(true)
+        try {
+            const updated = await setCommunityNotificationsMuted(muted, topicId)
+            if (mountedRef.current) setNotificationSettings(updated)
+        } finally {
+            notificationRevisionRef.current += 1
+            notificationMutationRef.current = false
+            if (mountedRef.current) setNotificationsBusy(false)
+        }
+    }, [])
+
     return {
         connectionState,
         error,
@@ -538,6 +561,9 @@ export function useCommunityChat(
         sending,
         status,
         topics,
+        notificationSettings,
+        notificationsBusy,
+        setNotificationsMuted,
         edit,
         loadOlder,
         markRead,

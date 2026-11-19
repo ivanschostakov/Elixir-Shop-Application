@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 CommunityAccessState = Literal["granted", "telegram_link_required", "membership_required", "temporarily_unavailable"]
 CommunityDeliveryStatus = Literal["queued", "sending", "sent", "failed", "delivery_unknown"]
@@ -92,7 +92,18 @@ class CommunityTopicRead(BaseModel):
     unread_count: int = 0
 
 
+class CommunityNotificationSettingsRead(BaseModel):
+    muted: bool = False
+    muted_topic_ids: list[int] = Field(default_factory=list)
+
+
+class CommunityNotificationUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    muted: bool = Field(strict=True)
+
+
 class CommunityTopicListRead(BaseModel):
+    notifications: CommunityNotificationSettingsRead = Field(default_factory=CommunityNotificationSettingsRead)
     blocked_author_ids: list[int] = Field(default_factory=list)
     topics: list[CommunityTopicRead]
     total_unread: int = 0

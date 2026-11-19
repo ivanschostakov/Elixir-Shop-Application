@@ -1,4 +1,9 @@
 export const ruTranslations = {
+    "chat.communityNotifications": "Уведомления",
+    "chat.communityGroupNotifications": "Уведомления группы",
+    "chat.communityMuteTopic": "Отключить уведомления темы",
+    "chat.communityUnmuteTopic": "Включить уведомления темы",
+    "chat.communityNotificationSaveFailed": "Не удалось сохранить настройки уведомлений.",
     "profile.settlement.balance": "Баланс",
     "profile.settlement.purchases": "Сумма отгруженных покупок",
     "profile.settlement.program": "Программа лояльности",
@@ -1020,6 +1025,11 @@ export type Language = "ru" | "en" | "kz"
 export type TranslationKey = keyof typeof ruTranslations
 
 const enTranslations: Record<TranslationKey, string> = {
+    "chat.communityNotifications": "Notifications",
+    "chat.communityGroupNotifications": "Group notifications",
+    "chat.communityMuteTopic": "Mute topic notifications",
+    "chat.communityUnmuteTopic": "Unmute topic notifications",
+    "chat.communityNotificationSaveFailed": "Could not save notification settings.",
     "profile.settlement.balance": "Balance",
     "profile.settlement.purchases": "Shipped purchase total",
     "profile.settlement.program": "Loyalty program",
@@ -2061,6 +2071,11 @@ const enTranslations: Record<TranslationKey, string> = {
 }
 
 const kzTranslations: Record<TranslationKey, string> = {
+    "chat.communityNotifications": "Хабарландырулар",
+    "chat.communityGroupNotifications": "Топ хабарландырулары",
+    "chat.communityMuteTopic": "Тақырып хабарландыруларын өшіру",
+    "chat.communityUnmuteTopic": "Тақырып хабарландыруларын қосу",
+    "chat.communityNotificationSaveFailed": "Хабарландыру баптауларын сақтау мүмкін болмады.",
     "profile.settlement.balance": "Баланс",
     "profile.settlement.purchases": "Жөнелтілген сатып алулар сомасы",
     "profile.settlement.program": "Адалдық бағдарламасы",

@@ -4,6 +4,7 @@ from .author import CommunityAuthor
 from .attachment import CommunityAttachment
 from .message import CommunityMessage
 from .notification_event import CommunityNotificationEvent
+from .notification_mute import CommunityNotificationMute
 from .reaction import CommunityReaction
 from .read_state import CommunityTopicRead
 from .telegram_part import CommunityTelegramPart
@@ -17,6 +18,7 @@ __all__ = [
     "CommunityReport",
     "CommunityMessage",
     "CommunityNotificationEvent",
+    "CommunityNotificationMute",
     "CommunityReaction",
     "CommunityTelegramPart",
     "CommunityTelegramReaction",

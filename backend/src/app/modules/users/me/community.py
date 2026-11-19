@@ -35,10 +35,27 @@ from src.app.services.community import (
 )
 from src.database import get_db
 from src.database.models import User
+from src.database.schemas.community import CommunityNotificationSettingsRead, CommunityNotificationUpdate
+from src.app.services.community.notification_settings import get_community_notification_settings, set_community_notification_muted
 
 community_router = APIRouter(
     prefix="/community", tags=["community"], dependencies=[Depends(get_current_user)],
 )
+
+
+@community_router.get("/notifications", response_model=CommunityNotificationSettingsRead)
+async def get_my_community_notifications(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("community:read"))):
+    return await get_community_notification_settings(db, user=current_user)
+
+
+@community_router.patch("/notifications", response_model=CommunityNotificationSettingsRead)
+async def set_my_community_notifications(payload: CommunityNotificationUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("community:read"))):
+    return await set_community_notification_muted(db, user=current_user, muted=payload.muted)
+
+
+@community_router.patch("/topics/{topic_id}/notifications", response_model=CommunityNotificationSettingsRead)
+async def set_my_community_topic_notifications(topic_id: int, payload: CommunityNotificationUpdate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("community:read"))):
+    return await set_community_notification_muted(db, user=current_user, muted=payload.muted, topic_id=topic_id)
 
 
 @community_router.post("/topics/{topic_id}/messages/{message_id}/reports", response_model=CommunityReportReceipt, status_code=status.HTTP_201_CREATED)

@@ -36,7 +36,7 @@ test("both mentor catalogs cover all interface phrases and preserve every interp
             if (locale === "en") assert.doesNotMatch(translations[locale], /[А-Яа-яЁё]/, source)
         }
     }
-    for (const file of ["mentor.tsx", "mentor-progress.tsx", "mentor-workouts.tsx", "mentor-photos.tsx", "mentor-data.ts", "companion.tsx", "companion-dialogue.tsx", "companion-timezones.ts"]) {
+    for (const file of ["mentor.tsx", "mentor-progress.tsx", "mentor-workouts.tsx", "mentor-photos.tsx", "mentor-data.ts", "companion.tsx", "companion-dialogue.tsx", "companion-timezones.ts", "mentor-onboarding.tsx", "mentor-onboarding-data.ts", "mentor-setup.tsx"]) {
         const filename = path.join(__dirname, "../screens/chat", file)
         const source = ts.createSourceFile(filename, fs.readFileSync(filename, "utf8"), ts.ScriptTarget.Latest, true)
         const visit = node => {

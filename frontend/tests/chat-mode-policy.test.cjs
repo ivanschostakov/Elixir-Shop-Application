@@ -90,7 +90,7 @@ test("the iOS selector passes the selection and unread count to UIKit", () => {
 })
 
 test("native chat controls depend only on the installed native module", () => {
-    for (const [platform, module] of [["ios", null], ["ios", {}], ["ios", { interfaceVersion: 2 }], ["ios", { interfaceVersion: 3 }], ["ios", { interfaceVersion: 4 }], ["android", null], ["web", null]]) {
+    for (const [platform, module] of [["ios", null], ["ios", {}], ["ios", { interfaceVersion: 2 }], ["ios", { interfaceVersion: 3 }], ["ios", { interfaceVersion: 4 }], ["ios", { interfaceVersion: 5 }], ["android", null], ["web", null]]) {
         const registeredViews = []
         const controls = loadTs("screens/chat/native-chat-controls.tsx", {
             expo: {
@@ -106,6 +106,7 @@ test("native chat controls depend only on the installed native module", () => {
         assert.equal(controls.NativeChatModeControl, module ? "ModeControl" : null)
         assert.equal(controls.NativeChatAction, module ? "ActionControl" : null)
         assert.equal(controls.nativeChatInlineBadgesAvailable, (module?.interfaceVersion ?? 1) >= 4)
+        assert.equal(controls.nativeChatMentorActionAvailable, (module?.interfaceVersion ?? 1) >= 5)
         assert.deepEqual(registeredViews, module ? ["ModeControl", "ActionControl", "ComposerMaterial", ...(module.interfaceVersion >= 2 ? ["InputMaterial", "KeyboardMaterial", "MenuControl"] : []), ...(module.interfaceVersion >= 3 ? ["TitleMaterial"] : [])] : [])
         assert.equal(controls.NativeChatInputMaterial, module?.interfaceVersion >= 2 ? "InputMaterial" : null, "Older installed builds never request an unregistered view")
         const { ChatEdgeBlur } = loadTs("screens/chat/chat-edge-blur.tsx", {

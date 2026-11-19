@@ -54,7 +54,8 @@ export type MentorDashboard = {
     week: { from_date: string; to_date: string; summary: Summary & ProgressTotals }
 }
 export type CompanionAction = {
-    request_key?: string; kind: "enable" | "disable" | "profile" | "settings" | "plan" | "plan_status" | "entry" | "delete_entry" | "event" | "confirm" | "cancel" | "nutrition" | "dialogue_confirm" | "dialogue_cancel" | "dialogue_edit" | "dialogue_undo" | "workout_plan"
+    request_key?: string; kind: "enable" | "disable" | "onboard" | "profile" | "settings" | "plan" | "plan_status" | "entry" | "delete_entry" | "event" | "confirm" | "cancel" | "nutrition" | "dialogue_confirm" | "dialogue_cancel" | "dialogue_edit" | "dialogue_undo" | "workout_plan"
+    onboarding?: { goal: "weight_loss" | "weight_gain" | "maintain" | "custom"; custom_goal: string; age: number; sex: "male" | "female"; height_cm: Numeric; current_weight_kg: Numeric; activity: "low" | "light" | "moderate" | "high" }
     workout_plan?: WorkoutPlan | null
     expected_version?: number; resource_id?: number; profile?: ProfileData; settings?: CompanionSettings; plan?: PlanData
     entry?: EntryData; nutrition?: Nutrition; nutrition_rule_version?: string; status?: string; message_id?: number; action_id?: string; action_token?: string

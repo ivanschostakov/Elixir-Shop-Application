@@ -234,6 +234,7 @@ def test_review_reminder_processor_sends_once_per_order(monkeypatch: pytest.Monk
 
 
 def test_bonus_expiry_processor_warns_once_fourteen_days_before(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(notifications_service, "LOYALTY_USE_SETTLEMENT_BALANCE", False)
     now = notifications_service.ufa_now()
     credit = SimpleNamespace(
         id=501,
@@ -267,8 +268,8 @@ def test_bonus_expiry_processor_warns_once_fourteen_days_before(monkeypatch: pyt
     assert session.added[0].type == notifications_service.DISPATCH_TYPE_BONUS_EXPIRY
 
 
-@pytest.mark.parametrize("blocked_by, recipients", [([], [12, 13]), ([12], [13])])
-def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyPatch, blocked_by, recipients):
+@pytest.mark.parametrize("blocked_by, muted_by, recipients", [([], [], [12, 13]), ([12], [], [13]), ([], [12], [13]), ([12], [13], [])])
+def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyPatch, blocked_by, muted_by, recipients):
     now = notifications_service.ufa_now()
     message = SimpleNamespace(
         id=501,
@@ -278,7 +279,7 @@ def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyP
         text="  New   community message  ",
         attachments=[],
         author=SimpleNamespace(id=21, app_user_id=11, full_name="Татьяна"),
-        topic=SimpleNamespace(name="Приложение"),
+        topic=SimpleNamespace(name="Приложение", telegram_chat_id=-10099),
     )
     event = SimpleNamespace(
         message=message,
@@ -291,6 +292,7 @@ def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyP
         _FakeScalarResult(rows=[event]),
         _FakeScalarResult(rows=[11, 12, 13]),
         _FakeScalarResult(rows=blocked_by),
+        _FakeScalarResult(rows=muted_by),
     ])
     captured: dict[str, object] = {}
 
@@ -303,6 +305,10 @@ def test_community_message_processor_excludes_sender(monkeypatch: pytest.MonkeyP
     processed = asyncio.run(notifications_service.process_community_message_notifications(session, now=now))
 
     assert processed == 1
+    if not recipients:
+        assert captured == {}
+        assert event.sent_at == now and event.last_error is None
+        return
     assert captured["user_ids"] == recipients
     assert captured["title"] == "Приложение"
     assert captured["body"] == "Татьяна: New community message"
@@ -323,7 +329,7 @@ def test_community_message_processor_retries_failed_delivery(monkeypatch: pytest
         text="",
         attachments=[SimpleNamespace(id=1)],
         author=SimpleNamespace(id=22, app_user_id=None, full_name="Участник"),
-        topic=SimpleNamespace(name="Новости"),
+        topic=SimpleNamespace(name="Новости", telegram_chat_id=-10099),
     )
     event = SimpleNamespace(
         message=message,
@@ -335,6 +341,7 @@ def test_community_message_processor_retries_failed_delivery(monkeypatch: pytest
     session = _FakeSession([
         _FakeScalarResult(rows=[event]),
         _FakeScalarResult(rows=[12]),
+        _FakeScalarResult(rows=[]),
         _FakeScalarResult(rows=[]),
     ])
 

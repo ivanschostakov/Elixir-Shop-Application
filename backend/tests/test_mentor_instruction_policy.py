@@ -26,3 +26,15 @@ def test_telegram_reminders_are_opt_in_and_timezone_is_not_invented():
     prompt = (INSTRUCTIONS / "companion-telegram.txt").read_text()
     assert "только по включённым пользователем настройкам" in prompt
     assert "Не утверждай, что пояс получен с телефона" in prompt
+
+
+def test_app_profile_requires_telegram_fields_and_keeps_phone_timezone_automatic():
+    for name in ("companion.txt", "companion-dialogue.txt"):
+        prompt = (INSTRUCTIONS / name).read_text()
+        required = prompt.split("четыре шага — ", 1)[1].split(".", 1)[0]
+        for field in ("goal", "age", "sex", "height_cm", "latest_weight", "activity"):
+            assert f"({field})" in required
+        assert "Целевой вес (target_weight_kg), предпочтения (preferences) и ограничения (restrictions) необязательны" in prompt
+        assert "по кнопке «Открыть наставника»" in prompt
+        assert "Не собирай эти данные вопросами в чате" in prompt
+        assert "без вопроса и подтверждения" in prompt

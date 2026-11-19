@@ -12,6 +12,7 @@ from .reactions import _normalize_reaction_emoji
 from .media import build_community_media_url
 from .access import require_community_access
 from .blocks import blocked_community_author_ids, visible_community_message
+from .notification_settings import get_community_notification_settings
 from .telegram_helpers import _delete_telegram_message_ids
 
 
@@ -96,7 +97,7 @@ async def list_community_topics(db: AsyncSession, *, user: User, request: Reques
         unread = unread_by_topic.get(topic.id, 0)
         total_unread += unread
         topic_reads.append(CommunityTopicRead(id=topic.id, name=topic.name, icon_color=topic.icon_color, icon_custom_emoji_id=topic.icon_custom_emoji_id, is_closed=topic.is_closed, last_message=serialize_community_message(last_message, request=request, user_id=user.id, blocked_author_ids=blocked_ids) if last_message else None, unread_count=unread))
-    return CommunityTopicListRead(topics=topic_reads, total_unread=total_unread, blocked_author_ids=sorted(blocked_ids))
+    return CommunityTopicListRead(topics=topic_reads, total_unread=total_unread, blocked_author_ids=sorted(blocked_ids), notifications=await get_community_notification_settings(db, user=user))
 
 
 async def list_community_messages(db: AsyncSession, *, user: User, request: Request, topic_id: int, before_id: int | None, after_id: int | None, changed_after: datetime | None, changed_after_id: int, limit: int) -> CommunityMessagePageRead:

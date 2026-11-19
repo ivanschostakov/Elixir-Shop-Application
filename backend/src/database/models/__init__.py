@@ -47,6 +47,7 @@ from .community import (
     CommunityReport,
     CommunityMessage,
     CommunityNotificationEvent,
+    CommunityNotificationMute,
     CommunityReaction,
     CommunityTelegramPart,
     CommunityTelegramReaction,
