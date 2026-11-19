@@ -17,7 +17,7 @@ export function MentorCustomAnswer({ label, placeholder, value, onChange, onCanc
             </Pressable>
         </View>
         <TextInput accessibilityLabel={label} placeholder={placeholder} placeholderTextColor={colors.muted} value={value} onChangeText={onChange}
-            multiline textAlignVertical="top" maxLength={maxLength} editable={!disabled} selectionColor={colors.greenBright}
+            autoFocus={!disabled} multiline textAlignVertical="top" maxLength={maxLength} editable={!disabled} selectionColor={colors.greenBright}
             style={[styles.input, { color: colors.text }]} />
     </View>
 }

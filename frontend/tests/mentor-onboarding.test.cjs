@@ -255,10 +255,14 @@ test("a custom goal also replaces the choices and keeps its draft when returning
     assert.equal(nodes(goalPage()).find(node => node.type === "CustomAnswer").props.value, "Больше энергии")
 })
 
-test("the custom answer cross dismisses the keyboard and returns to the choices", () => {
+test("custom input focuses only when editable and the cross dismisses the keyboard", () => {
     let dismissed = 0, cancelled = 0
     const h = harness("screens/chat/mentor-custom-answer.tsx", { "react-native": { View: "View", Text: "Text", TextInput: "TextInput", Pressable: "Pressable", Keyboard: { dismiss() { dismissed++ } }, StyleSheet: { create: value => value } } })
-    const tree = h.render("MentorCustomAnswer", { label: "Свой вариант", placeholder: "Ваш ответ", value: "Черновик", onChange() {}, onCancel() { cancelled++ }, disabled: false })
+    const props = { label: "Свой вариант", placeholder: "Ваш ответ", value: "Черновик", onChange() {}, onCancel() { cancelled++ }, disabled: false }
+    const tree = h.render("MentorCustomAnswer", props)
+    assert.equal(nodes(tree).find(node => node.type === "TextInput").props.autoFocus, true)
+    const hidden = h.render("MentorCustomAnswer", { ...props, disabled: true })
+    assert.equal(nodes(hidden).find(node => node.type === "TextInput").props.autoFocus, false)
     label(tree, "Вернуться к вариантам").props.onPress()
     assert.equal(dismissed, 1); assert.equal(cancelled, 1)
 })
@@ -271,7 +275,9 @@ test("each reminder has an independently editable time while disabled and weekly
     let value = data.mentorOptionalFormFromState(null)
     const render = () => h.render("MentorOptionalOnboarding", { value, onChange: next => { value = next }, step: 5, onBack() {}, onClose() {}, onNext() {}, saving: false, error: "" })
     for (const [name, time, field] of [["Отметить вес", "18:45", "weightTime"], ["Подвести итог дня", "06:30", "dailyTime"], ["Итоги недели", "13:15", "weeklyTime"]]) {
-        nodes(pane(render(), 5)).find(node => node.props.label === name).props.onTime(time)
+        const reminder = nodes(pane(render(), 5)).find(node => node.props.label === name)
+        assert.ok(reminder.props.detail)
+        reminder.props.onTime(time)
         assert.equal(value[field], time)
     }
     value = { ...value, weightEnabled: true, dailyEnabled: true, weeklyEnabled: true }

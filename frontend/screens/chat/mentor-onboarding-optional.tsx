@@ -76,9 +76,9 @@ export function MentorOptionalOnboarding({ value, onChange, step, onBack, onClos
                                 onPress={() => index === 3 ? change({ experienceChoice: item.id as MentorOptionalForm["experienceChoice"] }) : change({ conditionsChoice: item.id as MentorOptionalForm["conditionsChoice"] })} />)}
                         </View>
                     : <View>
-                        <MentorReminderRow label={mt("Отметить вес")} icon="weight" enabled={value.weightEnabled} time={value.weightTime} busy={editingLocked || step !== index} onToggle={weightEnabled => change({ weightEnabled })} onTime={weightTime => change({ weightTime })} />
-                        <MentorReminderRow label={mt("Подвести итог дня")} icon="summary" enabled={value.dailyEnabled} time={value.dailyTime} busy={editingLocked || step !== index} onToggle={dailyEnabled => change({ dailyEnabled })} onTime={dailyTime => change({ dailyTime })} />
-                        <MentorReminderRow label={mt("Итоги недели")} detail={mt("Каждый понедельник")} icon="weekly" enabled={value.weeklyEnabled} time={value.weeklyTime} busy={editingLocked || step !== index} onToggle={weeklyEnabled => change({ weeklyEnabled })} onTime={weeklyTime => change({ weeklyTime })} />
+                        <MentorReminderRow label={mt("Отметить вес")} detail={mt("Следите за динамикой веса.")} icon="weight" enabled={value.weightEnabled} time={value.weightTime} busy={editingLocked || step !== index} onToggle={weightEnabled => change({ weightEnabled })} onTime={weightTime => change({ weightTime })} />
+                        <MentorReminderRow label={mt("Подвести итог дня")} detail={mt("Питание, активность и самочувствие.")} icon="summary" enabled={value.dailyEnabled} time={value.dailyTime} busy={editingLocked || step !== index} onToggle={dailyEnabled => change({ dailyEnabled })} onTime={dailyTime => change({ dailyTime })} />
+                        <MentorReminderRow label={mt("Итоги недели")} detail={mt("Обзор прогресса каждый понедельник.")} icon="weekly" enabled={value.weeklyEnabled} time={value.weeklyTime} busy={editingLocked || step !== index} onToggle={weeklyEnabled => change({ weeklyEnabled })} onTime={weeklyTime => change({ weeklyTime })} />
                     </View>}
                 </ScrollView>
             </Animated.View>)}
