@@ -3,8 +3,8 @@
  * Run from frontend: node tests/chat-keyboard-native-server.cjs
  * Open the already installed iOS dev client with:
  *   exp+elixir-shop://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8103
- * The 15-second fixture checks real keyboard geometry, a 12-line draft,
- * incoming messages while reading history, and a lower workout form field.
+ * The 15-second fixture checks keyboard geometry, a 12-line draft,
+ * incoming messages while reading history, native tabs and the closed-topic notice.
  * Measurements append to /private/tmp/elixir-native-keyboard-metrics.jsonl.
  * Reopen the URL with a unique query on its encoded localhost URL to rerun.
  */

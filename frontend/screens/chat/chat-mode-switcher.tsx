@@ -6,7 +6,7 @@ import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createCommunityChatStyles } from "@/screens/chat/community-chat-screen.styles"
 import { useChatReducedMotion } from "@/screens/chat/chat-mode-transition"
 import { isCommunityChatAvailable, type ChatMode } from "@/screens/chat/chat-mode-policy"
-import { NativeChatModeControl } from "@/screens/chat/native-chat-controls"
+import { NativeChatModeControl, nativeChatInlineBadgesAvailable } from "@/screens/chat/native-chat-controls"
 
 export type { ChatMode } from "@/screens/chat/chat-mode-policy"
 
@@ -31,6 +31,7 @@ export function ChatModeSwitcher({
     const styles = mentorStyle ? mentorSwitcherStyles : themeStyles
     const { t } = useLanguage()
     const communityAvailable = isCommunityChatAvailable(Platform.OS)
+    const nativeControlEnabled = nativeDark !== undefined && NativeChatModeControl !== null
     const modeIndex = mode === "support" ? (communityAvailable ? 2 : 1) : mode === "community" && communityAvailable ? 1 : 0
     const reducedMotion = useChatReducedMotion()
     const progress = useRef(new Animated.Value(modeIndex)).current
@@ -47,7 +48,7 @@ export function ChatModeSwitcher({
     }
 
     useEffect(() => {
-        if (solidStyle) return
+        if (solidStyle || nativeControlEnabled) return
         progress.stopAnimation()
         if (reducedMotion) {
             progress.setValue(modeIndex)
@@ -56,15 +57,17 @@ export function ChatModeSwitcher({
         const animation = Animated.spring(progress, { toValue: modeIndex, damping: 20, stiffness: 220, mass: 0.7, useNativeDriver: false })
         animation.start()
         return () => animation.stop()
-    }, [modeIndex, progress, reducedMotion, solidStyle])
+    }, [modeIndex, progress, reducedMotion, solidStyle, nativeControlEnabled])
 
     if (nativeDark !== undefined && NativeChatModeControl) {
         const modes: ChatMode[] = ["ai", "community", "support"]
+        const badge = (count: number) => count > 0 ? count > 99 ? "99+" : String(count) : ""
         const unreadLabel = (label: string, count: number) => count > 0 ? `${label} · ${count > 99 ? "99+" : count}` : label
         return (
             <NativeChatModeControl
                 dark={nativeDark}
-                labels={[t("chat.modeAi"), unreadLabel(t("chat.modeGroup"), unreadCount), unreadLabel(t("chat.modeSupport"), supportUnreadCount)]}
+                labels={nativeChatInlineBadgesAvailable ? [t("chat.modeAi"), t("chat.modeGroup"), t("chat.modeSupport")] : [t("chat.modeAi"), unreadLabel(t("chat.modeGroup"), unreadCount), unreadLabel(t("chat.modeSupport"), supportUnreadCount)]}
+                badges={nativeChatInlineBadgesAvailable ? ["", badge(unreadCount), badge(supportUnreadCount)] : undefined}
                 onSelect={({ nativeEvent }) => {
                     const selected = modes[nativeEvent.index]
                     if (selected) onChange(selected)
@@ -94,7 +97,7 @@ export function ChatModeSwitcher({
 }
 
 const mentorSwitcherStyles = StyleSheet.create({
-    nativeControl: { flex: 1, minWidth: 0, height: 42 },
+    nativeControl: { flex: 1, minWidth: 0, height: 44 },
     modeSwitcher: { flex: 1, minWidth: 0, height: 42, padding: 3, borderRadius: 23, flexDirection: "row", overflow: "hidden", shadowOpacity: 0, elevation: 0 },
     modeIndicator: { position: "absolute", left: 3, top: 3, height: 34, borderRadius: 19, backgroundColor: "#078AFF" },
     modeButton: { flex: 1, minWidth: 0, height: 34, paddingHorizontal: 4, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, zIndex: 1 },

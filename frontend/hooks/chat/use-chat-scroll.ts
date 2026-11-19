@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react"
+import { Platform } from "react-native"
 import type { NativeScrollEvent, NativeSyntheticEvent, ScrollView, TextInput } from "react-native"
 import { CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD } from "@/screens/chat/chat-screen.constants"
 
@@ -18,6 +19,8 @@ export function useChatScroll(
     const focusFrame = useRef<number | null>(null)
     const focusMeasurement = useRef(0)
     const revealField = useCallback(() => {
+        // iOS workspaces use KeyboardAwareScrollView to follow the focused field natively.
+        if (Platform.OS === "ios") return
         const measurement = ++focusMeasurement.current
         if (focusFrame.current != null) cancelAnimationFrame(focusFrame.current)
         focusFrame.current = null
@@ -70,8 +73,8 @@ export function useChatScroll(
     const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         scrollOffset.current = event.nativeEvent.contentOffset.y
         if (page.current || resetting.current) return
-        const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
-        const nextFollowing = contentSize.height - contentOffset.y - layoutMeasurement.height <= CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD
+        const { contentOffset, contentSize, layoutMeasurement, contentInset } = event.nativeEvent
+        const nextFollowing = contentSize.height + (contentInset?.bottom ?? 0) - contentOffset.y - layoutMeasurement.height <= CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD
         if (following.current === nextFollowing) return
         following.current = nextFollowing
         onFollowingChange?.(nextFollowing)
@@ -79,6 +82,8 @@ export function useChatScroll(
     const followLatest = useCallback((animated = false) => {
         if (animated && !page.current) {
             cancel()
+            following.current = true
+            onFollowingChange?.(true)
             scrollRef.current?.scrollToEnd({ animated: true })
             return
         }
@@ -87,6 +92,6 @@ export function useChatScroll(
         settle()
     }, [cancel, onFollowingChange, scrollRef, settle])
     const onFieldFocus = useCallback((input: TextInput | null) => { focusedField.current = input; revealField() }, [revealField])
-    const onLayout = useCallback(() => { settle(); revealField() }, [settle, revealField])
+    const onLayout = useCallback(() => { if (Platform.OS !== "ios") settle(); revealField() }, [settle, revealField])
     return { onScroll, onScrollBeginDrag: cancel, onContentSizeChange: settle, onLayout, followLatest, onFieldFocus }
 }

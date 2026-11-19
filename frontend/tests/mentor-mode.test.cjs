@@ -2,7 +2,7 @@ const { test } = require("node:test")
 const assert = require("node:assert/strict")
 const loadTs = require("./load-ts.cjs")
 
-function createMode(resolveProfileEnabled) {
+function createMode(resolveProfileEnabled, initiallyShown) {
     const slots = []
     let cursor = 0
     const react = {
@@ -27,7 +27,7 @@ function createMode(resolveProfileEnabled) {
     return {
         render: function Render(resolver = resolveProfileEnabled) {
             cursor = 0
-            return useMentorMode(resolver)
+            return useMentorMode(resolver, initiallyShown)
         },
     }
 }
@@ -120,4 +120,13 @@ test("AI header wrappers allow the wallpaper to show in ordinary and mentor mode
     const styles = createChatScreenStyles({ surfaceSoft: "#FFFFFF" })
     assert.equal(styles.fixedHeader.backgroundColor, "transparent")
     assert.equal({ ...styles.fixedHeader, ...styles.mentorHeader }.backgroundColor, "transparent")
+})
+
+test("the paused mentor starts in ordinary AI without resolving its profile", async () => {
+    let reads = 0
+    const mode = createMode(async () => { reads++; return true }, false)
+    const initial = mode.render()
+    assert.equal(initial.shown, false)
+    assert.equal(await initial.resolveEnabled(), false)
+    assert.equal(reads, 0)
 })

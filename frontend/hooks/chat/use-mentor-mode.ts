@@ -1,9 +1,9 @@
 import { useCallback, useRef, useState } from "react"
 
 /** Presentation mode is separate from the saved mentor profile and reminders. */
-export function useMentorMode(resolveProfileEnabled: () => Promise<boolean>) {
-    const [shown, setShown] = useState(true)
-    const shownRef = useRef(true)
+export function useMentorMode(resolveProfileEnabled: () => Promise<boolean>, initiallyShown = true) {
+    const [shown, setShown] = useState(initiallyShown)
+    const shownRef = useRef(initiallyShown)
     const profileResolver = useRef(resolveProfileEnabled)
     profileResolver.current = resolveProfileEnabled
 

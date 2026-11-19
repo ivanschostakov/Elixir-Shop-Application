@@ -115,6 +115,8 @@ export const createCommunityChatStyles = (colors: ThemePalette) => StyleSheet.cr
     replyComposerCopy: { flex: 1 },
     replyComposerTitle: { color: colors.primary, fontSize: 11, fontWeight: "800" },
     replyComposerText: { color: colors.stateText, fontSize: 11 },
+    closedNotice: { alignSelf: "center", minHeight: 32, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 7, backgroundColor: colors.danger },
+    closedNoticeText: { color: "#FFFFFF", fontSize: 13, lineHeight: 18, fontWeight: "600", textAlign: "center" },
     closeReply: { color: colors.stateText, fontSize: 22 },
     attachmentStrip: { flexDirection: "row", gap: 6, paddingBottom: 6 },
     queuedAttachment: { maxWidth: 160, minHeight: 32, borderRadius: 16, backgroundColor: colors.surfaceMuted, paddingHorizontal: 10, flexDirection: "row", alignItems: "center", gap: 5 },

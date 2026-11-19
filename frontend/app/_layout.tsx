@@ -6,6 +6,7 @@ import { router } from "expo-router"
 import { AppState, Platform, type AppStateStatus } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider } from "react-native-safe-area-context"
+import { KeyboardProvider } from "react-native-keyboard-controller"
 
 import AppShell from "@/components/navigation/app-shell"
 import { VersionGate } from "@/components/navigation/version-gate"
@@ -101,15 +102,17 @@ function RootLayoutContent() {
     return (
         <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
             <SafeAreaProvider>
-                <LanguageProvider>
-                    <VersionGate>
-                        <AuthProvider>
-                            <TelegramWebAppGate>
-                                <AiConsentProvider><AppShell /></AiConsentProvider>
-                            </TelegramWebAppGate>
-                        </AuthProvider>
-                    </VersionGate>
-                </LanguageProvider>
+                <KeyboardProvider enabled={Platform.OS === "ios"} preload={false}>
+                    <LanguageProvider>
+                        <VersionGate>
+                            <AuthProvider>
+                                <TelegramWebAppGate>
+                                    <AiConsentProvider><AppShell /></AiConsentProvider>
+                                </TelegramWebAppGate>
+                            </AuthProvider>
+                        </VersionGate>
+                    </LanguageProvider>
+                </KeyboardProvider>
             </SafeAreaProvider>
         </GestureHandlerRootView>
     )

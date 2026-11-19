@@ -1,3 +1,4 @@
+/* global __dirname */
 const { test } = require("node:test")
 const assert = require("node:assert/strict")
 const { readFileSync } = require("node:fs")
@@ -64,7 +65,7 @@ test("mentor preserves native gate and separates real summaries from display sam
     const progress = readFileSync(join(__dirname, "../screens/chat/mentor-progress.tsx"), "utf8")
     assert.match(chat, /mentorEnabled = mentorAvailable/)
     assert.match(chat, /mentorPage = mentorAvailable && mentorMode\.shown \? companion\.mentorPage : null/)
-    assert.match(chat, /<MentorEntry controller=\{companion\}>/)
+    assert.match(chat, /<MentorDevelopmentNotice onChat=/)
     assert.match(chat, /mentorVisible = mentorPage !== null/)
     assert.match(mentor, /getCompanionSummary/)
     assert.match(progress, /summary\.nutrition\.kcal/)

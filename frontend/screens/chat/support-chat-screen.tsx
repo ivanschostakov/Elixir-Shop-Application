@@ -25,6 +25,7 @@ import * as ImagePicker from "expo-image-picker"
 import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
+import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock } from "@/screens/chat/chat-keyboard-motion"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ROUTES } from "@/constants/routes"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
@@ -117,7 +118,6 @@ export function SupportChatScreen({
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(74)
-    const [keyboardVisible, setKeyboardVisible] = useState(false)
     const voiceStarting = useRef(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
@@ -137,7 +137,6 @@ export function SupportChatScreen({
     const headerTop = top + 8
     const contentTop = embedded ? headerInset : headerTop + 52
     const iosChat = Platform.OS === "ios"
-    const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottom, spacing.sm)
     const isHistorical = Boolean(conversation && conversation.id !== inbox?.active?.id)
     const contentBottom = isHistorical ? 0 : composerHeight
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
@@ -154,20 +153,7 @@ export function SupportChatScreen({
         }
     }, [active, closePrevious, conversation?.id, inbox?.active?.id, inbox?.previous, openPrevious, requestedConversationId])
 
-    useEffect(() => {
-        const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow"
-        const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide"
-        const showSubscription = Keyboard.addListener(showEvent, () => {
-            setKeyboardVisible(true)
-        })
-        const hideSubscription = Keyboard.addListener(hideEvent, () => {
-            setKeyboardVisible(false)
-        })
-        return () => {
-            showSubscription.remove()
-            hideSubscription.remove()
-        }
-    }, [])
+
 
     useEffect(() => () => {
         try {
@@ -364,7 +350,7 @@ export function SupportChatScreen({
     }
 
     return (
-        <View style={styles.overlay}>
+        <ChatKeyboardPane style={styles.overlay}>
             <View style={[styles.screen, embedded ? { backgroundColor: "transparent" } : null]}>
                 {!embedded ? <>
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_LIGHT} style={[chatStyles.backgroundImage, themeName === "dark" ? chatStyles.backgroundImageHidden : null]} />
@@ -381,6 +367,7 @@ export function SupportChatScreen({
                     </Pressable>
                     <ChatModeSwitcher
                         mode={mode}
+                        nativeDark={iosChat ? isDark : undefined}
                         onChange={onModeChange}
                         supportUnreadCount={supportUnreadCount}
                         unreadCount={communityUnreadCount}
@@ -388,19 +375,19 @@ export function SupportChatScreen({
                 </View> : null}
 
                 <KeyboardAvoidingView
-                    enabled={!embedded}
+                    enabled={!embedded && !iosChat}
                     behavior={iosChat ? "padding" : "height"}
                     contentContainerStyle={chatStyles.keyboardContent}
                     keyboardVerticalOffset={0}
                     style={styles.keyboard}
                 >
                     <View style={chatStyles.keyboardContent}>
-                        <ScrollView
+                        <ChatMessageScrollView
                             contentContainerStyle={[
                                 styles.messagesContent,
                                 {
                                     paddingTop: contentTop + spacing.sm,
-                                    paddingBottom: contentBottom + spacing.md,
+                                    paddingBottom: iosChat ? spacing.sm : contentBottom + spacing.md,
                                 },
                             ]}
                             keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
@@ -487,7 +474,7 @@ export function SupportChatScreen({
                                 })}
                             </>
                         ) : null}
-                        </ScrollView>
+                        </ChatMessageScrollView>
 
                         {error ? (
                             <View style={[chatStyles.inlineErrorWrap, { bottom: (isHistorical ? 0 : composerHeight) + spacing.sm }]}>
@@ -495,12 +482,11 @@ export function SupportChatScreen({
                             </View>
                         ) : null}
                         {!isHistorical ? (
-                            <View
+                            <ChatComposerDock
                                 onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
                                 pointerEvents={iosChat ? "box-none" : "auto"}
-                                style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay, { paddingBottom: composerBottomInset }]}
+                                style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay]}
                             >
-                                {iosChat ? <ChatEdgeBlur dark={isDark} style={chatStyles.composerMaterial} /> : null}
                                 {voiceStatusVisible ? (
                                     <View style={chatStyles.voiceStatusPill}>
                                         {voiceTranscribing
@@ -532,7 +518,7 @@ export function SupportChatScreen({
                                     busy={sending || voiceTranscribing}
                                     transcribing={voiceTranscribing}
                                 />
-                            </View>
+                            </ChatComposerDock>
                         ) : null}
                     </View>
                 </KeyboardAvoidingView>
@@ -549,6 +535,6 @@ export function SupportChatScreen({
                     visible={attachmentSheetVisible}
                 />
             </View>
-        </View>
+        </ChatKeyboardPane>
     )
 }

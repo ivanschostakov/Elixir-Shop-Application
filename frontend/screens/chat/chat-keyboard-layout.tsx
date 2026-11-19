@@ -1,10 +1,10 @@
 import { useEffect, useRef, type ReactNode } from "react"
-import { Animated, Dimensions, Keyboard, KeyboardAvoidingView, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native"
+import { Animated, Dimensions, Keyboard, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native"
 import { useTheme } from "@/providers/theme-provider"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { NativeChatKeyboardMaterial } from "@/screens/chat/native-chat-controls"
 
-/** Own keyboard avoidance once, from the fullscreen origin, including the header. */
+/** Keep screen and header geometry fixed; each conversation follows the keyboard on the UI thread. */
 export function ChatKeyboardLayout({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
     const { isDark } = useTheme()
     const keyboardFill = useRef(new Animated.Value(0)).current
@@ -24,13 +24,10 @@ export function ChatKeyboardLayout({ children, style }: { children: ReactNode; s
     }, [keyboardFill])
     return <View style={[styles.screen, style]}>
         {NativeChatKeyboardMaterial ? <NativeChatKeyboardMaterial dark={isDark} pointerEvents="none" style={StyleSheet.absoluteFill} /> : Platform.OS === "ios" ? <Animated.View testID="chat-keyboard-corner-fill" pointerEvents="none" style={[styles.keyboardFill, { height: keyboardFill }]}><ChatEdgeBlur dark={isDark} style={styles.material} /></Animated.View> : null}
-        <KeyboardAvoidingView
+        <View
         testID="chat-keyboard-layout"
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        enabled={Platform.OS === "ios"}
-        keyboardVerticalOffset={0}
         style={styles.screen}
-    >{children}</KeyboardAvoidingView>
+    >{children}</View>
     </View>
 }
 const styles = StyleSheet.create({

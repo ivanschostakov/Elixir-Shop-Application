@@ -7,7 +7,7 @@ const ts = require("typescript")
 const loadTs = require("./load-ts.cjs")
 const timezones = loadTs("screens/chat/companion-timezones.ts")
 
-test("stationary chat chrome sits above retained content with an in-flow keyboard composer", () => {
+test("stationary chat chrome and retained conversations share keyboard motion without resizing the screen", () => {
     const source = ts.createSourceFile("chat-screen.tsx", fs.readFileSync(path.join(__dirname, "../screens/chat/chat-screen.tsx"), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
     const nodes = []
     const visit = node => { nodes.push(node); ts.forEachChild(node, visit) }
@@ -23,17 +23,9 @@ test("stationary chat chrome sits above retained content with an in-flow keyboar
     const backdrop = nodes.find(node => tag(node) === "ChatBackdrop")
     assert.ok(backdrop.end < header.pos)
     assert.ok(!ancestors(backdrop).some(node => ["ChatKeyboardLayout", "ChatModePane", "ChatModeTransition"].includes(tag(node))), "Wallpaper never resizes with the keyboard or animates with a mode")
-    const panel = nodes.find(node => tag(node) === "CompanionPanel")
-    assert.ok(ancestors(panel).includes(composer), "Mentor navigation stays inside the composer when conditionally shown")
-    assert.ok(!ancestors(panel).includes(header))
-    assert.ok(!ancestors(panel).some(node => tag(node) === "ScrollView"))
+    assert.ok(!nodes.some(node => ["CompanionPanel", "MentorWorkspace", "MentorModeToggle"].includes(tag(node))), "The paused mentor screen must not mount its old panels")
     const input = nodes.find(node => tag(node) === "ChatComposer")
     assert.ok(input, "Use the shared bounded composer in every chat")
-    assert.ok(panel.end < input.pos)
-    const toggle = nodes.find(node => tag(node) === "MentorModeToggle")
-    assert.ok(toggle && ancestors(toggle).includes(composer), "Mentor toggle stays in the shortcut row above the input")
-    assert.ok(!ancestors(toggle).includes(header))
-    assert.ok(toggle.end < input.pos)
     const keyboard = nodes.find(node => tag(node) === "ChatKeyboardLayout")
     assert.ok(keyboard, "Use the same production shell exercised by the browser fixture")
     assert.ok(ancestors(header).includes(keyboard), "A fullscreen shared keyboard shell includes the header's screen offset")
@@ -45,37 +37,25 @@ test("stationary chat chrome sits above retained content with an in-flow keyboar
     assert.ok(!ancestors(composer).some(node => tag(node) === "ScrollView"))
     const history = byTestId("ai-chat-message-history")
     const mentor = byTestId("ai-chat-mentor-workspace")
-    assert.equal(tag(history), "ScrollView")
-    assert.equal(tag(mentor), "ScrollView")
+    assert.equal(tag(history), "ChatMessageScrollView")
+    assert.equal(tag(mentor), "View")
     assert.ok(history.parent === ancestors(mentor).find(node => tag(node) === "View"), "The scroll views are siblings in the same viewport")
     assert.match(history.openingElement.getText(source), /ref=\{scrollRef\}/)
-    assert.match(mentor.openingElement.getText(source), /ref=\{mentorScrollRef\}/)
-    assert.match(mentor.openingElement.getText(source), /contentContainerStyle=\{\[chatScreenStyles\.mentorMessagesContent, scrollInsets\]\}/)
     assert.ok(!nodes.some(node => tag(node) === "KeyboardAvoidingView"), "Do not add a second keyboard avoidance layer")
     const composerStyle = composer.openingElement.attributes.properties.find(attr => attr.name?.text === "style").getText(source)
     assert.match(composerStyle, /composerDockInFlow/)
     assert.equal(nodes.find(node => ts.isVariableDeclaration(node) && node.name.getText(source) === "overlaysChatChrome").initializer.getText(source), 'Platform.OS === "ios"')
     const blurLayers = nodes.filter(node => tag(node) === "ChatEdgeBlur")
-    assert.equal(blurLayers.length, 2)
-    assert.ok(ancestors(blurLayers[0]).includes(composer) && blurLayers[0].end < toggle.pos, "The bottom blur covers the mentor shortcuts and composer")
+    assert.equal(blurLayers.length, 1, "Only the top material belongs to the screen; every composer owns the same bottom material")
     const panes = nodes.find(node => tag(node) === "ChatModeTransition")
-    assert.ok(panes.end < blurLayers[1].pos && ancestors(blurLayers[1]).includes(keyboard), "The top blur samples the rendered scroll content")
-    const focus = input.attributes.properties.find(attr => attr.name?.text === "onFocus")
-    assert.match(focus.getText(source), /setComposerFocused\(true\)/)
-    assert.doesNotMatch(focus.getText(source), /setMentorPage\(null\)/, "Focusing input preserves the open mentor form")
-    const blur = input.attributes.properties.find(attr => attr.name?.text === "onBlur")
-    assert.match(blur.getText(source), /setComposerFocused\(false\)/)
-    const shortcutRow = ancestors(toggle).find(node => tag(node) === "View")
-    assert.ok(ancestors(panel).includes(shortcutRow), "Hide the toggle and the mentor shortcuts together")
-    assert.match(shortcutRow.openingElement.getText(source), /hideMentorShortcuts && chatScreenStyles.hiddenComposerShortcuts/)
-    const hideShortcuts = nodes.find(node => ts.isVariableDeclaration(node) && node.name.getText(source) === "hideMentorShortcuts")
-    assert.match(hideShortcuts.initializer.getText(source), /iosChat && \(keyboardVisible \|\| composerFocused\)/)
+    assert.ok(panes.end < blurLayers[0].pos && ancestors(blurLayers[0]).includes(keyboard), "The top material stays outside moving conversations")
+    assert.ok(!input.attributes.properties.some(attr => ["onFocus", "onBlur"].includes(attr.name?.text)), "Input focus must not cause a JS layout commit before the native keyboard animation")
+    assert.ok(nodes.some(node => tag(node) === "MentorDevelopmentNotice"), "Mentor opens a development notice while the ordinary chat remains available")
     const { createChatScreenStyles } = loadTs("screens/chat/chat-screen.styles.ts", {
         "react-native": { StyleSheet: { create: value => value, absoluteFillObject: { position: "absolute" } } },
         "@/theme/spacing": { spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 } },
     })
     const styles = createChatScreenStyles({})
-    assert.equal(styles.hiddenComposerShortcuts.display, "none")
     assert.equal(styles.fixedHeader.flexShrink, 0)
     assert.notEqual(styles.fixedHeader.position, "absolute")
     assert.notEqual(styles.topBarRow.position, "absolute")
@@ -89,7 +69,7 @@ test("stationary chat chrome sits above retained content with an in-flow keyboar
     assert.equal(styles.messagesScroll.minHeight, 0)
 })
 
-test("iOS keyboard avoidance resizes the screen instead of translating its scroll area", () => {
+test("keyboard shell keeps its screen geometry while conversation and composer track the keyboard", () => {
     const renderShell = platform => {
         const { ChatKeyboardLayout } = loadTs("screens/chat/chat-keyboard-layout.tsx", {
             react: { useEffect: () => {}, useRef: value => ({ current: value }) },
@@ -105,9 +85,9 @@ test("iOS keyboard avoidance resizes the screen instead of translating its scrol
         return avoidance
     }
     const ios = renderShell("ios")
-    assert.equal(ios.type, "KeyboardAvoidingView")
-    assert.equal(ios.props.behavior, "padding")
-    assert.equal(ios.props.keyboardVerticalOffset ?? 0, 0, "Fullscreen shell uses screen coordinates without double-counting header height")
+    assert.equal(ios.type, "View")
+    assert.equal(ios.props.behavior, undefined)
+    assert.equal(ios.props.testID, "chat-keyboard-layout")
     assert.equal(ios.props.contentContainerStyle, undefined, "A translated content wrapper must not return")
     const android = renderShell("android")
     assert.ok(android.props.enabled === false || android.props.behavior === undefined, "Android's native resize must not be applied a second time")

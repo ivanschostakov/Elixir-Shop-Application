@@ -21,7 +21,7 @@ test("Android and web retain all existing chat modes", () => {
     }
 })
 
-function renderSwitcher(platform, mode, onChange, solidStyle = false, nativeDark) {
+function renderSwitcher(platform, mode, onChange, solidStyle = false, nativeDark, inlineBadges = true) {
     class Value {
         interpolate(config) { return config }
     }
@@ -33,7 +33,7 @@ function renderSwitcher(platform, mode, onChange, solidStyle = false, nativeDark
         "@/screens/chat/community-chat-screen.styles": { createCommunityChatStyles: () => ({}) },
         "@/screens/chat/chat-mode-transition": { useChatReducedMotion: () => true },
         "@/screens/chat/chat-mode-policy": policy,
-        "@/screens/chat/native-chat-controls": { NativeChatModeControl: "NativeChatModeControl" },
+        "@/screens/chat/native-chat-controls": { NativeChatModeControl: "NativeChatModeControl", nativeChatInlineBadgesAvailable: inlineBadges },
     })
     return ChatModeSwitcher({ mode, onChange, unreadCount: 5, mentorStyle: true, solidStyle, nativeDark })
 }
@@ -82,14 +82,15 @@ test("the iOS selector passes the selection and unread count to UIKit", () => {
     const native = renderSwitcher("ios", "community", onChange, false, true)
     assert.equal(native.type, "NativeChatModeControl")
     assert.equal(native.props.selectedIndex, 1)
-    assert.deepEqual(native.props.labels, ["chat.modeAi", "chat.modeGroup · 5", "chat.modeSupport"])
+    assert.deepEqual(native.props.labels, ["chat.modeAi", "chat.modeGroup", "chat.modeSupport"])
+    assert.deepEqual(native.props.badges, ["", "5", ""])
     native.props.onSelect({ nativeEvent: { index: 2 } })
     native.props.onSelect({ nativeEvent: { index: -1 } })
     assert.deepEqual(changes, ["support"])
 })
 
 test("native chat controls depend only on the installed native module", () => {
-    for (const [platform, module] of [["ios", null], ["ios", {}], ["ios", { interfaceVersion: 2 }], ["android", null], ["web", null]]) {
+    for (const [platform, module] of [["ios", null], ["ios", {}], ["ios", { interfaceVersion: 2 }], ["ios", { interfaceVersion: 3 }], ["ios", { interfaceVersion: 4 }], ["android", null], ["web", null]]) {
         const registeredViews = []
         const controls = loadTs("screens/chat/native-chat-controls.tsx", {
             expo: {
@@ -104,7 +105,8 @@ test("native chat controls depend only on the installed native module", () => {
         })
         assert.equal(controls.NativeChatModeControl, module ? "ModeControl" : null)
         assert.equal(controls.NativeChatAction, module ? "ActionControl" : null)
-        assert.deepEqual(registeredViews, module ? ["ModeControl", "ActionControl", "ComposerMaterial", ...(module.interfaceVersion >= 2 ? ["InputMaterial", "KeyboardMaterial", "MenuControl"] : [])] : [])
+        assert.equal(controls.nativeChatInlineBadgesAvailable, (module?.interfaceVersion ?? 1) >= 4)
+        assert.deepEqual(registeredViews, module ? ["ModeControl", "ActionControl", "ComposerMaterial", ...(module.interfaceVersion >= 2 ? ["InputMaterial", "KeyboardMaterial", "MenuControl"] : []), ...(module.interfaceVersion >= 3 ? ["TitleMaterial"] : [])] : [])
         assert.equal(controls.NativeChatInputMaterial, module?.interfaceVersion >= 2 ? "InputMaterial" : null, "Older installed builds never request an unregistered view")
         const { ChatEdgeBlur } = loadTs("screens/chat/chat-edge-blur.tsx", {
             "expo-blur": { BlurView: "BlurView" },
@@ -133,4 +135,10 @@ test("Mentor and Community are available to all native customers", () => {
         assert.equal(nodes.filter(node => node.props?.accessibilityRole === "tab").length, 3)
     }
     assert.equal(policy.isMentorAvailable("web"), false)
+})
+
+test("older installed builds keep unread counts until their native client is rebuilt", () => {
+    const native = renderSwitcher("ios", "community", () => {}, false, false, false)
+    assert.deepEqual(native.props.labels, ["chat.modeAi", "chat.modeGroup · 5", "chat.modeSupport"])
+    assert.equal(native.props.badges, undefined)
 })

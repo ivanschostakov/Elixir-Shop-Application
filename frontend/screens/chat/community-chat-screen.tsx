@@ -35,6 +35,9 @@ import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Path } from "react-native-svg"
 
+import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock } from "@/screens/chat/chat-keyboard-motion"
+import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
+import { ChatTopicTitle } from "@/screens/chat/chat-topic-title"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ROUTES } from "@/constants/routes"
 import { useCommunityChat } from "@/hooks/chat/use-community-chat"
@@ -127,6 +130,8 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
     const scrollRef = useRef<ScrollView | null>(null)
+    const chatScroll = useChatScroll(scrollRef, null)
+    const { followLatest, onScroll: trackScroll } = chatScroll
     const shouldAutoScrollRef = useRef(true)
     const pushPermissionRequestedRef = useRef(false)
     const [draft, setDraft] = useState("")
@@ -134,7 +139,6 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(110)
-    const [keyboardVisible, setKeyboardVisible] = useState(false)
     const voiceStarting = useRef(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
@@ -157,17 +161,14 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     const headerTop = top + 8
     const contentTop = embedded ? headerInset : headerTop + 58
     const iosChat = Platform.OS === "ios"
-    const composerBottomInset = keyboardVisible ? spacing.sm : Math.max(bottom, spacing.sm)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
     const newestMessageId = chat.messages.at(-1)?.id ?? null
 
     useEffect(() => {
         if (!active || !newestMessageId || !shouldAutoScrollRef.current) return
-        const frame = requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
         markRead(newestMessageId)
-        return () => cancelAnimationFrame(frame)
-    }, [active, composerHeight, markRead, newestMessageId])
+    }, [active, markRead, newestMessageId])
 
     useEffect(() => {
         if (!active || chat.status?.access !== "granted" || pushPermissionRequestedRef.current) return
@@ -201,31 +202,16 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
 
     useEffect(() => {
         shouldAutoScrollRef.current = true
+        followLatest()
         setDraft("")
         setReplyTo(null)
         setEditingMessage(null)
         setAttachments([])
         setActionMenuMessage(null)
         setActiveMedia(null)
-    }, [chat.selectedTopicId])
+    }, [chat.selectedTopicId, followLatest])
 
-    useEffect(() => {
-        const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow"
-        const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide"
-        const showSubscription = Keyboard.addListener(showEvent, () => {
-            setKeyboardVisible(true)
-            if (shouldAutoScrollRef.current) {
-                requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }))
-            }
-        })
-        const hideSubscription = Keyboard.addListener(hideEvent, () => {
-            setKeyboardVisible(false)
-        })
-        return () => {
-            showSubscription.remove()
-            hideSubscription.remove()
-        }
-    }, [])
+
 
     useEffect(() => () => {
         try {
@@ -236,12 +222,13 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     }, [audioRecorder])
 
     const handleMessagesScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-        const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent
-        const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height)
+        trackScroll(event)
+        const { contentOffset, contentSize, layoutMeasurement, contentInset } = event.nativeEvent
+        const distanceFromBottom = contentSize.height + (contentInset?.bottom ?? 0) - (contentOffset.y + layoutMeasurement.height)
         const isNearBottom = distanceFromBottom <= 56
         shouldAutoScrollRef.current = isNearBottom
         if (active && isNearBottom && newestMessageId) markRead(newestMessageId)
-    }, [active, markRead, newestMessageId])
+    }, [active, markRead, newestMessageId, trackScroll])
 
     const appendAttachments = useCallback((items: UploadableChatAttachment[]) => {
         setAttachments((current) => [...current, ...items].slice(0, 6))
@@ -480,7 +467,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     }
 
     return (
-        <View style={styles.overlay}>
+        <ChatKeyboardPane style={styles.overlay}>
             <View style={[styles.screen, embedded ? { backgroundColor: "transparent" } : null]}>
                 {!embedded ? <>
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_LIGHT} style={[chatStyles.backgroundImage, themeName === "dark" ? chatStyles.backgroundImageHidden : null]} />
@@ -492,11 +479,9 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                         <Text style={styles.backText}>‹</Text>
                     </Pressable>
                     {chat.selectedTopic ? (
-                        <View style={styles.selectedTopicPill}>
-                            <Text numberOfLines={1} style={styles.selectedTopicTitle}>{chat.selectedTopic.name}</Text>
-                        </View>
+                        <ChatTopicTitle title={chat.selectedTopic.name} />
                     ) : (
-                        <ChatModeSwitcher mode={mode} onChange={onModeChange} supportUnreadCount={supportUnreadCount} unreadCount={unreadCount} />
+                        <ChatModeSwitcher mode={mode} nativeDark={iosChat ? isDark : undefined} onChange={onModeChange} supportUnreadCount={supportUnreadCount} unreadCount={unreadCount} />
                     )}
                 </View> : null}
 
@@ -515,9 +500,9 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
 
                 {chat.status?.access === "granted" && chat.selectedTopic ? (
                     <>
-                        <KeyboardAvoidingView enabled={!embedded} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.topicKeyboardLayer}>
+                        <KeyboardAvoidingView enabled={!embedded && !iosChat} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.topicKeyboardLayer}>
                             <View style={chatStyles.keyboardContent}>
-                                <ScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + spacing.sm, paddingBottom: composerHeight + spacing.sm }]} keyboardDismissMode={iosChat ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} automaticallyAdjustsScrollIndicatorInsets={iosChat ? false : undefined} scrollIndicatorInsets={iosChat ? { top: contentTop, bottom: composerHeight } : undefined} style={styles.messageScroll}>
+                                <ChatMessageScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + spacing.sm, paddingBottom: iosChat ? spacing.sm : composerHeight + spacing.sm }]} keyboardDismissMode={iosChat ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} onScrollBeginDrag={chatScroll.onScrollBeginDrag} onContentSizeChange={chatScroll.onContentSizeChange} onLayout={chatScroll.onLayout} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} automaticallyAdjustsScrollIndicatorInsets={iosChat ? false : undefined} scrollIndicatorInsets={iosChat ? { top: contentTop, bottom: composerHeight } : undefined} style={styles.messageScroll}>
                                     {chat.hasMore ? <Pressable disabled={chat.loadingOlder} onPress={() => { void chat.loadOlder() }} style={styles.loadOlder}>{chat.loadingOlder ? <ActivityIndicator color={palette.primary} size="small" /> : <Text style={styles.loadOlderText}>{t("chat.communityLoadOlder")}</Text>}</Pressable> : null}
                                     {!chat.messages.length && !chat.loading ? <View style={styles.stateCenter}><View style={styles.stateIcon}><Text style={styles.stateIconText}>✦</Text></View><Text style={styles.stateTitle}>{t("chat.communityNoMessagesTitle")}</Text><Text style={styles.stateBody}>{t("chat.communityNoMessagesMessage")}</Text></View> : null}
                                     {chat.messages.map((message) => (
@@ -531,16 +516,15 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                                             reacting={chat.reactingMessageId === message.id}
                                         />
                                     ))}
-                                </ScrollView>
+                                </ChatMessageScrollView>
                                 {chat.error ? <Pressable onPress={() => { void chat.refresh() }} style={styles.inlineError}><Text style={styles.inlineErrorText}>{chat.error} · {t("chat.retry")}</Text></Pressable> : null}
-                                <View onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} pointerEvents={iosChat ? "box-none" : "auto"} style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay, { paddingBottom: composerBottomInset }]}>
-                                    {iosChat ? <ChatEdgeBlur dark={isDark} style={chatStyles.composerMaterial} /> : null}
+                                <ChatComposerDock onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} pointerEvents={iosChat ? "box-none" : "auto"} style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay]}>
                                     {editingMessage ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityEditingMessage")}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{editingMessage.text}</Text></View><Pressable onPress={() => { setEditingMessage(null); setDraft("") }}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {replyTo ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityReplyingTo")} {replyTo.author.full_name}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{replyTo.text || t("chat.attachmentFallbackMessage")}</Text></View><Pressable onPress={() => setReplyTo(null)}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {voiceStatusVisible ? <View style={chatStyles.voiceStatusPill}>{voiceTranscribing ? <ActivityIndicator color={palette.primary} size="small" /> : <View style={chatStyles.voiceStatusDot} />}<Text style={chatStyles.voiceStatusText}>{voiceTranscribing ? t("chat.voiceTranscribing") : `${t("chat.voiceRecording")} ${formatVoiceDuration(audioRecorderState.durationMillis)}`}</Text></View> : null}
                                     <QueuedAttachmentStrip attachments={attachments} onRemove={(index) => setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))} />
-                                    {chat.selectedTopic.is_closed ? <View style={styles.replyComposer}><Text style={styles.replyComposerText}>{t("chat.communityClosedMessage")}</Text></View> : <ChatComposer value={draft} onChangeText={setDraft} placeholder={voiceRecording ? t("chat.voiceRecording") : editingMessage ? t("chat.communityEditingMessage") : t("chat.communityInputPlaceholder")} onAttachment={openAttachmentSheet} onAction={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }} hasContent={hasComposerContent} disabled={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} attachmentDisabled={Boolean(editingMessage) || voiceStatusVisible} recording={voiceRecording} busy={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} transcribing={voiceTranscribing} />}
-                                </View>
+                                    {chat.selectedTopic.is_closed ? <View accessibilityRole="text" style={styles.closedNotice}><Text style={styles.closedNoticeText}>{t("chat.communityClosedMessage")}</Text></View> : <ChatComposer value={draft} onChangeText={setDraft} placeholder={voiceRecording ? t("chat.voiceRecording") : editingMessage ? t("chat.communityEditingMessage") : t("chat.communityInputPlaceholder")} onAttachment={openAttachmentSheet} onAction={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }} hasContent={hasComposerContent} disabled={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} attachmentDisabled={Boolean(editingMessage) || voiceStatusVisible} recording={voiceRecording} busy={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} transcribing={voiceTranscribing} />}
+                                </ChatComposerDock>
                             </View>
                         </KeyboardAvoidingView>
                     </>
@@ -578,7 +562,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                     />
                 ) : null}
             </View>
-        </View>
+        </ChatKeyboardPane>
     )
 }
 
