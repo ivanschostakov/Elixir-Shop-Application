@@ -37,6 +37,8 @@ logs/
 *.log
 media/
 output/
+/tmp/
+/generated_images/
 integrations/bitrix/dist/
 *.zip
 *.sqlite*
