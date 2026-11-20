@@ -20,8 +20,18 @@ import Leaf from "@/assets/icons/mentor/leaf.svg"
 import TrendingDown from "@/assets/icons/mentor/trending-down.svg"
 import TrendingUp from "@/assets/icons/mentor/trending-up.svg"
 import HeartPulse from "@/assets/icons/mentor/heart-pulse.svg"
+import Settings from "@/assets/icons/mentor/settings.svg"
+import Message from "@/assets/icons/mentor/message-square-text.svg"
+import Target from "@/assets/icons/mentor/target.svg"
+import ChevronRight from "@/assets/icons/mentor/chevron-right.svg"
+import Check from "@/assets/icons/mentor/check.svg"
+import Profile from "@/assets/icons/mentor/user-round.svg"
+import Camera from "@/assets/icons/mentor/camera.svg"
+import Microphone from "@/assets/icons/mentor/mic.svg"
+import Stop from "@/assets/icons/mentor/square.svg"
 
-const icons = { sedentary: Armchair, light: Footprints, moderate: Bike, high: Dumbbell, beginner: Sprout, occasional: CalendarClock, regular: CalendarCheck, home: House, gym: Dumbbell, mixed: ArrowLeftRight, custom: PencilLine, weight: Weight, summary: ClipboardCheck, weekly: CalendarDays, chevronDown: ChevronDown, back: ChevronLeft, close: Close, food: Utensils, leaf: Leaf, loss: TrendingDown, gain: TrendingUp, maintain: HeartPulse }
+const icons = { sedentary: Armchair, light: Footprints, moderate: Bike, high: Dumbbell, beginner: Sprout, occasional: CalendarClock, regular: CalendarCheck, home: House, gym: Dumbbell, mixed: ArrowLeftRight, custom: PencilLine, weight: Weight, summary: ClipboardCheck, weekly: CalendarDays, chevronDown: ChevronDown, back: ChevronLeft, close: Close, food: Utensils, leaf: Leaf, loss: TrendingDown, gain: TrendingUp, maintain: HeartPulse,
+    settings: Settings, message: Message, target: Target, chevronRight: ChevronRight, check: Check, profile: Profile, camera: Camera, microphone: Microphone, stop: Stop }
 export type MentorQuestionIconName = keyof typeof icons
 
 export function MentorQuestionIcon({ name, size = 26, color }: { name: MentorQuestionIconName; size?: number; color: string }) {

@@ -40,7 +40,9 @@ import { useAuth } from "@/providers/auth-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
-import { useCompanion } from "@/screens/chat/companion"
+import { CompanionCards, useCompanion } from "@/screens/chat/companion"
+import type { MentorComposeMode } from "@/screens/chat/mentor"
+import { mentorText as mt } from "@/i18n/mentor-translations"
 import { MentorSetup } from "@/screens/chat/mentor-setup"
 import { MentorShortcut } from "@/screens/chat/mentor-shortcut"
 import { ChatBackdrop } from "@/screens/chat/chat-backdrop"
@@ -177,7 +179,11 @@ function ChatScreenContent() {
     const aiAllowed = useAiChatEntryConsent(modeReady && chatMode === "ai")
     const companion = useCompanion(aiAllowed && mentorAvailable)
     const [mentorOpen, setMentorOpen] = useState(false)
-    const resolveMentorChat = useCallback(async () => false, [])
+    const [mentorVisited, setMentorVisited] = useState(false)
+    const [mentorChatActive, setMentorChatActive] = useState(false)
+    const mentorChatActiveRef = useRef(false)
+    const pendingMentorCompose = useRef<{ text: string; mode: MentorComposeMode } | null>(null)
+    const resolveMentorChat = async () => mentorChatActiveRef.current ? companion.resolveEnabled() : false
     const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(resolveMentorChat, companion.resolveProtocol, aiAllowed)
     const initialMessageIds = useRef<Set<number> | null>(null)
     if (chat && !initialMessageIds.current) initialMessageIds.current = new Set((chat.chat?.messages ?? []).map(message => message.id))
@@ -192,7 +198,7 @@ function ChatScreenContent() {
     const chatScroll = useChatScroll(scrollRef, null, iosChat ? setFollowingLatest : undefined)
     const { followLatest } = chatScroll
     const showConversation = useCallback(() => { followLatest() }, [followLatest])
-    const openMentor = useCallback(() => { Keyboard.dismiss(); setMentorOpen(true) }, [])
+    const openMentor = useCallback(() => { Keyboard.dismiss(); setMentorVisited(true); setMentorOpen(true) }, [])
     const cameraPermissionPromptedRef = useRef(false)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
@@ -693,6 +699,27 @@ function ChatScreenContent() {
         if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress()
         else void handleSend()
     }
+    const finishMentorDismiss = () => {
+        const pending = pendingMentorCompose.current
+        pendingMentorCompose.current = null
+        if (!pending) return
+        if (pending.text) setDraft(pending.text)
+        if (pending.mode === "photo") void handleOpenCamera()
+        else if (pending.mode === "voice") void handleVoiceButtonPress()
+        else mentorInputRef.current?.focus()
+    }
+    const closeMentor = () => {
+        companion.setEditor(null)
+        setMentorOpen(false)
+        // iOS presents the input/camera after the full-screen modal has dismissed.
+        if (Platform.OS !== "ios") requestAnimationFrame(finishMentorDismiss)
+    }
+    const askMentor = (text = "", mode: MentorComposeMode = "text") => {
+        mentorChatActiveRef.current = true
+        setMentorChatActive(true)
+        pendingMentorCompose.current = { text, mode }
+        closeMentor()
+    }
     const handleBack = () => {
         if (chatMode === "community" && topicNavigation) topicNavigation.onBack()
         else router.push(ROUTES.discover)
@@ -877,6 +904,7 @@ function ChatScreenContent() {
                                                             payload={message.interactive}
                                                         />
                                                     ) : null}
+                                                    {mentorAvailable && (message.dialogue_cards?.length || message.companion_cards?.length) ? <CompanionCards controller={companion} message={message} onChanged={refresh} /> : null}
                                                 </View>
                                             </AnimatedMessageBlock>
                                         )
@@ -974,7 +1002,7 @@ function ChatScreenContent() {
                                     value={draft}
                                     onChangeText={setDraft}
                                     inputRef={mentorInputRef}
-                                    placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.inputPlaceholder")}
+                                    placeholder={voiceRecording ? t("chat.voiceRecording") : mentorChatActive ? mt("Спросите наставника") : t("chat.inputPlaceholder")}
                                     onAttachment={handleOpenAttachmentSheet}
                                     onAction={handleComposerAction}
                                     hasContent={hasComposerContent}
@@ -1036,7 +1064,7 @@ function ChatScreenContent() {
             </ChatModeTransition>
             {overlaysChatChrome ? <ChatEdgeBlur dark={isDark} topEdge style={[chatScreenStyles.dialogTopBlur, { height: headerHeight + 10 }]} /> : null}
             </ChatKeyboardLayout>
-            {mentorAvailable && mentorOpen ? <MentorSetup controller={companion} onClose={() => setMentorOpen(false)} /> : null}
+            {mentorAvailable && mentorVisited ? <MentorSetup controller={companion} visible={mentorOpen} onDismiss={finishMentorDismiss} onClose={closeMentor} onAsk={askMentor} /> : null}
         </View>
     )
 }

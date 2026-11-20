@@ -26,3 +26,4 @@ class AIChatSendResult:
     chat: AIChat
     turn_meta: dict[str, int | str | None]
     basket_updated: bool = False
+    meal_estimate: dict | None = None

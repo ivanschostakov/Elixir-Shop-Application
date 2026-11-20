@@ -37,7 +37,7 @@ function harness(file, overrides = {}) {
         "@/screens/chat/mentor-onboarding-layout": { MentorFlowHeader: "FlowHeader", MentorFlowButton: "FlowButton", MentorFlowBody: "FlowBody", MentorStageTransition: "StageTransition", flowStyles: { title: {} } },
         "@/screens/chat/mentor-onboarding-optional": { MentorOptionalOnboarding: "OptionalOnboarding" },
         "@/screens/chat/mentor-nutrition-result": { MentorNutritionResult: "NutritionResult" },
-        "@/screens/chat/mentor-development-notice": { MentorDevelopmentNotice: "MentorDevelopmentNotice" },
+        "@/screens/chat/mentor-main": { MentorMainScreen: "MentorMainScreen" },
         "@/screens/chat/companion-consent": { CompanionActionCancelled: class extends Error {} },
         "@/services/api/companion": { requestKey: () => "stable-onboarding-key" },
         "@/services/notifications/order-status-notifications": { syncPushNotifications: async () => "push-token" },
@@ -109,7 +109,7 @@ test("the leaf opens the question directly; final save prevents duplicate taps a
     const nutrition = nodes(render()).find(node => node.type === "NutritionResult")
     assert.ok(nutrition); assert.ok(!nodes(render()).some(node => node.type === "OptionalOnboarding"))
     nutrition.props.onDecline()
-    assert.ok(nodes(render()).some(node => node.type === "MentorDevelopmentNotice"))
+    assert.ok(nodes(render()).some(node => node.type === "MentorMainScreen"))
 })
 
 test("failed save retains answers and retries the same operation", async () => {
@@ -123,12 +123,12 @@ test("failed save retains answers and retries the same operation", async () => {
     await form.props.onSave(); assert.deepEqual(actions[1], actions[0]); assert.ok(nodes(render()).some(node => node.type === "NutritionResult"))
 })
 
-test("an existing complete profile opens directly onto the placeholder", () => {
+test("an existing complete profile opens directly onto the mentor home", () => {
     const h = harness("screens/chat/mentor-setup.tsx"), saved = state()
     saved.profile.data = { goal: "maintain", age: 32, sex: "female", height_cm: "170", activity: "moderate", target_weight_kg: "75" }; saved.mentor.latest_weight = { data: { weight_kg: "78.5" } }
     const render = () => h.render("MentorSetup", { controller: { state: saved, initialized: true }, onClose() {} })
-    assert.ok(nodes(render()).some(node => node.type === "MentorDevelopmentNotice"))
-    assert.equal(render().type, "MentorOnboarding", "Keep one native modal when showing the placeholder")
+    assert.ok(nodes(render()).some(node => node.type === "MentorMainScreen"))
+    assert.equal(render().type, "MentorOnboarding", "Keep one native modal when showing the mentor home")
 })
 
 test("known required answers open directly at the missing goal-weight question", () => {
@@ -183,7 +183,7 @@ test("backtracking through saved optional questions stays sequential without red
     const c = { state: saved, initialized: true, perform: async () => { writes++; return saved } }
     const render = () => h.render("MentorSetup", { controller: c, onClose() {} })
     const page = () => nodes(render()).find(node => node.type === "OptionalOnboarding")
-    nodes(render()).find(node => node.type === "MentorDevelopmentNotice").props.onContinue()
+    nodes(render()).find(node => node.type === "MentorMainScreen").props.onContinue()
     for (let index = 4; index >= 0; index--) { page().props.onBack(); assert.equal(page().props.step, index) }
     for (let index = 1; index <= 5; index++) { page().props.onNext(false); assert.equal(page().props.step, index) }
     assert.equal(writes, 0)
@@ -196,7 +196,7 @@ test("new optional answers transition immediately and a failed save returns to t
     const c = { state: saved, initialized: true, refresh: async () => saved, perform: () => new Promise((resolve, reject) => { rejectSave = reject }) }
     const render = () => h.render("MentorSetup", { controller: c, onClose() {} })
     const page = () => nodes(render()).find(node => node.type === "OptionalOnboarding")
-    nodes(render()).find(node => node.type === "MentorDevelopmentNotice").props.onContinue()
+    nodes(render()).find(node => node.type === "MentorMainScreen").props.onContinue()
     page().props.onChange({ ...page().props.value, lifestyle: "Evening walks" })
     page().props.onNext(false); assert.equal(page().props.step, 1); assert.equal(page().props.editingLocked, false)
     await new Promise(resolve => setImmediate(resolve)); rejectSave(Error("offline"))
@@ -303,13 +303,13 @@ test("time selection uses UIDatePicker on iOS and the system time dialog on Andr
     opened.onChange({ type: "set" }, picked); assert.equal(saved, "17:35")
 })
 
-test("the placeholder resumes optional setup and notification denial can be skipped without enabling reminders", async () => {
+test("the mentor home resumes optional setup and notification denial can be skipped without enabling reminders", async () => {
     let permissions = 0
     const h = harness("screens/chat/mentor-setup.tsx", { "@/services/notifications/order-status-notifications": { syncPushNotifications: async () => { permissions++; return null } } })
     const saved = state(); saved.profile.data = { goal: "maintain", age: 32, sex: "female", height_cm: "170", activity: "moderate", target_weight_kg: "75", onboarding_optional_step: 5 }; saved.mentor.latest_weight = { data: { weight_kg: "78.5" } }
     const actions = [], c = { state: saved, initialized: true, refresh: async () => saved, perform: async action => { actions.push(action); return saved } }
     const render = () => h.render("MentorSetup", { controller: c, onClose() {} })
-    nodes(render()).find(node => node.type === "MentorDevelopmentNotice").props.onContinue()
+    nodes(render()).find(node => node.type === "MentorMainScreen").props.onContinue()
     let page = nodes(render()).find(node => node.type === "OptionalOnboarding")
     assert.equal(page.props.step, 5); assert.equal(permissions, 0)
     page.props.onChange({ ...page.props.value, weightEnabled: true })
@@ -319,7 +319,7 @@ test("the placeholder resumes optional setup and notification denial can be skip
     page = nodes(render()).find(node => node.type === "OptionalOnboarding")
     assert.ok(page.props.error); page.props.onNext(true); await new Promise(resolve => setImmediate(resolve))
     assert.equal(permissions, 1); assert.equal(actions[0].settings.weight_time, null)
-    assert.ok(nodes(render()).some(node => node.type === "MentorDevelopmentNotice"))
+    assert.ok(nodes(render()).some(node => node.type === "MentorMainScreen"))
 })
 
 test("nutrition result uses calculated saved values and has no questionnaire progress", () => {

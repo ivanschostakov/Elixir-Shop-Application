@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import config
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.ai.companion import service
-from src.app.services.ai.companion.schemas import Action, Settings, StrictModel
+from src.app.services.ai.companion.schemas import Action, EntryData, Settings, StrictModel
 from src.app.services.ai.companion.mentor import FavoriteMealsRead, MentorDashboard, ProgressSummary, dashboard
 from src.app.services.ai.companion.photos import ProgressPhotosRead, serialize_entries
 from src.app.services.ai.companion.timezones import normalize_timezone, timezone_info
@@ -140,8 +140,7 @@ async def nutrition(user: User = Depends(native_access), db: AsyncSession = Depe
     return await service.nutrition_suggestion(db, user.id)
 
 
-@companion_router.post("/messages")
-async def message(request: Request, text: str = Form(...), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), dialogue_protocol: int | None = Form(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+async def _message(request, text, client_request_id, attachments, dialogue_protocol, user, db, *, meal_estimate=False):
     if dialogue_protocol != 2:
         raise HTTPException(426, detail={"code": "mentor_client_update_required", "message": "Обновите приложение для работы с наставником."})
     await require_ai_data_consent(db, user.id)
@@ -176,7 +175,11 @@ async def message(request: Request, text: str = Form(...), client_request_id: st
     try:
         await record_app_ai_activity(db, request=request, user=user, event_type="message_requested", details={"message_length": len(text), "attachments_count": len(attachments or []), "mode": "companion"})
         async with asyncio.timeout(540):
-            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=True, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2)
+            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=not meal_estimate, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2, **({"meal_estimate": True} if meal_estimate else {}))
+        if meal_estimate:
+            if result.meal_estimate is None:
+                raise HTTPException(409, "Не удалось восстановить расчёт. Попробуйте ещё раз.")
+            return MealEstimateRead.model_validate(result.meal_estimate)
         return AIChatResponse(chat=result.chat, last_turn=AIChatTurnMetaRead(**result.turn_meta) if result.turn_meta else None)
     finally:
         try:
@@ -184,6 +187,23 @@ async def message(request: Request, text: str = Form(...), client_request_id: st
                 await lock.release()
         except RedisError:
             pass  # The finite lock lease releases itself; do not mask the response.
+
+
+class MealEstimateRead(StrictModel):
+    entry: EntryData | None = None
+    message: str
+
+
+@companion_router.post("/messages")
+async def message(request: Request, text: str = Form(...), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), dialogue_protocol: int | None = Form(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    return await _message(request, text, client_request_id, attachments, dialogue_protocol, user, db)
+
+
+@companion_router.post("/meal-estimate", response_model=MealEstimateRead)
+async def meal_estimate(request: Request, text: str = Form("", max_length=4000), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    if not text.strip() and not attachments:
+        raise HTTPException(422, "Опишите еду или добавьте фото")
+    return await _message(request, text.strip() or "Оцените КБЖУ еды на фото.", client_request_id, attachments, 2, user, db, meal_estimate=True)
 
 
 @companion_router.get("/supply")

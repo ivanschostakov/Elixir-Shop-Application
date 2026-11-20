@@ -227,7 +227,7 @@ def test_post_my_ai_chat_message_returns_turn_meta(monkeypatch):
         with TestClient(app) as test_client:
             response = test_client.post(
                 "/api/v1/users/me/ai-chat",
-                data={"text": "hello"},
+                data={"text": "hello", "chat_mode": "ordinary"},
                 files=[("attachments", ("a.txt", b"abc", "text/plain"))],
             )
 
@@ -259,7 +259,7 @@ def test_post_my_ai_chat_message_rejects_blank_text(monkeypatch):
 
     try:
         with TestClient(app) as test_client:
-            response = test_client.post("/api/v1/users/me/ai-chat", data={"text": "   "})
+            response = test_client.post("/api/v1/users/me/ai-chat", data={"text": "   ", "chat_mode": "ordinary"})
 
         assert response.status_code == 422, response.text
         assert response.json()["detail"] == "text must not be empty"

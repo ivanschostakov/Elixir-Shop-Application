@@ -4,7 +4,8 @@ import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import type { useCompanion } from "@/screens/chat/companion"
 import { CompanionActionCancelled } from "@/screens/chat/companion-consent"
-import { MentorDevelopmentNotice } from "@/screens/chat/mentor-development-notice"
+import { MentorMainScreen } from "@/screens/chat/mentor-main"
+import type { MentorComposeMode } from "@/screens/chat/mentor"
 import { MentorOnboarding } from "@/screens/chat/mentor-onboarding"
 import { mentorFormFromState, mentorOnboardingAction, mentorOptionalAction, mentorOptionalFormFromState, mentorOptionalResumeStep, mentorProfileComplete, optionalMentorFields, type MentorForm, type MentorOptionalForm } from "@/screens/chat/mentor-onboarding-data"
 import { MentorOptionalOnboarding } from "@/screens/chat/mentor-onboarding-optional"
@@ -17,10 +18,10 @@ import { getErrorMessage } from "@/utils/errors"
 
 type Controller = ReturnType<typeof useCompanion>
 
-export function MentorSetup({ controller: c, onClose }: { controller: Controller; onClose: () => void }) {
+export function MentorSetup({ controller: c, onClose, onAsk, visible = true, onDismiss }: { controller: Controller; onClose: () => void; onAsk?: (text?: string, mode?: MentorComposeMode) => void; visible?: boolean; onDismiss?: () => void }) {
     useLanguage()
     const colors = useMentorPalette()
-    const [view, setView] = useState<"form" | "nutrition" | "optional" | "placeholder">(() => mentorProfileComplete(c.state) ? "placeholder" : "form")
+    const [view, setView] = useState<"form" | "nutrition" | "optional" | "home">(() => mentorProfileComplete(c.state) ? "home" : "form")
     const [form, setForm] = useState<MentorForm>(() => mentorFormFromState(c.state))
     const [optional, setOptional] = useState<MentorOptionalForm>(() => mentorOptionalFormFromState(c.state))
     const [optionalStep, setOptionalStep] = useState(() => mentorOptionalResumeStep(c.state))
@@ -40,11 +41,11 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
         setForm(mentorFormFromState(c.state))
         setOptional(mentorOptionalFormFromState(c.state))
         setOptionalStep(mentorOptionalResumeStep(c.state))
-        setView(mentorProfileComplete(c.state) ? "placeholder" : "form")
+        setView(mentorProfileComplete(c.state) ? "home" : "form")
     }, [c.state])
     const change = (next: MentorForm) => { submission.current = null; setError(""); setForm(next) }
     const changeOptional = (next: MentorOptionalForm) => { if (!savingRef.current) submission.current = null; setError(""); setOptional(next) }
-    const currentState = savedState && savedState.profile?.id === c.state?.profile?.id && (savedState.profile?.version ?? 0) >= (c.state?.profile?.version ?? 0) ? savedState : c.state
+    const currentState = savedState && savedState.profile?.id === c.state?.profile?.id && (savedState.profile?.version ?? 0) > (c.state?.profile?.version ?? 0) ? savedState : c.state
     const submit = async (build: () => CompanionAction | Promise<CompanionAction>, success: (state: CompanionState) => void, failure?: () => void) => {
         if (savingRef.current || !c.state) return
         savingRef.current = true; setSaving(true); setError("")
@@ -100,14 +101,14 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
                 if (!token) throw new Error(mt("Разрешите уведомления на телефоне или продолжите без напоминаний."))
             }
             return action
-        }, () => { if (sourceStep === 5) setView("placeholder") }, () => { if (sourceStep < 5) setOptionalStep(sourceStep) })
+        }, () => { if (sourceStep === 5) setView("home") }, () => { if (sourceStep < 5) setOptionalStep(sourceStep) })
     }
     const close = () => { if (!savingRef.current) onClose() }
     const stage = readyContent()
 
     function readyContent() {
-        if (view === "placeholder") return <MentorDevelopmentNotice onChat={close} onContinue={openOptional} />
-        if (view === "nutrition") return <MentorNutritionResult state={currentState} onContinue={openOptional} onDecline={() => setView("placeholder")} onBack={() => { submission.current = null; setView("form") }} onClose={close} />
+        if (view === "home") return <MentorMainScreen controller={{ ...c, state: currentState }} onClose={close} onContinue={openOptional} onAsk={(text, mode) => { if (!savingRef.current) { if (onAsk) onAsk(text, mode); else close() } }} visible={visible} />
+        if (view === "nutrition") return <MentorNutritionResult state={currentState} onContinue={openOptional} onDecline={() => setView("home")} onBack={() => { submission.current = null; setView("form") }} onClose={close} />
         if (view === "optional") return <MentorOptionalOnboarding value={optional} onChange={changeOptional} step={optionalStep} onBack={() => { if (savingRef.current) return; submission.current = null; setError(""); if (optionalStep) setOptionalStep(optionalStep - 1); else setView("nutrition") }} onClose={close} onNext={saveOptional} saving={saving} editingLocked={saving && pendingOptionalStep.current === optionalStep} error={error} />
         return undefined
     }
@@ -122,7 +123,7 @@ export function MentorSetup({ controller: c, onClose }: { controller: Controller
         </>}
         <Pressable accessibilityRole="button" onPress={close} style={styles.back}><Text style={{ color: colors.green }}>{mt("Назад")}</Text></Pressable>
     </View>
-    return <MentorOnboarding visible value={form} onChange={change} onClose={close} onSave={save} saving={saving} error={error}>{content}</MentorOnboarding>
+    return <MentorOnboarding visible={visible} onDismiss={onDismiss} value={form} onChange={change} onClose={close} onSave={save} saving={saving} error={error}>{content}</MentorOnboarding>
 }
 
 const styles = StyleSheet.create({

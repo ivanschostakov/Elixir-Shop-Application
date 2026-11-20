@@ -1,0 +1,154 @@
+import { useEffect, useRef, useState } from "react"
+import { ActivityIndicator, ActionSheetIOS, Alert, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import * as ImagePicker from "expo-image-picker"
+import { RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio"
+import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
+import { mentorText as mt } from "@/i18n/mentor-translations"
+import { requestChatRecordingPermission } from "@/screens/chat/chat-recording-permission"
+import { createAttachmentFromImagePickerAsset, getVoiceRecordingFilename, getVoiceRecordingMimeType } from "@/screens/chat/chat-attachments"
+import { CHAT_IDLE_AUDIO_MODE, CHAT_RECORDING_AUDIO_MODE } from "@/screens/chat/chat-screen.constants"
+import type { useCompanion } from "@/screens/chat/companion"
+import { appendFoodDictation, foodDescription, foodSaveAction } from "@/screens/chat/mentor-food-data"
+import { mentorHomeNumber } from "@/screens/chat/mentor-home-data"
+import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
+import { useMentorPalette } from "@/screens/chat/mentor-ui"
+import { estimateCompanionFood } from "@/services/api/companion-food"
+import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
+import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
+import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
+import { requestKey, type CompanionAction, type CompanionEntry, type EntryData } from "@/services/api/companion"
+import { getErrorMessage } from "@/utils/errors"
+
+type Phase = "idle" | "picking" | "recording" | "transcribing" | "calculating" | "saving"
+type Controller = ReturnType<typeof useCompanion>
+
+export function MentorFoodEditor({ controller: c, shown, onClose, onSaved }: { controller: Controller; shown: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
+    const { t } = useLanguage()
+    const { isDark } = useTheme()
+    const colors = useMentorPalette()
+    const original = useRef<CompanionEntry | undefined>(c.editor?.entry).current
+    const [text, setText] = useState(() => foodDescription(original?.data ?? c.editor?.proposal?.entry))
+    const [photo, setPhoto] = useState<UploadableChatAttachment | null>(null)
+    const [estimate, setEstimate] = useState<EntryData | null>(null)
+    const [phase, setPhase] = useState<Phase>("idle")
+    const [error, setError] = useState("")
+    const input = useRef<TextInput>(null)
+    const alive = useRef(true)
+    const phaseRef = useRef<Phase>("idle")
+    const isRecording = () => phaseRef.current === "recording"
+    const estimateRequest = useRef<{ fingerprint: string; key: string } | null>(null)
+    const saveRequest = useRef<CompanionAction | null>(null)
+    const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
+    const recording = useAudioRecorderState(recorder, 250)
+    const busy = phase !== "idle" || c.busy
+    const transition = (next: Phase) => { phaseRef.current = next; if (alive.current) setPhase(next) }
+    useEffect(() => {
+        alive.current = true
+        return () => {
+            alive.current = false
+            try { void recorder.stop().catch(() => undefined) } catch { /* Native recorder may already be released. */ }
+            if (phaseRef.current === "recording" || phaseRef.current === "transcribing") void setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined)
+        }
+    }, [recorder])
+    useEffect(() => { if (shown) input.current?.focus() }, [shown])
+    const changeText = (value: string) => { setText(value); setError(""); saveRequest.current = null }
+    const calculate = async () => {
+        if (phaseRef.current !== "idle" || c.busy || !text.trim() && !photo) return
+        Keyboard.dismiss(); setError(""); transition("calculating")
+        const fingerprint = JSON.stringify([text.trim(), photo])
+        if (estimateRequest.current?.fingerprint !== fingerprint) estimateRequest.current = { fingerprint, key: requestKey() }
+        try {
+            const result = await estimateCompanionFood(text, photo, estimateRequest.current.key)
+            if (!alive.current) return
+            if (!result.entry) { setError(result.message || mt("Не удалось рассчитать КБЖУ. Уточните описание еды.")); input.current?.focus(); return }
+            // Validate the estimate before offering its save action.
+            foodSaveAction(result.entry, text, "validate-food")
+            saveRequest.current = null; setEstimate(result.entry)
+        } catch (e) { if (alive.current && !(e instanceof AiConsentDeclinedError)) setError(getErrorMessage(e)) }
+        finally { transition("idle") }
+    }
+    const save = async () => {
+        if (phaseRef.current !== "idle" || c.busy || !estimate) return
+        transition("saving"); setError("")
+        try {
+            saveRequest.current ??= foodSaveAction(estimate, text, requestKey(), original)
+            await c.perform(saveRequest.current)
+            if (alive.current) await onSaved()
+        } catch (e) { if (alive.current) setError(getErrorMessage(e)) }
+        finally { transition("idle") }
+    }
+    const pickPhoto = async (camera: boolean) => {
+        if (phaseRef.current !== "idle") return
+        Keyboard.dismiss(); setError(""); transition("picking")
+        try {
+            if (camera && !(await ImagePicker.requestCameraPermissionsAsync()).granted) { if (alive.current) setError(t("chat.attachmentsPhotoPermissionMessage")); return }
+            const options: ImagePicker.ImagePickerOptions = { mediaTypes: ["images"], quality: 0.92, allowsMultipleSelection: false }
+            const result = camera ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options)
+            if (!alive.current || result.canceled || !result.assets[0]) return
+            setPhoto(createAttachmentFromImagePickerAsset(result.assets[0])); saveRequest.current = null
+        } catch (e) { if (alive.current) setError(getErrorMessage(e)) }
+        finally { transition("idle"); if (alive.current) input.current?.focus() }
+    }
+    const photoOptions = () => {
+        if (busy) return
+        Keyboard.dismiss()
+        if (Platform.OS === "ios") ActionSheetIOS.showActionSheetWithOptions({ options: [mt("Отмена"), mt("Сделать фото"), mt("Выбрать из галереи")], cancelButtonIndex: 0, userInterfaceStyle: isDark ? "dark" : "light" }, selected => { if (selected > 0) void pickPhoto(selected === 1) })
+        else Alert.alert(mt("Фото еды"), undefined, [{ text: mt("Сделать фото"), onPress: () => void pickPhoto(true) }, { text: mt("Выбрать из галереи"), onPress: () => void pickPhoto(false) }, { text: mt("Отмена"), style: "cancel" }])
+    }
+    const voice = async () => {
+        if (phaseRef.current === "recording") {
+            transition("transcribing")
+            try {
+                await recorder.stop()
+                const uri = recorder.uri ?? recorder.getStatus().url
+                await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE)
+                if (!alive.current) return
+                if (!uri) throw new Error(t("chat.voiceTranscriptionFailedMessage"))
+                const result = await transcribeMyAiChatVoice({ uri, fileName: getVoiceRecordingFilename(uri), mimeType: getVoiceRecordingMimeType(uri) })
+                if (alive.current) { setText(value => appendFoodDictation(value, result.text)); input.current?.focus() }
+            } catch (e) { if (alive.current && !(e instanceof AiConsentDeclinedError)) setError(getErrorMessage(e)) }
+            finally { await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined); transition("idle") }
+            return
+        }
+        if (phaseRef.current !== "idle" || c.busy) return
+        transition("transcribing"); setError(""); Keyboard.dismiss()
+        try {
+            if (!await requestChatRecordingPermission(t) || !alive.current) return
+            await setAudioModeAsync(CHAT_RECORDING_AUDIO_MODE)
+            await recorder.prepareToRecordAsync()
+            if (!alive.current) { await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE); return }
+            recorder.record(); transition("recording")
+        } catch (e) { if (alive.current) setError(getErrorMessage(e)); await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined) }
+        finally { if (!isRecording()) transition("idle") }
+    }
+    const close = () => { if (phaseRef.current !== "saving") { Keyboard.dismiss(); onClose() } }
+    const seconds = Math.floor(recording.durationMillis / 1000)
+    return <ScrollView testID="mentor-food-editor" keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={styles.sheet} style={{ flex: 1, backgroundColor: colors.surface }}>
+        <View style={[styles.handle, { backgroundColor: colors.border }]} />
+        <View style={styles.header}><Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{estimate ? mt("Расчёт КБЖУ") : mt("Добавить еду")}</Text><Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} disabled={phase === "saving"} onPress={close} style={[styles.close, { backgroundColor: colors.soft }]}><MentorQuestionIcon name="close" size={25} color={colors.green} /></Pressable></View>
+        {estimate ? <View style={styles.result}>
+            <Text style={[styles.foodName, { color: colors.text }]}>{estimate.name}</Text>
+            <Text style={[styles.calories, { color: colors.green }]}>{mentorHomeNumber(estimate.nutrition?.kcal)}<Text style={styles.unit}> {mt("ккал")}</Text></Text>
+            <View style={styles.macros}>{(["protein", "fat", "carbs"] as const).map((key, index) => <View key={key} style={[styles.macro, index > 0 && { borderLeftWidth: 1, borderLeftColor: colors.border }]}><Text style={[styles.macroLabel, { color: colors.muted }]}>{[mt("Белки"), mt("Жиры"), mt("Углеводы")][index]}</Text><Text style={[styles.macroValue, { color: colors.text }]}>{mentorHomeNumber(estimate.nutrition?.[key])} {mt("г")}</Text></View>)}</View>
+            <Text numberOfLines={3} style={[styles.caption, { color: colors.muted }]}>{estimate.assumptions || mt("Приблизительная оценка")}</Text>
+        </View> : <View style={[styles.composer, { backgroundColor: colors.soft, borderColor: colors.border }]}>
+            <TextInput ref={input} accessibilityLabel={mt("Что вы съели?")} value={text} onChangeText={changeText} placeholder={mt("Что вы съели?")} placeholderTextColor={colors.muted} maxLength={4000} multiline textAlignVertical="top" editable={phase === "idle"} keyboardAppearance={isDark ? "dark" : "light"} selectionColor={colors.greenBright} style={[styles.input, { color: colors.text }]} />
+            {photo ? <View style={styles.photo}><Image source={{ uri: photo.uri }} style={styles.thumbnail} /><Pressable accessibilityRole="button" accessibilityLabel={mt("Убрать фото")} disabled={busy} onPress={() => setPhoto(null)} style={[styles.remove, { backgroundColor: colors.surface }]}><MentorQuestionIcon name="close" size={16} color={colors.green} /></Pressable></View> : null}
+            <View style={[styles.toolbar, { borderTopColor: colors.border }]}><Pressable accessibilityRole="button" accessibilityLabel={mt("Фото еды")} disabled={busy} onPress={photoOptions} style={styles.photoButton}><MentorQuestionIcon name="camera" color={colors.green} size={25} /><Text style={[styles.photoLabel, { color: colors.green }]}>{mt("Фото")}</Text></Pressable>
+                <View style={styles.voiceArea}>{phase === "recording" ? <Text accessibilityLiveRegion="polite" style={[styles.caption, { color: colors.green }]}>{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`}</Text> : phase === "transcribing" ? <ActivityIndicator color={colors.green} /> : null}<Pressable accessibilityRole="button" accessibilityLabel={phase === "recording" ? mt("Завершить диктовку") : mt("Надиктовать описание")} accessibilityState={{ disabled: busy && phase !== "recording" }} disabled={busy && phase !== "recording"} onPress={() => void voice()} style={[styles.microphone, { backgroundColor: colors.mint }]}><MentorQuestionIcon name={phase === "recording" ? "stop" : "microphone"} color={colors.green} size={25} /></Pressable></View>
+            </View>
+        </View>}
+        {error ? <Text accessibilityRole="alert" numberOfLines={3} style={[styles.error, { color: colors.text }]}>{error}</Text> : null}
+        <Pressable accessibilityRole="button" accessibilityLabel={estimate ? mt("Сохранить") : mt("Рассчитать КБЖУ")} disabled={busy || !estimate && !text.trim() && !photo} onPress={() => void (estimate ? save() : calculate())} style={({ pressed }) => [styles.primary, { backgroundColor: colors.greenBright, opacity: busy || !estimate && !text.trim() && !photo ? 0.55 : pressed ? 0.75 : 1 }]}>{phase === "calculating" || phase === "saving" ? <ActivityIndicator color="#FFFFFF" /> : null}<Text style={styles.primaryText}>{phase === "calculating" ? mt("Считаем…") : phase === "saving" ? mt("Сохраняем…") : estimate ? mt("Сохранить") : mt("Рассчитать КБЖУ")}</Text></Pressable>
+        {estimate ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Изменить описание")} disabled={busy} onPress={() => { setEstimate(null); setError(""); requestAnimationFrame(() => input.current?.focus()) }} style={styles.edit}><Text style={[styles.photoLabel, { color: colors.green }]}>{mt("Изменить описание")}</Text></Pressable> : null}
+    </ScrollView>
+}
+
+const styles = StyleSheet.create({
+    sheet: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 20, gap: 18 }, handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 2 },
+    header: { flexDirection: "row", alignItems: "center", gap: 12 }, title: { flex: 1, fontSize: 25, lineHeight: 32, fontWeight: "700", letterSpacing: -0.5 }, close: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center" },
+    composer: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 17, paddingTop: 14 }, input: { minHeight: 100, maxHeight: 180, padding: 0, fontSize: 18, lineHeight: 27 }, toolbar: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingVertical: 9, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, photoButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 9, paddingRight: 12 }, photoLabel: { fontSize: 17, lineHeight: 23, fontWeight: "500" }, voiceArea: { flexDirection: "row", gap: 10, alignItems: "center" }, microphone: { width: 46, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+    photo: { width: 70, height: 70, marginTop: 12 }, thumbnail: { width: 64, height: 64, borderRadius: 12 }, remove: { position: "absolute", right: -4, top: -6, width: 30, height: 30, borderRadius: 15, justifyContent: "center", alignItems: "center" }, primary: { minHeight: 54, borderRadius: 17, paddingHorizontal: 16, paddingVertical: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 }, primaryText: { fontSize: 17, lineHeight: 24, fontWeight: "600", color: "#FFFFFF" }, edit: { minHeight: 44, alignItems: "center", justifyContent: "center" }, error: { fontSize: 14, lineHeight: 20 },
+    result: { gap: 14, paddingTop: 2 }, foodName: { fontSize: 18, lineHeight: 26, fontWeight: "500" }, calories: { fontSize: 45, lineHeight: 54, fontWeight: "700", letterSpacing: -1 }, unit: { fontSize: 19, fontWeight: "500" }, macros: { flexDirection: "row" }, macro: { flex: 1, alignItems: "center", gap: 5 }, macroLabel: { fontSize: 13, lineHeight: 18 }, macroValue: { fontSize: 20, lineHeight: 26, fontWeight: "600" }, caption: { fontSize: 13, lineHeight: 19 },
+})

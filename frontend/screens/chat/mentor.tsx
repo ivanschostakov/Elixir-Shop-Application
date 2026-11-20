@@ -12,7 +12,7 @@ import { companionDialogue, getCompanionEntries, getCompanionEvents, getCompanio
 import type { CompanionAction, CompanionEntry, CompanionEvent, EntryData, Measurement, MentorDashboard, Summary } from "@/services/api/companion"
 import type { AIAttachmentRead, AIMessageRead } from "@/services/api/ai-chat.types"
 import type { useCompanion } from "@/screens/chat/companion"
-import { calendarDate, companionCalendarDay, formatCompanionDate, localDateTime, localEntryTimestamp } from "@/screens/chat/companion-timezones"
+import { calendarDate, companionCalendarDay, formatCompanionDate, localDateTime } from "@/screens/chat/companion-timezones"
 import { goalLabels, measurementLabels, mentorUnitLabel, numeric, repeatMeal } from "@/screens/chat/mentor-data"
 import type { MentorPage } from "@/screens/chat/mentor-data"
 import { MentorWorkouts } from "@/screens/chat/mentor-workouts"
@@ -50,7 +50,7 @@ export function MentorNavigation({ controller: c }: { controller: Controller }) 
     </View>
 }
 
-export function MentorWorkspace({ controller: c, onCompose, onPrompt, displayName, photoMessages = [], renderPhotoAttachments = () => null }: { controller: Controller; displayName?: string | null; onCompose: (mode: MentorComposeMode, text: string) => void; onPrompt: (text: string) => Promise<unknown>; photoMessages?: AIMessageRead[]; renderPhotoAttachments?: (attachments: AIAttachmentRead[]) => React.ReactNode }) {
+export function MentorWorkspace({ controller: c, onCompose, onPrompt, displayName, photoMessages = [], renderPhotoAttachments = () => null, embedded = false }: { controller: Controller; displayName?: string | null; onCompose: (mode: MentorComposeMode, text: string) => void; onPrompt: (text: string) => Promise<unknown>; photoMessages?: AIMessageRead[]; renderPhotoAttachments?: (attachments: AIAttachmentRead[]) => React.ReactNode; embedded?: boolean }) {
     const { t } = useLanguage()
     const { palette } = useTheme()
     const colors = useMentorPalette()
@@ -137,14 +137,14 @@ export function MentorWorkspace({ controller: c, onCompose, onPrompt, displayNam
     const numberLabel = (value: unknown) => numeric(value)?.toLocaleString(mentorLocale(), { maximumFractionDigits: 1 }) ?? "—"
     const page = c.mentorPage
     if (!page) return null
-    return <View testID="mentor-workspace" style={[styles.body, { backgroundColor: colors.surface }, page === "today" ? { gap: 12 } : null]}>
-        <View style={styles.header}>
+    return <View testID="mentor-workspace" style={[styles.body, { backgroundColor: colors.surface }, embedded ? { padding: 0 } : null, page === "today" ? { gap: 12 } : null]}>
+        {!embedded ? <View style={styles.header}>
             {page !== "today" ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Назад к сегодняшнему плану")} onPress={() => go("today")} hitSlop={8} style={{ minHeight: 36, justifyContent: "center" }}><MentorIcon name="back" size={18} color={colors.green} /></Pressable> : null}
             <View style={[styles.avatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={26} /></View>
             <Text style={[styles.heading, { color: colors.green, fontSize: screenWidth < 360 ? 14 : 16 }]}>{mt("Наставник ElixirPeptide")}</Text>
             {page === "today" ? <Text style={[styles.time, { color: colors.muted }]}>{localTime(new Date().toISOString())}</Text> : null}
             {loading && (page === "nutrition" || page === "workouts") ? <ActivityIndicator accessibilityLabel={t("common.loading")} accessibilityRole="progressbar" color={colors.greenBright} /> : null}
-        </View>
+        </View> : null}
         {c.error ? <View style={[styles.notice, { backgroundColor: colors.mint }]}><Copy>{c.error}</Copy><Button label={mt("Обновить данные")} onPress={() => void c.attempt(async () => { await c.refresh(); await load() })} /></View> : null}
         {page === "today" ? <>
             <Copy style={styles.greeting}>{mt("Добрый день")}{displayName?.trim() ? `, ${displayName.trim().split(" ")[0]}` : ""}!</Copy>
@@ -218,9 +218,7 @@ function MealCopy({ entry }: { entry: CompanionEntry }) {
 function MeasurementEditor({ controller: c, save, onClose }: { controller: Controller; save: (action: CompanionAction) => Promise<void>; onClose: () => void }) {
     useLanguage()
     const [measurement, setMeasurement] = useState<Measurement>({})
-    const original = useRef(new Date().toISOString())
-    const [date, setDate] = useState(localDateTime(original.current))
-    return <View style={styles.section}><Field label={mt("Дата и время, ГГГГ-ММ-ДД ЧЧ:ММ")} value={date} onChange={setDate} />{(Object.keys(measurementLabels) as (keyof Measurement)[]).map(key => <Field key={key} label={measurementLabels[key]} numeric value={measurement[key]} onChange={text => setMeasurement({ ...measurement, [key]: text.trim() ? text.replace(",", ".") : null })} />)}<Button label={mt("Подтвердить замеры")} primary disabled={c.busy || !Object.values(measurement).some(value => value != null) || Object.values(measurement).some(value => value != null && (numeric(value) == null || Number(value) <= 0))} onPress={() => void c.attempt(async () => { const entry: EntryData = { kind: "measurement", occurred_at: localEntryTimestamp(date, original.current), measurement }; await save({ kind: "entry", entry }); onClose() })} /><Button label={mt("Отмена")} onPress={onClose} /></View>
+    return <View style={styles.section}>{(Object.keys(measurementLabels) as (keyof Measurement)[]).map(key => <Field key={key} label={measurementLabels[key]} numeric value={measurement[key]} onChange={text => setMeasurement({ ...measurement, [key]: text.trim() ? text.replace(",", ".") : null })} />)}<Button label={mt("Подтвердить замеры")} primary disabled={c.busy || !Object.values(measurement).some(value => value != null) || Object.values(measurement).some(value => value != null && (numeric(value) == null || Number(value) <= 0))} onPress={() => void c.attempt(async () => { const entry: EntryData = { kind: "measurement", occurred_at: new Date().toISOString(), measurement }; await save({ kind: "entry", entry }); onClose() })} /><Button label={mt("Отмена")} onPress={onClose} /></View>
 }
 
 function MentorCourse({ controller: c }: { controller: Controller }) {

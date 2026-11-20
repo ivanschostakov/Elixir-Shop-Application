@@ -9,12 +9,13 @@ import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, g
 import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
 import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
-import { calendarDate, deviceCompanionTimezone, formatCompanionDate as dateLabel, localDateTime, localEntryTimestamp } from "@/screens/chat/companion-timezones"
+import { calendarDate, deviceCompanionTimezone, formatCompanionDate as dateLabel, shiftCalendarDay } from "@/screens/chat/companion-timezones"
 import { useDeviceClock } from "@/hooks/chat/use-device-clock"
 import { DialogueCards, DialoguePanel } from "@/screens/chat/companion-dialogue"
 import type { MentorPage } from "@/screens/chat/mentor-data"
 import { goalLabels } from "@/screens/chat/mentor-data"
 import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
+import { MentorFoodEditor } from "@/screens/chat/mentor-food"
 
 type Page = "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
 type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry }
@@ -186,6 +187,8 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     const colors = useMentorPalette()
     const hasProfile = !!c.state?.profile
     const setEditor = c.setEditor
+    const [editorShown, setEditorShown] = useState(false)
+    useEffect(() => { if (!c.editor) setEditorShown(false) }, [c.editor])
     useEffect(() => { if (openRequested && hasProfile && c.state?.dialogue_protocol !== 2) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor, c.state?.dialogue_protocol])
     if (Platform.OS === "web" || !c.state?.available) return null
     const changed = async () => { await c.refresh(); await onChanged() }
@@ -193,8 +196,9 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     return <View style={dialogue ? undefined : [styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         {navigationVisible ? dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label={mt("Мой курс · дневник · прогресс")} disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} /> : null}
         {c.error && !workspaceVisible ? <><Copy>{c.error}</Copy><Button label={mt("Обновить")} onPress={() => void changed()} /></> : null}
-        <Modal visible={!!c.editor} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => c.setEditor(null)}>
-            <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.mint }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <Modal visible={!!c.editor} animationType="slide" presentationStyle="pageSheet" onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>
+            <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.editor?.page === "meal" ? colors.surface : colors.mint }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+                {c.editor?.page === "meal" ? <MentorFoodEditor key={JSON.stringify(c.editor)} controller={c} shown={editorShown} onClose={() => { c.setEditor(null); void onChanged() }} onSaved={async () => { c.setEditor(null); await changed() }} /> : <>
                 <View style={[styles.modalHeader, { backgroundColor: colors.surface }]}>
                     <View style={styles.modalBrandRow}>
                         <View style={[styles.modalAvatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={27} /></View>
@@ -210,6 +214,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
                         {c.editor ? <CompanionContent key={JSON.stringify(c.editor)} controller={c} onChanged={changed} /> : null}
                     </View>
                 </ScrollView>
+                </>}
             </KeyboardAvoidingView>
         </Modal>
     </View>
@@ -272,7 +277,6 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
     const [person, setPerson] = useState<ProfileData>(editor.proposal?.profile ?? profile.data)
     const [nutrition, setNutrition] = useState<Nutrition>(editor.proposal?.nutrition ?? profile.data.nutrition ?? emptyNutrition())
     const [entry, setEntry] = useState<EntryData>(editor.entry?.data ?? editor.proposal?.entry ?? { kind: page as EntryData["kind"], occurred_at: new Date().toISOString(), ...(page === "meal" ? { nutrition: emptyNutrition() } : {}) })
-    const [entryDateText, setEntryDateText] = useState(() => localDateTime(entry.occurred_at))
     const [plan, setPlan] = useState<PlanData>(editor.proposal?.plan ?? c.state!.plan?.data ?? { name: "", timezone: deviceCompanionTimezone(), items: [] })
     const [settings, setSettings] = useState<CompanionSettings>({ ...settingsDefault, ...profile.settings })
     const [suggestionNote, setSuggestionNote] = useState("")
@@ -282,7 +286,6 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
     const version = profile.version
     const convertOpenEditor = useRef(() => {})
     convertOpenEditor.current = () => {
-        setEntryDateText(localDateTime(entry.occurred_at))
         if (!editor.proposal?.plan && !c.state?.plan) setPlan(previous => ({ ...previous, timezone: deviceCompanionTimezone() }))
     }
     useEffect(() => { convertOpenEditor.current() }, [c.clock]) // Only clock changes, not typing, reset the local-time input.
@@ -325,15 +328,11 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             <Button label={mt("Подтвердить КБЖУ")} primary disabled={c.busy || calculating} onPress={() => save({ kind: "nutrition", nutrition, nutrition_rule_version: ruleVersion })} />
         </> : null}
         {["meal", "weight", "wellbeing"].includes(page) ? <>
-            <Field label={mt("Дата и время телефона, ГГГГ-ММ-ДД ЧЧ:ММ")} value={entryDateText} onChange={value => {
-                setEntryDateText(value)
-                try { setEntry({ ...entry, occurred_at: localEntryTimestamp(value, entry.occurred_at) }) } catch { /* Allow incomplete input while typing. */ }
-            }} />
             {page === "meal" ? <><Field label={mt("Что съели")} value={entry.name} onChange={name => setEntry({ ...entry, name })} /><Field label={mt("Порция, г (если известна)")} value={entry.portion_g} numeric onChange={text => setEntry({ ...entry, portion_g: numberOrNull(text) })} /><NutritionFields value={entry.nutrition ?? emptyNutrition()} onChange={nutrition => setEntry({ ...entry, nutrition })} /><Toggle label={mt("Приблизительная оценка")} value={!!entry.estimated} onChange={estimated => setEntry({ ...entry, estimated })} />{entry.estimated ? <Field label={mt("Допущения оценки")} value={entry.assumptions} onChange={assumptions => setEntry({ ...entry, assumptions })} /> : null}<Copy>{mt("Можно отправить фото еды в чат — AI предложит оценку для подтверждения.")}</Copy></> : null}
             {page === "weight" ? <Field label={mt("Вес, кг")} value={entry.weight_kg} numeric onChange={text => setEntry({ ...entry, weight_kg: numberOrNull(text) })} /> : null}
             {page === "wellbeing" ? <>{(["wellbeing", "appetite", "energy", "sleep_hours"] as const).map((key, i) => <Field key={key} label={[mt("Самочувствие, 1–5"), mt("Аппетит, 1–5"), mt("Энергия, 1–5"), mt("Сон, часов")][i]} value={entry[key]} numeric onChange={text => setEntry({ ...entry, [key]: numberOrNull(text) })} />)}</> : null}
             <Field label={mt("Комментарий")} multiline value={entry.note} onChange={note => setEntry({ ...entry, note })} />
-            <Button label={editor.entry ? mt("Сохранить исправление") : mt("Подтвердить запись")} primary disabled={c.busy} onPress={() => void c.attempt(() => onSave({ kind: "entry", entry: { ...entry, occurred_at: localEntryTimestamp(entryDateText, entry.occurred_at) }, resource_id: editor.entry?.id, expected_version: editor.entry?.version }))} />
+            <Button label={editor.entry ? mt("Сохранить исправление") : mt("Подтвердить запись")} primary disabled={c.busy} onPress={() => void c.attempt(() => onSave({ kind: "entry", entry: { ...entry, occurred_at: editor.entry?.occurred_at ?? new Date().toISOString() }, resource_id: editor.entry?.id, expected_version: editor.entry?.version }))} />
         </> : null}
         {page === "plan" ? <><Copy>{mt("Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.")}</Copy><Field label={mt("Название курса")} value={plan.name} onChange={name => setPlan({ ...plan, name })} /><Copy>{plan.timezone === deviceCompanionTimezone() ? mt("Время определяется по телефону автоматически.") : mt("Исходная схема записана в {0}. Её время не сдвигается при поездке; события в дневнике показаны по времени телефона.", [plan.timezone])}</Copy><PlanFields plan={plan} onChange={setPlan} /><Button label={mt("Подтвердить и сохранить курс")} primary disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
         {page === "settings" ? <>
@@ -357,7 +356,7 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
 
 function PlanFields({ plan, onChange }: { plan: PlanData; onChange: (plan: PlanData) => void }) {
     useLanguage()
-    const blankStage = (): Stage => ({ start_date: "", end_date: "", amount: "", unit: "mg", interval_days: 1, weekdays: [], times: [""] })
+    const blankStage = (start = calendarDate()): Stage => ({ start_date: start, end_date: "", amount: "", unit: "mg", interval_days: 1, weekdays: [], times: [""] })
     const itemChange = (i: number, patch: Partial<PlanData["items"][number]>) => onChange({ ...plan, items: plan.items.map((item, n) => n === i ? { ...item, ...patch } : item) })
     return <>{plan.items.map((item, i) => <View key={i} style={styles.card}>
         <Field label={mt("Позиция ") + (i + 1)} value={item.name} onChange={name => itemChange(i, { name })} />
@@ -369,8 +368,7 @@ function PlanFields({ plan, onChange }: { plan: PlanData; onChange: (plan: PlanD
             const change = (patch: Partial<Stage>) => itemChange(i, { stages: item.stages.map((s, n) => n === j ? { ...s, ...patch } : s) })
             return <View key={j} style={styles.card}>
                 <Copy>{mt("Этап ")}{j + 1}</Copy>
-                <Field label={mt("Начало, ГГГГ-ММ-ДД")} value={stage.start_date} onChange={start_date => change({ start_date })} />
-                <Field label={mt("Конец включительно, ГГГГ-ММ-ДД")} value={stage.end_date} onChange={end_date => change({ end_date })} />
+                <Field label={mt("Длительность этапа, дней")} value={stage.end_date && stage.start_date ? Math.round((Date.parse(`${stage.end_date}T12:00:00Z`) - Date.parse(`${stage.start_date}T12:00:00Z`)) / 86400000) + 1 : ""} numeric onChange={text => { const days = Number(text); change({ end_date: Number.isInteger(days) && days > 0 && days <= 731 ? shiftCalendarDay(stage.start_date || calendarDate(), days - 1) : "" }) }} />
                 <Field label={mt("Количество на одно событие — из вашей схемы")} value={stage.amount} numeric onChange={text => change({ amount: text.replace(",", ".") })} />
                 <Choices options={unitLabels} value={stage.unit} onChange={unit => change({ unit })} />
                 <Field label={mt("Время, ЧЧ:ММ; несколько через запятую")} value={stage.times.join(", ")} onChange={text => change({ times: text.split(",").map(t => t.trim()) })} />
@@ -380,7 +378,7 @@ function PlanFields({ plan, onChange }: { plan: PlanData; onChange: (plan: PlanD
                 {item.stages.length > 1 ? <Button label={mt("Удалить этап из черновика")} onPress={() => itemChange(i, { stages: item.stages.filter((_, n) => n !== j) })} /> : null}
             </View>
         })}
-        <Button label={mt("+ Этап")} disabled={item.stages.length >= 24} onPress={() => itemChange(i, { stages: [...item.stages, blankStage()] })} />
+        <Button label={mt("+ Этап")} disabled={item.stages.length >= 24} onPress={() => itemChange(i, { stages: [...item.stages, blankStage(item.stages.at(-1)?.end_date ? shiftCalendarDay(item.stages.at(-1)!.end_date, 1) : calendarDate())] })} />
         <Button label={mt("Удалить позицию из черновика")} onPress={() => onChange({ ...plan, items: plan.items.filter((_, n) => n !== i) })} />
     </View>)}<Button label={mt("+ Позиция курса")} disabled={plan.items.length >= 12} onPress={() => onChange({ ...plan, items: [...plan.items, { name: "", stages: [blankStage()], home_amount: null }] })} /></>
 }
