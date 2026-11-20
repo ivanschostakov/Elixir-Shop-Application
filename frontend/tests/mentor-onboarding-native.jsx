@@ -7,6 +7,7 @@ import { MentorOnboarding } from "@/screens/chat/mentor-onboarding"
 import { MentorOptionalOnboarding } from "@/screens/chat/mentor-onboarding-optional"
 import { MentorNutritionResult } from "@/screens/chat/mentor-nutrition-result"
 import { MentorMainScreen } from "@/screens/chat/mentor-main"
+import { MentorShortcut } from "@/screens/chat/mentor-shortcut"
 import { calendarDate, deviceClockKey } from "@/screens/chat/companion-timezones"
 import { mentorFormFromState, mentorOptionalFormFromState } from "@/screens/chat/mentor-onboarding-data"
 import { darkColors, lightColors } from "@/theme/colors"
@@ -42,11 +43,13 @@ export const estimateCompanionFood = async text => {
 export const transcribeMyAiChatVoice = async () => ({ text: "Рис с курицей, одна тарелка" })
 
 function Preview() {
+    const { palette } = useTheme()
     const source = NativeModules.SourceCode?.getConstants?.().scriptURL ?? ""
     const [screen, setScreen] = useState(globalThis.__MENTOR_PREVIEW_SCREEN__ ?? new URL(source || "http://127.0.0.1").searchParams.get("previewScreen") ?? "required")
     const [homeState, setHomeState] = useState(() => screen === "home-empty" ? { ...previewState, entries: [], mentor: { ...previewState.mentor, today: { ...previewState.mentor.today, tasks: [], nutrition: { target: saved.profile.data.nutrition, consumed: { kcal: 0, protein: 0, fat: 0, carbs: 0 } } } } } : previewState)
     const homeRef = useRef(homeState); homeRef.current = homeState; previewState = homeState
     const [editor, updateEditor] = useState(null)
+    const [greetingCollapsed, setGreetingCollapsed] = useState(false)
     const setEditor = value => updateEditor(value?.page === "meal" && !value.entry && globalThis.__MENTOR_PREVIEW_FOOD_TEXT__ ? { ...value, proposal: { entry: { kind: "meal", note: globalThis.__MENTOR_PREVIEW_FOOD_TEXT__ } } } : value)
     const controller = { state: homeState, clock: deviceClockKey(), initialized: true, enabled: true, busy: false, error: "", editor, setEditor, setError() {}, refresh: async () => homeRef.current,
         attempt: async operation => operation(), perform: async action => {
@@ -64,7 +67,7 @@ function Preview() {
     const [optional, setOptional] = useState(mentorOptionalFormFromState(saved))
     const [step, setStep] = useState(screen === "reminders" ? 5 : screen === "experience" ? 3 : screen === "conditions" ? 4 : 0)
     const close = () => setScreen("home")
-    const content = screen === "result" ? <MentorNutritionResult state={saved} onContinue={() => { setScreen("optional"); setStep(0) }} onDecline={close} onBack={() => setScreen("required")} onClose={close} /> : ["optional", "experience", "conditions", "reminders"].includes(screen) ? <MentorOptionalOnboarding value={optional} onChange={setOptional} step={step} onBack={() => step ? setStep(step - 1) : setScreen("result")} onClose={close} onNext={() => step === 5 ? close() : setStep(step + 1)} saving={false} error="" /> : ["home", "home-empty"].includes(screen) ? <MentorMainScreen controller={controller} onClose={() => setScreen("required")} onAsk={() => setScreen("ask")} onContinue={() => { setScreen("optional"); setStep(0) }} /> : screen === "ask" ? <View><Text>Спросить наставника</Text></View> : undefined
+    const content = screen === "shortcut" ? <View style={{ flex: 1, justifyContent: "flex-end", padding: 8, gap: 8 }}><MentorShortcut goal="weight_loss" collapsed={greetingCollapsed} onCollapse={() => setGreetingCollapsed(true)} onPress={() => setScreen("home")} /><View style={{ borderWidth: 1, borderColor: "#A3B8AB", borderRadius: 24, padding: 18 }}><Text style={{ color: palette.text }}>Сообщение</Text></View></View> : screen === "result" ? <MentorNutritionResult state={saved} onContinue={() => { setScreen("optional"); setStep(0) }} onDecline={close} onBack={() => setScreen("required")} onClose={close} /> : ["optional", "experience", "conditions", "reminders"].includes(screen) ? <MentorOptionalOnboarding value={optional} onChange={setOptional} step={step} onBack={() => step ? setStep(step - 1) : setScreen("result")} onClose={close} onNext={() => step === 5 ? close() : setStep(step + 1)} saving={false} error="" /> : ["home", "home-empty"].includes(screen) ? <MentorMainScreen controller={controller} onClose={() => setScreen("shortcut")} onAsk={() => setScreen("ask")} onContinue={() => { setScreen("optional"); setStep(0) }} /> : screen === "ask" ? <View><Text>Спросить наставника</Text></View> : undefined
     return <SafeAreaProvider><View style={{ flex: 1, backgroundColor: "white" }}><MentorOnboarding visible value={form} onChange={setForm} onClose={close} onSave={async () => setScreen("result")} saving={false} error="">{content}</MentorOnboarding></View></SafeAreaProvider>
 }
 registerRootComponent(Preview)

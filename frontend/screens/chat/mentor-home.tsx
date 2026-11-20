@@ -1,12 +1,14 @@
 import { useState } from "react"
-import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native"
+import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native"
 import { mentorText as mt, mentorDateLabel } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
+import { useTheme } from "@/providers/theme-provider"
 import { formatCompanionDate } from "@/screens/chat/companion-timezones"
 import { mentorHomeData, mentorHomeNumber as number } from "@/screens/chat/mentor-home-data"
 import { MentorCalorieRing, MentorMacroProgress } from "@/screens/chat/mentor-nutrition-progress"
 import { MentorQuestionIcon, type MentorQuestionIconName } from "@/screens/chat/mentor-question-icon"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
+import { NativeChatAction, nativeChatSettingsActionAvailable } from "@/screens/chat/native-chat-controls"
 import type { CompanionEntry, CompanionState } from "@/services/api/companion"
 
 type Props = {
@@ -18,11 +20,15 @@ type Props = {
 
 export function MentorHomeHeader({ onBack, onSettings, title }: { onBack: () => void; onSettings?: () => void; title?: string }) {
     const colors = useMentorPalette()
+    const { isDark } = useTheme()
+    const backLabel = title ? mt("Назад") : mt("Назад в чат")
     return <View style={styles.header}>
-        <Pressable accessibilityRole="button" accessibilityLabel={title ? mt("Назад") : mt("Назад в чат")} onPress={onBack} style={styles.iconButton}><MentorQuestionIcon name="back" size={24} color={colors.text} /></Pressable>
+        {NativeChatAction ? <NativeChatAction action="back" dark={isDark} label={backLabel} onAction={onBack} style={styles.iconButton} /> :
+            <Pressable accessibilityRole="button" accessibilityLabel={backLabel} onPress={onBack} style={styles.iconButton}><MentorQuestionIcon name="back" size={24} color={colors.text} /></Pressable>}
         {title ? <Text accessibilityRole="header" style={[styles.headerTitle, { color: colors.text }]}>{title}</Text> :
-            <View style={styles.brand}><Image source={require("@/assets/icons/dynamic-island.png")} resizeMode="contain" style={styles.logo} /><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.brandName, { color: colors.text }]}>ElixirPeptide</Text></View>}
-        {onSettings ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Настройки наставника")} onPress={onSettings} style={[styles.iconButton, { backgroundColor: colors.soft, borderRadius: 22 }]}><MentorQuestionIcon name="settings" size={23} color={colors.green} /></Pressable> : <View style={styles.iconButton} />}
+            <View style={styles.brand}><MentorQuestionIcon name="leaf" size={27} color={colors.green} /><Text accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit style={[styles.brandName, { color: colors.text }]}>{mt("Наставник")}</Text></View>}
+        {onSettings ? NativeChatAction && nativeChatSettingsActionAvailable ? <NativeChatAction action="settings" dark={isDark} label={mt("Настройки наставника")} onAction={onSettings} style={styles.iconButton} /> :
+            <Pressable accessibilityRole="button" accessibilityLabel={mt("Настройки наставника")} onPress={onSettings} style={[styles.iconButton, { backgroundColor: colors.soft, borderRadius: 22 }]}><MentorQuestionIcon name="settings" size={23} color={colors.green} /></Pressable> : <View style={styles.iconButton} />}
     </View>
 }
 
@@ -94,7 +100,7 @@ export function MentorHomeScreen(props: Props) {
 export const mentorHomeStyles = StyleSheet.create({ body: { width: "100%", maxWidth: 560, alignSelf: "center", paddingHorizontal: 24, paddingTop: 14, paddingBottom: 20, gap: 12 } })
 const styles = StyleSheet.create({
     screen: { flex: 1 }, header: { minHeight: 56, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 16, paddingBottom: 6 }, iconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-    brand: { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 7 }, logo: { width: 29, height: 29 }, brandName: { fontSize: 22, fontWeight: "700", flexShrink: 1, letterSpacing: -0.5 }, headerTitle: { flex: 1, fontSize: 22, fontWeight: "600", textAlign: "center" },
+    brand: { flex: 1, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 7 }, brandName: { fontSize: 22, fontWeight: "700", flexShrink: 1, letterSpacing: -0.5 }, headerTitle: { flex: 1, fontSize: 22, fontWeight: "600", textAlign: "center" },
     body: { ...mentorHomeStyles.body, flex: 1, paddingBottom: 8 }, today: { gap: 4 }, title: { fontSize: 32, lineHeight: 38, fontWeight: "700", letterSpacing: -0.8 }, date: { fontSize: 16, lineHeight: 22 },
     nutrition: { gap: 12, paddingVertical: 4 }, calories: { flexDirection: "row", gap: 19, alignItems: "center", marginBottom: 1 }, calorieCopy: { flex: 1, gap: 7 }, calorieValue: { fontSize: 24, lineHeight: 30, fontWeight: "700", letterSpacing: -0.6 }, calorieUnit: { fontSize: 17, fontWeight: "600" }, remaining: { fontSize: 16, lineHeight: 22 },
     macroRow: { flexDirection: "row", gap: 12, alignItems: "center" }, macroLabel: { width: 89, fontSize: 15, lineHeight: 21, fontWeight: "600" }, macroValue: { width: 104, textAlign: "right", fontSize: 15, lineHeight: 21 },

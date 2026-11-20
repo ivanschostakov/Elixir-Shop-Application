@@ -340,15 +340,26 @@ test("adult onboarding calculates directly without an extra confirmation dialog"
     assert.equal(payload.settings, undefined)
 })
 
-test("the circular leaf uses the native glass action and supports older installed native views", () => {
+test("the mentor greeting uses native glass and keeps older installed builds working", () => {
     for (const native of [true, false]) {
-        const h = harness("screens/chat/mentor-shortcut.tsx", { "@/screens/chat/native-chat-controls": { NativeChatAction: "NativeAction", NativeChatTitleMaterial: "NativeGlass", nativeChatMentorActionAvailable: native } })
-        let opened = 0
-        const tree = h.render("MentorShortcut", { onPress: () => opened++ })
-        const style = native ? tree.props.style : tree.props.style({ pressed: false })[0]
-        assert.equal(style.width, 44); assert.equal(style.height, 44); assert.equal(style.borderRadius, 22)
-        if (native) { assert.equal(tree.props.action, "mentor"); tree.props.onAction() }
-        else { assert.ok(nodes(tree).some(node => node.type === "NativeGlass")); tree.props.onPress() }
+        const h = harness("screens/chat/mentor-shortcut.tsx", {
+            "react-native-reanimated": { default: { View: "AnimatedView" }, LinearTransition: { duration: () => ({ reduceMotion: () => "system-motion" }) }, ReduceMotion: { System: "system" } },
+            "@/screens/chat/native-chat-controls": { NativeChatAction: "NativeAction", NativeChatTitleMaterial: "NativeGlass", nativeChatMentorActionAvailable: true, nativeChatMentorGreetingAvailable: native },
+        })
+        let opened = 0, collapsed = false
+        const render = () => h.render("MentorShortcut", { onPress: () => opened++, onCollapse: () => { collapsed = true }, collapsed, goal: "weight_loss" })
+        let tree = render()
+        const button = nodes(tree).find(node => node.props.testID === "mentor-open-shortcut")
+        if (native) { assert.equal(button.props.action, "mentor"); assert.match(button.props.title, /по похудению/) }
+        else assert.ok(nodes(tree).some(node => node.type === "NativeGlass"))
+        nodes(tree).find(node => node.props.accessibilityLabel === "Свернуть приветствие").props.onPress()
+        assert.equal(opened, 0); assert.equal(collapsed, true)
+        tree = render()
+        assert.equal(nodes(tree).some(node => node.props.accessibilityLabel === "Свернуть приветствие"), false)
+        assert.equal(nodes(tree).find(node => node.type === "AnimatedView").props.style.width, 44)
+        const round = nodes(tree).find(node => node.props.testID === "mentor-open-shortcut")
+        assert.equal(round.props.title, native ? "" : undefined)
+        assert.equal(round.props.label, "Открыть наставника"); round.props.onAction()
         assert.equal(opened, 1)
     }
 })

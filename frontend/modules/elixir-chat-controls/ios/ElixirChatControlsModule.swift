@@ -4,7 +4,7 @@ import UIKit
 public final class ElixirChatControlsModule: Module {
   public func definition() -> ModuleDefinition {
     Name("ElixirChatControls")
-    Constant("interfaceVersion") { 5 }
+    Constant("interfaceVersion") { 6 }
 
     View(ChatModeControl.self) {
       ViewName("ModeControl")
@@ -20,6 +20,7 @@ public final class ElixirChatControlsModule: Module {
       ViewName("ActionControl")
       Events("onAction")
       Prop("action") { (view, action: String) in view.action = ChatAction(rawValue: action) ?? .microphone }
+      Prop("title", "") { (view, title: String) in view.title = title }
       Prop("label") { (view, label: String) in view.button.accessibilityLabel = label }
       Prop("disabled", false) { (view, disabled: Bool) in view.button.isEnabled = !disabled }
       Prop("dark") { (view, dark: Bool) in view.overrideUserInterfaceStyle = dark ? .dark : .light }
@@ -399,6 +400,7 @@ private final class ChatActionControl: ExpoView {
   let onAction = EventDispatcher()
   let button = ChatActionButton(type: .system)
   var action: ChatAction = .microphone
+  var title = ""
 
   required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
@@ -412,7 +414,7 @@ private final class ChatActionControl: ExpoView {
   }
 
   func updateControl() {
-    button.setChatAction(action)
+    button.setChatAction(action, title: title)
   }
 
   @objc private func press() {

@@ -63,6 +63,8 @@ function harness(file, overrides = {}) {
         "@/constants/routes": { ROUTES: { home: "/", discover: "/discover", basket: "/basket", profile: "/profile" } },
         "@/hooks/basket/basket-draft-editing-store": { useBasketDraftEditingId: () => 14 },
         "@/providers/language-provider": { useLanguage() {} },
+        "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
+        "@/screens/chat/native-chat-controls": { NativeChatAction: null, nativeChatSettingsActionAvailable: false },
         "@/screens/chat/mentor-ui": { useMentorPalette: () => ({ surface: "#FFFFFF", text: "#202923", green: "#1C694B", greenBright: "#38976A", muted: "#7D8781", border: "#DDE6DF", mint: "#E8F5EC" }) },
         "@/screens/chat/companion-timezones": dates, "@/screens/chat/mentor-home-data": home,
         "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "Icon" },

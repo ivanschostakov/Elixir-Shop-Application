@@ -135,6 +135,10 @@ export const mentorTranslations: Record<string, { en: string; kz: string }> = {
     "Укажите текущий вес больше 0 и не больше 500 кг.": { en: "Enter your current weight above 0 and up to 500 kg.", kz: "Қазіргі салмағыңызды 0-ден жоғары және 500 кг-нан аспайтын етіп көрсетіңіз." },
     "Выберите уровень активности.": { en: "Choose an activity level.", kz: "Белсенділік деңгейін таңдаңыз." },
     "Открыть наставника": { en: "Open mentor", kz: "Тәлімгерді ашу" },
+    "Свернуть приветствие": { en: "Collapse greeting", kz: "Сәлемдесуді жинау" },
+    "Добрый день!\nЯ ваш наставник по похудению": { en: "Hello!\nI'm your weight loss mentor", kz: "Қайырлы күн!\nМен салмақ тастау тәлімгеріңізбін" },
+    "Добрый день!\nЯ ваш наставник по набору веса": { en: "Hello!\nI'm your weight gain mentor", kz: "Қайырлы күн!\nМен салмақ қосу тәлімгеріңізбін" },
+    "Добрый день!\nЯ ваш наставник по питанию": { en: "Hello!\nI'm your nutrition mentor", kz: "Қайырлы күн!\nМен тамақтану тәлімгеріңізбін" },
     "Наставник временно недоступен. Попробуйте ещё раз.": {
         "en": "Your mentor is temporarily unavailable. Please try again.",
         "kz": "Тәлімгер уақытша қолжетімсіз. Қайталап көріңіз."
