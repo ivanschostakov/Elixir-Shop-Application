@@ -41,7 +41,7 @@ final class ChatActionButton: UIButton {
       next.titleAlignment = .leading
       next.titleLineBreakMode = .byWordWrapping
       next.imagePadding = 11
-      next.contentInsets = .init(top: 8, leading: 16, bottom: 8, trailing: 56)
+      next.contentInsets = .init(top: 8, leading: 16, bottom: 8, trailing: 16)
       next.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
         var result = attributes
         result.font = UIFont.systemFont(ofSize: 14, weight: .medium)

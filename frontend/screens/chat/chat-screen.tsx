@@ -44,7 +44,7 @@ import { CompanionCards, useCompanion } from "@/screens/chat/companion"
 import type { MentorComposeMode } from "@/screens/chat/mentor"
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { MentorSetup } from "@/screens/chat/mentor-setup"
-import { MENTOR_SHORTCUT_COLLAPSED_SIZE, MENTOR_SHORTCUT_HEIGHT, MentorShortcut } from "@/screens/chat/mentor-shortcut"
+import { MENTOR_SHORTCUT_HEIGHT, MentorShortcut } from "@/screens/chat/mentor-shortcut"
 import { ChatBackdrop } from "@/screens/chat/chat-backdrop"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 import { ContentReveal, QuietLoading } from "@/components/ui/quiet-loading"
@@ -179,7 +179,6 @@ function ChatScreenContent() {
     const aiAllowed = useAiChatEntryConsent(modeReady && chatMode === "ai")
     const companion = useCompanion(aiAllowed && mentorAvailable)
     const [mentorOpen, setMentorOpen] = useState(false)
-    const [mentorGreetingCollapsed, setMentorGreetingCollapsed] = useState(false)
     const [mentorVisited, setMentorVisited] = useState(false)
     const [mentorChatActive, setMentorChatActive] = useState(false)
     const mentorChatActiveRef = useRef(false)
@@ -725,7 +724,7 @@ function ChatScreenContent() {
         if (chatMode === "community" && topicNavigation) topicNavigation.onBack()
         else router.push(ROUTES.discover)
     }
-    const scrollInsets = { paddingTop: scrollTopInset + spacing.sm, paddingBottom: (iosChat ? spacing.sm : scrollBottomInset + spacing.sm) + (mentorAvailable ? (mentorGreetingCollapsed ? MENTOR_SHORTCUT_COLLAPSED_SIZE : MENTOR_SHORTCUT_HEIGHT) + 8 : 0) }
+    const scrollInsets = { paddingTop: scrollTopInset + spacing.sm, paddingBottom: (iosChat ? spacing.sm : scrollBottomInset + spacing.sm) + (mentorAvailable ? MENTOR_SHORTCUT_HEIGHT + 8 : 0) }
     const scrollProps = {
         automaticallyAdjustKeyboardInsets: false,
         automaticallyAdjustContentInsets: false,
@@ -965,7 +964,7 @@ function ChatScreenContent() {
                         ) : null}
 
                         {mentorAvailable ? <ChatKeyboardFloating pointerEvents="box-none" style={{ position: "absolute", left: 8, right: iosChat && !followingLatest && aiContentReady && messages.length > 0 ? 60 : 8, bottom: composerDockHeight + 8, zIndex: 13 }}>
-                            <MentorShortcut onPress={openMentor} collapsed={mentorGreetingCollapsed} onCollapse={() => setMentorGreetingCollapsed(true)} disabled={voiceStatusVisible} goal={companion.state?.profile?.data.goal} />
+                            <MentorShortcut onPress={openMentor} disabled={voiceStatusVisible} goal={companion.state?.profile?.data.goal} />
                         </ChatKeyboardFloating> : null}
 
                         <ChatComposerDock

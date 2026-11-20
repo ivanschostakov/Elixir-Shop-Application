@@ -340,26 +340,17 @@ test("adult onboarding calculates directly without an extra confirmation dialog"
     assert.equal(payload.settings, undefined)
 })
 
-test("the mentor greeting uses native glass and keeps older installed builds working", () => {
+test("the mentor invitation opens directly with native glass and older installed builds", () => {
     for (const native of [true, false]) {
         const h = harness("screens/chat/mentor-shortcut.tsx", {
-            "react-native-reanimated": { default: { View: "AnimatedView" }, LinearTransition: { duration: () => ({ reduceMotion: () => "system-motion" }) }, ReduceMotion: { System: "system" } },
             "@/screens/chat/native-chat-controls": { NativeChatAction: "NativeAction", NativeChatTitleMaterial: "NativeGlass", nativeChatMentorActionAvailable: true, nativeChatMentorGreetingAvailable: native },
         })
-        let opened = 0, collapsed = false
-        const render = () => h.render("MentorShortcut", { onPress: () => opened++, onCollapse: () => { collapsed = true }, collapsed, goal: "weight_loss" })
-        let tree = render()
+        let opened = 0
+        const tree = h.render("MentorShortcut", { onPress: () => opened++, goal: "weight_loss" })
         const button = nodes(tree).find(node => node.props.testID === "mentor-open-shortcut")
-        if (native) { assert.equal(button.props.action, "mentor"); assert.match(button.props.title, /по похудению/) }
-        else assert.ok(nodes(tree).some(node => node.type === "NativeGlass"))
-        nodes(tree).find(node => node.props.accessibilityLabel === "Свернуть приветствие").props.onPress()
-        assert.equal(opened, 0); assert.equal(collapsed, true)
-        tree = render()
-        assert.equal(nodes(tree).some(node => node.props.accessibilityLabel === "Свернуть приветствие"), false)
-        assert.equal(nodes(tree).find(node => node.type === "AnimatedView").props.style.width, 44)
-        const round = nodes(tree).find(node => node.props.testID === "mentor-open-shortcut")
-        assert.equal(round.props.title, native ? "" : undefined)
-        assert.equal(round.props.label, "Открыть наставника"); round.props.onAction()
+        if (native) { assert.equal(button.props.action, "mentor"); assert.match(button.props.title, /по похудению\nНажмите, чтобы открыть/); button.props.onAction() }
+        else { assert.ok(nodes(tree).some(node => node.type === "NativeGlass")); button.props.onPress() }
+        assert.equal(nodes(tree).filter(node => node.type === "NativeAction" || node.type === "Pressable").length, 1)
         assert.equal(opened, 1)
     }
 })
