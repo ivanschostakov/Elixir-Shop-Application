@@ -18,7 +18,7 @@ import { getErrorMessage } from "@/utils/errors"
 
 type Controller = ReturnType<typeof useCompanion>
 
-export function MentorSetup({ controller: c, onClose, renderChat, visible = true, onDismiss, initialTab }: { controller: Controller; onClose: () => void; renderChat: MentorChatRenderer; visible?: boolean; onDismiss?: () => void; initialTab?: MentorTab }) {
+export function MentorSetup({ controller: c, onClose, renderChat, visible = true, onDismiss, initialTab, onExitToShop }: { controller: Controller; onClose: () => void; renderChat: MentorChatRenderer; visible?: boolean; onDismiss?: () => void; initialTab?: MentorTab; onExitToShop?: () => void }) {
     useLanguage()
     const colors = useMentorPalette()
     const [view, setView] = useState<"form" | "nutrition" | "optional" | "home">(() => mentorProfileComplete(c.state) ? "home" : "form")
@@ -104,10 +104,11 @@ export function MentorSetup({ controller: c, onClose, renderChat, visible = true
         }, () => { if (sourceStep === 5) setView("home") }, () => { if (sourceStep < 5) setOptionalStep(sourceStep) })
     }
     const close = () => { if (!savingRef.current) onClose() }
+    const exitToShop = () => { if (!savingRef.current) (onExitToShop ?? onClose)() }
     const stage = readyContent()
 
     function readyContent() {
-        if (view === "home") return <MentorMainScreen controller={{ ...c, state: currentState }} onClose={close} onContinue={openOptional} renderChat={renderChat} initialTab={initialTab} visible={visible} />
+        if (view === "home") return <MentorMainScreen controller={{ ...c, state: currentState }} onClose={exitToShop} onContinue={openOptional} renderChat={renderChat} initialTab={initialTab} visible={visible} />
         if (view === "nutrition") return <MentorNutritionResult state={currentState} onContinue={openOptional} onDecline={() => setView("home")} onBack={() => { submission.current = null; setView("form") }} onClose={close} />
         if (view === "optional") return <MentorOptionalOnboarding value={optional} onChange={changeOptional} step={optionalStep} onBack={() => { if (savingRef.current) return; submission.current = null; setError(""); if (optionalStep) setOptionalStep(optionalStep - 1); else setView("nutrition") }} onClose={close} onNext={saveOptional} saving={saving} editingLocked={saving && pendingOptionalStep.current === optionalStep} error={error} />
         return undefined
@@ -123,7 +124,7 @@ export function MentorSetup({ controller: c, onClose, renderChat, visible = true
         </>}
         <Pressable accessibilityRole="button" onPress={close} style={styles.back}><Text style={{ color: colors.green }}>{mt("Назад")}</Text></Pressable>
     </View>
-    return <MentorOnboarding visible={visible} contentSafeBottom={view !== "home"} onDismiss={onDismiss} value={form} onChange={change} onClose={close} onSave={save} saving={saving} error={error}>{content}</MentorOnboarding>
+    return <MentorOnboarding visible={visible} contentSafeTop={view !== "home"} contentSafeBottom={view !== "home"} onDismiss={onDismiss} value={form} onChange={change} onClose={close} onSave={save} saving={saving} error={error}>{content}</MentorOnboarding>
 }
 
 const styles = StyleSheet.create({

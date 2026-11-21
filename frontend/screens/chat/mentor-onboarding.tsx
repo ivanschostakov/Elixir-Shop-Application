@@ -17,9 +17,10 @@ type Props = {
     children?: ReactNode
     onDismiss?: () => void
     contentSafeBottom?: boolean
+    contentSafeTop?: boolean
 }
 
-export function MentorOnboarding({ visible, value, onChange, onClose, onSave, saving, error, children, onDismiss, contentSafeBottom = true }: Props) {
+export function MentorOnboarding({ visible, value, onChange, onClose, onSave, saving, error, children, onDismiss, contentSafeBottom = true, contentSafeTop = true }: Props) {
     useLanguage()
     const colors = useMentorPalette()
     const insets = useSafeAreaInsets()
@@ -80,7 +81,7 @@ export function MentorOnboarding({ visible, value, onChange, onClose, onSave, sa
     const choice = (label: string, selected: boolean, onPress: () => void, disabled: boolean, icon?: MentorQuestionIconName, example?: string) => <MentorChoiceCard key={label} title={label} description={example} selected={selected} onPress={onPress} disabled={disabled} icon={icon} />
 
     return <Modal visible={visible} onDismiss={onDismiss} animationType={reducedMotion ? "none" : "fade"} presentationStyle="fullScreen" onRequestClose={children ? onClose : back}>
-        {children ? <View style={[styles.screen, { backgroundColor: colors.surface, paddingTop: insets.top, paddingBottom: contentSafeBottom ? Math.max(insets.bottom, 12) : 0 }]}>{children}</View> :
+        {children ? <View style={[styles.screen, { backgroundColor: colors.surface, paddingTop: contentSafeTop ? insets.top : 0, paddingBottom: contentSafeBottom ? Math.max(insets.bottom, 12) : 0 }]}>{children}</View> :
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.screen, { backgroundColor: colors.surface, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 12) }]}>
             <MentorFlowHeader section={mt("Обязательная часть")} step={step} total={5} onBack={step ? back : undefined} onClose={onClose} busy={saving} />
             <View testID="mentor-onboarding-transition" style={styles.viewport}>

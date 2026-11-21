@@ -193,7 +193,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     if (Platform.OS === "web" || !c.state?.available) return null
     const changed = async () => { await c.refresh(); await onChanged() }
     const dialogue = c.state.dialogue_protocol === 2 && onPrompt
-    return <View style={dialogue ? undefined : [styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+    return <View testID="companion-panel" style={navigationVisible && !dialogue ? [styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }] : undefined}>
         {navigationVisible ? dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label={mt("Мой курс · дневник · прогресс")} disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} /> : null}
         {c.error && !workspaceVisible ? <><Copy>{c.error}</Copy><Button label={mt("Обновить")} onPress={() => void changed()} /></> : null}
         <Modal visible={!!c.editor} animationType="slide" presentationStyle="pageSheet" onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>

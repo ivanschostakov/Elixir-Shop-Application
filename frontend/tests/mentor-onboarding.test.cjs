@@ -126,9 +126,12 @@ test("failed save retains answers and retries the same operation", async () => {
 test("an existing complete profile opens directly onto the mentor home", () => {
     const h = harness("screens/chat/mentor-setup.tsx"), saved = state()
     saved.profile.data = { goal: "maintain", age: 32, sex: "female", height_cm: "170", activity: "moderate", target_weight_kg: "75" }; saved.mentor.latest_weight = { data: { weight_kg: "78.5" } }
-    const render = () => h.render("MentorSetup", { controller: { state: saved, initialized: true }, onClose() {} })
-    assert.ok(nodes(render()).some(node => node.type === "MentorMainScreen"))
+    let dismissed = 0, exited = 0
+    const render = () => h.render("MentorSetup", { controller: { state: saved, initialized: true }, onClose() { dismissed++ }, onExitToShop() { exited++ } })
+    nodes(render()).find(node => node.type === "MentorMainScreen").props.onClose()
+    assert.equal(exited, 1); assert.equal(dismissed, 0, "Menu back exits to shop instead of revealing the professor")
     assert.equal(render().type, "MentorOnboarding", "Keep one native modal when showing the mentor home")
+    assert.equal(render().props.contentSafeTop, false); assert.equal(render().props.contentSafeBottom, false)
 })
 
 test("known required answers open directly at the missing goal-weight question", () => {
@@ -353,4 +356,16 @@ test("the mentor invitation opens directly with native glass and older installed
         assert.equal(nodes(tree).filter(node => node.type === "NativeAction" || node.type === "Pressable").length, 1)
         assert.equal(opened, 1)
     }
+})
+
+
+test("fullscreen mentor content owns its safe areas while the questionnaire retains its padding", () => {
+    const h = harness("screens/chat/mentor-onboarding.tsx")
+    const props = { visible: true, value: complete, onChange() {}, onClose() {}, onSave: async () => {}, saving: false, error: "", children: { type: "MentorMainScreen", props: {} } }
+    const screen = h.render("MentorOnboarding", { ...props, contentSafeTop: false, contentSafeBottom: false })
+    assert.equal(screen.props.children.props.style.at(-1).paddingTop, 0)
+    assert.equal(screen.props.children.props.style.at(-1).paddingBottom, 0)
+    const form = h.render("MentorOnboarding", { ...props, children: undefined })
+    assert.equal(form.props.children.props.style.at(-1).paddingTop, 47)
+    assert.equal(form.props.children.props.style.at(-1).paddingBottom, 34)
 })

@@ -187,6 +187,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
     const ownCompanion = useCompanion(aiAllowed && mentorAvailable)
     const companion = mentor?.controller ?? ownCompanion
     const [mentorOpen, setMentorOpen] = useState(false)
+    const mentorExitToShop = useRef(false)
     const [mentorVisited, setMentorVisited] = useState(false)
     const [mentorInitialTab, setMentorInitialTab] = useState<MentorTab>("nutrition")
     const resolveMentorChat = async () => mentorChat ? companion.resolveEnabled() : false
@@ -210,7 +211,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
     const chatScroll = useChatScroll(scrollRef, null, iosChat ? setFollowingLatest : undefined)
     const { followLatest } = chatScroll
     const showConversation = useCallback(() => { followLatest() }, [followLatest])
-    const openMentor = useCallback(() => { Keyboard.dismiss(); setMentorInitialTab("nutrition"); setMentorVisited(true); setMentorOpen(true) }, [])
+    const openMentor = useCallback(() => { mentorExitToShop.current = false; Keyboard.dismiss(); setMentorInitialTab("nutrition"); setMentorVisited(true); setMentorOpen(true) }, [])
     const cameraPermissionPromptedRef = useRef(false)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
@@ -731,6 +732,16 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
         companion.setEditor(null)
         setMentorOpen(false)
     }
+    const finishMentorDismiss = () => {
+        if (!mentorExitToShop.current) return
+        mentorExitToShop.current = false
+        router.replace(ROUTES.home)
+    }
+    const exitMentorToShop = () => {
+        mentorExitToShop.current = true
+        closeMentor()
+        if (Platform.OS !== "ios") requestAnimationFrame(finishMentorDismiss)
+    }
     const handleBack = () => {
         if (mentor) mentor.onBack()
         else if (chatMode === "community" && topicNavigation) topicNavigation.onBack()
@@ -781,7 +792,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
                     />
                 </Svg>
             </Pressable>}
-            {mentorChat ? <Text accessibilityRole="header" style={{ color: palette.text, fontSize: 20, fontWeight: "600" }}>{mt("Наставник")}</Text> : chatMode === "community" && topicNavigation ? <ChatTopicTitle title={topicNavigation.title} notifications={topicNavigation.notifications} /> : <ChatModeSwitcher mode={chatMode} solidStyle={simpleIosChat} nativeDark={nativeIosChat ? isDark : undefined} mentorStyle onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
+            {mentorChat ? <ChatTopicTitle title={mt("Наставник")} /> : chatMode === "community" && topicNavigation ? <ChatTopicTitle title={topicNavigation.title} notifications={topicNavigation.notifications} /> : <ChatModeSwitcher mode={chatMode} solidStyle={simpleIosChat} nativeDark={nativeIosChat ? isDark : undefined} mentorStyle onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
         </View>
         </View>
             <ChatModeTransition mode={chatMode} style={overlaysChatChrome ? { zIndex: 1 } : undefined}>
@@ -1076,7 +1087,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
             </ChatModeTransition>
             {overlaysChatChrome ? <ChatEdgeBlur dark={isDark} topEdge style={[chatScreenStyles.dialogTopBlur, { height: headerHeight + 10 }]} /> : null}
             </ChatKeyboardLayout>
-            {mentorAvailable && mentorVisited ? <MentorSetup controller={companion} visible={mentorOpen} onClose={closeMentor} initialTab={mentorInitialTab} renderChat={props => <MentorChatScreen {...props} controller={companion} />} /> : null}
+            {mentorAvailable && mentorVisited ? <MentorSetup controller={companion} visible={mentorOpen} onClose={closeMentor} onExitToShop={exitMentorToShop} onDismiss={finishMentorDismiss} initialTab={mentorInitialTab} renderChat={props => <MentorChatScreen {...props} controller={companion} />} /> : null}
         </View>
     )
 }

@@ -1,12 +1,13 @@
 // Isolated synthetic native preview. Uses production screens and no real account.
 import React, { useRef, useState } from "react"
 import { registerRootComponent } from "expo"
-import { NativeModules, Text, View } from "react-native"
+import { NativeModules, Pressable, Text, View } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { NavigationContext } from "@react-navigation/native"
 import { KeyboardProvider } from "react-native-keyboard-controller"
 import { MentorChatScreen } from "@/screens/chat/chat-screen"
 import { SafeAreaProvider } from "react-native-safe-area-context"
+import StickyFooter from "@/components/footer/sticky-footer"
 import { MentorOnboarding } from "@/screens/chat/mentor-onboarding"
 import { MentorOptionalOnboarding } from "@/screens/chat/mentor-onboarding-optional"
 import { MentorNutritionResult } from "@/screens/chat/mentor-nutrition-result"
@@ -19,10 +20,10 @@ import { translate } from "@/i18n/translations"
 
 export const useTheme = () => {
     const isDark = globalThis.__MENTOR_PREVIEW_DARK__ === true
-    return { palette: isDark ? darkColors : lightColors, isDark, themeName: isDark ? "dark" : "light" }
+    return { palette: isDark ? darkColors : lightColors, accentPalette: isDark ? darkColors : lightColors, isDark, themeName: isDark ? "dark" : "light" }
 }
 export const useLanguage = () => ({ language: "ru", t: key => translate(key, "ru") })
-export const useAuth = () => ({ user: { id: 1 } })
+export const useAuth = () => ({ user: { id: 1 }, isAuthenticated: true })
 export const useApplyScreenTemplate = () => {}
 export const useAiChatEntryConsent = active => active
 export const useBasket = () => ({ basket: null })
@@ -87,7 +88,7 @@ function Preview() {
     const [optional, setOptional] = useState(mentorOptionalFormFromState(saved))
     const [step, setStep] = useState(screen === "reminders" ? 5 : screen === "experience" ? 3 : screen === "conditions" ? 4 : 0)
     const close = () => setScreen("home")
-    const content = screen === "shortcut" ? <View style={{ flex: 1, justifyContent: "flex-end", padding: 8, gap: 8 }}><MentorShortcut goal="weight_loss" onPress={() => setScreen("home")} /><View style={{ borderWidth: 1, borderColor: "#A3B8AB", borderRadius: 24, padding: 18 }}><Text style={{ color: palette.text }}>Сообщение</Text></View></View> : screen === "result" ? <MentorNutritionResult state={saved} onContinue={() => { setScreen("optional"); setStep(0) }} onDecline={close} onBack={() => setScreen("required")} onClose={close} /> : ["optional", "experience", "conditions", "reminders"].includes(screen) ? <MentorOptionalOnboarding value={optional} onChange={setOptional} step={step} onBack={() => step ? setStep(step - 1) : setScreen("result")} onClose={close} onNext={() => step === 5 ? close() : setStep(step + 1)} saving={false} error="" /> : ["home", "home-empty"].includes(screen) ? <MentorMainScreen controller={controller} onClose={() => setScreen("shortcut")} renderChat={props => <MentorChatScreen {...props} controller={controller} />} onContinue={() => { setScreen("optional"); setStep(0) }} /> : screen === "ask" ? <View><Text>Спросить наставника</Text></View> : undefined
-    return <GestureHandlerRootView style={{ flex: 1 }}><NavigationContext.Provider value={navigation}><SafeAreaProvider><KeyboardProvider preload={false}><View style={{ flex: 1, backgroundColor: "white" }}><MentorOnboarding visible contentSafeBottom={!["home", "home-empty"].includes(screen)} value={form} onChange={setForm} onClose={close} onSave={async () => setScreen("result")} saving={false} error="">{content}</MentorOnboarding></View></KeyboardProvider></SafeAreaProvider></NavigationContext.Provider></GestureHandlerRootView>
+    const content = screen === "shop" ? <View style={{ flex: 1 }}><View style={{ flex: 1 }}><Text style={{ color: palette.text }}>Магазин</Text><Pressable onPress={() => setScreen("home")} style={{ padding: 24 }}><Text style={{ color: palette.primary }}>Открыть наставника</Text></Pressable></View><StickyFooter template={{ footer: "nav", header: "none", mode: "standard" }} pathname="/discover" /></View> : screen === "shortcut" ? <View style={{ flex: 1, justifyContent: "flex-end", padding: 8, gap: 8 }}><MentorShortcut goal="weight_loss" onPress={() => setScreen("home")} /><View style={{ borderWidth: 1, borderColor: "#A3B8AB", borderRadius: 24, padding: 18 }}><Text style={{ color: palette.text }}>Сообщение</Text></View></View> : screen === "result" ? <MentorNutritionResult state={saved} onContinue={() => { setScreen("optional"); setStep(0) }} onDecline={close} onBack={() => setScreen("required")} onClose={close} /> : ["optional", "experience", "conditions", "reminders"].includes(screen) ? <MentorOptionalOnboarding value={optional} onChange={setOptional} step={step} onBack={() => step ? setStep(step - 1) : setScreen("result")} onClose={close} onNext={() => step === 5 ? close() : setStep(step + 1)} saving={false} error="" /> : ["home", "home-empty"].includes(screen) ? <MentorMainScreen controller={controller} onClose={() => setScreen("shop")} renderChat={props => <MentorChatScreen {...props} controller={controller} />} onContinue={() => { setScreen("optional"); setStep(0) }} /> : screen === "ask" ? <View><Text>Спросить наставника</Text></View> : undefined
+    return <GestureHandlerRootView style={{ flex: 1 }}><NavigationContext.Provider value={navigation}><SafeAreaProvider><KeyboardProvider preload={false}><View style={{ flex: 1, backgroundColor: "white" }}><MentorOnboarding visible contentSafeTop={!["home", "home-empty", "shop"].includes(screen)} contentSafeBottom={!["home", "home-empty", "shop"].includes(screen)} value={form} onChange={setForm} onClose={close} onSave={async () => setScreen("result")} saving={false} error="">{content}</MentorOnboarding></View></KeyboardProvider></SafeAreaProvider></NavigationContext.Provider></GestureHandlerRootView>
 }
 registerRootComponent(Preview)

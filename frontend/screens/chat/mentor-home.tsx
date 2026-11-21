@@ -17,13 +17,13 @@ type Props = {
     onMeal: (entry: CompanionEntry) => void; onJournal: () => void
 }
 
-export function MentorHomeHeader({ onBack, onSettings, title }: { onBack: () => void; onSettings?: () => void; title?: string }) {
+export function MentorHomeHeader({ onBack, onSettings, title, backLabel }: { onBack: () => void; onSettings?: () => void; title?: string; backLabel?: string }) {
     const colors = useMentorPalette()
     const { isDark } = useTheme()
-    const backLabel = title ? mt("Назад") : mt("Назад в чат")
+    const label = backLabel ?? (title ? mt("Назад") : mt("На главную магазина"))
     return <View style={styles.header}>
-        {NativeChatAction ? <NativeChatAction action="back" dark={isDark} label={backLabel} onAction={onBack} style={styles.iconButton} /> :
-            <Pressable accessibilityRole="button" accessibilityLabel={backLabel} onPress={onBack} style={styles.iconButton}><MentorQuestionIcon name="back" size={24} color={colors.text} /></Pressable>}
+        {NativeChatAction ? <NativeChatAction action="back" dark={isDark} label={label} onAction={onBack} style={styles.iconButton} /> :
+            <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onBack} style={styles.iconButton}><MentorQuestionIcon name="back" size={24} color={colors.text} /></Pressable>}
         {title ? <Text accessibilityRole="header" style={[styles.headerTitle, { color: colors.text }]}>{title}</Text> :
             <View style={styles.brand}><MentorQuestionIcon name="leaf" size={27} color={colors.green} /><Text accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit style={[styles.brandName, { color: colors.text }]}>{mt("Наставник")}</Text></View>}
         {onSettings ? NativeChatAction && nativeChatSettingsActionAvailable ? <NativeChatAction action="settings" dark={isDark} label={mt("Настройки наставника")} onAction={onSettings} style={styles.iconButton} /> :

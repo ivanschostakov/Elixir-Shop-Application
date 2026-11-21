@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
-import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
-import { SafeAreaInsetsContext } from "react-native-safe-area-context"
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { Keyboard, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { CompanionPanel, type useCompanion } from "@/screens/chat/companion"
@@ -13,25 +13,19 @@ import { useMentorPalette } from "@/screens/chat/mentor-ui"
 type Controller = ReturnType<typeof useCompanion>
 export type MentorChatRenderer = (props: { active: boolean; onBack: () => void }) => ReactNode
 const unchanged = async () => {}
-const zeroInsets = { top: 0, bottom: 0, left: 0, right: 0 }
 
 export function MentorMainScreen({ controller: c, onClose, renderChat, onContinue, visible = true, initialTab = "nutrition" }: {
     controller: Controller; onClose: () => void; renderChat: MentorChatRenderer; onContinue: () => void; visible?: boolean; initialTab?: MentorTab
 }) {
     useLanguage()
     const colors = useMentorPalette()
+    const { top } = useSafeAreaInsets()
     const [tab, setTab] = useState<MentorTab>(initialTab)
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [chatVisited, setChatVisited] = useState(initialTab === "chat")
-    const [keyboardVisible, setKeyboardVisible] = useState(false)
     const [entrance, setEntrance] = useState(0)
     const callbacks = useRef(c); callbacks.current = c
     useLayoutEffect(() => { if (visible) { setTab(initialTab); setSettingsOpen(false); if (initialTab === "chat") setChatVisited(true); setEntrance(value => value + 1); void callbacks.current.refresh() } }, [visible, initialTab])
-    useEffect(() => {
-        const show = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", event => { Keyboard.scheduleLayoutAnimation(event); setKeyboardVisible(true) })
-        const hide = Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", event => { Keyboard.scheduleLayoutAnimation(event); setKeyboardVisible(false) })
-        return () => { show.remove(); hide.remove() }
-    }, [])
     const select = (next: MentorTab) => { Keyboard.dismiss(); c.setEditor(null); setSettingsOpen(false); if (next === "chat") setChatVisited(true); setTab(next) }
     const settings: { label: string; icon: MentorQuestionIconName; action: () => void }[] = [
         { label: mt("Мой профиль"), icon: "profile", action: () => c.setEditor({ page: "profile" }) },
@@ -41,18 +35,18 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
         ...(mentorHomeData(c.state, c.clock).optionalIncomplete ? [{ label: mt("Продолжить заполнение"), icon: "custom" as const, action: onContinue }] : []),
     ]
     const render = (page: MentorTab) => {
-        if (page === "nutrition") return <MentorHomeScreen state={c.state} clock={c.clock} animationKey={entrance} error={c.error} busy={c.busy} onRefresh={() => void c.refresh()} onClose={onClose}
+        if (page === "nutrition") return <View style={[styles.fill, { paddingTop: top }]}><MentorHomeScreen state={c.state} clock={c.clock} animationKey={entrance} error={c.error} busy={c.busy} onRefresh={() => void c.refresh()} onClose={onClose}
             onSettings={() => setSettingsOpen(true)} onAddFood={() => c.setEditor({ page: "meal" })} onNutrition={() => c.setEditor({ page: "nutrition" })}
-            onMeal={entry => c.setEditor({ page: "meal", entry })} onJournal={() => c.setEditor({ page: "journal" })} />
-        if (page === "chat") return chatVisited ? <SafeAreaInsetsContext.Provider value={zeroInsets}>{renderChat({ active: visible && tab === "chat" && !settingsOpen, onBack: () => select("nutrition") })}</SafeAreaInsetsContext.Provider> : null
-        return <View style={styles.fill}><MentorHomeHeader title={mentorTabLabel(page)} onBack={() => select("nutrition")} onSettings={() => setSettingsOpen(true)} />
+            onMeal={entry => c.setEditor({ page: "meal", entry })} onJournal={() => c.setEditor({ page: "journal" })} /></View>
+        if (page === "chat") return chatVisited ? <View style={styles.fill}>{renderChat({ active: visible && tab === "chat" && !settingsOpen, onBack: () => select("nutrition") })}</View> : null
+        return <View style={[styles.fill, { paddingTop: top }]}><MentorHomeHeader title={mentorTabLabel(page)} backLabel={mt("На главную магазина")} onBack={onClose} onSettings={() => setSettingsOpen(true)} />
             <View testID={`mentor-placeholder-${page}`} style={styles.placeholder}><View style={[styles.placeholderIcon, { backgroundColor: colors.soft }]}><MentorQuestionIcon name={page === "workouts" ? "gym" : "maintain"} size={38} color={colors.green} /></View>
                 <Text accessibilityRole="header" style={[styles.placeholderTitle, { color: colors.text }]}>{mentorTabLabel(page)}</Text><Text style={[styles.placeholderCopy, { color: colors.muted }]}>{mt("Раздел скоро появится")}</Text></View></View>
     }
     return <View style={[styles.fill, { backgroundColor: colors.surface }]}>
         <View style={[styles.fill, settingsOpen && styles.hidden]} pointerEvents={settingsOpen ? "none" : "auto"} accessibilityElementsHidden={settingsOpen} importantForAccessibility={settingsOpen ? "no-hide-descendants" : "auto"}><MentorTabPages active={tab} render={render} onSelect={select} /></View>
-        {settingsOpen ? <View style={styles.fill}><MentorHomeHeader title={mt("Настройки")} onBack={() => setSettingsOpen(false)} /><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={mentorHomeStyles.body}>{settings.map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} onPress={item.action} style={({ pressed }) => [styles.setting, { borderBottomColor: colors.border, opacity: pressed ? 0.65 : 1 }]}><MentorQuestionIcon name={item.icon} color={colors.green} /><Text style={[styles.settingText, { color: colors.text }]}>{item.label}</Text><MentorQuestionIcon name="chevronRight" size={20} color={colors.muted} /></Pressable>)}</ScrollView></View> : null}
-        {!(tab === "chat" && keyboardVisible && !settingsOpen) ? <MentorBottomNavigation active={tab} onSelect={select} /> : null}
+        {settingsOpen ? <View style={[styles.fill, { paddingTop: top }]}><MentorHomeHeader title={mt("Настройки")} onBack={() => setSettingsOpen(false)} /><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={mentorHomeStyles.body}>{settings.map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} onPress={item.action} style={({ pressed }) => [styles.setting, { borderBottomColor: colors.border, opacity: pressed ? 0.65 : 1 }]}><MentorQuestionIcon name={item.icon} color={colors.green} /><Text style={[styles.settingText, { color: colors.text }]}>{item.label}</Text><MentorQuestionIcon name="chevronRight" size={20} color={colors.muted} /></Pressable>)}</ScrollView></View> : null}
+        {(tab !== "chat" || settingsOpen) ? <MentorBottomNavigation active={tab} onSelect={select} /> : null}
         <CompanionPanel controller={c} onChanged={unchanged} workspaceVisible navigationVisible={false} />
     </View>
 }

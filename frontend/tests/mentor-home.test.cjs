@@ -59,7 +59,7 @@ function harness(file, overrides = {}) {
     const module = loadTs(file, {
         react, "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
         "react-native": { View: "View", Text: "Text", Pressable: "Pressable", ScrollView: "ScrollView", Keyboard: { addListener: () => ({ remove() {} }), dismiss() {}, scheduleLayoutAnimation() {} }, Platform: { OS: "ios" }, useWindowDimensions: () => ({ width: 390, height: 844 }), StyleSheet: { create: v => v, absoluteFillObject: {}, hairlineWidth: 0.5 } },
-        "react-native-safe-area-context": { SafeAreaInsetsContext: { Provider: "Insets" } },
+        "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 47, bottom: 34 }) },
         "@/screens/chat/mentor-navigation": { MentorBottomNavigation: "Tabs", MentorTabPages: "Pages", mentorTabLabel: tab => ({ workouts: "Тренировки", wellbeing: "Самочувствие" })[tab] },
         "expo-router": { useRouter: () => ({ replace: value => routes.push(value) }) },
         "@/constants/routes": { ROUTES: { home: "/", discover: "/discover", basket: "/basket", profile: "/profile" } },
@@ -91,7 +91,7 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     const c = { state: state(), clock, setEditor: editor => edits.push(editor), refresh: async () => c.state }
     const render = () => h.render("MentorMainScreen", { controller: c, onClose() { closed++ }, renderChat: props => ({ type: "Chat", props }), onContinue() { continued++ } })
     const page = key => find(render(), "Pages").props.render(key)
-    let screen = page("nutrition")
+    let screen = find(page("nutrition"), "Home")
     screen.props.onAddFood(); screen.props.onMeal({ id: 42 })
     assert.deepEqual(edits, [{ page: "meal" }, { page: "meal", entry: { id: 42 } }])
     screen.props.onSettings()
@@ -104,12 +104,16 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     assert.ok(nodes(page("workouts")).some(node => node.props.testID === "mentor-placeholder-workouts"))
     find(render(), "Tabs").props.onSelect("wellbeing")
     assert.ok(nodes(page("wellbeing")).some(node => node.props.testID === "mentor-placeholder-wellbeing"))
+    find(page("workouts"), "Header").props.onBack(); assert.equal(closed, 1)
+    find(page("wellbeing"), "Header").props.onBack(); assert.equal(closed, 2)
     find(render(), "Tabs").props.onSelect("chat")
+    assert.equal(find(render(), "Tabs"), undefined, "Fullscreen mentor chat never displays bottom navigation")
     assert.equal(find(page("chat"), "Chat").props.active, true)
-    find(render(), "Tabs").props.onSelect("nutrition")
+    find(page("chat"), "Chat").props.onBack()
     assert.equal(find(page("chat"), "Chat").props.active, false)
-    page("nutrition").props.onClose()
-    assert.equal(closed, 1); assert.deepEqual(h.routes, [])
+    assert.equal(find(render(), "Tabs").props.active, "nutrition")
+    find(page("nutrition"), "Home").props.onClose()
+    assert.equal(closed, 3); assert.deepEqual(h.routes, [])
 })
 
 test("calorie and macro animations reach clamped fractions, update from the current value, and respect system Reduce Motion", () => {

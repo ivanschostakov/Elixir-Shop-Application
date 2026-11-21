@@ -89,6 +89,7 @@ export const mentorTranslations: Record<string, { en: string; kz: string }> = {
     "Следите за динамикой веса.": { en: "Track changes in your weight.", kz: "Салмақ өзгерісін бақылаңыз." },
     "Питание, активность и самочувствие.": { en: "Food, activity and how you feel.", kz: "Тамақтану, белсенділік және көңіл күй." },
     "Обзор прогресса каждый понедельник.": { en: "Review your progress every Monday.", kz: "Әр дүйсенбіде нәтижелерді шолу." },
+    "На главную магазина": { en: "Back to shop home", kz: "Дүкеннің басты бетіне оралу" },
     "Назад в чат": { en: "Back to chat", kz: "Чатқа оралу" },
     "Настройки наставника": { en: "Mentor settings", kz: "Тәлімгер баптаулары" },
     "Главная": { en: "Home", kz: "Басты бет" },

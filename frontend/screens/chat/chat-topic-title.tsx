@@ -9,7 +9,7 @@ export function ChatTopicTitle({ title, style, notifications }: { title: string;
     const { isDark, palette } = useTheme()
     return <View style={[styles.pill, !NativeChatTitleMaterial && { backgroundColor: palette.surfaceOverlaySoft }, style]}>
         {NativeChatTitleMaterial ? <NativeChatTitleMaterial dark={isDark} pointerEvents="none" style={StyleSheet.absoluteFill} /> : null}
-        <Text numberOfLines={1} style={[styles.title, { color: palette.text }, notifications && { paddingHorizontal: 28 }]}>{title}</Text>
+        <Text accessibilityRole="header" numberOfLines={1} style={[styles.title, { color: palette.text }, notifications && { paddingHorizontal: 28 }]}>{title}</Text>
         {notifications ? <View style={styles.action}><CommunityNotificationButton {...notifications} /></View> : null}
     </View>
 }
