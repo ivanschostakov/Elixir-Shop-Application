@@ -11,6 +11,7 @@ import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
 import { calendarDate, deviceCompanionTimezone, formatCompanionDate as dateLabel, shiftCalendarDay } from "@/screens/chat/companion-timezones"
 import { useDeviceClock } from "@/hooks/chat/use-device-clock"
+import type { MentorQuestion } from "@/hooks/chat/use-mentor-question"
 import { DialogueCards, DialoguePanel } from "@/screens/chat/companion-dialogue"
 import type { MentorPage } from "@/screens/chat/mentor-data"
 import { goalLabels } from "@/screens/chat/mentor-data"
@@ -44,6 +45,9 @@ export function useCompanion(enabled = true) {
     const retryKeys = useRef(new Map<string, string>())
     const [error, setError] = useState("")
     const [editor, setEditor] = useState<Editor | null>(null)
+    const [mentorQuestion, setMentorQuestion] = useState<MentorQuestion | null>(null)
+    const askMentor = (text: string) => { setEditor(null); setMentorQuestion({ id: requestKey(), text }) }
+    const questionHandled = useCallback((id: string) => setMentorQuestion(current => current?.id === id ? null : current), [])
     const [mentorPage, setMentorPage] = useState<MentorPage | null>("today")
     const refreshSequence = useRef(0)
     const refresh = useCallback(async () => {
@@ -100,7 +104,7 @@ export function useCompanion(enabled = true) {
     const attempt = async (operation: () => Promise<unknown>) => {
         try { await operation() } catch (e) { if (!(e instanceof CompanionActionCancelled)) setError(getErrorMessage(e)) }
     }
-    return { state, initialized, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => 2 as const, busy, error, setError, editor, setEditor, mentorPage, setMentorPage, refresh, perform, attempt }
+    return { state, initialized, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => 2 as const, busy, error, setError, editor, setEditor, mentorQuestion, askMentor, questionHandled, mentorPage, setMentorPage, refresh, perform, attempt }
 }
 
 function Copy({ children }: { children: React.ReactNode }) {

@@ -20,17 +20,16 @@ function useNutritionFill(amount: unknown, target: unknown, delay: number) {
     return progress
 }
 
-export function MentorCalorieRing({ amount, target, label, size = 80, kind = "food" }: { amount: unknown; target: unknown; label: string; size?: number; kind?: "food" | "water" }) {
+export function MentorCalorieRing({ amount, target, label, size = 80 }: { amount: unknown; target: unknown; label: string; size?: number }) {
     const colors = useMentorPalette()
-    const color = kind === "water" ? colors.blue : colors.green
     const progress = useNutritionFill(amount, target, 0)
     const animatedProps = useAnimatedProps(() => ({ strokeDashoffset: circumference * (1 - progress.value), strokeOpacity: progress.value > 0 ? 1 : 0 }))
     return <View accessibilityRole="progressbar" accessibilityLabel={label} accessibilityValue={{ min: 0, max: 100, now: Math.round(nutritionFraction(amount, target) * 100) }} style={[styles.ring, { width: size, height: size }]}>
         <Svg width={size} height={size} viewBox="0 0 80 80" accessible={false}>
-            <Circle cx={40} cy={40} r={radius} stroke={kind === "water" ? `${color}35` : colors.border} strokeWidth={7} fill="none" />
-            <AnimatedCircle cx={40} cy={40} r={radius} stroke={color} strokeWidth={7} fill="none" strokeLinecap="round" strokeDasharray={`${circumference} ${circumference}`} rotation={-90} origin="40, 40" animatedProps={animatedProps} />
+            <Circle cx={40} cy={40} r={radius} stroke={colors.border} strokeWidth={7} fill="none" />
+            <AnimatedCircle cx={40} cy={40} r={radius} stroke={colors.green} strokeWidth={7} fill="none" strokeLinecap="round" strokeDasharray={`${circumference} ${circumference}`} rotation={-90} origin="40, 40" animatedProps={animatedProps} />
         </Svg>
-        <View pointerEvents="none" style={styles.center}><MentorQuestionIcon name={kind} size={kind === "water" ? size * 0.35 : size < 72 ? 21 : 25} color={color} /></View>
+        <View pointerEvents="none" style={styles.center}><MentorQuestionIcon name="food" size={size < 72 ? 21 : 25} color={colors.green} /></View>
     </View>
 }
 

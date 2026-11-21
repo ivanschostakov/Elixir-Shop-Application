@@ -9,6 +9,7 @@ import config
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.ai.companion import service
 from src.app.services.ai.companion.schemas import Action, EntryData, Settings, StrictModel
+from src.app.services.ai.companion.food_suggestions import FoodSuggestionRead, MealSuggestionContext
 from src.app.services.ai.companion.mentor import FavoriteMealsRead, MentorDashboard, ProgressSummary, dashboard
 from src.app.services.ai.companion.photos import ProgressPhotosRead, serialize_entries
 from src.app.services.ai.companion.timezones import normalize_timezone, timezone_info
@@ -193,6 +194,8 @@ async def _message(request, text, client_request_id, attachments, dialogue_proto
 class MealEstimateRead(StrictModel):
     entry: EntryData | None = None
     message: str
+    suggestions: list[FoodSuggestionRead] = Field(default_factory=list, max_length=3)
+    next_meal: MealSuggestionContext | None = None
 
 
 @companion_router.post("/messages")

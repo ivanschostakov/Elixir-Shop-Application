@@ -144,6 +144,9 @@ test("past meals prefill the text and private photo without estimating or saving
 
 test("product questions use the read-only helper and never offer a save-to-diary action", async () => {
     const h = harness({ helpMode: "product" }); let tree = h.render()
+    assert.equal(h.button(tree, "Разобрать состав"), undefined)
+    assert.equal(h.button(tree, "С чем сочетать"), undefined)
+    assert.equal(h.button(tree, "Сравнить с другим продуктом"), undefined)
     nodes(tree).find(node => node.type === "Input").props.onChangeText("Греческий йогурт")
     tree = h.render(); h.button(tree, "Узнать о продукте").props.onPress(); await h.flush()
     tree = h.render(); assert.equal(h.calls.help[0][0], "product")

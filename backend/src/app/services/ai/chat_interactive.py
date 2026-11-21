@@ -50,12 +50,14 @@ def _normalize_openai_json_schema(node: Any) -> Any:
     return node
 
 
-def build_ai_chat_output_schema(*, include_companion: bool = False, dialogue: bool = False) -> dict[str, Any]:
+def build_ai_chat_output_schema(*, include_companion: bool = False, dialogue: bool = False, nutrition_suggestions: bool = False) -> dict[str, Any]:
     schema = copy.deepcopy(StructuredAIChatOutput.model_json_schema())
     if not dialogue or not include_companion:
         schema["properties"].pop("companion_dialogue", None)
     if not include_companion:
         schema["properties"].pop("companion_proposals", None)
+    if not nutrition_suggestions:
+        schema["properties"].pop("nutrition_suggestions", None)
     # Keep only definitions reachable in the negotiated protocol.
     pending = [schema["properties"]]
     names = set()

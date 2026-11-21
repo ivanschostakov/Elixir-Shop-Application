@@ -4,7 +4,7 @@ import { mentorText as mt, mentorDateLabel } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { mentorHomeData, mentorHomeNumber as number } from "@/screens/chat/mentor-home-data"
-import { MentorNutritionPager, type NutritionMetric } from "@/screens/chat/mentor-nutrition-pager"
+import { MentorNutritionSummary } from "@/screens/chat/mentor-nutrition-summary"
 import { MentorQuestionIcon, type MentorQuestionIconName } from "@/screens/chat/mentor-question-icon"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import { NativeChatAction, nativeChatSettingsActionAvailable } from "@/screens/chat/native-chat-controls"
@@ -45,7 +45,6 @@ export function MentorHomeScreen(props: Props) {
     const { state, clock } = props
     const data = mentorHomeData(state, clock)
     const window = useWindowDimensions()
-    const [metric, setMetric] = useState<NutritionMetric>("nutrition")
     const [height, setHeight] = useState(window.height - 150)
     const compact = height < 650, dense = height < 560
     const date = mentorDateLabel(new Date(`${data.date}T12:00:00`), dense ? { day: "numeric", month: "short" } : { weekday: "long", day: "numeric", month: "long" })
@@ -59,8 +58,8 @@ export function MentorHomeScreen(props: Props) {
         <View testID="mentor-home-content" onLayout={event => setHeight(event.nativeEvent.layout.height)} style={[styles.body, { gap: dense ? 3 : compact ? 6 : 8, paddingHorizontal: dense ? 18 : 24, paddingBottom: dense ? 4 : 8, paddingTop: dense ? 2 : 5 }]}>
             <View style={[styles.today, dense && { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }]}><Text accessibilityRole="header" style={[styles.title, { color: colors.text, fontSize: dense ? 26 : 32, lineHeight: dense ? 32 : 38 }]}>{mt("Сегодня")}</Text><Text style={[styles.date, { color: colors.muted }, dense && { fontSize: 12, lineHeight: 18 }]}>{date.charAt(0).toUpperCase() + date.slice(1)}</Text></View>
             {props.error ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Обновить данные")} onPress={props.onRefresh} style={[styles.notice, { backgroundColor: colors.soft }]}><Text accessibilityRole="alert" style={{ color: colors.text }}>{props.error}</Text><Text style={{ color: colors.green }}>{mt("Обновить данные")}</Text></Pressable> : null}
-            <MentorNutritionPager active={metric} onSelect={setMetric} consumed={data.consumed} target={data.target} remaining={remaining} water={water} waterGoal={waterGoal} animationKey={`${data.date}:${props.animationKey ?? 0}`} dense={dense} compact={compact} onNutrition={props.onNutrition} />
-            <Action label={metric === "water" ? mt("Добавить воду") : mt("Добавить {0}", [mealLabel(currentMeal).toLowerCase()])} icon={metric === "water" ? "water" : "food"} primary compact={dense} accent={metric === "water" ? colors.blue : undefined} onPress={() => metric === "water" ? props.onWater?.() : props.onAddFood(currentMeal)} />
+            <MentorNutritionSummary consumed={data.consumed} target={data.target} remaining={remaining} water={water} waterGoal={waterGoal} animationKey={`${data.date}:${props.animationKey ?? 0}`} dense={dense} compact={compact} onNutrition={props.onNutrition} onWater={props.onWater} />
+            <Action label={mt("Добавить {0}", [mealLabel(currentMeal).toLowerCase()])} icon="food" primary compact={dense} onPress={() => props.onAddFood(currentMeal)} />
             <View style={{ gap: dense ? 0 : 3 }}>
                 <View style={[styles.sectionHeader, dense && { minHeight: 28, marginBottom: 2 }]}><Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }, dense && { fontSize: 20, lineHeight: 24 }]}>{mt("Приёмы пищи")}</Text><Pressable accessibilityRole="button" onPress={props.onJournal} hitSlop={8}><Text style={[styles.subtitle, { color: colors.green }]}>{mt("Все записи")}</Text></Pressable></View>
                 {groups.slice(0, 3).map(group => <Pressable key={group.type} accessibilityRole="button" accessibilityLabel={`${mealLabel(group.type)}, ${number(group.total.kcal)} ${mt("ккал")}`} onPress={() => group.entries.length ? props.onMealGroup ? props.onMealGroup(group.type) : props.onMeal(group.entries[0]) : props.onAddFood(group.type)}

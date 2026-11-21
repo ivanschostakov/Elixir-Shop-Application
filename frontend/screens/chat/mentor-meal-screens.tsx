@@ -5,12 +5,13 @@ import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import type { useCompanion } from "@/screens/chat/companion"
 import { MentorFoodEditor } from "@/screens/chat/mentor-food"
+import { MentorFoodSuggestions } from "@/screens/chat/mentor-food-suggestions"
 import { MentorHomeHeader } from "@/screens/chat/mentor-home"
 import { mentorHomeData, mentorHomeNumber as number } from "@/screens/chat/mentor-home-data"
 import { entryMeal, mainMeals, mealLabel, mealTotals, waterTarget } from "@/screens/chat/mentor-meals-data"
 import { MentorQuestionIcon, type MentorQuestionIconName } from "@/screens/chat/mentor-question-icon"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
-import { getMealLibrary, requestKey, type CompanionEntry, type MealHabits, type MealType } from "@/services/api/companion"
+import { getMealLibrary, requestKey, type CompanionEntry, type MealHabits } from "@/services/api/companion"
 import { syncPushNotifications } from "@/services/notifications/order-status-notifications"
 import { getErrorMessage } from "@/utils/errors"
 
@@ -112,7 +113,7 @@ export function MentorNutritionEditor({ controller: c, shown, onClose }: { contr
     const colors = useMentorPalette(), editor = c.editor!, insets = useSafeAreaInsets()
     const back = () => editor.parentMeal ? c.setEditor({ page: "meal_group", mealType: editor.mealType, mealKey: editor.mealKey }) : onClose()
     return <View style={{ flex: 1, backgroundColor: colors.surface, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 8) }}>
-        {editor.page === "meal" || editor.page === "food_help" ? <MentorFoodEditor controller={c} shown={shown} onClose={back} onSaved={async () => { back() }} helpMode={editor.page === "food_help" ? editor.helpMode ?? "suggest" : undefined} /> : editor.page === "meal_group" ? <MealGroup c={c} close={onClose} /> : editor.page === "water" ? <Water c={c} close={onClose} /> : <MealReminders c={c} close={onClose} />}
+        {editor.page === "food_help" && editor.helpMode !== "product" ? <MentorFoodSuggestions controller={c} shown={shown} onClose={back} /> : editor.page === "meal" || editor.page === "food_help" ? <MentorFoodEditor controller={c} shown={shown} onClose={back} onSaved={async () => { back() }} helpMode={editor.page === "food_help" ? editor.helpMode ?? "suggest" : undefined} /> : editor.page === "meal_group" ? <MealGroup c={c} close={onClose} /> : editor.page === "water" ? <Water c={c} close={onClose} /> : <MealReminders c={c} close={onClose} />}
     </View>
 }
 

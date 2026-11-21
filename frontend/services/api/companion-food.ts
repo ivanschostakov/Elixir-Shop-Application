@@ -2,9 +2,15 @@ import { apiPostMultipart } from "@/services/api/client"
 import { aiChatEndpoint } from "@/services/api/ai-chat.constants"
 import { ensureAiDataConsent } from "@/services/api/ai-data-consent"
 import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
-import type { EntryData } from "@/services/api/companion"
+import type { EntryData, MealType, Nutrition } from "@/services/api/companion"
 
-export type FoodEstimate = { entry: EntryData | null; message: string }
+export type FoodSuggestion = {
+    name: string; description: string; portion: string; nutrition: Nutrition; minutes: number
+    ingredients: string[]; steps: string[]; image_query: string
+    image: { url: string; source_url: string; author: string; license: string } | null
+}
+export type MealSuggestionContext = { meal_type: MealType; meals_left: number; remaining: Nutrition | null; budget: Nutrition | null }
+export type FoodEstimate = { entry: EntryData | null; message: string; suggestions?: FoodSuggestion[]; next_meal?: MealSuggestionContext | null }
 
 export async function estimateCompanionFood(text: string, photo: UploadableChatAttachment | null, key: string, previousPhotoId?: number): Promise<FoodEstimate> {
     await ensureAiDataConsent()

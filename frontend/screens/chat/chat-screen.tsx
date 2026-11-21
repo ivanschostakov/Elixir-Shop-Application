@@ -41,6 +41,7 @@ import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import { CompanionCards, useCompanion } from "@/screens/chat/companion"
+import { useMentorQuestion, type MentorQuestion } from "@/hooks/chat/use-mentor-question"
 import type { MentorTab } from "@/screens/chat/mentor-navigation"
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { MentorSetup } from "@/screens/chat/mentor-setup"
@@ -128,7 +129,7 @@ export default function ChatScreen() {
     return <ChatScreenContent key={user?.id ?? "guest"} />
 }
 
-type EmbeddedMentor = { controller: ReturnType<typeof useCompanion>; active: boolean; onBack: () => void }
+type EmbeddedMentor = { controller: ReturnType<typeof useCompanion>; active: boolean; onBack: () => void; question?: MentorQuestion | null; onQuestionHandled?: (id: string) => void }
 export function MentorChatScreen(props: EmbeddedMentor) { return <ChatScreenContent mentor={props} /> }
 
 function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
@@ -536,6 +537,16 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
             )
         }
     }
+
+    useMentorQuestion({
+        question: mentor?.question, active: !!mentor && screenActive && aiAllowed, busy: loading || sending,
+        handled: mentor?.onQuestionHandled,
+        send: async text => { showConversation(); await sendMessage(text) },
+        onError: (sendError, text) => {
+            setDraft(current => current || text)
+            if (!(sendError instanceof AiConsentDeclinedError)) Alert.alert(t("chat.sendFailedTitle"), sendError instanceof Error ? sendError.message : t("chat.sendFailedMessage"))
+        },
+    })
 
     const formatTime = (isoTimestamp: string) => {
         const parsedDate = new Date(isoTimestamp)

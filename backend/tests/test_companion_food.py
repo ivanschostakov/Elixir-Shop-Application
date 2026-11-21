@@ -69,6 +69,11 @@ def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypa
     direct = AsyncMock(); monkeypatch.setattr(dialogue, "direct_reply", direct)
     response = {"text": "Food calculated", "structured_output": {"assistant_text": "Food calculated", "companion_dialogue": DialogueTurn(operations=[meal()]).model_dump(mode="json")},
         "conversation_id": "conv_food", "input_tokens": 20, "output_tokens": 10, "openai_model": "mock"}
+    if help_mode == "suggest":
+        from src.app.services.ai.companion import food_suggestions
+        recipe = {"name": "Chicken and rice", "description": "Balanced meal", "portion": "1 bowl", "nutrition": {"kcal": 440, "protein": 30, "fat": 12, "carbs": 53}, "minutes": 25, "ingredients": ["Chicken 120 g", "Rice 60 g"], "steps": ["Cook rice", "Cook chicken and serve"], "image_query": "chicken rice"}
+        response["structured_output"]["nutrition_suggestions"] = [recipe, {**recipe, "name": "Rice and chicken"}]
+        monkeypatch.setattr(food_suggestions, "illustrated_suggestions", AsyncMock(return_value=[{**recipe, "image": None}]))
     provider = SimpleNamespace(send_message_v2=AsyncMock(return_value=response))
     result = asyncio.run(chat.send_user_chat_message(db, user=SimpleNamespace(id=7), text="Chicken", attachments=None, professor_client=provider,
         allow_commerce=False, companion_profile=profile, client_request_id="food-estimate-request-1", dialogue_protocol=2, meal_estimate=True, nutrition_help=help_mode))
@@ -85,6 +90,11 @@ def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypa
     usage.assert_awaited_once()
     args = provider.send_message_v2.call_args.kwargs
     assert args["function_tools"] == [] and "dialogue" not in args["companion_context"]
+    if help_mode == "suggest":
+        assert "next_meal" in args["companion_context"]
+        assert "nutrition_suggestions" in args["output_schema"]["properties"]
+        assert len(result.meal_estimate["suggestions"]) == 1
+        assert messages[1].context_json["meal_estimate"] == result.meal_estimate
     assert ("Не записывай" in args["input_text"] or "не записывай" in args["input_text"]) if help_mode else "не спрашивай дату" in args["input_text"]
 
 
@@ -102,16 +112,20 @@ def test_photo_only_estimation_uses_the_same_native_protected_message_path(monke
     assert error.value.status_code == 422 and respond.await_count == 1
 
 
-def test_completed_food_retry_returns_stored_estimate_without_model_or_usage_charge(monkeypatch):
+@pytest.mark.parametrize("help_mode", [None, "suggest"])
+def test_completed_food_retry_returns_stored_estimate_without_model_or_usage_charge(monkeypatch, help_mode):
     import hashlib
     from src.app.services.ai import chat
     from src.app.services.ai.companion import food
-    fingerprint = hashlib.sha256(("meal_estimate:" + hashlib.sha256(b"Chicken\n").hexdigest()).encode()).hexdigest()
+    prefix = "nutrition_help:suggest:" if help_mode else "meal_estimate:"
+    fingerprint = hashlib.sha256((prefix + hashlib.sha256(b"Chicken\n").hexdigest()).encode()).hexdigest()
     duplicate = SimpleNamespace(chat_id=8, text="Chicken", context_json={"generation_status": "completed", "input_fingerprint": fingerprint})
     query = MagicMock(); query.scalar_one_or_none.return_value = duplicate
     db = SimpleNamespace(execute=AsyncMock(return_value=query))
     saved = SimpleNamespace(id=8, conversation_id="conv_food")
     stored = {"entry": food_estimate(DialogueTurn(operations=[meal()]), NOW).model_dump(mode="json"), "message": "Ready"}
+    if help_mode:
+        stored.update(entry=None, suggestions=[{"name": "Cached recipe", "image": {"url": "https://thumb.wikimedia.org/photo.jpg"}}], next_meal={"meal_type": "dinner"})
     cached = AsyncMock(return_value=stored)
     monkeypatch.setattr(food, "cached_food_estimate", cached)
     monkeypatch.setattr(chat, "get_or_create_user_chat", AsyncMock(return_value=saved))
@@ -120,7 +134,7 @@ def test_completed_food_retry_returns_stored_estimate_without_model_or_usage_cha
     model = AsyncMock(); monkeypatch.setattr(chat, "resolve_user_bot_model", model)
     provider = SimpleNamespace(send_message_v2=AsyncMock())
     result = asyncio.run(chat.send_user_chat_message(db, user=SimpleNamespace(id=7), text="Chicken", attachments=None, professor_client=provider,
-        allow_commerce=False, companion_profile=SimpleNamespace(id=3), client_request_id="food-request-1", dialogue_protocol=2, meal_estimate=True))
+        allow_commerce=False, companion_profile=SimpleNamespace(id=3), client_request_id="food-request-1", dialogue_protocol=2, meal_estimate=True, nutrition_help=help_mode))
     assert result.meal_estimate == stored
     cached.assert_awaited_once_with(db, 7, "food-request-1")
     model.assert_not_awaited(); provider.send_message_v2.assert_not_awaited()

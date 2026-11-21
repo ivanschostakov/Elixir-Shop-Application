@@ -75,7 +75,7 @@ function harness(file, overrides = {}) {
         "@/screens/chat/mentor-meals-data": mealHelpers,
         "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "Icon" },
         "@/screens/chat/mentor-home": { MentorHomeScreen: "Home", MentorHomeHeader: "Header", mentorHomeStyles: {} },
-        "@/screens/chat/mentor-nutrition-pager": { MentorNutritionPager: "NutritionPager" },
+        "@/screens/chat/mentor-nutrition-summary": { MentorNutritionSummary: "NutritionSummary" },
         "@/screens/chat/mentor-nutrition-progress": { MentorCalorieRing: "Ring", MentorMacroProgress: "Bar" },
         "@/screens/chat/mentor-onboarding-layout": { MentorStageTransition: "Transition" },
         "@/screens/chat/companion": { CompanionPanel: "Editors" }, "@/screens/chat/mentor": { MentorWorkspace: "Workspace" },
@@ -171,16 +171,13 @@ test("home remains a fixed layout on small screens with no tab bar or next-step 
     for (const label of ["Спросить наставника", "Самочувствие", "Тренировка", "Мой курс"]) assert.equal(nodes(tree).some(node=>node.props.accessibilityLabel===label), false)
 })
 
-test("the primary nutrition action switches to water after swiping the metric cards", () => {
+test("the water row opens logging while the main action keeps adding food", () => {
     const h = harness("screens/chat/mentor-home.tsx"), actions = []
     const props = { state: state(), clock, busy: false, onAddFood: type => actions.push(type), onWater: () => actions.push("water") }
-    let tree = h.render("MentorHomeScreen", props)
-    find(tree, "NutritionPager").props.onSelect("water")
-    tree = h.render("MentorHomeScreen", props)
-    const button = nodes(tree).find(node => node.props.label === "Добавить воду")
-    assert.equal(button.props.icon, "water"); button.props.onPress()
+    const tree = h.render("MentorHomeScreen", props)
+    find(tree, "NutritionSummary").props.onWater()
     assert.deepEqual(actions, ["water"])
-    find(tree, "NutritionPager").props.onSelect("nutrition")
-    tree = h.render("MentorHomeScreen", props)
-    assert.ok(nodes(tree).some(node => node.props.icon === "food" && node.props.primary))
+    const button = nodes(tree).find(node => node.props.icon === "food" && node.props.primary)
+    button.props.onPress(); assert.notEqual(actions[1], "water")
+    assert.equal(nodes(tree).some(node => node.props.label === "Добавить воду"), false)
 })

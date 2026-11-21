@@ -36,7 +36,7 @@ test("both mentor catalogs cover all interface phrases and preserve every interp
             if (locale === "en") assert.doesNotMatch(translations[locale], /[А-Яа-яЁё]/, source)
         }
     }
-    for (const file of ["mentor.tsx", "mentor-progress.tsx", "mentor-workouts.tsx", "mentor-photos.tsx", "mentor-data.ts", "companion.tsx", "companion-dialogue.tsx", "companion-timezones.ts", "mentor-onboarding.tsx", "mentor-onboarding-data.ts", "mentor-setup.tsx", "mentor-onboarding-layout.tsx", "mentor-onboarding-optional.tsx", "mentor-nutrition-result.tsx", "mentor-development-notice.tsx", "mentor-reminder-time.tsx", "mentor-custom-answer.tsx", "mentor-home.tsx", "mentor-home-data.ts", "mentor-main.tsx", "mentor-navigation.tsx", "mentor-food.tsx", "mentor-food-data.ts"]) {
+    for (const file of ["mentor.tsx", "mentor-progress.tsx", "mentor-workouts.tsx", "mentor-photos.tsx", "mentor-data.ts", "companion.tsx", "companion-dialogue.tsx", "companion-timezones.ts", "mentor-onboarding.tsx", "mentor-onboarding-data.ts", "mentor-setup.tsx", "mentor-onboarding-layout.tsx", "mentor-onboarding-optional.tsx", "mentor-nutrition-result.tsx", "mentor-development-notice.tsx", "mentor-reminder-time.tsx", "mentor-custom-answer.tsx", "mentor-home.tsx", "mentor-home-data.ts", "mentor-main.tsx", "mentor-navigation.tsx", "mentor-food.tsx", "mentor-food-data.ts", "mentor-food-suggestions.tsx", "mentor-meal-screens.tsx", "mentor-nutrition-summary.tsx"]) {
         const filename = path.join(__dirname, "../screens/chat", file)
         const source = ts.createSourceFile(filename, fs.readFileSync(filename, "utf8"), ts.ScriptTarget.Latest, true)
         const visit = node => {

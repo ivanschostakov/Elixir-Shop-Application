@@ -418,6 +418,10 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             if meal_estimate:
                 snapshot.pop("dialogue", None)
                 function_tools = []
+            if nutrition_help == "suggest":
+                from .companion.food_suggestions import next_meal_context
+                meal_context = next_meal_context(snapshot)
+                snapshot["next_meal"] = meal_context.model_dump(mode="json")
             recent = list((await db.execute(select(AIMessage).where(AIMessage.chat_id == chat.id, AIMessage.id < user_message.id).order_by(AIMessage.id.desc()).limit(20))).scalars().all())
             replay = [{"role": "assistant" if m.sender == MessageSender.AI else "user", "content": m.text[:6000]} for m in reversed(recent)]
             async def record_resource(kind, external_id):
@@ -452,6 +456,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         output_schema = build_ai_chat_output_schema(
             include_companion=companion_profile is not None,
             dialogue=companion_profile is not None and dialogue_protocol == 2,
+            nutrition_suggestions=nutrition_help == "suggest",
         )
         from .companion.food import food_prompt, food_help_prompt
         ai_result = await professor_client.send_message_v2(
@@ -481,6 +486,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 raise HTTPException(409, "Контекст сопровождения изменился. Отправьте запрос заново.")
             proposal_version = snapshot["profile_version"]
         structured_output, initial_validation_errors = validate_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
+        if nutrition_help == "suggest" and structured_output is not None:
+            from .companion.food_suggestions import suggestion_errors
+            errors = suggestion_errors(structured_output, meal_context)
+            if errors:
+                structured_output, initial_validation_errors = None, errors
         if companion_profile is not None and dialogue_protocol == 2 and structured_output is not None:
             semantic_errors = _companion_output_semantic_errors(structured_output)
             if semantic_errors:
@@ -509,6 +519,10 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             if current_conversation != starting_conversation_id:
                 raise HTTPException(409, "Контекст сопровождения изменился. Отправьте запрос заново.")
             structured_output, final_validation_errors = validate_structured_ai_chat_output(ai_result.get("structured_output") or ai_result.get("text"))
+            if nutrition_help == "suggest" and structured_output is not None:
+                errors = suggestion_errors(structured_output, meal_context)
+                if errors:
+                    structured_output, final_validation_errors = None, errors
             if dialogue_protocol == 2 and structured_output is not None:
                 semantic_errors = _companion_output_semantic_errors(structured_output)
                 if semantic_errors:
@@ -596,6 +610,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 estimate.food_photo_attachment_ids = list((await db.execute(select(Attachment.id).where(Attachment.message_id == user_message.id, Attachment.type == AttachmentType.IMAGE))).scalars())
             reply_text = "Расчёт КБЖУ готов." if estimate else reply_text or "Опишите, что было в порции, или добавьте фото еды."
             meal_result = {"entry": estimate.model_dump(mode="json") if estimate else None, "message": reply_text}
+            if nutrition_help == "suggest":
+                from .companion.food_suggestions import illustrated_suggestions
+                meal_result.update(next_meal=meal_context.model_dump(mode="json"), suggestions=await illustrated_suggestions(structured_output.nutrition_suggestions) if structured_output else [])
+                # Photo lookup is external I/O; recheck ownership/consent before persisting.
+                companion_profile = await companion_service.assert_session_active(db, user.id, companion_profile_id)
             assistant_context.update(meal_estimate_request_id=client_request_id, meal_estimate=meal_result)
         ai_message = await create_ai_message(db, AIMessageCreate(user_id=user.id, chat_id=chat.id, text=reply_text or AI_CHAT_EMPTY_REPLY, sender=MessageSender.AI, context_json=assistant_context, is_sensitive=companion_profile is not None), commit=False)
         ai_message_id = ai_message.id
