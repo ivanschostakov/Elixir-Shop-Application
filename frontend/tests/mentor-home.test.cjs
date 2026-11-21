@@ -58,7 +58,9 @@ function harness(file, overrides = {}) {
     const jsx = (type, props, key) => ({ type, props, key })
     const module = loadTs(file, {
         react, "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
-        "react-native": { View: "View", Text: "Text", Pressable: "Pressable", ScrollView: "ScrollView", RefreshControl: "RefreshControl", useWindowDimensions: () => ({ width: 390, height: 844 }), StyleSheet: { create: v => v, absoluteFillObject: {}, hairlineWidth: 0.5 } },
+        "react-native": { View: "View", Text: "Text", Pressable: "Pressable", ScrollView: "ScrollView", Keyboard: { addListener: () => ({ remove() {} }), dismiss() {}, scheduleLayoutAnimation() {} }, Platform: { OS: "ios" }, useWindowDimensions: () => ({ width: 390, height: 844 }), StyleSheet: { create: v => v, absoluteFillObject: {}, hairlineWidth: 0.5 } },
+        "react-native-safe-area-context": { SafeAreaInsetsContext: { Provider: "Insets" } },
+        "@/screens/chat/mentor-navigation": { MentorBottomNavigation: "Tabs", MentorTabPages: "Pages", mentorTabLabel: tab => ({ workouts: "Тренировки", wellbeing: "Самочувствие" })[tab] },
         "expo-router": { useRouter: () => ({ replace: value => routes.push(value) }) },
         "@/constants/routes": { ROUTES: { home: "/", discover: "/discover", basket: "/basket", profile: "/profile" } },
         "@/hooks/basket/basket-draft-editing-store": { useBasketDraftEditingId: () => 14 },
@@ -83,24 +85,30 @@ function harness(file, overrides = {}) {
 const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)]
 const find = (tree, type) => nodes(tree).find(node => node.type === type)
 
-test("home actions open real editors and settings resume setup without bottom navigation", () => {
+test("nutrition editors, placeholder tabs, retained mentor chat and settings share one navigation", () => {
     const h = harness("screens/chat/mentor-main.tsx"), edits = []
-    let continued = 0, asked = 0, closed = 0
+    let continued = 0, closed = 0
     const c = { state: state(), clock, setEditor: editor => edits.push(editor), refresh: async () => c.state }
-    const render = () => h.render("MentorMainScreen", { controller: c, onClose() { closed++ }, onAsk() { asked++ }, onContinue() { continued++ } })
-    let screen = find(render(), "Home")
-    screen.props.onAddFood(); screen.props.onWellbeing(); screen.props.onMeal({ id: 42 })
-    assert.deepEqual(edits, [{ page: "meal" }, { page: "wellbeing" }, { page: "meal", entry: { id: 42 } }])
-    screen.props.onAsk(); assert.equal(asked, 1)
+    const render = () => h.render("MentorMainScreen", { controller: c, onClose() { closed++ }, renderChat: props => ({ type: "Chat", props }), onContinue() { continued++ } })
+    const page = key => find(render(), "Pages").props.render(key)
+    let screen = page("nutrition")
+    screen.props.onAddFood(); screen.props.onMeal({ id: 42 })
+    assert.deepEqual(edits, [{ page: "meal" }, { page: "meal", entry: { id: 42 } }])
     screen.props.onSettings()
     const settings = render()
     nodes(settings).find(node => node.props.accessibilityLabel === "Продолжить заполнение").props.onPress(); assert.equal(continued, 1)
     nodes(settings).find(node => node.props.accessibilityLabel === "Настройки и напоминания").props.onPress(); assert.equal(edits.at(-1).page, "settings")
     find(settings, "Header").props.onBack()
-    screen = find(render(), "Home"); screen.props.onWorkout()
-    assert.equal(find(render(), "Workspace").props.controller.mentorPage, "workouts")
-    assert.equal(find(render(), "Footer"), undefined)
-    find(render(), "Header").props.onBack(); find(render(), "Home").props.onClose()
+    find(render(), "Tabs").props.onSelect("workouts")
+    assert.equal(find(render(), "Tabs").props.active, "workouts")
+    assert.ok(nodes(page("workouts")).some(node => node.props.testID === "mentor-placeholder-workouts"))
+    find(render(), "Tabs").props.onSelect("wellbeing")
+    assert.ok(nodes(page("wellbeing")).some(node => node.props.testID === "mentor-placeholder-wellbeing"))
+    find(render(), "Tabs").props.onSelect("chat")
+    assert.equal(find(page("chat"), "Chat").props.active, true)
+    find(render(), "Tabs").props.onSelect("nutrition")
+    assert.equal(find(page("chat"), "Chat").props.active, false)
+    page("nutrition").props.onClose()
     assert.equal(closed, 1); assert.deepEqual(h.routes, [])
 })
 
@@ -143,5 +151,5 @@ test("home remains a fixed layout on small screens with no tab bar or next-step 
     assert.equal(find(tree,"ScrollView"),undefined)
     assert.equal(nodes(tree).some(node=>node.props.accessibilityRole==="tablist"),false)
     assert.equal(nodes(tree).some(node=>node.props.children==="Следующий шаг"),false)
-    assert.ok(nodes(tree).some(node=>node.props.accessibilityLabel==="Спросить наставника"))
+    for (const label of ["Спросить наставника", "Самочувствие", "Тренировка", "Мой курс"]) assert.equal(nodes(tree).some(node=>node.props.accessibilityLabel===label), false)
 })

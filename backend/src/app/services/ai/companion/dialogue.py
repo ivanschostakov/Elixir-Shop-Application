@@ -43,9 +43,9 @@ async def workflow(db, user_id, create=False):
 
 
 async def chat_for(db, user_id):
-    chat = (await db.execute(select(AIChat).where(AIChat.user_id == user_id))).scalar_one_or_none()
+    chat = (await db.execute(select(AIChat).where(AIChat.user_id == user_id, AIChat.scope == "mentor"))).scalar_one_or_none()
     if chat is None:
-        chat = AIChat(user_id=user_id, conversation_id=f"reset:{uuid4()}", current_tokens=0, total_tokens=0)
+        chat = AIChat(user_id=user_id, scope="mentor", conversation_id=f"reset:{uuid4()}", current_tokens=0, total_tokens=0)
         db.add(chat)
         await db.flush()
     return chat

@@ -600,17 +600,17 @@ async def apply_card(db, user_id, profile, action):
     message.context_json = context
 
 
-async def register_resource(db, user_id, kind, external_id):
+async def register_resource(db, user_id, kind, external_id, *, scope="mentor"):
     if not external_id or str(external_id).startswith("reset:"):
         return
     exists = (await db.execute(select(AIProviderResource.id).where(AIProviderResource.kind == kind, AIProviderResource.external_id == external_id))).scalar_one_or_none()
     if exists is None:
-        db.add(AIProviderResource(user_id=user_id, kind=kind, external_id=external_id))
+        db.add(AIProviderResource(user_id=user_id, scope=scope, kind=kind, external_id=external_id))
         await db.flush()
 
 
 async def invalidate_conversation(db, user_id):
-    chat = (await db.execute(select(AIChat).where(AIChat.user_id == user_id))).scalar_one_or_none()
+    chat = (await db.execute(select(AIChat).where(AIChat.user_id == user_id, AIChat.scope == "mentor"))).scalar_one_or_none()
     if chat:
         await register_resource(db, user_id, "conversation", chat.conversation_id)
         # A recognizable tombstone forces creation without carrying old context.
@@ -625,13 +625,16 @@ async def erase_companion(db, user_id):
         return  # Repeated erasure must not invalidate a new ordinary chat.
     if profile.enabled:
         await invalidate_conversation(db, user_id)
-    files = list((await db.execute(select(Attachment).join(AIMessage).where(AIMessage.user_id == user_id, Attachment.is_private.is_(True)))).scalars().all())
+    mentor_chats = select(AIChat.id).where(AIChat.user_id == user_id, AIChat.scope == "mentor")
+    files = list((await db.execute(select(Attachment).join(AIMessage).where(AIMessage.user_id == user_id, (AIMessage.is_sensitive.is_(True) | AIMessage.chat_id.in_(mentor_chats)), Attachment.is_private.is_(True)))).scalars().all())
     for attachment in files:
         await register_resource(db, user_id, "local_file", str(attachment.relative_path))
-    await db.execute(update(AIProviderResource).where(AIProviderResource.user_id == user_id).values(status="pending_delete", next_attempt_at=now_utc() + timedelta(minutes=10)))
+    ordinary_conversations = select(AIChat.conversation_id).where(AIChat.user_id == user_id, AIChat.scope == "ordinary")
+    await db.execute(update(AIProviderResource).where(AIProviderResource.user_id == user_id, AIProviderResource.scope == "mentor",
+        ~((AIProviderResource.kind == "conversation") & AIProviderResource.external_id.in_(ordinary_conversations))).values(status="pending_delete", next_attempt_at=now_utc() + timedelta(minutes=10)))
     for model in (AICompanionDialogue, AICompanionReminder, AICompanionEvent, AICompanionEntry, AICompanionPlan, AICompanionOperation, AICompanionProfile):
         await db.execute(delete(model).where(model.user_id == user_id))
     # Provider cleanup waits out the maximum in-flight turn (540 s); local records vanish now.
     # Remove actual sensitive message content too, otherwise it can rehydrate memory.
-    await db.execute(delete(AIMessage).where(AIMessage.user_id == user_id, AIMessage.is_sensitive.is_(True)))
+    await db.execute(delete(AIMessage).where(AIMessage.user_id == user_id, (AIMessage.is_sensitive.is_(True) | AIMessage.chat_id.in_(mentor_chats))))
     await revoke_consent(db, user_id)

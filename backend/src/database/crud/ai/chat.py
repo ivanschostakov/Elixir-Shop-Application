@@ -35,7 +35,7 @@ async def get_ai_chat_by_id(session: AsyncSession, chat_id: int, *, user_id: int
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
-async def get_ai_chat_by_user_id(session: AsyncSession, user_id: int) -> AIChat | None: return (await session.execute(_ai_chat_select().where(AIChat.user_id == user_id))).scalar_one_or_none()
+async def get_ai_chat_by_user_id(session: AsyncSession, user_id: int, *, scope: str = "ordinary") -> AIChat | None: return (await session.execute(_ai_chat_select().where(AIChat.user_id == user_id, AIChat.scope == scope))).scalar_one_or_none()
 async def get_ai_chat_by_conversation_id(session: AsyncSession, conversation_id: str) -> AIChat | None: return (await session.execute(_ai_chat_select().where(AIChat.conversation_id == conversation_id))).scalar_one_or_none()
 
 

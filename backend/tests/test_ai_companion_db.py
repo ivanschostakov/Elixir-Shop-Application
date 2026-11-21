@@ -292,7 +292,7 @@ def test_plan_revision_reminders_and_erasure(monkeypatch):
             state = await service.get_state(db, user.id)
             assert len(state["events"]) == 1
             assert (await service.context_for(db, user.id))["profile_version"] == state["profile"]["version"]
-            chat = AIChat(user_id=user.id, conversation_id="conv_sensitive")
+            chat = AIChat(user_id=user.id, scope="mentor", conversation_id="conv_sensitive")
             db.add(chat); await db.flush()
             db.add(AIMessage(user_id=user.id, chat_id=chat.id, sender=MessageSender.AI, text="private", is_sensitive=True))
             await service.register_resource(db, user.id, "file", "file_sensitive"); await db.commit()
@@ -356,6 +356,7 @@ def test_companion_turn_persists_draft_private_upload_and_deduplicates(monkeypat
     from starlette.datastructures import UploadFile
     from src.app.services.ai import chat as chat_service
     from src.database.schemas.ai.chat import AIChatWithMessagesRead
+    from src.app.services.ai.companion.dialogue_schemas import DialogueOperation, DialogueTurn
     import src.database.models.ai.attachment as attachment_model
     monkeypatch.setattr(config, "AI_COMPANION_ENABLED", True)
     monkeypatch.setattr(attachment_model, "PRIVATE_MEDIA_DIR", tmp_path)
@@ -373,28 +374,30 @@ def test_companion_turn_persists_draft_private_upload_and_deduplicates(monkeypat
                 seen.update(kwargs)
                 await kwargs["resource_recorder"]("conversation", kwargs["conversation_id"])
                 await kwargs["resource_recorder"]("response", "resp_mock")
-                return {"text": "Проверьте вес", "structured_output": {"assistant_text": "Проверьте вес", "companion_proposals": [Proposal(kind="entry", entry=entry, summary="Записать вес").model_dump(mode="json")]}, "openai_model": "mock", "input_tokens": 100, "output_tokens": 10, "conversation_id": kwargs["conversation_id"]}
+                return {"text": "Проверьте вес", "structured_output": {"assistant_text": "Проверьте вес", "companion_dialogue": DialogueTurn(operations=[DialogueOperation(kind="entry", entry=entry, summary="Записать вес", evidence="Вес 80 кг", certain=False)]).model_dump(mode="json")}, "openai_model": "mock", "input_tokens": 100, "output_tokens": 10, "conversation_id": kwargs["conversation_id"]}
             professor = SimpleNamespace(create_conversation=AsyncMock(return_value="conv_mock"), send_message_v2=AsyncMock(side_effect=respond), _resolve_model_name=lambda _: "mock")
-            result = await chat_service.send_user_chat_message(db, user=user, text="Вес 80 кг", attachments=[UploadFile(file=BytesIO(b"private attachment"), filename="note.txt")], professor_client=professor, allow_commerce=False, companion_profile=profile, client_request_id="request-turn-001")
+            result = await chat_service.send_user_chat_message(db, user=user, text="Вес 80 кг", attachments=[UploadFile(file=BytesIO(b"private attachment"), filename="note.txt")], professor_client=professor, allow_commerce=False, companion_profile=profile, client_request_id="request-turn-001", dialogue_protocol=2)
             read = AIChatWithMessagesRead.model_validate(result.chat)
             assert len(read.messages) == 2
-            assert len(read.messages[-1].companion_cards) == 1
+            assert len(read.messages[-1].dialogue_cards) == 1
+            assert read.scope == "mentor"
             assert not list((await db.execute(select(AICompanionEntry))).scalars())
             attachment = read.messages[0].attachments[0]
             assert attachment.is_private and "/attachments/" in attachment.download_path
             assert seen["input_text"] == "Вес 80 кг"
             assert "companion_context" in seen and not seen["companion_context"]["commerce_allowed"]
+            assert seen["companion_context"]["channel"] == "app"
             if not has_consent:
                 assert seen["companion_context"]["storage_consent_required"]
                 assert seen["companion_context"]["profile"] == {}
                 assert await service.consent_for(db, user.id) is None
             assert "calculate_course_supply" not in {t["name"] for t in seen["function_tools"]}
-            repeat = await chat_service.send_user_chat_message(db, user=user, text="Вес 80 кг", attachments=None, professor_client=professor, allow_commerce=False, companion_profile=profile, client_request_id="request-turn-001")
+            repeat = await chat_service.send_user_chat_message(db, user=user, text="Вес 80 кг", attachments=[UploadFile(file=BytesIO(b"private attachment"), filename="note.txt")], professor_client=professor, allow_commerce=False, companion_profile=profile, client_request_id="request-turn-001", dialogue_protocol=2)
             assert len(repeat.chat.messages) == 2
             professor.send_message_v2.assert_awaited_once()
             if not has_consent:
-                card = read.messages[-1].companion_cards[0]
-                await act(db, user, "confirm", message_id=read.messages[-1].id, action_id=card["id"], action_token=card["action_token"], consent_version=config.AI_COMPANION_CONSENT_VERSION, adult_confirmed=True)
+                card = read.messages[-1].dialogue_cards[0]
+                await act(db, user, "dialogue_confirm", message_id=read.messages[-1].id, action_id=card["id"], action_token=card["action_token"], consent_version=config.AI_COMPANION_CONSENT_VERSION, adult_confirmed=True)
                 assert service.consent_is_current(await service.consent_for(db, user.id))
                 assert len(list((await db.execute(select(AICompanionEntry))).scalars())) == 1
     asyncio.run(run())
@@ -453,7 +456,7 @@ def test_erasure_during_generation_cannot_restore_health_messages(monkeypatch):
                 return {"text": "must not persist", "structured_output": {"assistant_text": "must not persist"}, "openai_model": "mock", "conversation_id": kwargs["conversation_id"]}
             professor = SimpleNamespace(create_conversation=AsyncMock(return_value="conv_inflight"), send_message_v2=respond, _resolve_model_name=lambda _: "mock")
             with pytest.raises(HTTPException) as error:
-                await chat_service.send_user_chat_message(db, user=user, text="sensitive", attachments=None, professor_client=professor, companion_profile=profile, client_request_id="request-delete-race")
+                await chat_service.send_user_chat_message(db, user=user, text="sensitive", attachments=None, professor_client=professor, companion_profile=profile, client_request_id="request-delete-race", dialogue_protocol=2, allow_commerce=False)
             assert error.value.status_code == 409
             assert not list((await db.execute(select(AIMessage).where(AIMessage.user_id == user_id))).scalars())
             chat = (await db.execute(select(AIChat).where(AIChat.user_id == user_id))).scalar_one()
@@ -500,7 +503,6 @@ def test_account_deletion_queues_companion_erasure(monkeypatch):
     _patched_value_500 = AsyncMock()
     for target in ('src.app.services.auth.service.email._apply_auth_rate_limit', 'src.app.services.auth.service.phone._apply_auth_rate_limit', 'src.app.services.auth.service.rate_limits._apply_auth_rate_limit', 'src.app.services.auth.service.sessions._apply_auth_rate_limit', 'src.app.services.auth.service.telegram._apply_auth_rate_limit',):
         monkeypatch.setattr(target, _patched_value_500)
-    monkeypatch.setattr(auth, "revoke_active_user_sessions", AsyncMock())
     async def run():
         async with database() as (db, user):
             await enable(db, user)

@@ -17,6 +17,7 @@ from src.app.services.ai.data_consent import require_ai_data_consent
 from src.app.services.app_integrity.service import verify_app_integrity_request
 from src.database import get_db
 from src.database.models import User
+from .schemas.ai_chat import AIChatResponse
 
 companion_router = APIRouter(prefix="/ai-chat/companion", tags=["ai_companion"])
 
@@ -175,7 +176,7 @@ async def _message(request, text, client_request_id, attachments, dialogue_proto
     try:
         await record_app_ai_activity(db, request=request, user=user, event_type="message_requested", details={"message_length": len(text), "attachments_count": len(attachments or []), "mode": "companion"})
         async with asyncio.timeout(540):
-            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=not meal_estimate, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2, **({"meal_estimate": True} if meal_estimate else {}))
+            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=False, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2, **({"meal_estimate": True} if meal_estimate else {}))
         if meal_estimate:
             if result.meal_estimate is None:
                 raise HTTPException(409, "Не удалось восстановить расчёт. Попробуйте ещё раз.")
@@ -197,6 +198,16 @@ class MealEstimateRead(StrictModel):
 @companion_router.post("/messages")
 async def message(request: Request, text: str = Form(...), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), dialogue_protocol: int | None = Form(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
     return await _message(request, text, client_request_id, attachments, dialogue_protocol, user, db)
+
+
+@companion_router.get("/messages", response_model=AIChatResponse)
+async def read_messages(user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    from src.database.crud.ai.chat import get_ai_chat_by_user_id
+    profile = await service.profile_for(db, user.id)
+    if profile is None or not profile.enabled:
+        raise HTTPException(403, "Сопровождение отключено")
+    await service.require_chat_consent(db, user.id, profile)
+    return AIChatResponse(chat=await get_ai_chat_by_user_id(db, user.id, scope="mentor"), last_turn=None)
 
 
 @companion_router.post("/meal-estimate", response_model=MealEstimateRead)

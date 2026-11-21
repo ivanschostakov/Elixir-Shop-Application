@@ -14,8 +14,7 @@ import type { CompanionEntry, CompanionState } from "@/services/api/companion"
 type Props = {
     state: CompanionState | null; clock: string; animationKey?: number; error?: string; busy: boolean
     onRefresh: () => void; onClose: () => void; onSettings: () => void; onAddFood: () => void; onNutrition: () => void
-    onMeal: (entry: CompanionEntry) => void; onWorkout: () => void; onCourse: () => void; onWellbeing: (entry?: CompanionEntry) => void; onWeight: () => void
-    onAsk: () => void; onJournal: () => void
+    onMeal: (entry: CompanionEntry) => void; onJournal: () => void
 }
 
 export function MentorHomeHeader({ onBack, onSettings, title }: { onBack: () => void; onSettings?: () => void; title?: string }) {
@@ -57,10 +56,7 @@ export function MentorHomeScreen(props: Props) {
     const [height, setHeight] = useState(window.height - 150)
     const compact = height < 650, dense = height < 560
     const date = mentorDateLabel(new Date(`${data.date}T12:00:00`), dense ? { day: "numeric", month: "short" } : { weekday: "long", day: "numeric", month: "long" })
-    const mealLimit = height >= 760 ? 3 : height >= 650 ? 2 : height >= 560 ? 1 : 0
-    const quickLabels = { wellbeing: mt("Самочувствие"), weight: mt("Отметить вес"), workouts: mt("Тренировка"), course: mt("Мой курс") }
-    const quickDetails = { wellbeing: mt("Оцените в 1–5 баллов"), weight: mt("Записать текущий вес"), workouts: data.workouts.find(task => task.status === "pending" || task.status === "in_progress")?.label, course: mt("Отметить приём по курсу") }
-    const quickActions = { wellbeing: () => props.onWellbeing(), weight: props.onWeight, workouts: props.onWorkout, course: props.onCourse }
+    const mealLimit = Math.max(1, Math.min(6, Math.floor((height - (dense ? 370 : 440)) / 54)))
     const time = (value: string) => formatCompanionDate(value, clock).match(/(\d{2}:\d{2})(?::\d{2})?/)?.[1] ?? ""
     const remaining = data.remaining === null ? mt("Ориентир питания не задан") : data.remaining >= 0 ? mt("Осталось {0} ккал", [number(data.remaining)]) : mt("Сверх ориентира {0} ккал", [number(-data.remaining)])
     return <View testID="mentor-home" style={[styles.screen, { backgroundColor: colors.surface }]}>
@@ -86,12 +82,6 @@ export function MentorHomeScreen(props: Props) {
                 <View style={styles.sectionHeader}><Text accessibilityRole="header" style={[styles.sectionTitle, { color: colors.text }]}>{mt("Ваш день")}</Text><Pressable accessibilityRole="button" onPress={props.onJournal} hitSlop={8}><Text style={[styles.subtitle, { color: colors.green }]}>{mt("Все записи")}</Text></Pressable></View>
                 {mealLimit > 0 ? data.meals.slice(-mealLimit).map(entry => <DayRow key={entry.id} title={entry.data.name || mt("Приём пищи")} subtitle={dense ? undefined : time(entry.occurred_at)} done trailing={entry.data.nutrition ? mt("{0} ккал", [number(entry.data.nutrition.kcal)]) : undefined} onPress={() => props.onMeal(entry)} />) : null}
                 {!data.meals.length && !dense ? <Text style={[styles.empty, { color: colors.muted }]}>{mt("Добавьте первый приём пищи")}</Text> : null}
-                {data.quickStep ? <DayRow title={quickLabels[data.quickStep]} subtitle={dense ? undefined : quickDetails[data.quickStep]} onPress={quickActions[data.quickStep]} /> : null}
-            </View>
-            {state?.plan && !compact ? <Pressable accessibilityRole="button" onPress={props.onCourse} style={styles.course}><MentorQuestionIcon name="weekly" size={22} color={colors.green} /><Text style={[styles.courseText, { color: colors.text }]}>{state.plan.status === "paused" ? mt("Курс на паузе") : state.plan.status === "completed" ? mt("Курс завершён") : data.nextCourse ? mt("Следующий приём: {0}", [formatCompanionDate(data.nextCourse.scheduled_at, clock)]) : mt("На сегодня нет приёмов по курсу")}</Text><MentorQuestionIcon name="chevronRight" size={18} color={colors.muted} /></Pressable> : null}
-            <View style={styles.bottomActions}>
-                <View style={styles.actions}><Action label={mt("Тренировка")} icon="gym" fill onPress={props.onWorkout} /><Action label={mt("Мой курс")} icon="weekly" fill onPress={props.onCourse} /></View>
-                <Pressable accessibilityRole="button" accessibilityLabel={mt("Спросить наставника")} onPress={props.onAsk} style={({ pressed }) => [styles.ask, { backgroundColor: colors.mint, opacity: pressed ? 0.7 : 1 }]}><MentorQuestionIcon name="message" size={27} color={colors.green} /><Text style={[styles.askText, { color: colors.text }]}>{mt("Спросить наставника")}</Text><MentorQuestionIcon name="chevronRight" size={21} color={colors.green} /></Pressable>
             </View>
         </View>
     </View>
@@ -107,6 +97,5 @@ const styles = StyleSheet.create({
     action: { minHeight: 46, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 9, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 12 }, actionText: { fontSize: 17, lineHeight: 23, fontWeight: "600", flexShrink: 1 },
     sectionHeader: { minHeight: 33, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }, sectionTitle: { fontSize: 24, lineHeight: 30, fontWeight: "700", letterSpacing: -0.5 },
     dayRow: { minHeight: 50, flexDirection: "row", alignItems: "center", gap: 11, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth }, status: { width: 23, height: 23, borderWidth: 1.5, borderRadius: 12, alignItems: "center", justifyContent: "center" }, rowCopy: { flex: 1, minWidth: 0, gap: 3 }, rowTitle: { fontSize: 17, lineHeight: 23, fontWeight: "600" }, subtitle: { fontSize: 14, lineHeight: 19 }, trailing: { fontSize: 14, lineHeight: 20, flexShrink: 1, textAlign: "right" }, empty: { fontSize: 14, lineHeight: 20, paddingVertical: 6 },
-    course: { flexDirection: "row", alignItems: "center", gap: 11, paddingVertical: 2 }, courseText: { flex: 1, fontSize: 15, lineHeight: 22 }, actions: { flexDirection: "row", gap: 10 },
-    bottomActions: { marginTop: "auto", gap: 10 }, ask: { flexDirection: "row", alignItems: "center", minHeight: 50, gap: 13, paddingVertical: 10, paddingHorizontal: 17, borderRadius: 17 }, askText: { flex: 1, fontSize: 18, lineHeight: 24, fontWeight: "600" }, notice: { borderRadius: 14, padding: 14, gap: 8 },
+    notice: { borderRadius: 14, padding: 14, gap: 8 },
 })

@@ -147,6 +147,7 @@ async def list_ai_chats(
 ) -> AdminPage[AdminAIChatListItem]:
     filters = []
     if not context.has_permission("ai_companion.read_sensitive"):
+        filters.append(AIChat.scope == "ordinary")
         filters.append(~AIChat.messages.any(AIMessage.is_sensitive.is_(True)))
     if q:
         pattern = f"%{q.strip()}%"
@@ -509,7 +510,7 @@ async def get_ai_chat_detail(
     chat = await get_ai_chat_by_id(db, chat_id)
     if chat is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI chat not found")
-    if any(message.is_sensitive for message in chat.messages) and not context.has_permission("ai_companion.read_sensitive"):
+    if (chat.scope == "mentor" or any(message.is_sensitive for message in chat.messages)) and not context.has_permission("ai_companion.read_sensitive"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI chat not found")
     user = await db.get(User, chat.user_id)
     if user is None:

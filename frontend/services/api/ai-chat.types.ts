@@ -95,6 +95,7 @@ export type AIMessageUsageRead = {
 
 export type AIChatRead = {
     id: number
+    scope?: "ordinary" | "mentor"
     user_id: number
     conversation_id: string
     current_tokens: number

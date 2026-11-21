@@ -102,7 +102,7 @@ def test_completed_food_retry_returns_stored_estimate_without_model_or_usage_cha
     from src.app.services.ai import chat
     from src.app.services.ai.companion import food
     fingerprint = hashlib.sha256(("meal_estimate:" + hashlib.sha256(b"Chicken\n").hexdigest()).encode()).hexdigest()
-    duplicate = SimpleNamespace(text="Chicken", context_json={"generation_status": "completed", "input_fingerprint": fingerprint})
+    duplicate = SimpleNamespace(chat_id=8, text="Chicken", context_json={"generation_status": "completed", "input_fingerprint": fingerprint})
     query = MagicMock(); query.scalar_one_or_none.return_value = duplicate
     db = SimpleNamespace(execute=AsyncMock(return_value=query))
     saved = SimpleNamespace(id=8, conversation_id="conv_food")

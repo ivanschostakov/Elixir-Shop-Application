@@ -87,7 +87,24 @@ test("explicit ordinary chat sends the mode flag while mentor requests retain pr
     assert.equal(requests[1][2].appIntegrityAction, "ai-companion")
 })
 
-test("chat sends follow the resolved mentor mode without changing the saved profile", async () => {
+test("each history uses its own protected route and rejects a response from the other chat", async () => {
+    const requests = []
+    let scope = "mentor"
+    const api = loadTs("services/api/ai-chat.ts", {
+        "@/services/api/client": { apiGet: async (...args) => { requests.push(args); return { chat: { scope, messages: [] } } } },
+        "@/services/api/ai-chat.constants": { aiChatEndpoint: "/ai-chat" },
+        "@/services/api/ai-data-consent": {},
+    })
+    await api.getMyAiChat(true)
+    assert.equal(requests[0][0], "/ai-chat/companion/messages"); assert.equal(requests[0][2].appIntegrityAction, "ai-companion")
+    await assert.rejects(api.getMyAiChat(false))
+    scope = "ordinary"; await api.getMyAiChat(false)
+    assert.equal(requests.at(-1)[0], "/ai-chat"); assert.equal(requests.at(-1)[2].appIntegrityAction, "ai-chat:read")
+    await assert.rejects(api.getMyAiChat(true))
+    scope = undefined; await assert.rejects(api.getMyAiChat(true))
+})
+
+test("mentor and professor keep separate send scopes; disabled mentor never falls back to professor", async () => {
     const requests = []
     const profile = { enabled: true, version: 4 }
     let mentorShown = true
@@ -104,10 +121,12 @@ test("chat sends follow the resolved mentor mode without changing the saved prof
         "@/services/api/companion": { requestKey: () => "mentor-request-001" },
         "@/services/api/ai-data-consent": { AiConsentDeclinedError: class extends Error {} },
     })
-    const chat = useAiChat(async () => mentorShown && profile.enabled, () => 2)
+    const chat = useAiChat(async () => mentorShown && profile.enabled, () => 2, true, "mentor")
     await chat.sendMessage("mentor")
     mentorShown = false
-    await chat.sendMessage("ordinary")
+    await assert.rejects(chat.sendMessage("mentor disabled"), /Сопровождение отключено/)
+    const ordinary = useAiChat(false, () => 2, true, "ordinary")
+    await ordinary.sendMessage("ordinary")
     mentorShown = true
     await chat.sendMessage("mentor again")
     assert.deepEqual(requests, [
@@ -118,7 +137,7 @@ test("chat sends follow the resolved mentor mode without changing the saved prof
     assert.deepEqual(profile, { enabled: true, version: 4 })
 })
 
-test("failed chat retries retain their key only while the resolved mode stays the same", async () => {
+test("mentor retries retain their key when access is temporarily unavailable", async () => {
     const requests = []
     let mentorShown = true
     let keyIndex = 0
@@ -135,16 +154,16 @@ test("failed chat retries retain their key only while the resolved mode stays th
         "@/services/api/companion": { requestKey: () => `retry-key-${++keyIndex}` },
         "@/services/api/ai-data-consent": { AiConsentDeclinedError: class extends Error {} },
     })
-    const chat = useAiChat(async () => mentorShown, () => 2)
+    const chat = useAiChat(async () => mentorShown, () => 2, true, "mentor")
     await assert.rejects(chat.sendMessage("same draft"), /offline/)
     await assert.rejects(chat.sendMessage("same draft"), /offline/)
     mentorShown = false
-    await assert.rejects(chat.sendMessage("same draft"), /offline/)
+    await assert.rejects(chat.sendMessage("same draft"), /Сопровождение отключено/)
     mentorShown = true
     await assert.rejects(chat.sendMessage("same draft"), /offline/)
-    assert.deepEqual(requests.map(args => args[2]), ["retry-key-1", "retry-key-1", undefined, "retry-key-3"])
-    assert.deepEqual(requests.map(args => args[4]), [false, false, true, false])
-    assert.equal(keyIndex, 3)
+    assert.deepEqual(requests.map(args => args[2]), ["retry-key-1", "retry-key-1", "retry-key-1"])
+    assert.deepEqual(requests.map(args => args[4]), [false, false, false])
+    assert.equal(keyIndex, 1)
 })
 
 test("private diary attachments never resolve to public media URLs", () => {

@@ -246,7 +246,7 @@ def test_conversation_rotation_rehydrates_once_and_tracks_response(monkeypatch):
 
 def test_sensitive_admin_chat_requires_explicit_permission(monkeypatch):
     from src.app.modules.admin import ai_chats
-    chat = SimpleNamespace(messages=[SimpleNamespace(is_sensitive=True)])
+    chat = SimpleNamespace(scope="mentor", messages=[SimpleNamespace(is_sensitive=True)])
     monkeypatch.setattr(ai_chats, "get_ai_chat_by_id", AsyncMock(return_value=chat))
     async def run():
         with pytest.raises(HTTPException) as error:

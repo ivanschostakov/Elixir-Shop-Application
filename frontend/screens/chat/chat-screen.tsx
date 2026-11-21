@@ -41,7 +41,7 @@ import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import { CompanionCards, useCompanion } from "@/screens/chat/companion"
-import type { MentorComposeMode } from "@/screens/chat/mentor"
+import type { MentorTab } from "@/screens/chat/mentor-navigation"
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { MentorSetup } from "@/screens/chat/mentor-setup"
 import { MENTOR_SHORTCUT_HEIGHT, MentorShortcut } from "@/screens/chat/mentor-shortcut"
@@ -128,10 +128,17 @@ export default function ChatScreen() {
     return <ChatScreenContent key={user?.id ?? "guest"} />
 }
 
-function ChatScreenContent() {
+type EmbeddedMentor = { controller: ReturnType<typeof useCompanion>; active: boolean; onBack: () => void }
+export function MentorChatScreen(props: EmbeddedMentor) { return <ChatScreenContent mentor={props} /> }
+
+function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
+    const mentorChat = !!mentor
+    const screenActive = mentor?.active ?? true
+    const screenActiveRef = useRef(screenActive); screenActiveRef.current = screenActive
     const chatScreenStyles = useThemeStyles(createChatScreenStyles)
     const router = useRouter()
-    const routeParams = useLocalSearchParams<{ mode?: string | string[]; topicId?: string | string[]; conversationId?: string | string[]; companion?: string }>()
+    const localParams = useLocalSearchParams<{ mode?: string | string[]; topicId?: string | string[]; conversationId?: string | string[]; companion?: string }>()
+    const routeParams = mentorChat ? {} : localParams
     const { t } = useLanguage()
     const { isDark, palette } = useTheme()
     const { width: screenWidth } = useWindowDimensions()
@@ -149,7 +156,7 @@ function ChatScreenContent() {
     const [voiceRecording, setVoiceRecording] = useState(false)
     const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const [chatMode, setChatMode] = useState<ChatMode>("ai")
-    const [modeReady, setModeReady] = useState(false)
+    const [modeReady, setModeReady] = useState(mentorChat)
     const [topicNavigation, setTopicNavigation] = useState<ChatTopicNavigation | null>(null)
     const [communityUnread, setCommunityUnread] = useState(0)
     const [supportUnread, setSupportUnread] = useState(0)
@@ -169,22 +176,27 @@ function ChatScreenContent() {
     const simpleIosChat = iosChat && !nativeIosChat
     const [composerDockHeight, setComposerDockHeight] = useState(0)
     const [followingLatest, setFollowingLatest] = useState(true)
-    const communityAvailable = isCommunityChatAvailable(Platform.OS)
-    const mentorAvailable = isMentorAvailable(Platform.OS)
+    const communityAvailable = !mentorChat && isCommunityChatAvailable(Platform.OS)
+    const mentorAvailable = !mentorChat && isMentorAvailable(Platform.OS)
     const communityRoute = requestedMode === "community" || requestedTopicId !== null
     const communityRequestedByRoute = communityAvailable && communityRoute
     const blockedCommunityRoute = !communityAvailable && communityRoute
     const supportRequestedByRoute = requestedMode === "support" || requestedConversationId !== null
     const chatModeRequestedByRoute = communityRoute || supportRequestedByRoute || requestedMode === "ai"
-    const aiAllowed = useAiChatEntryConsent(modeReady && chatMode === "ai")
-    const companion = useCompanion(aiAllowed && mentorAvailable)
+    const aiAllowed = useAiChatEntryConsent(modeReady && chatMode === "ai" && screenActive)
+    const ownCompanion = useCompanion(aiAllowed && mentorAvailable)
+    const companion = mentor?.controller ?? ownCompanion
     const [mentorOpen, setMentorOpen] = useState(false)
     const [mentorVisited, setMentorVisited] = useState(false)
-    const [mentorChatActive, setMentorChatActive] = useState(false)
-    const mentorChatActiveRef = useRef(false)
-    const pendingMentorCompose = useRef<{ text: string; mode: MentorComposeMode } | null>(null)
-    const resolveMentorChat = async () => mentorChatActiveRef.current ? companion.resolveEnabled() : false
-    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(resolveMentorChat, companion.resolveProtocol, aiAllowed)
+    const [mentorInitialTab, setMentorInitialTab] = useState<MentorTab>("nutrition")
+    const resolveMentorChat = async () => mentorChat ? companion.resolveEnabled() : false
+    const { aiTyping, chat, error, loading, messages, performAction, refresh, refreshing, sending, sendMessage } = useAiChat(resolveMentorChat, companion.resolveProtocol, aiAllowed, mentorChat ? "mentor" : "ordinary")
+    const latestMentorMessage = mentorChat ? chat?.chat?.messages.at(-1) : undefined
+    const mentorReplyId = latestMentorMessage?.sender === "ai" ? latestMentorMessage.id : undefined
+    const refreshCompanion = companion.refresh
+    useEffect(() => {
+        if (mentorReplyId !== undefined) void refreshCompanion()
+    }, [mentorReplyId, refreshCompanion])
     const initialMessageIds = useRef<Set<number> | null>(null)
     if (chat && !initialMessageIds.current) initialMessageIds.current = new Set((chat.chat?.messages ?? []).map(message => message.id))
     const scrollRef = useRef<ScrollView | null>(null)
@@ -198,7 +210,7 @@ function ChatScreenContent() {
     const chatScroll = useChatScroll(scrollRef, null, iosChat ? setFollowingLatest : undefined)
     const { followLatest } = chatScroll
     const showConversation = useCallback(() => { followLatest() }, [followLatest])
-    const openMentor = useCallback(() => { Keyboard.dismiss(); setMentorVisited(true); setMentorOpen(true) }, [])
+    const openMentor = useCallback(() => { Keyboard.dismiss(); setMentorInitialTab("nutrition"); setMentorVisited(true); setMentorOpen(true) }, [])
     const cameraPermissionPromptedRef = useRef(false)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
@@ -211,6 +223,7 @@ function ChatScreenContent() {
     } = useBasketMutations()
 
     useEffect(() => {
+        if (mentorChat) return
         let mounted = true
         void readStoredChatMode().then((storedMode) => {
             if (!mounted) return
@@ -218,7 +231,12 @@ function ChatScreenContent() {
             setModeReady(true)
         })
         return () => { mounted = false }
-    }, [chatModeRequestedByRoute])
+    }, [chatModeRequestedByRoute, mentorChat])
+
+    useEffect(() => {
+        if (routeParams.companion !== "1") return
+        Keyboard.dismiss(); setMentorInitialTab("chat"); setMentorVisited(true); setMentorOpen(true)
+    }, [routeParams.companion])
 
     useEffect(() => {
         if (!communityRequestedByRoute) return
@@ -260,7 +278,7 @@ function ChatScreenContent() {
         header: "none",
         footer: "none",
         mode: "fullscreen",
-    })
+    }, !mentorChat)
 
     useEffect(() => {
         if (
@@ -292,6 +310,15 @@ function ChatScreenContent() {
             // Ignore cleanup failures when the recorder native object is already released.
         }
     }, [audioRecorder])
+
+    useEffect(() => {
+        if (screenActive) return
+        setAttachmentSheetVisible(false)
+        if (voiceRecording) {
+            void audioRecorder.stop().catch(() => undefined).finally(() => setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined))
+            setVoiceRecording(false)
+        }
+    }, [screenActive, audioRecorder, voiceRecording])
 
     const appendAttachments = useCallback((nextAttachments: UploadableChatAttachment[]) => {
         if (!nextAttachments.length) {
@@ -406,6 +433,7 @@ function ChatScreenContent() {
 
             await setAudioModeAsync(CHAT_RECORDING_AUDIO_MODE)
             await audioRecorder.prepareToRecordAsync()
+            if (!screenActiveRef.current) { await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE); return }
             audioRecorder.record()
             setVoiceRecording(true)
         } catch {
@@ -699,29 +727,13 @@ function ChatScreenContent() {
         if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress()
         else void handleSend()
     }
-    const finishMentorDismiss = () => {
-        const pending = pendingMentorCompose.current
-        pendingMentorCompose.current = null
-        if (!pending) return
-        if (pending.text) setDraft(pending.text)
-        if (pending.mode === "photo") void handleOpenCamera()
-        else if (pending.mode === "voice") void handleVoiceButtonPress()
-        else mentorInputRef.current?.focus()
-    }
     const closeMentor = () => {
         companion.setEditor(null)
         setMentorOpen(false)
-        // iOS presents the input/camera after the full-screen modal has dismissed.
-        if (Platform.OS !== "ios") requestAnimationFrame(finishMentorDismiss)
-    }
-    const askMentor = (text = "", mode: MentorComposeMode = "text") => {
-        mentorChatActiveRef.current = true
-        setMentorChatActive(true)
-        pendingMentorCompose.current = { text, mode }
-        closeMentor()
     }
     const handleBack = () => {
-        if (chatMode === "community" && topicNavigation) topicNavigation.onBack()
+        if (mentor) mentor.onBack()
+        else if (chatMode === "community" && topicNavigation) topicNavigation.onBack()
         else router.push(ROUTES.discover)
     }
     const scrollInsets = { paddingTop: scrollTopInset + spacing.sm, paddingBottom: (iosChat ? spacing.sm : scrollBottomInset + spacing.sm) + (mentorAvailable ? MENTOR_SHORTCUT_HEIGHT + 8 : 0) }
@@ -769,7 +781,7 @@ function ChatScreenContent() {
                     />
                 </Svg>
             </Pressable>}
-            {chatMode === "community" && topicNavigation ? <ChatTopicTitle title={topicNavigation.title} notifications={topicNavigation.notifications} /> : <ChatModeSwitcher mode={chatMode} solidStyle={simpleIosChat} nativeDark={nativeIosChat ? isDark : undefined} mentorStyle onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
+            {mentorChat ? <Text accessibilityRole="header" style={{ color: palette.text, fontSize: 20, fontWeight: "600" }}>{mt("Наставник")}</Text> : chatMode === "community" && topicNavigation ? <ChatTopicTitle title={topicNavigation.title} notifications={topicNavigation.notifications} /> : <ChatModeSwitcher mode={chatMode} solidStyle={simpleIosChat} nativeDark={nativeIosChat ? isDark : undefined} mentorStyle onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
         </View>
         </View>
             <ChatModeTransition mode={chatMode} style={overlaysChatChrome ? { zIndex: 1 } : undefined}>
@@ -904,7 +916,7 @@ function ChatScreenContent() {
                                                             payload={message.interactive}
                                                         />
                                                     ) : null}
-                                                    {mentorAvailable && (message.dialogue_cards?.length || message.companion_cards?.length) ? <CompanionCards controller={companion} message={message} onChanged={refresh} /> : null}
+                                                    {mentorChat && (message.dialogue_cards?.length || message.companion_cards?.length) ? <CompanionCards controller={companion} message={message} onChanged={refresh} /> : null}
                                                 </View>
                                             </AnimatedMessageBlock>
                                         )
@@ -1002,7 +1014,7 @@ function ChatScreenContent() {
                                     value={draft}
                                     onChangeText={setDraft}
                                     inputRef={mentorInputRef}
-                                    placeholder={voiceRecording ? t("chat.voiceRecording") : mentorChatActive ? mt("Спросите наставника") : t("chat.inputPlaceholder")}
+                                    placeholder={voiceRecording ? t("chat.voiceRecording") : mentorChat ? mt("Спросите наставника") : t("chat.inputPlaceholder")}
                                     onAttachment={handleOpenAttachmentSheet}
                                     onAction={handleComposerAction}
                                     hasContent={hasComposerContent}
@@ -1048,7 +1060,7 @@ function ChatScreenContent() {
                 unreadCount={communityUnread}
             />
             </ChatModePane> : null}
-            <ChatModePane mode="support" active={chatMode === "support"}>
+            {!mentorChat ? <ChatModePane mode="support" active={chatMode === "support"}>
             <SupportChatScreen
                 embedded
                 headerInset={scrollTopInset}
@@ -1060,11 +1072,11 @@ function ChatScreenContent() {
                 requestedConversationId={requestedConversationId}
                 supportUnreadCount={supportUnread}
             />
-            </ChatModePane>
+            </ChatModePane> : null}
             </ChatModeTransition>
             {overlaysChatChrome ? <ChatEdgeBlur dark={isDark} topEdge style={[chatScreenStyles.dialogTopBlur, { height: headerHeight + 10 }]} /> : null}
             </ChatKeyboardLayout>
-            {mentorAvailable && mentorVisited ? <MentorSetup controller={companion} visible={mentorOpen} onDismiss={finishMentorDismiss} onClose={closeMentor} onAsk={askMentor} /> : null}
+            {mentorAvailable && mentorVisited ? <MentorSetup controller={companion} visible={mentorOpen} onClose={closeMentor} initialTab={mentorInitialTab} renderChat={props => <MentorChatScreen {...props} controller={companion} />} /> : null}
         </View>
     )
 }

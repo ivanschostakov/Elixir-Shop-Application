@@ -285,18 +285,18 @@ async def resolve_user_bot_model(db: AsyncSession, *, user_id: int) -> BotModel:
     return BotModel.PREMIUM if total > PREMIUM_MONTHLY_PAID_ORDERS_THRESHOLD else BotModel.FREE
 
 
-async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_client: "ProfessorClient") -> AIChat:
+async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_client: "ProfessorClient", scope: str = "ordinary") -> AIChat:
     # Account deletion takes this same lock before erasing chat state.
     active_id = (await db.execute(select(User.id).where(User.id == user.id, User.is_active.is_(True)).with_for_update())).scalar_one_or_none()
     if active_id is None:
         raise HTTPException(401, "Account is no longer available")
-    existing = await get_ai_chat_by_user_id(db, user.id)
+    existing = await get_ai_chat_by_user_id(db, user.id, scope=scope)
     if existing is not None: return existing
 
     from .companion.service import register_resource
     conversation_id = await professor_client.create_conversation(user_id=user.id)
-    await register_resource(db, user.id, "conversation", conversation_id)
-    created = await create_ai_chat(db, AIChatCreate(user_id=user.id, conversation_id=conversation_id, current_tokens=0, total_tokens=0), commit=True)
+    await register_resource(db, user.id, "conversation", conversation_id, scope=scope)
+    created = await create_ai_chat(db, AIChatCreate(user_id=user.id, scope=scope, conversation_id=conversation_id, current_tokens=0, total_tokens=0), commit=True)
     return created
 
 
@@ -307,7 +307,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         raise HTTPException(426, detail={"code": "mentor_client_update_required", "message": "Обновите клиент наставника."})
     if not telegram_transport:
         await require_ai_data_consent(db, user.id)
-    chat = await get_or_create_user_chat(db, user=user, professor_client=professor_client)
+    chat = await get_or_create_user_chat(db, user=user, professor_client=professor_client, **({"scope": "mentor"} if companion_profile is not None else {}))
     companion_profile_id = companion_profile.id if companion_profile is not None else None
     starting_conversation_id = chat.conversation_id
     loaded_uploads = await _load_uploads(attachments)
@@ -318,6 +318,8 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
     if client_request_id:
         duplicate = (await db.execute(select(AIMessage).where(AIMessage.user_id == user.id, AIMessage.client_request_id == client_request_id))).scalar_one_or_none()
         if duplicate is not None:
+            if duplicate.chat_id != chat.id:
+                raise HTTPException(409, "Ключ сообщения принадлежит другому чату")
             if duplicate.text != text or (dialogue_protocol == 2 and (duplicate.context_json or {}).get("input_fingerprint", input_fingerprint) != input_fingerprint):
                 raise HTTPException(409, "Ключ сообщения уже использован")
             if (duplicate.context_json or {}).get("generation_status") == "completed":
@@ -393,6 +395,8 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             snapshot["commerce_allowed"] = allow_commerce
             if telegram_transport:
                 snapshot["channel"] = "telegram"
+            else:
+                snapshot["channel"] = "app"
             if dialogue_protocol == 2 and not meal_estimate:
                 from .companion import dialogue
                 flow = await dialogue.workflow(db, user.id, True)
@@ -435,7 +439,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 from src.database.models.ai.companion import AIProviderResource
                 from sqlalchemy import update
                 active_id = (await db.execute(select(User.id).where(User.id == user.id, User.is_active.is_(True)).with_for_update())).scalar_one_or_none()
-                await register_resource(db, active_id, kind, external_id)
+                await register_resource(db, active_id, kind, external_id, scope="ordinary")
                 if active_id is None:
                     await db.execute(update(AIProviderResource).where(AIProviderResource.kind == kind, AIProviderResource.external_id == external_id).values(status="pending_delete"))
                 await db.commit()
@@ -672,7 +676,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
 
 
 async def _get_locked_ai_message_for_action(session: AsyncSession, *, message_id: int, user_id: int) -> AIMessage | None:
-    stmt = select(AIMessage).options(selectinload(AIMessage.attachments)).where(AIMessage.id == message_id).where(AIMessage.user_id == user_id).where(AIMessage.sender == MessageSender.AI).with_for_update()
+    stmt = select(AIMessage).join(AIChat, AIChat.id == AIMessage.chat_id).options(selectinload(AIMessage.attachments)).where(AIMessage.id == message_id, AIMessage.user_id == user_id, AIMessage.sender == MessageSender.AI, AIChat.scope == "ordinary").with_for_update(of=AIMessage)
     return (await session.execute(stmt)).scalar_one_or_none()
 
 

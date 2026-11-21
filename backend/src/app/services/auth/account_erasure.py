@@ -29,7 +29,7 @@ async def erase_account(db, user):
 
     chats = (await db.execute(select(m.AIChat).where(m.AIChat.user_id == user_id))).scalars().all()
     for chat in chats:
-        await register_resource(db, user_id, "conversation", chat.conversation_id)
+        await register_resource(db, user_id, "conversation", chat.conversation_id, scope=chat.scope)
     attachments = (await db.execute(select(m.Attachment).join(m.AIMessage).where(m.AIMessage.user_id == user_id))).scalars().all()
     for attachment in attachments:
         await queue_file("local_file" if attachment.is_private else "public_ai_file", attachment.relative_path)

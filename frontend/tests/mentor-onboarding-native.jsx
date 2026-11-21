@@ -2,6 +2,10 @@
 import React, { useRef, useState } from "react"
 import { registerRootComponent } from "expo"
 import { NativeModules, Text, View } from "react-native"
+import { GestureHandlerRootView } from "react-native-gesture-handler"
+import { NavigationContext } from "@react-navigation/native"
+import { KeyboardProvider } from "react-native-keyboard-controller"
+import { MentorChatScreen } from "@/screens/chat/chat-screen"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { MentorOnboarding } from "@/screens/chat/mentor-onboarding"
 import { MentorOptionalOnboarding } from "@/screens/chat/mentor-onboarding-optional"
@@ -18,6 +22,23 @@ export const useTheme = () => {
     return { palette: isDark ? darkColors : lightColors, isDark, themeName: isDark ? "dark" : "light" }
 }
 export const useLanguage = () => ({ language: "ru", t: key => translate(key, "ru") })
+export const useAuth = () => ({ user: { id: 1 } })
+export const useApplyScreenTemplate = () => {}
+export const useAiChatEntryConsent = active => active
+export const useBasket = () => ({ basket: null })
+export const useBasketMutations = () => ({ addItem: async () => {}, removeItem: async () => {}, updateItemQuantity: async () => {} })
+export const trackCustomerEvent = async () => {}
+export function useAiChat(_enabled, _protocol, _active, scope) {
+    const base = (id, sender, text) => ({ id, chat_id: 1, user_id: 1, sender, text, attachments: [], interactive: null, companion_cards: [], dialogue_cards: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString(), usage: null })
+    const [messages, setMessages] = useState(() => [base(101, "user", "Что можно добавить на ужин?"), base(102, "ai", "С учётом вашего дневника осталось 660 ккал. Можно приготовить рыбу с овощами и добавить порцию риса. Напишите, что есть дома, и подберём вариант.")])
+    const [sending, setSending] = useState(false)
+    return { chat: { chat: { id: 1, scope, messages } }, messages, aiTyping: sending, sending, loading: false, refreshing: false, error: null, refresh: async () => {}, performAction: async () => {}, sendMessage: async text => {
+        setMessages(value => [...value, base(Date.now(), "user", text)]); setSending(true)
+        await new Promise(resolve => setTimeout(resolve, 700))
+        setMessages(value => [...value, base(Date.now(), "ai", "Давайте подберём ужин по вашим предпочтениям. Какие продукты есть под рукой?")]); setSending(false)
+    } }
+}
+const navigation = { isFocused: () => true, addListener: () => () => {} }
 export const requestKey = () => "synthetic-preview-key"
 export const syncPushNotifications = async () => "synthetic-notification-token"
 const saved = { available: true, consent_required: false, profile: { id: 1, version: 1, data: { goal: "weight_loss", age: 32, sex: "female", height_cm: "170", activity: "moderate", nutrition: { kcal: "1900", protein: "130", fat: "60", carbs: "210" } } }, mentor: { latest_weight: { data: { weight_kg: "78.5" } } } }
@@ -50,7 +71,7 @@ function Preview() {
     const homeRef = useRef(homeState); homeRef.current = homeState; previewState = homeState
     const [editor, updateEditor] = useState(null)
     const setEditor = value => updateEditor(value?.page === "meal" && !value.entry && globalThis.__MENTOR_PREVIEW_FOOD_TEXT__ ? { ...value, proposal: { entry: { kind: "meal", note: globalThis.__MENTOR_PREVIEW_FOOD_TEXT__ } } } : value)
-    const controller = { state: homeState, clock: deviceClockKey(), initialized: true, enabled: true, busy: false, error: "", editor, setEditor, setError() {}, refresh: async () => homeRef.current,
+    const controller = { state: homeState, clock: deviceClockKey(), initialized: true, enabled: true, resolveEnabled: async () => true, resolveProtocol: () => 2, busy: false, error: "", editor, setEditor, setError() {}, refresh: async () => homeRef.current,
         attempt: async operation => operation(), perform: async action => {
             let next = { ...homeRef.current }
             if (action.entry) {
@@ -66,7 +87,7 @@ function Preview() {
     const [optional, setOptional] = useState(mentorOptionalFormFromState(saved))
     const [step, setStep] = useState(screen === "reminders" ? 5 : screen === "experience" ? 3 : screen === "conditions" ? 4 : 0)
     const close = () => setScreen("home")
-    const content = screen === "shortcut" ? <View style={{ flex: 1, justifyContent: "flex-end", padding: 8, gap: 8 }}><MentorShortcut goal="weight_loss" onPress={() => setScreen("home")} /><View style={{ borderWidth: 1, borderColor: "#A3B8AB", borderRadius: 24, padding: 18 }}><Text style={{ color: palette.text }}>Сообщение</Text></View></View> : screen === "result" ? <MentorNutritionResult state={saved} onContinue={() => { setScreen("optional"); setStep(0) }} onDecline={close} onBack={() => setScreen("required")} onClose={close} /> : ["optional", "experience", "conditions", "reminders"].includes(screen) ? <MentorOptionalOnboarding value={optional} onChange={setOptional} step={step} onBack={() => step ? setStep(step - 1) : setScreen("result")} onClose={close} onNext={() => step === 5 ? close() : setStep(step + 1)} saving={false} error="" /> : ["home", "home-empty"].includes(screen) ? <MentorMainScreen controller={controller} onClose={() => setScreen("shortcut")} onAsk={() => setScreen("ask")} onContinue={() => { setScreen("optional"); setStep(0) }} /> : screen === "ask" ? <View><Text>Спросить наставника</Text></View> : undefined
-    return <SafeAreaProvider><View style={{ flex: 1, backgroundColor: "white" }}><MentorOnboarding visible value={form} onChange={setForm} onClose={close} onSave={async () => setScreen("result")} saving={false} error="">{content}</MentorOnboarding></View></SafeAreaProvider>
+    const content = screen === "shortcut" ? <View style={{ flex: 1, justifyContent: "flex-end", padding: 8, gap: 8 }}><MentorShortcut goal="weight_loss" onPress={() => setScreen("home")} /><View style={{ borderWidth: 1, borderColor: "#A3B8AB", borderRadius: 24, padding: 18 }}><Text style={{ color: palette.text }}>Сообщение</Text></View></View> : screen === "result" ? <MentorNutritionResult state={saved} onContinue={() => { setScreen("optional"); setStep(0) }} onDecline={close} onBack={() => setScreen("required")} onClose={close} /> : ["optional", "experience", "conditions", "reminders"].includes(screen) ? <MentorOptionalOnboarding value={optional} onChange={setOptional} step={step} onBack={() => step ? setStep(step - 1) : setScreen("result")} onClose={close} onNext={() => step === 5 ? close() : setStep(step + 1)} saving={false} error="" /> : ["home", "home-empty"].includes(screen) ? <MentorMainScreen controller={controller} onClose={() => setScreen("shortcut")} renderChat={props => <MentorChatScreen {...props} controller={controller} />} onContinue={() => { setScreen("optional"); setStep(0) }} /> : screen === "ask" ? <View><Text>Спросить наставника</Text></View> : undefined
+    return <GestureHandlerRootView style={{ flex: 1 }}><NavigationContext.Provider value={navigation}><SafeAreaProvider><KeyboardProvider preload={false}><View style={{ flex: 1, backgroundColor: "white" }}><MentorOnboarding visible contentSafeBottom={!["home", "home-empty"].includes(screen)} value={form} onChange={setForm} onClose={close} onSave={async () => setScreen("result")} saving={false} error="">{content}</MentorOnboarding></View></KeyboardProvider></SafeAreaProvider></NavigationContext.Provider></GestureHandlerRootView>
 }
 registerRootComponent(Preview)

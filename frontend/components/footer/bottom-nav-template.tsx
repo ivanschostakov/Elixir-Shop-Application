@@ -1,5 +1,5 @@
 import { useContext } from "react"
-import { Platform, Pressable, View } from "react-native"
+import { Platform, View } from "react-native"
 import { router } from "expo-router"
 
 import {
@@ -21,6 +21,7 @@ import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { isMentorAvailable } from "@/screens/chat/chat-mode-policy"
 import { RouteTransitionContext } from "@/components/navigation/route-transition-context"
+import { FooterNavRow } from "@/components/footer/footer-nav-row"
 
 export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
@@ -77,39 +78,15 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
         },
     ]
 
-    return (
-        <View style={stickyFooterStyles.navRow}>
-            {footerItems.map((item) => (
-                <View key={item.key} style={stickyFooterStyles.footerItem}>
-                    <Pressable
-                        accessibilityLabel={item.accessibilityLabel}
-                        accessibilityRole="button"
-                        onPress={() => {
-                            if (!item.isActive) {
-                                if (!isAuthenticated && isAccountRequiredRoute(item.route)) {
-                                    showAuthRequiredAlert({
-                                        onLogin: () => {
-                                            router.push(ROUTES.login)
-                                        },
-                                    })
-                                    return
-                                }
-
-                                const current = PRIMARY_APP_ROUTES.findIndex(route => route === pathname)
-                                const next = PRIMARY_APP_ROUTES.findIndex(route => route === item.key)
-                                setAnimation(next < current ? "slide_from_left" : "slide_from_right")
-                                router.replace(item.route as never)
-                            }
-                        }}
-                        style={({ pressed }) => [
-                            stickyFooterStyles.iconButton,
-                            item.isActive && pressed && stickyFooterStyles.iconButtonPressed,
-                        ]}
-                    >
-                        {item.icon}
-                    </Pressable>
-                </View>
-            ))}
-        </View>
-    )
+    return <FooterNavRow items={footerItems.map(item => ({ ...item, onPress: () => {
+        if (item.isActive) return
+        if (!isAuthenticated && isAccountRequiredRoute(item.route)) {
+            showAuthRequiredAlert({ onLogin: () => router.push(ROUTES.login) })
+            return
+        }
+        const current = PRIMARY_APP_ROUTES.findIndex(route => route === pathname)
+        const next = PRIMARY_APP_ROUTES.findIndex(route => route === item.key)
+        setAnimation(next < current ? "slide_from_left" : "slide_from_right")
+        router.replace(item.route as never)
+    } }))} />
 }

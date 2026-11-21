@@ -1,6 +1,7 @@
 import { apiGet, apiPost, apiPostMultipart } from "@/services/api/client"
 import { aiChatEndpoint } from "@/services/api/ai-chat.constants"
 import { ensureAiDataConsent } from "@/services/api/ai-data-consent"
+import { mentorText as mt } from "@/i18n/mentor-translations"
 import type {
     AIChatActionPayload,
     AIChatActionResponse,
@@ -9,8 +10,13 @@ import type {
     UploadableChatAttachment,
 } from "@/services/api/ai-chat.types"
 
-export function getMyAiChat(): Promise<AIChatResponse> {
-    return apiGet<AIChatResponse>(aiChatEndpoint, undefined, { appIntegrityAction: "ai-chat:read" })
+function scopedChat(response: AIChatResponse, mentor: boolean): AIChatResponse {
+    if (response?.chat && response.chat.scope !== (mentor ? "mentor" : "ordinary")) throw new Error(mt("Не удалось загрузить чат. Попробуйте ещё раз."))
+    return response
+}
+
+export async function getMyAiChat(mentor = false): Promise<AIChatResponse> {
+    return scopedChat(await apiGet<AIChatResponse>(mentor ? `${aiChatEndpoint}/companion/messages` : aiChatEndpoint, undefined, { appIntegrityAction: mentor ? "ai-companion" : "ai-chat:read" }), mentor)
 }
 
 export async function sendMyAiChatMessage(text: string, attachments: UploadableChatAttachment[] = [], companionRequestId?: string, dialogueProtocol: 1 | 2 = 2, ordinaryChat = false): Promise<AIChatResponse> {
@@ -35,7 +41,7 @@ export async function sendMyAiChatMessage(text: string, attachments: UploadableC
         )
     }
 
-    return apiPostMultipart<AIChatResponse>(companionRequestId ? `${aiChatEndpoint}/companion/messages` : aiChatEndpoint, formData, { appIntegrityAction: companionRequestId ? "ai-companion" : "ai-chat:send", ...(companionRequestId ? { timeoutMs: 550000 } : {}) })
+    return scopedChat(await apiPostMultipart<AIChatResponse>(companionRequestId ? `${aiChatEndpoint}/companion/messages` : aiChatEndpoint, formData, { appIntegrityAction: companionRequestId ? "ai-companion" : "ai-chat:send", ...(companionRequestId ? { timeoutMs: 550000 } : {}) }), !!companionRequestId)
 }
 
 export function performAiChatAction(payload: AIChatActionPayload): Promise<AIChatActionResponse> {

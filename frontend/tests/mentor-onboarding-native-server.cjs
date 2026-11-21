@@ -11,7 +11,7 @@ const config = require("../metro.config")
 const port = 8104, base = `http://127.0.0.1:${port}`
 config.maxWorkers = 2
 config.watchFolders = [path.resolve(__dirname, "..")]
-const fixtures = new Set(["@/providers/theme-provider", "@/providers/language-provider", "@/services/api/companion", "@/services/api/companion-food", "@/services/api/ai-chat", "@/services/notifications/order-status-notifications"])
+const fixtures = new Set(["@/providers/theme-provider", "@/providers/language-provider", "@/services/api/companion", "@/services/api/companion-food", "@/services/api/ai-chat", "@/services/notifications/order-status-notifications", "@/hooks/chat/use-ai-chat", "@/hooks/chat/use-ai-chat-entry-consent", "@/hooks/basket/use-basket", "@/hooks/basket/use-basket-mutations", "@/services/customer-intelligence", "@/components/templates/screen-template.hooks", "@/providers/auth-provider"])
 config.resolver.resolveRequest = (context, name, platform) => context.resolveRequest(context, fixtures.has(name) ? path.join(__dirname, "mentor-onboarding-native.jsx") : name.startsWith("@/") ? path.resolve(__dirname, "..", name.slice(2)) : name, platform)
 config.server = { ...config.server, port, enhanceMiddleware: middleware => (req, res, next) => {
     const url = new URL(req.url, base)

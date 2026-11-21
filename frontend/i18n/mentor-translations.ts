@@ -103,6 +103,8 @@ export const mentorTranslations: Record<string, { en: string; kz: string }> = {
     "Отметьте самочувствие": { en: "Log how you feel", kz: "Көңіл күйіңізді белгілеңіз" },
     "Калории за сегодня": { en: "Today's calories", kz: "Бүгінгі калориялар" },
     "Ваш день": { en: "Your day", kz: "Сіздің күніңіз" },
+    "Чат": { en: "Chat", kz: "Чат" },
+    "Раздел скоро появится": { en: "This section is coming soon", kz: "Бұл бөлім жақында пайда болады" },
     "Тренировка на сегодня": { en: "Today's workout", kz: "Бүгінгі жаттығу" },
     "Пока нет записей за сегодня": { en: "No entries for today yet", kz: "Бүгінге әлі жазба жоқ" },
     "Оценка {0} из 5": { en: "Score {0} out of 5", kz: "Баға: 5-тен {0}" },

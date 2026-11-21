@@ -39,7 +39,7 @@ type UseAiChatResult = {
 const AI_REPLY_POLL_INTERVAL_MS = 1500
 const AI_REPLY_POLL_MAX_ATTEMPTS = 30
 
-export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false, companionProtocol: () => 1 | 2 = () => 2, enabled = true): UseAiChatResult {
+export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) = false, companionProtocol: () => 1 | 2 = () => 2, enabled = true, scope: "ordinary" | "mentor" = typeof companionEnabled === "boolean" && companionEnabled ? "mentor" : "ordinary"): UseAiChatResult {
     const focused = useIsFocused()
     const isFocused = focused && enabled
     const [refreshing, setRefreshing] = useState(false)
@@ -57,9 +57,9 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
         reload,
         setData: setChat,
     } = useAsyncData({
-        deps: [],
+        deps: [scope],
         enabled: false,
-        fetcher: getMyAiChat,
+        fetcher: () => getMyAiChat(scope === "mentor"),
         initialData: null as AIChatResponse | null,
     })
     const hasPendingServerReply = hasServerPendingAssistantReply(chat)
@@ -117,7 +117,7 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
             attempts += 1
 
             try {
-                const nextChat = await getMyAiChat()
+                const nextChat = await getMyAiChat(scope === "mentor")
                 if (isDisposed) {
                     return
                 }
@@ -141,7 +141,7 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
                 clearTimeout(nextPollTimeout)
             }
         }
-    }, [hasPendingServerReply, isFocused, sending, setChat])
+    }, [hasPendingServerReply, isFocused, sending, setChat, scope])
 
     const sendMessage = async (text: string, attachments: UploadableChatAttachment[] = []) => {
         if (sendingRef.current) throw new Error(mentorText("Дождитесь ответа на предыдущее сообщение"))
@@ -163,7 +163,8 @@ export function useAiChat(companionEnabled: boolean | (() => Promise<boolean>) =
         setSending(true)
 
         try {
-            const useCompanion = typeof companionEnabled === "function" ? await companionEnabled() : companionEnabled
+            const useCompanion = scope === "mentor"
+            if (useCompanion && !(typeof companionEnabled === "function" ? await companionEnabled() : companionEnabled)) throw new Error(mentorText("Сопровождение отключено"))
             const fingerprint = JSON.stringify([useCompanion, text, attachments])
             const key = failedRequestRef.current?.fingerprint === fingerprint ? failedRequestRef.current.key : requestKey()
             failedRequestRef.current = { fingerprint, key }

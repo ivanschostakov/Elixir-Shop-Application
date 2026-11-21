@@ -79,11 +79,10 @@ class User(Base, IdPkMixin, TimestampMixin):
         foreign_keys="ReferralProfile.user_id",
         uselist=False,
     )
-    ai_chat: Mapped["AIChat | None"] = relationship(
+    ai_chats: Mapped[list["AIChat"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         passive_deletes=True,
-        uselist=False,
     )
     ai_messages: Mapped[list["AIMessage"]] = relationship(back_populates="user", passive_deletes=True)
     devices: Mapped[list["UserDevice"]] = relationship(back_populates="user", cascade="all, delete-orphan", passive_deletes=True)

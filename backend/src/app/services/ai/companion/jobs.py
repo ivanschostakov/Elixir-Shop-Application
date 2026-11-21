@@ -169,9 +169,9 @@ async def deliver_reminder(db, row, profile, now):
         row.status = "cancelled"
         return
     if row.message_id is None:
-        chat = (await db.execute(select(AIChat).where(AIChat.user_id == row.user_id))).scalar_one_or_none()
+        chat = (await db.execute(select(AIChat).where(AIChat.user_id == row.user_id, AIChat.scope == "mentor"))).scalar_one_or_none()
         if chat is None:
-            chat = AIChat(user_id=row.user_id, conversation_id=f"reset:{uuid4()}", current_tokens=0, total_tokens=0)
+            chat = AIChat(user_id=row.user_id, scope="mentor", conversation_id=f"reset:{uuid4()}", current_tokens=0, total_tokens=0)
             db.add(chat)
             await db.flush()
         message = AIMessage(user_id=row.user_id, chat_id=chat.id, text=body, sender=MessageSender.AI, is_sensitive=True, context_json={"reminder_id": row.id, "event_id": row.event_id})

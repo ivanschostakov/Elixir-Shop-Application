@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -7,6 +8,7 @@ from src.database.schemas.ai.message import AIMessageRead
 
 class AIChatBase(BaseModel):
     user_id: int = Field(ge=1)
+    scope: Literal["ordinary", "mentor"] = "ordinary"
     conversation_id: str = Field(min_length=1)
     current_tokens: int = Field(ge=0, default=0)
     total_tokens: int = Field(ge=0, default=0)

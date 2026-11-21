@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Index, text
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -73,9 +73,10 @@ class AICompanionReminder(Base, IdPkMixin, TimestampMixin):
 
 class AIProviderResource(Base, IdPkMixin, TimestampMixin):
     __tablename__ = "ai_provider_resources"
-    __table_args__ = (UniqueConstraint("kind", "external_id", name="uq_ai_provider_resource"),)
+    __table_args__ = (UniqueConstraint("kind", "external_id", name="uq_ai_provider_resource"), CheckConstraint("scope IN ('ordinary', 'mentor')", name="ck_ai_provider_resource_scope"))
     # Nullable on account removal so an external deletion retry can finish.
     user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="mentor", server_default="mentor")
     kind: Mapped[str] = mapped_column(String(24), nullable=False)
     external_id: Mapped[str] = mapped_column(String(200), nullable=False)
     status: Mapped[str] = mapped_column(String(24), default="active", nullable=False)

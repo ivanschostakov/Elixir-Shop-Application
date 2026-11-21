@@ -10,26 +10,29 @@ import { useScreenTemplate } from "@/providers/screen-template-provider"
 export function useApplyScreenTemplate(
     kind: ScreenTemplateKind,
     chromeTemplate?: ScreenChromeTemplateOverride | null,
+    enabled = true,
 ) {
     const { setScreenChromeTemplate } = useScreenChromeTemplate()
     const { setScreenTemplate } = useScreenTemplate()
     const stableChromeTemplate = useStableScreenChromeTemplate(chromeTemplate ?? null)
 
     useLayoutEffect(() => {
+        if (!enabled) return
         setScreenTemplate(kind)
 
         return () => {
             setScreenTemplate(null)
         }
-    }, [kind, setScreenTemplate])
+    }, [enabled, kind, setScreenTemplate])
 
     useLayoutEffect(() => {
+        if (!enabled) return
         setScreenChromeTemplate(stableChromeTemplate)
 
         return () => {
             setScreenChromeTemplate(null)
         }
-    }, [setScreenChromeTemplate, stableChromeTemplate])
+    }, [enabled, setScreenChromeTemplate, stableChromeTemplate])
 }
 
 function useStableScreenChromeTemplate(chromeTemplate: ScreenChromeTemplateOverride | null) {
