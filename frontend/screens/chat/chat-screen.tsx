@@ -210,6 +210,12 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
     const aiContentReady = chat !== null || error !== null
     const chatScroll = useChatScroll(scrollRef, null, iosChat ? setFollowingLatest : undefined)
     const { followLatest } = chatScroll
+    const settleFollowingConversation = chatScroll.onContentSizeChange
+    useEffect(() => {
+        // A retained, prewarmed chat may measure before its native composer inset.
+        // Settle again on entry, respecting readers who scrolled up in the history.
+        if (mentorChat && screenActive && aiContentReady && composerDockHeight > 0) settleFollowingConversation()
+    }, [mentorChat, screenActive, aiContentReady, composerDockHeight, settleFollowingConversation])
     const showConversation = useCallback(() => { followLatest() }, [followLatest])
     const openMentor = useCallback(() => { mentorExitToShop.current = false; Keyboard.dismiss(); setMentorInitialTab("nutrition"); setMentorVisited(true); setMentorOpen(true) }, [])
     const cameraPermissionPromptedRef = useRef(false)

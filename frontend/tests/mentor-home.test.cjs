@@ -55,18 +55,20 @@ function harness(file, overrides = {}) {
         useEffect(callback, deps) { const i = cursor++; if (!slots[i] || deps.some((value, j) => value !== slots[i].deps[j])) effects.push(() => { slots[i]?.cleanup?.(); slots[i] = { deps, cleanup: callback() } }) },
     }
     react.useLayoutEffect = react.useEffect
+    react.useCallback = callback => callback
     const jsx = (type, props, key) => ({ type, props, key })
     const module = loadTs(file, {
         react, "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
-        "react-native": { View: "View", Text: "Text", Pressable: "Pressable", ScrollView: "ScrollView", Keyboard: { addListener: () => ({ remove() {} }), dismiss() {}, scheduleLayoutAnimation() {} }, Platform: { OS: "ios" }, useWindowDimensions: () => ({ width: 390, height: 844 }), StyleSheet: { create: v => v, absoluteFillObject: {}, hairlineWidth: 0.5 } },
+        "react-native": { View: "View", Text: "Text", Pressable: "Pressable", ScrollView: "ScrollView", InteractionManager: { runAfterInteractions: () => ({ cancel() {} }) }, Keyboard: { addListener: () => ({ remove() {} }), dismiss() {}, scheduleLayoutAnimation() {} }, Platform: { OS: "ios" }, useWindowDimensions: () => ({ width: 390, height: 844 }), StyleSheet: { create: v => v, absoluteFillObject: {}, hairlineWidth: 0.5 } },
         "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 47, bottom: 34 }) },
-        "@/screens/chat/mentor-navigation": { MentorBottomNavigation: "Tabs", MentorTabPages: "Pages", mentorTabLabel: tab => ({ workouts: "Тренировки", wellbeing: "Самочувствие" })[tab] },
+        "@/screens/chat/mentor-navigation": { MentorBottomNavigation: "Tabs", MentorTabPages: "Pages", mentorTabs: ["nutrition", "workouts", "wellbeing", "chat"], mentorTabLabel: tab => ({ workouts: "Тренировки", wellbeing: "Самочувствие" })[tab] },
         "expo-router": { useRouter: () => ({ replace: value => routes.push(value) }) },
         "@/constants/routes": { ROUTES: { home: "/", discover: "/discover", basket: "/basket", profile: "/profile" } },
         "@/hooks/basket/basket-draft-editing-store": { useBasketDraftEditingId: () => 14 },
         "@/providers/language-provider": { useLanguage() {} },
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
         "@/screens/chat/native-chat-controls": { NativeChatAction: null, nativeChatSettingsActionAvailable: false },
+        "@/components/footer/sticky-footer.styles": { getNavigationFooterHeight: bottom => 52 + Math.max(16, bottom) },
         "@/screens/chat/mentor-ui": { useMentorPalette: () => ({ surface: "#FFFFFF", text: "#202923", green: "#1C694B", greenBright: "#38976A", muted: "#7D8781", border: "#DDE6DF", mint: "#E8F5EC" }) },
         "@/screens/chat/companion-timezones": dates, "@/screens/chat/mentor-home-data": home,
         "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "Icon" },
@@ -82,7 +84,7 @@ function harness(file, overrides = {}) {
     })
     return { timings, routes, render(name, props) { cursor = 0; const tree = module[name](props); effects.splice(0).forEach(run => run()); return tree } }
 }
-const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)]
+const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children), ...nodes(tree.props?.footer)]
 const find = (tree, type) => nodes(tree).find(node => node.type === type)
 
 test("nutrition editors, placeholder tabs, retained mentor chat and settings share one navigation", () => {
@@ -95,7 +97,7 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     screen.props.onAddFood(); screen.props.onMeal({ id: 42 })
     assert.deepEqual(edits, [{ page: "meal" }, { page: "meal", entry: { id: 42 } }])
     screen.props.onSettings()
-    const settings = render()
+    const settings = page("settings")
     nodes(settings).find(node => node.props.accessibilityLabel === "Продолжить заполнение").props.onPress(); assert.equal(continued, 1)
     nodes(settings).find(node => node.props.accessibilityLabel === "Настройки и напоминания").props.onPress(); assert.equal(edits.at(-1).page, "settings")
     find(settings, "Header").props.onBack()
@@ -107,11 +109,19 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     find(page("workouts"), "Header").props.onBack(); assert.equal(closed, 1)
     find(page("wellbeing"), "Header").props.onBack(); assert.equal(closed, 2)
     find(render(), "Tabs").props.onSelect("chat")
-    assert.equal(find(render(), "Tabs"), undefined, "Fullscreen mentor chat never displays bottom navigation")
+    assert.equal(find(render(), "Pages").props.footerVisible, false, "Fullscreen mentor chat hides navigation without resizing its viewport")
+    assert.equal(find(page("chat"), "Chat").props.active, false, "History loading waits until the transition settles")
+    find(render(), "Pages").props.onSettled("chat")
     assert.equal(find(page("chat"), "Chat").props.active, true)
     find(page("chat"), "Chat").props.onBack()
     assert.equal(find(page("chat"), "Chat").props.active, false)
     assert.equal(find(render(), "Tabs").props.active, "nutrition")
+    assert.equal(find(page("nutrition"), "Home").props.onClose instanceof Function, true)
+    assert.equal(page("nutrition").props.style.at(-1).paddingBottom, 86)
+    assert.equal(page("chat").props.style.paddingBottom, undefined)
+    const tabs = find(render(), "Tabs").props
+    tabs.onSelect("workouts"); tabs.onSelect("nutrition")
+    assert.equal(find(render(), "Pages").props.active, "nutrition", "The latest tap wins even before a render")
     find(page("nutrition"), "Home").props.onClose()
     assert.equal(closed, 3); assert.deepEqual(h.routes, [])
 })

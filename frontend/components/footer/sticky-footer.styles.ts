@@ -3,6 +3,9 @@ import { Platform, StyleSheet } from "react-native"
 import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
+const navigationButtonHeight = 48
+export const getNavigationFooterHeight = (bottomInset: number) => navigationButtonHeight + spacing.xs + Math.max(spacing.md, bottomInset)
+
 export const createStickyFooterStyles = (colors: ThemePalette) => StyleSheet.create({
     footerBase: {
         backgroundColor: colors.background,
@@ -57,7 +60,7 @@ export const createStickyFooterStyles = (colors: ThemePalette) => StyleSheet.cre
         alignItems: "center",
         borderRadius: 18,
         justifyContent: "center",
-        minHeight: 48,
+        minHeight: navigationButtonHeight,
         paddingHorizontal: 4,
         paddingVertical: spacing.xs,
     },
