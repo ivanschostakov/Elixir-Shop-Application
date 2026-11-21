@@ -92,9 +92,9 @@ export function MentorOptionalOnboarding({ value, onChange, step, onBack, onClos
 }
 
 const styles = StyleSheet.create({
-    textarea: { minHeight: 196, borderRadius: 22, borderWidth: 1, padding: 19, fontSize: 18, lineHeight: 28 },
+    textarea: { fontWeight: "500", minHeight: 196, borderRadius: 22, borderWidth: 1, padding: 19, fontSize: 18, lineHeight: 28 },
     choices: { gap: 12 },
     reminder: { flexDirection: "row", alignItems: "flex-start", gap: 12, paddingVertical: 20, borderBottomWidth: StyleSheet.hairlineWidth }, reminderIcon: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-    reminderCopy: { flex: 1, minWidth: 0, gap: 6, paddingTop: 6 }, reminderLabel: { fontSize: 17, lineHeight: 24, fontWeight: "600" },
-    reminderControls: { alignItems: "flex-end", gap: 10 }, reminderSwitch: { alignSelf: "flex-end" }, reminderDetail: { fontSize: 13, lineHeight: 19 },
+    reminderCopy: { flex: 1, minWidth: 0, gap: 6, paddingTop: 6 }, reminderLabel: { fontSize: 17, lineHeight: 24, fontWeight: "700" },
+    reminderControls: { alignItems: "flex-end", gap: 10 }, reminderSwitch: { alignSelf: "flex-end" }, reminderDetail: { fontWeight: "500", fontSize: 13, lineHeight: 19 },
 })

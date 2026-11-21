@@ -2861,6 +2861,15 @@ export function mentorLocale(language: Language = getTranslationLanguage()): str
 // Some phone/browser ICU bundles recognize kk-KZ but omit its month names.
 const kazakhMonths = ["қаңтар", "ақпан", "наурыз", "сәуір", "мамыр", "маусым", "шілде", "тамыз", "қыркүйек", "қазан", "қараша", "желтоқсан"]
 const kazakhShortMonths = ["қаң", "ақп", "нау", "сәу", "мам", "мау", "шіл", "там", "қыр", "қаз", "қар", "жел"]
+/** Keep decimal points consistent while retaining each language's digit grouping. */
+export function mentorNumber(value: number, options: Intl.NumberFormatOptions = { maximumFractionDigits: 1 }): string {
+    if (!Number.isFinite(value)) return "—"
+    const locale = mentorLocale()
+    // Use format() so this also works on Hermes builds without formatToParts().
+    const decimal = new Intl.NumberFormat(locale, { useGrouping: false }).format(1.1).replace(/\d/g, "") || "."
+    return new Intl.NumberFormat(locale, options).format(value).replace(decimal, ".")
+}
+
 export function mentorDateLabel(value: Date, options?: Intl.DateTimeFormatOptions, language: Language = getTranslationLanguage()): string {
     if (language !== "kz") return value.toLocaleDateString(mentorLocale(language), options)
     const format = options ?? { year: "numeric", month: "2-digit", day: "2-digit" }

@@ -1,4 +1,4 @@
-import { mentorText as mt, mentorLocale, mentorDateLabel } from "@/i18n/mentor-translations"
+import { mentorText as mt, mentorDateLabel } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
@@ -111,10 +111,8 @@ export function DialoguePanel({ controller: c, onChanged, onPrompt, sending }: {
 }
 
 function displayNumber(value: string | number) {
-    // Hermes supports format(), but not NumberFormat.formatToParts(). Derive
-    // only the separator so saved doses keep their precision and trailing zeros.
-    const decimal = new Intl.NumberFormat(mentorLocale()).format(1.1).replace(/\d/g, "") || "."
-    return String(value).replace(".", decimal)
+    // Saved decimal strings keep their precision, including trailing zeros.
+    return String(value).replace(",", ".")
 }
 
 function shortTime(value: string) {

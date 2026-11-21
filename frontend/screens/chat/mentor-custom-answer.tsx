@@ -24,7 +24,7 @@ export function MentorCustomAnswer({ label, placeholder, value, onChange, onCanc
 
 const styles = StyleSheet.create({
     card: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 18 },
-    header: { flexDirection: "row", alignItems: "center", gap: 9 }, label: { flex: 1, fontSize: 15, lineHeight: 22, fontWeight: "600" },
+    header: { flexDirection: "row", alignItems: "center", gap: 9 }, label: { flex: 1, fontSize: 15, lineHeight: 22, fontWeight: "700" },
     close: { width: 44, height: 44, marginRight: -9, alignItems: "center", justifyContent: "center" },
-    input: { minHeight: 158, paddingTop: 8, paddingBottom: 0, paddingHorizontal: 0, fontSize: 18, lineHeight: 28 },
+    input: { fontWeight: "500", minHeight: 158, paddingTop: 8, paddingBottom: 0, paddingHorizontal: 0, fontSize: 18, lineHeight: 28 },
 })

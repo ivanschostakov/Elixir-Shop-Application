@@ -6,7 +6,7 @@ const path = require("node:path")
 const ts = require("typescript")
 const loadTs = require("./load-ts.cjs")
 const language = loadTs("i18n/translations.ts")
-const { mentorText, mentorLocale, mentorDateLabel, mentorDateTimeLabel, mentorTranslations } = loadTs("i18n/mentor-translations.ts", { "@/i18n/translations": language })
+const { mentorText, mentorLocale, mentorDateLabel, mentorDateTimeLabel, mentorTranslations, mentorNumber } = loadTs("i18n/mentor-translations.ts", { "@/i18n/translations": language })
 const data = loadTs("screens/chat/mentor-data.ts", { "@/i18n/mentor-translations": { mentorText } })
 const dates = loadTs("screens/chat/companion-timezones.ts", { "@/i18n/mentor-translations": { mentorText, mentorLocale, mentorDateTimeLabel } })
 
@@ -64,5 +64,19 @@ test("phone time remains the same instant while dates, numbers and validation er
         assert.equal(mentorDateTimeLabel(new Date("2026-09-30T00:27:00Z"), "UTC", "kz"), "30.09.2026, 00:27:00")
         assert.equal(mentorText("Выполнено {0} из {1}", [2, 5], "en"), "Completed 2 of 5")
         assert.equal(mentorText("Выполнено {0} из {1}", [2, 5], "kz"), "5 тапсырманың 2 орындалды")
+    } finally { language.setTranslationLanguage("ru") }
+})
+
+
+test("mentor numbers use decimal points in every language without changing precision or digit grouping", () => {
+    try {
+        for (const locale of ["ru", "en", "kz"]) {
+            language.setTranslationLanguage(locale)
+            assert.equal(mentorNumber(191.8), "191.8")
+            assert.equal(mentorNumber(78.05, { maximumFractionDigits: 2 }), "78.05")
+            assert.equal(mentorNumber(78.5, { minimumFractionDigits: 2 }), "78.50")
+            assert.equal(mentorNumber(NaN), "—")
+            assert.equal(mentorNumber(1900.5).replace(/[^0-9.]/g, ""), "1900.5")
+        }
     } finally { language.setTranslationLanguage("ru") }
 })

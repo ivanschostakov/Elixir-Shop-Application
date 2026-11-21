@@ -8,7 +8,7 @@ import { createStickyFooterStyles } from "@/components/footer/sticky-footer.styl
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useTheme } from "@/providers/theme-provider"
 import { useChatReducedMotion } from "@/screens/chat/chat-mode-transition"
-import { MentorNavigationIcon } from "@/screens/chat/mentor-navigation.icons"
+import { MentorSolidIcon } from "@/screens/chat/mentor-icons"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import { spacing } from "@/theme/spacing"
 
@@ -23,7 +23,7 @@ export function MentorBottomNavigation({ active, onSelect }: { active: MentorTab
     const styles = useThemeStyles(createStickyFooterStyles)
     return <View testID="mentor-bottom-navigation" style={[styles.footerBase, { paddingBottom: Math.max(spacing.md, bottom) }]}>
         <FooterNavRow tabs items={mentorTabs.map(tab => ({ key: tab, accessibilityLabel: mentorTabLabel(tab), isActive: active === tab,
-            icon: <MentorNavigationIcon name={tab} color={active === tab ? colors.green : palette.mutedText} background={palette.background} />, onPress: () => onSelect(tab) }))} />
+            icon: <MentorSolidIcon name={tab} color={active === tab ? colors.green : palette.mutedText} />, onPress: () => onSelect(tab) }))} />
     </View>
 }
 

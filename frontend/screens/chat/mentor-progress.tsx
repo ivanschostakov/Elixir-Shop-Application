@@ -1,4 +1,4 @@
-import { mentorText as mt, mentorLocale, mentorDateLabel } from "@/i18n/mentor-translations"
+import { mentorText as mt, mentorNumber, mentorLocale, mentorDateLabel } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { QuietLoading } from "@/components/ui/quiet-loading"
 import { useState } from "react"
@@ -29,7 +29,7 @@ type Props = {
 const primaryTabs = { get weight() { return mt("Вес") }, get nutrition() { return mt("Питание") }, get workouts() { return mt("Тренировки") }, get course() { return mt("Курс") } } as const
 const number = (value: unknown, digits = 1) => {
     const parsed = numeric(value)
-    return parsed == null ? "—" : parsed.toLocaleString(mentorLocale(), { maximumFractionDigits: digits })
+    return parsed == null ? "—" : mentorNumber(parsed, { maximumFractionDigits: digits })
 }
 const signedWeight = (value: number) => mt("{0}{1} кг", [value > 0 ? "+" : value < 0 ? "−" : "", number(Math.abs(value))])
 function periodLabel(days: 7 | 30) {

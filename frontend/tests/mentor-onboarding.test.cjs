@@ -82,7 +82,7 @@ test("five retained pages animate in both directions and save after goal weight"
     label(tree, "Возраст").props.onChangeText("32"); label(render(), "Женский").props.onPress(); next()
     label(render(), "Рост").props.onChangeText("170"); label(render(), "Текущий вес").props.onChangeText("78,5"); next()
     nodes(render()).find(node => node.type === "FlowHeader").props.onBack(); tree = render()
-    assert.equal(label(tree, "Текущий вес").props.value, "78,5"); assert.equal(h.animations.at(-1).toValue, 2)
+    assert.equal(label(tree, "Текущий вес").props.value, "78.5"); assert.equal(h.animations.at(-1).toValue, 2)
     assert.equal(nodes(tree).filter(node => /^mentor-onboarding-step-/.test(node.props.testID)).length, 5)
     assert.equal(saves, 0); next(); label(render(), "Умеренная активность").props.onPress(); next(); assert.equal(saves, 0)
     label(render(), "Желаемый вес").props.onChangeText("75"); next(); assert.equal(saves, 1)
@@ -343,7 +343,7 @@ test("adult onboarding calculates directly without an extra confirmation dialog"
     assert.equal(payload.settings, undefined)
 })
 
-test("the mentor invitation opens directly with native glass and older installed builds", () => {
+test("the mentor invitation shares its leaf icon and keeps native glass on installed builds", () => {
     for (const native of [true, false]) {
         const h = harness("screens/chat/mentor-shortcut.tsx", {
             "@/screens/chat/native-chat-controls": { NativeChatAction: "NativeAction", NativeChatTitleMaterial: "NativeGlass", nativeChatMentorActionAvailable: true, nativeChatMentorGreetingAvailable: native },
@@ -351,8 +351,9 @@ test("the mentor invitation opens directly with native glass and older installed
         let opened = 0
         const tree = h.render("MentorShortcut", { onPress: () => opened++, goal: "weight_loss" })
         const button = nodes(tree).find(node => node.props.testID === "mentor-open-shortcut")
-        if (native) { assert.equal(button.props.action, "mentor"); assert.match(button.props.title, /по похудению\nНажмите, чтобы открыть/); button.props.onAction() }
-        else { assert.ok(nodes(tree).some(node => node.type === "NativeGlass")); button.props.onPress() }
+        assert.ok(nodes(tree).some(node => node.type === "NativeGlass"))
+        assert.ok(nodes(tree).some(node => node.type === "Icon" && node.props.name === "leaf"))
+        button.props.onPress()
         assert.equal(nodes(tree).filter(node => node.type === "NativeAction" || node.type === "Pressable").length, 1)
         assert.equal(opened, 1)
     }

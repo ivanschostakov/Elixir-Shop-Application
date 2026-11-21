@@ -42,7 +42,7 @@ export function useAiChat(_enabled, _protocol, _active, scope) {
 const navigation = { isFocused: () => true, addListener: () => () => {} }
 export const requestKey = () => "synthetic-preview-key"
 export const syncPushNotifications = async () => "synthetic-notification-token"
-const saved = { available: true, consent_required: false, profile: { id: 1, version: 1, data: { goal: "weight_loss", age: 32, sex: "female", height_cm: "170", activity: "moderate", nutrition: { kcal: "1900", protein: "130", fat: "60", carbs: "210" } } }, mentor: { latest_weight: { data: { weight_kg: "78.5" } } } }
+const saved = { available: true, consent_required: false, profile: { id: 1, version: 1, data: { goal: "weight_loss", age: 32, sex: "female", height_cm: "170", activity: "moderate", nutrition: { kcal: "1900", protein: "130.5", fat: "60.2", carbs: "210.1" } } }, mentor: { latest_weight: { data: { weight_kg: "78.5" } } } }
 const day = calendarDate(), started = new Date(); started.setHours(0, 0, 0, 0)
 const elapsed = Date.now() - started.getTime()
 const meal = (id, share, name, nutrition) => {

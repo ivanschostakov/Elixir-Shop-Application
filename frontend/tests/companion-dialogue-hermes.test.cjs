@@ -56,7 +56,7 @@ Intl.NumberFormat.prototype.formatToParts = undefined;
 ${compiled}
 for (var locale of ['ru-RU', 'en-US', 'kk-KZ']) {
     language = locale;
-    var decimal = locale === 'en-US' ? '.' : ',';
+    var decimal = '.';
     equal(displayNumber('0.250'), '0' + decimal + '250');
     equal(displayNumber(0.125), '0' + decimal + '125');
     equal(displayNumber('12345.000000001'), '12345' + decimal + '000000001');

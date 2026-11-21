@@ -71,7 +71,7 @@ export function MentorOnboarding({ visible, value, onChange, onClose, onSave, sa
     const field = (label: string, fieldName: "age" | "height" | "weight" | "targetWeight", unit: string, active: boolean) => <View style={styles.field}>
         <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
         <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-            <TextInput accessibilityLabel={label} value={value[fieldName]} onChangeText={text => change({ [fieldName]: text })}
+            <TextInput accessibilityLabel={label} value={value[fieldName]} onChangeText={text => change({ [fieldName]: text.replace(/,/g, ".") })}
                 editable={active && !saving} keyboardType={fieldName === "age" ? "number-pad" : "decimal-pad"} maxLength={7}
                 keyboardAppearance={colors.surface === "#FFFFFF" ? "light" : "dark"} selectionColor={colors.greenBright}
                 style={[styles.input, { color: colors.text }]} />
@@ -105,7 +105,7 @@ export function MentorOnboarding({ visible, value, onChange, onClose, onSave, sa
                             {index === 3 ? <View accessibilityRole="radiogroup" style={styles.choices}>{mentorActivityChoices.map(item => choice(item.label, value.activity === item.value, () => change({ activity: item.value }), disabled, item.icon, item.example))}</View> : null}
                             {index === 4 ? <View style={styles.groups}>
                                 <View style={[styles.targetCard, { backgroundColor: colors.soft, borderColor: colors.border }]}>
-                                    <TextInput accessibilityLabel={mt("Желаемый вес")} value={value.targetWeight} onChangeText={targetWeight => change({ targetWeight })} editable={!disabled} placeholder="—" placeholderTextColor={colors.muted} keyboardType="decimal-pad" maxLength={7} selectionColor={colors.greenBright} style={[styles.targetInput, { color: colors.green }]} />
+                                    <TextInput accessibilityLabel={mt("Желаемый вес")} value={value.targetWeight} onChangeText={targetWeight => change({ targetWeight: targetWeight.replace(/,/g, ".") })} editable={!disabled} placeholder="—" placeholderTextColor={colors.muted} keyboardType="decimal-pad" maxLength={7} selectionColor={colors.greenBright} style={[styles.targetInput, { color: colors.green }]} />
                                     <Text style={[styles.targetUnit, { color: colors.muted }]}>{mt("кг")}</Text>
                                 </View>
                             </View> : null}
@@ -125,9 +125,9 @@ const styles = StyleSheet.create({
     screen: { flex: 1 },
     viewport: { flex: 1, minHeight: 0, overflow: "hidden" }, pane: { ...StyleSheet.absoluteFillObject },
     stepBody: { paddingHorizontal: 24, paddingTop: 28, paddingBottom: 24, width: "100%", maxWidth: 560, alignSelf: "center" },
-    title: { ...flowStyles.title, marginBottom: 28 }, choices: { gap: 13 }, groups: { gap: 28 }, field: { gap: 10 }, label: { fontSize: 17, fontWeight: "600" },
-    targetCard: { minHeight: 160, borderRadius: 28, borderWidth: 1, padding: 24, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 }, targetInput: { minWidth: 120, maxWidth: "80%", fontSize: 62, fontWeight: "600", textAlign: "center", paddingVertical: 12, fontVariant: ["tabular-nums"] }, targetUnit: { fontSize: 22, alignSelf: "center" },
-    inputWrap: { borderWidth: 1.5, borderRadius: 16, minHeight: 74, flexDirection: "row", alignItems: "center", paddingHorizontal: 18 }, input: { flex: 1, minWidth: 0, fontSize: 28, paddingVertical: 15 }, unit: { fontSize: 18, paddingLeft: 10 },
+    title: { ...flowStyles.title, marginBottom: 28 }, choices: { gap: 13 }, groups: { gap: 28 }, field: { gap: 10 }, label: { fontSize: 17, fontWeight: "700" },
+    targetCard: { minHeight: 160, borderRadius: 28, borderWidth: 1, padding: 24, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12 }, targetInput: { minWidth: 120, maxWidth: "80%", fontSize: 62, fontWeight: "700", textAlign: "center", paddingVertical: 12, fontVariant: ["tabular-nums"] }, targetUnit: { fontSize: 22, alignSelf: "center" },
+    inputWrap: { borderWidth: 1.5, borderRadius: 16, minHeight: 74, flexDirection: "row", alignItems: "center", paddingHorizontal: 18 }, input: { fontWeight: "600", flex: 1, minWidth: 0, fontSize: 28, paddingVertical: 15 }, unit: { fontSize: 18, paddingLeft: 10 },
     sexChoices: { flexDirection: "row", gap: 10 },
     footer: { width: "100%", maxWidth: 560, alignSelf: "center", paddingHorizontal: 24, paddingTop: 12, paddingBottom: 12, gap: 12 },
     error: { color: "#B55353", fontSize: 14, lineHeight: 20 },

@@ -14,6 +14,7 @@ import { useDeviceClock } from "@/hooks/chat/use-device-clock"
 import { DialogueCards, DialoguePanel } from "@/screens/chat/companion-dialogue"
 import type { MentorPage } from "@/screens/chat/mentor-data"
 import { goalLabels } from "@/screens/chat/mentor-data"
+import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
 import { MentorFoodEditor } from "@/screens/chat/mentor-food"
 
@@ -114,7 +115,7 @@ function Button({ label, onPress, disabled = false, primary = false, selected = 
 function Field({ label, value, onChange, numeric = false, multiline = false, disabled = false }: { label: string; value: unknown; onChange: (value: string) => void; numeric?: boolean; multiline?: boolean; disabled?: boolean }) {
     useLanguage()
     const colors = useMentorPalette()
-    return <View style={styles.field}><Text style={[styles.fieldLabel, { color: colors.muted }]}>{label}</Text><TextInput accessibilityLabel={label} editable={!disabled} value={value == null ? "" : String(value)} onChangeText={onChange} keyboardType={numeric ? "decimal-pad" : "default"} autoCapitalize="none" multiline={multiline} textAlignVertical={multiline ? "top" : "center"} selectionColor={colors.greenBright} style={[styles.input, multiline ? styles.multilineInput : null, { color: colors.text, backgroundColor: colors.soft, borderColor: colors.border, opacity: disabled ? 0.55 : 1 }]} /></View>
+    return <View style={styles.field}><Text style={[styles.fieldLabel, { color: colors.muted }]}>{label}</Text><TextInput accessibilityLabel={label} editable={!disabled} value={value == null ? "" : String(value)} onChangeText={text => onChange(numeric ? text.replace(/,/g, ".") : text)} keyboardType={numeric ? "decimal-pad" : "default"} autoCapitalize="none" multiline={multiline} textAlignVertical={multiline ? "top" : "center"} selectionColor={colors.greenBright} style={[styles.input, multiline ? styles.multilineInput : null, { color: colors.text, backgroundColor: colors.soft, borderColor: colors.border, opacity: disabled ? 0.55 : 1 }]} /></View>
 }
 function Toggle({ label, value, onChange, disabled = false }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
     useLanguage()
@@ -204,7 +205,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
                         <View style={[styles.modalAvatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={27} /></View>
                         <Text style={[styles.modalBrand, { color: colors.green }]}>{mt("Наставник ElixirPeptide")}</Text>
                         {c.busy ? <ActivityIndicator color={colors.greenBright} /> : null}
-                        <Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} onPress={() => c.setEditor(null)} style={({ pressed }) => [styles.modalClose, { backgroundColor: colors.soft, opacity: pressed ? 0.65 : 1 }]}><Text style={[styles.modalCloseText, { color: colors.green }]}>×</Text></Pressable>
+                        <Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} onPress={() => c.setEditor(null)} style={({ pressed }) => [styles.modalClose, { backgroundColor: colors.soft, opacity: pressed ? 0.65 : 1 }]}><MentorQuestionIcon name="close" size={24} color={colors.green} /></Pressable>
                     </View>
                     <Text accessibilityRole="header" style={[styles.modalTitle, { color: colors.text }]}>{c.editor?.entry ? mt("Изменить запись") : editorTitles[c.editor?.page ?? "home"]}</Text>
                 </View>
@@ -435,24 +436,24 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
 
 const styles = StyleSheet.create({
     panel: { borderWidth: 1, borderRadius: 18, padding: 6, gap: 8 },
-    copy: { fontSize: 15, lineHeight: 23, flexShrink: 1 },
+    copy: { fontWeight: "500", fontSize: 15, lineHeight: 23, flexShrink: 1 },
     row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     button: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 13, alignSelf: "flex-start", minHeight: 48, maxWidth: "100%", justifyContent: "center", alignItems: "center" },
     primaryButton: { alignSelf: "stretch", marginTop: 6 },
-    buttonText: { fontSize: 15, lineHeight: 21, fontWeight: "600", textAlign: "center", flexShrink: 1 },
+    buttonText: { fontSize: 15, lineHeight: 21, fontWeight: "700", textAlign: "center", flexShrink: 1 },
     card: { padding: 14, borderRadius: 18, borderWidth: 1, borderColor: "#86AC953D", gap: 12, marginVertical: 5 },
     field: { gap: 6, marginVertical: 2 },
-    fieldLabel: { fontSize: 14, lineHeight: 21, fontWeight: "500" },
-    input: { borderWidth: 1, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 12, minHeight: 50, fontSize: 16, lineHeight: 23 },
+    fieldLabel: { fontSize: 14, lineHeight: 21, fontWeight: "600" },
+    input: { fontWeight: "500", borderWidth: 1, borderRadius: 13, paddingHorizontal: 14, paddingVertical: 12, minHeight: 50, fontSize: 16, lineHeight: 23 },
     multilineInput: { minHeight: 98 },
     toggle: { flexDirection: "row", alignItems: "center", gap: 12, padding: 13, borderRadius: 14 },
     modalHeader: { paddingTop: 16, paddingHorizontal: 18, paddingBottom: 20, gap: 15, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
     modalBrandRow: { flexDirection: "row", alignItems: "center", gap: 9 },
     modalAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
-    modalBrand: { flex: 1, fontSize: 15, lineHeight: 22, fontWeight: "600" },
-    modalTitle: { fontSize: 26, lineHeight: 33, fontWeight: "600" },
+    modalBrand: { flex: 1, fontSize: 15, lineHeight: 22, fontWeight: "700" },
+    modalTitle: { fontSize: 26, lineHeight: 33, fontWeight: "700" },
     modalClose: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-    modalCloseText: { fontSize: 28, lineHeight: 32, fontWeight: "400" },
+    modalCloseText: { fontSize: 28, lineHeight: 32, fontWeight: "500" },
     modal: { padding: 14, paddingBottom: 50, width: "100%", maxWidth: 700, alignSelf: "center" },
     modalCard: { padding: 18, borderRadius: 22, gap: 15 },
 })

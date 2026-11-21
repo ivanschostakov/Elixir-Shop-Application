@@ -1,4 +1,4 @@
-import { mentorLocale } from "@/i18n/mentor-translations"
+import { mentorNumber } from "@/i18n/mentor-translations"
 import { companionCalendarDay } from "@/screens/chat/companion-timezones"
 import { numeric } from "@/screens/chat/mentor-data"
 import type { CompanionState } from "@/services/api/companion"
@@ -11,7 +11,7 @@ export function nutritionFraction(amount: unknown, target: unknown): number {
 
 export function mentorHomeNumber(value: unknown): string {
     const number = numeric(value)
-    return number === null ? "—" : new Intl.NumberFormat(mentorLocale(), { maximumFractionDigits: 1 }).format(number)
+    return number === null ? "—" : mentorNumber(number)
 }
 
 export function mentorHomeData(state: CompanionState | null, clock: string, now = new Date()) {

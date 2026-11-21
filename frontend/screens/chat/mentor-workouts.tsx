@@ -1,4 +1,4 @@
-import { mentorText as mt, mentorLocale, mentorDateLabel } from "@/i18n/mentor-translations"
+import { mentorText as mt, mentorNumber, mentorDateLabel } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useEffect, useRef, useState } from "react"
 import { Alert, Switch, View } from "react-native"
@@ -78,7 +78,7 @@ function WorkoutSession({ entry, controller: c, onChanged }: { entry: CompanionE
             <Switch accessibilityLabel={mt("Подход {0} выполнен", [index + 1])} value={set.completed} disabled={completed || c.busy || numeric(set.weight_kg) == null || Number(set.weight_kg) < 0 || !Number.isInteger(set.reps) || Number(set.reps) < 1} onValueChange={value => updateSet(index, { completed: value })} />
         </View>)}</> : null}
         <View style={styles.row}>{workout.exercises.map((item, index) => <Button key={item.key} label={`${index + 1}. ${item.name}`} onPress={() => setWorkout({ ...workout, current_exercise_index: index })} />)}</View>
-        <Copy>{totals.sets} {mt(" подходов · ")}{totals.reps} {mt(" повторений · ")}{totals.volume.toLocaleString(mentorLocale())} {mt(" кг объёма")}</Copy>
+        <Copy>{totals.sets} {mt(" подходов · ")}{totals.reps} {mt(" повторений · ")}{mentorNumber(totals.volume)} {mt(" кг объёма")}</Copy>
         <Field label={mt("Длительность, минут")} numeric value={Math.round(workout.duration_seconds / 60)} disabled={completed || c.busy} onChange={text => { setNotice(""); setWorkout({ ...workout, duration_seconds: Math.max(0, Math.round((numeric(text) ?? 0) * 60)) }) }} />
         {!completed ? <><Button label={mt("Сохранить подходы")} primary disabled={c.busy} onPress={() => persist(workout)} />
             {current < workout.exercises.length - 1 ? <Button label={mt("Сохранить и к следующему упражнению")} disabled={c.busy} onPress={() => persist({ ...workout, current_exercise_index: current + 1 })} /> : null}

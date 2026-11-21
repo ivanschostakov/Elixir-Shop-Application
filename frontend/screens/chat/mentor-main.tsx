@@ -51,5 +51,5 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
     </View>
 }
 
-const styles = StyleSheet.create({ fill: { flex: 1, minHeight: 0 }, hidden: { display: "none" }, setting: { minHeight: 64, flexDirection: "row", gap: 14, alignItems: "center", paddingVertical: 15, borderBottomWidth: StyleSheet.hairlineWidth }, settingText: { flex: 1, fontSize: 17, lineHeight: 24 },
-    placeholder: { flex: 1, padding: 32, alignItems: "center", justifyContent: "center", gap: 14 }, placeholderIcon: { width: 78, height: 78, borderRadius: 26, alignItems: "center", justifyContent: "center" }, placeholderTitle: { fontSize: 25, fontWeight: "700" }, placeholderCopy: { fontSize: 16, textAlign: "center", lineHeight: 23 } })
+const styles = StyleSheet.create({ fill: { flex: 1, minHeight: 0 }, hidden: { display: "none" }, setting: { minHeight: 64, flexDirection: "row", gap: 14, alignItems: "center", paddingVertical: 15, borderBottomWidth: StyleSheet.hairlineWidth }, settingText: { fontWeight: "600", flex: 1, fontSize: 17, lineHeight: 24 },
+    placeholder: { flex: 1, padding: 32, alignItems: "center", justifyContent: "center", gap: 14 }, placeholderIcon: { width: 78, height: 78, borderRadius: 26, alignItems: "center", justifyContent: "center" }, placeholderTitle: { fontSize: 25, fontWeight: "800" }, placeholderCopy: { fontWeight: "500", fontSize: 16, textAlign: "center", lineHeight: 23 } })

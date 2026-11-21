@@ -51,12 +51,12 @@ export function MentorFlowBody({ children }: { children: ReactNode }) {
 export const flowStyles = StyleSheet.create({
     fill: { flex: 1, minHeight: 0 },
     header: { paddingHorizontal: 16, paddingTop: 8, minHeight: 64, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-    headerCenter: { flex: 1, alignItems: "center", gap: 4 }, section: { fontSize: 12, fontWeight: "700", letterSpacing: 0.8, textTransform: "uppercase" }, count: { fontSize: 12, fontWeight: "500" },
+    headerCenter: { flex: 1, alignItems: "center", gap: 4 }, section: { fontSize: 12, fontWeight: "800", letterSpacing: 0.8, textTransform: "uppercase" }, count: { fontSize: 12, fontWeight: "600" },
     iconButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" }, close: { fontSize: 32, lineHeight: 36, fontWeight: "300" },
     progress: { flexDirection: "row", gap: 5, marginHorizontal: 24, marginTop: 12, marginBottom: 4 }, segment: { flex: 1, height: 4, borderRadius: 4 },
     body: { paddingHorizontal: 24, paddingTop: 30, paddingBottom: 24, gap: 24, width: "100%", maxWidth: 560, alignSelf: "center", flexGrow: 1 },
-    title: { fontSize: 31, lineHeight: 38, fontWeight: "700", letterSpacing: -0.7 },
+    title: { fontSize: 31, lineHeight: 38, fontWeight: "800", letterSpacing: -0.7 },
     footer: { width: "100%", maxWidth: 560, alignSelf: "center", paddingHorizontal: 24, paddingTop: 12, paddingBottom: 12, gap: 10 },
     button: { minHeight: 56, borderRadius: 18, paddingHorizontal: 20, paddingVertical: 15, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-    buttonText: { fontSize: 17, lineHeight: 24, fontWeight: "600", textAlign: "center" }, error: { color: "#B55353", fontSize: 14, lineHeight: 21 },
+    buttonText: { fontSize: 17, lineHeight: 24, fontWeight: "700", textAlign: "center" }, error: { fontWeight: "500", color: "#B55353", fontSize: 14, lineHeight: 21 },
 })

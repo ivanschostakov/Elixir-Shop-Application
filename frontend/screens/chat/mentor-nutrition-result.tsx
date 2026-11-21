@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from "react-native"
-import { mentorText as mt, mentorLocale } from "@/i18n/mentor-translations"
+import { mentorText as mt, mentorNumber } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { MentorFlowBody, MentorFlowButton, MentorFlowHeader, flowStyles } from "@/screens/chat/mentor-onboarding-layout"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
@@ -11,7 +11,7 @@ export function MentorNutritionResult({ state, onContinue, onDecline, onBack, on
     const colors = useMentorPalette()
     const profile = state?.profile?.data
     const nutrition = profile?.onboarding_nutrition_reason ? null : profile?.nutrition
-    const number = (value: string | number) => new Intl.NumberFormat(mentorLocale(), { maximumFractionDigits: 0 }).format(Number(value))
+    const number = (value: string | number) => mentorNumber(Number(value), { maximumFractionDigits: 0 })
     return <View testID="mentor-nutrition-result" style={flowStyles.fill}>
         <MentorFlowHeader onBack={onBack} onClose={onClose} />
         <MentorFlowBody>
@@ -49,9 +49,9 @@ export function MentorNutritionResult({ state, onContinue, onDecline, onBack, on
 const styles = StyleSheet.create({
     calorieCard: { borderRadius: 28, alignItems: "center", paddingVertical: 24, paddingHorizontal: 18, gap: 6 },
     foodIcon: { width: 52, height: 52, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 6 },
-    calories: { fontSize: 62, lineHeight: 72, fontWeight: "700", letterSpacing: -2.5 }, calorieUnit: { fontSize: 17, fontWeight: "500" },
+    calories: { fontSize: 62, lineHeight: 72, fontWeight: "800", letterSpacing: -2.5 }, calorieUnit: { fontSize: 17, fontWeight: "600" },
     macros: { flexDirection: "row", paddingVertical: 5 }, macro: { flex: 1, minWidth: 0, alignItems: "center", gap: 10 },
-    macroLabel: { fontSize: 14, fontWeight: "500" }, macroValue: { fontSize: 29, fontWeight: "700", letterSpacing: -0.7 }, grams: { fontSize: 17, fontWeight: "500" }, macroLine: { width: 34, height: 3, borderRadius: 3 },
-    explanation: { fontSize: 16, lineHeight: 24 }, invitation: { gap: 8, marginTop: 6 }, invitationTitle: { fontSize: 23, lineHeight: 29, fontWeight: "600", letterSpacing: -0.4 },
+    macroLabel: { fontSize: 14, fontWeight: "600" }, macroValue: { fontSize: 29, fontWeight: "800", letterSpacing: -0.7 }, grams: { fontSize: 17, fontWeight: "600" }, macroLine: { width: 34, height: 3, borderRadius: 3 },
+    explanation: { fontWeight: "500", fontSize: 16, lineHeight: 24 }, invitation: { gap: 8, marginTop: 6 }, invitationTitle: { fontSize: 23, lineHeight: 29, fontWeight: "700", letterSpacing: -0.4 },
     unavailable: { borderRadius: 24, padding: 24, gap: 20 },
 })

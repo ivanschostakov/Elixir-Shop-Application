@@ -1,4 +1,4 @@
-import { mentorText as mt, mentorLocale } from "@/i18n/mentor-translations"
+import { mentorText as mt, mentorNumber } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Alert, Pressable, Text, useWindowDimensions, View } from "react-native"
@@ -134,7 +134,7 @@ export function MentorWorkspace({ controller: c, onCompose, onPrompt, displayNam
     const workoutTask = tasks.find(task => task.kind === "workout" && task.status !== "done") ?? tasks.find(task => task.kind === "workout")
     const courseTask = tasks.find(task => task.kind === "course" && task.status === "pending")
     const localTime = (date: string) => formatCompanionDate(date, c.clock).match(/(\d{2}:\d{2})(?::\d{2})?/)?.[1] ?? ""
-    const numberLabel = (value: unknown) => numeric(value)?.toLocaleString(mentorLocale(), { maximumFractionDigits: 1 }) ?? "—"
+    const numberLabel = (value: unknown) => { const number = numeric(value); return number === null ? "—" : mentorNumber(number) }
     const page = c.mentorPage
     if (!page) return null
     return <View testID="mentor-workspace" style={[styles.body, { backgroundColor: colors.surface }, embedded ? { padding: 0 } : null, page === "today" ? { gap: 12 } : null]}>
@@ -204,7 +204,7 @@ function NutritionOverview({ nutrition }: { nutrition: MentorDashboard["today"][
     }
     return <View style={[styles.notice, { backgroundColor: colors.mint }]}>
         <Copy muted>{mt("Итоги за сегодня")}</Copy>
-        <Text style={{ color: colors.green, fontSize: 30, fontWeight: "600" }}>{Number(nutrition.consumed.kcal).toLocaleString(mentorLocale())} <Text style={{ fontSize: 15, fontWeight: "400", color: colors.muted }}>{nutrition.target ? mt("из {0} ", [Number(nutrition.target.kcal).toLocaleString(mentorLocale())]) : ""}{mt("ккал")}</Text></Text>
+        <Text style={{ color: colors.green, fontSize: 30, fontWeight: "600" }}>{mentorNumber(Number(nutrition.consumed.kcal))} <Text style={{ fontSize: 15, fontWeight: "400", color: colors.muted }}>{nutrition.target ? mt("из {0} ", [mentorNumber(Number(nutrition.target.kcal))]) : ""}{mt("ккал")}</Text></Text>
         {nutrition.target ? <View style={{ height: 7, backgroundColor: colors.surface, borderRadius: 5, overflow: "hidden" }}><View style={{ height: 7, borderRadius: 5, width: `${fraction(nutrition.consumed.kcal, nutrition.target.kcal) * 100}%`, backgroundColor: colors.greenBright }} /></View> : null}
         <View style={styles.row}>{(["protein", "fat", "carbs"] as const).map((key, index) => <View key={key} style={{ flex: 1, gap: 4, paddingTop: 8 }}><Copy muted style={{ fontSize: 12 }}>{[mt("Белки"), mt("Жиры"), mt("Углеводы")][index]}</Copy><Copy style={{ fontSize: 16, fontWeight: "600", color: colors.green }}>{nutrition.consumed[key]} {mt(" г")}</Copy>{nutrition.target ? <Copy muted style={{ fontSize: 12 }}>{mt("из ")}{nutrition.target[key]} {mt(" г")}</Copy> : null}</View>)}</View>
         {nutrition.remaining ? <Copy style={{ color: colors.green }}>{mt("Осталось ")}{nutrition.remaining.kcal} {mt(" ккал · ")}{nutrition.remaining.protein} {mt(" г белка")}</Copy> : null}

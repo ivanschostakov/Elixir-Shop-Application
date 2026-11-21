@@ -15,6 +15,6 @@ export function MentorChoiceCard({ title, description, icon, selected, onPress, 
 const styles = StyleSheet.create({
     card: { minHeight: 76, borderWidth: 1.5, borderRadius: 20, flexDirection: "row", alignItems: "center", padding: 16, gap: 12, flexGrow: 1, flexShrink: 1, flexBasis: "auto" },
     icon: { width: 42, height: 42, borderRadius: 14, justifyContent: "center", alignItems: "center" },
-    copy: { flex: 1, minWidth: 0, gap: 5 }, title: { fontSize: 17, lineHeight: 23, fontWeight: "600" }, description: { fontSize: 13, lineHeight: 19 },
+    copy: { flex: 1, minWidth: 0, gap: 5 }, title: { fontSize: 17, lineHeight: 23, fontWeight: "700" }, description: { fontWeight: "500", fontSize: 13, lineHeight: 19 },
     radio: { width: 21, height: 21, borderRadius: 11, borderWidth: 1.5, justifyContent: "center", alignItems: "center" }, dot: { width: 11, height: 11, borderRadius: 6 },
 })
