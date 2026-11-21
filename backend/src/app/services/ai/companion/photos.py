@@ -44,16 +44,16 @@ async def validate_photo_attachments(db, user_id, attachment_ids):
 
 async def serialize_entries(db, user_id, entries):
     from . import service
-    ids = {photo_id for entry in entries if entry.kind == "progress_photo" and entry.user_id == user_id
-        for photo_id in entry.data.get("photo_attachment_ids", [])}
+    ids = {photo_id for entry in entries if entry.kind in {"progress_photo", "meal"} and entry.user_id == user_id
+        for photo_id in entry.data.get("photo_attachment_ids" if entry.kind == "progress_photo" else "food_photo_attachment_ids", [])}
     available = await owned_photos(db, user_id, ids)
     result = []
     for entry in entries:
         if entry.user_id != user_id:
             continue
         value = service.dump(entry)
-        if entry.kind == "progress_photo":
-            ids = entry.data.get("photo_attachment_ids", [])
+        if entry.kind in {"progress_photo", "meal"}:
+            ids = entry.data.get("photo_attachment_ids" if entry.kind == "progress_photo" else "food_photo_attachment_ids", [])
             value["photo_attachments"] = [AIAttachmentRead.model_validate(available[i]).model_dump(mode="json") for i in ids if i in available]
             value["unavailable_photo_attachment_ids"] = [i for i in ids if i not in available]
         result.append(value)

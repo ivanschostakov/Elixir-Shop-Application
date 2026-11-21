@@ -58,13 +58,14 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
         { label: mt("Мой профиль"), icon: "profile", action: () => c.setEditor({ page: "profile" }) },
         { label: mt("Настроить питание"), icon: "food", action: () => c.setEditor({ page: "nutrition" }) },
         { label: mt("Записать вес"), icon: "weight", action: () => c.setEditor({ page: "weight" }) },
+        { label: mt("Напоминания о еде"), icon: "clock", action: () => c.setEditor({ page: "meal_reminders" }) },
         { label: mt("Настройки и напоминания"), icon: "settings", action: () => c.setEditor({ page: "settings" }) },
         ...(mentorHomeData(c.state, c.clock).optionalIncomplete ? [{ label: mt("Продолжить заполнение"), icon: "custom" as const, action: onContinue }] : []),
     ]
     const render = (page: MentorPage) => {
         if (page === "nutrition") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeScreen state={c.state} clock={c.clock} animationKey={entrance} error={c.error} busy={c.busy} onRefresh={() => void c.refresh()} onClose={onClose}
-            onSettings={openSettings} onAddFood={() => c.setEditor({ page: "meal" })} onNutrition={() => c.setEditor({ page: "nutrition" })}
-            onMeal={entry => c.setEditor({ page: "meal", entry })} onJournal={() => c.setEditor({ page: "journal" })} /></View>
+            onSettings={openSettings} onAddFood={mealType => c.setEditor({ page: "meal", mealType })} onMealGroup={(mealType, mealKey) => c.setEditor({ page: "meal_group", mealType, mealKey })} onWater={() => c.setEditor({ page: "water" })} onFoodHelp={helpMode => c.setEditor({ page: "food_help", helpMode })} onNutrition={() => c.setEditor({ page: "nutrition" })}
+            onMeal={entry => c.setEditor({ page: "meal", entry })} onJournal={() => c.setEditor({ page: "journal", entryKind: "meal" })} /></View>
         if (page === "chat") return chatVisited ? <View style={styles.fill}>{renderChat({ active: visible && tab === "chat" && chatInteractive && !settingsOpen, onBack: backToMenu })}</View> : null
         if (page === "settings") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeHeader title={mt("Настройки")} onBack={closeSettings} /><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={mentorHomeStyles.body}>{settings.map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} onPress={item.action} style={({ pressed }) => [styles.setting, { borderBottomColor: colors.border, opacity: pressed ? 0.65 : 1 }]}><MentorQuestionIcon name={item.icon} color={colors.green} /><Text style={[styles.settingText, { color: colors.text }]}>{item.label}</Text><MentorQuestionIcon name="chevronRight" size={20} color={colors.muted} /></Pressable>)}</ScrollView></View>
         return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeHeader title={mentorTabLabel(page)} backLabel={mt("На главную магазина")} onBack={onClose} onSettings={openSettings} />

@@ -300,7 +300,9 @@ async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_cli
     return created
 
 
-async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1, telegram_transport: bool = False, bot_model_override: BotModel | None = None, meal_estimate: bool = False) -> AIChatSendResult:
+async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1, telegram_transport: bool = False, bot_model_override: BotModel | None = None, meal_estimate: bool = False, nutrition_help: str | None = None) -> AIChatSendResult:
+    if nutrition_help not in {None, "suggest", "product"} or nutrition_help and not meal_estimate:
+        raise HTTPException(422, "Некорректный режим справки о питании")
     if meal_estimate and (companion_profile is None or not client_request_id):
         raise HTTPException(422, "Расчёт еды требует профиля и ключа запроса")
     if companion_profile is not None and dialogue_protocol != 2:
@@ -313,7 +315,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
     loaded_uploads = await _load_uploads(attachments)
     input_fingerprint = hashlib.sha256((text + "\n" + "\n".join(hashlib.sha256(u.content).hexdigest() for u in loaded_uploads)).encode()).hexdigest()
     if meal_estimate:
-        input_fingerprint = hashlib.sha256(("meal_estimate:" + input_fingerprint).encode()).hexdigest()
+        input_fingerprint = hashlib.sha256((("nutrition_help:" + nutrition_help + ":" if nutrition_help else "meal_estimate:") + input_fingerprint).encode()).hexdigest()
     duplicate = None
     if client_request_id:
         duplicate = (await db.execute(select(AIMessage).where(AIMessage.user_id == user.id, AIMessage.client_request_id == client_request_id))).scalar_one_or_none()
@@ -451,9 +453,9 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             include_companion=companion_profile is not None,
             dialogue=companion_profile is not None and dialogue_protocol == 2,
         )
-        from .companion.food import food_prompt
+        from .companion.food import food_prompt, food_help_prompt
         ai_result = await professor_client.send_message_v2(
-            input_text=food_prompt(text, user_message.created_at) if meal_estimate else text if companion_profile is not None else _build_commerce_ai_input(text) if allow_commerce else (
+            input_text=food_help_prompt(text, nutrition_help) if nutrition_help else food_prompt(text, user_message.created_at) if meal_estimate else text if companion_profile is not None else _build_commerce_ai_input(text) if allow_commerce else (
                 "В этой версии приложения каталог и покупки недоступны. Не рекламируй товары, "
                 "не предлагай покупку, скидки или переход в магазин. Не выполняй действия с корзиной. "
                 "Отвечай на вопрос без коммерческих рекомендаций. product_refs=[], basket_addition=null.\n\n"
@@ -587,6 +589,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             from .companion.food import food_estimate
             from .companion.dialogue_schemas import DialogueTurn
             estimate = food_estimate(structured_output.companion_dialogue or DialogueTurn(), user_message.created_at) if structured_output is not None else None
+            if nutrition_help:
+                estimate = None  # Reference answers never create diary proposals.
+            elif estimate:
+                from src.database.models import Attachment
+                estimate.food_photo_attachment_ids = list((await db.execute(select(Attachment.id).where(Attachment.message_id == user_message.id, Attachment.type == AttachmentType.IMAGE))).scalars())
             reply_text = "Расчёт КБЖУ готов." if estimate else reply_text or "Опишите, что было в порции, или добавьте фото еды."
             meal_result = {"entry": estimate.model_dump(mode="json") if estimate else None, "message": reply_text}
             assistant_context.update(meal_estimate_request_id=client_request_id, meal_estimate=meal_result)

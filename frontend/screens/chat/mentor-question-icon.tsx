@@ -34,13 +34,15 @@ import Stop from "@/assets/icons/mentor/square.svg"
 
 const icons = { sedentary: Armchair, light: Footprints, moderate: Bike, high: Dumbbell, beginner: Sprout, occasional: CalendarClock, regular: CalendarCheck, home: House, gym: Dumbbell, mixed: ArrowLeftRight, custom: PencilLine, weight: Weight, summary: ClipboardCheck, weekly: CalendarDays, chevronDown: ChevronDown, back: ChevronLeft, close: Close, food: Utensils, leaf: Leaf, loss: TrendingDown, gain: TrendingUp, maintain: HeartPulse,
     settings: Settings, message: Message, target: Target, chevronRight: ChevronRight, check: Check, profile: Profile, camera: Camera, microphone: Microphone, stop: Stop }
-export type MentorQuestionIconName = keyof typeof icons | "plus" | "book" | "progress" | "adjust" | "more" | "search" | "clock"
+export type MentorQuestionIconName = keyof typeof icons | "plus" | "book" | "progress" | "adjust" | "more" | "search" | "clock" | "water" | "trash"
 const solidIcons: Partial<Record<MentorQuestionIconName, MentorSolidIconName>> = { food: "nutrition", gym: "workouts", high: "workouts", maintain: "wellbeing", message: "chat" }
 const utilityPaths = {
     plus: "M12 4v16M4 12h16",
     book: "M12 5v16M12 5C8 2 4 3 2 4v15c3-1 7-1 10 2 3-3 7-3 10-2V4c-2-1-6-2-10 1Z",
     adjust: "M3 6h4m4 0h10M3 12h10m4 0h4M3 18h2m4 0h12",
     search: "m16 16 5 5", clock: "M12 6v6l4 2",
+    water: "M12 3C9 7 5 11 5 15a7 7 0 0 0 14 0c0-4-4-8-7-12Z",
+    trash: "M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7",
 }
 
 export function MentorQuestionIcon({ name, size = 26, color }: { name: MentorQuestionIconName; size?: number; color: string }) {

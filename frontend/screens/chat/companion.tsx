@@ -16,17 +16,18 @@ import type { MentorPage } from "@/screens/chat/mentor-data"
 import { goalLabels } from "@/screens/chat/mentor-data"
 import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
-import { MentorFoodEditor } from "@/screens/chat/mentor-food"
+import { MentorNutritionEditor, nutritionEditorPages } from "@/screens/chat/mentor-meal-screens"
 
-type Page = "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
-type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry }
+type Page = "meal_group" | "water" | "food_help" | "meal_reminders" | "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
+type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry; mealType?: import("@/services/api/companion").MealType; mealKey?: string; parentMeal?: boolean; helpMode?: "suggest" | "product"; entryKind?: EntryData["kind"] }
 type Controller = ReturnType<typeof useCompanion>
 const unitLabels: Record<Unit, string> = { get mg() { return mt("мг") }, get mcg() { return mt("мкг") }, get g() { return mt("г") }, get ml() { return mt("мл") }, get capsule() { return mt("капсул") }, get tablet() { return mt("таблеток") }, get IU() { return mt("МЕ") } }
 const settingsDefault: CompanionSettings = { timezone: "UTC", nutrition_auto_eligible: false, course_reminders: false, daily_time: null, weight_time: null, weekly_time: null, weekly_day: 6, supply_reminders: false, supply_days: 7 }
 const emptyNutrition = (): Nutrition => ({ kcal: "", protein: "", fat: "", carbs: "" })
 const numberOrNull = (value: string) => value.trim() ? Number(value.replace(",", ".")) : null
-const legacyEntryPage = (kind?: EntryData["kind"]): Page => kind === "workout" || kind === "measurement" || kind === "progress_photo" ? "journal" : kind ?? "meal"
+const legacyEntryPage = (kind?: EntryData["kind"]): Page => kind === "workout" || kind === "measurement" || kind === "progress_photo" || kind === "water" ? "journal" : kind ?? "meal"
 const editorTitles: Record<Page, string> = {
+    get meal_group() { return mt("Приём пищи") }, get water() { return mt("Вода") }, get food_help() { return mt("Помощь с питанием") }, get meal_reminders() { return mt("Напоминания о еде") },
     get home() { return mt("Мой наставник") }, get consent() { return mt("Начнём знакомство") }, get profile() { return mt("Мой профиль") }, get plan() { return mt("Мой курс") },
     get meal() { return mt("Добавить еду") }, get weight() { return mt("Добавить вес") }, get wellbeing() { return mt("Самочувствие") }, get nutrition() { return mt("Настроить питание") },
     get settings() { return mt("Настройки") }, get journal() { return mt("Мой дневник") }, get events() { return mt("События курса") }, get summary() { return mt("Мои результаты") }, get supply() { return mt("Запас курса") },
@@ -47,6 +48,7 @@ export function useCompanion(enabled = true) {
     const refreshSequence = useRef(0)
     const refresh = useCallback(async () => {
         if (!enabled || Platform.OS === "web") return
+        if (busyRef.current) return
         const sequence = ++refreshSequence.current
         try {
             const availability = await getCompanionAvailability()
@@ -56,7 +58,7 @@ export function useCompanion(enabled = true) {
                 const next = await getCompanion()
                 if (sequence !== refreshSequence.current) return
                 if (next.dialogue_protocol !== 2) throw new Error(mt("Не удалось загрузить чат. Попробуйте ещё раз."))
-                setState(next)
+                setState({ ...next, received_at: Date.now() })
                 setError("")
                 return next
             }
@@ -78,7 +80,7 @@ export function useCompanion(enabled = true) {
     }
     const perform = async (action: CompanionAction) => {
         if (busyRef.current) throw new Error(mt("Дождитесь завершения предыдущего действия"))
-        busyRef.current = true; setBusy(true); setError("")
+        refreshSequence.current++; busyRef.current = true; setBusy(true); setError("")
         try {
             const payload = await withStorageConsent(state, action, version => new Promise(resolve => {
                 Alert.alert(mt("Сохранить личные данные?"), mt("Приложение сохранит профиль, курс и дневник; нужный контекст будет передаваться OpenAI для ответов. Данные можно удалить в настройках. Нажимая кнопку ниже, вы подтверждаете возраст 18+ и согласие на обработку этих данных (") + version + ").", [
@@ -91,7 +93,7 @@ export function useCompanion(enabled = true) {
             retryKeys.current.set(identity, key)
             const result = await actCompanion({ ...payload, request_key: key, ...(payload.settings ? { settings: { ...payload.settings, timezone: deviceCompanionTimezone() } } : {}) })
             retryKeys.current.delete(identity)
-            setState(result.state)
+            refreshSequence.current++; setState({ ...result.state, received_at: Date.now() }); setInitialized(true)
             return result.state
         } finally { busyRef.current = false; setBusy(false) }
     }
@@ -189,6 +191,10 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     const hasProfile = !!c.state?.profile
     const setEditor = c.setEditor
     const [editorShown, setEditorShown] = useState(false)
+    const lastEditor = useRef(c.editor)
+    if (c.editor) lastEditor.current = c.editor
+    const displayEditor = c.editor ?? lastEditor.current
+    const nutritionEditor = nutritionEditorPages.has(displayEditor?.page ?? "")
     useEffect(() => { if (!c.editor) setEditorShown(false) }, [c.editor])
     useEffect(() => { if (openRequested && hasProfile && c.state?.dialogue_protocol !== 2) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor, c.state?.dialogue_protocol])
     if (Platform.OS === "web" || !c.state?.available) return null
@@ -197,9 +203,9 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     return <View testID="companion-panel" style={navigationVisible && !dialogue ? [styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }] : undefined}>
         {navigationVisible ? dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label={mt("Мой курс · дневник · прогресс")} disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} /> : null}
         {c.error && !workspaceVisible ? <><Copy>{c.error}</Copy><Button label={mt("Обновить")} onPress={() => void changed()} /></> : null}
-        <Modal visible={!!c.editor} animationType="slide" presentationStyle="pageSheet" onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>
-            <KeyboardAvoidingView style={{ flex: 1, backgroundColor: c.editor?.page === "meal" ? colors.surface : colors.mint }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-                {c.editor?.page === "meal" ? <MentorFoodEditor key={JSON.stringify(c.editor)} controller={c} shown={editorShown} onClose={() => { c.setEditor(null); void onChanged() }} onSaved={async () => { c.setEditor(null); await changed() }} /> : <>
+        <Modal visible={!!c.editor} animationType="slide" presentationStyle={nutritionEditor ? "fullScreen" : "pageSheet"} onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>
+            <KeyboardAvoidingView style={{ flex: 1, backgroundColor: nutritionEditor ? colors.surface : colors.mint }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+                {nutritionEditor ? <MentorNutritionEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} shown={editorShown} onClose={() => c.setEditor(null)} /> : <>
                 <View style={[styles.modalHeader, { backgroundColor: colors.surface }]}>
                     <View style={styles.modalBrandRow}>
                         <View style={[styles.modalAvatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={27} /></View>
@@ -389,7 +395,7 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
     const page = c.editor!.page
     const [from, setFrom] = useState(calendarDate(-6))
     const [to, setTo] = useState(calendarDate(1))
-    const [entries, setEntries] = useState(c.state!.entries ?? [])
+    const [entries, setEntries] = useState((c.state!.entries ?? []).filter(entry => !c.editor?.entryKind || entry.kind === c.editor.entryKind))
     const [events, setEvents] = useState(c.state!.events ?? [])
     const [summary, setSummary] = useState<Summary | null>(null)
     const [supply, setSupply] = useState<Supply | null>(null)
@@ -405,7 +411,7 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
             if (page === "supply") { const result = await getCompanionSupply(Number(days)); if (sequence === loadSequence.current) { setSupply(result); setAdded([]) } }
             else if (page === "events") { const result = await getCompanionEvents(from, to); if (sequence === loadSequence.current) setEvents(result.events) }
             else if (page === "summary") { const result = await getCompanionSummary(from, to); if (sequence === loadSequence.current) setSummary(result) }
-            else { const result = await getCompanionEntries(from, to); if (sequence === loadSequence.current) setEntries(result.entries) }
+            else { const result = await getCompanionEntries(from, to, c.editor?.entryKind); if (sequence === loadSequence.current) setEntries(result.entries) }
         } finally { if (sequence === loadSequence.current) setLoading(false) }
     }
     const reloadForClock = useRef(() => {})

@@ -71,7 +71,7 @@ export function MentorTabPages({ active, direction, transitionKey, render, onSel
 }) {
     const { width } = useWindowDimensions()
     const swipe = (event: PanGestureHandlerStateChangeEvent) => {
-        if (active === "settings" || active === "chat" || event.nativeEvent.state !== State.END) return
+        if (active === "settings" || active === "chat" || active === "nutrition" || event.nativeEvent.state !== State.END) return
         const { translationX, velocityX } = event.nativeEvent
         const left = translationX < -70 || velocityX < -650
         const right = translationX > 70 || velocityX > 650
@@ -79,7 +79,7 @@ export function MentorTabPages({ active, direction, transitionKey, render, onSel
         const next = Math.max(0, Math.min(mentorTabs.indexOf(active) + (left ? 1 : -1), mentorTabs.length - 1))
         if (mentorTabs[next] !== active) onSelect(mentorTabs[next])
     }
-    return <PanGestureHandler enabled={active !== "chat" && active !== "settings"} activeOffsetX={[-40, 40]} failOffsetY={[-24, 24]} onHandlerStateChange={swipe}><View testID="mentor-tab-pages" style={styles.viewport}>
+    return <PanGestureHandler enabled={active === "workouts" || active === "wellbeing"} activeOffsetX={[-40, 40]} failOffsetY={[-24, 24]} onHandlerStateChange={swipe}><View testID="mentor-tab-pages" style={styles.viewport}>
         {mentorPages.map(page => <MentorPagePane key={page} page={page} active={active === page} direction={direction} transitionKey={transitionKey} width={width} onSettled={onSettled}>{render(page)}</MentorPagePane>)}
         <MentorFooterMotion visible={footerVisible} height={footerHeight}>{footer}</MentorFooterMotion>
     </View></PanGestureHandler>

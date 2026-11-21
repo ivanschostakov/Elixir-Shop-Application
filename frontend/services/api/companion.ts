@@ -13,10 +13,13 @@ export type ProfileData = {
     nutrition_source?: "manual" | "calculated"; nutrition_rule_version?: string | null
 }
 export type CompanionSettings = {
+    meal_reminders?: Exclude<MealType, "extra">[]; water_goal_ml?: number | null
     timezone: string; nutrition_auto_eligible: boolean; course_reminders: boolean; daily_time: string | null; weight_time: string | null
     weekly_time: string | null; weekly_day: number; supply_reminders: boolean; supply_days: number
     checkin_time?: string | null; checkin_topics?: ("course" | "nutrition" | "weight" | "wellbeing")[]; inactivity_days?: number | null; inactivity_time?: string
 }
+export type MealType = "breakfast" | "lunch" | "dinner" | "extra"
+export type MealHabits = Record<Exclude<MealType, "extra">, { time: string | null; days: number }>
 export type Unit = "mg" | "mcg" | "g" | "ml" | "capsule" | "tablet" | "IU"
 export type Stage = { start_date: string; end_date: string; amount: Numeric; unit: Unit; interval_days: number; weekdays: number[]; times: string[] }
 export type CourseItem = {
@@ -28,10 +31,11 @@ export type WorkoutPlan = { name: string; start_date: string; end_date: string |
 export type Workout = { name: string; plan_day_key: string | null; scheduled_date: string | null; status: "in_progress" | "completed"; duration_seconds: number; current_exercise_index: number; exercises: { key: string; name: string; sets: { weight_kg: Numeric | null; reps: number | null; completed: boolean }[] }[] }
 export type Measurement = { waist_cm?: Numeric | null; chest_cm?: Numeric | null; hips_cm?: Numeric | null; arm_cm?: Numeric | null; thigh_cm?: Numeric | null; body_fat_percent?: Numeric | null }
 export type EntryData = {
-    kind: "meal" | "weight" | "wellbeing" | "workout" | "measurement" | "progress_photo"; occurred_at: string; name?: string | null; portion_g?: Numeric | null
+    kind: "meal" | "water" | "weight" | "wellbeing" | "workout" | "measurement" | "progress_photo"; occurred_at: string; name?: string | null; portion_g?: Numeric | null
     nutrition?: Nutrition | null; weight_kg?: Numeric | null; wellbeing?: number | null; appetite?: number | null
     energy?: number | null; sleep_hours?: Numeric | null; note?: string; estimated?: boolean; assumptions?: string
     workout?: Workout | null; measurement?: Measurement | null; favorite?: boolean
+    meal_type?: MealType | null; meal_key?: string | null; water_ml?: number | null; food_photo_attachment_ids?: number[]
     photo_attachment_ids?: number[]
 }
 export type Proposal = { kind: "profile" | "plan" | "entry" | "nutrition"; summary: string; profile?: ProfileData | null; plan?: PlanData | null; entry?: EntryData | null; nutrition?: Nutrition | null }
@@ -39,8 +43,9 @@ export type CompanionCard = { id: string; kind: Proposal["kind"]; summary: strin
 export type CompanionEntry = { id: number; version: number; kind: EntryData["kind"]; occurred_at: string; data: EntryData; photo_attachments?: AIAttachmentRead[]; unavailable_photo_attachment_ids?: number[] }
 export type CompanionEvent = { id: number; version: number; scheduled_at: string; status: "pending" | "done" | "skipped"; data: { name: string; amount: Numeric; unit: Unit } }
 export type ProgressTotals = { workouts: { sessions: number; completed: number; in_progress: number; completed_sets: number; reps: number; volume_kg: Numeric; duration_seconds: number }; measurements: { count: number; latest: Measurement; change: Measurement }; wellbeing: { entries: number; average_score: Numeric | null; average_energy?: Numeric | null; energy_measurements?: number } }
-export type Summary = { nutrition: Nutrition; meals_logged: number; days_with_meals: number; weight_measurements: number; weight_change_kg: string | null; events: { done: number; skipped: number; pending: number }; coverage_note: string } & Partial<ProgressTotals>
+export type Summary = { water_ml?: number; nutrition: Nutrition; meals_logged: number; days_with_meals: number; weight_measurements: number; weight_change_kg: string | null; events: { done: number; skipped: number; pending: number }; coverage_note: string } & Partial<ProgressTotals>
 export type CompanionState = {
+    as_of?: string; received_at?: number
     mentor?: MentorDashboard | null
     dialogue_protocol?: 1 | 2
     available: boolean; consent_version: string; consent_required?: boolean
@@ -52,10 +57,11 @@ export type MentorTask = { id: string; kind: "course" | "workout"; label: string
 export type MentorDashboard = {
     latest_weight: CompanionEntry | null
     workout_plan: WorkoutPlan | null
-    today: { date: string; course: { scheduled: number; done: number; skipped: number; pending: number }; workouts: { scheduled: number; completed: number; in_progress: number }; tasks: MentorTask[]; nutrition: { consumed: Nutrition; target: Nutrition | null; remaining: Nutrition | null } }
+    today: { date: string; water?: { consumed_ml: number; target_ml: number }; course: { scheduled: number; done: number; skipped: number; pending: number }; workouts: { scheduled: number; completed: number; in_progress: number }; tasks: MentorTask[]; nutrition: { consumed: Nutrition; target: Nutrition | null; remaining: Nutrition | null } }
     week: { from_date: string; to_date: string; summary: Summary & ProgressTotals }
 }
 export type CompanionAction = {
+    record_now?: boolean
     request_key?: string; kind: "enable" | "disable" | "onboard" | "onboarding_details" | "profile" | "settings" | "plan" | "plan_status" | "entry" | "delete_entry" | "event" | "confirm" | "cancel" | "nutrition" | "dialogue_confirm" | "dialogue_cancel" | "dialogue_edit" | "dialogue_undo" | "workout_plan"
     onboarding?: { goal: "weight_loss" | "weight_gain" | "maintain" | "custom"; custom_goal: string; age: number; sex: "male" | "female"; height_cm: Numeric; current_weight_kg: Numeric; target_weight_kg: Numeric; activity: "low" | "light" | "moderate" | "high" }
     onboarding_details?: { next_step: number; lifestyle?: string; preferences?: string; restrictions?: string; training_experience?: string; training_conditions?: string }
@@ -103,3 +109,5 @@ export const getCompanionFavoriteMeals = () => apiGet<{ entries: CompanionEntry[
 export const getCompanionEvents = (from: string, to: string) => apiGet<{ events: CompanionEvent[] }>(`${endpoint}/events`, { from_date: from, to_date: to }, proof)
 export const getCompanionSupply = (days = 30) => apiGet<Supply>(`${endpoint}/supply`, { days }, proof)
 export const getNutritionSuggestion = () => apiGet<{ available: boolean; reason?: string; nutrition?: Nutrition; rule_version?: string; note?: string; maintenance_kcal?: string; deficit_kcal?: string; surplus_kcal?: string }>(`${endpoint}/nutrition`, undefined, proof)
+
+export const getMealLibrary = () => apiGet<{ entries: CompanionEntry[]; habits: MealHabits }>(`${endpoint}/meals`, undefined, proof)

@@ -1,6 +1,7 @@
 const { test } = require("node:test")
 const assert = require("node:assert/strict")
 const loadTs = require("./load-ts.cjs")
+const mealHelpers = loadTs("screens/chat/mentor-meals-data.ts", { "@/screens/chat/companion-timezones": loadTs("screens/chat/companion-timezones.ts"), "@/screens/chat/mentor-data": loadTs("screens/chat/mentor-data.ts") })
 const data = loadTs("screens/chat/mentor-onboarding-data.ts")
 const complete = { goal: "maintain", customGoal: "", age: "32", sex: "female", height: "170", weight: "78,5", targetWeight: "75", activity: "moderate" }
 const state = () => ({ available: true, consent_required: false, profile: { version: 1, enabled: true, data: {} }, mentor: { latest_weight: null } })
@@ -29,6 +30,7 @@ function harness(file, overrides = {}) {
         "@/screens/chat/mentor-ui": { MentorIcon: "Icon", useMentorPalette: () => ({ surface: "#FFFFFF" }) },
         "@/screens/chat/mentor-choice-card": { MentorChoiceCard: "ChoiceCard" },
         "@/screens/chat/mentor-custom-answer": { MentorCustomAnswer: "CustomAnswer" },
+        "@/screens/chat/mentor-meals-data": mealHelpers,
         "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "QuestionIcon" },
         "@/screens/chat/mentor-reminder-time": { MentorReminderTime: "NativeTime" },
         "@/screens/chat/chat-mode-transition": { useChatReducedMotion: () => false },

@@ -169,13 +169,13 @@ async def summary_for(db, user_id, start, end):
     events = list((await db.execute(select(AICompanionEvent).where(AICompanionEvent.user_id == user_id, AICompanionEvent.scheduled_at >= start, AICompanionEvent.scheduled_at < end, AICompanionEvent.status != "cancelled"))).scalars().all())
     profile = await profile_for(db, user_id)
     zone = timezone_info(Settings.model_validate(profile.settings if profile else {}).timezone)
-    return {"from": start.isoformat(), "to": end.isoformat(), "nutrition": totals, "meals_logged": len(meals), "days_with_meals": len({e.occurred_at.astimezone(zone).date() for e in meals}), "weight_measurements": len(weights), "weight_change_kg": str(Decimal(weights[-1].data["weight_kg"]) - Decimal(weights[0].data["weight_kg"])) if len(weights) > 1 else None, "events": {status: sum(e.status == status for e in events) for status in ("done", "skipped", "pending")}, "coverage_note": "Итоги только по внесённым записям; отсутствие записи не означает отсутствие еды или выполненного действия.", **progress_totals(entries)}
+    return {"from": start.isoformat(), "to": end.isoformat(), "nutrition": totals, "water_ml": sum(e.data.get("water_ml") or 0 for e in entries if e.kind == "water"), "meals_logged": len(meals), "days_with_meals": len({e.occurred_at.astimezone(zone).date() for e in meals}), "weight_measurements": len(weights), "weight_change_kg": str(Decimal(weights[-1].data["weight_kg"]) - Decimal(weights[0].data["weight_kg"])) if len(weights) > 1 else None, "events": {status: sum(e.status == status for e in events) for status in ("done", "skipped", "pending")}, "coverage_note": "Итоги только по внесённым записям; отсутствие записи не означает отсутствие еды или выполненного действия.", **progress_totals(entries)}
 
 
 async def get_state(db, user_id):
     from .mentor import dashboard
     from .photos import serialize_entries
-    base = {"available": True, "consent_version": config.AI_COMPANION_CONSENT_VERSION, "dialogue_protocol": 2}
+    base = {"as_of": now_utc().isoformat(), "available": True, "consent_version": config.AI_COMPANION_CONSENT_VERSION, "dialogue_protocol": 2}
     if not base["available"]:
         return base
     profile = await profile_for(db, user_id)
@@ -502,8 +502,18 @@ async def apply_payload(db, user_id, profile, action, source_message_id=None):
             raise HTTPException(422, "Нет данных записи")
         if row is not None and row.kind != action.entry.kind:
             raise HTTPException(422, "Нельзя менять тип существующей записи")
-        if action.entry.occurred_at > now_utc() + timedelta(minutes=5):
+        instant = now_utc()
+        if action.record_now:
+            if row is not None or action.entry.kind not in {"meal", "water"}:
+                raise HTTPException(422, "Текущее время допустимо только для новой еды или воды")
+            action = action.model_copy(update={"entry": action.entry.model_copy(update={"occurred_at": instant})})
+        if action.entry.occurred_at > instant + timedelta(minutes=5):
             raise HTTPException(422, "Нельзя отметить фактическую запись в будущем")
+        if action.entry.kind in {"meal", "water"} and action.entry.occurred_at > instant:
+            action = action.model_copy(update={"entry": action.entry.model_copy(update={"occurred_at": instant})})  # Tolerate device clock skew.
+        if action.entry.food_photo_attachment_ids:
+            from .photos import validate_photo_attachments
+            await validate_photo_attachments(db, user_id, action.entry.food_photo_attachment_ids)
         if action.entry.workout:
             await validate_workout_entry(db, user_id, profile, action.entry, row)
         if action.entry.kind == "progress_photo":

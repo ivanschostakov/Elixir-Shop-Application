@@ -40,7 +40,7 @@ export function useAiChat(_enabled, _protocol, _active, scope) {
     } }
 }
 const navigation = { isFocused: () => true, addListener: () => () => {} }
-export const requestKey = () => "synthetic-preview-key"
+export const requestKey = () => `preview-${Date.now()}`
 export const syncPushNotifications = async () => "synthetic-notification-token"
 const saved = { available: true, consent_required: false, profile: { id: 1, version: 1, data: { goal: "weight_loss", age: 32, sex: "female", height_cm: "170", activity: "moderate", nutrition: { kcal: "1900", protein: "130.5", fat: "60.2", carbs: "210.1" } } }, mentor: { latest_weight: { data: { weight_kg: "78.5" } } } }
 const day = calendarDate(), started = new Date(); started.setHours(0, 0, 0, 0)
@@ -53,6 +53,8 @@ const entries = [meal(1, 0.3, "Омлет и тост", { kcal: 520, protein: 26
 const workoutPlan = { name: "Мои тренировки", start_date: day, end_date: null, days: [{ key: "today", name: "Лёгкая тренировка", weekdays: [(new Date().getDay() + 6) % 7], exercises: [{ key: "squats", name: "Приседания", sets: 3, target_reps: 12, target_weight_kg: null }] }] }
 let previewState = { ...saved, dialogue_protocol: 2, entries, events: [], profile: { ...saved.profile, enabled: true, data: { ...saved.profile.data, target_weight_kg: 75, onboarding_optional_step: 5, workout_plan: workoutPlan } },
     mentor: { ...saved.mentor, latest_weight: { ...saved.mentor.latest_weight, id: 3, version: 1, kind: "weight", occurred_at: new Date(started.getTime() + elapsed * 0.1).toISOString() }, workout_plan: workoutPlan, today: { date: day, tasks: [{ id: "workout:today", kind: "workout", label: "Лёгкая тренировка", status: "pending", resource_id: null }], nutrition: { consumed: { kcal: 1240, protein: 96, fat: 48, carbs: 106 }, target: saved.profile.data.nutrition } } } }
+export const getMealLibrary = async () => ({ entries: previewState.entries.filter(entry => entry.kind === "meal"), habits: { breakfast: { time: "08:30", days: 6 }, lunch: { time: "13:00", days: 5 }, dinner: { time: "19:30", days: 7 } } })
+export const askNutritionHelp = async mode => ({ entry: null, message: mode === "product" ? "Греческий йогурт: ориентировочно 74 ккал на 100 г. Белки — 10 г, жиры — 2 г, углеводы — 4 г. Можно сочетать с ягодами или использовать как основу соуса." : "С учётом вашего дневника можно приготовить рыбу с рисом и овощами: примерно 540 ккал на порцию. Другой вариант — омлет с овощами, примерно 360 ккал." })
 export const getCompanionEntries = async () => ({ entries: previewState.entries })
 export const getCompanionEvents = async () => ({ events: [] })
 export const getCompanionFavoriteMeals = async () => ({ entries: [], may_have_more: false })
@@ -74,14 +76,17 @@ function Preview() {
     const setEditor = value => updateEditor(value?.page === "meal" && !value.entry && globalThis.__MENTOR_PREVIEW_FOOD_TEXT__ ? { ...value, proposal: { entry: { kind: "meal", note: globalThis.__MENTOR_PREVIEW_FOOD_TEXT__ } } } : value)
     const controller = { state: homeState, clock: deviceClockKey(), initialized: true, enabled: true, resolveEnabled: async () => true, resolveProtocol: () => 2, busy: false, error: "", editor, setEditor, setError() {}, refresh: async () => homeRef.current,
         attempt: async operation => operation(), perform: async action => {
-            let next = { ...homeRef.current }
+            let next = { ...homeRef.current, as_of: new Date().toISOString(), received_at: Date.now() }
+            if (action.kind === "delete_entry") next.entries = next.entries.filter(entry => entry.id !== action.resource_id)
             if (action.entry) {
-                const entry = { id: action.resource_id ?? Date.now(), version: 1, kind: action.entry.kind, occurred_at: action.entry.occurred_at, data: action.entry }
+                const entry = { id: action.resource_id ?? Date.now(), version: 1, kind: action.entry.kind, occurred_at: action.record_now ? new Date().toISOString() : action.entry.occurred_at, data: action.entry }
                 next.entries = [...next.entries.filter(item => item.id !== entry.id), entry]
                 const consumed = Object.fromEntries(["kcal", "protein", "fat", "carbs"].map(key => [key, next.entries.filter(item => item.kind === "meal").reduce((sum, item) => sum + Number(item.data.nutrition?.[key] ?? 0), 0)]))
                 next.mentor = { ...next.mentor, today: { ...next.mentor.today, nutrition: { ...next.mentor.today.nutrition, consumed } } }
             }
-            next.profile = { ...next.profile, version: next.profile.version + 1 }
+            const consumed = Object.fromEntries(["kcal", "protein", "fat", "carbs"].map(key => [key, next.entries.filter(entry => entry.kind === "meal").reduce((sum, entry) => sum + Number(entry.data.nutrition?.[key] ?? 0), 0)]))
+            next.profile = { ...next.profile, version: next.profile.version + 1, settings: { timezone: "UTC", ...(next.profile.settings ?? {}), ...(action.settings ?? {}) } }
+            next.mentor = { ...next.mentor, today: { ...next.mentor.today, nutrition: { ...next.mentor.today.nutrition, consumed }, water: { consumed_ml: next.entries.filter(entry => entry.kind === "water").reduce((sum, entry) => sum + Number(entry.data.water_ml ?? 0), 0), target_ml: next.profile.settings.water_goal_ml ?? 1600 } } }
             homeRef.current = next; setHomeState(next); return next
         } }
     const [form, setForm] = useState({ ...mentorFormFromState(saved), ...(screen === "activity" ? { activity: null } : {}) })

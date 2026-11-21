@@ -4,6 +4,7 @@ import { useLanguage } from "@/providers/language-provider"
 import { MentorFlowBody, MentorFlowButton, MentorFlowHeader, flowStyles } from "@/screens/chat/mentor-onboarding-layout"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
+import { waterTarget } from "@/screens/chat/mentor-meals-data"
 import type { CompanionState } from "@/services/api/companion"
 
 export function MentorNutritionResult({ state, onContinue, onDecline, onBack, onClose }: { state: CompanionState | null; onContinue: () => void; onDecline: () => void; onBack: () => void; onClose: () => void }) {
@@ -29,6 +30,7 @@ export function MentorNutritionResult({ state, onContinue, onDecline, onBack, on
                         <View style={[styles.macroLine, { backgroundColor: colors.greenBright }]} />
                     </View>)}
                 </View>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}><MentorQuestionIcon name="water" size={24} color={colors.blue} /><Text style={{ color: colors.blue, fontSize: 18, fontWeight: "700" }}>{mt("Вода — {0} мл в день", [number(waterTarget(state))])}</Text></View>
                 <Text style={[styles.explanation, { color: colors.muted }]}>{mt("Начнём с этого ориентира и посмотрим на самочувствие и динамику.")}</Text>
             </> : <View style={[styles.unavailable, { backgroundColor: colors.soft }]}>
                 <MentorQuestionIcon name="food" size={36} color={colors.green} />

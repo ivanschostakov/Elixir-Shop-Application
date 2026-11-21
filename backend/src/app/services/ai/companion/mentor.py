@@ -53,6 +53,7 @@ class ProgressSummary(StrictModel):
     from_at: str = Field(alias="from")
     to: str
     nutrition: NutritionTotals
+    water_ml: int = 0
     meals_logged: int
     days_with_meals: int
     weight_measurements: int
@@ -87,12 +88,18 @@ class TodayNutrition(StrictModel):
     remaining: Nutrition | None = None
 
 
+class TodayWater(StrictModel):
+    consumed_ml: int = 0
+    target_ml: int
+
+
 class MentorToday(StrictModel):
     date: date
     course: CourseCounts
     workouts: TodayWorkouts
     tasks: list[MentorTask]
     nutrition: TodayNutrition
+    water: TodayWater | None = None
 
 
 class MentorWeek(StrictModel):
@@ -179,6 +186,7 @@ async def dashboard(db, user_id):
     profile = await service.profile_for(db, user_id)
     if not profile or not profile.enabled or not service.consent_is_current(await service.consent_for(db, user_id)):
         return None
+    from .meals import water_target
     data = ProfileData.model_validate(profile.data)
     zone = timezone_info(Settings.model_validate(profile.settings).timezone)
     now = service.now_utc()
@@ -218,7 +226,7 @@ async def dashboard(db, user_id):
     latest = await service.latest_weight(db, user_id, now)
     return MentorDashboard(
         workout_plan=plan, latest_weight=service.dump(latest),
-        today=MentorToday(date=today, tasks=tasks,
+        today=MentorToday(date=today, tasks=tasks, water=TodayWater(consumed_ml=today_summary["water_ml"], target_ml=water_target(profile)),
             course=CourseCounts(scheduled=len(events), **today_summary["events"]),
             workouts=TodayWorkouts(scheduled=len(scheduled), completed=today_summary["workouts"]["completed"], in_progress=today_summary["workouts"]["in_progress"]),
             nutrition=TodayNutrition(consumed=today_summary["nutrition"], target=data.nutrition, remaining=remaining_nutrition(today_summary["nutrition"], data.nutrition))),

@@ -15,6 +15,8 @@ export function mentorHomeNumber(value: unknown): string {
 }
 
 export function mentorHomeData(state: CompanionState | null, clock: string, now = new Date()) {
+    const server = Date.parse(state?.as_of ?? "")
+    if (Number.isFinite(server) && state?.received_at != null) now = new Date(server + Math.max(0, now.getTime() - state.received_at))
     const date = companionCalendarDay(now.toISOString(), clock)
     const dashboard = state?.mentor?.today?.date === date ? state.mentor.today : null
     const entries = (state?.entries ?? []).filter(entry => {
@@ -37,6 +39,6 @@ export function mentorHomeData(state: CompanionState | null, clock: string, now 
     const wellbeingToday = !!wellbeing || !!dashboard && (state?.today?.wellbeing?.entries ?? 0) > 0
     const dueCourse = tasks.some(task => task.kind === "course" && task.status === "pending" && task.scheduled_at && Date.parse(task.scheduled_at) <= now.getTime())
     const quickStep: MentorQuickStep | null = !dashboard ? null : dueCourse ? "course" : !wellbeingToday ? "wellbeing" : !weightToday ? "weight" : workouts.some(task => task.status === "pending" || task.status === "in_progress") ? "workouts" : null
-    return { date, meals, wellbeing, workouts, nextCourse, target, consumed, remaining, quickStep,
+    return { date, instant: now.toISOString(), meals, wellbeing, workouts, nextCourse, target, consumed, remaining, quickStep,
         optionalIncomplete: (state?.profile?.data.onboarding_optional_step ?? 0) < 6 }
 }

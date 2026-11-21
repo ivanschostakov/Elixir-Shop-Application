@@ -155,3 +155,26 @@ def test_find_new_records_respects_kind_and_user():
                 assert result["ok"] and len(result["data"]["entries"]) == 1
                 assert result["data"]["entries"][0]["kind"] == entry.kind
     asyncio.run(run())
+
+
+@db_test
+def test_food_library_reuses_owned_private_photos_and_rejects_foreign_references():
+    from src.app.services.ai.companion.meals import library
+    async def run():
+        async with database() as (db, user):
+            await enable(db, user)
+            owned = await photo(db, user)
+            entry = EntryData(kind="meal", occurred_at=NOW, name="Soup", note="A bowl of soup", nutrition={"kcal": 250, "protein": 12, "fat": 11, "carbs": 26}, food_photo_attachment_ids=[owned.id])
+            await act(db, user, "entry", entry=entry)
+            result = await library(db, user.id)
+            assert result["entries"][0]["data"]["food_photo_attachment_ids"] == [owned.id]
+            returned = result["entries"][0]["photo_attachments"][0]
+            assert returned["is_private"] and returned["download_path"].startswith("/api/v1/users/me/ai-chat/attachments/")
+            other = User(name="Other", surname="Photo", password_hash="not-a-password")
+            db.add(other); await db.flush()
+            foreign = await photo(db, other)
+            invalid = entry.model_copy(update={"food_photo_attachment_ids": [foreign.id]})
+            with pytest.raises(HTTPException) as error:
+                await act(db, user, "entry", entry=invalid)
+            assert error.value.status_code == 422
+    asyncio.run(run())

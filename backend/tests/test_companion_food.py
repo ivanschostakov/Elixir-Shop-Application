@@ -30,7 +30,8 @@ def test_food_estimate_aggregates_ingredients_and_cannot_edit_old_records_or_oth
     assert food_estimate(DialogueTurn(operations=[turn.operations[-1]]), NOW) is None
 
 
-def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypatch):
+@pytest.mark.parametrize("help_mode", [None, "suggest", "product"])
+def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypatch, help_mode):
     from src.app.services.ai import chat
     from src.app.services.ai.companion import dialogue, service
     from src.integrations.ai.enums import BotModel
@@ -70,9 +71,13 @@ def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypa
         "conversation_id": "conv_food", "input_tokens": 20, "output_tokens": 10, "openai_model": "mock"}
     provider = SimpleNamespace(send_message_v2=AsyncMock(return_value=response))
     result = asyncio.run(chat.send_user_chat_message(db, user=SimpleNamespace(id=7), text="Chicken", attachments=None, professor_client=provider,
-        allow_commerce=False, companion_profile=profile, client_request_id="food-estimate-request-1", dialogue_protocol=2, meal_estimate=True))
-    assert result.meal_estimate["entry"]["estimated"] is True
-    assert result.meal_estimate["entry"]["occurred_at"].startswith("2026-11-20")
+        allow_commerce=False, companion_profile=profile, client_request_id="food-estimate-request-1", dialogue_protocol=2, meal_estimate=True, nutrition_help=help_mode))
+    if help_mode:
+        assert result.meal_estimate["entry"] is None
+        assert result.meal_estimate["message"] == "Food calculated"
+    else:
+        assert result.meal_estimate["entry"]["estimated"] is True
+        assert result.meal_estimate["entry"]["occurred_at"].startswith("2026-11-20")
     assert len(messages) == 2 and messages[0].text == "Chicken"
     assert messages[1].context_json["meal_estimate_request_id"] == "food-estimate-request-1"
     attach.assert_not_awaited(); direct.assert_not_awaited(); notify.assert_not_awaited()
@@ -80,7 +85,7 @@ def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypa
     usage.assert_awaited_once()
     args = provider.send_message_v2.call_args.kwargs
     assert args["function_tools"] == [] and "dialogue" not in args["companion_context"]
-    assert "не спрашивай дату" in args["input_text"]
+    assert ("Не записывай" in args["input_text"] or "не записывай" in args["input_text"]) if help_mode else "не спрашивай дату" in args["input_text"]
 
 
 def test_photo_only_estimation_uses_the_same_native_protected_message_path(monkeypatch):

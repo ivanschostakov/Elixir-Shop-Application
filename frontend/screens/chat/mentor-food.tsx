@@ -10,24 +10,32 @@ import { createAttachmentFromImagePickerAsset, getVoiceRecordingFilename, getVoi
 import { CHAT_IDLE_AUDIO_MODE, CHAT_RECORDING_AUDIO_MODE } from "@/screens/chat/chat-screen.constants"
 import type { useCompanion } from "@/screens/chat/companion"
 import { appendFoodDictation, foodDescription, foodSaveAction } from "@/screens/chat/mentor-food-data"
+import { MentorHomeHeader } from "@/screens/chat/mentor-home"
+import { MentorMealImage } from "@/screens/chat/mentor-meal-image"
+import { entryMeal, mainMeals, mealLabel, needsFoodDetails, suggestedMeal } from "@/screens/chat/mentor-meals-data"
 import { mentorHomeNumber } from "@/screens/chat/mentor-home-data"
 import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
-import { estimateCompanionFood } from "@/services/api/companion-food"
+import { askNutritionHelp, estimateCompanionFood } from "@/services/api/companion-food"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
-import { requestKey, type CompanionAction, type CompanionEntry, type EntryData } from "@/services/api/companion"
+import { getMealLibrary, requestKey, type CompanionAction, type CompanionEntry, type EntryData, type MealType } from "@/services/api/companion"
 import { getErrorMessage } from "@/utils/errors"
 
 type Phase = "idle" | "picking" | "recording" | "transcribing" | "calculating" | "saving"
 type Controller = ReturnType<typeof useCompanion>
 
-export function MentorFoodEditor({ controller: c, shown, onClose, onSaved }: { controller: Controller; shown: boolean; onClose: () => void; onSaved: () => Promise<void> }) {
+export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpMode }: { controller: Controller; shown: boolean; onClose: () => void; onSaved: () => Promise<void>; helpMode?: "suggest" | "product" }) {
     const { t } = useLanguage()
     const { isDark } = useTheme()
     const colors = useMentorPalette()
     const original = useRef<CompanionEntry | undefined>(c.editor?.entry).current
+    const [selectedMeal, setSelectedMeal] = useState<MealType>(() => c.editor?.mealType ?? (original ? entryMeal(original, c.clock) : suggestedMeal(c.clock)))
+    const [recent, setRecent] = useState<CompanionEntry[]>([])
+    const [recipe, setRecipe] = useState<CompanionEntry | null>(original ?? null)
+    const [answer, setAnswer] = useState("")
+    const previousPhoto = recipe?.photo_attachments?.[0]
     const [text, setText] = useState(() => foodDescription(original?.data ?? c.editor?.proposal?.entry))
     const [photo, setPhoto] = useState<UploadableChatAttachment | null>(null)
     const [estimate, setEstimate] = useState<EntryData | null>(null)
@@ -52,15 +60,26 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved }: { c
         }
     }, [recorder])
     useEffect(() => { if (shown) input.current?.focus() }, [shown])
+    useEffect(() => {
+        if (helpMode) return
+        let disposed = false
+        void getMealLibrary().then(result => { if (!disposed) setRecent(result.entries) }).catch(() => {})
+        return () => { disposed = true }
+    }, [helpMode])
     const changeText = (value: string) => { setText(value); setError(""); saveRequest.current = null }
-    const calculate = async () => {
-        if (phaseRef.current !== "idle" || c.busy || !text.trim() && !photo) return
+    const calculate = async (force = false) => {
+        if (phaseRef.current !== "idle" || c.busy || !text.trim() && !photo && !previousPhoto && helpMode !== "suggest") return
+        if (!force && !helpMode && needsFoodDetails(text, !!photo || !!previousPhoto)) {
+            Alert.alert(mt("Добавьте подробности"), mt("Укажите состав и примерную порцию — так расчёт будет точнее, а рецепт можно будет использовать снова."), [{ text: mt("Дополнить"), style: "cancel", onPress: () => input.current?.focus() }, { text: mt("Рассчитать так"), onPress: () => void calculate(true) }])
+            return
+        }
         Keyboard.dismiss(); setError(""); transition("calculating")
-        const fingerprint = JSON.stringify([text.trim(), photo])
+        const fingerprint = JSON.stringify([text.trim(), photo, previousPhoto?.id, helpMode])
         if (estimateRequest.current?.fingerprint !== fingerprint) estimateRequest.current = { fingerprint, key: requestKey() }
         try {
-            const result = await estimateCompanionFood(text, photo, estimateRequest.current.key)
+            const result = helpMode ? await askNutritionHelp(helpMode, text || mt("Что можно съесть с учётом оставшихся КБЖУ и моих предпочтений?"), photo, estimateRequest.current.key) : await estimateCompanionFood(text, photo, estimateRequest.current.key, previousPhoto?.id)
             if (!alive.current) return
+            if (helpMode) { setAnswer(result.message); return }
             if (!result.entry) { setError(result.message || mt("Не удалось рассчитать КБЖУ. Уточните описание еды.")); input.current?.focus(); return }
             // Validate the estimate before offering its save action.
             foodSaveAction(result.entry, text, "validate-food")
@@ -72,7 +91,7 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved }: { c
         if (phaseRef.current !== "idle" || c.busy || !estimate) return
         transition("saving"); setError("")
         try {
-            saveRequest.current ??= foodSaveAction(estimate, text, requestKey(), original)
+            saveRequest.current ??= foodSaveAction(estimate, text, requestKey(), original, new Date(), selectedMeal, c.editor?.mealKey)
             await c.perform(saveRequest.current)
             if (alive.current) await onSaved()
         } catch (e) { if (alive.current) setError(getErrorMessage(e)) }
@@ -86,7 +105,7 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved }: { c
             const options: ImagePicker.ImagePickerOptions = { mediaTypes: ["images"], quality: 0.92, allowsMultipleSelection: false }
             const result = camera ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options)
             if (!alive.current || result.canceled || !result.assets[0]) return
-            setPhoto(createAttachmentFromImagePickerAsset(result.assets[0])); saveRequest.current = null
+            setRecipe(null); setPhoto(createAttachmentFromImagePickerAsset(result.assets[0])); saveRequest.current = null
         } catch (e) { if (alive.current) setError(getErrorMessage(e)) }
         finally { transition("idle"); if (alive.current) input.current?.focus() }
     }
@@ -123,32 +142,44 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved }: { c
         finally { if (!isRecording()) transition("idle") }
     }
     const close = () => { if (phaseRef.current !== "saving") { Keyboard.dismiss(); onClose() } }
+    const chooseMeal = () => {
+        const types = [...mainMeals, "extra"] as const
+        const choose = (type: MealType) => { setSelectedMeal(type); saveRequest.current = null }
+        if (Platform.OS === "ios") ActionSheetIOS.showActionSheetWithOptions({ options: [mt("Отмена"), ...types.map(mealLabel)], cancelButtonIndex: 0, userInterfaceStyle: isDark ? "dark" : "light" }, index => { if (index > 0) choose(types[index - 1]) })
+        else Alert.alert(mt("Приём пищи"), undefined, [...types.map(type => ({ text: mealLabel(type), onPress: () => choose(type) })), { text: mt("Отмена"), style: "cancel" }])
+    }
+    const hasFood = !!text.trim() || !!photo || !!previousPhoto || helpMode === "suggest"
+    const primaryLabel = estimate ? mt("Сохранить") : answer ? mt("Задать другой вопрос") : helpMode === "product" ? mt("Узнать о продукте") : helpMode === "suggest" ? mt("Подобрать варианты") : mt("Рассчитать КБЖУ")
+    const title = helpMode === "product" ? mt("О продукте") : helpMode === "suggest" ? mt("Что поесть?") : estimate ? mt("Расчёт КБЖУ") : original ? mt("Изменить блюдо") : mt("Добавить еду")
+    const placeholder = helpMode === "product" ? mt("О каком продукте хотите узнать?") : helpMode === "suggest" ? mt("Какие продукты есть дома?") : mt("Что вы съели?")
     const seconds = Math.floor(recording.durationMillis / 1000)
-    return <ScrollView testID="mentor-food-editor" keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={styles.sheet} style={{ flex: 1, backgroundColor: colors.surface }}>
-        <View style={[styles.handle, { backgroundColor: colors.border }]} />
-        <View style={styles.header}><Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{estimate ? mt("Расчёт КБЖУ") : mt("Добавить еду")}</Text><Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} disabled={phase === "saving"} onPress={close} style={[styles.close, { backgroundColor: colors.soft }]}><MentorQuestionIcon name="close" size={25} color={colors.green} /></Pressable></View>
-        {estimate ? <View style={styles.result}>
+    return <View style={{ flex: 1, backgroundColor: colors.surface }}><MentorHomeHeader title={title} onBack={close} /><ScrollView testID="mentor-food-editor" keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={styles.sheet} style={{ flex: 1, backgroundColor: colors.surface }}>
+        {!helpMode && !estimate ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Выбрать приём пищи")} onPress={chooseMeal} style={[styles.mealChoice, { backgroundColor: colors.soft }]}><MentorQuestionIcon name="food" color={colors.green} /><Text style={[styles.photoLabel, { color: colors.text, flex: 1 }]}>{mealLabel(selectedMeal)}</Text><MentorQuestionIcon name="chevronDown" color={colors.muted} size={20} /></Pressable> : null}
+        {answer ? <View style={[styles.answer, { backgroundColor: colors.soft }]}><Text selectable style={{ color: colors.text, fontSize: 17, lineHeight: 26, fontWeight: "500" }}>{answer}</Text></View> : estimate ? <View style={styles.result}>
             <Text style={[styles.foodName, { color: colors.text }]}>{estimate.name}</Text>
             <Text style={[styles.calories, { color: colors.green }]}>{mentorHomeNumber(estimate.nutrition?.kcal)}<Text style={styles.unit}> {mt("ккал")}</Text></Text>
             <View style={styles.macros}>{(["protein", "fat", "carbs"] as const).map((key, index) => <View key={key} style={[styles.macro, index > 0 && { borderLeftWidth: 1, borderLeftColor: colors.border }]}><Text style={[styles.macroLabel, { color: colors.muted }]}>{[mt("Белки"), mt("Жиры"), mt("Углеводы")][index]}</Text><Text style={[styles.macroValue, { color: colors.text }]}>{mentorHomeNumber(estimate.nutrition?.[key])} {mt("г")}</Text></View>)}</View>
             <Text numberOfLines={3} style={[styles.caption, { color: colors.muted }]}>{estimate.assumptions || mt("Приблизительная оценка")}</Text>
         </View> : <View style={[styles.composer, { backgroundColor: colors.soft, borderColor: colors.border }]}>
-            <TextInput ref={input} accessibilityLabel={mt("Что вы съели?")} value={text} onChangeText={changeText} placeholder={mt("Что вы съели?")} placeholderTextColor={colors.muted} maxLength={4000} multiline textAlignVertical="top" editable={phase === "idle"} keyboardAppearance={isDark ? "dark" : "light"} selectionColor={colors.greenBright} style={[styles.input, { color: colors.text }]} />
-            {photo ? <View style={styles.photo}><Image source={{ uri: photo.uri }} style={styles.thumbnail} /><Pressable accessibilityRole="button" accessibilityLabel={mt("Убрать фото")} disabled={busy} onPress={() => setPhoto(null)} style={[styles.remove, { backgroundColor: colors.surface }]}><MentorQuestionIcon name="close" size={16} color={colors.green} /></Pressable></View> : null}
+            <TextInput ref={input} accessibilityLabel={placeholder} value={text} onChangeText={changeText} placeholder={placeholder} placeholderTextColor={colors.muted} maxLength={4000} multiline textAlignVertical="top" editable={phase === "idle"} keyboardAppearance={isDark ? "dark" : "light"} selectionColor={colors.greenBright} style={[styles.input, { color: colors.text }]} />
+            {photo || previousPhoto ? <View style={styles.photo}>{photo ? <Image source={{ uri: photo.uri }} style={styles.thumbnail} /> : previousPhoto ? <MentorMealImage attachment={previousPhoto} style={styles.thumbnail} /> : null}<Pressable accessibilityRole="button" accessibilityLabel={mt("Убрать фото")} disabled={busy} onPress={() => { setPhoto(null); setRecipe(null); saveRequest.current = null }} style={[styles.remove, { backgroundColor: colors.surface }]}><MentorQuestionIcon name="close" size={16} color={colors.green} /></Pressable></View> : null}
             <View style={[styles.toolbar, { borderTopColor: colors.border }]}><Pressable accessibilityRole="button" accessibilityLabel={mt("Фото еды")} disabled={busy} onPress={photoOptions} style={styles.photoButton}><MentorQuestionIcon name="camera" color={colors.green} size={25} /><Text style={[styles.photoLabel, { color: colors.green }]}>{mt("Фото")}</Text></Pressable>
                 <View style={styles.voiceArea}>{phase === "recording" ? <Text accessibilityLiveRegion="polite" style={[styles.caption, { color: colors.green }]}>{`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`}</Text> : phase === "transcribing" ? <ActivityIndicator color={colors.green} /> : null}<Pressable accessibilityRole="button" accessibilityLabel={phase === "recording" ? mt("Завершить диктовку") : mt("Надиктовать описание")} accessibilityState={{ disabled: busy && phase !== "recording" }} disabled={busy && phase !== "recording"} onPress={() => void voice()} style={[styles.microphone, { backgroundColor: colors.mint }]}><MentorQuestionIcon name={phase === "recording" ? "stop" : "microphone"} color={colors.green} size={25} /></Pressable></View>
             </View>
         </View>}
         {error ? <Text accessibilityRole="alert" numberOfLines={3} style={[styles.error, { color: colors.text }]}>{error}</Text> : null}
-        <Pressable accessibilityRole="button" accessibilityLabel={estimate ? mt("Сохранить") : mt("Рассчитать КБЖУ")} disabled={busy || !estimate && !text.trim() && !photo} onPress={() => void (estimate ? save() : calculate())} style={({ pressed }) => [styles.primary, { backgroundColor: colors.greenBright, opacity: busy || !estimate && !text.trim() && !photo ? 0.55 : pressed ? 0.75 : 1 }]}>{phase === "calculating" || phase === "saving" ? <ActivityIndicator color="#FFFFFF" /> : null}<Text style={styles.primaryText}>{phase === "calculating" ? mt("Считаем…") : phase === "saving" ? mt("Сохраняем…") : estimate ? mt("Сохранить") : mt("Рассчитать КБЖУ")}</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={primaryLabel} disabled={busy || !estimate && !answer && !hasFood} onPress={() => { if (answer) { setAnswer(""); requestAnimationFrame(() => input.current?.focus()) } else void (estimate ? save() : calculate()) }} style={({ pressed }) => [styles.primary, { backgroundColor: colors.greenBright, opacity: busy || !estimate && !answer && !hasFood ? 0.55 : pressed ? 0.75 : 1 }]}>{phase === "calculating" || phase === "saving" ? <ActivityIndicator color="#FFFFFF" /> : null}<Text style={styles.primaryText}>{phase === "calculating" ? helpMode ? mt("Готовим ответ…") : mt("Считаем…") : phase === "saving" ? mt("Сохраняем…") : primaryLabel}</Text></Pressable>
         {estimate ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Изменить описание")} disabled={busy} onPress={() => { setEstimate(null); setError(""); requestAnimationFrame(() => input.current?.focus()) }} style={styles.edit}><Text style={[styles.photoLabel, { color: colors.green }]}>{mt("Изменить описание")}</Text></Pressable> : null}
-    </ScrollView>
+        {!estimate && !answer && !helpMode && recent.length ? <View style={{ gap: 8 }}><Text style={[styles.foodName, { color: colors.text, fontSize: 22, fontWeight: "800" }]}>{mt("Добавляли раньше")}</Text>{recent.slice(0, 6).map(entry => <Pressable key={entry.id} accessibilityRole="button" accessibilityLabel={mt("Повторить {0}", [entry.data.name ?? ""])} disabled={busy} onPress={() => { setText(foodDescription(entry.data)); setRecipe(entry); setPhoto(null); setError(""); saveRequest.current = null; input.current?.focus() }} style={[styles.recent, { backgroundColor: recipe?.id === entry.id ? colors.soft : "transparent", borderBottomColor: colors.border }]}>{entry.photo_attachments?.[0] ? <MentorMealImage attachment={entry.photo_attachments[0]} style={styles.recentPhoto} /> : <MentorQuestionIcon name="food" size={27} color={colors.green} />}<View style={{ flex: 1, gap: 3 }}><Text numberOfLines={1} style={[styles.photoLabel, { color: colors.text }]}>{entry.data.name}</Text><Text numberOfLines={1} style={[styles.caption, { color: colors.muted }]}>{foodDescription(entry.data)}</Text></View><MentorQuestionIcon name="chevronRight" color={colors.muted} size={19} /></Pressable>)}</View> : null}
+        {helpMode && !answer ? <View style={{ gap: 8 }}>{(helpMode === "product" ? [mt("Разобрать состав"), mt("С чем сочетать"), mt("Сравнить с другим продуктом")] : [mt("Что приготовить на ужин?"), mt("Что можно съесть на перекус?")]).map(label => <Pressable key={label} accessibilityRole="button" onPress={() => { setText(value => [value, label].filter(Boolean).join(". ")); input.current?.focus() }} style={[styles.recent, { backgroundColor: colors.soft }]}><Text style={[styles.photoLabel, { color: colors.green }]}>{label}</Text></Pressable>)}</View> : null}
+    </ScrollView></View>
 }
 
 const styles = StyleSheet.create({
-    sheet: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 20, gap: 18 }, handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 2 },
+    sheet: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 20, gap: 18 }, handle: { width: 36, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 2 },
     header: { flexDirection: "row", alignItems: "center", gap: 12 }, title: { flex: 1, fontSize: 25, lineHeight: 32, fontWeight: "800", letterSpacing: -0.5 }, close: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center" },
     composer: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 17, paddingTop: 14 }, input: { fontWeight: "500", minHeight: 100, maxHeight: 180, padding: 0, fontSize: 18, lineHeight: 27 }, toolbar: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingVertical: 9, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, photoButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 9, paddingRight: 12 }, photoLabel: { fontSize: 17, lineHeight: 23, fontWeight: "600" }, voiceArea: { flexDirection: "row", gap: 10, alignItems: "center" }, microphone: { width: 46, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center" },
     photo: { width: 70, height: 70, marginTop: 12 }, thumbnail: { width: 64, height: 64, borderRadius: 12 }, remove: { position: "absolute", right: -4, top: -6, width: 30, height: 30, borderRadius: 15, justifyContent: "center", alignItems: "center" }, primary: { minHeight: 54, borderRadius: 17, paddingHorizontal: 16, paddingVertical: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 }, primaryText: { fontSize: 17, lineHeight: 24, fontWeight: "700", color: "#FFFFFF" }, edit: { minHeight: 44, alignItems: "center", justifyContent: "center" }, error: { fontWeight: "500", fontSize: 14, lineHeight: 20 },
+    mealChoice: { flexDirection: "row", gap: 10, alignItems: "center", borderRadius: 17, padding: 14 }, recent: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 17, padding: 12, minHeight: 66, borderBottomWidth: StyleSheet.hairlineWidth }, recentPhoto: { width: 54, height: 54, borderRadius: 12 }, answer: { padding: 20, borderRadius: 22 },
     result: { gap: 14, paddingTop: 2 }, foodName: { fontSize: 18, lineHeight: 26, fontWeight: "600" }, calories: { fontSize: 45, lineHeight: 54, fontWeight: "800", letterSpacing: -1 }, unit: { fontSize: 19, fontWeight: "600" }, macros: { flexDirection: "row" }, macro: { flex: 1, alignItems: "center", gap: 5 }, macroLabel: { fontWeight: "500", fontSize: 13, lineHeight: 18 }, macroValue: { fontSize: 20, lineHeight: 26, fontWeight: "700" }, caption: { fontWeight: "500", fontSize: 13, lineHeight: 19 },
 })

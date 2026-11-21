@@ -39,6 +39,16 @@ async def schedule_recurring(db, profile, now):
         kinds.append(("supply", time(12)))
     if settings.inactivity_days is not None:
         await schedule_inactivity(db, profile, settings, now)
+    if settings.meal_reminders:
+        from .meals import history_and_habits, meal_type
+        meals, habits = await history_and_habits(db, profile.user_id, settings, now)
+        logged = {meal_type(entry, zone) for entry in meals if entry.occurred_at.astimezone(zone).date() == today}
+        for meal in set(settings.meal_reminders) - logged:
+            value = habits[meal]["time"]
+            if value:
+                clock = time.fromisoformat(value)
+                minute = min(1439, clock.hour * 60 + clock.minute + 30)
+                kinds.append((f"meal_{meal}", time(minute // 60, minute % 60)))
     for kind, value in kinds:
         if value is None:
             continue
@@ -95,6 +105,21 @@ async def schedule_inactivity(db, profile, settings, now):
 
 async def reminder_text(db, row, profile):
     settings = Settings.model_validate(profile.settings)
+    if row.kind.startswith("meal_"):
+        from .meals import MEAL_TYPES, meal_type
+        kind = row.kind.removeprefix("meal_")
+        if kind not in MEAL_TYPES or kind not in settings.meal_reminders:
+            return None
+        now = service.now_utc()
+        zone = timezone_info(settings.timezone)
+        local = now.astimezone(zone)
+        if row.due_at.astimezone(zone).date() != local.date():
+            return None
+        meals = await service.entries_for(db, row.user_id, local.replace(hour=0, minute=0, second=0, microsecond=0), now + timedelta(microseconds=1), "meal", limit=10001)
+        if any(meal_type(entry, zone) == kind for entry in meals):
+            return None
+        label = {"breakfast": "завтрак", "lunch": "обед", "dinner": "ужин"}[kind]
+        return f"Не забыли про {label}? Если уже поели, добавьте запись. Можно написать текстом, голосом или прислать фото."
     if row.kind == "inactivity":
         instant = service.now_utc()
         slot = inactivity_slot(await last_user_activity(db, profile, instant), settings, instant)
@@ -164,7 +189,7 @@ async def deliver_reminder(db, row, profile, now):
     from src.app.services.push_notifications import _build_push_messages, _send_expo_push_messages, _delete_invalid_push_tokens
     body = await reminder_text(db, row, profile)
     # Do not send an overdue injection reminder after a long worker outage.
-    grace = timedelta(minutes=30) if row.kind == "course" else timedelta(hours=1) if row.kind == "checkin" else timedelta(hours=12)
+    grace = timedelta(minutes=30) if row.kind == "course" else timedelta(hours=1) if row.kind == "checkin" or row.kind.startswith("meal_") else timedelta(hours=12)
     if not body or now - row.due_at > grace:
         row.status = "cancelled"
         return
@@ -180,7 +205,7 @@ async def deliver_reminder(db, row, profile, now):
         row.message_id = message.id
     data = {"type": "ai_companion_supply" if row.kind == "supply" else "ai_companion", "reminder_id": row.id, "message_id": row.message_id, "event_id": row.event_id}
     tokens = list((await db.execute(select(UserPushToken).where(UserPushToken.user_id == row.user_id, UserPushToken.platform.in_(["ios", "android"])))).scalars().all())
-    messages = _build_push_messages(tokens, title="Elixir", body="Есть обновление в вашем чате.", data=data)
+    messages = _build_push_messages(tokens, title="Наставник" if row.kind.startswith("meal_") else "Elixir", body=body if row.kind.startswith("meal_") else "Есть обновление в вашем чате.", data=data)
     row.attempts += 1
     if not messages:
         row.status = "sent"  # In-chat delivery still works without a push permission/token.

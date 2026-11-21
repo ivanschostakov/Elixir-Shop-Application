@@ -176,6 +176,8 @@ class Settings(StrictModel):
     weekly_day: int = Field(default=6, ge=0, le=6)
     supply_reminders: bool = False
     supply_days: int = Field(default=7, ge=1, le=30)
+    meal_reminders: list[Literal["breakfast", "lunch", "dinner"]] = Field(default_factory=list, max_length=3)
+    water_goal_ml: int | None = Field(default=None, ge=250, le=10000)
     checkin_time: time | None = None
     inactivity_days: int | None = Field(default=None, ge=2, le=30)
     inactivity_time: time = time(18, 0)
@@ -252,8 +254,12 @@ class PlanData(StrictModel):
 
 
 class EntryData(StrictModel):
-    kind: Literal["meal", "weight", "wellbeing", "workout", "measurement", "progress_photo"]
+    kind: Literal["meal", "water", "weight", "wellbeing", "workout", "measurement", "progress_photo"]
     occurred_at: datetime
+    meal_type: Literal["breakfast", "lunch", "dinner", "extra"] | None = None
+    meal_key: str | None = Field(default=None, min_length=1, max_length=64)
+    water_ml: int | None = Field(default=None, gt=0, le=10000)
+    food_photo_attachment_ids: list[Annotated[int, Field(gt=0)]] = Field(default_factory=list, max_length=8)
     name: str | None = Field(default=None, max_length=300)
     portion_g: Decimal | None = Field(default=None, gt=0, le=100000)
     nutrition: Nutrition | None = None
@@ -262,7 +268,7 @@ class EntryData(StrictModel):
     appetite: int | None = Field(default=None, ge=1, le=5)
     energy: int | None = Field(default=None, ge=1, le=5)
     sleep_hours: Decimal | None = Field(default=None, ge=0, le=24)
-    note: str = Field(default="", max_length=3000)
+    note: str = Field(default="", max_length=4000)
     estimated: bool = False
     assumptions: str = Field(default="", max_length=1500)
     favorite: bool = False
@@ -276,6 +282,16 @@ class EntryData(StrictModel):
             raise ValueError("Timestamp must include an offset")
         if self.kind == "meal" and (not self.name or self.nutrition is None):
             raise ValueError("Meal requires name and nutrition")
+        if self.kind != "meal" and (self.meal_type is not None or self.meal_key is not None or self.food_photo_attachment_ids):
+            raise ValueError("Meal metadata requires a meal")
+        if self.meal_key is not None and self.meal_type != "extra":
+            raise ValueError("Only additional meals have a group key")
+        if (self.water_ml is not None) != (self.kind == "water"):
+            raise ValueError("Water records require an amount in ml")
+        if self.kind == "water" and any(value is not None for value in (self.nutrition, self.portion_g, self.weight_kg, self.wellbeing, self.appetite, self.energy, self.sleep_hours)):
+            raise ValueError("Water records cannot contain food or health measurements")
+        if len(set(self.food_photo_attachment_ids)) != len(self.food_photo_attachment_ids):
+            raise ValueError("Food photo IDs must be unique")
         if self.kind == "weight" and self.weight_kg is None:
             raise ValueError("Weight is required")
         if self.kind == "wellbeing" and not self.note and all(v is None for v in (self.wellbeing, self.appetite, self.energy, self.sleep_hours)):
@@ -315,6 +331,7 @@ class Proposal(StrictModel):
 
 class Action(StrictModel):
     request_key: str = Field(min_length=8, max_length=64)
+    record_now: bool = False
     kind: Literal["enable", "disable", "onboard", "onboarding_details", "profile", "settings", "plan", "plan_status", "workout_plan", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]
     expected_version: int | None = Field(default=None, ge=1)
     resource_id: int | None = Field(default=None, gt=0)

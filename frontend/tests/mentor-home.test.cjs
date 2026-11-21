@@ -1,6 +1,7 @@
 const { test } = require("node:test")
 const assert = require("node:assert/strict")
 const loadTs = require("./load-ts.cjs")
+const mealHelpers = loadTs("screens/chat/mentor-meals-data.ts", { "@/screens/chat/companion-timezones": loadTs("screens/chat/companion-timezones.ts"), "@/screens/chat/mentor-data": loadTs("screens/chat/mentor-data.ts") })
 const dates = loadTs("screens/chat/companion-timezones.ts")
 const numbers = loadTs("screens/chat/mentor-data.ts")
 const home = loadTs("screens/chat/mentor-home-data.ts", { "@/screens/chat/companion-timezones": dates, "@/screens/chat/mentor-data": numbers })
@@ -69,10 +70,12 @@ function harness(file, overrides = {}) {
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
         "@/screens/chat/native-chat-controls": { NativeChatAction: null, nativeChatSettingsActionAvailable: false },
         "@/components/footer/sticky-footer.styles": { getNavigationFooterHeight: bottom => 52 + Math.max(16, bottom) },
-        "@/screens/chat/mentor-ui": { useMentorPalette: () => ({ surface: "#FFFFFF", text: "#202923", green: "#1C694B", greenBright: "#38976A", muted: "#7D8781", border: "#DDE6DF", mint: "#E8F5EC" }) },
+        "@/screens/chat/mentor-ui": { useMentorPalette: () => ({ surface: "#FFFFFF", text: "#202923", green: "#1C694B", greenBright: "#38976A", blue: "#0288D1", muted: "#7D8781", border: "#DDE6DF", mint: "#E8F5EC" }) },
         "@/screens/chat/companion-timezones": dates, "@/screens/chat/mentor-home-data": home,
+        "@/screens/chat/mentor-meals-data": mealHelpers,
         "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "Icon" },
         "@/screens/chat/mentor-home": { MentorHomeScreen: "Home", MentorHomeHeader: "Header", mentorHomeStyles: {} },
+        "@/screens/chat/mentor-nutrition-pager": { MentorNutritionPager: "NutritionPager" },
         "@/screens/chat/mentor-nutrition-progress": { MentorCalorieRing: "Ring", MentorMacroProgress: "Bar" },
         "@/screens/chat/mentor-onboarding-layout": { MentorStageTransition: "Transition" },
         "@/screens/chat/companion": { CompanionPanel: "Editors" }, "@/screens/chat/mentor": { MentorWorkspace: "Workspace" },
@@ -94,8 +97,8 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     const render = () => h.render("MentorMainScreen", { controller: c, onClose() { closed++ }, renderChat: props => ({ type: "Chat", props }), onContinue() { continued++ } })
     const page = key => find(render(), "Pages").props.render(key)
     let screen = find(page("nutrition"), "Home")
-    screen.props.onAddFood(); screen.props.onMeal({ id: 42 })
-    assert.deepEqual(edits, [{ page: "meal" }, { page: "meal", entry: { id: 42 } }])
+    screen.props.onAddFood("lunch"); screen.props.onMeal({ id: 42 })
+    assert.deepEqual(edits, [{ page: "meal", mealType: "lunch" }, { page: "meal", entry: { id: 42 } }])
     screen.props.onSettings()
     const settings = page("settings")
     nodes(settings).find(node => node.props.accessibilityLabel === "Продолжить заполнение").props.onPress(); assert.equal(continued, 1)
@@ -166,4 +169,18 @@ test("home remains a fixed layout on small screens with no tab bar or next-step 
     assert.equal(nodes(tree).some(node=>node.props.accessibilityRole==="tablist"),false)
     assert.equal(nodes(tree).some(node=>node.props.children==="Следующий шаг"),false)
     for (const label of ["Спросить наставника", "Самочувствие", "Тренировка", "Мой курс"]) assert.equal(nodes(tree).some(node=>node.props.accessibilityLabel===label), false)
+})
+
+test("the primary nutrition action switches to water after swiping the metric cards", () => {
+    const h = harness("screens/chat/mentor-home.tsx"), actions = []
+    const props = { state: state(), clock, busy: false, onAddFood: type => actions.push(type), onWater: () => actions.push("water") }
+    let tree = h.render("MentorHomeScreen", props)
+    find(tree, "NutritionPager").props.onSelect("water")
+    tree = h.render("MentorHomeScreen", props)
+    const button = nodes(tree).find(node => node.props.label === "Добавить воду")
+    assert.equal(button.props.icon, "water"); button.props.onPress()
+    assert.deepEqual(actions, ["water"])
+    find(tree, "NutritionPager").props.onSelect("nutrition")
+    tree = h.render("MentorHomeScreen", props)
+    assert.ok(nodes(tree).some(node => node.props.icon === "food" && node.props.primary))
 })

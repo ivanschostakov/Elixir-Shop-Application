@@ -97,7 +97,7 @@ async def bounds(db, user_id, from_date, to_date):
 
 @companion_router.get("/entries")
 async def entries(from_date: date, to_date: date, kind: str | None = None, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
-    if kind is not None and kind not in {"meal", "weight", "wellbeing", "workout", "measurement", "progress_photo"}:
+    if kind is not None and kind not in {"meal", "weight", "wellbeing", "workout", "measurement", "progress_photo", "water"}:
         raise HTTPException(422, "Неизвестный тип записи")
     start, end = await bounds(db, user.id, from_date, to_date)
     return {"entries": await serialize_entries(db, user.id, await service.entries_for(db, user.id, start, end, kind))}
@@ -141,7 +141,7 @@ async def nutrition(user: User = Depends(native_access), db: AsyncSession = Depe
     return await service.nutrition_suggestion(db, user.id)
 
 
-async def _message(request, text, client_request_id, attachments, dialogue_protocol, user, db, *, meal_estimate=False):
+async def _message(request, text, client_request_id, attachments, dialogue_protocol, user, db, *, meal_estimate=False, nutrition_help=None):
     if dialogue_protocol != 2:
         raise HTTPException(426, detail={"code": "mentor_client_update_required", "message": "Обновите приложение для работы с наставником."})
     await require_ai_data_consent(db, user.id)
@@ -176,7 +176,7 @@ async def _message(request, text, client_request_id, attachments, dialogue_proto
     try:
         await record_app_ai_activity(db, request=request, user=user, event_type="message_requested", details={"message_length": len(text), "attachments_count": len(attachments or []), "mode": "companion"})
         async with asyncio.timeout(540):
-            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=False, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2, **({"meal_estimate": True} if meal_estimate else {}))
+            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=False, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2, **({"meal_estimate": True, **({"nutrition_help": nutrition_help} if nutrition_help else {})} if meal_estimate else {}))
         if meal_estimate:
             if result.meal_estimate is None:
                 raise HTTPException(409, "Не удалось восстановить расчёт. Попробуйте ещё раз.")
@@ -211,10 +211,32 @@ async def read_messages(user: User = Depends(native_access), db: AsyncSession = 
 
 
 @companion_router.post("/meal-estimate", response_model=MealEstimateRead)
-async def meal_estimate(request: Request, text: str = Form("", max_length=4000), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+async def meal_estimate(request: Request, text: str = Form("", max_length=4000), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db), photo_attachment_id: int | None = Form(None, gt=0)):
+    if isinstance(photo_attachment_id, int):
+        from io import BytesIO
+        from src.app.services.ai.companion.photos import owned_photos
+        from starlette.datastructures import Headers
+        photos = await owned_photos(db, user.id, [photo_attachment_id])
+        photo = photos.get(photo_attachment_id)
+        if photo is None:
+            raise HTTPException(422, "Фото больше недоступно. Выберите другое фото.")
+        attachments = [*(attachments or []), UploadFile(BytesIO(photo.path.read_bytes()), filename=photo.original_filename or photo.filename, headers=Headers({"content-type": photo.mime_type}))]
     if not text.strip() and not attachments:
         raise HTTPException(422, "Опишите еду или добавьте фото")
     return await _message(request, text.strip() or "Оцените КБЖУ еды на фото.", client_request_id, attachments, 2, user, db, meal_estimate=True)
+
+
+@companion_router.get("/meals")
+async def meal_library(user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    from src.app.services.ai.companion.meals import library
+    return await library(db, user.id)
+
+
+@companion_router.post("/nutrition-help", response_model=MealEstimateRead)
+async def nutrition_help(request: Request, mode: Literal["suggest", "product"] = Form(...), text: str = Form("", max_length=4000), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    if not text.strip() and not attachments:
+        raise HTTPException(422, "Напишите вопрос или добавьте фото")
+    return await _message(request, text.strip() or "Расскажите о продукте на фото.", client_request_id, attachments, 2, user, db, meal_estimate=True, nutrition_help=mode)
 
 
 @companion_router.get("/supply")
