@@ -10,7 +10,9 @@ from src.app.services.avatar_storage import (
     save_avatar,
     validate_avatar_content,
     validate_avatar_content_type,
+    MAX_AVATAR_SIZE_BYTES,
 )
+from src.app.services.upload_limits import read_upload_file_limited
 from src.database.models import User
 from src.database.schemas import AvatarResponse
 
@@ -25,7 +27,7 @@ async def get_my_avatar(request: Request, current_user: User = Depends(get_curre
 @avatar_router.post("", response_model=AvatarResponse, status_code=status.HTTP_200_OK)
 async def upload_my_avatar(request: Request, image: UploadFile = File(...), current_user: User = Depends(get_current_user)) -> AvatarResponse:
     validate_avatar_content_type(image.content_type)
-    content = await image.read()
+    content = await read_upload_file_limited(image, max_bytes=MAX_AVATAR_SIZE_BYTES, label="Avatar image")
     validate_avatar_content(content)
     png_content = convert_avatar_to_png(content)
     remove_existing_avatars(current_user.id)

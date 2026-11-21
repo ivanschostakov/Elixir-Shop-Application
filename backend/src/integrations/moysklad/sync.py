@@ -110,7 +110,7 @@ async def upsert_variants(session, variants, stats, products_by_id, variants_by_
             "name": row.name,
             "stock": row.stock,
             "price": row.price,
-            "archived": product.archived,
+            "archived": product.archived or row.archived,
         }
         variant = variants_by_id.get(row.system_id)
 

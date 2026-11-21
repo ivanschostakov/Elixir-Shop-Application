@@ -16,11 +16,17 @@ class WebsiteIdentityClient:
         if not self.endpoint or len(self.token) < 32: raise RuntimeError("Website identity integration is not configured")
 
     async def authenticate(self, *, login: str, password: str) -> dict[str, Any]:
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
-            response = await client.post(self.endpoint, json={"login": login, "password": password}, headers={
-                "X-App-Integration-Token": self.token,
-                "Accept": "application/json",
-            })
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+                response = await client.post(self.endpoint, json={"login": login, "password": password}, headers={
+                    "X-App-Integration-Token": self.token,
+                    "Accept": "application/json",
+                })
+        except httpx.RequestError as exc:
+            raise WebsiteIdentityError(status_code=503, code="temporarily_unavailable",
+                message="Website login is temporarily unavailable",
+                message_ru="Вход через сайт временно недоступен.",
+                message_en="Website login is temporarily unavailable.") from exc
 
         try: result = response.json()
         except ValueError as exception:

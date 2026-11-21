@@ -13,7 +13,7 @@ from src.app.services.catalog_merchandising import (
     product_is_new,
 )
 from src.app.services.referrals.calculations import quantize_money, quantize_percent
-from src.app.services.referrals.profile import get_referral_profile_by_user_id, user_has_promo_code
+from src.app.services.referrals.program import ensure_default_reward_program
 from src.app.services.review_attachments import build_review_attachment_url
 from src.app.services.stock_visibility import StockVisibilityPolicy
 from src.database.models import Product, ProductQuestion, Review
@@ -48,9 +48,7 @@ def review_stats(product_id: int, stats: ReviewStatsByProductId | None) -> tuple
 
 async def get_user_product_discount_percent(db: AsyncSession, user: User | None) -> Decimal:
     if user is None: return Decimal("0.00")
-    if not user_has_promo_code(user): return Decimal("0.00")
-    profile = await get_referral_profile_by_user_id(db, user.id)
-    if profile is None: return Decimal("0.00")
+    profile = await ensure_default_reward_program(db, user=user)
     return quantize_percent(profile.current_discount_percent)
 
 
@@ -80,11 +78,8 @@ def resolve_variant_price(
     original = quantize_money(price)
     catalog_percent = product_catalog_discount_percent(product)
     personal_percent = ctx.app_referral_percent if product_is_discountable(product) else Decimal("0.00")
-    combined_percent = min(
-        Decimal("100.00"),
-        quantize_percent(catalog_percent + personal_percent),
-    )
-    discounted = apply_percent_discount(original, combined_percent)
+    discounted = apply_percent_discount(apply_percent_discount(original, catalog_percent), personal_percent)
+    combined_percent = effective_discount_percent(original, discounted)
     return (
         original,
         discounted,

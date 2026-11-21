@@ -21,6 +21,7 @@ RETRY_SECONDS = 60
 PROGRAM_ATTRIBUTE_ID = "a779beff-9d52-11f1-0a80-06b0000da6f9"
 OWN_PROMO_ATTRIBUTE_ID = "10c17c18-13e8-11f1-0a80-14740012e755"
 REFERRER_ATTRIBUTE_ID = "10c17b69-13e8-11f1-0a80-14740012e754"
+DISCOUNT_ATTRIBUTE_ID = "d3e95d89-16dd-11f1-0a80-1a79000940fb"
 PROGRAM_NAMES = {"нулевая": 0, "накопительная": 1, "бонусная": 1,
                  "реферальная": 2, "партнерская": 2, "партнёрская": 2}
 
@@ -49,11 +50,22 @@ def parse_settlement(counterparty: dict, report: dict, *, expected_id: UUID, now
     purchases = _money(counterparty.get("salesAmount"))
     if purchases < 0:
         raise ValueError("Negative sales amount")
+    discount_value = attrs.get(DISCOUNT_ATTRIBUTE_ID)
+    discount = None
+    if discount_value is not None:
+        raw = discount_value.get("name") if isinstance(discount_value, dict) else discount_value
+        try:
+            discount = Decimal(str(raw).strip().removesuffix("%").replace(",", "."))
+        except InvalidOperation as exc:
+            raise ValueError("Invalid personal discount") from exc
+        if not discount.is_finite() or not 0 <= discount <= 100:
+            raise ValueError("Invalid personal discount")
     return SettlementRead(
         status="fresh",
         balance_rubles=_money(report.get("balance")),
         total_purchases_rubles=purchases,
         loyalty_program=program_code,
+        personal_discount_percent=discount,
         own_promo_code=attrs.get(OWN_PROMO_ATTRIBUTE_ID) or None,
         referrer_promo_code=attrs.get(REFERRER_ATTRIBUTE_ID) or None,
         fetched_at=now,
@@ -88,7 +100,7 @@ async def get_account_settlement(counterparty_id: UUID | None, *, redis=None, cl
         return SettlementRead(status="unavailable", issue="cache_unavailable")
     now = time.time() if now is None else now
     scope = hashlib.sha256(client.base_url.encode()).hexdigest()[:12]
-    prefix = f"ms:settlement:v1:{scope}"
+    prefix = f"ms:settlement:v2:{scope}"
     key = f"{prefix}:{counterparty_id}"
     value = None
     try:

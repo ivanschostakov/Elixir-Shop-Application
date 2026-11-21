@@ -68,6 +68,8 @@ async def _refresh_moysklad_program(profile: ReferralProfile, *, user: User) -> 
             raise HTTPException(status_code=503, detail="Программа лояльности временно недоступна / Loyalty program is temporarily unavailable")
         return False
     previous = profile.reward_program
+    if value.loyalty_program != 0 and value.personal_discount_percent is None:
+        raise HTTPException(status_code=503, detail="Скидка клиента в МойСклад не определена. Повторите позже или обратитесь в поддержку.")
     profile.reward_program = "partner" if value.loyalty_program == 2 else "bonus"
     profile.reward_program_selection_source = "moysklad"
     if previous != profile.reward_program or profile.reward_program_selected_at is None:
@@ -79,6 +81,7 @@ async def _refresh_moysklad_program(profile: ReferralProfile, *, user: User) -> 
         moysklad_counterparty_id=str(counterparty_id),
         moysklad_own_promo=value.own_promo_code,
         moysklad_referrer_promo=value.referrer_promo_code,
+        moysklad_discount_percent=str(value.personal_discount_percent or Decimal("0.00")),
         moysklad_synced_at=value.fetched_at.isoformat() if value.fetched_at else None)
     return True
 

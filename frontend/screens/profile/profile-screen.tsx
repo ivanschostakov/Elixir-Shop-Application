@@ -54,6 +54,7 @@ export default function ProfileScreen() {
             <ProfileHeroCard
                 avatarUri={avatarUri}
                 contactValue={user?.phoneNumber ?? user?.email}
+                contactType={user?.phoneNumber ? "phone" : "email"}
                 initials={initials}
                 displayName={displayName}
                 isActive={user?.isActive}

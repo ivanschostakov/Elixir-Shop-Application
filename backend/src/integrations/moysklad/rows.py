@@ -1,4 +1,5 @@
 from typing import Any
+from decimal import Decimal
 from uuid import UUID, NAMESPACE_URL, uuid5
 
 from config import MOY_SKLAD_STOCK_RESERVE
@@ -88,14 +89,16 @@ def build_variant_rows(variants, stocks, products_by_code, products_by_id, stats
         sku = fit_text(variant.get("code"), VARIANT_SKU_MAX_LENGTH)
         fallback = sku or "Основной вариант"
         name = display_variant_name(variant.get("name"), product.get("name"), fallback)
+        price = sale_price(variant)
 
         rows.append(MoySkladVariantRow(
             system_id=variant_id,
             product_system_id=product_id,
             sku=sku,
             name=fit_text(name, VARIANT_NAME_MAX_LENGTH) or fallback[:VARIANT_NAME_MAX_LENGTH],
-            stock=available_stock((stock or {}).get("quantity"), reserve),
-            price=sale_price(variant),
+            stock=available_stock((stock or {}).get("quantity"), reserve) if price is not None else 0,
+            price=price if price is not None else Decimal("0.00"),
+            archived=price is None,
         ))
 
     add_synthetic_variants(rows, products_by_code, seen_products, stock_by_id, stock_by_code, reserve)
@@ -124,11 +127,13 @@ def add_synthetic_variants(rows, products_by_code, seen_products, stock_by_id, s
         if product_id is None or product_id in seen_products: continue
 
         stock = stock_by_id.get(product_id) or stock_by_code.get(code)
+        price = sale_price(product)
         rows.append(MoySkladVariantRow(
             system_id=synthetic_variant_id(product_id),
             product_system_id=product_id,
             sku=fit_text(product.get("code"), VARIANT_SKU_MAX_LENGTH),
             name="Основной вариант",
-            stock=available_stock((stock or {}).get("quantity"), reserve),
-            price=sale_price(product),
+            stock=available_stock((stock or {}).get("quantity"), reserve) if price is not None else 0,
+            price=price if price is not None else Decimal("0.00"),
+            archived=price is None,
         ))

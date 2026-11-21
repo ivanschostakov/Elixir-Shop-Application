@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react"
 
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
+import { commerceAccountId, subscribeCommerceAccount } from "@/services/commerce-account"
 
 type OrderDraftListener = (orderDraft: OrderDraftRead | null) => void
 
@@ -13,6 +14,7 @@ export function getOrderDraftSnapshot() {
 }
 
 export function setOrderDraftSnapshot(nextOrderDraft: OrderDraftRead | null) {
+    if (nextOrderDraft && nextOrderDraft.user_id !== commerceAccountId()) return
     orderDraftSnapshot = nextOrderDraft
     listeners.forEach((listener) => listener(nextOrderDraft))
 }
@@ -20,6 +22,8 @@ export function setOrderDraftSnapshot(nextOrderDraft: OrderDraftRead | null) {
 export function clearOrderDraftSnapshot() {
     setOrderDraftSnapshot(null)
 }
+
+subscribeCommerceAccount(clearOrderDraftSnapshot)
 
 export function subscribeOrderDraftSnapshot(listener: OrderDraftListener) {
     listeners.add(listener)

@@ -34,6 +34,8 @@ async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     if not website_identity_configured():
+        if local_authenticated:
+            return user
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Website login is not configured")
 
     try: identity = await WebsiteIdentityClient().authenticate(login=requested_login, password=payload.password,)

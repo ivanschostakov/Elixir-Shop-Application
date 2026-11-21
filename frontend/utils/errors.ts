@@ -94,6 +94,14 @@ export function getErrorMessage(error: unknown, fallback?: string) {
         return getBackendUnavailableMessage()
     }
 
+    if (error instanceof ApiError && error.status === 422) {
+        const detail = (error.body as { detail?: unknown } | null)?.detail
+        if (Array.isArray(detail) && detail.some(issue => Array.isArray(issue?.loc) && issue.loc.includes("email"))) {
+            return translate("auth.error.invalidEmail")
+        }
+        return translate("common.validationError")
+    }
+
     if (error instanceof ApiError && [401, 403].includes(error.status)) {
         return normalizeMessage(error.message, getAuthRequiredMessage())
     }

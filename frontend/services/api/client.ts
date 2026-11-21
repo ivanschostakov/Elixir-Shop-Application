@@ -78,7 +78,7 @@ async function buildHeaders(init?: RequestInit, auth = true, options?: RequestOp
 
 function buildApiError(response: Response, raw: string): ApiError {
     let body: unknown = raw
-    let message = raw || `HTTP ${response.status}`
+    let message = `HTTP ${response.status}`
 
     if (raw) {
         if (isLikelyHtmlResponse(raw)) {
@@ -135,6 +135,7 @@ async function request<T>(
     hasRetriedAppIntegrity = false,
 ): Promise<T> {
     const auth = options?.auth ?? true
+    const sessionId = getAuthTokens()?.sessionId
     const retryOnUnauthorized = options?.retryOnUnauthorized ?? auth
     let response: Response
     let rawResponse: string
@@ -146,6 +147,9 @@ async function request<T>(
         }, options?.timeoutMs)
         response = result.response
         rawResponse = result.text
+        if (auth && sessionId !== getAuthTokens()?.sessionId) {
+            throw new ApiError(409, "Session changed; please try again")
+        }
     } catch (error) {
         if (error instanceof AppIntegrityUnavailableError || error instanceof ApiError) throw error
         throw new ApiError(

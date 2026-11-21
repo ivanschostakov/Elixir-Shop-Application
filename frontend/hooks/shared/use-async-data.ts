@@ -26,6 +26,7 @@ export function useAsyncData<TData>({ debounceMs = 0, deps, enabled = true, fetc
     snapshotRef.current = snapshot
     scopeRef.current = scope
     fetcherRef.current = fetcher
+    initialDataRef.current = initialData
 
     const reset = useCallback(() => {
         requestIdRef.current += 1

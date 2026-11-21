@@ -5,8 +5,8 @@ type PaymentMethod = "later" | "sbp"
 const FINAL_STOP_STATUSES = new Set(["error", "canceled", "refunded", "hold", "partial"])
 
 export function resolvePaymentPhase(payment: PaymentStatusRead, requestedMethod: PaymentMethod) {
-    if (payment.is_paid || payment.payment_status === "paid") return "success"
     if (payment.payment_status && FINAL_STOP_STATUSES.has(payment.payment_status)) return "failure"
+    if (payment.is_paid || payment.payment_status === "paid") return "success"
     const method = payment.payment_method === "later" || payment.payment_method === "sbp"
         ? payment.payment_method
         : requestedMethod

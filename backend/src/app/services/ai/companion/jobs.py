@@ -266,6 +266,7 @@ async def delete_provider_resource(client, kind, external_id):
         "public_ai_file": config.ATTACHMENTS_DIR,
         "support_file": config.SUPPORT_MEDIA_DIR,
         "review_file": config.REVIEWS_MEDIA_DIR,
+        "avatar_file": config.AVATARS_MEDIA_DIR,
         "community_file": config.COMMUNITY_MEDIA_DIR / "attachments",
         "community_avatar": config.COMMUNITY_MEDIA_DIR / "avatars",
     }

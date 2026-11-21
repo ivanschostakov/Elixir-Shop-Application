@@ -14,11 +14,13 @@ import { PRIMARY_APP_ROUTES, ROUTES } from "@/constants/routes"
 import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useAuth } from "@/providers/auth-provider"
+import { useLanguage } from "@/providers/language-provider"
 import { ScreenChromeTemplateProvider, useScreenChromeTemplate } from "@/providers/screen-chrome-template-provider"
 import { ScreenTemplateProvider } from "@/providers/screen-template-provider"
 
 /** Chrome lives inside the native screen, so an entering route cannot resize the outgoing one. */
 function RouteScreenContent({ children, pathname }: { children: ReactNode; pathname: string }) {
+    useLanguage()
     const styles = useThemeStyles(createAppShellStyles)
     const { top } = useAppSafeAreaInsets()
     const { isAuthenticated, isReady } = useAuth()

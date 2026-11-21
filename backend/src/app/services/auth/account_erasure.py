@@ -27,6 +27,12 @@ async def erase_account(db, user):
         paths.append((kind, str(path)))
         await register_resource(db, user_id, kind, str(path))
 
+    from src.app.services.avatar_storage import ALLOWED_AVATAR_EXTENSIONS, AVATARS_MEDIA_DIR
+    for extension in ALLOWED_AVATAR_EXTENSIONS:
+        filename = f"{user_id}{extension}"
+        if (AVATARS_MEDIA_DIR / filename).exists():
+            await queue_file("avatar_file", filename)
+
     chats = (await db.execute(select(m.AIChat).where(m.AIChat.user_id == user_id))).scalars().all()
     for chat in chats:
         await register_resource(db, user_id, "conversation", chat.conversation_id, scope=chat.scope)

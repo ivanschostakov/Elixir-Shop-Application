@@ -1,6 +1,7 @@
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
+from config import MOY_SKLAD_PRICE_TYPE_ID, MOY_SKLAD_CURRENCY_ID
 
 from src.normalize import coerce_decimal, coerce_uuid, fit_text, optional_str
 
@@ -10,10 +11,20 @@ def money(value: Any) -> Decimal:
     return Decimal(str(value)) / Decimal("100")
 
 
-def sale_price(item: dict[str, Any]) -> Decimal:
+def sale_price(item: dict[str, Any]) -> Decimal | None:
+    """Select the audited retail RUB price; never infer it from array order."""
     prices = item.get("salePrices")
-    if not isinstance(prices, list) or not prices or not isinstance(prices[0], dict): return Decimal("0")
-    return money(prices[0].get("value"))
+    if not isinstance(prices, list): return None
+    def ref_id(ref):
+        if not isinstance(ref, dict): return None
+        return coerce_uuid(ref.get("id")) or coerce_uuid(str((ref.get("meta") or {}).get("href", "")).rstrip("/").rsplit("/", 1)[-1])
+    selected = [p for p in prices if isinstance(p, dict)
+                and ref_id(p.get("priceType")) == coerce_uuid(MOY_SKLAD_PRICE_TYPE_ID)
+                and ref_id(p.get("currency")) == coerce_uuid(MOY_SKLAD_CURRENCY_ID)]
+    if len(selected) != 1: return None
+    value = coerce_decimal(selected[0].get("value"))
+    if value is None or not value.is_finite() or value <= 0: return None
+    return (value / 100).quantize(Decimal("0.01"))
 
 
 def available_stock(value: Any, reserve: int) -> int:

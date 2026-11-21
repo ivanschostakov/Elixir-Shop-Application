@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { usePathname } from "expo-router"
 import { AppState, Platform, type AppStateStatus } from "react-native"
 import { isMentorAvailable } from "@/screens/chat/chat-mode-policy"
@@ -20,6 +20,8 @@ import {
 } from "@/services/auth/auth"
 import { translate } from "@/i18n/translations"
 import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
+import { clearOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
+import { setCommerceAccount } from "@/services/commerce-account"
 import { AuthContext } from "@/providers/auth-provider.context"
 import type { AuthProviderProps } from "@/providers/auth-provider.types"
 import {
@@ -96,7 +98,11 @@ function mapAuthErrorMessage(error: unknown, fallbackMessage: string) {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
-    const [user, setUser] = useState<AuthUser | null>(null)
+    const [user, commitUser] = useState<AuthUser | null>(null)
+    const setUser = useCallback((nextUser: AuthUser | null) => {
+        setCommerceAccount(nextUser?.id ?? null)
+        commitUser(nextUser)
+    }, [])
     const [isReady, setIsReady] = useState(false)
     const pathname = usePathname()
     const timezoneUserId = user?.id
@@ -110,6 +116,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return subscribeAuthSession((tokens) => {
             if (!tokens) {
                 clearBasketSnapshot()
+                clearOrderDraftSnapshot()
                 resetOrderStatusNotifications()
                 setUser(null)
             }
@@ -339,15 +346,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
 
     const deleteAccount = async () => {
-        try {
-            await unregisterOrderStatusNotifications()
-            await deleteAccountRequest()
-        } finally {
-            clearAuthTokens()
-            clearBasketSnapshot()
-            resetOrderStatusNotifications()
-            setUser(null)
-        }
+        await deleteAccountRequest()
+        await unregisterOrderStatusNotifications().catch(() => undefined)
+        clearAuthTokens()
+        clearBasketSnapshot()
+        clearOrderDraftSnapshot()
+        resetOrderStatusNotifications()
+        setUser(null)
     }
 
     const isAuthenticated = Boolean(user)

@@ -7,29 +7,31 @@ import { useAuth } from "@/providers/auth-provider.context"
 import { getBasket } from "@/services/api/basket"
 import { getGuestBasket } from "@/services/guest-cart"
 import type { BasketRead } from "@/types/basket"
+import { commerceAccountRevision } from "@/services/commerce-account"
 
-let basketLoadRequest: { isAuthenticated: boolean; promise: Promise<BasketRead> } | null = null
+let basketLoadRequest: { revision: number; promise: Promise<BasketRead> } | null = null
 
 async function loadBasketSnapshot(isAuthenticated: boolean) {
-    if (!basketLoadRequest || basketLoadRequest.isAuthenticated !== isAuthenticated) {
+    const revision = commerceAccountRevision()
+    if (!basketLoadRequest || basketLoadRequest.revision !== revision) {
         const promise = (isAuthenticated ? getBasket() : getGuestBasket())
             .then((nextBasket) => {
-                setBasketSnapshot(nextBasket)
+                if (commerceAccountRevision() === revision) setBasketSnapshot(nextBasket)
                 return nextBasket
             })
             .finally(() => {
-                basketLoadRequest = null
+                if (basketLoadRequest?.revision === revision) basketLoadRequest = null
             })
-        basketLoadRequest = { isAuthenticated, promise }
+        basketLoadRequest = { revision, promise }
     }
 
     return basketLoadRequest.promise
 }
 
 export function useBasket(): UseBasketResult {
-    const { isAuthenticated, isReady } = useAuth()
+    const { isAuthenticated, isReady, user } = useAuth()
     const { data: basket, error, loading, reload, setData } = useAsyncData({
-        deps: [isAuthenticated],
+        deps: [user?.id ?? null],
         enabled: isReady,
         fetcher: () => loadBasketSnapshot(isAuthenticated),
         initialData: getBasketSnapshot(),

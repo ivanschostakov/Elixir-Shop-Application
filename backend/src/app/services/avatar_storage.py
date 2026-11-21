@@ -1,5 +1,6 @@
 from io import BytesIO
 from pathlib import Path
+import warnings
 
 import aiofiles
 from fastapi import HTTPException, Request
@@ -9,8 +10,9 @@ from starlette import status
 from config import AVATARS_MEDIA_DIR
 
 ALLOWED_AVATAR_TYPES = {"image/jpeg", "image/png", "image/webp"}
-ALLOWED_AVATAR_EXTENSIONS = (".jpg", ".png", ".webp")
+ALLOWED_AVATAR_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
 MAX_AVATAR_SIZE_BYTES = 5 * 1024 * 1024
+MAX_AVATAR_PIXELS = 16_000_000
 AVATAR_EXTENSION = ".png"
 
 
@@ -39,12 +41,20 @@ def validate_avatar_content(content: bytes) -> None:
 
 def convert_avatar_to_png(content: bytes) -> bytes:
     try:
-        with Image.open(BytesIO(content)) as uploaded_image:
-            image = uploaded_image.convert("RGBA")
-            output = BytesIO()
-            image.save(output, format="PNG")
-            return output.getvalue()
-    except UnidentifiedImageError as error: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is not a valid image") from error
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(content)) as uploaded_image:
+                if uploaded_image.width * uploaded_image.height > MAX_AVATAR_PIXELS:
+                    raise HTTPException(status_code=413, detail="Avatar image dimensions are too large")
+                uploaded_image.thumbnail((1024, 1024))
+                image = uploaded_image.convert("RGBA")
+                output = BytesIO()
+                image.save(output, format="PNG")
+                return output.getvalue()
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning) as error:
+        raise HTTPException(status_code=413, detail="Avatar image dimensions are too large") from error
+    except (UnidentifiedImageError, OSError, ValueError) as error:
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid image") from error
 
 
 def remove_existing_avatars(user_id: int) -> None:

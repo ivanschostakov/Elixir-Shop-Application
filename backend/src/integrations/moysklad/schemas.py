@@ -21,6 +21,7 @@ class MoySkladVariantRow:
     name: str
     stock: int
     price: Decimal
+    archived: bool = False
 
 
 @dataclass

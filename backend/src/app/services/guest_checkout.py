@@ -74,6 +74,7 @@ async def _load_guest_variants(session: AsyncSession, items_by_variant_id: dict[
         .where(
             Variant.id.in_(items_by_variant_id.keys()),
             Variant.product.has(Product.is_visible_in_app.is_(True)),
+            Variant.product.has(Product.archived.is_(False)),
         )
     )
     scope = purchase_category_scope(None, client_platform=client_platform)
@@ -93,7 +94,7 @@ def _validate_guest_variants(
     for variant_id, quantity in items_by_variant_id.items():
         variant = variants_by_id[variant_id]
         visible_stock = stock_policy.visible_stock(variant.stock, variant.product)
-        if variant.archived or visible_stock <= 0: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
+        if variant.archived or variant.product.archived or visible_stock <= 0 or variant.price <= 0: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket contains unavailable items")
         if quantity > visible_stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested quantity exceeds available stock")
 
 

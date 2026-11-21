@@ -1,5 +1,6 @@
 import type { BasketRead } from "@/types/basket"
 import { clearBasketDraftEditingId } from "@/hooks/basket/basket-draft-editing-store"
+import { commerceAccountId, subscribeCommerceAccount } from "@/services/commerce-account"
 
 type BasketListener = (basket: BasketRead | null) => void
 
@@ -12,6 +13,7 @@ export function getBasketSnapshot() {
 }
 
 export function setBasketSnapshot(nextBasket: BasketRead | null) {
+    if (nextBasket && nextBasket.user_id !== (commerceAccountId() ?? 0)) return
     basketSnapshot = nextBasket
 
     if (!nextBasket || nextBasket.total_quantity === 0 || nextBasket.items.length === 0) {
@@ -22,20 +24,10 @@ export function setBasketSnapshot(nextBasket: BasketRead | null) {
 }
 
 export function clearBasketSnapshot() {
-    if (!basketSnapshot) {
-        setBasketSnapshot(null)
-        return
-    }
-
-    setBasketSnapshot({
-        ...basketSnapshot,
-        items: [],
-        items_count: 0,
-        total_quantity: 0,
-        total_amount: "0.00",
-        has_unavailable_items: false,
-    })
+    setBasketSnapshot(null)
 }
+
+subscribeCommerceAccount(clearBasketSnapshot)
 
 export function subscribeBasketSnapshot(listener: BasketListener) {
     listeners.add(listener)

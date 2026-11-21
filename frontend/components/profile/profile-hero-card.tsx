@@ -11,6 +11,7 @@ import { useTheme } from "@/providers/theme-provider"
 export function ProfileHeroCard({
     avatarUri,
     contactValue,
+    contactType = "email",
     initials,
     displayName,
     isActive,
@@ -73,7 +74,7 @@ export function ProfileHeroCard({
                         </Pressable>
                         {contactValue ? (
                             <Pressable
-                                accessibilityLabel={t("profile.email")}
+                                accessibilityLabel={t(contactType === "phone" ? "profile.phone" : "profile.email")}
                                 accessibilityRole="button"
                                 onPress={() => void handleCopy(contactValue)}
                                 style={({ pressed }) => [
