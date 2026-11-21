@@ -29,6 +29,10 @@ def test_water_and_meal_metadata_are_typed_and_cannot_leak_to_other_records():
     with pytest.raises(ValidationError):
         meal(note="x" * 4001)
     assert EntryData(kind="water", occurred_at=NOW, water_ml=250).water_ml == 250
+    assert meal(water_ml=300).water_ml == 300
+    for value in (0, -10, 10001):
+        with pytest.raises(ValidationError):
+            meal(water_ml=value)
     for payload in ({"kind": "water"}, {"kind": "water", "water_ml": 0}, {"kind": "water", "water_ml": 250, "meal_type": "breakfast"}, {"kind": "weight", "weight_kg": 80, "water_ml": 250}):
         with pytest.raises(ValidationError):
             EntryData(occurred_at=NOW, **payload)
@@ -72,24 +76,27 @@ def test_action_response_updates_all_totals_immediately_with_fast_device_clock(m
             await act(db, user, "entry", entry=EntryData(kind="weight", occurred_at=NOW, weight_kg=80))
             await act(db, user, "profile", expected_version=profile.version, profile=ProfileData(goal="maintain", age=30, sex="male", height_cm=180, activity="low", nutrition=Nutrition(kcal=3069, protein=191.8, fat=102.3, carbs=345.3)))
             request = SimpleNamespace(headers={})
-            payload = Action(request_key="meal-clock-save", kind="entry", record_now=True, entry=meal(NOW+timedelta(minutes=3), meal_type="lunch"))
+            payload = Action(request_key="meal-clock-save", kind="entry", record_now=True, entry=meal(NOW+timedelta(minutes=3), meal_type="lunch", water_ml=300))
             saved = (await action(payload, request, user, db))["state"]
             assert saved["today"]["nutrition"]["kcal"] == "1270"
             assert saved["mentor"]["today"]["nutrition"]["consumed"]["kcal"] == "1270"
             assert saved["mentor"]["today"]["nutrition"]["remaining"]["kcal"] == "1799"
+            assert saved["mentor"]["today"]["water"]["consumed_ml"] == 300
+            assert (await action(payload, request, user, db))["state"]["today"]["water_ml"] == 300
             row = next(row for row in saved["entries"] if row["kind"] == "meal")
             assert datetime.fromisoformat(row["occurred_at"]) == NOW
             water = Action(request_key="water-clock-save", kind="entry", record_now=True, entry=EntryData(kind="water", occurred_at=NOW+timedelta(days=1), water_ml=250))
             updated = (await action(water, request, user, db))["state"]
             assert water.entry.occurred_at == NOW + timedelta(days=1)
             repeated = (await action(water, request, user, db))["state"]
-            assert repeated["today"]["water_ml"] == 250
-            assert updated["today"]["water_ml"] == 250
-            assert updated["mentor"]["today"]["water"] == {"consumed_ml": 250, "target_ml": 2000}
+            assert repeated["today"]["water_ml"] == 550
+            assert updated["today"]["water_ml"] == 550
+            assert updated["mentor"]["today"]["water"] == {"consumed_ml": 550, "target_ml": 2000}
             assert updated["today"]["nutrition"]["kcal"] == "1270"
-            replacement = meal(meal_type="dinner"); replacement.nutrition.kcal = Decimal(500)
+            replacement = meal(meal_type="dinner", water_ml=100); replacement.nutrition.kcal = Decimal(500)
             changed = (await action(Action(request_key="meal-clock-edit", kind="entry", resource_id=row["id"], expected_version=row["version"], entry=replacement), request, user, db))["state"]
             assert changed["mentor"]["today"]["nutrition"]["consumed"]["kcal"] == "500"
+            assert changed["mentor"]["today"]["water"]["consumed_ml"] == 350
             changed_row = next(row for row in changed["entries"] if row["kind"] == "meal")
             deleted = (await action(Action(request_key="meal-clock-delete", kind="delete_entry", resource_id=changed_row["id"], expected_version=changed_row["version"]), request, user, db))["state"]
             assert deleted["mentor"]["today"]["nutrition"]["consumed"]["kcal"] == "0"

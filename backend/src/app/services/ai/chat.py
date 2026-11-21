@@ -605,7 +605,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             estimate = food_estimate(structured_output.companion_dialogue or DialogueTurn(), user_message.created_at) if structured_output is not None else None
             if nutrition_help:
                 estimate = None  # Reference answers never create diary proposals.
-            elif estimate:
+            elif estimate and estimate.kind == "meal":
                 from src.database.models import Attachment
                 estimate.food_photo_attachment_ids = list((await db.execute(select(Attachment.id).where(Attachment.message_id == user_message.id, Attachment.type == AttachmentType.IMAGE))).scalars())
             reply_text = "Расчёт КБЖУ готов." if estimate else reply_text or "Опишите, что было в порции, или добавьте фото еды."

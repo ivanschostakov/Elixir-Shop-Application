@@ -2,6 +2,8 @@ import { getTranslationLanguage, type Language } from "@/i18n/translations"
 
 // Source phrases belong to the interface; user-entered names and notes are never passed here.
 export const mentorTranslations: Record<string, { en: string; kz: string }> = {
+    "Что вы съели? Добавьте и выпитую воду, например: курица с рисом и 300 мл воды.": { en: "What did you eat? Include water too, for example: chicken with rice and 300 ml of water.", kz: "Не жедіңіз? Ішкен суыңызды да қосыңыз, мысалы: күріш пен тауық және 300 мл су." },
+    "Нельзя менять тип существующей записи": { en: "An existing entry's type cannot be changed", kz: "Бар жазбаның түрін өзгерту мүмкін емес" },
     "Попробовать ещё раз": { en: "Try again", kz: "Қайта көру" },
     "Не удалось открыть ссылку": { en: "Could not open the link", kz: "Сілтемені ашу мүмкін болмады" },
     "Фото похожего блюда: {0}": {"en": "Photo of a similar dish: {0}", "kz": "Ұқсас тағамның фотосы: {0}"},

@@ -69,9 +69,14 @@ export function MentorHomeScreen(props: Props) {
                     <Text style={[styles.trailing, { color: group.entries.length ? colors.text : colors.green }]}>{group.entries.length ? mt("{0} ккал", [number(group.total.kcal)]) : mt("Добавить")}</Text><MentorQuestionIcon name="chevronRight" size={17} color={colors.muted} />
                 </Pressable>)}
             </View>
-            <Pressable accessibilityRole="button" accessibilityLabel={mt("Ещё приём пищи")} onPress={() => extras.length && props.onMealGroup ? props.onMealGroup("extra") : props.onAddFood("extra")} style={[styles.smallAction, dense && { minHeight: 32, paddingVertical: 5 }, { backgroundColor: colors.soft }]}><MentorQuestionIcon name="plus" size={21} color={colors.green} /><Text style={[styles.actionText, { color: colors.green, fontSize: dense ? 14 : 16 }]}>{mt("Ещё приём пищи")}{extras.length ? ` · ${extras.length}` : ""}</Text></Pressable>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-                {([["suggest", "Что поесть?", "food"], ["product", "О продукте", "search"]] as const).map(([mode, label, icon]) => <Pressable key={mode} accessibilityRole="button" accessibilityLabel={mt(label)} onPress={() => props.onFoodHelp?.(mode)} style={[styles.smallAction, dense && { minHeight: 32, paddingVertical: 5 }, { flex: 1, backgroundColor: colors.soft }]}><MentorQuestionIcon name={icon} size={19} color={colors.green} /><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.actionText, { color: colors.green, fontSize: dense ? 13 : 15 }]}>{mt(label)}</Text></Pressable>)}
+            <Pressable accessibilityRole="button" accessibilityLabel={mt("Ещё приём пищи")} onPress={() => extras.length && props.onMealGroup ? props.onMealGroup("extra") : props.onAddFood("extra")} style={({ pressed }) => [styles.extraMeal, { minHeight: dense ? 34 : 44, opacity: pressed ? 0.65 : 1 }]}>
+                <MentorQuestionIcon name="plus" size={21} color={colors.green} /><Text style={[styles.extraLabel, { color: colors.green, fontSize: dense ? 14 : 16 }]}>{mt("Ещё приём пищи")}</Text>
+                {extras.length ? <Text style={[styles.trailing, { color: colors.muted }]}>{extras.length}</Text> : null}<MentorQuestionIcon name="chevronRight" size={17} color={colors.muted} />
+            </Pressable>
+            <View testID="mentor-food-help" style={[styles.helpPanel, { backgroundColor: colors.soft }]}>
+                {([["suggest", "Что поесть?", "food"], ["product", "О продукте", "search"]] as const).map(([mode, label, icon], index) => <Pressable key={mode} accessibilityRole="button" accessibilityLabel={mt(label)} onPress={() => props.onFoodHelp?.(mode)} style={({ pressed }) => [styles.helpItem, { minHeight: dense ? 58 : compact ? 70 : 80, opacity: pressed ? 0.65 : 1 }, index > 0 && { borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: colors.border }]}>
+                    <MentorQuestionIcon name={icon} size={dense ? 22 : 25} color={colors.green} /><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.helpLabel, { color: colors.text, fontSize: dense ? 13 : 15 }]}>{mt(label)}</Text>
+                </Pressable>)}
             </View>
         </View>
     </View>
@@ -85,6 +90,7 @@ const styles = StyleSheet.create({
     action: { minHeight: 46, flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 9, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 12 }, actionText: { fontSize: 17, lineHeight: 23, fontWeight: "700", flexShrink: 1 },
     sectionHeader: { minHeight: 33, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }, sectionTitle: { fontSize: 24, lineHeight: 30, fontWeight: "800", letterSpacing: -0.5 },
     rowCopy: { flex: 1, minWidth: 0, gap: 3 }, rowTitle: { fontSize: 17, lineHeight: 23, fontWeight: "700" }, subtitle: { fontWeight: "500", fontSize: 14, lineHeight: 19 }, trailing: { fontWeight: "600", fontSize: 14, lineHeight: 20, flexShrink: 1, textAlign: "right" },
-    mealRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 7, borderRadius: 13, borderBottomWidth: StyleSheet.hairlineWidth }, smallAction: { minHeight: 38, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, borderRadius: 14, paddingHorizontal: 9, paddingVertical: 7 },
+    mealRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 7, borderRadius: 13, borderBottomWidth: StyleSheet.hairlineWidth }, extraMeal: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 7 }, extraLabel: { flex: 1, fontWeight: "700", lineHeight: 22 },
+    helpPanel: { flexDirection: "row", borderRadius: 20, paddingVertical: 6, marginTop: 2 }, helpItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 7, paddingHorizontal: 10 }, helpLabel: { fontWeight: "700", lineHeight: 21 },
     notice: { borderRadius: 14, padding: 14, gap: 8 },
 })

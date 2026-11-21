@@ -286,8 +286,10 @@ class EntryData(StrictModel):
             raise ValueError("Meal metadata requires a meal")
         if self.meal_key is not None and self.meal_type != "extra":
             raise ValueError("Only additional meals have a group key")
-        if (self.water_ml is not None) != (self.kind == "water"):
+        if self.kind == "water" and self.water_ml is None:
             raise ValueError("Water records require an amount in ml")
+        if self.water_ml is not None and self.kind not in {"meal", "water"}:
+            raise ValueError("Drinking water belongs to a meal or a water record")
         if self.kind == "water" and any(value is not None for value in (self.nutrition, self.portion_g, self.weight_kg, self.wellbeing, self.appetite, self.energy, self.sleep_hours)):
             raise ValueError("Water records cannot contain food or health measurements")
         if len(set(self.food_photo_attachment_ids)) != len(self.food_photo_attachment_ids):

@@ -45,10 +45,10 @@ function harness(options = {}) {
         "@/screens/chat/chat-screen.constants": {}, "@/screens/chat/mentor-food-data": food,
         "@/screens/chat/mentor-home-data": { mentorHomeNumber: String }, "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "Icon" },
         "@/screens/chat/mentor-ui": { useMentorPalette: () => ({}) },
-        "@/services/api/companion-food": { askNutritionHelp: async (...args) => { calls.help ??= []; calls.help.push(args); return { message: "Example nutrition answer", entry: null } }, estimateCompanionFood: async (...args) => { calls.estimates.push(args); if (calls.failEstimate) throw new Error("network"); return { entry: estimate() } } },
+        "@/services/api/companion-food": { askNutritionHelp: async (...args) => { calls.help ??= []; calls.help.push(args); return { message: "Example nutrition answer", entry: null } }, estimateCompanionFood: async (...args) => { calls.estimates.push(args); if (calls.failEstimate) throw new Error("network"); return { entry: options.estimate ?? estimate() } } },
         "@/services/api/ai-chat": { transcribeMyAiChatVoice: async () => { calls.transcriptions++; return { text: "курица" } } },
         "@/services/api/ai-data-consent": { AiConsentDeclinedError: class extends Error {} },
-        "@/screens/chat/mentor-home": { MentorHomeHeader: "HomeHeader" }, "@/screens/chat/mentor-meal-image": { MentorMealImage: "MealImage" }, "@/screens/chat/mentor-meals-data": meals,
+        "@/screens/chat/mentor-meal-selector": { MentorMealSelector: "MealSelector" }, "@/screens/chat/mentor-home": { MentorHomeHeader: "HomeHeader" }, "@/screens/chat/mentor-meal-image": { MentorMealImage: "MealImage" }, "@/screens/chat/mentor-meals-data": meals,
         "@/services/api/companion": { getMealLibrary: async () => ({ entries: options.recent ?? [] }), requestKey: () => `request-${++sequence}` }, "@/utils/errors": { getErrorMessage: e => e.message },
     })
     const render = () => {
@@ -140,6 +140,31 @@ test("past meals prefill the text and private photo without estimating or saving
     assert.equal(h.calls.estimates.length, 0); assert.equal(h.calls.saves.length, 0)
     h.button(tree, "Рассчитать КБЖУ").props.onPress(); await h.flush()
     assert.equal(h.calls.estimates[0][3], 77)
+})
+
+test("an inline meal selector saves the chosen group together with described water", async () => {
+    const h = harness({ estimate: { ...estimate(), water_ml: 300 } }); let tree = h.render()
+    const input = nodes(tree).find(node => node.type === "Input")
+    assert.match(input.props.placeholder, /300 мл воды/)
+    const selector = nodes(tree).find(node => node.type === "MealSelector")
+    assert.ok(selector); selector.props.onChange("dinner")
+    input.props.onChangeText("Рис с курицей и 300 мл воды")
+    tree = h.render(); h.button(tree, "Рассчитать КБЖУ").props.onPress(); await h.flush()
+    tree = h.render(); assert.ok(nodes(tree).some(node => node.props.children?.[0] === "300"))
+    h.button(tree, "Сохранить").props.onPress(); await h.flush()
+    assert.equal(h.calls.saves[0].entry.meal_type, "dinner"); assert.equal(h.calls.saves[0].entry.water_ml, 300)
+    assert.equal(h.calls.alerts.length, 0)
+})
+
+test("water alone uses the same input and saves no food or meal metadata", async () => {
+    const h = harness({ estimate: { kind: "water", water_ml: 400, occurred_at: "2026-11-21T12:00:00Z" } }); let tree = h.render()
+    nodes(tree).find(node => node.type === "Input").props.onChangeText("400 мл воды")
+    tree = h.render(); h.button(tree, "Рассчитать КБЖУ").props.onPress(); await h.flush()
+    tree = h.render(); h.button(tree, "Сохранить").props.onPress(); await h.flush()
+    const saved = h.calls.saves[0]
+    assert.equal(saved.entry.kind, "water"); assert.equal(saved.entry.water_ml, 400)
+    assert.equal(saved.entry.nutrition, undefined); assert.equal(saved.entry.meal_type, undefined)
+    assert.equal(h.calls.alerts.length, 0)
 })
 
 test("product questions use the read-only helper and never offer a save-to-diary action", async () => {

@@ -15,6 +15,7 @@ test("meals group several dishes, preserve additional meal groups and infer lega
     assert.equal(meals.needsFoodDetails("омлет", false), true)
     assert.equal(meals.needsFoodDetails("омлет", true), false)
     assert.equal(meals.needsFoodDetails("два яйца с сыром", false), false)
+    for (const water of ["300 мл воды", "выпил 0.5 л воды", "water 250 ml", "300 мл су"]) assert.equal(meals.needsFoodDetails(water, false), false)
 })
 
 test("a fast or slow phone clock does not hide freshly saved food or move the dashboard to another day", () => {

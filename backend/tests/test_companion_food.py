@@ -30,8 +30,23 @@ def test_food_estimate_aggregates_ingredients_and_cannot_edit_old_records_or_oth
     assert food_estimate(DialogueTurn(operations=[turn.operations[-1]]), NOW) is None
 
 
+def test_food_estimate_keeps_described_water_in_the_same_meal_and_supports_water_alone():
+    chicken = meal()
+    chicken.entry.water_ml = 200
+    water = DialogueOperation(kind="entry", summary="Water", evidence="300 ml water", certain=False, entry=EntryData(kind="water", occurred_at=NOW, water_ml=300))
+    result = food_estimate(DialogueTurn(operations=[chicken, meal("Rice", "150"), water]), NOW)
+    assert result.kind == "meal" and result.water_ml == 500
+    assert result.nutrition.kcal == 350 and result.nutrition.protein == 40
+    result = food_estimate(DialogueTurn(operations=[water]), NOW)
+    assert result.kind == "water" and result.water_ml == 300 and result.nutrition is None
+    assert result.occurred_at == NOW
+    chicken.entry.water_ml = 10000
+    assert food_estimate(DialogueTurn(operations=[chicken, water]), NOW) is None
+
+
 @pytest.mark.parametrize("help_mode", [None, "suggest", "product"])
-def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypatch, help_mode):
+@pytest.mark.parametrize("water_only", [False, True])
+def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypatch, help_mode, water_only):
     from src.app.services.ai import chat
     from src.app.services.ai.companion import dialogue, service
     from src.integrations.ai.enums import BotModel
@@ -67,7 +82,8 @@ def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypa
     monkeypatch.setattr(dialogue, "guard_for", AsyncMock(return_value=None))
     attach = AsyncMock(); monkeypatch.setattr(dialogue, "attach_turn", attach)
     direct = AsyncMock(); monkeypatch.setattr(dialogue, "direct_reply", direct)
-    response = {"text": "Food calculated", "structured_output": {"assistant_text": "Food calculated", "companion_dialogue": DialogueTurn(operations=[meal()]).model_dump(mode="json")},
+    operation = DialogueOperation(kind="entry", summary="Water", evidence="300 ml water", certain=False, entry=EntryData(kind="water", occurred_at=NOW, water_ml=300)) if water_only else meal()
+    response = {"text": "Food calculated", "structured_output": {"assistant_text": "Food calculated", "companion_dialogue": DialogueTurn(operations=[operation]).model_dump(mode="json")},
         "conversation_id": "conv_food", "input_tokens": 20, "output_tokens": 10, "openai_model": "mock"}
     if help_mode == "suggest":
         from src.app.services.ai.companion import food_suggestions
@@ -83,6 +99,13 @@ def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypa
     else:
         assert result.meal_estimate["entry"]["estimated"] is True
         assert result.meal_estimate["entry"]["occurred_at"].startswith("2026-11-20")
+        assert result.meal_estimate["entry"]["kind"] == ("water" if water_only else "meal")
+        if water_only:
+            assert result.meal_estimate["entry"]["water_ml"] == 300
+            assert result.meal_estimate["entry"]["nutrition"] is None
+            assert not result.meal_estimate["entry"]["food_photo_attachment_ids"]
+    from src.app.modules.users.me.companion import MealEstimateRead
+    MealEstimateRead.model_validate(result.meal_estimate)
     assert len(messages) == 2 and messages[0].text == "Chicken"
     assert messages[1].context_json["meal_estimate_request_id"] == "food-estimate-request-1"
     attach.assert_not_awaited(); direct.assert_not_awaited(); notify.assert_not_awaited()

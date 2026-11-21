@@ -25,4 +25,7 @@ export function mealGroups(entries: CompanionEntry[], clock: string) {
     return groups
 }
 export const waterTarget = (state: CompanionState | null) => state?.mentor?.today?.water?.target_ml ?? state?.profile?.settings?.water_goal_ml ?? (state?.profile?.data.sex === "female" ? 1600 : 2000)
-export const needsFoodDetails = (text: string, hasPhoto: boolean) => !hasPhoto && text.trim().split(/\s+/).filter(Boolean).length < 4
+export const needsFoodDetails = (text: string, hasPhoto: boolean) => {
+    const describedWater = /\d+(?:[.,]\d+)?\s*(?:мл|ml|л|l)(?!\p{L})/iu.test(text) && /(?:^|\s)(?:вод[ауы]|water|су)(?:$|[\s.!?,])/iu.test(text)
+    return !hasPhoto && !describedWater && text.trim().split(/\s+/).filter(Boolean).length < 4
+}

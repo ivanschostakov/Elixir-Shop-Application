@@ -12,7 +12,8 @@ import type { useCompanion } from "@/screens/chat/companion"
 import { appendFoodDictation, foodDescription, foodSaveAction } from "@/screens/chat/mentor-food-data"
 import { MentorHomeHeader } from "@/screens/chat/mentor-home"
 import { MentorMealImage } from "@/screens/chat/mentor-meal-image"
-import { entryMeal, mainMeals, mealLabel, needsFoodDetails, suggestedMeal } from "@/screens/chat/mentor-meals-data"
+import { entryMeal, needsFoodDetails, suggestedMeal } from "@/screens/chat/mentor-meals-data"
+import { MentorMealSelector } from "@/screens/chat/mentor-meal-selector"
 import { mentorHomeNumber } from "@/screens/chat/mentor-home-data"
 import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
@@ -82,7 +83,7 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpM
             if (helpMode) { setAnswer(result.message); return }
             if (!result.entry) { setError(result.message || mt("Не удалось рассчитать КБЖУ. Уточните описание еды.")); input.current?.focus(); return }
             // Validate the estimate before offering its save action.
-            foodSaveAction(result.entry, text, "validate-food")
+            foodSaveAction(result.entry, text, "validate-food", original)
             saveRequest.current = null; setEstimate(result.entry)
         } catch (e) { if (alive.current && !(e instanceof AiConsentDeclinedError)) setError(getErrorMessage(e)) }
         finally { transition("idle") }
@@ -142,23 +143,18 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpM
         finally { if (!isRecording()) transition("idle") }
     }
     const close = () => { if (phaseRef.current !== "saving") { Keyboard.dismiss(); onClose() } }
-    const chooseMeal = () => {
-        const types = [...mainMeals, "extra"] as const
-        const choose = (type: MealType) => { setSelectedMeal(type); saveRequest.current = null }
-        if (Platform.OS === "ios") ActionSheetIOS.showActionSheetWithOptions({ options: [mt("Отмена"), ...types.map(mealLabel)], cancelButtonIndex: 0, userInterfaceStyle: isDark ? "dark" : "light" }, index => { if (index > 0) choose(types[index - 1]) })
-        else Alert.alert(mt("Приём пищи"), undefined, [...types.map(type => ({ text: mealLabel(type), onPress: () => choose(type) })), { text: mt("Отмена"), style: "cancel" }])
-    }
     const hasFood = !!text.trim() || !!photo || !!previousPhoto || helpMode === "suggest"
     const primaryLabel = estimate ? mt("Сохранить") : answer ? mt("Задать другой вопрос") : helpMode === "product" ? mt("Узнать о продукте") : helpMode === "suggest" ? mt("Подобрать варианты") : mt("Рассчитать КБЖУ")
-    const title = helpMode === "product" ? mt("О продукте") : helpMode === "suggest" ? mt("Что поесть?") : estimate ? mt("Расчёт КБЖУ") : original ? mt("Изменить блюдо") : mt("Добавить еду")
-    const placeholder = helpMode === "product" ? mt("О каком продукте хотите узнать?") : helpMode === "suggest" ? mt("Какие продукты есть дома?") : mt("Что вы съели?")
+    const title = helpMode === "product" ? mt("О продукте") : helpMode === "suggest" ? mt("Что поесть?") : estimate ? estimate.kind === "water" ? mt("Вода") : mt("Расчёт КБЖУ") : original ? mt("Изменить блюдо") : mt("Добавить еду")
+    const placeholder = helpMode === "product" ? mt("О каком продукте хотите узнать?") : helpMode === "suggest" ? mt("Какие продукты есть дома?") : mt("Что вы съели? Добавьте и выпитую воду, например: курица с рисом и 300 мл воды.")
     const seconds = Math.floor(recording.durationMillis / 1000)
     return <View style={{ flex: 1, backgroundColor: colors.surface }}><MentorHomeHeader title={title} onBack={close} /><ScrollView testID="mentor-food-editor" keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive" contentContainerStyle={styles.sheet} style={{ flex: 1, backgroundColor: colors.surface }}>
-        {!helpMode && !estimate ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Выбрать приём пищи")} onPress={chooseMeal} style={[styles.mealChoice, { backgroundColor: colors.soft }]}><MentorQuestionIcon name="food" color={colors.green} /><Text style={[styles.photoLabel, { color: colors.text, flex: 1 }]}>{mealLabel(selectedMeal)}</Text><MentorQuestionIcon name="chevronDown" color={colors.muted} size={20} /></Pressable> : null}
+        {!helpMode && !estimate ? <MentorMealSelector value={selectedMeal} disabled={busy} onChange={type => { setSelectedMeal(type); saveRequest.current = null }} /> : null}
         {answer ? <View style={[styles.answer, { backgroundColor: colors.soft }]}><Text selectable style={{ color: colors.text, fontSize: 17, lineHeight: 26, fontWeight: "500" }}>{answer}</Text></View> : estimate ? <View style={styles.result}>
-            <Text style={[styles.foodName, { color: colors.text }]}>{estimate.name}</Text>
-            <Text style={[styles.calories, { color: colors.green }]}>{mentorHomeNumber(estimate.nutrition?.kcal)}<Text style={styles.unit}> {mt("ккал")}</Text></Text>
-            <View style={styles.macros}>{(["protein", "fat", "carbs"] as const).map((key, index) => <View key={key} style={[styles.macro, index > 0 && { borderLeftWidth: 1, borderLeftColor: colors.border }]}><Text style={[styles.macroLabel, { color: colors.muted }]}>{[mt("Белки"), mt("Жиры"), mt("Углеводы")][index]}</Text><Text style={[styles.macroValue, { color: colors.text }]}>{mentorHomeNumber(estimate.nutrition?.[key])} {mt("г")}</Text></View>)}</View>
+            <Text style={[styles.foodName, { color: colors.text }]}>{estimate.kind === "water" ? mt("Вода") : estimate.name}</Text>
+            <Text style={[styles.calories, { color: estimate.kind === "water" ? colors.blue : colors.green }]}>{mentorHomeNumber(estimate.kind === "water" ? estimate.water_ml : estimate.nutrition?.kcal)}<Text style={styles.unit}> {estimate.kind === "water" ? mt("мл") : mt("ккал")}</Text></Text>
+            {estimate.kind === "meal" ? <View style={styles.macros}>{(["protein", "fat", "carbs"] as const).map((key, index) => <View key={key} style={[styles.macro, index > 0 && { borderLeftWidth: 1, borderLeftColor: colors.border }]}><Text style={[styles.macroLabel, { color: colors.muted }]}>{[mt("Белки"), mt("Жиры"), mt("Углеводы")][index]}</Text><Text style={[styles.macroValue, { color: colors.text }]}>{mentorHomeNumber(estimate.nutrition?.[key])} {mt("г")}</Text></View>)}</View> : null}
+            {estimate.kind === "meal" && estimate.water_ml ? <View style={[styles.waterResult, { backgroundColor: colors.soft }]}><Text style={[styles.photoLabel, { color: colors.text }]}>{mt("Вода")}</Text><Text style={[styles.photoLabel, { color: colors.blue }]}>{mentorHomeNumber(estimate.water_ml)} {mt("мл")}</Text></View> : null}
             <Text numberOfLines={3} style={[styles.caption, { color: colors.muted }]}>{estimate.assumptions || mt("Приблизительная оценка")}</Text>
         </View> : <View style={[styles.composer, { backgroundColor: colors.soft, borderColor: colors.border }]}>
             <TextInput ref={input} accessibilityLabel={placeholder} value={text} onChangeText={changeText} placeholder={placeholder} placeholderTextColor={colors.muted} maxLength={4000} multiline textAlignVertical="top" editable={phase === "idle"} keyboardAppearance={isDark ? "dark" : "light"} selectionColor={colors.greenBright} style={[styles.input, { color: colors.text }]} />
@@ -180,6 +176,6 @@ const styles = StyleSheet.create({
     header: { flexDirection: "row", alignItems: "center", gap: 12 }, title: { flex: 1, fontSize: 25, lineHeight: 32, fontWeight: "800", letterSpacing: -0.5 }, close: { width: 42, height: 42, borderRadius: 21, justifyContent: "center", alignItems: "center" },
     composer: { borderRadius: 22, borderWidth: 1, paddingHorizontal: 17, paddingTop: 14 }, input: { fontWeight: "500", minHeight: 100, maxHeight: 180, padding: 0, fontSize: 18, lineHeight: 27 }, toolbar: { borderTopWidth: StyleSheet.hairlineWidth, marginTop: 12, paddingVertical: 9, flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, photoButton: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 9, paddingRight: 12 }, photoLabel: { fontSize: 17, lineHeight: 23, fontWeight: "600" }, voiceArea: { flexDirection: "row", gap: 10, alignItems: "center" }, microphone: { width: 46, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center" },
     photo: { width: 70, height: 70, marginTop: 12 }, thumbnail: { width: 64, height: 64, borderRadius: 12 }, remove: { position: "absolute", right: -4, top: -6, width: 30, height: 30, borderRadius: 15, justifyContent: "center", alignItems: "center" }, primary: { minHeight: 54, borderRadius: 17, paddingHorizontal: 16, paddingVertical: 15, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 10 }, primaryText: { fontSize: 17, lineHeight: 24, fontWeight: "700", color: "#FFFFFF" }, edit: { minHeight: 44, alignItems: "center", justifyContent: "center" }, error: { fontWeight: "500", fontSize: 14, lineHeight: 20 },
-    mealChoice: { flexDirection: "row", gap: 10, alignItems: "center", borderRadius: 17, padding: 14 }, recent: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 17, padding: 12, minHeight: 66, borderBottomWidth: StyleSheet.hairlineWidth }, recentPhoto: { width: 54, height: 54, borderRadius: 12 }, answer: { padding: 20, borderRadius: 22 },
+    waterResult: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 15, padding: 15 }, recent: { flexDirection: "row", alignItems: "center", gap: 12, borderRadius: 17, padding: 12, minHeight: 66, borderBottomWidth: StyleSheet.hairlineWidth }, recentPhoto: { width: 54, height: 54, borderRadius: 12 }, answer: { padding: 20, borderRadius: 22 },
     result: { gap: 14, paddingTop: 2 }, foodName: { fontSize: 18, lineHeight: 26, fontWeight: "600" }, calories: { fontSize: 45, lineHeight: 54, fontWeight: "800", letterSpacing: -1 }, unit: { fontSize: 19, fontWeight: "600" }, macros: { flexDirection: "row" }, macro: { flex: 1, alignItems: "center", gap: 5 }, macroLabel: { fontWeight: "500", fontSize: 13, lineHeight: 18 }, macroValue: { fontSize: 20, lineHeight: 26, fontWeight: "700" }, caption: { fontWeight: "500", fontSize: 13, lineHeight: 19 },
 })
