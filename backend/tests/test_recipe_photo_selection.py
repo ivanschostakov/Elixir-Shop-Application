@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from openai import APIConnectionError
 
 from src.app.services.ai.companion import recipe_photo_selection as photos
+from src.app.services.ai.companion import recipe_photo_storage as storage
 from src.app.services.ai.companion.food_suggestions import RecipeImage
 from src.app.services.ai.companion.recipe_images import RecipePhotoCandidate
 from src.app.services.ai.companion.recipe_images import MAX_PHOTO_BYTES, load_recipe_photo
@@ -28,6 +29,7 @@ def candidate(name):
 def clear_photo_cache(monkeypatch):
     photos._verified.clear()
     monkeypatch.setattr(photos, "load_recipe_photo", AsyncMock(return_value=("image/jpeg", b"\xff\xd8\xff")))
+    monkeypatch.setattr(photos, "publish_recipe_photo", AsyncMock(side_effect=lambda image, content: image))
 
 
 def provider(matches):
@@ -64,6 +66,7 @@ def test_unmatched_uncertain_or_invented_candidates_never_fall_back_to_first_pho
     monkeypatch.setattr(photos, "find_recipe_candidates", AsyncMock(return_value=[candidate("Unrelated")]))
     result, usage = asyncio.run(photos.select_recipe_photos([recipe()], client=provider([match]), bot_model=BotModel.FREE, resource_recorder=None))
     assert result == [None] and usage["input_tokens"] == 100
+    photos.publish_recipe_photo.assert_not_awaited()
 
 
 def test_candidate_must_belong_to_its_recipe_and_photos_are_not_repeated(monkeypatch):
@@ -121,6 +124,55 @@ def test_missing_search_and_unavailable_inspection_leave_recipes_without_unverif
     client.inspect_images.side_effect = HTTPException(409, "Consent revoked")
     with pytest.raises(HTTPException):
         asyncio.run(photos.select_recipe_photos([recipe()], client=client, bot_model=BotModel.FREE, resource_recorder=None))
+
+
+def test_approved_photo_bytes_are_published_once_and_load_without_vendor_headers(monkeypatch, tmp_path):
+    import base64
+    from urllib.parse import urlsplit
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.app.services.ai.private_attachments import PublicMediaFiles
+    raw = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRXkAAAAASUVORK5CYII=")
+    wrong, right = candidate("Chicken_potatoes"), candidate("Chicken_rice")
+    monkeypatch.setattr(storage, "MEDIA_DIR", tmp_path)
+    monkeypatch.setattr(storage, "PUBLIC_API_BASE_URL", "https://api.example.test/")
+    monkeypatch.setattr(photos, "publish_recipe_photo", storage.publish_recipe_photo)
+    monkeypatch.setattr(photos, "find_recipe_candidates", AsyncMock(return_value=[wrong, right]))
+    monkeypatch.setattr(photos, "load_recipe_photo", AsyncMock(side_effect=[("image/jpeg", b"\xff\xd8\xffwrong"), ("image/png", raw)]))
+    client = provider([{"recipe_id": 0, "candidate_id": 1, "matches": True, "confidence": 1}])
+    async def run():
+        images, _ = await photos.select_recipe_photos([recipe()], client=client, bot_model=BotModel.FREE, resource_recorder=None)
+        published = images[0]
+        duplicate = await storage.publish_recipe_photo(right.image, ("image/png", raw))
+        assert duplicate == published
+        return published
+    image = asyncio.run(run())
+    assert image.url.startswith("https://api.example.test/media/recipe-photos/")
+    assert image.source_url == right.image.source_url and image.author == right.image.author and image.license == right.image.license
+    assert len(list((tmp_path / "recipe-photos").iterdir())) == 1, "Only the approved photo is stored; duplicate content is reused"
+    app = FastAPI()
+    app.mount("/media", PublicMediaFiles(directory=tmp_path))
+    with TestClient(app) as http:
+        response = http.get(urlsplit(image.url).path)
+    assert response.status_code == 200 and response.content == raw
+    assert response.headers["content-type"] == "image/png"
+
+
+@pytest.mark.parametrize("content", [("text/html", b"<html>"), ("image/png", b"<html>"), ("image/jpeg", b""), ("image/jpeg", b"\xff\xd8\xff" + b"x" * MAX_PHOTO_BYTES)])
+def test_publication_rejects_invalid_or_oversized_bytes_before_writing(monkeypatch, tmp_path, content):
+    monkeypatch.setattr(storage, "MEDIA_DIR", tmp_path)
+    monkeypatch.setattr(storage, "PUBLIC_API_BASE_URL", "https://api.example.test")
+    with pytest.raises(ValueError):
+        asyncio.run(storage.publish_recipe_photo(candidate("Chicken").image, content))
+    assert not list(tmp_path.iterdir())
+
+
+def test_failed_publication_keeps_the_recipe_without_a_broken_remote_image(monkeypatch):
+    monkeypatch.setattr(photos, "find_recipe_candidates", AsyncMock(return_value=[candidate("Chicken")]))
+    monkeypatch.setattr(photos, "publish_recipe_photo", AsyncMock(side_effect=OSError("Disk unavailable")))
+    client = provider([{"recipe_id": 0, "candidate_id": 0, "matches": True, "confidence": 1}])
+    images, usage = asyncio.run(photos.select_recipe_photos([recipe()], client=client, bot_model=BotModel.FREE, resource_recorder=None))
+    assert images == [None] and usage["input_tokens"] == 100
 
 
 def test_photo_inspection_is_stateless_has_no_tools_and_reports_actual_usage(monkeypatch):

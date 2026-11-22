@@ -13,10 +13,11 @@ import { askNutritionHelp, type FoodEstimate, type FoodSuggestion } from "@/serv
 import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import { getErrorMessage } from "@/utils/errors"
 
-function DishPhoto({ recipe, large = false }: { recipe: FoodSuggestion; large?: boolean }) {
-    const colors = useMentorPalette(), [failed, setFailed] = useState(false)
+export function DishPhoto({ recipe, large = false }: { recipe: FoodSuggestion; large?: boolean }) {
+    const colors = useMentorPalette(), [failedUrl, setFailedUrl] = useState<string | null>(null)
+    const photoUrl = recipe.image?.url
     return <View style={[styles.photo, large && styles.hero, { backgroundColor: colors.soft }]}>
-        {recipe.image && !failed ? <Image accessibilityLabel={mt("Фото похожего блюда: {0}", [recipe.name])} source={{ uri: recipe.image.url }} resizeMode="cover" onError={() => setFailed(true)} style={StyleSheet.absoluteFill} /> : <MentorQuestionIcon name="food" size={large ? 52 : 38} color={colors.green} />}
+        {photoUrl && photoUrl !== failedUrl ? <Image accessibilityLabel={mt("Фото похожего блюда: {0}", [recipe.name])} source={{ uri: photoUrl, headers: { "User-Agent": "ElixirNutrition/1.0 (recipe photograph display)" } }} resizeMode="cover" onError={() => setFailedUrl(photoUrl)} style={StyleSheet.absoluteFill} /> : <MentorQuestionIcon name="food" size={large ? 52 : 38} color={colors.green} />}
     </View>
 }
 

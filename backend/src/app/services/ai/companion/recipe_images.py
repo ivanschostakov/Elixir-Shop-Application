@@ -4,6 +4,7 @@ API: https://www.mediawiki.org/wiki/API:Imageinfo
 License metadata: https://commons.wikimedia.org/wiki/Help:Machine-readable_data
 """
 import html
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -18,12 +19,17 @@ _ttl = 86400
 _agent = "ElixirNutrition/1.0 (recipe photograph search; Wikimedia Commons)"
 MAX_CANDIDATES = 4
 MAX_PHOTO_BYTES = 2 * 1024 * 1024
+_stop_words = {"and", "with", "the", "of", "on", "a", "in", "or", "an"}
 
 
 @dataclass(frozen=True)
 class RecipePhotoCandidate:
     image: RecipeImage
     title: str
+
+
+def recipe_photo_mime(raw):
+    return "image/jpeg" if raw.startswith(b"\xff\xd8\xff") else "image/png" if raw.startswith(b"\x89PNG\r\n\x1a\n") else "image/webp" if raw.startswith(b"RIFF") and raw[8:12] == b"WEBP" else None
 
 
 async def load_recipe_photo(url, *, client):
@@ -41,7 +47,7 @@ async def load_recipe_photo(url, *, client):
                     return None
                 data.extend(chunk)
         raw = bytes(data)
-        mime = "image/jpeg" if raw.startswith(b"\xff\xd8\xff") else "image/png" if raw.startswith(b"\x89PNG\r\n\x1a\n") else "image/webp" if raw.startswith(b"RIFF") and raw[8:12] == b"WEBP" else None
+        mime = recipe_photo_mime(raw)
         return (mime, raw) if mime else None
     except (httpx.HTTPError, ValueError, TypeError):
         return None
@@ -80,23 +86,32 @@ async def find_recipe_candidates(query):
     candidates = []
     try:
         async with httpx.AsyncClient(timeout=8, headers={"User-Agent": _agent}, follow_redirects=False) as client:
-            # Keep the complete dish: dropping garnish/preparation caused unrelated photos.
-            response = await client.get("https://commons.wikimedia.org/w/api.php", params={"action": "query", "generator": "search", "gsrnamespace": 6, "gsrsearch": key + " filetype:bitmap", "gsrlimit": 8, "prop": "imageinfo", "iiprop": "url|extmetadata|mime", "iiextmetadatafilter": "Artist|LicenseShortName", "iiurlwidth": 800, "format": "json"})
-            response.raise_for_status()
-            pages = response.json().get("query", {}).get("pages", {}).values()
-            words = set(re.findall(r"[a-z]+", key)) - {"and", "with", "the", "of", "on", "a"}
+            words = list(dict.fromkeys(word for word in re.findall(r"[a-z]+", key) if word not in _stop_words))
+            searches = [key + " filetype:bitmap"]
+            # An AND search for every ingredient often finds nothing. Keep all
+            # dish terms in a second, broader search; visual approval still
+            # requires the complete original recipe, including its side dish.
+            if len(words) > 1:
+                searches.append("(" + " OR ".join(words) + ") filetype:bitmap")
             def rank(page):
                 title = set(re.findall(r"[a-z]+", page.get("title", "").lower()))
-                return (-len(words & title), page.get("index", 100))
+                return (-len(set(words) & title), page.get("index", 100))
             seen = set()
-            for page in sorted(pages, key=rank):
-                photo = commons_image(page)
-                if photo and photo.url not in seen:
-                    candidates.append(RecipePhotoCandidate(image=photo, title=plain(page.get("title", ""))))
-                    seen.add(photo.url)
-                if len(candidates) == MAX_CANDIDATES:
+            for search in searches:
+                response = await client.get("https://commons.wikimedia.org/w/api.php", params={"action": "query", "generator": "search", "gsrnamespace": 6, "gsrsearch": search, "gsrlimit": 8, "prop": "imageinfo", "iiprop": "url|extmetadata|mime", "iiextmetadatafilter": "Artist|LicenseShortName", "iiurlwidth": 800, "format": "json"})
+                response.raise_for_status()
+                pages = response.json().get("query", {}).get("pages", {}).values()
+                for page in sorted(pages, key=rank):
+                    photo = commons_image(page)
+                    if photo and photo.url not in seen:
+                        candidates.append(RecipePhotoCandidate(image=photo, title=plain(page.get("title", ""))))
+                        seen.add(photo.url)
+                    if len(candidates) == MAX_CANDIDATES:
+                        break
+                if candidates:
                     break
-    except (httpx.HTTPError, ValueError, TypeError, AttributeError):
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as error:
+        logging.getLogger(__name__).warning("Recipe photo search unavailable: %s", type(error).__name__)
         return []  # A photo outage must not discard an already calculated recipe.
     if len(_cache) >= 256:
         _cache.pop(next(iter(_cache)))

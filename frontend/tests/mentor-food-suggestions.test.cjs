@@ -30,9 +30,24 @@ function harness() {
     const questions = [], controller = { askMentor: text => questions.push(text) }
     return { calls, questions, answer, finish: value => resolve(value ?? answer), fail: () => { reject = true }, recover: () => { reject = false },
         render(shown = true) { h.reset(); const tree = module.MentorFoodSuggestions({ controller, shown, onClose() {} }); h.run(); return tree }, dispose: h.dispose,
+        renderPhoto(value) { h.reset(); const tree = module.DishPhoto({ recipe: value }); h.run(); return tree },
         button(tree, label) { return nodes(tree).find(node => node.props.accessibilityLabel === label) },
     }
 }
+
+test("recipe photos identify mobile image requests and recover when a new image URL arrives", () => {
+    const h = harness()
+    const old = nodes(h.renderPhoto(recipe)).find(node => node.type === "Image")
+    assert.equal(old.props.source.uri, recipe.image.url)
+    assert.match(old.props.source.headers["User-Agent"], /ElixirNutrition/)
+    old.props.onError()
+    assert.ok(!nodes(h.renderPhoto(recipe)).some(node => node.type === "Image"))
+    const updated = { ...recipe, image: { ...recipe.image, url: "https://api.example.test/media/recipe-photos/approved.jpg" } }
+    assert.equal(nodes(h.renderPhoto(updated)).find(node => node.type === "Image").props.source.uri, updated.image.url)
+    old.props.onError()
+    assert.ok(nodes(h.renderPhoto(updated)).some(node => node.type === "Image"), "An old image failure cannot hide the new photo")
+    assert.ok(!nodes(h.renderPhoto({ ...recipe, image: null })).some(node => node.type === "Image"))
+})
 
 test("recommendations load on opening without an input; recipes open and explicitly send one question", async () => {
     const h = harness(); h.render(false); assert.equal(h.calls.length, 0)

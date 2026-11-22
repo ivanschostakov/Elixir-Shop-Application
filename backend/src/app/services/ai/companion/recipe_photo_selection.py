@@ -11,6 +11,7 @@ from pydantic import Field, ValidationError, model_validator
 
 from .schemas import StrictModel
 from .recipe_images import find_recipe_candidates, load_recipe_photo
+from .recipe_photo_storage import publish_recipe_photo
 
 _verified = {}
 _ttl = 86400
@@ -95,14 +96,18 @@ async def select_recipe_photos(recipes, *, client, bot_model, resource_recorder)
         selection = PhotoSelection.model_validate(result.get("structured_output"))
     except (ValidationError, TypeError):
         return images, result
-    used = {image.url for image in images if image}
+    used = {image.source_url for image in images if image}
     for match in selection.matches:
         if match.recipe_id not in groups or match.candidate_id not in groups[match.recipe_id] or not match.matches or match.confidence < 0.9:
             continue
         image = candidates[match.candidate_id].image
-        if image.url not in used:
-            images[match.recipe_id] = image
-            used.add(image.url)
+        if image.source_url not in used:
+            try:
+                images[match.recipe_id] = await publish_recipe_photo(image, contents[match.candidate_id])
+            except (OSError, ValueError) as error:
+                logging.getLogger(__name__).warning("Recipe photo publication unavailable: %s", type(error).__name__)
+                continue
+            used.add(image.source_url)
     for index in pending:
         if len(_verified) >= 256:
             _verified.pop(next(iter(_verified)))

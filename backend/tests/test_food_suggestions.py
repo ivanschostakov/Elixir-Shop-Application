@@ -91,8 +91,27 @@ def test_public_photo_search_is_bounded_cached_and_fails_without_losing_recipes(
     get.reset_mock()
     response.json = lambda: {}
     assert asyncio.run(recipe_images.find_recipe_candidates("grilled chicken rice broccoli")) == []
-    assert get.await_count == 1
-    assert get.call_args.kwargs["params"]["gsrsearch"] == "grilled chicken rice broccoli filetype:bitmap"
+    assert get.await_count == 2
+    assert get.call_args_list[0].kwargs["params"]["gsrsearch"] == "grilled chicken rice broccoli filetype:bitmap"
+    assert get.call_args.kwargs["params"]["gsrsearch"] == "(grilled OR chicken OR rice OR broccoli) filetype:bitmap"
     recipe_images._cache.clear()
     get.side_effect = recipe_images.httpx.ConnectError("Offline")
     assert asyncio.run(recipe_images.find_recipe_candidates("rice bowl")) == []
+
+
+def test_empty_full_dish_search_retries_all_terms_and_still_returns_only_candidates(monkeypatch):
+    recipe_images._cache.clear()
+    empty = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {})
+    found = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"query": {"pages": {"1": commons_page()}}})
+    get = AsyncMock(side_effect=[empty, found])
+    class Client:
+        def __init__(self, **kwargs): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+    Client.get = get
+    monkeypatch.setattr(recipe_images.httpx, "AsyncClient", Client)
+    result = asyncio.run(recipe_images.find_recipe_candidates("grilled chicken with rice broccoli"))
+    assert len(result) == 1 and isinstance(result[0], recipe_images.RecipePhotoCandidate)
+    assert get.await_count == 2
+    assert get.call_args.kwargs["params"]["gsrsearch"] == "(grilled OR chicken OR rice OR broccoli) filetype:bitmap"
+    assert get.call_args.kwargs["params"]["gsrnamespace"] == 6
