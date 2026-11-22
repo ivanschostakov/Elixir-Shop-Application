@@ -319,6 +319,8 @@ async def _move_lead_to_payment_result_status(session: AsyncSession, order: Orde
     if not order.amocrm_lead_id or target_status_id is None: return order
 
     target_patch = _order_state_patch_for_amocrm_status(target_status_id)
+    # Financial state is committed by the payment handler before this retryable effect.
+    target_patch.pop("is_paid", None)
     if _order_has_state_patch(order, target_patch): return order
 
     previous_status = order.status
@@ -336,7 +338,10 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
     if order.payment_status == "refunded" and status_id in amocrm_client.PAID_STATUS_IDS:
         return order
     previous_status = order.status
-    order = await update_order(session, order, OrderUpdate(**_order_state_patch_for_amocrm_status(status_id)), commit=False)
+    patch = _order_state_patch_for_amocrm_status(status_id)
+    if order.payment_provider in {"intellectmoney", "moysklad_balance"}:
+        patch.pop("is_paid", None)
+    order = await update_order(session, order, OrderUpdate(**patch), commit=False)
 
     if status_id in amocrm_client.PAID_STATUS_IDS and order.delivery_created_at is None:
         try: delivery_patch = await create_delivery_for_order(order)

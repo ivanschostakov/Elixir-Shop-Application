@@ -26,12 +26,20 @@ async def try_payment_effects(run_id):
         logging.getLogger(__name__).exception("Payment effects deferred run_id=%s", run_id)
 
 async def apply_payment_effects(db, order, expected):
+    from src.database.models import Order
+    await db.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+    await db.refresh(order)
     if order.payment_invoice_id != expected.get("invoice_id") or order.payment_status != expected.get("payment_status"):
         return {"skipped": "superseded"}
     from .crm import _move_lead_to_payment_result_status
     from src.integrations.moysklad.order_sync import sync_moysklad_customerorder_state, sync_moysklad_invoiceout_state, MOY_SKLAD_STATE_INVOICE_PAID, MOY_SKLAD_INVOICEOUT_STATE_PAID
     await _move_lead_to_payment_result_status(db, order, payment_status=order.payment_status)
+    await db.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+    await db.refresh(order)
+    if order.payment_status != expected.get("payment_status"):
+        return {"skipped": "superseded"}
     if order.payment_status == "paid":
         await sync_moysklad_customerorder_state(order, state_name=MOY_SKLAD_STATE_INVOICE_PAID, strict=True)
         await sync_moysklad_invoiceout_state(order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID, strict=True)
+    await db.commit()
     return {"order_id": order.id, "payment_status": order.payment_status}
