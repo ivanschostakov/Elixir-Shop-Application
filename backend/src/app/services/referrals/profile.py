@@ -34,10 +34,16 @@ def user_has_promo_code(user: User) -> bool:
     return bool(normalize_referral_code(user.promo_code))
 
 
+def personal_discount_applies(profile: ReferralProfile) -> bool:
+    if getattr(profile, "reward_program_selection_source", None) == "moysklad":
+        return (getattr(profile, "reward_program_snapshot", None) or {}).get("moysklad_program_code") == 2
+    return getattr(profile, "reward_program", None) == "partner"
+
+
 def refresh_profile_discount(profile: ReferralProfile, *, has_promo_code: bool | None = None) -> None:
     if getattr(profile, "reward_program_selection_source", None) == "moysklad":
         snapshot = getattr(profile, "reward_program_snapshot", None) or {}
-        profile.current_discount_percent = (Decimal("0.00") if snapshot.get("moysklad_program_code") == 0
+        profile.current_discount_percent = (Decimal("0.00") if not personal_discount_applies(profile)
             else Decimal(str(snapshot.get("moysklad_discount_percent", "0.00"))))
         return
     profile.current_discount_percent = calculate_personal_discount_percent(

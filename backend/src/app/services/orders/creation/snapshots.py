@@ -24,6 +24,7 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
         "total_after_discounts": _json_money(resolved_benefits.get("total_after_discounts")),
         "cash_total": _json_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None else None,
         "use_bonus_rubles": bool(resolved_benefits.get("use_bonus_rubles")),
+        "balance_redemption_mode": resolved_benefits.get("balance_redemption_mode", "explicit"),
         "bonus_applied_points": int(resolved_benefits.get("bonus_applied_points") or 0),
         "bonus_applied_rubles": _json_money(resolved_benefits.get("bonus_applied_rubles")),
         "cashback_percent": str(resolved_benefits.get("cashback_percent") or 0),
@@ -88,9 +89,10 @@ def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected
     if benefits.get("settlement_counterparty_id") and benefits.get("use_bonus_rubles"):
         snapshot["settlement_payment"] = {
             "version": 1, "status": "awaiting_invoice",
+            "mode": benefits.get("balance_redemption_mode", "explicit"),
             "counterparty_id": benefits["settlement_counterparty_id"],
             "maximum_balance_rubles": benefits["bonus_applied_rubles"],
-            "requested_balance_rubles": benefits["bonus_applied_rubles"],
+            "requested_balance_rubles": None if benefits.get("balance_redemption_mode") == "automatic" else benefits["bonus_applied_rubles"],
             "gross_rubles": str(quantize_money(
                 (Decimal(str(benefits["cash_total"])) if benefits.get("cash_total") is not None
                  else Decimal(str(benefits["total_after_discounts"])) + draft.delivery_total)

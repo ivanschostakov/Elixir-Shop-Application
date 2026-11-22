@@ -17,6 +17,7 @@ class AuthUserRead(BaseModel):
     is_active: bool
     is_verified: bool
     promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
+    program_selection_required: bool = False
 
 
 class AuthTokensBase(BaseModel):

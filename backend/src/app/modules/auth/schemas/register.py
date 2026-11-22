@@ -1,6 +1,7 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import Literal
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-from src.database.limits import EMAIL_MAX_LENGTH, PERSON_NAME_MAX_LENGTH
+from src.database.limits import EMAIL_MAX_LENGTH, PERSON_NAME_MAX_LENGTH, PROMO_CODE_MAX_LENGTH
 from src.normalize import normalize_email
 
 
@@ -9,6 +10,16 @@ class UserRegisterPayload(BaseModel):
     password: str = Field(min_length=8, max_length=100)
     name: str = Field(min_length=1, max_length=PERSON_NAME_MAX_LENGTH)
     surname: str = Field(min_length=1, max_length=PERSON_NAME_MAX_LENGTH)
+    reward_program: Literal["bonus", "partner"] | None = None
+    promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
+    select_program_after_registration: bool = False
+
+    @model_validator(mode="after")
+    def _validate_program(self):
+        self.promo_code = self.promo_code.strip() if self.promo_code else None
+        if self.promo_code and self.reward_program != "partner":
+            raise ValueError("A promo code requires the partner program")
+        return self
 
     @field_validator("email", mode="before")
     @classmethod

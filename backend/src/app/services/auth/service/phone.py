@@ -128,6 +128,8 @@ async def register_user_by_phone(request: Request, payload: PhoneAuthRegisterPay
             existing_phone_user.is_verified = not bool(email)
             target_user = existing_phone_user
         else: target_user = await create_user(db, UserCreate(email=email, password_hash=password_hash, name=payload.name, surname=payload.surname, phone_number=payload.phone_number, is_verified=not bool(email),), commit=False,)
+        from src.app.services.referrals.registration import record_registration_choice
+        await record_registration_choice(db, user=target_user, program=payload.reward_program, promo_code=payload.promo_code)
         return await _finalize_phone_auth_setup(target_user, db)
     except IntegrityError as error:
         await db.rollback()

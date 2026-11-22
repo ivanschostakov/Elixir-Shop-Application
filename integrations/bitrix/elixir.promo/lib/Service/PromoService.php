@@ -26,6 +26,7 @@ final class PromoService
         }
 
         $rule = $this->analyzeRule((string)$row['ACTIONS'], (string)$row['CONDITIONS']);
+        $registrationContext = (new SiteDiscountContext())->resolve($promo, 0);
 
         return [
             'promo' => (string)$row['COUPON'],
@@ -39,6 +40,8 @@ final class PromoService
             'discount_percent' => $rule['discount_percent'] ?? null,
             'applicability' => 'requires_bitrix_cart',
             'price_authority' => 'bitrix',
+            'is_firm_promo' => $registrationContext['is_firm_promo'],
+            'referral_owner_id' => $registrationContext['referral_owner_id'],
             'constraints' => [
                 'has_order_conditions' => (bool)($rule['has_order_conditions'] ?? true),
                 'has_basket_item_conditions' => (bool)($rule['has_basket_item_conditions'] ?? true),

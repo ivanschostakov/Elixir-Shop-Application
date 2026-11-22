@@ -38,13 +38,19 @@ def serialized_settlement_checkout(function):
     @wraps(function)
     async def wrapped(session, **kwargs):
         from config import LOYALTY_USE_SETTLEMENT_BALANCE, LOYALTY_SETTLEMENT_CHECKOUT_ENABLED, MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID, MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID
-        if not LOYALTY_USE_SETTLEMENT_BALANCE or not kwargs.get("use_bonus_rubles"):
+        user = kwargs["user"]
+        automatic = False
+        if LOYALTY_USE_SETTLEMENT_BALANCE:
+            from src.app.services.referrals.program import ensure_default_reward_program, moysklad_program_is_authoritative
+            profile = await ensure_default_reward_program(session, user=user)
+            automatic = (moysklad_program_is_authoritative(profile)
+                and (profile.reward_program_snapshot or {}).get("moysklad_program_code") in {1, 2})
+        if not LOYALTY_USE_SETTLEMENT_BALANCE or not (automatic or kwargs.get("use_bonus_rubles")):
             return await function(session, **kwargs)
         if not LOYALTY_SETTLEMENT_CHECKOUT_ENABLED:
             raise HTTPException(409, "Оплата с баланса временно недоступна.")
-        if not coerce_uuid(MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID) or not coerce_uuid(MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID):
+        if not automatic and (not coerce_uuid(MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID) or not coerce_uuid(MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID)):
             raise HTTPException(503, "Оплата с баланса ещё не настроена. Выберите оплату без списания или обратитесь в поддержку.")
-        user = kwargs["user"]
         if user.moysklad_counterparty_id is None:
             raise HTTPException(409, "Для оплаты с баланса сначала нужно связать профиль с МойСклад.")
         async with settlement_lock(user.moysklad_counterparty_id):
@@ -119,6 +125,7 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
     except SettlementNotReady as exc:
         raise HTTPException(409, str(exc)) from exc
     currency_id = None
+    automatic = settlement.get("mode") == "automatic"
     for attempt in range(attempts):
         remote = await client.get_customer_order(order.moysklad_customerorder_id)
         if not remote:
@@ -148,7 +155,9 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
                     currency_id=currency_id,
                     gross_rubles=money(settlement["gross_rubles"]),
                     maximum_balance_rubles=money(settlement["maximum_balance_rubles"]),
-                    requested_balance_rubles=money(settlement["requested_balance_rubles"]) if settlement.get("requested_balance_rubles") is not None else None)
+                    requested_balance_rubles=money(settlement["requested_balance_rubles"]) if settlement.get("requested_balance_rubles") is not None else None,
+                    automatic_balance=automatic,
+                    position_count=max(1, len(getattr(order, "items", ())) * 2 + (1 if order.delivery_total else 0)))
                 break
             except SettlementNotReady:
                 pass
@@ -161,7 +170,7 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
     wallet = await get_moysklad_settlement_wallet(counterparty_id, moysklad_client=client)
     if result.balance_rubles > wallet.balance_rubles:
         raise HTTPException(409, "Баланс изменился. Не оплачивайте старый счёт; обратитесь к менеджеру для перерасчёта.")
-    if result.balance_rubles == 0:
+    if result.balance_rubles == 0 and not automatic:
         raise HTTPException(409, "МойСклад не применил баланс к счёту. Оплата не создана; обратитесь к менеджеру.")
     snapshot = deepcopy(order.checkout_snapshot)
     snapshot["settlement_payment"].update({"status": "confirmed", "invoice_id": str(result.invoice_id),
@@ -176,6 +185,11 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
     benefits["cash_total"] = float(result.cash_rubles)
     benefits["stacked_discount_amount"] = float(money(benefits["stacked_discount_amount"]) - previous + result.balance_rubles)
     benefits["total_after_discounts"] = float(max(Decimal("0"), result.cash_rubles - order.delivery_total))
+    if benefits.get("reward_program") == "bonus" and Decimal(str(benefits.get("cashback_percent", "0"))) > 0:
+        from src.app.services.benefits.loyalty import cashback_points_for_amount
+        base = (money(settlement["gross_rubles"]) - order.delivery_total - Decimal(result.displayed_spent_rubles)
+                if automatic else max(Decimal("0"), result.cash_rubles - order.delivery_total))
+        benefits["cashback_earned_points"] = cashback_points_for_amount(max(Decimal("0"), base))
     for item in benefits.get("applications", []):
         if item.get("source_kind") == SOURCE_KIND:
             item["discount_amount"] = str(result.balance_rubles)

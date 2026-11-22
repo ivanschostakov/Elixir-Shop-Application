@@ -40,5 +40,5 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
 
 async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal, delivery_total: Decimal, currency: str, entered_code: str | None, quote_items: list[dict[str, Any]], use_bonus_rubles: bool, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None,) -> dict[str, Any]:
     resolved = await resolve_benefits_for_user(session, user=user, entered_code=entered_code, subtotal=subtotal, discountable_subtotal=discountable_subtotal, delivery_total=delivery_total, currency=currency, quote_items=quote_items, use_bonus_rubles=use_bonus_rubles, bonus_rubles_to_use=bonus_rubles_to_use, reward_mode=reward_mode,)
-    if use_bonus_rubles and not (resolved.get("bonus_option") or {}).get("is_applicable"): raise HTTPException(409, "Баланс недоступен или изменился. Обновите оформление заказа.")
+    if use_bonus_rubles and resolved.get("balance_redemption_mode") != "automatic" and not (resolved.get("bonus_option") or {}).get("is_applicable"): raise HTTPException(409, "Баланс недоступен или изменился. Обновите оформление заказа.")
     return resolved

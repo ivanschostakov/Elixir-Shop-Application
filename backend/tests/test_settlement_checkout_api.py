@@ -22,7 +22,7 @@ from test_orders_api import (
 
 
 @pytest.mark.parametrize("scenario", ["exact", "rounded", "full", "full_exact_balance", "partial_delivery", "wrong_invoice",
-    "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order"])
+    "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order", "zero_balance", "opt_out", "partial_request"])
 def test_balance_checkout_api_uses_only_mocked_external_services(
     client, registered_user, variant_factory, stub_amocrm, monkeypatch, scenario,
 ):
@@ -41,7 +41,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     crm_fields = AsyncMock()
     monkeypatch.setattr(crm.amocrm_client, "update_lead_order_fields", crm_fields, raising=False)
     monkeypatch.setattr(crm.amocrm_client, "add_lead_note", AsyncMock(), raising=False)
-    balance = Decimal("300") if scenario == "partial_delivery" else Decimal("399") if scenario == "full_exact_balance" else Decimal("1000")
+    balance = Decimal("0") if scenario == "zero_balance" else Decimal("300") if scenario == "partial_delivery" else Decimal("399") if scenario == "full_exact_balance" else Decimal("1000")
     wallet = moysklad_bonus.MoySkladBonusWallet(is_loaded=True, is_settlement=True,
         counterparty_id=CID, program_name="Balance", balance_points=int(balance),
         balance_rubles=balance, max_paid_rate_percent=Decimal("100"))
@@ -100,11 +100,14 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         preview = client.post("/api/v1/users/me/benefits/check", headers=headers, json={
             "draft_id": draft["id"], "use_bonus_rubles": use_balance})
         assert preview.status_code == 200, preview.text
-        expected_cash = max(Decimal("0"), gross - balance) if use_balance else gross
+        expected_cash = max(Decimal("0"), gross - balance)
         assert Decimal(preview.json()["cash_total"]) == expected_cash
+        assert preview.json()["balance_redemption_mode"] == "automatic"
+        assert preview.json()["use_bonus_rubles"] is True
         assert Decimal(preview.json()["total_after_discounts"]) >= 0
     response = client.post("/api/v1/users/me/orders", headers=headers, json={
-        "draft_id": draft["id"], "payment_method": "sbp", "use_bonus_rubles": True})
+        "draft_id": draft["id"], "payment_method": "sbp", "use_bonus_rubles": scenario != "opt_out",
+        **({"bonus_rubles_to_use": "1.00"} if scenario == "partial_request" else {})})
     assert response.status_code == 200, response.text
     assert Decimal(response.json()["grand_total"]) == max(Decimal("0"), gross - balance)
     order_id = response.json()["id"]
@@ -135,7 +138,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         gateway.assert_not_awaited()
         remote["invoicesOut"] = [ref(IID)]
         response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
-    if scenario in {"rounded", "wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
+    if scenario in {"wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
         assert response.status_code == 409, response.text
         gateway.assert_not_awaited()
         assert _get_order(order_id).payment_invoice_id is None

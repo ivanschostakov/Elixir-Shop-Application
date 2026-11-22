@@ -34,6 +34,11 @@ async def register_user(request: Request, payload: UserRegisterPayload, db: Asyn
             existing_user.is_verified = False
             user = existing_user
         else: user = await create_user(db, UserCreate(username=str(payload.email), email=payload.email, password_hash=password_hash, name=payload.name, surname=payload.surname, phone_number=None, is_verified=False,), commit=False,)
+        from src.app.services.referrals.registration import record_registration_choice
+        await record_registration_choice(db, user=user, program=payload.reward_program, promo_code=payload.promo_code)
+        if payload.select_program_after_registration and payload.reward_program is None:
+            from src.app.services.referrals.registration import mark_registration_choice_required
+            await mark_registration_choice_required(db, user=user)
         await _create_and_send_verification_code(user, db)
         await db.commit()
         await db.refresh(user)

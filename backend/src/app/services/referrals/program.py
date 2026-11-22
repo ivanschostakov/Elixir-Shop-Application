@@ -40,15 +40,13 @@ def reward_program_selection_available(profile: ReferralProfile) -> bool:
 
 
 def reward_program_selection_required(profile: ReferralProfile) -> bool:
-    # The active program is selected by promo presence, not by a separate
-    # one-time choice: no promo means cashback, an assigned promo means the
-    # referral discount program.
-    return False
+    return (getattr(profile, "reward_program_selection_source", None) == "registration"
+        and bool((getattr(profile, "reward_program_snapshot", None) or {}).get("registration_selection_required")))
 
 
 def moysklad_program_is_authoritative(profile: ReferralProfile) -> bool:
-    snapshot = profile.reward_program_snapshot or {}
-    return (profile.reward_program_selection_source == "moysklad"
+    snapshot = getattr(profile, "reward_program_snapshot", None) or {}
+    return (getattr(profile, "reward_program_selection_source", None) == "moysklad"
             and snapshot.get("moysklad_program_code") in {0, 1, 2})
 
 
@@ -77,7 +75,7 @@ async def _refresh_moysklad_program(profile: ReferralProfile, *, user: User) -> 
     if previous != profile.reward_program or profile.reward_program_selected_at is None:
         profile.reward_program_selected_at = datetime.now(timezone.utc)
     profile.referral_discount_base_total = quantize_money(value.total_purchases_rubles)
-    user.promo_code = optional_str(value.referrer_promo_code)
+    user.promo_code = optional_str(value.referrer_promo_code) if value.loyalty_program == 2 else None
     profile.reward_program_snapshot = dict(profile.reward_program_snapshot or {},
         program_authority="moysklad", moysklad_program_code=value.loyalty_program,
         moysklad_counterparty_id=str(counterparty_id),
@@ -95,10 +93,18 @@ async def ensure_default_reward_program(
 ) -> ReferralProfile:
     """Mirror the accounting program; promo presence is only a legacy default."""
     profile = await get_or_create_referral_profile(db, user=user)
+    if profile.reward_program_selection_source == "registration":
+        from .registration import sync_registration_choice
+        await sync_registration_choice(db, user=user)
     if await _refresh_moysklad_program(profile, user=user):
         refresh_profile_discount(profile, has_promo_code=profile.reward_program == "partner")
         if profile.reward_program_snapshot.get("moysklad_program_code") == 0:
             profile.current_discount_percent = Decimal("0.00")
+        await db.flush()
+        return profile
+    if profile.reward_program_selection_source == "registration":
+        # Keep the choice during a temporary outage; do not infer it from promo.
+        profile.current_discount_percent = Decimal("0.00")
         await db.flush()
         return profile
     existing_promo = optional_str(user.promo_code)

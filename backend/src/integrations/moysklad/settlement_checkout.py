@@ -89,6 +89,8 @@ def validate_settlement_invoice(
     gross_rubles: Decimal,
     maximum_balance_rubles: Decimal,
     requested_balance_rubles: Decimal | None = None,
+    automatic_balance: bool = False,
+    position_count: int = 1,
 ) -> SettlementInvoice:
     """Validate linked documents and use their exact difference, not a rounded field."""
     if any(coerce_uuid(value) is None for value in (order_id, counterparty_id, organization_id, currency_id)):
@@ -130,7 +132,17 @@ def validate_settlement_invoice(
         raise ValueError("Settlement does not match the amount selected by the customer")
     shown = display_spent_rubles(spent)
     label = attributes(invoice).get(INVOICE_SPENT_ATTRIBUTE)
-    if isinstance(label, bool) or not isinstance(label, int) or label != shown:
+    if isinstance(label, bool) or not isinstance(label, int) or label < 0:
+        raise ValueError("Settlement invoice spending label is inconsistent")
+    if automatic_balance:
+        # Robots 05/06 round the common percentage DOWN to 0.01 percentage
+        # points and store a whole-ruble label separately. Authorize the exact
+        # invoice difference, tolerating only that known rounding envelope.
+        tolerance = gross_rubles / Decimal("10000") + Decimal("1") + Decimal(max(1, position_count)) / 100
+        if label > display_spent_rubles(maximum_balance_rubles) or not -Decimal("1") < Decimal(label) - spent <= tolerance:
+            raise ValueError("Automatic settlement spending exceeds robot rounding")
+        shown = label
+    elif label != shown:
         raise ValueError("Settlement invoice spending label is inconsistent")
     order_label = attributes(order).get(ORDER_SPENT_ATTRIBUTE)
     if isinstance(order_label, bool) or not isinstance(order_label, int) or order_label != shown:

@@ -1,8 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
-from src.database.limits import EMAIL_MAX_LENGTH, PERSON_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH
+from src.database.limits import EMAIL_MAX_LENGTH, PERSON_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH, PROMO_CODE_MAX_LENGTH
 from src.normalize import normalize_phone
 
 
@@ -41,6 +41,15 @@ class PhoneAuthRegisterPayload(_PhonePayload):
     surname: str = Field(min_length=1, max_length=PERSON_NAME_MAX_LENGTH)
     email: EmailStr | None = Field(default=None, max_length=EMAIL_MAX_LENGTH)
     password: str = Field(min_length=8, max_length=128)
+    reward_program: Literal["bonus", "partner"] | None = None
+    promo_code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
+
+    @model_validator(mode="after")
+    def _validate_program(self):
+        self.promo_code = self.promo_code.strip() if self.promo_code else None
+        if self.promo_code and self.reward_program != "partner":
+            raise ValueError("A promo code requires the partner program")
+        return self
 
     @field_validator("name", "surname", mode="before")
     @classmethod

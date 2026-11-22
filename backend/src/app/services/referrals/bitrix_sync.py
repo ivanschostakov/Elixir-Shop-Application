@@ -43,6 +43,8 @@ def apply_bitrix_program_profile(
     program_profile: dict[str, Any],
     bitrix_user_id: int | None = None,
 ) -> None:
+    if getattr(profile, "reward_program_selection_source", None) == "registration":
+        return
     remote_purchase_total = _remote_purchase_total(program_profile)
     stored_percent = Decimal(str(program_profile.get("stored_discount_percent") or 0))
     group_percent = Decimal(str(program_profile.get("group_discount_percent") or 0))

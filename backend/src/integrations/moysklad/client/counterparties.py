@@ -106,7 +106,7 @@ class CounterpartiesMixin:
         await self._update_entity("counterparty", counterparty_id, {"email": normalized_email})
 
 
-    async def get_or_create_counterparty(self, *, existing_counterparty_id: UUID | None, external_code: str, sync_id: UUID, name: str, email: str | None, phone: str | None, actual_address: str | None) -> dict[str, Any]:
+    async def get_or_create_counterparty(self, *, existing_counterparty_id: UUID | None, external_code: str, sync_id: UUID, name: str, email: str | None, phone: str | None, actual_address: str | None, initial_attributes: list[dict] | None = None) -> dict[str, Any]:
         normalized_external_code = optional_str(external_code)
         if not normalized_external_code: raise ValueError("Counterparty external_code is required")
 
@@ -125,6 +125,8 @@ class CounterpartiesMixin:
 
         if counterparty_data is None:
             payload["syncId"] = str(sync_id)
+            if initial_attributes is not None:
+                payload["attributes"] = initial_attributes
             return await self._create_entity("counterparty", payload)
 
         counterparty_id = coerce_uuid(counterparty_data.get("id"))
@@ -134,13 +136,14 @@ class CounterpartiesMixin:
         return counterparty_data
 
 
-    async def resolve_or_sync_counterparty(self, *, existing_counterparty_id: UUID | None, external_code: str, sync_id: UUID, name: str, email: str | None, phone: str | None, actual_address: str | None) -> MoySkladCounterpartySyncResult:
+    async def resolve_or_sync_counterparty(self, *, existing_counterparty_id: UUID | None, external_code: str, sync_id: UUID, name: str, email: str | None, phone: str | None, actual_address: str | None, initial_attributes: list[dict] | None = None) -> MoySkladCounterpartySyncResult:
         normalized_external_code = optional_str(external_code) or ""
         existing = await self._get_entity_by_id("counterparty", existing_counterparty_id) if existing_counterparty_id is not None else None
         if existing is None: existing = await self._find_entity_by_external_code("counterparty", normalized_external_code)
         if existing is None: existing = await self._find_counterparty(normalized_external_code)
         created = existing is None
-        counterparty_data = await self.get_or_create_counterparty(existing_counterparty_id=existing_counterparty_id, external_code=normalized_external_code, sync_id=sync_id, name=name, email=email, phone=phone, actual_address=actual_address,)
+        kwargs = {"initial_attributes": initial_attributes} if initial_attributes is not None else {}
+        counterparty_data = await self.get_or_create_counterparty(existing_counterparty_id=existing_counterparty_id, external_code=normalized_external_code, sync_id=sync_id, name=name, email=email, phone=phone, actual_address=actual_address, **kwargs)
         counterparty_id = coerce_uuid(counterparty_data.get("id"))
         if counterparty_id is None: raise RuntimeError("MoySklad counterparty response is missing a valid id")
 

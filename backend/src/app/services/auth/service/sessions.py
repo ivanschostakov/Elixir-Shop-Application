@@ -21,7 +21,20 @@ from .counterparty import _link_moysklad_counterparty_by_email
 async def _build_auth_tokens_response(user: User, db: AsyncSession) -> AuthTokensWithUserResponse:
     user_id = user.id
     await _link_moysklad_counterparty_by_email(user, db)
-    try: await grant_welcome_bonus_safe(db, user=user)
+    from src.app.services.referrals.registration import sync_registration_choice
+    registration_sync_failed = False
+    try:
+        await sync_registration_choice(db, user=user)
+    except Exception:
+        registration_sync_failed = True
+        await db.rollback()
+        await db.refresh(user)
+        logger.exception("Could not synchronize registration program user_id=%s", user_id)
+    from src.app.services.referrals.registration import registration_choice_required
+    selection_required = await registration_choice_required(db, user=user)
+    try:
+        if not registration_sync_failed and not selection_required:
+            await grant_welcome_bonus_safe(db, user=user)
     except Exception:
         await db.rollback()
         await db.refresh(user)
@@ -30,7 +43,8 @@ async def _build_auth_tokens_response(user: User, db: AsyncSession) -> AuthToken
     refresh_token_hash = hash_refresh_token(refresh_token)
     session = await create_user_session(db, UserSessionCreate(user_id=user.id, refresh_token_hash=refresh_token_hash))
     access_token = create_access_token(user_id=user.id, session_id=session.id)
-    return AuthTokensWithUserResponse(access_token=access_token, refresh_token=refresh_token, session_id=session.id, user=AuthUserRead.model_validate(user),)
+    auth_user = AuthUserRead.model_validate(user).model_copy(update={"program_selection_required": selection_required})
+    return AuthTokensWithUserResponse(access_token=access_token, refresh_token=refresh_token, session_id=session.id, user=auth_user)
 
 
 async def refresh_user_tokens(request: Request, payload: UserRefreshPayload, db: AsyncSession) -> AuthRefreshResponse:

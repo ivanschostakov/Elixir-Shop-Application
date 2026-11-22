@@ -147,7 +147,8 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         await _local_partner_totals(db, user_id=user.id)
     )
 
-    program_profile = await refresh_assigned_referrer_promo(db, user=user)
+    awaiting_registration = profile.reward_program_selection_source == "registration"
+    program_profile = None if awaiting_registration else await refresh_assigned_referrer_promo(db, user=user)
     if program_profile is not None:
         own_promo_code = program_profile.get("own_promo")
         suggested_promo_code = program_profile.get("suggested_promo")
@@ -162,7 +163,7 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
     )
 
     remote_monthly_eligible: bool | None = None
-    if bitrix_promo_configured() and user.email:
+    if bitrix_promo_configured() and user.email and not awaiting_registration:
         try:
             partner_summary = await BitrixPromoClient().partner_summary(
                 bitrix_user_id=profile.bitrix_user_id,
@@ -236,6 +237,13 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         except (BitrixPromoError, RuntimeError, httpx.HTTPError):
             logger.exception("Could not load Bitrix partner summary for user_id=%s", user.id)
 
+    if moysklad_program_is_authoritative(profile):
+        own_promo_code = profile.reward_program_snapshot.get("moysklad_own_promo")
+        referrer_promo_code = profile.reward_program_snapshot.get("moysklad_referrer_promo") if reward_program == "partner" else None
+        refresh_profile_discount(profile)
+    bonus_enabled = (reward_program == "bonus"
+        and (profile.reward_program_snapshot or {}).get("moysklad_program_code") != 0
+        and not reward_program_selection_required(profile))
     total_purchases = quantize_money(profile.referral_discount_base_total)
     if own_promo_code or total_purchases >= PARTNER_UNLOCK_SPEND:
         profile.partner_unlocked_at = profile.partner_unlocked_at or datetime.now(timezone.utc)
@@ -254,9 +262,9 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         "reward_program": reward_program,
         "reward_program_selected_at": profile.reward_program_selected_at,
         "reward_program_selection_source": profile.reward_program_selection_source,
-        "program_selection_available": reward_program_selection_available(profile),
+        "program_selection_available": not moysklad_program_is_authoritative(profile) and reward_program_selection_available(profile),
         "program_selection_required": reward_program_selection_required(profile),
-        "bonus_program_enabled": reward_program == "bonus",
+        "bonus_program_enabled": bonus_enabled,
         "partner_program_unlocked": partner_unlocked,
         "partner_program_status": "active" if reward_program == "partner" else "eligible" if partner_unlocked else "locked",
         "partner_unlock_threshold": PARTNER_UNLOCK_SPEND,
@@ -281,7 +289,7 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         "bonus_points": bonus_wallet.balance_points + (0 if LOYALTY_USE_SETTLEMENT_BALANCE else pending_bonus_points),
         "bonus_rubles": bonus_wallet.balance_rubles + (Decimal("0.00") if LOYALTY_USE_SETTLEMENT_BALANCE else pending_bonus_rubles),
         "bonus_cashback_percent": Decimal(
-            max(0, min(100, int(LOYALTY_ORDER_CASHBACK_PERCENT)))
+            max(0, min(100, int(LOYALTY_ORDER_CASHBACK_PERCENT))) if bonus_enabled else 0
         ),
         "bonus_wallet_available": bonus_wallet.is_loaded or (not LOYALTY_USE_SETTLEMENT_BALANCE and pending_bonus_points > 0),
         "bonus_program_name": "Бонусные рубли",

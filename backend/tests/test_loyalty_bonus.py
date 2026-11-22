@@ -215,7 +215,7 @@ async def test_inferred_existing_promo_partner_is_normalized_to_promo_activation
 
 
 @pytest.mark.anyio
-async def test_base_promo_discounts_products_in_bonus_program(monkeypatch):
+async def test_bonus_program_does_not_apply_personal_partner_discount(monkeypatch):
     user = SimpleNamespace(id=18, promo_code="slim101")
     profile = SimpleNamespace(
         reward_program="bonus",
@@ -232,4 +232,4 @@ async def test_base_promo_discounts_products_in_bonus_program(monkeypatch):
         user,
     )
 
-    assert discount == Decimal("3.00")
+    assert discount == Decimal("0.00")

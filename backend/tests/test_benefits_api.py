@@ -244,13 +244,13 @@ def test_benefit_check_rejects_unknown_entered_code_without_external_lookup(clie
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["entered_code"] == "Огонь26"
+    assert payload["entered_code"] is None
     assert payload["entered_code_matches"] == []
-    assert payload["unresolved_code_reason"] == "Промокод не найден или неактивен / Promo code was not found or is not active"
+    assert payload["unresolved_code_reason"] is None
     assert payload["reward_program"] == "bonus"  # An invalid code doesn't change the account's program.
-    assert payload["reward_mode"] == "promo"
-    assert payload["cashback_earned_points"] == 0
-    assert _decimal(payload["cashback_percent"]) == 0
+    assert payload["reward_mode"] == "cashback"
+    assert payload["cashback_earned_points"] == 10
+    assert _decimal(payload["cashback_percent"]) == 5
     assert _decimal(payload["stacked_discount_amount"]) == Decimal("0.00")
     assert _decimal(payload["total_after_discounts"]) == Decimal("200.00")
 

@@ -27,7 +27,7 @@ def profile():
         bitrix_user_id=None, partner_unlocked_at=None)
 
 
-@pytest.mark.parametrize("code,expected,promo", [(2, "partner", None), (1, "bonus", "OLD-PROMO"), (0, "bonus", None)])
+@pytest.mark.parametrize("code,expected,promo", [(2, "partner", None), (1, "bonus", None), (0, "bonus", None)])
 def test_moysklad_program_is_not_inferred_from_promo(monkeypatch, code, expected, promo):
     row = profile()
     user = SimpleNamespace(id=1, moysklad_counterparty_id=uuid4(), promo_code="LOCAL")

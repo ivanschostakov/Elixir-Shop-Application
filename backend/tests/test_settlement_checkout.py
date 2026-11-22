@@ -97,6 +97,25 @@ def test_zero_cash_and_full_balance_are_valid():
     assert result.balance_rubles == 1000
 
 
+def test_current_robots_rounding_uses_exact_cash_and_preserves_legacy_label():
+    order, invoice = documents("46160", "42074.85", 4087)
+    result = validate_settlement_invoice(order, invoice, order_id=OID, counterparty_id=CID,
+        organization_id=ORG, currency_id=CURRENCY, gross_rubles=Decimal("46160"),
+        maximum_balance_rubles=Decimal("4087"), automatic_balance=True, position_count=12)
+    assert result.cash_rubles == Decimal("42074.85")
+    assert result.balance_rubles == Decimal("4085.15")
+    assert result.displayed_spent_rubles == 4087
+
+
+@pytest.mark.parametrize("cash,label", [("42074.85", 4100), ("42000", 4087), ("44000", 4087)])
+def test_automatic_mode_does_not_accept_unexplained_amounts(cash, label):
+    with pytest.raises(ValueError):
+        validate_settlement_invoice(*documents("46160", cash, label), order_id=OID,
+            counterparty_id=CID, organization_id=ORG, currency_id=CURRENCY,
+            gross_rubles=Decimal("46160"), maximum_balance_rubles=Decimal("4087"),
+            automatic_balance=True, position_count=12)
+
+
 @pytest.mark.parametrize("field,value", [("rate", {"currency": ref(UUID(int=99))}),
     ("rate", {"currency": ref(CURRENCY), "value": 2}),
     ("state", {"stateType": "Unsuccessful"})])

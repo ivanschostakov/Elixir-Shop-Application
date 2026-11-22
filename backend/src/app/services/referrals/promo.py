@@ -13,7 +13,7 @@ from src.integrations.bitrix_promo import (
 from src.integrations.moysklad.client import MoySkladClient
 from .bitrix_sync import refresh_program_profile_from_bitrix
 from .profile import normalize_referral_code, refresh_profile_discount
-from .program import ensure_default_reward_program
+from .program import ensure_default_reward_program, moysklad_program_is_authoritative
 
 
 async def _get_program_profile(db: AsyncSession, *, user: User) -> ReferralProfile:
@@ -101,6 +101,12 @@ async def attach_referrer_code(
     moysklad_client: MoySkladClient | None = None,
 ) -> ReferralProfile:
     profile = await _get_program_profile(db, user=user)
+    if getattr(profile, "reward_program_selection_source", None) == "registration":
+        raise HTTPException(409, "Сначала выберите программу после регистрации.")
+    if moysklad_program_is_authoritative(profile):
+        if normalize_referral_code(user.promo_code) == normalize_referral_code(code):
+            return profile
+        raise HTTPException(409, "Программа уже определена в МойСкладе. Для изменения обратитесь в поддержку.")
     normalized_requested_code = normalize_referral_code(code)
     current_code = normalize_referral_code(user.promo_code)
     if current_code:
@@ -169,6 +175,10 @@ async def attach_referrer_code(
 
 async def detach_referrer_code(db: AsyncSession, *, user: User) -> ReferralProfile:
     profile = await _get_program_profile(db, user=user)
+    if getattr(profile, "reward_program_selection_source", None) == "registration":
+        raise HTTPException(409, "Сначала выберите программу после регистрации.")
+    if moysklad_program_is_authoritative(profile):
+        raise HTTPException(409, "Программа уже определена в МойСкладе. Для изменения обратитесь в поддержку.")
     if bitrix_promo_configured():
         try:
             await BitrixPromoClient().detach_referrer(user_email=user.email)

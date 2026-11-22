@@ -84,9 +84,11 @@ def _moysklad_attr_values(order: Order) -> dict[str, Any]:
         "delivery_cost": optional_str(raw_values.get("delivery_cost")) or _delivery_cost_value(order),
         "created_by_widget": True,
     }
-    if "balance_consent" in CUSTOMER_ORDER_ATTR_IDS:
+    settlement = snapshot.get("settlement_payment") or {}
+    automatic = settlement.get("mode") == "automatic"
+    if "balance_consent" in CUSTOMER_ORDER_ATTR_IDS and not automatic:
         values["balance_consent"] = order_bonus_consent(order)
-    if "balance_amount_kopecks" in CUSTOMER_ORDER_ATTR_IDS:
+    if "balance_amount_kopecks" in CUSTOMER_ORDER_ATTR_IDS and not automatic:
         from decimal import Decimal
         settlement = (order.checkout_snapshot or {}).get("settlement_payment") or {}
         values["balance_amount_kopecks"] = int(Decimal(str(settlement.get("requested_balance_rubles", "0"))) * 100) if order_bonus_consent(order) else 0

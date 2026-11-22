@@ -16,6 +16,7 @@ from src.app.services.referrals import (
     reward_program_selection_required,
 )
 from src.app.services.referrals.program import moysklad_program_is_authoritative
+from src.app.services.referrals.profile import personal_discount_applies
 from src.app.services.referrals.bitrix_sync import refresh_program_profile_from_bitrix
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User, Variant, Product, ProductByCategory
@@ -75,6 +76,8 @@ def _basket_subtotals(basket) -> tuple[Decimal, Decimal]:
 
 
 def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal) -> ResolvedDiscountOption | None:
+    if not personal_discount_applies(profile):
+        return None
     attached_promo = optional_str(user.promo_code)
     authoritative_discount = profile.reward_program_selection_source == "moysklad" and (profile.reward_program_snapshot or {}).get("moysklad_program_code") != 0
     if not attached_promo and not authoritative_discount:
@@ -276,13 +279,15 @@ async def resolve_benefits_for_user(
     )
     referral_profile = await ensure_default_reward_program(db, user=user)
     authoritative = moysklad_program_is_authoritative(referral_profile)
+    if referral_profile.reward_program_selection_source == "registration" and LOYALTY_USE_SETTLEMENT_BALANCE:
+        raise HTTPException(503, "Программа ещё синхронизируется с МойСкладом. Повторите расчёт позже.")
     if authoritative and getattr(user, "moysklad_counterparty_id", None):
         from .settlement import get_account_settlement
         account = await get_account_settlement(user.moysklad_counterparty_id)
         if account.status != "fresh":
             raise HTTPException(503, "Не удалось обновить условия МойСклада. Повторите расчёт позже.")
     reward_program = normalize_reward_program(referral_profile.reward_program) or "bonus"
-    if optional_str(user.promo_code) or reward_program == "partner":
+    if not authoritative and (optional_str(user.promo_code) or reward_program == "partner"):
         remote_program_profile = await refresh_program_profile_from_bitrix(
             db,
             user=user,
@@ -298,12 +303,22 @@ async def resolve_benefits_for_user(
             has_promo_code=bool(optional_str(user.promo_code)),
         )
     bonus_wallet = await get_user_moysklad_bonus_wallet(user)
-    # reward_mode is accepted for compatibility with already installed app
-    # builds. Promo availability and the selected program are authoritative.
+    automatic_settlement = (LOYALTY_USE_SETTLEMENT_BALANCE and authoritative
+        and (referral_profile.reward_program_snapshot or {}).get("moysklad_program_code") in {1, 2})
+    if automatic_settlement:
+        if not bonus_wallet.is_loaded or not bonus_wallet.is_settlement:
+            raise HTTPException(503, "Не удалось обновить баланс МойСклада. Повторите расчёт позже.")
+        # Robots 05/06 always apply the available balance. Old clients cannot
+        # select a partial amount or opt out while those robots own settlement.
+        use_bonus_rubles = True
+        bonus_rubles_to_use = None
+    # Old clients may still send reward_mode/code from a previous program.
+    # The confirmed program determines the benefit; keep promo history intact.
     del reward_mode
-    effective_code = trimmed_code or optional_str(user.promo_code)
     active_reward_program = normalize_reward_program(referral_profile.reward_program) or "bonus"
-    resolved_reward_mode = REWARD_MODE_PROMO if effective_code or active_reward_program == "partner" else REWARD_MODE_CASHBACK
+    effective_code = (trimmed_code or optional_str(user.promo_code)) if active_reward_program == "partner" else None
+    normalized_code = lower_optional_str(trimmed_code) if active_reward_program == "partner" else None
+    resolved_reward_mode = REWARD_MODE_PROMO if active_reward_program == "partner" else REWARD_MODE_CASHBACK
     bitrix_option = None
     app_referral_option = (
         _build_app_referral_option(
@@ -315,7 +330,7 @@ async def resolve_benefits_for_user(
         if effective_code or active_reward_program == "partner" or referral_profile.reward_program_selection_source == "moysklad"
         else None
     )
-    if authoritative and trimmed_code and lower_optional_str(trimmed_code) != lower_optional_str(user.promo_code):
+    if authoritative and active_reward_program == "partner" and trimmed_code and lower_optional_str(trimmed_code) != lower_optional_str(user.promo_code):
         raise HTTPException(409, "Сначала привяжите промокод в профиле и обновите условия заказа.")
     if not authoritative and bitrix_promo_configured() and effective_code:
         client = BitrixPromoClient()
@@ -422,7 +437,7 @@ async def resolve_benefits_for_user(
         if bonus_wallet.program_id is not None or bonus_wallet.is_settlement
         else None
     )
-    if use_bonus_rubles and bonus_option is not None and bonus_option.is_applicable:
+    if use_bonus_rubles and bonus_option is not None and (bonus_option.is_applicable or automatic_settlement):
         bonus_application, _ = _apply_discount_option(
             bonus_option,
             subtotal=bonus_subtotal,
@@ -435,7 +450,7 @@ async def resolve_benefits_for_user(
         stacked_discount_amount = (
             quantize_money(stacked_discount_amount + bonus_rubles) or Decimal("0.00")
         )
-    cashback_eligible = (active_reward_program == "bonus" and not effective_code
+    cashback_eligible = (active_reward_program == "bonus"
         and (referral_profile.reward_program_snapshot or {}).get("moysklad_program_code") != 0)
     cashback_earned_points = cashback_points_for_amount(total_after_discounts) if cashback_eligible else 0
     pending_bonus_points = await pending_loyalty_bonus_points(db, user_id=user.id)
@@ -448,9 +463,9 @@ async def resolve_benefits_for_user(
     resolved_currency = preferred_currency(requested_currency=currency, available_options=available_discount_options)
 
     unresolved_code_reason = None
-    if trimmed_code and not code_matches:
+    if active_reward_program == "partner" and trimmed_code and not code_matches:
         unresolved_code_reason = "Промокод не найден или неактивен / Promo code was not found or is not active"
-    elif trimmed_code and code_matches and not applicable_code_matches:
+    elif active_reward_program == "partner" and trimmed_code and code_matches and not applicable_code_matches:
         unresolved_code_reason = code_matches[0].reason
 
     return {
@@ -461,7 +476,7 @@ async def resolve_benefits_for_user(
         "subtotal_source": subtotal_source,
         "basket_subtotal": effective_subtotal,
         "currency": resolved_currency,
-        "entered_code": trimmed_code,
+        "entered_code": trimmed_code if active_reward_program == "partner" else None,
         "entered_code_matches": serialize_options(code_matches),
         "unresolved_code_reason": unresolved_code_reason,
         "available_discount_options": serialize_options(available_discount_options),
@@ -482,6 +497,7 @@ async def resolve_benefits_for_user(
         "settlement_balance_rubles": bonus_wallet.balance_rubles if bonus_wallet.is_settlement else None,
         "bonus_max_paid_rate_percent": bonus_wallet.max_paid_rate_percent,
         "use_bonus_rubles": use_bonus_rubles,
+        "balance_redemption_mode": "automatic" if automatic_settlement else "explicit",
         "bonus_applied_points": bonus_points if use_bonus_rubles else 0,
         "bonus_applied_rubles": bonus_rubles if use_bonus_rubles else Decimal("0.00"),
         "cashback_percent": Decimal(str(max(0, min(100, int(LOYALTY_ORDER_CASHBACK_PERCENT))))) if cashback_eligible else Decimal("0"),
