@@ -199,7 +199,12 @@ export function CartBasketItem({
                                 <Text style={cartScreenStyles.itemDiscountBadge}>−{Number(item.discount_percent)}%</Text>
                             </View>
                         ) : null}
-                        <Text style={cartScreenStyles.itemUnitPrice}>{`${unitPriceLabel}/ед`}</Text>
+                        <View style={cartScreenStyles.itemDiscountRow}>
+                            {hasDiscount ? <Text style={[cartScreenStyles.itemUnitPrice, { textDecorationLine: "line-through" }]}>
+                                {`${formatProductPrice(item.original_unit_price)}${t("cart.unitPriceSuffix")}`}
+                            </Text> : null}
+                            <Text style={cartScreenStyles.itemUnitPrice}>{`${unitPriceLabel}${t("cart.unitPriceSuffix")}`}</Text>
+                        </View>
                     </View>
 
                     <View style={cartScreenStyles.itemCopy}>

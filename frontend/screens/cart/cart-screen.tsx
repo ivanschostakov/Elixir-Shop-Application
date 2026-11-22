@@ -66,6 +66,7 @@ import { attachMyReferrerCode, getMyReferralProfile } from "@/services/api/users
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import type { BasketItemRead } from "@/types/basket"
 import { formatAppliedDiscount } from "@/utils/discount-display"
+import { getQuotedItemPrice } from "@/utils/quoted-item-price"
 
 export default function CartScreen() {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
@@ -795,7 +796,7 @@ export default function CartScreen() {
                                     {availableItems.map((item) => (
                                         <CartBasketItem
                                             key={item.id}
-                                            item={item}
+                                            item={getQuotedItemPrice(item, pricingBlocked ? null : benefitCheck)}
                                             onConfirmRemove={handleConfirmRemoveItem}
                                             onDecrease={(nextItem) => {
                                                 void handleQuantityDecrease(nextItem)
@@ -836,7 +837,7 @@ export default function CartScreen() {
                                     {unavailableItems.map((item) => (
                                         <CartBasketItem
                                             key={item.id}
-                                            item={item}
+                                            item={getQuotedItemPrice(item, pricingBlocked ? null : benefitCheck)}
                                             onConfirmRemove={handleConfirmRemoveItem}
                                             onDecrease={(nextItem) => {
                                                 void handleQuantityDecrease(nextItem)

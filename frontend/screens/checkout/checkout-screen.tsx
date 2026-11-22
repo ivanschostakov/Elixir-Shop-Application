@@ -98,6 +98,7 @@ import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { updateGuestBasketCheckout, updateGuestCartItemQuantity } from "@/services/guest-cart"
 import { spacing } from "@/theme/spacing"
 import { formatAppliedDiscount } from "@/utils/discount-display"
+import { getQuotedItemPrice } from "@/utils/quoted-item-price"
 import { CheckoutAddressPicker } from "@/screens/checkout/checkout-address-picker"
 
 export default function CheckoutScreen() {
@@ -1284,7 +1285,9 @@ export default function CheckoutScreen() {
                             </Pressable>
 
                             {orderDraft.items.map((item) => {
-                                const lineTotalLabel = formatMoney(Number(item.line_total), orderDraft.currency)
+                                const pricedItem = getQuotedItemPrice(item, benefitCheck)
+                                const hasItemDiscount = Number(pricedItem.unit_price) < Number(item.unit_price)
+                                const lineTotalLabel = formatMoney(Number(pricedItem.line_total), orderDraft.currency)
 
                                 return (
                                     <View key={item.id} style={checkoutScreenStyles.positionCard}>
@@ -1301,10 +1304,18 @@ export default function CheckoutScreen() {
                                                 {item.variant_name || item.product_sku}
                                             </Text>
                                             {lineTotalLabel ? (
-                                                <Text style={checkoutScreenStyles.positionPrice}>
-                                                    {lineTotalLabel}
-                                                </Text>
+                                                <View>
+                                                    <Text style={checkoutScreenStyles.positionPrice}>
+                                                        {lineTotalLabel}
+                                                    </Text>
+                                                    {hasItemDiscount ? <Text style={checkoutScreenStyles.positionOriginalPrice}>
+                                                        {formatMoney(Number(item.line_total), orderDraft.currency)}
+                                                    </Text> : null}
+                                                </View>
                                             ) : null}
+                                            <Text style={checkoutScreenStyles.positionSubtitle}>
+                                                {formatMoney(Number(pricedItem.unit_price), orderDraft.currency)}{t("cart.unitPriceSuffix")}
+                                            </Text>
                                             <View style={checkoutScreenStyles.positionQuantityControl}>
                                                 <Pressable
                                                     accessibilityLabel={t("cart.decreaseQuantity")}

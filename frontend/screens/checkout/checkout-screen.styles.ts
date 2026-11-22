@@ -429,6 +429,12 @@ export const createCheckoutScreenStyles = (colors: ThemePalette) => StyleSheet.c
         lineHeight: 18,
         marginTop: 2,
     },
+    positionOriginalPrice: {
+        color: colors.mutedText,
+        fontSize: 12,
+        lineHeight: 16,
+        textDecorationLine: "line-through",
+    },
     positionQuantityControl: {
         alignItems: "center",
         backgroundColor: colors.pageBackground,

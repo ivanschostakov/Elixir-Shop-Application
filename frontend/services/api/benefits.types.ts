@@ -36,6 +36,7 @@ export type BenefitOptionResponse = {
 }
 
 export type BenefitCheckResponse = {
+    priced_items?: { variant_id: number; quantity: number; unit_price: string; line_total: string }[]
     referral_profile_id: number | null
     reward_program: "bonus" | "partner"
     program_selection_required: boolean
