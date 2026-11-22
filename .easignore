@@ -1,0 +1,26 @@
+# Send only the mobile project to EAS; the backend and its state stay local.
+/*
+!/frontend
+!/.easignore
+/frontend/node_modules/
+/frontend/ios/
+/frontend/android/
+/frontend/.expo/
+/frontend/.idea/
+/frontend/.DS_Store
+/frontend/.env*
+!/frontend/.env.example
+/frontend/dist*/
+/frontend/web-build/
+/frontend/backups/
+/frontend/web-backup/
+/frontend/tests/
+/frontend/docs/
+/frontend/assets/store/
+/frontend/cloudflared/
+**/*.log
+**/*.tsbuildinfo
+**/*.mobileprovision
+**/*.p12
+**/*.p8
+**/*.key

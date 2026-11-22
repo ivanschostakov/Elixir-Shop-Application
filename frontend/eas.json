@@ -46,6 +46,9 @@
     },
     "testflight": {},
     "production": {
+      "ios": {
+        "ascAppId": "6817568156"
+      },
       "android": {
         "track": "production",
         "releaseStatus": "completed"

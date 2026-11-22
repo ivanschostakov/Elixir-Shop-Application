@@ -16,7 +16,7 @@
       "icon": "./assets/images/adaptive-icon-preview.png",
       "bundleIdentifier": "com.septaid.elixirpeptide",
       "appleTeamId": "6S5KXKN435",
-      "buildNumber": "2",
+      "buildNumber": "8",
       "associatedDomains": [
         "applinks:elixirshop.devsivanschostakov.org"
       ],
