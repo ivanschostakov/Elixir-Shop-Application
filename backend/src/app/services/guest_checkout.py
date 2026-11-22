@@ -126,7 +126,7 @@ def _guest_basket_item_read(
         price=unit_price,
         original_price=variant.price,
         discount_percent=discount_percent,
-        image_url=_variant_image_url(request, variant),
+        image_url=_variant_image_url(request, variant, product=product),
     ), created_at=now, updated_at=now)
 
 

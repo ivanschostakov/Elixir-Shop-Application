@@ -126,7 +126,8 @@ const getVariantPriceDisplayCandidate = (
 export const getProductPriceDisplay = (
     product: Pick<ProductWithVariantsRead, "variants" | "discount_percent">,
 ): ProductPriceDisplay | null => {
-    const candidates = product.variants
+    const availableVariants = product.variants.filter(variant => variant.stock > 0)
+    const candidates = (availableVariants.length ? availableVariants : product.variants)
         .map((variant) => getVariantPriceDisplayCandidate(variant, "от ", product))
         .filter((candidate): candidate is ProductPriceDisplayCandidate => candidate !== null)
         .sort((left, right) => left.currentPrice - right.currentPrice)

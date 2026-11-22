@@ -90,7 +90,7 @@ async def _bump_review_cache_namespaces() -> None:
 @products_router.get("/{product_id}", response_model=ProductWithVariantsRead, dependencies=[Depends(require_visible_product)])
 async def products_get_by_id(request: Request, product_id: int, db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user)):
     cache = get_cache_service()
-    base_key = build_cache_key(route="products:detail", params={"product_id": product_id, "base_url": str(request.base_url)})
+    base_key = build_cache_key(route="products:detail", params={"product_id": product_id, "base_url": str(request.base_url), "response_version": 2})
     cache_key = await cache.versioned_key("product", base_key)
     if current_user is None:
         cached_item = await cache.get_json(cache_key, key_prefix="products:detail")
@@ -116,6 +116,7 @@ async def products_get_by_id(request: Request, product_id: int, db: AsyncSession
 async def products_get_similar(request: Request, product_id: int, limit: int = Query(default=6, ge=1, le=20), offset: int = Query(default=0, ge=0), db: AsyncSession = Depends(get_db), current_user: User | None = Depends(get_optional_current_user), scope: CatalogScope = Depends(get_catalog_scope)):
     cache = get_cache_service()
     base_key = build_cache_key(route="products:similar", params={
+        "response_version": 2,
         "product_id": product_id,
         "scope": scope,
         "limit": limit,
@@ -308,6 +309,7 @@ async def products_get(
     normalized_sku = sku.strip() if sku is not None else None
     cache = get_cache_service()
     base_key = build_cache_key(route="products:list", params={
+        "response_version": 2,
         "q": normalized_q,
         "sku": normalized_sku,
         "min_priority": min_priority,
@@ -324,6 +326,8 @@ async def products_get(
         cached_items = await cache.get_json(cache_key, key_prefix="products:list")
         if cached_items is not None: return [ProductWithVariantsRead.model_validate(item) for item in cached_items]
 
+    discount_context = await get_user_product_price_discount_context(db, current_user)
+    stock_policy = await get_stock_visibility_policy(db)
     products = await get_products(
         db,
         q=normalized_q,
@@ -335,10 +339,11 @@ async def products_get(
         limit=limit,
         sort=sort,
         allowed_category_ids=scope,
+        personal_discount_percent=discount_context.app_referral_percent,
+        stock_reduction=stock_policy.global_reduction,
+        stock_reduction_enabled=stock_policy.enabled,
     )
     review_stats = await get_product_review_stats(db, product_ids=[product.id for product in products])
-    discount_context = await get_user_product_price_discount_context(db, current_user)
-    stock_policy = await get_stock_visibility_policy(db)
     payload = serialize_products_with_variants(
         request,
         products,

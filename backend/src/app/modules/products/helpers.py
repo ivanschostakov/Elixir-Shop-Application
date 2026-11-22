@@ -42,7 +42,9 @@ NO_PRODUCT_PRICE_DISCOUNT_CONTEXT = ProductPriceDiscountContext()
 
 
 def product_image_url(request: Request, product: Product) -> str: return build_products_media_url(str(request.base_url), product.image_path)
-def variant_image_url(request: Request, variant) -> str: return build_products_media_url(str(request.base_url), variant.image_path)
+def variant_image_url(request: Request, variant, *, product: Product | None = None) -> str:
+    image_path = variant.image_path or (product.image_path if product is not None else None)
+    return build_products_media_url(str(request.base_url), image_path)
 def review_attachment_path(review_id: int, filename: str) -> Path: return REVIEWS_MEDIA_DIR / str(review_id) / filename
 def review_stats(product_id: int, stats: ReviewStatsByProductId | None) -> tuple[float, int]: return stats.get(product_id, (0.0, 0)) if stats else (0.0, 0)
 
@@ -106,7 +108,7 @@ def serialize_product_variant(
     )
     policy = stock_policy or StockVisibilityPolicy()
     return ProductVariantRead.model_validate(variant).model_copy(update={
-        "image_url": variant_image_url(request, variant),
+        "image_url": variant_image_url(request, variant, product=resolved_product),
         "stock": policy.visible_stock(variant.stock, resolved_product),
         "original_price": original,
         "discounted_price": discounted,

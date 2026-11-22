@@ -1,11 +1,13 @@
-from sqlalchemy import distinct, func, or_, select
+from decimal import Decimal
+
+from sqlalchemy import case, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from src.product_media import resolve_product_image_path
 from src.database.search import build_search_query_variants
 
-from src.database.models import Product, ProductByCategory, Variant
+from src.database.models import Product, ProductByCategory, ProductCategory, Variant
 from src.database.schemas import ProductCreate, ProductUpdate
 def _in_stock_product_clause():
     return Product.in_stock.is_(True)
@@ -94,6 +96,9 @@ async def get_products(
     sort: str = None,
     include_archived: bool = False,
     allowed_category_ids: tuple[int, ...] | None = None,
+    personal_discount_percent: Decimal = Decimal("0.00"),
+    stock_reduction: int = 0,
+    stock_reduction_enabled: bool = False,
 ) -> list[Product]:
     stmt = select(Product).options(*_product_price_options()).where(Product.is_visible_in_app.is_(True))
     if allowed_category_ids is not None:
@@ -128,15 +133,39 @@ async def get_products(
         if predicates:
             stmt = stmt.where(or_(*predicates))
 
-    min_variant_price = select(func.min(Variant.price)).where(Variant.product_id == Product.id).correlate(Product).scalar_subquery()
-    max_variant_price = select(func.max(Variant.price)).where(Variant.product_id == Product.id).correlate(Product).scalar_subquery()
+    # Match the tile's lowest current price, including unit-level rounding.
+    category_discount = (
+        select(func.max(ProductCategory.discount_percent))
+        .join(ProductByCategory, ProductByCategory.category_id == ProductCategory.id)
+        .where(ProductByCategory.product_id == Product.id, ProductCategory.archived.is_(False))
+        .correlate(Product).scalar_subquery()
+    )
+    catalog_discount = case((category_discount > Product.discount_percent, category_discount), else_=Product.discount_percent)
+    display_unit_price = func.round(Variant.price * (1 - catalog_discount / 100), 2)
+    if personal_discount_percent > 0:
+        from src.app.services.discounts import NON_DISCOUNTABLE_CATEGORY_NAMES
+        excluded = (
+            select(ProductByCategory.product_id)
+            .join(ProductCategory, ProductCategory.id == ProductByCategory.category_id)
+            .where(ProductByCategory.product_id == Product.id,
+                   func.lower(ProductCategory.name).in_(NON_DISCOUNTABLE_CATEGORY_NAMES))
+            .correlate(Product).exists()
+        )
+        display_unit_price = case((excluded, display_unit_price), else_=func.round(display_unit_price * (1 - personal_discount_percent / 100), 2))
+    reduction = func.coalesce(Product.stock_reduction_override, stock_reduction) if stock_reduction_enabled else 0
+    def minimum_price(*, available_only: bool):
+        query = select(func.min(display_unit_price)).where(Variant.product_id == Product.id, Variant.archived.is_(False))
+        if available_only:
+            query = query.where(Variant.stock > reduction)
+        return query.correlate(Product).scalar_subquery()
+    min_variant_price = func.coalesce(minimum_price(available_only=True), minimum_price(available_only=False))
     in_stock_first = Product.in_stock.desc()
     sort_map = {
         "newest": (in_stock_first, Product.is_new_manual.desc(), Product.created_at.desc(), Product.id.desc()),
         "name_asc": (in_stock_first, func.lower(Product.name).asc(), Product.id.asc()),
         "name_desc": (in_stock_first, func.lower(Product.name).desc(), Product.id.asc()),
         "price_asc": (in_stock_first, min_variant_price.is_(None), min_variant_price.asc(), Product.id.asc()),
-        "price_desc": (in_stock_first, max_variant_price.is_(None), max_variant_price.desc(), Product.id.asc()),
+        "price_desc": (in_stock_first, min_variant_price.is_(None), min_variant_price.desc(), Product.id.asc()),
     }
     if sort in sort_map: stmt = stmt.order_by(*sort_map[sort])
     else: stmt = stmt.order_by(in_stock_first, Product.is_new_manual.desc(), Product.priority.desc(), Product.id.desc())

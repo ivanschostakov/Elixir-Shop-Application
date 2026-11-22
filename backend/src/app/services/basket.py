@@ -48,7 +48,9 @@ from .orders.recipients import get_checkout_recipients, resolve_checkout_recipie
 
 
 def _product_image_url(request: Request, product) -> str: return build_products_media_url(str(request.base_url), product.image_path)
-def _variant_image_url(request: Request, variant) -> str: return build_products_media_url(str(request.base_url), variant.image_path)
+def _variant_image_url(request: Request, variant, *, product=None) -> str:
+    image_path = variant.image_path or (product.image_path if product is not None else None)
+    return build_products_media_url(str(request.base_url), image_path)
 def _basket_conflict(detail: str) -> HTTPException: return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
 
 
@@ -91,7 +93,7 @@ def serialize_basket(
             price=unit_price,
             original_price=original_unit_price,
             discount_percent=discount_percent,
-            image_url=_variant_image_url(request, item.variant),
+            image_url=_variant_image_url(request, item.variant, product=item.product),
         ), created_at=item.created_at, updated_at=item.updated_at))
 
     recipient = saved_checkout_recipient(basket.recipient, user)
