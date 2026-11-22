@@ -22,6 +22,7 @@ import { translate } from "@/i18n/translations"
 import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
 import { clearOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { setCommerceAccount } from "@/services/commerce-account"
+import RegistrationProgramAlert from "@/screens/auth/registration-program-alert"
 import { AuthContext } from "@/providers/auth-provider.context"
 import type { AuthProviderProps } from "@/providers/auth-provider.types"
 import {
@@ -376,6 +377,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             }}
         >
             {children}
+            {user?.programSelectionRequired ? <RegistrationProgramAlert key={user.id} onComplete={setUser} /> : null}
         </AuthContext.Provider>
     )
 }

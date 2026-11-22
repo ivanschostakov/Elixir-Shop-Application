@@ -62,6 +62,7 @@ export type BenefitCheckResponse = {
     bonus_max_paid_rate_percent: string
     use_bonus_rubles: boolean
     bonus_applied_points: number
+    balance_redemption_mode: "automatic" | "explicit"
     bonus_applied_rubles: string
     cashback_percent: string
     cashback_earned_points: number

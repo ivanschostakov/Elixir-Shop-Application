@@ -1,0 +1,61 @@
+{
+  "date": "2026-11-21",
+  "scope": "Registration alert, authoritative loyalty programs and automatic MoySklad balance settlement",
+  "backend_full_regression": {
+    "passed": 347,
+    "skipped": 2,
+    "failed": 0,
+    "warning": "Existing pytest/anyio compatibility warning",
+    "skip_reason": "Concurrency tests require separate disposable bonus_sync_test database; current database is catalog_fixes"
+  },
+  "backend_final_program_regression": {
+    "passed": 76,
+    "failed": 0,
+    "includes": "New registration choice, protection from stale website profile, programme prices and referral API"
+  },
+  "frontend": {
+    "passed": 186,
+    "failed": 0
+  },
+  "frontend_typecheck": "passed",
+  "changed_frontend_files_eslint": "passed",
+  "database": "Isolated catalog_fixes on localhost:55461; dummy credentials; external APIs mocked",
+  "production_deployed": false,
+  "live_moysklad_modified": false,
+  "physical_ios_test_completed": false,
+  "php_runtime_available": false,
+  "deployment_requirement": "Deploy backend, frontend and updated Bitrix PromoService.php lookup fields; match LOYALTY_COMPANY_PROMO_CODE to website configuration. Existing robots were not modified.",
+  "logs": [
+    "/private/tmp/elixir-loyalty-backend-tests.log",
+    "/private/tmp/elixir-loyalty-final-backend-tests.log",
+    "/private/tmp/elixir-loyalty-final-orders-tests.log",
+    "/private/tmp/elixir-loyalty-frontend-tests.log"
+  ],
+  "backend_final_orders_regression": {
+    "passed": 72,
+    "failed": 0,
+    "includes": "Order creation, settlement preflight locking, payment checks and retries"
+  },
+  "commit_validation": {
+    "backend_passed": 334,
+    "backend_failed": 8,
+    "baseline_commit": "974bd0a",
+    "baseline_comparison_passed": 33,
+    "baseline_comparison_failed": 8,
+    "all_failures_reproduced_on_baseline": true,
+    "failed_tests": [
+      "tests/test_referral_wallet_sync.py::test_approved_partner_accrual_is_credited_to_moysklad_once",
+      "tests/test_referral_wallet_sync.py::test_rejected_credited_accrual_is_reversed_idempotently",
+      "tests/test_loyalty_sync_resilience.py::test_failure_records_details_after_rollback[sync_loyalty_bonus_credit-pending-failed]",
+      "tests/test_loyalty_sync_resilience.py::test_failure_records_details_after_rollback[reverse_loyalty_bonus_credit-applied-reversal_pending]",
+      "tests/test_loyalty_sync_resilience.py::test_queue_continues_after_first_credit_rolls_back",
+      "tests/test_loyalty_sync_resilience.py::test_expiry_queue_continues_after_rollback",
+      "tests/test_order_amount_integrity.py::test_phone_is_checked_before_stock_quotes_and_order_creation[basket]",
+      "tests/test_order_amount_integrity.py::test_phone_is_checked_before_stock_quotes_and_order_creation[draft]"
+    ],
+    "frontend_passed": 186,
+    "typecheck": "passed",
+    "repository_eslint": "passed with --max-warnings 0",
+    "note": "The broader backend run is not fully green. Existing failures were reproduced in an isolated git archive of HEAD; they are not new failures introduced by these changes."
+  }
+}

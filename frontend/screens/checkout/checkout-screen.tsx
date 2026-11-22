@@ -12,7 +12,6 @@ import {
     Platform,
     Pressable,
     ScrollView,
-    Switch,
     Text,
     TextInput,
     View,
@@ -181,8 +180,8 @@ export default function CheckoutScreen() {
         reload: reloadReferralProfile,
         setData: setReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
-        deps: [user?.id ?? null, orderDraft?.id ?? null, isBasketCheckout],
-        enabled: Boolean(orderDraft?.items.length && isAuthenticated),
+        deps: [user?.id ?? null, user?.programSelectionRequired, orderDraft?.id ?? null, isBasketCheckout],
+        enabled: Boolean(orderDraft?.items.length && isAuthenticated && !user?.programSelectionRequired),
         fetcher: getMyReferralProfile,
         initialData: null,
         resetOnLoad: true,
@@ -200,8 +199,6 @@ export default function CheckoutScreen() {
     const [recipientSaveError, setRecipientSaveError] = useState<string | null>(null)
     const [promoCode, setPromoCode] = useState(routePromoCode ?? "")
     const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(routePromoCode ?? null)
-    const [useBonusRubles, setUseBonusRubles] = useState(false)
-    const [bonusAmount, setBonusAmount] = useState("")
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const appliedRoutePromoCodeRef = useRef<string | null>(routePromoCode ?? null)
     const focusedRecipientInputRef = useRef<TextInput | null>(null)
@@ -265,19 +262,19 @@ export default function CheckoutScreen() {
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
     const attachedPromoCode = referralProfile?.promo_code ?? null
+    const programLocked = referralProfile?.reward_program_selection_source === "moysklad" || Boolean(user?.programSelectionRequired)
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
-    const isPromoRewardReady = !normalizedPromoCode || hasAttachedPromoCode || Boolean(appliedPromoCode)
-    const activeEnteredPromoCode = !hasAttachedPromoCode ? appliedPromoCode : null
+    const hasUnappliedPromoCode = Boolean(isAuthenticated && !programLocked && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const isPromoRewardReady = programLocked || !normalizedPromoCode || hasAttachedPromoCode || Boolean(appliedPromoCode)
+    const activeEnteredPromoCode = !programLocked && !hasAttachedPromoCode ? appliedPromoCode : null
     const quoteSource = { use_basket: isBasketCheckout, draft_id: isBasketCheckout ? null : orderDraft?.id }
-    const needsQuote = Boolean(orderDraft?.items.length && isAuthenticated)
+    const needsQuote = Boolean(orderDraft?.items.length && isAuthenticated && !user?.programSelectionRequired)
     const { data: benefitCheck, error: quoteError, reload: reloadQuote } = useOrderBenefits(
         [user?.id, attachedPromoCode, orderDraft?.id, orderDraft?.delivery_total, orderDraft?.currency,
             orderDraft?.items.map(item => [item.variant_id, item.quantity, item.line_total])],
         needsQuote && referralProfile !== null,
-        { ...quoteSource, code: activeEnteredPromoCode, use_bonus_rubles: useBonusRubles,
-            ...(useBonusRubles && bonusAmount ? { bonus_rubles_to_use: bonusAmount } : {}) },
+        { ...quoteSource, code: activeEnteredPromoCode },
     )
     const rewardMode = benefitCheck?.reward_mode
     const pricingError = needsQuote && (referralError || quoteError)
@@ -375,8 +372,7 @@ export default function CheckoutScreen() {
         try {
             const nextBenefitCheck = await checkMyBenefits({
                 use_basket: isBasketCheckout, draft_id: isBasketCheckout ? null : orderDraft.id,
-                code: normalizedPromoCode, use_bonus_rubles: useBonusRubles,
-                ...(useBonusRubles && bonusAmount ? { bonus_rubles_to_use: bonusAmount } : {}),
+                code: normalizedPromoCode,
             })
 
             const hasCodeMatch = Boolean(
@@ -415,7 +411,6 @@ export default function CheckoutScreen() {
             setIsCheckingPromoCode(false)
         }
     }, [
-        bonusAmount,
         hasAttachedPromoCode,
         isAuthenticated,
         isCheckingPromoCode,
@@ -424,7 +419,6 @@ export default function CheckoutScreen() {
         orderDraft,
         setReferralProfile,
         t,
-        useBonusRubles,
     ])
     const handlePromoCodeChange = useCallback((value: string) => {
         setPromoCode(value)
@@ -443,11 +437,10 @@ export default function CheckoutScreen() {
                 paymentMethod,
                 ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
                 ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
-                ...(useBonusRubles ? { useBonus: "1", bonusAmount: bonusAmount || String(benefitCheck?.bonus_applied_rubles ?? "0") } : {}),
                 ...(rewardMode ? { rewardMode } : {}),
             },
         })
-    }, [activeEnteredPromoCode, bonusAmount, benefitCheck?.bonus_applied_rubles, hasDeliveryAddress, hasRecipient, isBasketCheckout, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, useBonusRubles, waitingForCheckout])
+    }, [activeEnteredPromoCode, hasDeliveryAddress, hasRecipient, isBasketCheckout, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, waitingForCheckout])
 
     const handlePressPay = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
@@ -1205,7 +1198,7 @@ export default function CheckoutScreen() {
                                             : t("checkout.rewardCashbackHint")}
                                     </Text>
                                 </View> : null}
-                                {isAuthenticated ? (
+                                {(!programLocked || hasAttachedPromoCode) ? (
                                     <>
                                         <View style={checkoutScreenStyles.detailsSheetDivider} />
                                         <View style={checkoutScreenStyles.detailsSheetRow}>
@@ -1217,7 +1210,7 @@ export default function CheckoutScreen() {
                                                         <TextInput
                                                             autoCapitalize="characters"
                                                             autoCorrect={false}
-                                                            editable={!hasAttachedPromoCode}
+                                                            editable={!programLocked && !hasAttachedPromoCode}
                                                             onChangeText={handlePromoCodeChange}
                                                             placeholder={t("checkout.promoCodePlaceholder")}
                                                             placeholderTextColor="#94A3B8"
@@ -1245,32 +1238,10 @@ export default function CheckoutScreen() {
                                                     )}
                                                 </Text>
                                                 <Text style={checkoutScreenStyles.bonusToggleHint}>
-                                                    {useBonusRubles && Number(benefitCheck?.bonus_applied_rubles ?? 0) > 0
-                                                        ? t("checkout.bonusRublesApplied")
-                                                        : t("checkout.bonusRublesHint")}
+                                                    {t("checkout.automaticBalanceHint")}
                                                 </Text>
                                             </View>
-                                            <Switch
-                                                accessibilityLabel={benefitCheck?.bonus_option?.source_kind === "moysklad_settlement"
-                                                    ? t("checkout.settlementBalanceTitle") : t("checkout.bonusRublesTitle")}
-                                                disabled={!benefitCheck?.bonus_option?.is_applicable}
-                                                onValueChange={next => {
-                                                    setUseBonusRubles(next)
-                                                    if (next && !bonusAmount) setBonusAmount(String(benefitCheck?.bonus_option?.discount_amount ?? "0"))
-                                                }}
-                                                trackColor={{ false: palette.border, true: palette.primaryMuted }}
-                                                thumbColor={useBonusRubles ? palette.primary : palette.mutedText}
-                                                value={useBonusRubles}
-                                            />
                                         </View>
-                                        {useBonusRubles ? <TextInput
-                                            accessibilityLabel={t("checkout.balanceAmount")}
-                                            placeholder={t("checkout.balanceAmount")}
-                                            keyboardType="decimal-pad"
-                                            value={bonusAmount}
-                                            onChangeText={value => { const next = value.replace(",", "."); if (/^\d*(\.\d{0,2})?$/.test(next)) setBonusAmount(next) }}
-                                            style={[checkoutScreenStyles.recipientEditorInput, { color: palette.text }]}
-                                        /> : null}
                                     </>
                                 ) : null}
                             </>

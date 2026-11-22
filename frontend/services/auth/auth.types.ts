@@ -32,6 +32,7 @@ export type RegistrationPayload = {
     password: string
     name: string
     surname: string
+    select_program_after_registration?: boolean
 }
 
 export type RegistrationStartedResponse = {
@@ -66,6 +67,7 @@ export type BackendAuthUser = {
     is_active: boolean
     is_verified: boolean
     promo_code: string | null
+    program_selection_required?: boolean
 }
 
 export type BackendAuthTokens = {
@@ -113,6 +115,7 @@ export type AuthUser = {
     isActive: boolean
     isVerified: boolean
     promoCode: string | null
+    programSelectionRequired?: boolean
     displayName: string
 }
 

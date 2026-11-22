@@ -35,8 +35,8 @@ export function useInfiniteProductCatalog({
         loadingMore,
         reload,
     } = usePaginatedData({
-        deps: [user?.id, categoryId, newOnly, normalizedQuery, sort],
-        enabled: enabled && isReady,
+        deps: [user?.id, user?.programSelectionRequired, categoryId, newOnly, normalizedQuery, sort],
+        enabled: enabled && isReady && !user?.programSelectionRequired,
         fetchPage: ({ limit, offset }) =>
             getProducts({
                 ...buildProductBrowseQueryOptions({

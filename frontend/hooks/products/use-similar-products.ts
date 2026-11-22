@@ -11,8 +11,8 @@ export function useSimilarProducts(productId: number | null, limit: number = 6) 
         loading,
         reload,
     } = useAsyncData<ProductWithVariantsRead[]>({
-        deps: [user?.id, productId, limit],
-        enabled: Boolean(productId) && isReady,
+        deps: [user?.id, user?.programSelectionRequired, productId, limit],
+        enabled: Boolean(productId) && isReady && !user?.programSelectionRequired,
         fetcher: async () => getSimilarProducts(productId as number, { limit }),
         initialData: [],
         resetOnLoad: true,

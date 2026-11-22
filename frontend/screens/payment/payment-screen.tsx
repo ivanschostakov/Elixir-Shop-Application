@@ -167,16 +167,12 @@ export default function PaymentScreen() {
         draftId?: string | string[]
         paymentMethod?: string | string[]
         orderId?: string | string[]
-        useBonus?: string | string[]
-        bonusAmount?: string | string[]
         rewardMode?: string | string[]
     }>()
     const draftId = parseDraftId(params.draftId)
     const routePaymentMethod = parsePaymentMethod(params.paymentMethod)
     const routeOrderId = parsePositiveRouteId(params.orderId)
     const routePromoCode = parseRouteString(params.code)
-    const useBonusRubles = parseRouteString(params.useBonus) === "1"
-    const bonusAmount = parseRouteString(params.bonusAmount)
     const rewardMode: RewardMode = parseRouteString(params.rewardMode) === "promo" ? "promo" : "cashback"
     const isBasketCheckout = draftId === null
     const { basket, loading: basketLoading } = useBasket()
@@ -465,7 +461,6 @@ export default function PaymentScreen() {
                     nextOrder = await createOrder({
                         ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
                         ...(routePromoCode ? { code: routePromoCode } : {}),
-                        ...(useBonusRubles ? { use_bonus_rubles: true, ...(bonusAmount ? { bonus_rubles_to_use: bonusAmount } : {}) } : {}),
                         reward_mode: rewardMode,
                         payment_method: effectiveMethod,
                     })
@@ -548,7 +543,7 @@ export default function PaymentScreen() {
                 setSubmitting(false)
             }
         }
-    }, [bonusAmount, guestRecoveryEmail, reloadDraft, acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t, useBonusRubles])
+    }, [guestRecoveryEmail, reloadDraft, acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t])
 
     const handleContinueWaiting = useCallback(() => {
         void handleStartPayment(resolvedPaymentMethod)

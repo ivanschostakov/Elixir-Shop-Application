@@ -35,8 +35,8 @@ export function useProductCatalog({
     const isEnabled = enabled && (!skipEmptyQuery || normalizedQuery.length > 0)
     const { data: products, error, loading, reload } = useAsyncData<ProductWithVariantsRead[]>({
         debounceMs,
-        deps: [user?.id, categoryId, limit, minPriority, newOnly, normalizedQuery, sort],
-        enabled: isEnabled && isReady,
+        deps: [user?.id, user?.programSelectionRequired, categoryId, limit, minPriority, newOnly, normalizedQuery, sort],
+        enabled: isEnabled && isReady && !user?.programSelectionRequired,
         resetOnLoad: true,
         fetcher: () =>
             getProducts(

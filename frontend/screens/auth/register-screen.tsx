@@ -73,6 +73,7 @@ export default function RegisterScreen() {
                 surname: surname.trim(),
                 email: email.trim(),
                 password,
+                select_program_after_registration: true,
             })
             setPendingEmail(response.email)
             setStatusMessage("")

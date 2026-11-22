@@ -94,8 +94,8 @@ export default function CartScreen() {
         reload: reloadReferralProfile,
         setData: setReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
-        deps: [user?.id ?? null],
-        enabled: Boolean(isAuthenticated && basket?.items.length),
+        deps: [user?.id ?? null, user?.programSelectionRequired],
+        enabled: Boolean(isAuthenticated && !user?.programSelectionRequired && basket?.items.length),
         fetcher: getMyReferralProfile,
         initialData: null,
         resetOnLoad: true,
@@ -131,11 +131,12 @@ export default function CartScreen() {
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
     const attachedPromoCode = referralProfile?.promo_code ?? null
+    const programLocked = referralProfile?.reward_program_selection_source === "moysklad" || Boolean(user?.programSelectionRequired)
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
-    const hasUnappliedPromoCode = Boolean(isAuthenticated && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
-    const activeEnteredPromoCode = !hasAttachedPromoCode ? appliedPromoCode : null
-    const needsQuote = Boolean(isAuthenticated && basket?.items.length)
+    const hasUnappliedPromoCode = Boolean(isAuthenticated && !programLocked && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
+    const activeEnteredPromoCode = !programLocked && !hasAttachedPromoCode ? appliedPromoCode : null
+    const needsQuote = Boolean(isAuthenticated && !user?.programSelectionRequired && basket?.items.length)
     const { data: benefitCheck, error: quoteError, reload: reloadQuote } = useOrderBenefits(
         [user?.id, attachedPromoCode, basket?.id, basket?.delivery_total, basket?.currency,
             basket?.items.map(item => [item.variant_id, item.quantity, item.line_total])],
@@ -685,11 +686,11 @@ export default function CartScreen() {
                     <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
                         {isAuthenticated ? (
                             <View style={cartScreenStyles.summaryCard}>
-                                <View style={cartScreenStyles.promoInputShell}>
+                                {!programLocked || hasAttachedPromoCode ? <View style={cartScreenStyles.promoInputShell}>
                                     <TextInput
                                         autoCapitalize="characters"
                                         autoCorrect={false}
-                                        editable={!hasAttachedPromoCode}
+                                        editable={!programLocked && !hasAttachedPromoCode}
                                         onChangeText={handlePromoCodeChange}
                                         placeholder={t("cart.promoCodePlaceholder")}
                                         style={cartScreenStyles.promoInput}
@@ -709,7 +710,7 @@ export default function CartScreen() {
                                             <Text style={cartScreenStyles.promoClearButtonText}>×</Text>
                                         </Pressable>
                                     ) : null}
-                                </View>
+                                </View> : null}
                             </View>
                         ) : null}
 
