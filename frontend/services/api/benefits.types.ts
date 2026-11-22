@@ -6,6 +6,7 @@ export type BenefitCheckPayload = {
     discountable_subtotal?: string | null
     currency?: string | null
     use_bonus_rubles?: boolean
+    bonus_rubles_to_use?: string
     reward_mode?: "cashback" | "promo" | null
 }
 

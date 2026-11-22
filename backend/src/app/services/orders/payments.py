@@ -1,6 +1,8 @@
 import logging
 import socket
 import uuid
+from decimal import Decimal, InvalidOperation
+from sqlalchemy import select
 
 from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address
@@ -38,7 +40,7 @@ LEGACY_PAID_PAYMENT_STATUSES = {"ok", "success"}
 
 def _payment_status_from_step(payment_step: str | None) -> str:
     step = (payment_step or "").strip()
-    if step == "OK": return "paid"
+    if step.casefold() == "ok": return "paid"
     if step == "Error": return "error"
     if step in PENDING_PAYMENT_STEPS: return "pending"
     return step.lower() if step else "pending"
@@ -147,24 +149,36 @@ async def _resolve_payment_qr_image(request: Request, order: Order, *, qr_image:
     return build_order_payment_qr_url(request, saved_path)
 
 async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_step: str | None = None, payment_status_code: int | None = None, payment_data: str | None = None, invoice_id: str | None = None) -> Order:
+    await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+    await session.refresh(order)
     payment_status = _payment_status_from_code(payment_status_code) or _payment_status_from_step(payment_step)
+    if invoice_id and str(invoice_id) != str(order.payment_invoice_id or ""):
+        raise HTTPException(409, "Payment attempt mismatch")
+    previous = (order.payment_status or "").lower()
+    if previous == "refunded" and payment_status != "refunded":
+        return order
+    if (previous == "paid" or order.is_paid) and payment_status not in {"paid", "refunded"}:
+        return order
     patch: dict[str, Any] = {}
-    if invoice_id: patch["payment_invoice_id"] = str(invoice_id)
 
     if payment_status == "paid":
-        order = await _move_lead_to_payment_result_status(session, order, payment_status=payment_status)
+
         patch["payment_status"] = "paid"
         patch["payment_paid_at"] = _parse_payment_timestamp(payment_data) or datetime.now(timezone.utc)
         patch["payment_error"] = ""
         patch["is_paid"] = True
 
     else:
-        if payment_status in {"canceled", "error", "refunded", "hold", "partial"}: order = await _move_lead_to_payment_result_status(session, order, payment_status=payment_status)
+        if payment_status == "refunded": patch["is_paid"] = False
         patch["payment_status"] = payment_status
         error_text = _payment_error_text(payment_status, payment_step)
         if error_text: patch["payment_error"] = error_text
 
-    updated_order = await update_order(session, order, OrderUpdate(**patch), commit=True)
+    updated_order = await update_order(session, order, OrderUpdate(**patch), commit=False)
+    from .payment_effects import queue_payment_effects, try_payment_effects
+    run_id = await queue_payment_effects(session, updated_order)
+    await session.commit()
+    await try_payment_effects(run_id)
     if updated_order.payment_status == "refunded":
         user = await session.get(User, updated_order.user_id)
         if user is not None:
@@ -191,10 +205,27 @@ async def reconcile_sbp_payment(session: AsyncSession, order: Order, *, payment_
     if updated_order.payment_status == "refunded":
         return updated_order
     if updated_order.payment_status == "paid" or updated_order.is_paid:
-        await sync_moysklad_customerorder_state(updated_order, state_name=MOY_SKLAD_STATE_INVOICE_PAID)
-        await sync_moysklad_invoiceout_state(updated_order, state_name=MOY_SKLAD_INVOICEOUT_STATE_PAID)
         await sync_paid_order_referral_to_app_safe(session, order=updated_order)
     return updated_order
+
+
+async def _verify_provider_purchase(order, invoice_id):
+    """The status endpoint alone contains no amount or currency."""
+    info = await intellectmoney.get_purchase_info(invoice_id=invoice_id)
+    result = info.get("Result") or {}
+    invoice = result.get("Invoice") or {}
+    shop = result.get("Eshop") or {}
+    amount = invoice.get("InvoicePayerAmount") or invoice.get("TotalAmount") or {}
+    try:
+        valid = (str(invoice.get("InvoiceId")) == str(invoice_id)
+            and str(invoice.get("OrderId")) in {str(order.id), str(order.order_number)}
+            and str(shop.get("EshopId")) == str(intellectmoney.shop_id)
+            and str(amount.get("Currency")).upper() in {"RUB", "RUR"}
+            and Decimal(str(amount.get("Amount"))) == Decimal(order.grand_total))
+    except (InvalidOperation, TypeError, ValueError):
+        valid = False
+    if not valid:
+        raise IntellectMoneyError("Payment invoice details do not match the order")
 
 
 async def _ensure_persisted_paid_state(session: AsyncSession, order: Order) -> Order:
@@ -230,7 +261,8 @@ async def _checked_sbp_payment_payload(
     provider_checked = False
 
     try:
-        state_result = await intellectmoney.get_bank_card_payment_state(invoice_id=str(order.payment_invoice_id))
+        checked_invoice_id = str(order.payment_invoice_id)
+        state_result = await intellectmoney.get_bank_card_payment_state(invoice_id=checked_invoice_id)
         parsed_state = intellectmoney.parse_payment_state(state_result)
         provider_checked = True
         payment_step = parsed_state["payment_step"]
@@ -251,12 +283,15 @@ async def _checked_sbp_payment_payload(
             _qr_debug(qr_image),
         )
         if payment_step or payment_status_code is not None:
+            if (_payment_status_from_step(payment_step) == "paid"
+                    or _payment_status_from_code(payment_status_code) in {"paid", "refunded"}):
+                await _verify_provider_purchase(order, checked_invoice_id)
             order = await reconcile_sbp_payment(
                 session,
                 order,
                 payment_step=payment_step,
                 payment_status_code=payment_status_code,
-                invoice_id=str(order.payment_invoice_id),
+                invoice_id=checked_invoice_id,
             )
     except IntellectMoneyError:
         log.warning("IntellectMoney status check failed for order %s", order.order_number)
@@ -290,13 +325,11 @@ async def create_payment_for_order(
     payment_method: str | None = None,
 ) -> dict[str, Any]:
     settlement = order_settlement(order)
-    if settlement or _uses_standard_document_export(order):
-        lock_key = settlement["counterparty_id"] if settlement else f"order:{order.id}"
-        async with settlement_lock(lock_key, payment=True):
-            await session.refresh(order, attribute_names=["payment_invoice_id", "payment_status", "payment_provider", "payment_method",
-                "is_paid", "is_canceled", "checkout_snapshot", "grand_total", "moysklad_customerorder_id", "moysklad_invoiceout_id"])
-            return await _create_payment_for_order(session, request=request, order=order, payment_method=payment_method)
-    return await _create_payment_for_order(session, request=request, order=order, payment_method=payment_method)
+    lock_key = settlement["counterparty_id"] if settlement else f"order:{order.id}"
+    async with settlement_lock(lock_key, payment=True):
+        await session.refresh(order, attribute_names=["payment_invoice_id", "payment_status", "payment_provider", "payment_method",
+            "is_paid", "is_canceled", "checkout_snapshot", "grand_total", "moysklad_customerorder_id", "moysklad_invoiceout_id"])
+        return await _create_payment_for_order(session, request=request, order=order, payment_method=payment_method)
 
 
 def _uses_standard_document_export(order: Order) -> bool:
@@ -361,6 +394,11 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
     else:
         await verify_no_unapproved_balance(order)
         await verify_standard_sbp_invoice(order)
+    hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
+    if hold.get("status") == "released":
+        raise HTTPException(409, "Время резерва истекло. Проверьте остатки и оформите заказ заново.")
+    if _uses_standard_document_export(order) and hold and hold.get("status") != "exported":
+        raise HTTPException(409, "Резерв ещё не подтверждён МойСкладом. Повторите через несколько секунд.")
     if settlement and order.grand_total == 0:
         order = await update_order(session, order, OrderUpdate(
             payment_method="sbp", payment_provider="moysklad_balance", payment_invoice_id=None), commit=True)
@@ -413,7 +451,10 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         saved_qr_image = await _resolve_payment_qr_image(request, order, qr_image=qr_image, qr_url=qr_url)
         log.info("IntellectMoney SBP QR resolved order_number=%s invoice_id=%s saved_qr_image=%s returned_qr_image=%s returned_qr_url_present=%s", order.order_number, invoice_id, saved_qr_image, _qr_debug(qr_image), bool(qr_url))
 
-        if payment_step not in PENDING_PAYMENT_STEPS: order = await reconcile_sbp_payment(session, order, payment_step=payment_step, invoice_id=invoice_id)
+        if payment_step not in PENDING_PAYMENT_STEPS:
+            if _payment_status_from_step(payment_step) == "paid":
+                await _verify_provider_purchase(order, invoice_id)
+            order = await reconcile_sbp_payment(session, order, payment_step=payment_step, invoice_id=invoice_id)
         else:
             order = await update_order( session, order, OrderUpdate(payment_status=_payment_status_from_step(payment_step)), commit=True)
             if saved_qr_image or qr_image or qr_url:
@@ -476,6 +517,10 @@ async def recheck_payment_status_for_admin(session: AsyncSession, *, order: Orde
         raise RuntimeError("Payment provider response did not contain a status")
 
     previous_status = order.payment_status
+    checked_invoice_id = str(order.payment_invoice_id)
+    if (_payment_status_from_step(payment_step) == "paid"
+            or _payment_status_from_code(payment_status_code) in {"paid", "refunded"}):
+        await _verify_provider_purchase(order, checked_invoice_id)
     updated_order = await reconcile_sbp_payment(
         session,
         order,

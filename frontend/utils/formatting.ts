@@ -1,3 +1,4 @@
+import { getTranslationLocale } from "@/i18n/translations"
 export function formatMoney(amount?: number | null, currency?: string | null) {
     if (amount === null || amount === undefined) {
         return null
@@ -5,7 +6,7 @@ export function formatMoney(amount?: number | null, currency?: string | null) {
 
     if (currency) {
         try {
-            return new Intl.NumberFormat("ru-RU", {
+            return new Intl.NumberFormat(getTranslationLocale(), {
                 style: "currency",
                 currency,
                 maximumFractionDigits: Number.isInteger(amount) ? 0 : 2,

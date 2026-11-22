@@ -87,7 +87,8 @@ def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected
         snapshot["settlement_payment"] = {
             "version": 1, "status": "awaiting_invoice",
             "counterparty_id": benefits["settlement_counterparty_id"],
-            "maximum_balance_rubles": benefits["settlement_balance_rubles"],
+            "maximum_balance_rubles": benefits["bonus_applied_rubles"],
+            "requested_balance_rubles": benefits["bonus_applied_rubles"],
             "gross_rubles": str(quantize_money(
                 (Decimal(str(benefits["cash_total"])) if benefits.get("cash_total") is not None
                  else Decimal(str(benefits["total_after_discounts"])) + draft.delivery_total)

@@ -201,6 +201,7 @@ export default function CheckoutScreen() {
     const [promoCode, setPromoCode] = useState(routePromoCode ?? "")
     const [appliedPromoCode, setAppliedPromoCode] = useState<string | null>(routePromoCode ?? null)
     const [useBonusRubles, setUseBonusRubles] = useState(false)
+    const [bonusAmount, setBonusAmount] = useState("")
     const [isCheckingPromoCode, setIsCheckingPromoCode] = useState(false)
     const appliedRoutePromoCodeRef = useRef<string | null>(routePromoCode ?? null)
     const focusedRecipientInputRef = useRef<TextInput | null>(null)
@@ -275,7 +276,8 @@ export default function CheckoutScreen() {
         [user?.id, attachedPromoCode, orderDraft?.id, orderDraft?.delivery_total, orderDraft?.currency,
             orderDraft?.items.map(item => [item.variant_id, item.quantity, item.line_total])],
         needsQuote && referralProfile !== null,
-        { ...quoteSource, code: activeEnteredPromoCode, use_bonus_rubles: useBonusRubles },
+        { ...quoteSource, code: activeEnteredPromoCode, use_bonus_rubles: useBonusRubles,
+            ...(useBonusRubles && bonusAmount ? { bonus_rubles_to_use: bonusAmount } : {}) },
     )
     const rewardMode = benefitCheck?.reward_mode
     const pricingError = needsQuote && (referralError || quoteError)
@@ -374,6 +376,7 @@ export default function CheckoutScreen() {
             const nextBenefitCheck = await checkMyBenefits({
                 use_basket: isBasketCheckout, draft_id: isBasketCheckout ? null : orderDraft.id,
                 code: normalizedPromoCode, use_bonus_rubles: useBonusRubles,
+                ...(useBonusRubles && bonusAmount ? { bonus_rubles_to_use: bonusAmount } : {}),
             })
 
             const hasCodeMatch = Boolean(
@@ -439,11 +442,11 @@ export default function CheckoutScreen() {
                 paymentMethod,
                 ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
                 ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
-                ...(useBonusRubles ? { useBonus: "1" } : {}),
+                ...(useBonusRubles ? { useBonus: "1", bonusAmount: bonusAmount || String(benefitCheck?.bonus_applied_rubles ?? "0") } : {}),
                 ...(rewardMode ? { rewardMode } : {}),
             },
         })
-    }, [activeEnteredPromoCode, hasDeliveryAddress, hasRecipient, isBasketCheckout, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, useBonusRubles, waitingForCheckout])
+    }, [activeEnteredPromoCode, bonusAmount, benefitCheck?.bonus_applied_rubles, hasDeliveryAddress, hasRecipient, isBasketCheckout, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, useBonusRubles, waitingForCheckout])
 
     const handlePressPay = useCallback(() => {
         Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
@@ -1250,12 +1253,23 @@ export default function CheckoutScreen() {
                                                 accessibilityLabel={benefitCheck?.bonus_option?.source_kind === "moysklad_settlement"
                                                     ? t("checkout.settlementBalanceTitle") : t("checkout.bonusRublesTitle")}
                                                 disabled={!benefitCheck?.bonus_option?.is_applicable}
-                                                onValueChange={setUseBonusRubles}
+                                                onValueChange={next => {
+                                                    setUseBonusRubles(next)
+                                                    if (next && !bonusAmount) setBonusAmount(String(benefitCheck?.bonus_option?.discount_amount ?? "0"))
+                                                }}
                                                 trackColor={{ false: palette.border, true: palette.primaryMuted }}
                                                 thumbColor={useBonusRubles ? palette.primary : palette.mutedText}
                                                 value={useBonusRubles}
                                             />
                                         </View>
+                                        {useBonusRubles ? <TextInput
+                                            accessibilityLabel={t("checkout.balanceAmount")}
+                                            placeholder={t("checkout.balanceAmount")}
+                                            keyboardType="decimal-pad"
+                                            value={bonusAmount}
+                                            onChangeText={value => { const next = value.replace(",", "."); if (/^\d*(\.\d{0,2})?$/.test(next)) setBonusAmount(next) }}
+                                            style={[checkoutScreenStyles.recipientEditorInput, { color: palette.text }]}
+                                        /> : null}
                                     </>
                                 ) : null}
                             </>

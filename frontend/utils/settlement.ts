@@ -1,10 +1,11 @@
+import { getTranslationLocale } from "@/i18n/translations"
 import type { SettlementResponse } from "@/services/api/settlement"
 
 export function formatSettlementMoney(value: string | number | null | undefined): string {
     if (value === null || value === undefined || value === "") return "—"
     const amount = Number(value)
     if (!Number.isFinite(amount)) return "—"
-    return new Intl.NumberFormat("ru-RU", {
+    return new Intl.NumberFormat(getTranslationLocale(), {
         style: "currency", currency: "RUB", minimumFractionDigits: 2, maximumFractionDigits: 2,
     }).format(amount)
 }

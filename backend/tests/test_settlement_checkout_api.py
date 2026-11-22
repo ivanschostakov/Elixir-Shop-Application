@@ -28,6 +28,14 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
 ):
     monkeypatch.setattr(config, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
     monkeypatch.setattr(config, "LOYALTY_SETTLEMENT_CHECKOUT_ENABLED", True)
+    monkeypatch.setattr(config, "MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID", str(CID))
+    monkeypatch.setattr(config, "MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID", str(IID))
+    from src.app.services.benefits import settlement
+    from src.app.services.benefits.settlement_schemas import SettlementRead
+    monkeypatch.setattr(settlement, "get_account_settlement", AsyncMock(return_value=SettlementRead(
+        status="fresh", loyalty_program=1, personal_discount_percent=Decimal("0"),
+        balance_rubles=Decimal("1000"), total_purchases_rubles=Decimal("0"))))
+    monkeypatch.setattr("src.app.services.orders.payments.MOY_SKLAD_ORDER_SYNC_ENABLED", True)
     monkeypatch.setattr(crm.amocrm_client, "update_lead_price", AsyncMock(), raising=False)
     crm_fields = AsyncMock()
     monkeypatch.setattr(crm.amocrm_client, "update_lead_order_fields", crm_fields, raising=False)
@@ -61,6 +69,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         # Persistence is real; MoySklad documents and gateway calls are fixtures only.
         snapshot = deepcopy(order.checkout_snapshot)
         snapshot["settlement_payment"]["organization_id"] = str(ORG)
+        snapshot["stock_reservation"]["status"] = "exported"
         order.checkout_snapshot = snapshot
         order.moysklad_customerorder_id = OID
         await db.commit()
@@ -116,7 +125,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         gateway.assert_not_awaited()
         remote["invoicesOut"] = [ref(IID)]
         response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
-    if scenario in {"wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
+    if scenario in {"rounded", "wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
         assert response.status_code == 409, response.text
         gateway.assert_not_awaited()
         assert _get_order(order_id).payment_invoice_id is None

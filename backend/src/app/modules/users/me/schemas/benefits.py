@@ -20,6 +20,7 @@ class BenefitCheckPayload(BaseModel):
     discountable_subtotal: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
     currency: str | None = Field(default=None, max_length=CURRENCY_CODE_MAX_LENGTH)
     use_bonus_rubles: bool = False
+    bonus_rubles_to_use: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
     reward_mode: Literal["cashback", "promo"] | None = None
 
 

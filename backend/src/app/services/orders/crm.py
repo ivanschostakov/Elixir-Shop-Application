@@ -326,13 +326,15 @@ async def _move_lead_to_payment_result_status(session: AsyncSession, order: Orde
     try: await amocrm_client.update_lead_status(int(order.amocrm_lead_id), target_status_id)
     except Exception:
         log.exception("Failed to update amoCRM lead %s for payment status %s",order.amocrm_lead_id, payment_status)
-        return order
+        raise
 
     updated_order = await update_order(session, order, OrderUpdate(**target_patch), commit=True)
     await send_order_status_change_notification_if_needed(session, previous_status=previous_status, order=updated_order)
     return updated_order
 
 async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, status_id: int) -> Order:
+    if order.payment_status == "refunded" and status_id in amocrm_client.PAID_STATUS_IDS:
+        return order
     previous_status = order.status
     order = await update_order(session, order, OrderUpdate(**_order_state_patch_for_amocrm_status(status_id)), commit=False)
 

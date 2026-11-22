@@ -1,10 +1,11 @@
+import { getTranslationLocale } from "@/i18n/translations"
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
 
 type OrderDraftTitleSource = Pick<OrderDraftRead, "id" | "created_at" | "draft_name">
 
 function formatOrderDraftDate(createdAt: string) {
     try {
-        return new Intl.DateTimeFormat("ru-RU", {
+        return new Intl.DateTimeFormat(getTranslationLocale(), {
             day: "2-digit",
             month: "2-digit",
             year: "2-digit",

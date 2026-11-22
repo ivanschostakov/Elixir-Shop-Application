@@ -85,6 +85,8 @@ async def test_promo_order_does_not_grant_cashback(monkeypatch):
 
 @pytest.mark.anyio
 async def test_order_without_promo_still_grants_five_percent_cashback(monkeypatch):
+    # Legacy ledger mode remains testable; production settlement mode is covered separately.
+    monkeypatch.setattr(loyalty_service, "LOYALTY_USE_SETTLEMENT_BALANCE", False)
     expected_credit = object()
     create_credit = AsyncMock(return_value=expected_credit)
     monkeypatch.setattr(
@@ -221,7 +223,7 @@ async def test_base_promo_discounts_products_in_bonus_program(monkeypatch):
     )
     monkeypatch.setattr(
         product_helpers,
-        "get_referral_profile_by_user_id",
+        "ensure_default_reward_program",
         AsyncMock(return_value=profile),
     )
 

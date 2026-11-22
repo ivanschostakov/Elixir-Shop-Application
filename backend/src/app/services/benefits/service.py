@@ -3,19 +3,23 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from config import LOYALTY_BONUS_LIFETIME_DAYS, LOYALTY_ORDER_CASHBACK_PERCENT, LOYALTY_USE_SETTLEMENT_BALANCE
 from src.app.services.discounts import product_is_discountable
-from src.app.services.catalog_merchandising import catalog_unit_price
+from src.app.services.catalog_merchandising import catalog_unit_price, apply_percent_discount
 from src.app.services.referrals import (
     ensure_default_reward_program,
     normalize_reward_program,
     refresh_profile_discount,
     reward_program_selection_required,
 )
+from src.app.services.referrals.program import moysklad_program_is_authoritative
 from src.app.services.referrals.bitrix_sync import refresh_program_profile_from_bitrix
 from src.database.crud import get_basket_by_user_id
-from src.database.models import ReferralProfile, User
+from src.database.models import ReferralProfile, User, Variant, Product, ProductByCategory
+from src.normalize import coerce_uuid
 from src.integrations.bitrix_promo import (
     BitrixPromoClient,
     BitrixPromoError,
@@ -117,6 +121,29 @@ def _basket_quote_items(basket) -> list[dict]:
         for item in basket.items
         if item.variant is not None and item.product is not None
     ]
+
+
+async def _rounded_personal_discount(db, items, percent, *, subtotal):
+    """Use the same rounded unit price as the catalog, then multiply quantity."""
+    ids = {coerce_uuid(item.get("variant_system_id")) for item in items}
+    if not ids or None in ids:
+        return None
+    variants = (await db.execute(select(Variant).where(Variant.system_id.in_(ids)).options(
+        selectinload(Variant.product).selectinload(Product.products_by_category)
+        .selectinload(ProductByCategory.category)))).scalars().all()
+    by_id = {str(variant.system_id): variant for variant in variants}
+    total = discount = Decimal("0.00")
+    for item in items:
+        variant = by_id.get(str(item["variant_system_id"]))
+        if variant is None:
+            return None
+        quantity = Decimal(str(item["quantity"]))
+        unit = catalog_unit_price(variant.price, variant.product)
+        total += unit * quantity
+        if product_is_discountable(variant.product):
+            discount += (unit - apply_percent_discount(unit, percent)) * quantity
+    # Drafts are explicitly repriced before purchase; do not mix two price snapshots.
+    return discount if total == subtotal else None
 
 
 def _build_bitrix_promo_option(
@@ -229,7 +256,7 @@ async def resolve_benefits_for_user(
     delivery_total: Decimal | None = None,
     currency: str | None = None,
     quote_items: list[dict] | None = None,
-    use_bonus_rubles: bool = False,
+    use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None,
     reward_mode: str | None = None,
 ) -> dict:
     normalized_code = lower_optional_str(entered_code)
@@ -241,6 +268,12 @@ async def resolve_benefits_for_user(
         explicit_discountable_subtotal=discountable_subtotal,
     )
     referral_profile = await ensure_default_reward_program(db, user=user)
+    authoritative = moysklad_program_is_authoritative(referral_profile)
+    if authoritative and getattr(user, "moysklad_counterparty_id", None):
+        from .settlement import get_account_settlement
+        account = await get_account_settlement(user.moysklad_counterparty_id)
+        if account.status != "fresh":
+            raise HTTPException(503, "Не удалось обновить условия МойСклада. Повторите расчёт позже.")
     reward_program = normalize_reward_program(referral_profile.reward_program) or "bonus"
     if optional_str(user.promo_code) or reward_program == "partner":
         remote_program_profile = await refresh_program_profile_from_bitrix(
@@ -275,7 +308,9 @@ async def resolve_benefits_for_user(
         if effective_code or active_reward_program == "partner" or referral_profile.reward_program_selection_source == "moysklad"
         else None
     )
-    if bitrix_promo_configured() and effective_code:
+    if authoritative and trimmed_code and lower_optional_str(trimmed_code) != lower_optional_str(user.promo_code):
+        raise HTTPException(409, "Сначала привяжите промокод в профиле и обновите условия заказа.")
+    if not authoritative and bitrix_promo_configured() and effective_code:
         client = BitrixPromoClient()
         try:
             lookup = await client.lookup(effective_code)
@@ -332,6 +367,16 @@ async def resolve_benefits_for_user(
         subtotal=effective_subtotal,
         discountable_subtotal=effective_discountable_subtotal,
     )
+    if selected_option and selected_option.source_kind == "app_referral" and selected_option.discount_percent:
+        local_items = quote_items if quote_items is not None else _basket_quote_items(await get_basket_by_user_id(db, user.id))
+        rounded_discount = await _rounded_personal_discount(db, local_items,
+            selected_option.discount_percent, subtotal=effective_subtotal)
+        if rounded_discount is not None:
+            stacked_discount_amount = rounded_discount
+            total_after_discounts = effective_subtotal - rounded_discount
+            stacked_discount_options[0].update(applied_discount_amount=rounded_discount,
+                estimated_discount_amount=rounded_discount, estimated_total_after=total_after_discounts,
+                subtotal_after=total_after_discounts)
     delivery = max(Decimal("0.00"), quantize_money(delivery_total) or Decimal("0.00"))
     payable_before_balance = total_after_discounts + delivery
     bonus_subtotal = payable_before_balance if bonus_wallet.is_settlement else total_after_discounts
@@ -339,6 +384,12 @@ async def resolve_benefits_for_user(
         bonus_wallet,
         bonus_subtotal,
     )
+    if use_bonus_rubles and bonus_rubles_to_use is not None:
+        requested = quantize_money(bonus_rubles_to_use)
+        if requested is None or not requested.is_finite() or requested < 0 or requested > bonus_rubles:
+            raise HTTPException(409, "Выбранная сумма превышает доступный баланс или сумму заказа. Обновите расчёт.")
+        bonus_rubles = requested
+        bonus_points = int(requested.to_integral_value(rounding="ROUND_CEILING"))
     bonus_option = (
         ResolvedDiscountOption(
             source_kind="moysklad_settlement" if bonus_wallet.is_settlement else "moysklad_bonus",

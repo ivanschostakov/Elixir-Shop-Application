@@ -23,6 +23,13 @@ EXCLUDED_NAME_PREFIXES = ("пакет",)
 def synthetic_variant_id(product_id: UUID) -> UUID:
     return uuid5(NAMESPACE_URL, f"elixir-shop:moysklad:synthetic-variant:{product_id}")
 
+def weight_grams(item):
+    try:
+        value = Decimal(str(item.get("weight")))
+        return max(1, int(value * 1000)) if value.is_finite() and value > 0 else None
+    except Exception:
+        return None
+
 
 def is_excluded_product_name(name_raw: str | None) -> bool:
     if not name_raw: return False
@@ -99,6 +106,7 @@ def build_variant_rows(variants, stocks, products_by_code, products_by_id, stats
             stock=available_stock((stock or {}).get("quantity"), reserve) if price is not None else 0,
             price=price if price is not None else Decimal("0.00"),
             archived=price is None,
+            weight_grams=weight_grams(variant) or weight_grams(product),
         ))
 
     add_synthetic_variants(rows, products_by_code, seen_products, stock_by_id, stock_by_code, reserve)
@@ -136,4 +144,5 @@ def add_synthetic_variants(rows, products_by_code, seen_products, stock_by_id, s
             stock=available_stock((stock or {}).get("quantity"), reserve) if price is not None else 0,
             price=price if price is not None else Decimal("0.00"),
             archived=price is None,
+            weight_grams=weight_grams(product),
         ))

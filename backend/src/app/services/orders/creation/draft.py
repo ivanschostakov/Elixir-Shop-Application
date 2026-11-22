@@ -27,7 +27,7 @@ from .payloads import _build_order_create_data, _build_order_item_from_draft_ite
 
 
 @serialized_settlement_checkout
-async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id, lock=True)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
@@ -53,14 +53,28 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     if draft.delivery_address is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Delivery address is required")
     if not draft.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft is empty")
     validate_checkout_recipient(draft.recipient)
-    current_variants = list((await session.execute(select(Variant).options(selectinload(Variant.product)).where(Variant.id.in_([item.variant_id for item in draft.items])).with_for_update())).scalars().all())
+    from src.database.models import Product, ProductByCategory
+    current_variants = list((await session.execute(select(Variant).options(selectinload(Variant.product).selectinload(Product.products_by_category).selectinload(ProductByCategory.category)).where(Variant.id.in_([item.variant_id for item in draft.items])).order_by(Variant.id).with_for_update().execution_options(populate_existing=True))).scalars().all())
     variants_by_id = {variant.id: variant for variant in current_variants}
+    from src.app.services.catalog_merchandising import catalog_unit_price
+    changed_price = False
     stock_policy = await get_stock_visibility_policy(session)
     for item in draft.items:
         variant = variants_by_id.get(item.variant_id)
         if variant is None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft contains unavailable items")
         visible_stock = stock_policy.visible_stock(variant.stock, variant.product)
-        if variant.archived or visible_stock <= 0 or item.quantity > visible_stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft contains unavailable items")
+        if variant.archived or variant.product.archived or variant.price <= 0 or visible_stock <= 0 or item.quantity > visible_stock: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Order draft contains unavailable items")
+        current_price = catalog_unit_price(variant.price, variant.product)
+        if item.unit_price != current_price:
+            item.unit_price = current_price
+            item.line_total = current_price * item.quantity
+            changed_price = True
+
+    if changed_price:
+        draft.basket_subtotal = sum((item.line_total for item in draft.items), Decimal("0.00"))
+        draft.grand_total = draft.basket_subtotal + draft.delivery_total
+        await session.commit()
+        raise HTTPException(409, {"code": "draft_repriced", "message": "Цена товаров изменилась. Проверьте новый итог и подтвердите заказ ещё раз."})
 
     if str(draft.delivery_address.provider).upper() == "CDEK":
         authoritative_quote = await calculate_authoritative_cdek_quote(session, user=user, address=draft.delivery_address, items=draft.items,)
@@ -90,7 +104,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
             }
             for item in draft.items
         ],
-        use_bonus_rubles=use_bonus_rubles,
+        use_bonus_rubles=use_bonus_rubles, bonus_rubles_to_use=bonus_rubles_to_use,
         reward_mode=reward_mode,
     )
     grand_total = (quantize_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None else (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total)
@@ -104,6 +118,8 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     session.add_all(order_items)
     await session.flush()
     await _persist_order_benefit_applications(session, order=order, user=user, resolved_benefits=resolved_benefits)
+    from src.app.services.orders.stock_reservations import reserve_order_stock
+    await reserve_order_stock(session, order)
     for item in draft.items: await record_purchase(session, user_id=user_id, product_id=item.product_id, quantity=item.quantity, commit=False)
     await ensure_order_has_amocrm_lead(session, order, user=user)
     await _clear_order_draft_references(session, draft_id=draft.id)

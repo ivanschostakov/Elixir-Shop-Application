@@ -1,12 +1,6 @@
 const test = require("node:test")
 const assert = require("node:assert/strict")
-const fs = require("node:fs")
-const ts = require("typescript")
-const path = require("node:path")
-const source = fs.readFileSync(path.join(__dirname, "../utils/settlement.ts"), "utf8")
-const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
-const moduleExports = {}
-new Function("exports", compiled)(moduleExports)
+const moduleExports = require("./load-ts.cjs")("utils/settlement.ts")
 
 test("balance keeps debt, kopecks and unknown separate from zero", () => {
     assert.match(moduleExports.formatSettlementMoney("-100000.25"), /-100\s000,25/)

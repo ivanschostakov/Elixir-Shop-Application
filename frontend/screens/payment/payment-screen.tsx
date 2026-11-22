@@ -10,6 +10,7 @@ import {
     Pressable,
     ScrollView,
     Text,
+    TextInput,
     View,
 } from "react-native"
 import * as Clipboard from "expo-clipboard"
@@ -38,6 +39,7 @@ import { createPaymentScreenStyles } from "@/screens/payment/payment-screen.styl
 import { mergePaymentState, resolvePaymentPhase } from "@/screens/payment/payment-state"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createGuestOrder, isGuestPhoneExistsError } from "@/services/api/guest"
+import { ApiError } from "@/services/api/client"
 import type { GuestOrderPayload } from "@/services/api/guest.types"
 import { createOrder, getOrder, repeatOrder } from "@/services/api/orders"
 import type { OrderItemRead, OrderRead } from "@/services/api/orders.types"
@@ -108,7 +110,7 @@ function parseRouteString(value: string | string[] | undefined) {
     return trimmedValue || null
 }
 
-function buildGuestOrderPayload(orderDraft: OrderDraftRead, paymentMethod: PaymentMethod): GuestOrderPayload {
+function buildGuestOrderPayload(orderDraft: OrderDraftRead, paymentMethod: PaymentMethod, buyerEmail: string): GuestOrderPayload {
     const deliveryAddress = orderDraft.delivery_address
     const recipient = getDraftRecipient(orderDraft)
 
@@ -117,6 +119,7 @@ function buildGuestOrderPayload(orderDraft: OrderDraftRead, paymentMethod: Payme
     }
 
     return {
+        buyer_email: buyerEmail.trim().toLowerCase(),
         items: orderDraft.items.map((item) => ({
             variant_id: item.variant_id,
             quantity: item.quantity,
@@ -165,6 +168,7 @@ export default function PaymentScreen() {
         paymentMethod?: string | string[]
         orderId?: string | string[]
         useBonus?: string | string[]
+        bonusAmount?: string | string[]
         rewardMode?: string | string[]
     }>()
     const draftId = parseDraftId(params.draftId)
@@ -172,10 +176,11 @@ export default function PaymentScreen() {
     const routeOrderId = parsePositiveRouteId(params.orderId)
     const routePromoCode = parseRouteString(params.code)
     const useBonusRubles = parseRouteString(params.useBonus) === "1"
+    const bonusAmount = parseRouteString(params.bonusAmount)
     const rewardMode: RewardMode = parseRouteString(params.rewardMode) === "promo" ? "promo" : "cashback"
     const isBasketCheckout = draftId === null
     const { basket, loading: basketLoading } = useBasket()
-    const { orderDraft: savedOrderDraft, error: savedDraftError, loading: savedDraftLoading } = useOrderDraft(draftId)
+    const { orderDraft: savedOrderDraft, error: savedDraftError, loading: savedDraftLoading, reload: reloadDraft } = useOrderDraft(draftId)
     const orderDraft = useMemo(
         () => (isBasketCheckout && basket ? buildCheckoutDraftFromBasket(basket) : savedOrderDraft),
         [basket, isBasketCheckout, savedOrderDraft],
@@ -186,6 +191,7 @@ export default function PaymentScreen() {
     const [order, setOrder] = useState<OrderRead | null>(null)
     const [payment, setPayment] = useState<PaymentStatusRead | null>(null)
     const [submitting, setSubmitting] = useState(false)
+    const [guestRecoveryEmail, setGuestRecoveryEmail] = useState<string | null>(null)
     const [awaitingSettlement, setAwaitingSettlement] = useState(false)
     const [isRepeating, setIsRepeating] = useState(false)
     const [phase, setPhase] = useState<PaymentPhase>("select")
@@ -448,7 +454,9 @@ export default function PaymentScreen() {
                 }
 
                 if (isBasketCheckout && !isAuthenticated) {
-                    const guestOrderResponse = await createGuestOrder(buildGuestOrderPayload(orderDraft, effectiveMethod))
+                    const recoveryEmail = (guestRecoveryEmail ?? (orderDraft ? getDraftRecipient(orderDraft)?.email : "") ?? "").trim()
+                    if (!/^[^@\s]+@[^@]+\.[^@]+$/.test(recoveryEmail)) throw new Error(t("auth.error.invalidEmail"))
+                    const guestOrderResponse = await createGuestOrder(buildGuestOrderPayload(orderDraft, effectiveMethod, recoveryEmail))
                     acceptSession(guestOrderResponse)
                     nextOrder = guestOrderResponse.order
                     clearBasketSnapshot()
@@ -457,7 +465,7 @@ export default function PaymentScreen() {
                     nextOrder = await createOrder({
                         ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
                         ...(routePromoCode ? { code: routePromoCode } : {}),
-                        ...(useBonusRubles ? { use_bonus_rubles: true } : {}),
+                        ...(useBonusRubles ? { use_bonus_rubles: true, ...(bonusAmount ? { bonus_rubles_to_use: bonusAmount } : {}) } : {}),
                         reward_mode: rewardMode,
                         payment_method: effectiveMethod,
                     })
@@ -491,6 +499,12 @@ export default function PaymentScreen() {
             }
         } catch (paymentError) {
             if (!isActive()) return
+            if (paymentError instanceof ApiError && (paymentError.body as { detail?: { code?: string } })?.detail?.code === "draft_repriced") {
+                await reloadDraft()
+                setErrorMessage(paymentError.message)
+                setPhase("select")
+                return
+            }
             if (paymentError instanceof PaymentPreparationPendingError) {
                 setErrorMessage(paymentError.message)
                 setPhase("waiting")
@@ -534,7 +548,7 @@ export default function PaymentScreen() {
                 setSubmitting(false)
             }
         }
-    }, [acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t, useBonusRubles])
+    }, [bonusAmount, guestRecoveryEmail, reloadDraft, acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t, useBonusRubles])
 
     const handleContinueWaiting = useCallback(() => {
         void handleStartPayment(resolvedPaymentMethod)
@@ -1255,6 +1269,14 @@ export default function PaymentScreen() {
 
         return (
             <View style={paymentScreenStyles.summaryCard}>
+                {!isAuthenticated && !order ? <View style={paymentScreenStyles.summarySectionCard}>
+                    <Text>{t("payment.recoveryEmail")}</Text>
+                    <TextInput accessibilityLabel={t("payment.recoveryEmail")}
+                        autoCapitalize="none" keyboardType="email-address"
+                        value={guestRecoveryEmail ?? (orderDraft ? getDraftRecipient(orderDraft)?.email : "") ?? ""}
+                        onChangeText={setGuestRecoveryEmail} />
+                    <Text>{t("payment.recoveryEmailHint")}</Text>
+                </View> : null}
                 <View onLayout={handleSectionLayout("items")} style={paymentScreenStyles.summarySectionCard}>
                     {renderSectionHeader(t("payment.positionsTitle"), isItemsExpanded, () => {
                         handleToggleSection("items")

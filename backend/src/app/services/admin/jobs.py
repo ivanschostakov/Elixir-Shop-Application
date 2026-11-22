@@ -387,6 +387,12 @@ async def _execute_operation(run_id: int) -> dict[str, Any]:
         target_type = run.target_type
         target_id = run.target_id
         input_json = run.input_json
+    if provider == "app" and operation == "payment_effects":
+        from src.app.services.orders.payment_effects import apply_payment_effects
+        async with SessionLocal() as db:
+            order = await get_order_by_id(db, int(target_id))
+            if order is None: return {"skipped": "order_missing"}
+            return await apply_payment_effects(db, order, input_json)
 
     if provider == "moysklad" and operation == "catalog_sync" and target_type is None:
         stats = await sync_moysklad_product_catalog()

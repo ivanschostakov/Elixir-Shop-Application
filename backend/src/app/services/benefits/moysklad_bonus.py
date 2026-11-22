@@ -111,7 +111,10 @@ async def get_user_moysklad_bonus_wallet(
 
     try:
         if LOYALTY_USE_SETTLEMENT_BALANCE:
+            from config import MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID, MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID
             if not LOYALTY_SETTLEMENT_CHECKOUT_ENABLED:
+                return MoySkladBonusWallet()
+            if not coerce_uuid(MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID) or not coerce_uuid(MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID):
                 return MoySkladBonusWallet()
             from .settlement import get_account_settlement
             value = await get_account_settlement(user.moysklad_counterparty_id, client=client)

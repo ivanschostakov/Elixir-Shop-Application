@@ -44,7 +44,7 @@ async def create_bonus_balance_payment(
     currency_response.raise_for_status()
     state = state_response.json()
     currency = currency_response.json()
-    if state.get("name") != "Бонусная (Накопительная)":
+    if state.get("name") not in {"Бонусы", "Бонусная (Накопительная)"}:
         raise RuntimeError("Bonus incoming payment template has the wrong state")
     if currency.get("isoCode") != "B.RUB" or Decimal(str(currency.get("rate", 0))) != 1 or currency.get("multiplicity") != 1:
         raise RuntimeError("Bonus incoming payment template has an unsupported currency")

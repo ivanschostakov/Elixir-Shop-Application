@@ -1,3 +1,4 @@
+import { getTranslationLocale } from "@/i18n/translations"
 import type { TranslationKey } from "@/i18n/translations"
 import type { GetOrdersQuery, OrderHistoryBucket, OrderStatusCode } from "@/services/api/orders.types"
 
@@ -179,7 +180,7 @@ export function buildOrderHistoryQuery(
 
 export function formatHistoryDate(value: string) {
     try {
-        return new Intl.DateTimeFormat("ru-RU", {
+        return new Intl.DateTimeFormat(getTranslationLocale(), {
             day: "2-digit",
             month: "2-digit",
             year: "numeric",
@@ -191,7 +192,7 @@ export function formatHistoryDate(value: string) {
 
 export function formatHistoryDateWithoutYear(value: string) {
     try {
-        return new Intl.DateTimeFormat("ru-RU", {
+        return new Intl.DateTimeFormat(getTranslationLocale(), {
             day: "2-digit",
             month: "2-digit",
         }).format(toDisplayDate(value))

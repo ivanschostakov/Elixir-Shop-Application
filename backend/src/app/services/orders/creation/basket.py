@@ -28,7 +28,7 @@ from .payloads import _build_order_create_data, _build_order_item_from_basket_ro
 
 
 @serialized_settlement_checkout
-async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     basket = await get_basket_by_user_id(session, user_id, lock=True)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
@@ -89,7 +89,7 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
             }
             for item, _, _ in order_item_rows
         ],
-        use_bonus_rubles=use_bonus_rubles,
+        use_bonus_rubles=use_bonus_rubles, bonus_rubles_to_use=bonus_rubles_to_use,
         reward_mode=reward_mode,
     )
     grand_total = (quantize_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None else (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total)
@@ -103,6 +103,8 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     session.add_all(order_items)
     await session.flush()
     await _persist_order_benefit_applications(session, order=order, user=user, resolved_benefits=resolved_benefits)
+    from src.app.services.orders.stock_reservations import reserve_order_stock
+    await reserve_order_stock(session, order)
     for item, _, _ in order_item_rows: await record_purchase(session, user_id=user_id, product_id=item.product_id, quantity=item.quantity, commit=False)
     await ensure_order_has_amocrm_lead(session, order, user=user)
     await session.execute(delete(BasketItem).where(BasketItem.basket_id == basket.id))

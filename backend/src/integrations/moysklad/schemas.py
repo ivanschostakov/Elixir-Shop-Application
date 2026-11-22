@@ -22,6 +22,7 @@ class MoySkladVariantRow:
     stock: int
     price: Decimal
     archived: bool = False
+    weight_grams: int | None = None
 
 
 @dataclass

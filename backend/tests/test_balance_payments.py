@@ -230,7 +230,7 @@ def test_other_native_mutation_jobs_are_disabled_in_settlement_mode(monkeypatch)
 def test_pending_rewards_are_not_available_checkout_money(monkeypatch):
     monkeypatch.setattr(benefits, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
     monkeypatch.setattr(benefits, "_resolve_subtotals", AsyncMock(return_value=(Decimal(9180), Decimal(9180), "explicit")))
-    monkeypatch.setattr(benefits, "ensure_default_reward_program", AsyncMock(return_value=SimpleNamespace(id=1, reward_program="bonus")))
+    monkeypatch.setattr(benefits, "ensure_default_reward_program", AsyncMock(return_value=SimpleNamespace(id=1, reward_program="bonus", reward_program_selection_source="system_default", reward_program_snapshot={})))
     monkeypatch.setattr(benefits, "refresh_profile_discount", lambda *args, **kwargs: None)
     monkeypatch.setattr(benefits, "reward_program_selection_required", lambda profile: False)
     monkeypatch.setattr(benefits, "get_user_moysklad_bonus_wallet", AsyncMock(return_value=MoySkladBonusWallet()))

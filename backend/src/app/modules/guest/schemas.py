@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, EmailStr
 
 from src.app.modules.auth.schemas.responses import AuthUserRead
 from src.app.modules.users.me.schemas.order import PaymentMethod
@@ -58,6 +58,7 @@ class GuestDeliveryAddressPayload(BaseModel):
 
 
 class GuestOrderPayload(BaseModel):
+    buyer_email: EmailStr
     items: list[GuestBasketItemPayload] = Field(min_length=1, max_length=100)
     delivery_address: GuestDeliveryAddressPayload
     recipient: UpdateOrderDraftRecipientPayload

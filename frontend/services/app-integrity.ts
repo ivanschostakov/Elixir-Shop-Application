@@ -19,22 +19,35 @@ const APP_INTEGRITY_HEADERS = {
 
 let preparedAndroidProjectNumber: string | null = null
 let androidProjectNumberRequest: Promise<string> | null = null
-let iosRegistrationRequest: Promise<string> | null = null
-let iosKeyStateMigrationRequest: Promise<void> | null = null
 let iosOperationQueue: Promise<unknown> = Promise.resolve()
-
-// App Attest shares one device key; concurrent recovery must not delete another request's key.
-function withIosKeyLock<T>(operation: () => Promise<T>): Promise<T> {
-    const result = iosOperationQueue.then(operation)
-    iosOperationQueue = result.catch(() => undefined)
-    return result
+function checkDeadline(signal: AbortSignal) {
+    if (signal.aborted) throw new Error("integrity_timeout")
 }
 
-async function retryIosService<T>(operation: () => Promise<T>): Promise<T> {
+// App Attest shares one device key; concurrent recovery must not delete another request's key.
+function withIosKeyLock<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController()
+    const timeout = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener("abort", () => reject(new Error("integrity_timeout")))
+    })
+    const timer = setTimeout(() => controller.abort(), 20000)
+    const result = iosOperationQueue.then(() => {
+        checkDeadline(controller.signal)
+        return Promise.race([operation(controller.signal), timeout])
+    })
+    iosOperationQueue = result.catch(() => undefined)
+    return Promise.race([result, timeout]).finally(() => clearTimeout(timer))
+}
+
+async function retryIosService<T>(operation: () => Promise<T>, signal: AbortSignal): Promise<T> {
     for (let attempt = 0; ; attempt++) {
         try {
-            return await operation()
+            checkDeadline(signal)
+            const value = await operation()
+            checkDeadline(signal)
+            return value
         } catch (error) {
+            checkDeadline(signal)
             const code = (error as { code?: string } | null)?.code
             const retryable = code === "ERR_APP_INTEGRITY_SERVER_UNAVAILABLE" || code === "ERR_APP_INTEGRITY_SYSTEM_FAILURE"
             if (!retryable || attempt >= 2) throw error
@@ -162,10 +175,12 @@ async function appIntegrityFetch<T>(path: string, init: RequestInit, hasRetried 
         headers.set("Authorization", `Bearer ${tokens.accessToken}`)
     }
 
-    const response = await fetch(`${API_BASE_URL}${path}`, {
-        ...init,
-        headers,
-    })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000)
+    let response
+    try {
+        response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers, signal: controller.signal })
+    } finally { clearTimeout(timer) }
 
     if (response.status === 401 && !hasRetried && getAuthTokens()?.refreshToken) {
         const refreshedTokens = await refreshAuthTokens()
@@ -240,13 +255,15 @@ async function getAndroidIntegrityHeaders(action: string, requestHash: string): 
     }
 }
 
-async function getIosKeyId() {
+async function getIosKeyId(signal: AbortSignal) {
     const storedKeyId = await SecureStore.getItemAsync(IOS_APP_ATTEST_KEY_STORAGE_KEY)
+    checkDeadline(signal)
     if (storedKeyId) {
         return storedKeyId
     }
 
     const keyId = await AppIntegrity.generateKeyAsync()
+    checkDeadline(signal)
     await SecureStore.setItemAsync(IOS_APP_ATTEST_KEY_STORAGE_KEY, keyId)
     return keyId
 }
@@ -263,15 +280,14 @@ export async function resetAppIntegrityState() {
 
     if (Platform.OS === "ios") {
         await withIosKeyLock(async () => {
-            iosRegistrationRequest = null
-            iosKeyStateMigrationRequest = null
             await clearIosKeyState()
         })
     }
 }
 
-async function migrateIosKeyStateIfNeeded() {
+async function migrateIosKeyStateIfNeeded(signal: AbortSignal) {
     const stateVersion = await SecureStore.getItemAsync(IOS_APP_ATTEST_STATE_VERSION_STORAGE_KEY)
+    checkDeadline(signal)
     if (stateVersion === IOS_APP_ATTEST_STATE_VERSION) {
         return
     }
@@ -280,14 +296,8 @@ async function migrateIosKeyStateIfNeeded() {
     await SecureStore.setItemAsync(IOS_APP_ATTEST_STATE_VERSION_STORAGE_KEY, IOS_APP_ATTEST_STATE_VERSION)
 }
 
-async function ensureIosKeyStateMigrated() {
-    if (!iosKeyStateMigrationRequest) {
-        iosKeyStateMigrationRequest = migrateIosKeyStateIfNeeded().finally(() => {
-            iosKeyStateMigrationRequest = null
-        })
-    }
-
-    return iosKeyStateMigrationRequest
+async function ensureIosKeyStateMigrated(signal: AbortSignal) {
+    return migrateIosKeyStateIfNeeded(signal)
 }
 
 function isRecoverableIosKeyError(error: unknown) {
@@ -306,42 +316,38 @@ function isRecoverableIosKeyError(error: unknown) {
     )
 }
 
-async function registerIosKeyIfNeeded() {
-    const keyId = await getIosKeyId()
+async function registerIosKeyIfNeeded(signal: AbortSignal) {
+    const keyId = await getIosKeyId(signal)
     const registeredKeyId = await SecureStore.getItemAsync(IOS_APP_ATTEST_REGISTERED_STORAGE_KEY)
     if (registeredKeyId === keyId) {
         return keyId
     }
 
     const { challenge } = await fetchIosChallenge("attestation")
-    const attestationObject = await retryIosService(() => AppIntegrity.attestKeyAsync(keyId, challenge))
+    const attestationObject = await retryIosService(() => AppIntegrity.attestKeyAsync(keyId, challenge), signal)
+    checkDeadline(signal)
     await registerIosKey(keyId, challenge, attestationObject)
+    checkDeadline(signal)
     await SecureStore.setItemAsync(IOS_APP_ATTEST_REGISTERED_STORAGE_KEY, keyId)
     return keyId
 }
 
-async function ensureIosKeyRegistered() {
-    if (!iosRegistrationRequest) {
-        iosRegistrationRequest = registerIosKeyIfNeeded().finally(() => {
-            iosRegistrationRequest = null
-        })
-    }
-
-    return iosRegistrationRequest
+async function ensureIosKeyRegistered(signal: AbortSignal) {
+    return registerIosKeyIfNeeded(signal)
 }
 
-async function getIosIntegrityHeaders(action: string): Promise<AppIntegrityHeaders> {
+async function getIosIntegrityHeaders(action: string, signal: AbortSignal): Promise<AppIntegrityHeaders> {
     if (!AppIntegrity.isSupported) {
         throw new Error("ios_app_attest_unsupported")
     }
 
-    await ensureIosKeyStateMigrated()
+    await ensureIosKeyStateMigrated(signal)
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-            const keyId = await ensureIosKeyRegistered()
+            const keyId = await ensureIosKeyRegistered(signal)
             const { challenge } = await fetchIosChallenge("assertion", action)
-            const token = await retryIosService(() => AppIntegrity.generateAssertionAsync(keyId, challenge))
+            const token = await retryIosService(() => AppIntegrity.generateAssertionAsync(keyId, challenge), signal)
             return {
                 [APP_INTEGRITY_HEADERS.action]: action,
                 [APP_INTEGRITY_HEADERS.keyId]: keyId,
@@ -350,6 +356,7 @@ async function getIosIntegrityHeaders(action: string): Promise<AppIntegrityHeade
                 [APP_INTEGRITY_HEADERS.token]: token,
             }
         } catch (error) {
+            checkDeadline(signal)
             if (attempt === 0 && isRecoverableIosKeyError(error)) {
                 await clearIosKeyState()
                 continue
@@ -385,7 +392,7 @@ export async function getAppIntegrityHeaders(action?: string): Promise<AppIntegr
             return await getAndroidIntegrityHeaders(action, requestHash)
         }
         if (Platform.OS === "ios") {
-            return await withIosKeyLock(() => getIosIntegrityHeaders(action))
+            return await withIosKeyLock(signal => getIosIntegrityHeaders(action, signal))
         }
     } catch (error) {
         throw createUnavailableError(action, Platform.OS, error)

@@ -1,6 +1,7 @@
 from decimal import Decimal
+from datetime import datetime
 from pathlib import Path
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, Numeric, String, text
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, Numeric, String, DateTime, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from config import API_BASE_URL
@@ -19,6 +20,9 @@ class Variant(Base, SystemMixin):
     sku: Mapped[str | None] = mapped_column(String(length=VARIANT_SKU_MAX_LENGTH), nullable=True)
     name: Mapped[str] = mapped_column(String(length=VARIANT_NAME_MAX_LENGTH), nullable=False)
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    local_reserved: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    stock_valid_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 

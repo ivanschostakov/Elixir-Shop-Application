@@ -33,7 +33,7 @@ def _password_fingerprint(user: User) -> str:
 
 async def _active_verified_user(db: AsyncSession, email: str) -> User | None:
     return (await db.execute(
-        select(User).where(User.email == email, User.is_active.is_(True), User.is_verified.is_(True)).with_for_update()
+            select(User).where(User.email == email, User.is_active.is_(True)).with_for_update()
     )).scalar_one_or_none()
 
 
@@ -126,6 +126,7 @@ async def confirm_password_reset(
 
     now = ufa_now()
     user.password_hash = hash_password(password)
+    user.is_verified = True
     user.app_password_reset_at = now
     await db.delete(pending)
     await db.execute(update(UserSession).where(

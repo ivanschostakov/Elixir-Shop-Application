@@ -1,4 +1,8 @@
 import hashlib
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert
+from fastapi import HTTPException
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,3 +48,37 @@ async def register_webhook_delivery(
     except IntegrityError:
         await session.rollback()
         return False
+
+
+async def claim_webhook_delivery(session, *, provider: str, event_key: str, payload: dict):
+    """A verified event is retryable until its business transaction completes."""
+    now = datetime.now(timezone.utc)
+    await session.execute(insert(WebhookDelivery).values(provider=provider,
+        delivery_id=event_key, payload_hash=event_key, payload_json=payload,
+        status="received", attempts=0).on_conflict_do_nothing())
+    row = (await session.execute(select(WebhookDelivery).where(
+        WebhookDelivery.provider == provider, WebhookDelivery.delivery_id == event_key,
+    ).with_for_update())).scalar_one()
+    if row.status == "processed":
+        await session.commit()
+        return None
+    if row.status == "processing" and row.lease_until and row.lease_until > now:
+        await session.rollback()
+        raise HTTPException(503, "Event is being processed; retry later")
+    row.status = "processing"
+    row.attempts += 1
+    row.lease_until = now + timedelta(minutes=3)
+    row.next_attempt_at = None
+    await session.commit()
+    return row.id
+
+
+async def finish_webhook_delivery(session, delivery_id: int, *, error: Exception | None = None):
+    # Callers roll back a failed business transaction before recording failure.
+    values = dict(status="processed", lease_until=None, last_error=None, next_attempt_at=None)
+    if error is not None:
+        row = await session.get(WebhookDelivery, delivery_id)
+        values.update(status="failed", last_error=type(error).__name__,
+            next_attempt_at=datetime.now(timezone.utc) + timedelta(seconds=min(3600, 15 * 2 ** min(row.attempts, 8))))
+    await session.execute(update(WebhookDelivery).where(WebhookDelivery.id == delivery_id).values(**values))
+    await session.commit()

@@ -58,6 +58,8 @@ async def _refresh_moysklad_program(profile: ReferralProfile, *, user: User) -> 
         return False
     from src.app.services.benefits.settlement import get_account_settlement
     value = await get_account_settlement(counterparty_id)
+    if value.status == "fresh" and value.loyalty_program not in {0, 1, 2}:
+        raise HTTPException(503, "Программа клиента в МойСклад не распознана. Обратитесь в поддержку.")
     if value.status != "fresh" or value.loyalty_program not in {0, 1, 2}:
         snapshot = profile.reward_program_snapshot or {}
         if (moysklad_program_is_authoritative(profile)

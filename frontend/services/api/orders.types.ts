@@ -81,6 +81,7 @@ export type CreateOrderPayload = {
     payment_method: "later" | "sbp"
     code?: string | null
     use_bonus_rubles?: boolean
+    bonus_rubles_to_use?: string
     reward_mode?: "cashback" | "promo"
 }
 

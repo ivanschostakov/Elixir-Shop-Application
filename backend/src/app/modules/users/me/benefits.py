@@ -72,7 +72,7 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
         delivery_total=delivery_total,
         currency=currency,
         quote_items=quote_items,
-        use_bonus_rubles=payload.use_bonus_rubles,
+        bonus_rubles_to_use=payload.bonus_rubles_to_use, use_bonus_rubles=payload.use_bonus_rubles,
         reward_mode=payload.reward_mode,
     )
     await db.commit()

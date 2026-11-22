@@ -23,6 +23,8 @@ from .attributes import _invoiceout_external_code, _invoiceout_name, _is_intelle
 
 async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: User) -> MoySkladOrderSyncResult:
     if not MOY_SKLAD_ORDER_SYNC_ENABLED: return MoySkladOrderSyncResult(enabled=False, skipped_reason="disabled")
+    if (order.checkout_snapshot or {}).get("stock_reservation", {}).get("status") == "released":
+        return MoySkladOrderSyncResult(enabled=True, skipped_reason="reservation_expired")
 
     moysklad_client = get_moysklad_client()
     if not moysklad_client.is_configured(): return MoySkladOrderSyncResult(enabled=True, skipped_reason="client_not_configured")
@@ -53,10 +55,19 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         await session.commit()
 
     await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+    await session.refresh(order, attribute_names=["checkout_snapshot"])
+    if (order.checkout_snapshot or {}).get("stock_reservation", {}).get("status") == "released":
+        raise ValueError("Stock reservation expired during export")
+    order.checkout_snapshot = dict(order.checkout_snapshot or {}, moysklad_document_identity={
+        "counterparty_id": str(counterparty_result.counterparty_id), "organization_id": str(organization_id),
+    })
     await session.refresh(order, attribute_names=["moysklad_customerorder_id", "moysklad_invoiceout_id"])
     variant_ids = [int(item.variant_id) for item in order.items]
     assortment_refs = await _load_assortment_refs(session, variant_ids=variant_ids)
     positions, missing_variant_ids = _build_customerorder_positions(moysklad_client=moysklad_client, assortment_refs=assortment_refs, order=order,)
+    for position in positions:
+        if (position.get("assortment", {}).get("meta", {}).get("type")) != "service":
+            position["reserve"] = position["quantity"]
 
     if missing_variant_ids:
         unique_missing = sorted(set(missing_variant_ids))
@@ -90,6 +101,18 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         order.moysklad_customerorder_id = customerorder_result.customerorder_id
         await session.flush()
         await session.commit()
+    hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
+    if hold.get("status") == "held":
+        reserved = customerorder_result.created
+        if not reserved:
+            remote = await moysklad_client.get_customer_order(customerorder_result.customerorder_id, expand=True)
+            remote_positions = (remote or {}).get("positions", {}).get("rows", [])
+            reserved = bool(remote_positions) and len(remote_positions) == (remote or {}).get("positions", {}).get("meta", {}).get("size", len(remote_positions)) and all(
+                p.get("reserve", 0) >= p.get("quantity", 0) for p in remote_positions
+                if (p.get("assortment", {}).get("meta", {}).get("type")) != "service")
+        if reserved:
+            from src.app.services.orders.stock_reservations import acknowledge_remote_reservation
+            await acknowledge_remote_reservation(session, order)
     invoiceout_result = None
     if not settlement and (_is_intellectmoney_payment(order) or standard_export):
         await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
@@ -135,9 +158,10 @@ async def sync_order_to_moysklad_safe(session: AsyncSession, *, order: Order, us
                 await _record_automatic_order_sync(
                     session,
                     order_id=order_id,
-                    status="error",
+                    status="queued",
                     error=f"MoySklad order sync skipped: {result.skipped_reason}",
                     counters=result.as_dict(),
+                    enqueue=True,
                 )
         else:
             await _record_automatic_order_sync(
@@ -187,9 +211,9 @@ async def _record_automatic_order_sync(session: AsyncSession, *, order_id: int, 
 
             await enqueue_integration_run(run.id, delay_seconds=delay)
         except Exception as enqueue_error:
-            run.status = "error"
+            run.status = "queued"
             run.error = f"Failed to enqueue MoySklad retry: {enqueue_error}"[:8000]
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = None
             await session.commit()
             raise
     return run

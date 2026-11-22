@@ -37,11 +37,13 @@ def settlement_pending(*, rate_limit: httpx.Response | None = None) -> HTTPExcep
 def serialized_settlement_checkout(function):
     @wraps(function)
     async def wrapped(session, **kwargs):
-        from config import LOYALTY_USE_SETTLEMENT_BALANCE, LOYALTY_SETTLEMENT_CHECKOUT_ENABLED
+        from config import LOYALTY_USE_SETTLEMENT_BALANCE, LOYALTY_SETTLEMENT_CHECKOUT_ENABLED, MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID, MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID
         if not LOYALTY_USE_SETTLEMENT_BALANCE or not kwargs.get("use_bonus_rubles"):
             return await function(session, **kwargs)
         if not LOYALTY_SETTLEMENT_CHECKOUT_ENABLED:
             raise HTTPException(409, "Оплата с баланса временно недоступна.")
+        if not coerce_uuid(MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID) or not coerce_uuid(MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID):
+            raise HTTPException(503, "Оплата с баланса ещё не настроена. Выберите оплату без списания или обратитесь в поддержку.")
         user = kwargs["user"]
         if user.moysklad_counterparty_id is None:
             raise HTTPException(409, "Для оплаты с баланса сначала нужно связать профиль с МойСклад.")
@@ -132,6 +134,8 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
             if iid is None:
                 raise ValueError("Invalid settlement invoice reference")
             invoice = await client.get_invoiceout(iid)
+            if entity_id(invoice) != iid:
+                raise ValueError("Settlement invoice is unavailable")
             if invoice and not invoice.get("deleted") and invoice.get("applicable") is True:
                 invoices.append(invoice)
         if len(invoices) > 1:
@@ -143,7 +147,8 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
                     organization_id=coerce_uuid(settlement.get("organization_id")),
                     currency_id=currency_id,
                     gross_rubles=money(settlement["gross_rubles"]),
-                    maximum_balance_rubles=money(settlement["maximum_balance_rubles"]))
+                    maximum_balance_rubles=money(settlement["maximum_balance_rubles"]),
+                    requested_balance_rubles=money(settlement["requested_balance_rubles"]) if settlement.get("requested_balance_rubles") is not None else None)
                 break
             except SettlementNotReady:
                 pass
@@ -264,10 +269,20 @@ async def verify_standard_sbp_invoice(order, *, client=None):
         raise HTTPException(503, "Не удалось проверить счёт в МойСклад. Оплата не создана.") from exc
     try:
         expected = money(order.grand_total) * 100
+        identity = (order.checkout_snapshot or {}).get("moysklad_document_identity") or {}
+        expected_agent = coerce_uuid(identity.get("counterparty_id"))
+        expected_org = coerce_uuid(identity.get("organization_id"))
+        if expected_agent is None or expected_org is None:
+            raise ValueError("Expected MoySklad identities are missing; export must be verified")
+        currency_id = await verify_ruble_currency(client, remote)
+        if entity_id((invoice.get("rate") or {}).get("currency")) != currency_id:
+            raise ValueError("Currency mismatch")
         linked = {entity_id(ref) for ref in (remote.get("invoicesOut") or [])}
         if (entity_id(remote) != order_id or entity_id(invoice) != invoice_id
                 or linked != {invoice_id} or entity_id(invoice.get("customerOrder")) != order_id
                 or any(entity_id(remote.get(field)) != entity_id(invoice.get(field)) for field in ("agent", "organization"))
+                or any(entity_id(row.get("agent")) != expected_agent or entity_id(row.get("organization")) != expected_org
+                       or money((row.get("rate") or {}).get("value", 1)) != 1 for row in (remote, invoice))
                 or any(row.get("applicable") is not True or row.get("deleted")
                        or (row.get("state") or {}).get("stateType") == "Unsuccessful"
                        or money(row.get("payedSum", 0)) > 0 or money(row.get("sum")) != expected

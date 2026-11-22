@@ -4,6 +4,7 @@ import {
     Alert,
     Keyboard,
     KeyboardAvoidingView,
+    Modal,
     Platform,
     Pressable,
     Text,
@@ -17,6 +18,7 @@ import { ProfileQuickActions } from "@/components/profile/profile-quick-actions"
 import { FeedTemplate } from "@/components/templates/feed-template"
 import { ROUTES } from "@/constants/routes"
 import { useAuth } from "@/providers/auth-provider"
+import EmailVerificationStep from "@/screens/auth/email-verification-step"
 import { useLanguage } from "@/providers/language-provider"
 import { createProfileScreenStyles } from "@/screens/profile/profile-screen.styles"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
@@ -38,7 +40,9 @@ export default function PersonalDataScreen() {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const ProfileScreenStyles = useThemeStyles(createProfileScreenStyles)
     const { t } = useLanguage()
-    const { deleteAccount, signOut, updatePersonalData, user } = useAuth()
+    const { deleteAccount, signOut, updatePersonalData, user, resendRegistrationCode, verifyRegistration } = useAuth()
+    const [verificationEmail, setVerificationEmail] = useState<string | null>(null)
+    const [isVerifying, setIsVerifying] = useState(false)
     const [form, setForm] = useState<PersonalDataForm>({
         name: user?.name ?? "",
         surname: user?.surname ?? "",
@@ -134,7 +138,11 @@ export default function PersonalDataScreen() {
         setErrorMessage(null)
 
         try {
-            await updatePersonalData(payload)
+            const nextUser = await updatePersonalData(payload)
+            if (nextUser.email && !nextUser.isVerified) {
+                await resendRegistrationCode({ email: nextUser.email })
+                setVerificationEmail(nextUser.email)
+            }
             Alert.alert(t("profile.personalData.savedTitle"), t("profile.personalData.savedMessage"))
         } catch (saveError) {
             setErrorMessage(getErrorMessage(saveError, t("profile.personalData.saveFailed")))
@@ -228,6 +236,20 @@ export default function PersonalDataScreen() {
             keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
             style={ProfileScreenStyles.screen}
         >
+            <Modal visible={Boolean(verificationEmail)} onRequestClose={() => setVerificationEmail(null)}>
+                <View style={{ padding: 24, paddingTop: 72 }}>
+                    <EmailVerificationStep email={verificationEmail ?? ""} isChecking={isVerifying} isResending={isVerifying}
+                        statusMessage={errorMessage ?? ""} onEditEmail={() => setVerificationEmail(null)}
+                        onResend={async () => { if (verificationEmail) await resendRegistrationCode({ email: verificationEmail }) }}
+                        onVerify={async code => {
+                            if (!verificationEmail) return false
+                            setIsVerifying(true)
+                            try { await verifyRegistration({ email: verificationEmail, code }); setVerificationEmail(null); return true }
+                            catch (error) { setErrorMessage(getErrorMessage(error)); return false }
+                            finally { setIsVerifying(false) }
+                        }} />
+                </View>
+            </Modal>
             <FeedTemplate
                 chromeTemplate={personalDataChromeTemplate}
                 contentContainerStyle={ProfileScreenStyles.content}

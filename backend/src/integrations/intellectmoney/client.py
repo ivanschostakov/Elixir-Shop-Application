@@ -154,6 +154,11 @@ class AsyncIntellectMoney:
         assert last_exc is not None
         raise last_exc
 
+    async def get_purchase_info(self, *, invoice_id: str) -> dict[str, Any]:
+        form = {"EshopId": self.shop_id, "InvoiceId": invoice_id,
+                "Hash": self._md5_hash(self.shop_id, invoice_id, "", self.secret_key)}
+        return await self._post_form("/merchant/getPurchaseInfo", form, self.shop_id, invoice_id, "")
+
     def verify_webhook_hash(self, payload: dict[str, Any]) -> bool:
         actual = str(webhook_payload_value(payload, "Hash") or "")
         if not actual: return False

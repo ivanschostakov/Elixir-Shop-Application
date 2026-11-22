@@ -141,10 +141,14 @@ async function request<T>(
     let rawResponse: string
 
     try {
+        const startedAt = Date.now()
+        const headers = await buildHeaders(init, auth, options)
+        const remaining = (options?.timeoutMs ?? 20000) - (Date.now() - startedAt)
+        if (remaining <= 0) throw new RequestDeadlineError()
         const result = await fetchTextWithDeadline(buildUrl(baseUrl, path, query), {
             ...init,
-            headers: await buildHeaders(init, auth, options),
-        }, options?.timeoutMs)
+            headers,
+        }, remaining)
         response = result.response
         rawResponse = result.text
         if (auth && sessionId !== getAuthTokens()?.sessionId) {

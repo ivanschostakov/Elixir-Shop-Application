@@ -20,6 +20,7 @@ export type GuestBasketQuoteRead = BasketRead
 export type GuestDeliveryAddressPayload = NewDeliveryAddressPayload
 
 export type GuestOrderPayload = {
+    buyer_email: string
     items: GuestBasketItemPayload[]
     delivery_address: GuestDeliveryAddressPayload
     recipient: NewRecipientPayload

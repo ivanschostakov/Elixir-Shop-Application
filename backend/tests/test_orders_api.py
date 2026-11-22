@@ -350,6 +350,9 @@ def variant_factory():
 
 @pytest.fixture()
 def stub_amocrm(monkeypatch):
+    # These tests isolate CRM/gateway behavior. Real document validation has its
+    # own API/contract suite and must never be replaced by live MoySklad calls.
+    monkeypatch.setattr("src.app.services.orders.payments.MOY_SKLAD_ORDER_SYNC_ENABLED", False)
     calls = {"status_updates": []}
 
     class StubAmoCrmClient:
@@ -1205,6 +1208,8 @@ def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, regist
     order_id = order_response.json()["id"]
     order_number = order_response.json()["order_number"]
     payment_id = f"invoice-paid-{uuid.uuid4().hex}"
+    _update_order(order_id, payment_provider="intellectmoney", payment_invoice_id=payment_id)
+    monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.shop_id", "shop-id")
 
     monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.verify_webhook_hash", lambda payload: True)
 
@@ -1215,7 +1220,7 @@ def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, regist
             "OrderId": order_number,
             "ServiceName": f"Заказ №{order_number}",
             "EshopAccount": "",
-            "RecipientAmount": "21.00",
+            "RecipientAmount": str(order_response.json()["grand_total"]),
             "RecipientCurrency": "RUB",
             "PaymentStatus": "5",
             "UserName": "Иван Петров",
@@ -1248,20 +1253,17 @@ def test_intellectmoney_paid_webhook_persists_is_paid(client: TestClient, regist
     with Session(sync_engine) as session:
         purchase = session.execute(
             select(BonusProgramPurchase).where(BonusProgramPurchase.order_id == order_id)
-        ).scalar_one()
-        assert purchase.status == "posted"
-        assert purchase.amount == Decimal("42.00")
-        assert purchase.calculation_snapshot["program"] == "bonus"
-        assert purchase.calculation_snapshot["bitrix_written"] is False
+        ).scalar_one_or_none()
+        assert purchase is None  # Purchase accruals are owned by MoySklad.
         credit = session.execute(
             select(LoyaltyBonusCredit).where(
                 LoyaltyBonusCredit.order_id == order_id,
                 LoyaltyBonusCredit.source_kind == "order_cashback",
             )
-        ).scalar_one()
-        assert credit.points == 2
+        ).scalar_one_or_none()
+        assert credit is None
     profile = _get_referral_profile(registered_user["user_id"])
-    assert profile.referral_discount_base_total == Decimal("42.00")
+    assert profile.referral_discount_base_total == Decimal("0.00")
     assert profile.current_discount_percent == Decimal("0.00")
 
 
@@ -1287,6 +1289,9 @@ def test_intellectmoney_refund_reverses_unified_reward_purchase(
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
     order_number = order_response.json()["order_number"]
+    payment_id = f"invoice-refund-{uuid.uuid4().hex}"
+    _update_order(order_id, payment_provider="intellectmoney", payment_invoice_id=payment_id)
+    monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.shop_id", "shop-id")
     monkeypatch.setattr(
         "src.app.modules.webhooks.router.intellectmoney.verify_webhook_hash",
         lambda payload: True,
@@ -1297,7 +1302,7 @@ def test_intellectmoney_refund_reverses_unified_reward_purchase(
         "OrderId": order_number,
         "ServiceName": f"Заказ №{order_number}",
         "EshopAccount": "",
-        "RecipientAmount": "42.00",
+        "RecipientAmount": str(order_response.json()["grand_total"]),
         "RecipientCurrency": "RUB",
         "UserName": "Иван Петров",
         "UserEmail": "ivan.petrov@example.com",
@@ -1308,17 +1313,15 @@ def test_intellectmoney_refund_reverses_unified_reward_purchase(
         data={
             **common_payload,
             "PaymentStatus": "5",
-            "PaymentId": f"invoice-paid-{uuid.uuid4().hex}",
+            "PaymentId": payment_id,
             "Hash": uuid.uuid4().hex,
         },
     )
     assert paid_response.status_code == 200, paid_response.text
     posted_purchase = _get_reward_purchase(order_id)
-    assert posted_purchase is not None
-    assert posted_purchase.status == "posted"
-    assert posted_purchase.calculation_snapshot["participates_in_program"] is True
+    assert posted_purchase is None
     posted_profile = _get_referral_profile(registered_user["user_id"])
-    assert posted_profile.referral_discount_base_total == posted_purchase.amount
+    assert posted_profile.referral_discount_base_total == 0
     assert posted_profile.current_discount_percent == Decimal("3.00")
 
     refund_response = client.post(
@@ -1326,16 +1329,15 @@ def test_intellectmoney_refund_reverses_unified_reward_purchase(
         data={
             **common_payload,
             "PaymentStatus": "8",
-            "PaymentId": f"invoice-refund-{uuid.uuid4().hex}",
+            "PaymentId": payment_id,
             "Hash": uuid.uuid4().hex,
         },
     )
     assert refund_response.status_code == 200, refund_response.text
 
     reversed_purchase = _get_reward_purchase(order_id)
-    assert reversed_purchase is not None
-    assert reversed_purchase.status == "reversed"
-    assert reversed_purchase.reversed_at is not None
+    assert reversed_purchase is None
+    assert _get_order(order_id).is_paid is False
     profile = _get_referral_profile(registered_user["user_id"])
     assert profile.referral_discount_base_total == Decimal("0.00")
     assert profile.current_discount_percent == Decimal("3.00")
@@ -1373,6 +1375,8 @@ def test_intellectmoney_webhook_updates_amocrm_status_for_non_paid_results(
     order_id = order_response.json()["id"]
     order_number = order_response.json()["order_number"]
     payment_id = f"invoice-{payment_status_code}-{uuid.uuid4().hex}"
+    _update_order(order_id, payment_provider="intellectmoney", payment_invoice_id=payment_id)
+    monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.shop_id", "shop-id")
 
     monkeypatch.setattr("src.app.modules.webhooks.router.intellectmoney.verify_webhook_hash", lambda payload: True)
 
@@ -1383,7 +1387,7 @@ def test_intellectmoney_webhook_updates_amocrm_status_for_non_paid_results(
             "OrderId": order_number,
             "ServiceName": f"Заказ №{order_number}",
             "EshopAccount": "",
-            "RecipientAmount": "21.00",
+            "RecipientAmount": str(order_response.json()["grand_total"]),
             "RecipientCurrency": "RUB",
             "PaymentStatus": str(payment_status_code),
             "UserName": "Иван Петров",

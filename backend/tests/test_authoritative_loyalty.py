@@ -32,6 +32,7 @@ def test_moysklad_program_is_not_inferred_from_promo(monkeypatch, code, expected
     row = profile()
     user = SimpleNamespace(id=1, moysklad_counterparty_id=uuid4(), promo_code="LOCAL")
     value = SimpleNamespace(status="fresh", loyalty_program=code,
+        personal_discount_percent=Decimal("4") if code == 2 else Decimal("0"),
         total_purchases_rubles=Decimal("43502.10"), referrer_promo_code=promo,
         own_promo_code="OWN", fetched_at=datetime.now(timezone.utc))
     monkeypatch.setattr(program, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
@@ -77,6 +78,7 @@ def test_accounting_partner_discount_does_not_require_a_referrer_promo():
     row = profile()
     row.reward_program = "partner"
     row.reward_program_selection_source = "moysklad"
+    row.reward_program_snapshot = {"moysklad_program_code": 2, "moysklad_discount_percent": "4.00"}
     row.referral_discount_base_total = Decimal("43502.10")
     refresh_profile_discount(row, has_promo_code=False)
     assert row.current_discount_percent == Decimal("4.00")

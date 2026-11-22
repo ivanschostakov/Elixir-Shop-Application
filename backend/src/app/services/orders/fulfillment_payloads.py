@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from config import CDEK_SENDER_NAME, CDEK_SENDER_PHONE, YANDEX_DELIVERY_WAREHOUSE_ID
+from config import CDEK_DEFAULT_ITEM_WEIGHT_GRAMS, CDEK_PACKAGING_WEIGHT_GRAMS, CDEK_SENDER_NAME, CDEK_SENDER_PHONE, YANDEX_DELIVERY_WAREHOUSE_ID
 from src.database.models import Order
 
 log = logging.getLogger(__name__)
@@ -106,8 +106,8 @@ def _build_cdek_order_items(order: Order) -> list[dict[str, Any]]:
             "name": item.product_name,
             "ware_key": item.product_sku or str(item.product_id),
             "payment": {"value": 0},
-            "cost": max(1, int(Decimal(item.unit_price).quantize(Decimal("1"), rounding=ROUND_HALF_UP))),
-            "weight": 179,
+            "cost": float(Decimal(item.unit_price).quantize(Decimal("0.01"))),
+            "weight": item.weight_grams or 179,
             "amount": item.quantity,
             "comment": str(item.variant_id),
         }
@@ -129,7 +129,8 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
     if not isinstance(configured_tariff_code, int):
         configured_tariff_code = cdek_client.tariff_codes["office" if delivery_mode == "office" else "door"]
 
-    package = {"number": "1", "weight": 357, "length": 18, "width": 7, "height": 24, "items": _build_cdek_order_items(order)}
+    items = _build_cdek_order_items(order)
+    package = {"number": "1", "weight": sum(i["weight"] * i["amount"] for i in items) + CDEK_PACKAGING_WEIGHT_GRAMS, "length": 18, "width": 7, "height": 24, "items": items}
     order_body: dict[str, Any] = {
         "type": 1,
         "number": str(order.order_number),
@@ -139,7 +140,7 @@ async def build_cdek_order_body(order: Order, cdek_client: Any) -> dict[str, Any
         "sender": {"name": CDEK_SENDER_NAME, "phones": [{"number": CDEK_SENDER_PHONE}]},
         "from_location": cdek_client.from_location,
         "packages": [package],
-        "delivery_recipient_cost": {"value": float(order.delivery_total)},
+        "delivery_recipient_cost": {"value": 0 if order.is_paid else float(order.delivery_total)},
     }
 
     if delivery_mode == "office":

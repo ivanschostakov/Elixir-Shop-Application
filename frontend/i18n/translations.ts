@@ -767,6 +767,9 @@ export const ruTranslations = {
     "common.errorTitle": "Ошибка",
     "common.unknownError": "Неизвестная ошибка",
     "common.validationError": "Проверьте заполненные поля.",
+    "payment.recoveryEmail": "Email для доступа к заказам",
+    "payment.recoveryEmailHint": "Укажите свою почту. После покупки установите пароль через «Забыли пароль?», чтобы вернуться к заказам.",
+    "checkout.balanceAmount": "Сколько списать с баланса, ₽",
     "chat.title": "Чат",
     "chat.statusOnline": "в сети",
     "chat.description": "Связь с поддержкой появится здесь.",
@@ -1811,6 +1814,9 @@ const enTranslations: Record<TranslationKey, string> = {
     "common.errorTitle": "Error",
     "common.unknownError": "Unknown error",
     "common.validationError": "Please check the entered fields.",
+    "payment.recoveryEmail": "Email for access to your orders",
+    "payment.recoveryEmailHint": "Use your own email. After purchase, use Forgot password to set a password and return to your orders.",
+    "checkout.balanceAmount": "Amount to use from balance, ₽",
 
     "chat.title": "Chat",
     "chat.statusOnline": "online",
@@ -2843,6 +2849,9 @@ const kzTranslations: Record<TranslationKey, string> = {
     "common.errorTitle": "Қате",
     "common.unknownError": "Белгісіз қате",
     "common.validationError": "Толтырылған өрістерді тексеріңіз.",
+    "payment.recoveryEmail": "Тапсырыстарға кіру үшін email",
+    "payment.recoveryEmailHint": "Өз поштаңызды көрсетіңіз. Кейін құпия сөзді қалпына келтіріп, тапсырыстарға кіре аласыз.",
+    "checkout.balanceAmount": "Баланстан есептен шығару сомасы, ₽",
     "chat.title": "Чат",
     "chat.statusOnline": "онлайн",
     "chat.description": "Қолдау чаты осы жерде пайда болады.",
@@ -3119,4 +3128,8 @@ export function translate(key: TranslationKey, language: Language = activeLangua
     }
 
     return ruTranslations[key]
+}
+
+export function getTranslationLocale() {
+    return activeLanguage === "en" ? "en-US" : activeLanguage === "kz" ? "kk-KZ" : "ru-RU"
 }

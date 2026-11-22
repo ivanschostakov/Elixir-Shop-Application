@@ -1,6 +1,7 @@
 import logging
 import time
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -21,11 +22,11 @@ from .schemas import (
 logger = logging.getLogger(__name__)
 
 
-async def upsert_catalog_rows(session: AsyncSession, products: list[MoySkladProductRow], variants: list[MoySkladVariantRow], stats: MoySkladCatalogSyncStats | None = None):
+async def upsert_catalog_rows(session: AsyncSession, products: list[MoySkladProductRow], variants: list[MoySkladVariantRow], stats: MoySkladCatalogSyncStats | None = None, *, fetched_after=None):
     stats = stats or MoySkladCatalogSyncStats(fetched_products=len(products), fetched_variants=len(variants))
 
     local_products = list((await session.execute(select(Product))).scalars().all())
-    local_variants = list((await session.execute(select(Variant))).scalars().all())
+    local_variants = list((await session.execute(select(Variant).order_by(Variant.id).with_for_update().execution_options(populate_existing=True))).scalars().all())
 
     products_by_system_id = {p.system_id: p for p in local_products if p.system_id is not None}
     products_by_sku = {p.sku: p for p in local_products}
@@ -42,7 +43,7 @@ async def upsert_catalog_rows(session: AsyncSession, products: list[MoySkladProd
     archive_missing_products(local_products, incoming_product_ids, stats)
     await session.flush()
 
-    await upsert_variants(session, variants, stats, products_by_system_id, variants_by_system_id, variants_by_product_id)
+    await upsert_variants(session, variants, stats, products_by_system_id, variants_by_system_id, variants_by_product_id, fetched_after=fetched_after)
     archive_missing_variants(local_variants, incoming_variant_ids, stats)
     update_product_stock(products_by_system_id.values(), incoming_product_ids, variants_by_product_id, stats)
 
@@ -97,7 +98,7 @@ async def upsert_products(session, products, stats, by_id, by_sku, by_name, vari
             by_name[product.name] = product
 
 
-async def upsert_variants(session, variants, stats, products_by_id, variants_by_id, variants_by_product_id):
+async def upsert_variants(session, variants, stats, products_by_id, variants_by_id, variants_by_product_id, *, fetched_after=None):
     for row in variants:
         product = products_by_id.get(row.product_system_id)
         if product is None:
@@ -110,9 +111,14 @@ async def upsert_variants(session, variants, stats, products_by_id, variants_by_
             "name": row.name,
             "stock": row.stock,
             "price": row.price,
+            "weight_grams": row.weight_grams,
             "archived": product.archived or row.archived,
         }
         variant = variants_by_id.get(row.system_id)
+        if variant is not None:
+            payload["stock"] = max(0, row.stock - (variant.local_reserved or 0))
+            if variant.stock_valid_after and (fetched_after is None or fetched_after <= variant.stock_valid_after):
+                payload.pop("stock")
 
         if variant is None:
             variant = Variant(system_id=row.system_id, **payload)
@@ -158,12 +164,13 @@ def update_product_stock(products, incoming_ids, variants_by_product_id, stats):
 
 async def sync_moysklad_product_catalog():
     started = time.perf_counter()
+    fetched_after = datetime.now(timezone.utc)
     moysklad_client = get_moysklad_client()
     product_rows, variant_rows, stats = await moysklad_client.fetch_catalog_rows()
 
     async with SessionLocal() as session:
         try:
-            stats = await upsert_catalog_rows(session, product_rows, variant_rows, stats)
+            stats = await upsert_catalog_rows(session, product_rows, variant_rows, stats, fetched_after=fetched_after)
             await session.commit()
 
             cache = get_cache_service()

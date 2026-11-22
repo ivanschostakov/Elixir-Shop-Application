@@ -1,5 +1,5 @@
 import logging
-from config import MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID, MOY_SKLAD_BASE_URL
+from config import MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID, MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID, MOY_SKLAD_BASE_URL
 from src.normalize import coerce_uuid, optional_str
 
 
@@ -29,3 +29,5 @@ CUSTOMER_ORDER_CUSTOMENTITY_ATTR_KEYS = frozenset(("payment_method", "delivery_m
 
 if consent_attribute_id := coerce_uuid(MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID):
     CUSTOMER_ORDER_ATTR_IDS["balance_consent"] = str(consent_attribute_id)
+if amount_attribute_id := coerce_uuid(MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID):
+    CUSTOMER_ORDER_ATTR_IDS["balance_amount_kopecks"] = str(amount_attribute_id)

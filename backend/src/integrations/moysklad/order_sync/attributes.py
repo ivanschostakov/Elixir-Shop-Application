@@ -86,6 +86,10 @@ def _moysklad_attr_values(order: Order) -> dict[str, Any]:
     }
     if "balance_consent" in CUSTOMER_ORDER_ATTR_IDS:
         values["balance_consent"] = order_bonus_consent(order)
+    if "balance_amount_kopecks" in CUSTOMER_ORDER_ATTR_IDS:
+        from decimal import Decimal
+        settlement = (order.checkout_snapshot or {}).get("settlement_payment") or {}
+        values["balance_amount_kopecks"] = int(Decimal(str(settlement.get("requested_balance_rubles", "0"))) * 100) if order_bonus_consent(order) else 0
 
     promo_code = optional_str(raw_values.get("promo_code")) or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code"))
     if promo_code: values["promo_code"] = promo_code

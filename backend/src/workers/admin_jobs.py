@@ -67,6 +67,10 @@ async def run_forever() -> None:
             await record_worker_heartbeat("admin_jobs")
             await move_due_scheduled_runs()
             if loop.time() - last_recovery_at >= max(5, ADMIN_JOB_RECOVERY_INTERVAL_SECONDS):
+                from src.app.modules.webhooks.router import retry_due_webhook_deliveries
+                await retry_due_webhook_deliveries()
+                from src.app.services.orders.stock_reservations import expire_local_reservations
+                await expire_local_reservations()
                 await recover_due_database_runs()
                 last_recovery_at = loop.time()
             

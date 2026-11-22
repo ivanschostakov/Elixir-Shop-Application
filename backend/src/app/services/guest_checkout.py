@@ -200,6 +200,10 @@ def _delivery_address_create(user_id: int, payload: GuestDeliveryAddressPayload)
 async def create_guest_order(session: AsyncSession, request: Request, payload: GuestOrderPayload) -> tuple[User, Any]:
     normalized_phone = normalize_phone(payload.recipient.phone)
     normalized_email = str(payload.recipient.email).strip().lower()
+    recovery_email = str(payload.buyer_email).strip().lower()
+    from src.database.crud.auth.user import get_user_by_email
+    if await get_user_by_email(session, recovery_email) is not None:
+        raise HTTPException(409, detail={"code": "email_exists", "message": "Этот email уже используется. Войдите или восстановите пароль."})
     if not normalized_phone:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Phone must be in format +79991234567")
     existing_user = await get_user_by_phone_number(session, normalized_phone)
@@ -213,12 +217,12 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
     _validate_guest_variants(items_by_variant_id, variants_by_id, stock_policy)
 
     user = await create_user(session, UserCreate(
-        email=None,
+        email=recovery_email,
         name=payload.recipient.name,
         surname=payload.recipient.surname,
         phone_number=normalized_phone,
         password_hash=hash_password(generate_guest_password()),
-        is_verified=True,
+        is_verified=False,
     ), commit=False)
 
     delivery_address = await create_delivery_address(session, _delivery_address_create(user.id, payload.delivery_address), commit=False)
@@ -367,6 +371,8 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
         ))
     session.add_all(order_items)
     await session.flush()
+    from src.app.services.orders.stock_reservations import reserve_order_stock
+    await reserve_order_stock(session, order)
     for order_item in order_items: await record_purchase(session, user_id=user.id, product_id=order_item.product_id, quantity=order_item.quantity, commit=False)
     await ensure_order_has_amocrm_lead(session, order, user=user)
     await session.commit()

@@ -114,6 +114,7 @@ def _build_pickup_payload() -> dict:
 
 def _build_guest_order_payload(*, variant_id: int, email: str, phone: str = "+79991234567", quantity: int = 2) -> dict:
     return {
+        "buyer_email": email,
         "items": [{"variant_id": variant_id, "quantity": quantity}],
         "delivery_address": _build_pickup_payload(),
         "recipient": {
@@ -204,7 +205,7 @@ def test_guest_basket_quote_returns_hydrated_totals_without_auth(client: TestCli
     assert _decimal(payload["grand_total"]) == Decimal("25.00")
 
 
-def test_guest_order_creates_user_order_session_and_sets_auth_email_to_null(
+def test_guest_order_creates_user_order_session_with_recovery_email(
     client: TestClient,
     variant_factory,
     stub_amocrm,
@@ -223,7 +224,8 @@ def test_guest_order_creates_user_order_session_and_sets_auth_email_to_null(
     assert payload["access_token"]
     assert payload["refresh_token"]
     assert payload["session_id"] > 0
-    assert payload["user"]["email"] is None
+    assert payload["user"]["email"] == email
+    assert payload["user"]["is_verified"] is False
     assert payload["user"]["phone_number"] == phone
     assert payload["order"]["user_id"] == payload["user"]["id"]
     assert payload["order"]["recipient"]["email"] == email

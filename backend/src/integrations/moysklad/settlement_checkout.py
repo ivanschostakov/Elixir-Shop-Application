@@ -88,6 +88,7 @@ def validate_settlement_invoice(
     currency_id: UUID,
     gross_rubles: Decimal,
     maximum_balance_rubles: Decimal,
+    requested_balance_rubles: Decimal | None = None,
 ) -> SettlementInvoice:
     """Validate linked documents and use their exact difference, not a rounded field."""
     if any(coerce_uuid(value) is None for value in (order_id, counterparty_id, organization_id, currency_id)):
@@ -125,6 +126,8 @@ def validate_settlement_invoice(
     spent = money(gross_rubles - cash)
     if spent > money(maximum_balance_rubles):
         raise ValueError("Settlement exceeds the available balance")
+    if requested_balance_rubles is not None and spent != money(requested_balance_rubles):
+        raise ValueError("Settlement does not match the amount selected by the customer")
     shown = display_spent_rubles(spent)
     label = attributes(invoice).get(INVOICE_SPENT_ATTRIBUTE)
     if isinstance(label, bool) or not isinstance(label, int) or label != shown:

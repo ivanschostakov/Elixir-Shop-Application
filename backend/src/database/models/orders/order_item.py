@@ -20,6 +20,7 @@ class OrderItem(Base, IdPkMixin, TimestampMixin):
     variant_name: Mapped[str] = mapped_column(String(length=VARIANT_NAME_MAX_LENGTH), nullable=False)
     variant_sku: Mapped[str | None] = mapped_column(String(length=VARIANT_SKU_MAX_LENGTH), nullable=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    weight_grams: Mapped[int | None] = mapped_column(Integer, nullable=True)
     unit_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2), nullable=False, default=Decimal("0.00"), server_default=text("0.00")
     )
