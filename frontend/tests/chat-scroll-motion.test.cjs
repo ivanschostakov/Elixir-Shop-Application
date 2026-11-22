@@ -2,10 +2,11 @@ const { test } = require("node:test")
 const assert = require("node:assert/strict")
 const loadTs = require("./load-ts.cjs")
 
-function useScrollHarness(t, platform = "ios") {
+function useScrollHarness(t, platform = "ios", captureKeyboard = false) {
     const calls = []
     const following = []
     const frames = new Map()
+    const keyboard = new Map()
     let nextFrame = 0
     const originalRequest = globalThis.requestAnimationFrame
     const originalCancel = globalThis.cancelAnimationFrame
@@ -13,15 +14,39 @@ function useScrollHarness(t, platform = "ios") {
     globalThis.cancelAnimationFrame = id => frames.delete(id)
     t.after(() => { globalThis.requestAnimationFrame = originalRequest; globalThis.cancelAnimationFrame = originalCancel })
     const { useChatScroll } = loadTs("hooks/chat/use-chat-scroll.ts", {
-        react: { useCallback: fn => fn, useEffect: () => {}, useLayoutEffect: () => {}, useRef: value => ({ current: value }) },
-        "react-native": { Platform: { OS: platform } },
+        react: { useCallback: fn => fn, useEffect: callback => { if (captureKeyboard) { const cleanup = callback(); if (cleanup) t.after(cleanup) } }, useLayoutEffect: () => {}, useRef: value => ({ current: value }) },
+        "react-native": { Platform: { OS: platform }, Keyboard: { addListener: (name, callback) => { keyboard.set(name, callback); return { remove: () => keyboard.delete(name) } } } },
         "@/screens/chat/chat-screen.constants": { CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD: 56 },
     })
     const scroll = useChatScroll({ current: { scrollToEnd: options => calls.push(options) } }, null, value => following.push(value))
     const drain = () => { while (frames.size) { const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn()) } }
     const event = (y, inset = 300) => ({ nativeEvent: { contentSize: { height: 1000 }, layoutMeasurement: { height: 700 }, contentOffset: { y }, contentInset: { bottom: inset } } })
-    return { calls, following, scroll, drain, event }
+    return { calls, following, scroll, drain, event, keyboard }
 }
+
+test("keyboard geometry does not stop following the last message and settles after opening", t => {
+    const h = useScrollHarness(t, "ios", true)
+    h.scroll.onScroll(h.event(300, 0))
+    h.keyboard.get("keyboardWillShow")()
+    h.scroll.onScroll(h.event(300, 300))
+    h.scroll.onContentSizeChange()
+    h.drain()
+    assert.deepEqual(h.calls, [], "Native keyboard motion owns scrolling until the transition ends")
+    assert.deepEqual(h.following, [], "A temporary inset is not a user scrolling away")
+    h.keyboard.get("keyboardDidShow")()
+    h.drain()
+    assert.deepEqual(h.calls, [{ animated: false }])
+})
+
+test("opening the keyboard while reading older messages does not jump to the end", t => {
+    const h = useScrollHarness(t, "ios", true)
+    h.scroll.onScroll(h.event(100, 0))
+    h.keyboard.get("keyboardWillShow")()
+    h.keyboard.get("keyboardDidShow")()
+    h.drain()
+    assert.deepEqual(h.calls, [])
+    assert.deepEqual(h.following, [false])
+})
 
 test("bottom tracking includes the keyboard and composer inset", t => {
     const h = useScrollHarness(t)

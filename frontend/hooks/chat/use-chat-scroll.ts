@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from "react"
-import { Platform } from "react-native"
+import { Keyboard, Platform } from "react-native"
 import type { NativeScrollEvent, NativeSyntheticEvent, ScrollView, TextInput } from "react-native"
 import { CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD } from "@/screens/chat/chat-screen.constants"
 
@@ -18,6 +18,8 @@ export function useChatScroll(
     const scrollOffset = useRef(0)
     const focusFrame = useRef<number | null>(null)
     const focusMeasurement = useRef(0)
+    const keyboardChanging = useRef(false)
+    const followAfterKeyboard = useRef(false)
     const revealField = useCallback(() => {
         // iOS workspaces use KeyboardAwareScrollView to follow the focused field natively.
         if (Platform.OS === "ios") return
@@ -47,7 +49,7 @@ export function useChatScroll(
         resetting.current = false
     }, [])
     const settle = useCallback(() => {
-        if (page.current || !following.current) return
+        if (page.current || !following.current || keyboardChanging.current) return
         cancel()
         resetting.current = true
         frame.current = requestAnimationFrame(() => {
@@ -55,6 +57,29 @@ export function useChatScroll(
             frame.current = requestAnimationFrame(() => { frame.current = null; resetting.current = false })
         })
     }, [cancel, scrollRef])
+    useEffect(() => {
+        if (Platform.OS !== "ios") return
+        const begin = () => {
+            if (!keyboardChanging.current) followAfterKeyboard.current = following.current
+            keyboardChanging.current = true
+            cancel()
+        }
+        const finish = () => {
+            const shouldFollow = followAfterKeyboard.current
+            keyboardChanging.current = false
+            if (shouldFollow) {
+                following.current = true
+                settle()
+            }
+        }
+        const subscriptions = [
+            Keyboard.addListener("keyboardWillShow", begin),
+            Keyboard.addListener("keyboardWillHide", begin),
+            Keyboard.addListener("keyboardDidShow", finish),
+            Keyboard.addListener("keyboardDidHide", finish),
+        ]
+        return () => subscriptions.forEach(subscription => subscription.remove())
+    }, [cancel, settle])
     useLayoutEffect(() => {
         page.current = workspacePage
         focusedField.current = null
@@ -72,7 +97,7 @@ export function useChatScroll(
     useEffect(() => () => { cancel(); if (focusFrame.current != null) cancelAnimationFrame(focusFrame.current) }, [cancel])
     const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
         scrollOffset.current = event.nativeEvent.contentOffset.y
-        if (page.current || resetting.current) return
+        if (page.current || resetting.current || keyboardChanging.current) return
         const { contentOffset, contentSize, layoutMeasurement, contentInset } = event.nativeEvent
         const nextFollowing = contentSize.height + (contentInset?.bottom ?? 0) - contentOffset.y - layoutMeasurement.height <= CHAT_AUTO_SCROLL_BOTTOM_THRESHOLD
         if (following.current === nextFollowing) return
