@@ -1,3 +1,4 @@
+/* global __dirname */
 const assert = require("node:assert/strict")
 const { spawnSync } = require("node:child_process")
 const fs = require("node:fs")

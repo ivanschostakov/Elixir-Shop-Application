@@ -470,7 +470,7 @@ export default function DeliveryScreen() {
 
     useEffect(() => {
         setRemovedDeliveryPointKeys(new Set())
-    }, [activeCountryCode])
+    }, [activeCountryCode, setRemovedDeliveryPointKeys])
 
     useEffect(() => {
         if (!shouldRenderNativeMap || hasNativeMapLoaded) {
@@ -583,6 +583,16 @@ export default function DeliveryScreen() {
         clearResults,
         moveToRegion,
         selectedDeliveryCountry,
+        setDoorDeliveryDraft,
+        setIsDoorFooterExpanded,
+        setIsPickupFooterExpanded,
+        setIsSearchFocused,
+        setPickupPointDraft,
+        setPickupPointError,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+        setSelectionError,
     ])
 
     const getDoorDeliveryCameraRegion = useCallback(
@@ -657,7 +667,14 @@ export default function DeliveryScreen() {
             clearResults()
             moveToRegion(getDeliveryRegion(nextPoint), duration)
         },
-        [clearResults, moveToRegion],
+        [
+            clearResults,
+            moveToRegion,
+            setIsSearchFocused,
+            setSearch,
+            setSearchEnabled,
+            setSearchFocusPoint,
+        ],
     )
 
     const handleGoBack = () => {
@@ -678,7 +695,7 @@ export default function DeliveryScreen() {
 
     const handleClosePickupFooterExtension = useCallback(() => {
         setIsPickupFooterExpanded(false)
-    }, [])
+    }, [setIsPickupFooterExpanded])
 
     const handleCloseDoorFooterExtension = useCallback(() => {
         if (isResolvingDoorAddress) {
@@ -687,7 +704,7 @@ export default function DeliveryScreen() {
 
         setIsDoorFooterExpanded(false)
         setSelectionError(null)
-    }, [isResolvingDoorAddress])
+    }, [isResolvingDoorAddress, setIsDoorFooterExpanded, setSelectionError])
 
     const handleChangeSearch = (value: string) => {
         setSearch(value)
@@ -709,7 +726,13 @@ export default function DeliveryScreen() {
             setPickupPointError(null)
             void runSearch()
         },
-        [runSearch],
+        [
+            runSearch,
+            setIsSearchFocused,
+            setPickupPointError,
+            setSearchEnabled,
+            setSelectionError,
+        ],
     )
 
     const handleSubmitSearch = useCallback(() => {
@@ -717,7 +740,7 @@ export default function DeliveryScreen() {
         setSelectionError(null)
         setPickupPointError(null)
         void runSearch()
-    }, [runSearch])
+    }, [runSearch, setPickupPointError, setSearchEnabled, setSelectionError])
 
     const applyDoorDeliveryGeocodeResult = useCallback(
         (
@@ -791,7 +814,22 @@ export default function DeliveryScreen() {
 
             return applyDoorDeliveryDraft()
         },
-        [activeCountryCode, checkoutDraftId, clearResults, getDoorDeliveryCameraRegion, moveToRegion],
+        [
+            activeCountryCode,
+            checkoutDraftId,
+            clearResults,
+            getDoorDeliveryCameraRegion,
+            moveToRegion,
+            setDoorDeliveryDraft,
+            setIsDoorFooterExpanded,
+            setIsSearchFocused,
+            setPickupPointDraft,
+            setPickupPointError,
+            setSearch,
+            setSearchEnabled,
+            setSearchFocusPoint,
+            setSelectionError,
+        ],
     )
 
     const resolveDoorDeliveryPoint = useCallback(
@@ -832,7 +870,13 @@ export default function DeliveryScreen() {
                 setIsResolvingDoorAddress(false)
             }
         },
-        [applyDoorDeliveryGeocodeResult, doorDeliveryPoint],
+        [
+            applyDoorDeliveryGeocodeResult,
+            doorDeliveryPoint,
+            setIsDoorFooterExpanded,
+            setIsResolvingDoorAddress,
+            setSelectionError,
+        ],
     )
 
     const handleLocateUser = async () => {
@@ -879,7 +923,15 @@ export default function DeliveryScreen() {
                 DELIVERY_CAMERA_DURATIONS.search,
             )
         }
-    }, [doorDeliveryDraft?.address, doorDeliveryPoint, getDoorDeliveryCameraRegion, moveToRegion])
+    }, [
+        doorDeliveryDraft?.address,
+        doorDeliveryPoint,
+        getDoorDeliveryCameraRegion,
+        moveToRegion,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+    ])
 
     useEffect(() => {
         if (!pickupPoint || doorDeliveryPoint) {
@@ -893,7 +945,17 @@ export default function DeliveryScreen() {
         setSearchEnabled(false)
         clearResults()
         moveToRegion(getDeliveryRegion(pickupPoint, PICKUP_POINT_FOCUS_ZOOM), DELIVERY_CAMERA_DURATIONS.search)
-    }, [clearResults, doorDeliveryPoint, moveToRegion, pickupPoint, pickupPointDraft])
+    }, [
+        clearResults,
+        doorDeliveryPoint,
+        moveToRegion,
+        pickupPoint,
+        pickupPointDraft,
+        setIsSearchFocused,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+    ])
 
     const handleChoosePickupPoint = useCallback(() => {
         if (!pickupPointDraft) {
@@ -988,7 +1050,25 @@ export default function DeliveryScreen() {
 
         setIsResolvingPickupPoint(true)
         void choosePickupPoint()
-    }, [activeCountryCode, checkoutDraftId, clearResults, isAuthenticated, moveToRegion, pickupPointDraft, router, shouldSyncBasketItems])
+    }, [
+        activeCountryCode,
+        checkoutDraftId,
+        clearResults,
+        isAuthenticated,
+        moveToRegion,
+        pickupPointDraft,
+        router,
+        shouldSyncBasketItems,
+        setDoorDeliveryDraft,
+        setIsDoorFooterExpanded,
+        setIsResolvingPickupPoint,
+        setIsSearchFocused,
+        setPickupPointDraft,
+        setPickupPointError,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+    ])
 
     const handleCopyPickupInfo = useCallback(async (value: string) => {
         if (!value) {
@@ -1063,7 +1143,18 @@ export default function DeliveryScreen() {
 
         setIsResolvingDoorAddress(true)
         void chooseDoorDelivery()
-    }, [activeCountryCode, checkoutDraftId, doorDeliveryDraft, isAuthenticated, router, shouldSyncBasketItems])
+    }, [
+        activeCountryCode,
+        checkoutDraftId,
+        doorDeliveryDraft,
+        isAuthenticated,
+        router,
+        shouldSyncBasketItems,
+        setIsResolvingDoorAddress,
+        setPickupPointDraft,
+        setPickupPointError,
+        setSelectionError,
+    ])
 
     const handleOpenDeliveryPointOfficePage = useCallback(async (code: string) => {
         const officeUrl = `https://www.cdek.ru/ru/offices/view/${encodeURIComponent(code)}/`
@@ -1164,7 +1255,26 @@ export default function DeliveryScreen() {
         } finally {
             setIsResolvingPickupPoint(false)
         }
-    }, [activeCountryCode, checkoutDraftId, clearResults, moveToRegion, pickupPointDraft, shouldShowPickupFooterExtension])
+    }, [
+        activeCountryCode,
+        checkoutDraftId,
+        clearResults,
+        moveToRegion,
+        pickupPointDraft,
+        shouldShowPickupFooterExtension,
+        setDoorDeliveryDraft,
+        setIsDoorFooterExpanded,
+        setIsPickupFooterExpanded,
+        setIsResolvingPickupPoint,
+        setIsSearchFocused,
+        setPickupPointDraft,
+        setPickupPointError,
+        setRemovedDeliveryPointKeys,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+        setSelectionError,
+    ])
 
     const handlePressResult = async (item: DeliveryGeoSuggestResult) => {
         Keyboard.dismiss()

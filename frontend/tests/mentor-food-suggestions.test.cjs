@@ -64,7 +64,7 @@ test("a queued mentor question waits for the active chat and sends once across r
     try {
         const { useMentorQuestion } = loadTs("hooks/chat/use-mentor-question.ts", { react: h.react })
         const question = { id: "recipe-1", text: "Подойдёт ли рыба?" }, sent = [], acknowledged = [], errors = []
-        const render = (active, busy = false) => { h.reset(); useMentorQuestion({ question, active, busy, send: async text => { sent.push(text) }, handled: id => acknowledged.push(id), onError: (...args) => errors.push(args) }); h.run() }
+        const render = function QuestionHarness(active, busy = false) { h.reset(); useMentorQuestion({ question, active, busy, send: async text => { sent.push(text) }, handled: id => acknowledged.push(id), onError: (...args) => errors.push(args) }); h.run() }
         render(false); assert.equal(tasks.size, 0)
         render(true, true); assert.equal(tasks.size, 0)
         render(true); assert.equal(tasks.size, 1)

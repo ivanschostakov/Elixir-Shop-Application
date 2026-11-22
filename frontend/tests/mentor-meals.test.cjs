@@ -42,7 +42,7 @@ test("a late refresh cannot overwrite the complete state returned after a succes
         "@/screens/chat/companion-timezones": dates, "@/screens/chat/companion-dialogue": {}, "@/screens/chat/mentor-data": {},
         "@/screens/chat/mentor-question-icon": {}, "@/screens/chat/mentor-ui": {}, "@/screens/chat/mentor-meal-screens": {},
     })
-    const render = () => { cursor = 0; return useCompanion(true) }
+    const render = function CompanionHarness() { cursor = 0; return useCompanion(true) }
     const pending = render().refresh(); await Promise.resolve(); await Promise.resolve()
     await render().perform({ kind: "entry" })
     assert.equal(render().state.mentor.today.nutrition.consumed.kcal, 1270)

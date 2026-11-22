@@ -192,7 +192,7 @@ export default function DeliveryScreen() {
 
     useEffect(() => {
         setRemovedDeliveryPointKeys(new Set())
-    }, [activeCountryCode])
+    }, [activeCountryCode, setRemovedDeliveryPointKeys])
 
     useEffect(() => {
         if (typeof window === "undefined" || !("geolocation" in navigator)) {
@@ -277,7 +277,20 @@ export default function DeliveryScreen() {
             lon: nextRegion.lon,
         })
         setMapZoom(nextRegion.zoom ?? DEFAULT_DELIVERY_ZOOM)
-    }, [clearResults, selectedDeliveryCountry])
+    }, [
+        clearResults,
+        selectedDeliveryCountry,
+        setDoorDeliveryDraft,
+        setIsDoorFooterExpanded,
+        setIsPickupFooterExpanded,
+        setIsSearchFocused,
+        setPickupPointDraft,
+        setPickupPointError,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+        setSelectionError,
+    ])
 
     const applyDoorDeliveryGeocodeResult = useCallback(
         async (geocodeResult: DeliveryGeoCodeResult) => {
@@ -326,7 +339,20 @@ export default function DeliveryScreen() {
             setMapZoom(PICKUP_POINT_FOCUS_ZOOM)
             return true
         },
-        [activeCountryCode, checkoutDraftId, clearResults],
+        [
+            activeCountryCode,
+            checkoutDraftId,
+            clearResults,
+            setDoorDeliveryDraft,
+            setIsDoorFooterExpanded,
+            setIsSearchFocused,
+            setPickupPointDraft,
+            setPickupPointError,
+            setSearch,
+            setSearchEnabled,
+            setSearchFocusPoint,
+            setSelectionError,
+        ],
     )
 
     const resolveDoorDeliveryPoint = useCallback(
@@ -365,7 +391,13 @@ export default function DeliveryScreen() {
                 setIsResolvingDoorAddress(false)
             }
         },
-        [applyDoorDeliveryGeocodeResult, doorDeliveryPoint],
+        [
+            applyDoorDeliveryGeocodeResult,
+            doorDeliveryPoint,
+            setIsDoorFooterExpanded,
+            setIsResolvingDoorAddress,
+            setSelectionError,
+        ],
     )
 
     useEffect(() => {
@@ -378,7 +410,13 @@ export default function DeliveryScreen() {
         setSearchEnabled(false)
         setPoint(doorDeliveryPoint)
         setMapZoom(PICKUP_POINT_FOCUS_ZOOM)
-    }, [doorDeliveryDraft?.address, doorDeliveryPoint])
+    }, [
+        doorDeliveryDraft?.address,
+        doorDeliveryPoint,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+    ])
 
     useEffect(() => {
         if (!pickupPoint || doorDeliveryPoint) {
@@ -393,7 +431,16 @@ export default function DeliveryScreen() {
         clearResults()
         setPoint(pickupPoint)
         setMapZoom(16)
-    }, [clearResults, doorDeliveryPoint, pickupPoint, pickupPointDraft])
+    }, [
+        clearResults,
+        doorDeliveryPoint,
+        pickupPoint,
+        pickupPointDraft,
+        setIsSearchFocused,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+    ])
 
     const handleChangeSearch = (value: string) => {
         setSearch(value)
@@ -415,7 +462,13 @@ export default function DeliveryScreen() {
             setPickupPointError(null)
             void runSearch()
         },
-        [runSearch],
+        [
+            runSearch,
+            setIsSearchFocused,
+            setPickupPointError,
+            setSearchEnabled,
+            setSelectionError,
+        ],
     )
 
     const handleSubmitSearch = useCallback(() => {
@@ -423,7 +476,7 @@ export default function DeliveryScreen() {
         setSelectionError(null)
         setPickupPointError(null)
         void runSearch()
-    }, [runSearch])
+    }, [runSearch, setPickupPointError, setSearchEnabled, setSelectionError])
 
     const handleOpenSearch = () => {
         setIsSearchOpen(true)
@@ -440,7 +493,7 @@ export default function DeliveryScreen() {
 
     const handleClosePickupFooterExtension = useCallback(() => {
         setIsPickupFooterExpanded(false)
-    }, [])
+    }, [setIsPickupFooterExpanded])
 
     const handleCloseDoorFooterExtension = useCallback(() => {
         if (isResolvingDoorAddress) {
@@ -449,7 +502,7 @@ export default function DeliveryScreen() {
 
         setIsDoorFooterExpanded(false)
         setSelectionError(null)
-    }, [isResolvingDoorAddress])
+    }, [isResolvingDoorAddress, setIsDoorFooterExpanded, setSelectionError])
 
     const handleGoBack = () => {
         if (router.canGoBack()) {
@@ -472,7 +525,14 @@ export default function DeliveryScreen() {
             setSelectionError(null)
             void resolveDoorDeliveryPoint(nextPoint)
         },
-        [resolveDoorDeliveryPoint, supportsDoorDelivery],
+        [
+            resolveDoorDeliveryPoint,
+            supportsDoorDelivery,
+            setIsPickupFooterExpanded,
+            setPickupPointDraft,
+            setPickupPointError,
+            setSelectionError,
+        ],
     )
 
     const handlePressDeliveryPoint = useCallback(async (provider: DeliveryPointProvider, code: string) => {
@@ -555,7 +615,25 @@ export default function DeliveryScreen() {
         } finally {
             setIsResolvingPickupPoint(false)
         }
-    }, [activeCountryCode, checkoutDraftId, clearResults, pickupPointDraft, shouldShowPickupFooterExtension])
+    }, [
+        activeCountryCode,
+        checkoutDraftId,
+        clearResults,
+        pickupPointDraft,
+        shouldShowPickupFooterExtension,
+        setDoorDeliveryDraft,
+        setIsDoorFooterExpanded,
+        setIsPickupFooterExpanded,
+        setIsResolvingPickupPoint,
+        setIsSearchFocused,
+        setPickupPointDraft,
+        setPickupPointError,
+        setRemovedDeliveryPointKeys,
+        setSearch,
+        setSearchEnabled,
+        setSearchFocusPoint,
+        setSelectionError,
+    ])
 
     const handlePressResult = async (result: DeliveryGeoSuggestResult) => {
         try {
@@ -677,7 +755,19 @@ export default function DeliveryScreen() {
 
         setIsResolvingPickupPoint(true)
         void choosePickupPoint()
-    }, [activeCountryCode, checkoutDraftId, isAuthenticated, pickupPointDraft, router, shouldSyncBasketItems])
+    }, [
+        activeCountryCode,
+        checkoutDraftId,
+        isAuthenticated,
+        pickupPointDraft,
+        router,
+        shouldSyncBasketItems,
+        setDoorDeliveryDraft,
+        setIsDoorFooterExpanded,
+        setIsResolvingPickupPoint,
+        setPickupPointDraft,
+        setPickupPointError,
+    ])
 
     const handleCopyPickupInfo = useCallback(async (value: string) => {
         if (!value) {
@@ -696,7 +786,7 @@ export default function DeliveryScreen() {
         } catch {
             setPickupPointError(translate("delivery.pickupPointOfficePageErrorMessage"))
         }
-    }, [])
+    }, [setPickupPointError])
 
     const handleChooseDoorDelivery = useCallback(() => {
         if (!doorDeliveryDraft) {
@@ -762,7 +852,18 @@ export default function DeliveryScreen() {
 
         setIsResolvingDoorAddress(true)
         void chooseDoorDelivery()
-    }, [activeCountryCode, checkoutDraftId, doorDeliveryDraft, isAuthenticated, router, shouldSyncBasketItems])
+    }, [
+        activeCountryCode,
+        checkoutDraftId,
+        doorDeliveryDraft,
+        isAuthenticated,
+        router,
+        shouldSyncBasketItems,
+        setIsResolvingDoorAddress,
+        setPickupPointDraft,
+        setPickupPointError,
+        setSelectionError,
+    ])
 
     return (
         <MapFlowTemplate

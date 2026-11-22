@@ -28,7 +28,7 @@ function setup() {
         "@/utils/errors": { getErrorMessage: error => error.message },
     })
     return {
-        render(active = true) {
+        render: function ConsentHarness(active = true) {
             const allowed = useAiChatEntryConsent(active)
             if (effect) { cleanup?.(); cleanup = effect(); effect = null }
             return allowed
