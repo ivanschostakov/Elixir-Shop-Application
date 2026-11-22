@@ -24,8 +24,9 @@ export function getDefaultScreenTemplateKind(pathname: string): ScreenTemplateKi
 export function getDefaultScreenChromeTemplate(
     pathname: string,
     _isAuthenticated: boolean,
+    translateTitle?: Parameters<typeof getRouteTitle>[1],
 ): ScreenChromeTemplateConfig {
-    const title = getRouteTitle(pathname)
+    const title = getRouteTitle(pathname, translateTitle)
 
     if (isAuthRoute(pathname)) {
         return {

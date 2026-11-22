@@ -20,14 +20,14 @@ import { ScreenTemplateProvider } from "@/providers/screen-template-provider"
 
 /** Chrome lives inside the native screen, so an entering route cannot resize the outgoing one. */
 function RouteScreenContent({ children, pathname }: { children: ReactNode; pathname: string }) {
-    useLanguage()
+    const { t } = useLanguage()
     const styles = useThemeStyles(createAppShellStyles)
     const { top } = useAppSafeAreaInsets()
     const { isAuthenticated, isReady } = useAuth()
     const { screenChromeTemplate } = useScreenChromeTemplate()
     const { setAnimation } = useContext(RouteTransitionContext)
     const router = useRouter()
-    const template = mergeScreenChromeTemplate(getDefaultScreenChromeTemplate(pathname, isReady && isAuthenticated), screenChromeTemplate)
+    const template = mergeScreenChromeTemplate(getDefaultScreenChromeTemplate(pathname, isReady && isAuthenticated, t), screenChromeTemplate)
     const edges: "top"[] = template.mode === "fullscreen" || pathname === ROUTES.home ? [] : ["top"]
     const primaryAppRoutes = PRIMARY_APP_ROUTES
     const index = primaryAppRoutes.findIndex(route => route === pathname)

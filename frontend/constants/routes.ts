@@ -104,10 +104,10 @@ export function shouldShowAppChrome(pathname: string, _isAuthenticated: boolean)
     )
 }
 
-export function getRouteTitle(pathname: string) {
+export function getRouteTitle(pathname: string, t: (key: TranslationKey) => string = translate) {
     if (isProductRoute(pathname)) {
-        return translate("route.product")
+        return t("route.product")
     }
 
-    return translate(headerTitleKeys[pathname] ?? headerTitleKeys[ROUTES.home])
+    return t(headerTitleKeys[pathname] ?? headerTitleKeys[ROUTES.home])
 }
