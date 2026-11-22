@@ -62,7 +62,7 @@ function harness(file, overrides = {}) {
         react, "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
         "react-native": { View: "View", Text: "Text", Pressable: "Pressable", ScrollView: "ScrollView", InteractionManager: { runAfterInteractions: () => ({ cancel() {} }) }, Keyboard: { addListener: () => ({ remove() {} }), dismiss() {}, scheduleLayoutAnimation() {} }, Platform: { OS: "ios" }, useWindowDimensions: () => ({ width: 390, height: 844 }), StyleSheet: { create: v => v, absoluteFillObject: {}, hairlineWidth: 0.5 } },
         "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 47, bottom: 34 }) },
-        "@/screens/chat/mentor-navigation": { MentorBottomNavigation: "Tabs", MentorTabPages: "Pages", mentorTabs: ["nutrition", "workouts", "wellbeing", "chat"], mentorTabLabel: tab => ({ workouts: "Тренировки", wellbeing: "Самочувствие" })[tab] },
+        "@/screens/chat/mentor-navigation": { MentorBottomNavigation: "Tabs", MentorTabPages: "Pages", mentorTabs: ["nutrition", "workouts", "course", "chat", "wellbeing"], mentorTabLabel: tab => ({ workouts: "Тренировки", course: "Мой курс", wellbeing: "Самочувствие" })[tab] },
         "expo-router": { useRouter: () => ({ replace: value => routes.push(value) }) },
         "@/constants/routes": { ROUTES: { home: "/", discover: "/discover", basket: "/basket", profile: "/profile" } },
         "@/hooks/basket/basket-draft-editing-store": { useBasketDraftEditingId: () => 14 },
@@ -107,6 +107,10 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     find(render(), "Tabs").props.onSelect("workouts")
     assert.equal(find(render(), "Tabs").props.active, "workouts")
     assert.ok(nodes(page("workouts")).some(node => node.props.testID === "mentor-placeholder-workouts"))
+    find(render(), "Tabs").props.onSelect("course")
+    assert.ok(nodes(page("course")).some(node => node.props.testID === "mentor-placeholder-course"))
+    assert.ok(nodes(page("course")).some(node => node.props.name === "course"))
+    assert.equal(find(page("course"), "Header").props.title, "Мой курс")
     find(render(), "Tabs").props.onSelect("wellbeing")
     assert.ok(nodes(page("wellbeing")).some(node => node.props.testID === "mentor-placeholder-wellbeing"))
     find(page("workouts"), "Header").props.onBack(); assert.equal(closed, 1)

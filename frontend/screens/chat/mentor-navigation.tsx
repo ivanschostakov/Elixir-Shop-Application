@@ -12,12 +12,12 @@ import { MentorSolidIcon } from "@/screens/chat/mentor-icons"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import { spacing } from "@/theme/spacing"
 
-export const mentorTabs = ["nutrition", "workouts", "wellbeing", "chat"] as const
+export const mentorTabs = ["nutrition", "workouts", "course", "chat", "wellbeing"] as const
 export type MentorTab = typeof mentorTabs[number]
 export type MentorPage = MentorTab | "settings"
 const mentorPages: MentorPage[] = [...mentorTabs, "settings"]
 const transition = { duration: 240, easing: Easing.bezier(0.22, 0.7, 0.22, 1), reduceMotion: ReduceMotion.System }
-export const mentorTabLabel = (tab: MentorTab) => ({ nutrition: mt("Питание"), workouts: mt("Тренировки"), wellbeing: mt("Самочувствие"), chat: mt("Чат") })[tab]
+export const mentorTabLabel = (tab: MentorTab) => ({ nutrition: mt("Питание"), workouts: mt("Тренировки"), course: mt("Мой курс"), chat: mt("Чат"), wellbeing: mt("Самочувствие") })[tab]
 
 export function MentorBottomNavigation({ active, onSelect }: { active: MentorTab; onSelect: (tab: MentorTab) => void }) {
     const colors = useMentorPalette()

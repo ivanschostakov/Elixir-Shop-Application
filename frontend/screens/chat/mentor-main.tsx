@@ -48,7 +48,7 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
         if (current.tab === next && !current.settingsOpen) return
         Keyboard.dismiss(); callbacks.current.setEditor(null); setChatInteractive(false)
         if (next === "chat") setChatVisited(true)
-        const destination = { tab: next, settingsOpen: false, direction: mentorTabs.indexOf(next) > (current.settingsOpen ? 4 : mentorTabs.indexOf(current.tab)) ? 1 : -1, revision: current.revision + 1 }
+        const destination = { tab: next, settingsOpen: false, direction: mentorTabs.indexOf(next) > (current.settingsOpen ? mentorTabs.length : mentorTabs.indexOf(current.tab)) ? 1 : -1, revision: current.revision + 1 }
         route.current = destination; setNavigation(destination)
     }, [])
     const backToMenu = useCallback(() => { const pending = callbacks.current.mentorQuestion; if (pending) callbacks.current.questionHandled(pending.id); select("nutrition") }, [select])
@@ -71,7 +71,7 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
         if (page === "chat") return chatVisited ? <View style={styles.fill}>{renderChat({ active: visible && tab === "chat" && chatInteractive && !settingsOpen, onBack: backToMenu, question: c.mentorQuestion, onQuestionHandled: c.questionHandled })}</View> : null
         if (page === "settings") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeHeader title={mt("Настройки")} onBack={closeSettings} /><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={mentorHomeStyles.body}>{settings.map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} onPress={item.action} style={({ pressed }) => [styles.setting, { borderBottomColor: colors.border, opacity: pressed ? 0.65 : 1 }]}><MentorQuestionIcon name={item.icon} color={colors.green} /><Text style={[styles.settingText, { color: colors.text }]}>{item.label}</Text><MentorQuestionIcon name="chevronRight" size={20} color={colors.muted} /></Pressable>)}</ScrollView></View>
         return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeHeader title={mentorTabLabel(page)} backLabel={mt("На главную магазина")} onBack={onClose} onSettings={openSettings} />
-            <View testID={`mentor-placeholder-${page}`} style={styles.placeholder}><View style={[styles.placeholderIcon, { backgroundColor: colors.soft }]}><MentorQuestionIcon name={page === "workouts" ? "gym" : "maintain"} size={38} color={colors.green} /></View>
+            <View testID={`mentor-placeholder-${page}`} style={styles.placeholder}><View style={[styles.placeholderIcon, { backgroundColor: colors.soft }]}><MentorQuestionIcon name={page === "course" ? "course" : page === "workouts" ? "gym" : "maintain"} size={38} color={colors.green} /></View>
                 <Text accessibilityRole="header" style={[styles.placeholderTitle, { color: colors.text }]}>{mentorTabLabel(page)}</Text><Text style={[styles.placeholderCopy, { color: colors.muted }]}>{mt("Раздел скоро появится")}</Text></View></View>
     }
     return <View style={[styles.fill, { backgroundColor: colors.surface }]}>

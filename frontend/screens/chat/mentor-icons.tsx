@@ -2,7 +2,7 @@ import { useId } from "react"
 import { G, Mask, Path, Rect, Svg } from "react-native-svg"
 
 /** Shared solid glyphs for navigation, onboarding, summaries and actions. */
-export type MentorSolidIconName = "nutrition" | "workouts" | "wellbeing" | "chat"
+export type MentorSolidIconName = "nutrition" | "workouts" | "course" | "chat" | "wellbeing"
 export function MentorSolidIcon({ name, color, size = 24 }: { name: MentorSolidIconName; color: string; size?: number }) {
     const cutout = `mentor-icon-${useId().replace(/[^a-zA-Z0-9]/g, "")}`
     return <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
@@ -17,6 +17,11 @@ export function MentorSolidIcon({ name, color, size = 24 }: { name: MentorSolidI
             <Rect x={2} y={8} width={3} height={8} rx={1.2} />
             <Rect x={19} y={8} width={3} height={8} rx={1.2} />
         </G> : null}
+        {name === "course" ? <>
+            <Rect x={6} y={2} width={12} height={4} rx={1.2} fill={color} />
+            <Mask id={cutout} x={0} y={0} width={24} height={24} maskUnits="userSpaceOnUse"><Rect width={24} height={24} fill="#FFFFFF" /><Rect x={8} y={13.5} width={8} height={4.5} rx={0.8} fill="#000000" /></Mask>
+            <Path d="M8 7h8v2l3 3v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-8l3-3V7Z" fill={color} mask={`url(#${cutout})`} />
+        </> : null}
         {name === "wellbeing" ? <>
             <Mask id={cutout} x={0} y={0} width={24} height={24} maskUnits="userSpaceOnUse"><Rect width={24} height={24} fill="#FFFFFF" /><Path d="M3.5 11h4l2-4 3.5 9 2.5-5h5" fill="none" stroke="#000000" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></Mask>
             <Path d="M12 21s-10-5.9-10-12.3C2 5.3 4.5 3 7.5 3c1.9 0 3.5 1 4.5 2.4C13 4 14.6 3 16.5 3 19.5 3 22 5.3 22 8.7 22 15.1 12 21 12 21Z" fill={color} mask={`url(#${cutout})`} />

@@ -50,7 +50,7 @@ function harness() {
         const tree = component(props); effects.splice(0).forEach(run => run()); return tree
     }
     const pages = module.MentorTabPages({ active: "nutrition", direction: 1, transitionKey: 0, onSelect() {}, render: name => name, footer: "footer", footerVisible: true, footerHeight: 86, onSettled() {} }).props.children
-    return { render, pages: pages.props.children[0], footer: pages.props.children[1], values,
+    return { render, tabs: module.mentorTabs, pages: pages.props.children[0], footer: pages.props.children[1], values,
         advance(fraction) { for (const value of values) if (value.animation) {
             const animation = value.animation
             value.current = animation.from + (animation.target - animation.from) * fraction
@@ -100,5 +100,13 @@ test("the footer moves out as an overlay and never changes the page viewport hei
     assert.deepEqual(render().props.style.at(-1).sample(), beforeReverse)
     h.advance(1)
     assert.equal(render().props.style.at(-1).sample().transform[0].translateY, 0)
-    assert.equal(h.pages.length, 5, "Retained pages, including settings, keep their geometry and drafts")
+    assert.equal(h.pages.length, 6, "Retained pages, including settings, keep their geometry and drafts")
+})
+
+
+test("mentor navigation has five menus with course centered and chat fourth", () => {
+    const h = harness()
+    assert.deepEqual([...h.tabs], ["nutrition", "workouts", "course", "chat", "wellbeing"])
+    assert.equal(h.pages[2].props.page, "course")
+    assert.equal(h.pages[3].props.page, "chat")
 })
