@@ -82,6 +82,23 @@ test("permanent native failure is not bypassed and does not poison the queue", a
     assert.equal(api.stats().generated, 1)
 })
 
+test("a hung native call has a deadline and releases the iOS request queue", async t => {
+    const originalTimeout = global.setTimeout
+    global.setTimeout = (callback, delay, ...args) => originalTimeout(callback, delay === 20000 ? 30 : delay, ...args)
+    t.after(() => { global.setTimeout = originalTimeout })
+    let calls = 0
+    let finishLate
+    const api = setup(t, { generateAssertionAsync: async () => {
+        if (++calls === 1) return new Promise(resolve => { finishLate = resolve })
+        return "second-assertion"
+    } })
+    await assert.rejects(api.getAppIntegrityHeaders("orders:create"), /integrity_timeout/)
+    const headers = await api.getAppIntegrityHeaders("orders:create")
+    assert.equal(headers["X-App-Integrity-Token"], "second-assertion")
+    finishLate("expired-assertion")
+    assert.equal(api.stats().generated, 1)
+})
+
 test("key reset waits for an in-flight assertion before deleting its key", async t => {
     const api = setup(t)
     const request = api.getAppIntegrityHeaders("ai-companion")

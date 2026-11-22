@@ -415,6 +415,7 @@ export default function CheckoutScreen() {
             setIsCheckingPromoCode(false)
         }
     }, [
+        bonusAmount,
         hasAttachedPromoCode,
         isAuthenticated,
         isCheckingPromoCode,

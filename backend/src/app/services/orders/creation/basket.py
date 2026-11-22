@@ -93,6 +93,8 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
         reward_mode=reward_mode,
     )
     grand_total = (quantize_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None else (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + basket.delivery_total)
+    from src.app.services.discounts import get_non_discountable_product_ids
+    resolved_benefits["discount_excluded_product_ids"] = sorted(await get_non_discountable_product_ids(session, [item.product_id for item in basket.items]))
     checkout_snapshot = _build_checkout_snapshot(checkout_source, client_platform=client_platform, payment_method=payment_method, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, resolved_benefits=resolved_benefits,)
     delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
 

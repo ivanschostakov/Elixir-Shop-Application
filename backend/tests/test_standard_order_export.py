@@ -136,8 +136,13 @@ async def test_linked_moysklad_invoice_is_reused_or_rejected_without_post(monkey
 async def test_only_matching_unpaid_moysklad_invoice_allows_new_sbp(monkeypatch, case):
     monkeypatch.setattr(config, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
     remote, invoice = document_rows()
+    currency = UUID(int=99)
+    for document in (remote, invoice):
+        document["rate"] = {"currency": {"id": str(currency)}, "value": 1}
+    monkeypatch.setattr(settlement_payment, "verify_ruble_currency", AsyncMock(return_value=currency))
     order = SimpleNamespace(moysklad_customerorder_id=OID, moysklad_invoiceout_id=IID,
-                            grand_total=Decimal("6421.40"), checkout_snapshot={"order_export_version": 1})
+                            grand_total=Decimal("6421.40"), checkout_snapshot={"order_export_version": 1,
+                                "moysklad_document_identity": {"counterparty_id": str(CID), "organization_id": str(ORG)}})
     if case == "new_total": invoice["sum"] -= 1
     if case == "missing_id": order.moysklad_invoiceout_id = None
     if case == "second_invoice": remote["invoicesOut"].append({"id": str(UUID(int=8))})

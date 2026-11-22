@@ -66,7 +66,7 @@ def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int
         delivery_provider_ref=order.delivery_provider_ref,
         yandex_request_id=order.yandex_request_id,
         is_active=order.is_active,
-        is_paid=order.is_paid,
+        is_paid=bool(order.is_paid and order.payment_status != "refunded"),
         is_canceled=order.is_canceled,
         is_shipped=order.is_shipped,
         status_code=get_order_status_code(order),

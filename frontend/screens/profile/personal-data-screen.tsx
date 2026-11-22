@@ -149,7 +149,7 @@ export default function PersonalDataScreen() {
         } finally {
             setIsSaving(false)
         }
-    }, [form, isSaving, payload, t, updatePersonalData, user])
+    }, [form, isSaving, payload, resendRegistrationCode, t, updatePersonalData, user])
 
     const handleSignOut = useCallback(async () => {
         await signOut()

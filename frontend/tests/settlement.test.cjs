@@ -1,5 +1,8 @@
+/* global __dirname */
 const test = require("node:test")
 const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
 const moduleExports = require("./load-ts.cjs")("utils/settlement.ts")
 
 test("balance keeps debt, kopecks and unknown separate from zero", () => {

@@ -143,6 +143,9 @@ async function request<T>(
     try {
         const startedAt = Date.now()
         const headers = await buildHeaders(init, auth, options)
+        if (auth && sessionId !== getAuthTokens()?.sessionId) {
+            throw new ApiError(409, "Session changed; please try again")
+        }
         const remaining = (options?.timeoutMs ?? 20000) - (Date.now() - startedAt)
         if (remaining <= 0) throw new RequestDeadlineError()
         const result = await fetchTextWithDeadline(buildUrl(baseUrl, path, query), {
@@ -170,6 +173,7 @@ async function request<T>(
         getAuthTokens()?.refreshToken
     ) {
         const refreshedTokens = await refreshAuthTokens()
+        if (sessionId !== getAuthTokens()?.sessionId) throw new ApiError(409, "Session changed; please try again")
 
         if (refreshedTokens?.accessToken) {
             return request<T>(baseUrl, path, init, query, options, true, hasRetriedAppIntegrity)
@@ -186,6 +190,7 @@ async function request<T>(
             isAppIntegrityApiError(apiError)
         ) {
             await resetAppIntegrityState()
+            if (auth && sessionId !== getAuthTokens()?.sessionId) throw new ApiError(409, "Session changed; please try again")
             return request<T>(baseUrl, path, init, query, options, hasRetried, true)
         }
 

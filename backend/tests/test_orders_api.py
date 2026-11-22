@@ -353,6 +353,9 @@ def stub_amocrm(monkeypatch):
     # These tests isolate CRM/gateway behavior. Real document validation has its
     # own API/contract suite and must never be replaced by live MoySklad calls.
     monkeypatch.setattr("src.app.services.orders.payments.MOY_SKLAD_ORDER_SYNC_ENABLED", False)
+    monkeypatch.setattr("config.MOY_SKLAD_ORDER_SYNC_ENABLED", False)
+    monkeypatch.setattr("src.integrations.moysklad.order_sync.service.MOY_SKLAD_ORDER_SYNC_ENABLED", False)
+    monkeypatch.setattr("src.integrations.moysklad.order_sync.states.MOY_SKLAD_ORDER_SYNC_ENABLED", False)
     calls = {"status_updates": []}
 
     class StubAmoCrmClient:

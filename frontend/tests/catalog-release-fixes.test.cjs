@@ -22,3 +22,20 @@ test("refund wins over a contradictory paid flag", () => {
     const { resolvePaymentPhase } = load("screens/payment/payment-state.ts")
     assert.equal(resolvePaymentPhase({ is_paid: true, payment_status: "refunded" }, "sbp"), "failure")
 })
+
+test("an account change during device verification prevents sending the previous customer's request", async () => {
+    let session = { sessionId: 1, accessToken: "A" }
+    let fetched = false
+    const api = load("services/api/client.ts", {
+        "@/services/api/constants": { API_BASE_URL: "https://example.test" },
+        "@/services/app-integrity": { AppIntegrityUnavailableError: class extends Error {},
+            getAppIntegrityHeaders: async () => { session = { sessionId: 2, accessToken: "B" }; return {} } },
+        "@/services/auth/session": { getAuthTokens: () => session },
+        "react-native": { Platform: { OS: "ios" } },
+        "@/services/api/request-deadline": { RequestDeadlineError: class extends Error {},
+            fetchTextWithDeadline: async () => { fetched = true } },
+        "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
+    })
+    await assert.rejects(api.apiGet("/orders"), /Session changed/)
+    assert.equal(fetched, false)
+})

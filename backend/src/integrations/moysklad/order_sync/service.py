@@ -96,6 +96,15 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     if standard_export and ("payment_method" not in custom_refs or "delivery_method" not in custom_refs):
         raise ValueError("MoySklad payment or delivery method is missing from the order directory")
     attributes = moysklad_client.build_customerorder_attributes(values=_moysklad_attr_values(order), custom_refs=custom_refs)
+    hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
+    if hold.get("status") == "held" and not hold.get("remote_export_attempted"):
+        order.checkout_snapshot = dict(order.checkout_snapshot,
+            stock_reservation={**hold, "remote_export_attempted": True})
+        # A timed-out POST may have created a remote reservation. Persist this
+        # boundary before the call so expiry cannot incorrectly restore stock.
+        await session.commit()
+        await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+        await session.refresh(order, attribute_names=["checkout_snapshot", "moysklad_customerorder_id"])
     customerorder_result = await moysklad_client.resolve_or_sync_customerorder(existing_customerorder_id=order.moysklad_customerorder_id, external_code=customerorder_external_code, sync_id=customerorder_sync_id, organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, moment=order.created_at, description=_build_order_description(order), shipment_address=_shipment_address(order), shipment_address_full=await _shipment_address_full(order, moysklad_client=moysklad_client), attributes=attributes, store=refs["store"], state=refs["state"], sales_channel=refs["sales_channel"],)
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:
         order.moysklad_customerorder_id = customerorder_result.customerorder_id
@@ -103,20 +112,31 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         await session.commit()
     hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
     if hold.get("status") == "held":
-        reserved = customerorder_result.created
-        if not reserved:
-            remote = await moysklad_client.get_customer_order(customerorder_result.customerorder_id, expand=True)
-            remote_positions = (remote or {}).get("positions", {}).get("rows", [])
-            reserved = bool(remote_positions) and len(remote_positions) == (remote or {}).get("positions", {}).get("meta", {}).get("size", len(remote_positions)) and all(
-                p.get("reserve", 0) >= p.get("quantity", 0) for p in remote_positions
-                if (p.get("assortment", {}).get("meta", {}).get("type")) != "service")
+        remote = await moysklad_client.get_customer_order(customerorder_result.customerorder_id, expand=True)
+        remote_positions = (remote or {}).get("positions", {}).get("rows", [])
+        reserved = bool(remote_positions) and len(remote_positions) == (remote or {}).get("positions", {}).get("meta", {}).get("size", len(remote_positions)) and all(
+            p.get("reserve", 0) >= p.get("quantity", 0) for p in remote_positions
+            if (p.get("assortment", {}).get("meta", {}).get("type")) != "service")
+        expected_quantities = {}
+        actual_quantities = {}
+        for position in positions:
+            href = position["assortment"]["meta"]["href"]
+            expected_quantities[href] = expected_quantities.get(href, 0) + position["quantity"]
+        for position in remote_positions:
+            href = position["assortment"]["meta"]["href"]
+            actual_quantities[href] = actual_quantities.get(href, 0) + position["quantity"]
+        reserved = reserved and expected_quantities == actual_quantities
         if reserved:
             from src.app.services.orders.stock_reservations import acknowledge_remote_reservation
-            await acknowledge_remote_reservation(session, order)
+            await acknowledge_remote_reservation(session, order, remote_quantities=expected_quantities)
+        else:
+            raise ValueError("MoySklad stock reservation has not been confirmed")
     invoiceout_result = None
     if not settlement and (_is_intellectmoney_payment(order) or standard_export):
         await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
-        await session.refresh(order, attribute_names=["moysklad_invoiceout_id"])
+        await session.refresh(order, attribute_names=["moysklad_invoiceout_id", "checkout_snapshot"])
+        if (order.checkout_snapshot or {}).get("stock_reservation", {}).get("status") == "released":
+            raise ValueError("Stock reservation expired before invoice export")
         order_id = int(order.__dict__.get("id") or order.id)
         invoiceout_external_code = _invoiceout_external_code(order_id)
         invoiceout_sync_id = build_sync_id(scope="invoiceout", key=invoiceout_external_code)

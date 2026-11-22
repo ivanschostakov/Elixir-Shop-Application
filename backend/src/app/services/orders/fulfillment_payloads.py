@@ -107,7 +107,7 @@ def _build_cdek_order_items(order: Order) -> list[dict[str, Any]]:
             "ware_key": item.product_sku or str(item.product_id),
             "payment": {"value": 0},
             "cost": float(Decimal(item.unit_price).quantize(Decimal("0.01"))),
-            "weight": item.weight_grams or 179,
+            "weight": getattr(item, "weight_grams", None) or CDEK_DEFAULT_ITEM_WEIGHT_GRAMS,
             "amount": item.quantity,
             "comment": str(item.variant_id),
         }

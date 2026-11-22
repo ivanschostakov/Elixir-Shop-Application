@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -293,10 +294,15 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
     return int(order.amocrm_lead_id)
 
 async def _move_lead_to_pending_payment(session: AsyncSession, order: Order) -> Order:
+    await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+    await session.refresh(order, attribute_names=["is_paid", "is_canceled", "is_shipped", "payment_status", "status"])
+    if order.is_paid or order.is_canceled or order.is_shipped or order.payment_status in {"paid", "refunded"}:
+        return order
     pending_status_id = amocrm_client.STATUS_IDS.get("pending_payment")
     if not order.amocrm_lead_id or pending_status_id is None: return order
 
     pending_patch = _order_state_patch_for_amocrm_status(pending_status_id)
+    pending_patch.pop("is_paid", None)
     if _order_has_state_patch(order, pending_patch): return order
 
     previous_status = order.status
@@ -335,6 +341,8 @@ async def _move_lead_to_payment_result_status(session: AsyncSession, order: Orde
     return updated_order
 
 async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, status_id: int) -> Order:
+    await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+    await session.refresh(order, attribute_names=["is_paid", "is_canceled", "is_shipped", "payment_status", "payment_provider", "status", "delivery_created_at"])
     if order.payment_status == "refunded" and status_id in amocrm_client.PAID_STATUS_IDS:
         return order
     previous_status = order.status
@@ -343,7 +351,8 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
         patch.pop("is_paid", None)
     order = await update_order(session, order, OrderUpdate(**patch), commit=False)
 
-    if status_id in amocrm_client.PAID_STATUS_IDS and order.delivery_created_at is None:
+    if (status_id in amocrm_client.PAID_STATUS_IDS and order.delivery_created_at is None
+            and (order.is_paid or order.payment_provider not in {"intellectmoney", "moysklad_balance"})):
         try: delivery_patch = await create_delivery_for_order(order)
         except HTTPException as exc:
             if not _is_delivery_data_error(exc): raise

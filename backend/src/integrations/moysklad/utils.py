@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 from uuid import UUID
 from config import MOY_SKLAD_PRICE_TYPE_ID, MOY_SKLAD_CURRENCY_ID
@@ -15,21 +15,32 @@ def sale_price(item: dict[str, Any]) -> Decimal | None:
     """Select the audited retail RUB price; never infer it from array order."""
     prices = item.get("salePrices")
     if not isinstance(prices, list): return None
+    price_type_id, currency_id = coerce_uuid(MOY_SKLAD_PRICE_TYPE_ID), coerce_uuid(MOY_SKLAD_CURRENCY_ID)
+    if price_type_id is None or currency_id is None: return None
     def ref_id(ref):
         if not isinstance(ref, dict): return None
         return coerce_uuid(ref.get("id")) or coerce_uuid(str((ref.get("meta") or {}).get("href", "")).rstrip("/").rsplit("/", 1)[-1])
     selected = [p for p in prices if isinstance(p, dict)
-                and ref_id(p.get("priceType")) == coerce_uuid(MOY_SKLAD_PRICE_TYPE_ID)
-                and ref_id(p.get("currency")) == coerce_uuid(MOY_SKLAD_CURRENCY_ID)]
+                and ref_id(p.get("priceType")) == price_type_id
+                and ref_id(p.get("currency")) == currency_id]
     if len(selected) != 1: return None
     value = coerce_decimal(selected[0].get("value"))
     if value is None or not value.is_finite() or value <= 0: return None
-    return (value / 100).quantize(Decimal("0.01"))
+    return (value / 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def available_stock(value: Any, reserve: int) -> int:
     raw = max(int(coerce_decimal(value) or Decimal("0")), 0)
     return raw - reserve if reserve > 0 and raw >= reserve else raw if reserve <= 0 else 0
+
+
+def physical_free_stock(row: dict | None, reserve: int) -> int:
+    row = row or {}
+    # quantity can include expected receipts. Only physically present stock is sellable.
+    if "stock" in row and "reserve" in row:
+        physical = (coerce_decimal(row["stock"]) or Decimal("0")) - (coerce_decimal(row["reserve"]) or Decimal("0"))
+        return available_stock(physical, reserve)
+    return 0
 
 
 def assortment_id(row: dict[str, Any]) -> UUID | None:

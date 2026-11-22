@@ -1,4 +1,4 @@
-import { getTranslationLocale } from "@/i18n/translations"
+import { getTranslationLocale, translate } from "@/i18n/translations"
 export function formatMoney(amount?: number | null, currency?: string | null) {
     if (amount === null || amount === undefined) {
         return null
@@ -25,5 +25,5 @@ export function formatSavedCartDraftName(date: Date) {
     const day = String(date.getDate()).padStart(2, "0")
     const month = String(date.getMonth() + 1).padStart(2, "0")
 
-    return `Корзина от ${hours}:${minutes} ${day}.${month}`
+    return translate("cart.savedDraftName").replace("{time}", `${hours}:${minutes}`).replace("{date}", `${day}.${month}`)
 }

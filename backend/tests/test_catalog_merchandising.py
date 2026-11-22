@@ -57,7 +57,7 @@ def test_best_product_or_category_discount_wins():
     assert product_catalog_discount_percent(product) == Decimal("25.00")
 
 
-def test_catalog_and_personal_discounts_are_added_for_the_final_product_price():
+def test_personal_discount_is_applied_after_catalog_discount():
     product = Product(
         sku="discount-test",
         name="Discount test",
@@ -71,13 +71,13 @@ def test_catalog_and_personal_discounts_are_added_for_the_final_product_price():
     )
 
     assert original == Decimal("100.00")
-    assert discounted == Decimal("70.00")
-    assert effective == Decimal("30.00")
+    assert discounted == Decimal("72.00")
+    assert effective == Decimal("28.00")
     assert catalog == Decimal("20.00")
     assert personal == Decimal("10.00")
 
 
-def test_three_percent_promo_adds_to_twenty_percent_catalog_discount():
+def test_three_percent_promo_applies_to_remaining_eighty_percent():
     product = Product(
         sku="discount-promo-test",
         name="Discount promo test",
@@ -91,8 +91,8 @@ def test_three_percent_promo_adds_to_twenty_percent_catalog_discount():
     )
 
     assert original == Decimal("100.00")
-    assert discounted == Decimal("77.00")
-    assert effective == Decimal("23.00")
+    assert discounted == Decimal("77.60")
+    assert effective == Decimal("22.40")
     assert catalog == Decimal("20.00")
     assert personal == Decimal("3.00")
 

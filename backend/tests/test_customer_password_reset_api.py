@@ -106,7 +106,7 @@ def test_reset_request_response_does_not_disclose_unknown_or_ineligible_email(cl
     missing = f"missing-{uuid4().hex}@example.com"
     assert request_code(client, missing).json() == {"ok": True}
     with Session(sync_engine) as db:
-        db.get(User, data["user"]["id"]).is_verified = False
+        db.get(User, data["user"]["id"]).is_active = False
         db.commit()
     assert request_code(client, email).json() == {"ok": True}
     assert confirm(client, email, "345678").status_code == 400

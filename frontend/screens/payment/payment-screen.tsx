@@ -191,7 +191,7 @@ export default function PaymentScreen() {
     const [order, setOrder] = useState<OrderRead | null>(null)
     const [payment, setPayment] = useState<PaymentStatusRead | null>(null)
     const [submitting, setSubmitting] = useState(false)
-    const [guestRecoveryEmail, setGuestRecoveryEmail] = useState<string | null>(null)
+    const [guestRecoveryEmail, setGuestRecoveryEmail] = useState("")
     const [awaitingSettlement, setAwaitingSettlement] = useState(false)
     const [isRepeating, setIsRepeating] = useState(false)
     const [phase, setPhase] = useState<PaymentPhase>("select")
@@ -454,7 +454,7 @@ export default function PaymentScreen() {
                 }
 
                 if (isBasketCheckout && !isAuthenticated) {
-                    const recoveryEmail = (guestRecoveryEmail ?? (orderDraft ? getDraftRecipient(orderDraft)?.email : "") ?? "").trim()
+                    const recoveryEmail = guestRecoveryEmail.trim()
                     if (!/^[^@\s]+@[^@]+\.[^@]+$/.test(recoveryEmail)) throw new Error(t("auth.error.invalidEmail"))
                     const guestOrderResponse = await createGuestOrder(buildGuestOrderPayload(orderDraft, effectiveMethod, recoveryEmail))
                     acceptSession(guestOrderResponse)
@@ -1273,7 +1273,7 @@ export default function PaymentScreen() {
                     <Text>{t("payment.recoveryEmail")}</Text>
                     <TextInput accessibilityLabel={t("payment.recoveryEmail")}
                         autoCapitalize="none" keyboardType="email-address"
-                        value={guestRecoveryEmail ?? (orderDraft ? getDraftRecipient(orderDraft)?.email : "") ?? ""}
+                        value={guestRecoveryEmail}
                         onChangeText={setGuestRecoveryEmail} />
                     <Text>{t("payment.recoveryEmailHint")}</Text>
                 </View> : null}

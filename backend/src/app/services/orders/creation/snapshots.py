@@ -44,6 +44,8 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
             }
             for option in resolved_benefits.get("stacked_discount_options", [])
         ],
+        "priced_items": resolved_benefits.get("priced_items", []),
+        "discount_excluded_product_ids": resolved_benefits.get("discount_excluded_product_ids", []),
     }
 
 

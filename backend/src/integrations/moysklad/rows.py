@@ -7,7 +7,7 @@ from src.database.limits import PRODUCT_NAME_MAX_LENGTH, PRODUCT_SKU_MAX_LENGTH,
 from src.database.product_text import normalize_product_text
 from src.normalize import coerce_uuid, fit_text, optional_str
 
-from .utils import assortment_id, available_stock, display_variant_name, sale_price
+from .utils import assortment_id, physical_free_stock, display_variant_name, sale_price
 from .schemas import MoySkladCatalogSyncStats, MoySkladProductRow, MoySkladVariantRow
 
 
@@ -103,7 +103,7 @@ def build_variant_rows(variants, stocks, products_by_code, products_by_id, stats
             product_system_id=product_id,
             sku=sku,
             name=fit_text(name, VARIANT_NAME_MAX_LENGTH) or fallback[:VARIANT_NAME_MAX_LENGTH],
-            stock=available_stock((stock or {}).get("quantity"), reserve) if price is not None else 0,
+            stock=physical_free_stock(stock, reserve) if price is not None else 0,
             price=price if price is not None else Decimal("0.00"),
             archived=price is None,
             weight_grams=weight_grams(variant) or weight_grams(product),
@@ -141,7 +141,7 @@ def add_synthetic_variants(rows, products_by_code, seen_products, stock_by_id, s
             product_system_id=product_id,
             sku=fit_text(product.get("code"), VARIANT_SKU_MAX_LENGTH),
             name="Основной вариант",
-            stock=available_stock((stock or {}).get("quantity"), reserve) if price is not None else 0,
+            stock=physical_free_stock(stock, reserve) if price is not None else 0,
             price=price if price is not None else Decimal("0.00"),
             archived=price is None,
             weight_grams=weight_grams(product),

@@ -1,0 +1,26 @@
+{
+  "date": "2026-11-21",
+  "scope": "Catalog application fixes 1–24; dependencies, AI mentor and Telegram group excluded",
+  "backend": {
+    "passed": 302,
+    "failed": 0,
+    "warnings": 1,
+    "database": "isolated catalog_fixes on localhost:55461"
+  },
+  "frontend": {
+    "passed": 181,
+    "failed": 0
+  },
+  "typecheck": "passed",
+  "selected_changed_files_eslint": "passed",
+  "repository_eslint": {
+    "errors": 7,
+    "warnings": 29,
+    "status": "not passed; errors in other existing tests"
+  },
+  "migrations_tested_through": "e0a2c4e6f8b0",
+  "production_deployed": false,
+  "live_moysklad_modified": false,
+  "physical_ios_test_completed": false,
+  "remaining": "See docs/catalog-release-fixes.md and docs/catalog-moysklad-contract.md"
+}

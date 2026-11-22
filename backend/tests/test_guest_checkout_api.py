@@ -268,6 +268,41 @@ def test_guest_order_existing_phone_returns_409_and_creates_no_order(
         _delete_user(existing_user_id)
 
 
+def test_guest_recovers_same_orders_with_own_email_after_session_loss(client, variant_factory, stub_amocrm, monkeypatch):
+    from unittest.mock import AsyncMock
+    from src.app.services.auth.service import password_reset
+    catalog = variant_factory(stock=5, price=Decimal("19"))
+    buyer_email = f"buyer-{uuid.uuid4().hex}@example.com"
+    recipient_email = f"recipient-{uuid.uuid4().hex}@example.com"
+    payload = _build_guest_order_payload(variant_id=catalog["variant_id"], email=recipient_email)
+    payload["buyer_email"] = buyer_email
+    created = client.post("/api/v1/guest/orders", json=payload)
+    assert created.status_code == 201, created.text
+    customer = created.json()
+    uid = customer["user"]["id"]
+    try:
+        mail = AsyncMock()
+        monkeypatch.setattr(password_reset, "generate_email_verification_code", lambda: "345678")
+        monkeypatch.setattr(password_reset, "send_user_password_reset_code_email", mail)
+        assert client.post("/api/v1/auth/password-reset/request", json={"email": buyer_email}).status_code == 200
+        mail.assert_awaited_once_with(to_email=buyer_email, code="345678")
+        reset = client.post("/api/v1/auth/password-reset/confirm", json={"email": buyer_email,
+            "code": "345678", "password": "RecoveredPassword123!"})
+        assert reset.status_code == 200, reset.text
+        login = client.post("/api/v1/auth/login", json={"login": buyer_email, "password": "RecoveredPassword123!"})
+        assert login.status_code == 200, login.text
+        from conftest import TEST_EMAIL_VERIFICATION_CODE
+        login = client.post("/api/v1/auth/login/verify", json={"email": buyer_email, "code": TEST_EMAIL_VERIFICATION_CODE})
+        assert login.status_code == 200, login.text
+        assert login.json()["user"]["id"] == uid
+        order = client.get(f"/api/v1/users/me/orders/{customer['order']['id']}",
+            headers={"Authorization": f"Bearer {login.json()['access_token']}"})
+        assert order.status_code == 200 and order.json()["recipient"]["email"] == recipient_email
+        assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {customer['access_token']}"}).status_code == 401
+    finally:
+        _delete_user(uid)
+
+
 def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
     client: TestClient,
     registered_user,

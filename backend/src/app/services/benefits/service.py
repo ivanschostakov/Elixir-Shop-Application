@@ -123,7 +123,7 @@ def _basket_quote_items(basket) -> list[dict]:
     ]
 
 
-async def _rounded_personal_discount(db, items, percent, *, subtotal):
+async def _rounded_personal_discount(db, items, percent, *, subtotal, priced_items=None):
     """Use the same rounded unit price as the catalog, then multiply quantity."""
     ids = {coerce_uuid(item.get("variant_system_id")) for item in items}
     if not ids or None in ids:
@@ -133,6 +133,7 @@ async def _rounded_personal_discount(db, items, percent, *, subtotal):
         .selectinload(ProductByCategory.category)))).scalars().all()
     by_id = {str(variant.system_id): variant for variant in variants}
     total = discount = Decimal("0.00")
+    lines = []
     for item in items:
         variant = by_id.get(str(item["variant_system_id"]))
         if variant is None:
@@ -140,9 +141,15 @@ async def _rounded_personal_discount(db, items, percent, *, subtotal):
         quantity = Decimal(str(item["quantity"]))
         unit = catalog_unit_price(variant.price, variant.product)
         total += unit * quantity
+        final_unit = unit
         if product_is_discountable(variant.product):
-            discount += (unit - apply_percent_discount(unit, percent)) * quantity
+            final_unit = apply_percent_discount(unit, percent)
+            discount += (unit - final_unit) * quantity
+        lines.append({"variant_id": variant.id, "quantity": int(quantity),
+            "unit_price": str(final_unit), "line_total": str(final_unit * quantity)})
     # Drafts are explicitly repriced before purchase; do not mix two price snapshots.
+    if total == subtotal and priced_items is not None:
+        priced_items.extend(lines)
     return discount if total == subtotal else None
 
 
@@ -367,10 +374,11 @@ async def resolve_benefits_for_user(
         subtotal=effective_subtotal,
         discountable_subtotal=effective_discountable_subtotal,
     )
+    priced_items = []
     if selected_option and selected_option.source_kind == "app_referral" and selected_option.discount_percent:
         local_items = quote_items if quote_items is not None else _basket_quote_items(await get_basket_by_user_id(db, user.id))
         rounded_discount = await _rounded_personal_discount(db, local_items,
-            selected_option.discount_percent, subtotal=effective_subtotal)
+            selected_option.discount_percent, subtotal=effective_subtotal, priced_items=priced_items)
         if rounded_discount is not None:
             stacked_discount_amount = rounded_discount
             total_after_discounts = effective_subtotal - rounded_discount
@@ -460,6 +468,7 @@ async def resolve_benefits_for_user(
         "personal_discount": asdict(personal_discount) if personal_discount is not None else None,
         "best_discount": asdict(best_discount) if best_discount is not None else None,
         "stacked_discount_options": stacked_discount_options,
+        "priced_items": priced_items,
         "stacked_discount_amount": stacked_discount_amount,
         "total_after_discounts": total_after_discounts,
         "cash_total": payable_before_balance - (bonus_rubles if use_bonus_rubles else Decimal("0.00")) if delivery_total is not None else None,

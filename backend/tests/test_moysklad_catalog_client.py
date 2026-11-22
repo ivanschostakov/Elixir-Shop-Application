@@ -1,4 +1,5 @@
 from decimal import Decimal
+from config import MOY_SKLAD_PRICE_TYPE_ID, MOY_SKLAD_CURRENCY_ID
 from uuid import UUID
 
 import pytest
@@ -63,10 +64,10 @@ def test_moysklad_variant_rows_use_product_meta_id_and_stock_assortment_id():
             "code": "V-001",
             "name": "5 mg",
             "product": {"id": str(NEW_PRODUCT_ID), "externalCode": str(OLD_PRODUCT_ID)},
-            "salePrices": [{"value": 15050}],
+            "salePrices": [{"value": 15050, "priceType": {"id": MOY_SKLAD_PRICE_TYPE_ID}, "currency": {"id": MOY_SKLAD_CURRENCY_ID}}],
         }
     ]
-    stocks = [{"assortmentId": str(VARIANT_5_ID), "quantity": 8}]
+    stocks = [{"assortmentId": str(VARIANT_5_ID), "quantity": 8, "stock": 8, "reserve": 0}]
 
     product_rows, products_by_external_code, products_by_id = build_product_rows(products, stats)
     variant_rows = build_variant_rows(

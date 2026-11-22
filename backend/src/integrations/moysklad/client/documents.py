@@ -106,9 +106,10 @@ class DocumentsMixin:
         return data
 
 
-    async def get_customer_order(self, order_id: UUID | str, expand: bool = False) -> dict[str, Any] | None:
+    async def get_customer_order(self, order_id: UUID | str, expand: bool = False, *, include_stock: bool = False) -> dict[str, Any] | None:
         http_client = await self.client()
         params = {"expand": "positions.assortment,state" if expand else "state"}
+        if include_stock: params["fields"] = "stock"
         try:
             response = await http_client.get(f"/entity/customerorder/{order_id}", params=params)
             response.raise_for_status()

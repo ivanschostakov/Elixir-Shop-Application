@@ -123,7 +123,7 @@ def _detect_request_ip(request: Request) -> str:
     return "127.0.0.1"
 
 def _payment_status_payload(order: Order, *, payment_step: str | None = None, qr_url: str | None = None, qr_image: str | None = None, expires_at: datetime | None = None) -> dict[str, Any]:
-    payload = {"status": "success", "order_id": order.id, "order_code": order.order_code, "order_number": order.order_number, "payment_method": order.payment_method, "payment_status": order.payment_status, "payment_step": payment_step, "invoice_id": order.payment_invoice_id, "qr_url": qr_url, "qr_image": qr_image, "is_paid": bool(order.is_paid or order.payment_status == "paid"), "can_retry": order.payment_status in {"canceled", "error"}, }
+    payload = {"status": "success", "order_id": order.id, "order_code": order.order_code, "order_number": order.order_number, "payment_method": order.payment_method, "payment_status": order.payment_status, "payment_step": payment_step, "invoice_id": order.payment_invoice_id, "qr_url": qr_url, "qr_image": qr_image, "is_paid": bool(order.payment_status != "refunded" and (order.is_paid or order.payment_status == "paid")), "can_retry": order.payment_status in {"canceled", "error"}, }
     payload["amount_rubles"] = float(order.grand_total)
     payload["awaiting_settlement"] = (
         (order.payment_method or "").lower() == "sbp"
@@ -399,6 +399,14 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         raise HTTPException(409, "Время резерва истекло. Проверьте остатки и оформите заказ заново.")
     if _uses_standard_document_export(order) and hold and hold.get("status") != "exported":
         raise HTTPException(409, "Резерв ещё не подтверждён МойСкладом. Повторите через несколько секунд.")
+    if _uses_standard_document_export(order) and hold:
+        from .stock_reservations import verify_remote_reservation
+        try:
+            await verify_remote_reservation(order)
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(503, "Не удалось проверить резерв в МойСклад. Повторите позже.") from exc
     if settlement and order.grand_total == 0:
         order = await update_order(session, order, OrderUpdate(
             payment_method="sbp", payment_provider="moysklad_balance", payment_invoice_id=None), commit=True)

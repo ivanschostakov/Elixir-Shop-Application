@@ -37,12 +37,31 @@ def _build_customerorder_positions(*, moysklad_client: MoySkladClient, assortmen
     gross = settlement_money(settlement["gross_rubles"]) if settlement else Decimal(order.grand_total)
     target = moysklad_money(gross - Decimal(order.delivery_total))
     if subtotal != moysklad_money(Decimal(order.basket_subtotal)) or not 0 <= target <= subtotal: raise ValueError("Order totals are inconsistent; MoySklad sync requires manual review")
-    if not subtotal: allocated = [0] * len(line_amounts)
+    benefits = (order.checkout_snapshot or {}).get("benefits") or {}
+    priced_items = benefits.get("priced_items") or []
+    if priced_items:
+        priced_by_id = {row["variant_id"]: row for row in priced_items}
+        if len(priced_by_id) != len(order.items) or any(
+            item.variant_id not in priced_by_id or priced_by_id[item.variant_id]["quantity"] != item.quantity
+            for item in order.items):
+            raise ValueError("Priced order items do not match the exported order")
+        allocated = [moysklad_money(Decimal(priced_by_id[item.variant_id]["line_total"])) for item in order.items]
+        if sum(allocated) != target:
+            raise ValueError("Priced item amounts do not match the order total")
+    elif not subtotal: allocated = [0] * len(line_amounts)
     else:
+        excluded = set(benefits.get("discount_excluded_product_ids") or [])
+        fixed = [amount if getattr(item, "product_id", None) in excluded else 0 for item, amount in zip(order.items, line_amounts)]
+        weights = [amount if not fixed_amount else 0 for amount, fixed_amount in zip(line_amounts, fixed)]
+        eligible_subtotal = sum(weights)
+        eligible_target = target - sum(fixed)
+        if eligible_target < 0 or (eligible_target and not eligible_subtotal):
+            raise ValueError("Discount affects excluded products")
         # Allocate whole kopecks, then distribute the rounding remainder deterministically.
-        allocated = [amount * target // subtotal for amount in line_amounts]
-        remainder_order = sorted(range(len(line_amounts)), key=lambda i: (line_amounts[i] * target % subtotal, -i), reverse=True)
-        for index in remainder_order[:target - sum(allocated)]: allocated[index] += 1
+        allocated = [amount * eligible_target // eligible_subtotal if eligible_subtotal else 0 for amount in weights]
+        remainder_order = sorted(range(len(weights)), key=lambda i: (weights[i] * eligible_target % eligible_subtotal, -i), reverse=True) if eligible_subtotal else []
+        for index in remainder_order[:eligible_target - sum(allocated)]: allocated[index] += 1
+        allocated = [amount + fixed_amount for amount, fixed_amount in zip(allocated, fixed)]
 
     for item, line_total in zip(order.items, allocated):
         quantity = int(item.quantity)

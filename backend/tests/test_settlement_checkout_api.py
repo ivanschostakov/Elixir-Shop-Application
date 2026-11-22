@@ -36,6 +36,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         status="fresh", loyalty_program=1, personal_discount_percent=Decimal("0"),
         balance_rubles=Decimal("1000"), total_purchases_rubles=Decimal("0"))))
     monkeypatch.setattr("src.app.services.orders.payments.MOY_SKLAD_ORDER_SYNC_ENABLED", True)
+    monkeypatch.setattr(config, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
     monkeypatch.setattr(crm.amocrm_client, "update_lead_price", AsyncMock(), raising=False)
     crm_fields = AsyncMock()
     monkeypatch.setattr(crm.amocrm_client, "update_lead_order_fields", crm_fields, raising=False)
@@ -56,12 +57,20 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     cash = gross - applied
     remote, invoice = documents(str(gross), str(cash), display_spent_rubles(applied))
     remote["invoicesOut"] = [ref(IID)]
+    stock_href = "https://example.test/product"
+    delivery_href = "https://example.test/delivery"
+    remote["positions"] = {"rows": [
+        {"assortment": {"meta": {"href": stock_href, "type": "product"}}, "quantity": 2,
+         "reserve": 2, "stock": {"quantity": 10, "reserve": 2}},
+        {"assortment": {"meta": {"href": delivery_href, "type": "service"}}, "quantity": 1}],
+        "meta": {"size": 2}}
     ms = SimpleNamespace(
         entity_href=lambda *args: "https://example.test/agent",
         get_page=AsyncMock(return_value={"rows": []}),
         get_customer_order=AsyncMock(return_value=remote), get_invoiceout=AsyncMock(return_value=invoice),
     )
     monkeypatch.setattr(settlement_payment, "get_moysklad_client", lambda: ms)
+    monkeypatch.setattr("src.integrations.moysklad.client.get_moysklad_client", lambda: ms)
     monkeypatch.setattr(settlement_payment, "verify_ruble_currency", AsyncMock(return_value=CURRENCY))
     monkeypatch.setattr(settlement_payment.asyncio, "sleep", AsyncMock())
 
@@ -70,6 +79,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         snapshot = deepcopy(order.checkout_snapshot)
         snapshot["settlement_payment"]["organization_id"] = str(ORG)
         snapshot["stock_reservation"]["status"] = "exported"
+        snapshot["stock_reservation"]["remote_quantities"] = {stock_href: 2, delivery_href: 1}
         order.checkout_snapshot = snapshot
         order.moysklad_customerorder_id = OID
         await db.commit()

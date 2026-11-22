@@ -87,6 +87,11 @@ def test_repeated_credit_returns_existing_payment(client):
     client.client._create_entity.assert_awaited_once()
 
 
+def test_current_bonus_state_name_is_accepted(client):
+    client.state["name"] = "Бонусы"
+    assert post(client)["id"] == str(PAYMENT)
+
+
 def test_previously_credited_manual_welcome_is_reused_without_remote_writes(client):
     previous = post(client)
     previous.update(description="Приветственное начисление за регистрацию", externalCode="manual")

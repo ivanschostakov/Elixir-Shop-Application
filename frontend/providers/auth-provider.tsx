@@ -121,7 +121,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 setUser(null)
             }
         })
-    }, [])
+    }, [setUser])
 
     useEffect(() => {
         if (!user) {
@@ -257,7 +257,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             isMounted = false
             setRefreshHandler(null)
         }
-    }, [])
+    }, [setUser])
 
     const signIn = async (credentials: LoginCredentials): Promise<LoginResult> => {
         try {
