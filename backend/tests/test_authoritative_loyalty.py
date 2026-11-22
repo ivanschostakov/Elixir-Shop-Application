@@ -57,6 +57,49 @@ def test_moysklad_program_is_not_inferred_from_promo(monkeypatch, code, expected
         assert row.current_discount_percent == 0
 
 
+@pytest.mark.parametrize("code,discount", [
+    (1, None), (1, Decimal("0")), (1, Decimal("17")), (0, None),
+])
+def test_non_partner_program_does_not_require_a_personal_discount(monkeypatch, code, discount):
+    row = profile()
+    user = SimpleNamespace(id=1, moysklad_counterparty_id=uuid4(), promo_code="OLD-PROMO")
+    value = SimpleNamespace(status="fresh", loyalty_program=code,
+        personal_discount_percent=discount, total_purchases_rubles=Decimal("43502.10"),
+        referrer_promo_code="OLD-PROMO", own_promo_code=None,
+        fetched_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(program, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
+    monkeypatch.setattr(program, "get_or_create_referral_profile", AsyncMock(return_value=row))
+    monkeypatch.setattr("src.app.services.benefits.settlement.get_account_settlement", AsyncMock(return_value=value))
+    db = SimpleNamespace(flush=AsyncMock())
+
+    result = asyncio.run(program.ensure_default_reward_program(db, user=user))
+
+    assert result.reward_program == "bonus"
+    assert result.reward_program_selection_source == "moysklad"
+    assert result.current_discount_percent == Decimal("0.00")
+    assert result.reward_program_snapshot["moysklad_program_code"] == code
+    assert user.promo_code is None
+    db.flush.assert_awaited_once()
+
+
+def test_partner_program_still_requires_a_personal_discount(monkeypatch):
+    from fastapi import HTTPException
+
+    row = profile()
+    user = SimpleNamespace(id=1, moysklad_counterparty_id=uuid4(), promo_code=None)
+    value = SimpleNamespace(status="fresh", loyalty_program=2, personal_discount_percent=None)
+    monkeypatch.setattr(program, "LOYALTY_USE_SETTLEMENT_BALANCE", True)
+    monkeypatch.setattr(program, "get_or_create_referral_profile", AsyncMock(return_value=row))
+    monkeypatch.setattr("src.app.services.benefits.settlement.get_account_settlement", AsyncMock(return_value=value))
+    db = SimpleNamespace(flush=AsyncMock())
+
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(program.ensure_default_reward_program(db, user=user))
+
+    assert error.value.status_code == 503
+    db.flush.assert_not_awaited()
+
+
 def test_remote_outage_preserves_existing_account_program(monkeypatch):
     row = profile()
     cid = uuid4()
