@@ -1,7 +1,6 @@
 """Read-only account view. Never use the display balance to authorize spending."""
 
 import asyncio
-import hashlib
 import logging
 import secrets
 import time
@@ -11,6 +10,7 @@ from uuid import UUID
 import httpx
 
 from .settlement_schemas import SettlementRead
+from .settlement_cache import settlement_cache_prefix
 from src.app.services.cache import get_cache_service
 from src.integrations.moysklad.client import get_moysklad_client
 
@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 FRESH_SECONDS = 300
 RETAIN_SECONDS = 7 * 86400
 RETRY_SECONDS = 60
+REFRESH_WAIT_SECONDS = 3
+REFRESH_POLL_SECONDS = 0.05
 PROGRAM_ATTRIBUTE_ID = "a779beff-9d52-11f1-0a80-06b0000da6f9"
 OWN_PROMO_ATTRIBUTE_ID = "10c17c18-13e8-11f1-0a80-14740012e755"
 REFERRER_ATTRIBUTE_ID = "10c17b69-13e8-11f1-0a80-14740012e754"
@@ -87,6 +89,22 @@ def _fallback(value: SettlementRead | None, issue: str) -> SettlementRead:
     return SettlementRead(status="unavailable", issue=issue)
 
 
+async def _wait_for_refresh(redis, key: str, value: SettlementRead | None, now: float) -> SettlementRead:
+    """Join the other worker's refresh instead of rejecting a concurrent quote."""
+    started = time.monotonic()
+    while time.monotonic() - started < REFRESH_WAIT_SECONDS:
+        await asyncio.sleep(REFRESH_POLL_SECONDS)
+        updated = _cached(await redis.get(key))
+        current_time = now + time.monotonic() - started
+        if updated and 0 <= current_time - updated.fetched_at.timestamp() < FRESH_SECONDS:
+            return updated.model_copy(update={"status": "fresh"})
+        if await redis.get(f"{key}:retry"):
+            return _fallback(updated or value, "retry_later")
+        if not await redis.get(f"{key}:lock"):
+            break
+    return _fallback(value, "refresh_in_progress")
+
+
 async def get_account_settlement(counterparty_id: UUID | None, *, redis=None, client=None, now: float | None = None) -> SettlementRead:
     if counterparty_id is None:
         return SettlementRead(status="unlinked", issue="counterparty_unlinked")
@@ -99,8 +117,7 @@ async def get_account_settlement(counterparty_id: UUID | None, *, redis=None, cl
     if redis is None:
         return SettlementRead(status="unavailable", issue="cache_unavailable")
     now = time.time() if now is None else now
-    scope = hashlib.sha256(client.base_url.encode()).hexdigest()[:12]
-    prefix = f"ms:settlement:v2:{scope}"
+    prefix = settlement_cache_prefix(client.base_url)
     key = f"{prefix}:{counterparty_id}"
     value = None
     try:
@@ -113,15 +130,20 @@ async def get_account_settlement(counterparty_id: UUID | None, *, redis=None, cl
             return _fallback(value, "rate_limited")
         token = secrets.token_hex(12)
         if not await redis.set(f"{key}:lock", token, nx=True, ex=30):
-            return _fallback(value, "refresh_in_progress")
+            return await _wait_for_refresh(redis, key, value, now)
     except Exception:
         logger.warning("settlement_cache_unavailable counterparty_id=%s", counterparty_id)
         return _fallback(value, "cache_unavailable")
 
     try:
         # A shared gate limits all clients together, not just one customer's cache.
-        if not await redis.set(f"{prefix}:gate", "1", nx=True, ex=1):
-            return _fallback(value, "refresh_in_progress")
+        gate_started = time.monotonic()
+        while not await redis.set(f"{prefix}:gate", "1", nx=True, ex=1):
+            if await redis.get(f"{prefix}:cooldown"):
+                return _fallback(value, "rate_limited")
+            if time.monotonic() - gate_started >= REFRESH_WAIT_SECONDS:
+                return _fallback(value, "refresh_in_progress")
+            await asyncio.sleep(REFRESH_POLL_SECONDS)
         http = await client.client()
         async with asyncio.timeout(18):
             card_response = await http.get(f"/entity/counterparty/{counterparty_id}", timeout=8)

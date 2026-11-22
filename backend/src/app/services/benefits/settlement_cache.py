@@ -10,14 +10,18 @@ from src.integrations.moysklad.client import get_moysklad_client
 logger = logging.getLogger(__name__)
 
 
+def settlement_cache_prefix(base_url: str) -> str:
+    scope = hashlib.sha256(base_url.encode()).hexdigest()[:12]
+    return f"ms:settlement:v2:{scope}"
+
+
 async def invalidate_account_settlement(counterparty_id: UUID) -> None:
     try:
         client = get_moysklad_client()
         redis = get_cache_service().client
         if redis is None:
             return
-        scope = hashlib.sha256(client.base_url.encode()).hexdigest()[:12]
-        key = f"ms:settlement:v1:{scope}:{counterparty_id}"
+        key = f"{settlement_cache_prefix(client.base_url)}:{counterparty_id}"
         await redis.delete(key, f"{key}:retry")
     except Exception:
         logger.warning("settlement_cache_invalidation_failed counterparty_id=%s", counterparty_id)

@@ -1,5 +1,5 @@
 import { useAsyncData } from "@/hooks/shared/use-async-data"
-import { checkMyBenefits } from "@/services/api/benefits"
+import { checkMyBenefitsWithRetry } from "@/services/api/benefits"
 import type { BenefitCheckPayload, BenefitCheckResponse } from "@/services/api/benefits.types"
 
 export function useOrderBenefits(
@@ -10,8 +10,9 @@ export function useOrderBenefits(
     return useAsyncData<BenefitCheckResponse | null>({
         deps: [...scope, payload],
         enabled,
-        fetcher: () => checkMyBenefits(payload),
+        fetcher: () => checkMyBenefitsWithRetry(payload),
         initialData: null,
         preserveDataOnError: false,
+        showErrorAlert: false,
     })
 }

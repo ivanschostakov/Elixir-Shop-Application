@@ -12,9 +12,10 @@ type UseAsyncDataOptions<TData> = {
     initialData: TData
     resetOnLoad?: boolean
     preserveDataOnError?: boolean
+    showErrorAlert?: boolean
 }
 
-export function useAsyncData<TData>({ debounceMs = 0, deps, enabled = true, fetcher, initialData, resetOnLoad = false, preserveDataOnError = true }: UseAsyncDataOptions<TData>) {
+export function useAsyncData<TData>({ debounceMs = 0, deps, enabled = true, fetcher, initialData, resetOnLoad = false, preserveDataOnError = true, showErrorAlert = true }: UseAsyncDataOptions<TData>) {
     const scope = JSON.stringify(deps)
     const [snapshot, setSnapshot] = useState({ scope, data: initialData, loaded: false })
     const [request, setRequest] = useState({ scope, loading: enabled, error: null as string | null })
@@ -62,12 +63,12 @@ export function useAsyncData<TData>({ debounceMs = 0, deps, enabled = true, fetc
             if (!isCurrent()) return null
             if (!preserveDataOnError) setSnapshot({ scope, data: initialDataRef.current, loaded: false })
             setRequest({ scope, loading: false, error: getErrorMessage(loadError) })
-            showBackendErrorAlert(loadError)
+            if (showErrorAlert) showBackendErrorAlert(loadError)
             return null
         } finally {
             if (isCurrent()) setRequest(previous => ({ ...previous, loading: false }))
         }
-    }, [preserveDataOnError, resetOnLoad, scope])
+    }, [preserveDataOnError, resetOnLoad, scope, showErrorAlert])
 
     useEffect(() => {
         if (!enabled) { reset(); return }

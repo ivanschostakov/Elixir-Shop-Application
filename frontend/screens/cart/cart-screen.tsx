@@ -145,6 +145,7 @@ export default function CartScreen() {
     )
     const pricingError = needsQuote && (referralError || quoteError)
     const waitingForPricing = needsQuote && !pricingError && !benefitCheck
+    const pricingBlocked = Boolean(pricingError || waitingForPricing)
 
     useFocusEffect(
         useCallback(() => {
@@ -317,7 +318,7 @@ export default function CartScreen() {
     )
 
     const handleOpenCheckout = useCallback(async () => {
-        if (!basket?.items.length || isOpeningCheckout) {
+        if (!basket?.items.length || isOpeningCheckout || pricingBlocked || updating) {
             return
         }
         setIsOpeningCheckout(true)
@@ -353,7 +354,7 @@ export default function CartScreen() {
         } finally {
             setIsOpeningCheckout(false)
         }
-    }, [appliedPromoCode, basket?.items.length, basketDraftEditingId, clear, isEnteredPromoCodeApplicable, isOpeningCheckout, t])
+    }, [appliedPromoCode, basket?.items.length, basketDraftEditingId, clear, isEnteredPromoCodeApplicable, isOpeningCheckout, pricingBlocked, t, updating])
 
     const subtotalLabel = basket ? formatProductPrice(basket.total_amount) : null
     const deliveryAmount = Number(basket?.delivery_total ?? 0)
@@ -362,7 +363,7 @@ export default function CartScreen() {
     const hasAppliedDiscount = discountAmount > 0
     const originalGrandTotalAmount = basket ? Number(basket.grand_total) : null
     const originalGrandTotalLabel = originalGrandTotalAmount !== null ? formatProductPrice(originalGrandTotalAmount) : null
-    const grandTotalAmount = basket
+    const grandTotalAmount = basket && !pricingBlocked
         ? (
             benefitCheck
                 ? (benefitCheck.cash_total != null ? Number(benefitCheck.cash_total) : Number(benefitCheck.total_after_discounts) + deliveryAmount)
@@ -441,10 +442,10 @@ export default function CartScreen() {
         : hasUnappliedPromoCode
             ? t("cart.applyPromoCode")
             : checkoutCtaLabel
-    const isFooterCtaDisabled = isOpeningCheckout || isCheckingPromoCode
+    const isFooterCtaDisabled = isOpeningCheckout || isCheckingPromoCode || pricingBlocked || updating
 
     const cartChromeTemplate = useMemo(() => {
-        if (!isReady || !basket?.items.length || waitingForPricing || pricingError) {
+        if (!isReady || !basket?.items.length) {
             return null
         }
 
@@ -454,6 +455,11 @@ export default function CartScreen() {
                 footer: (
                     <View style={cartScreenStyles.footerActionStack}>
                         <View style={cartScreenStyles.footerTotalsList}>
+                            {pricingBlocked ? (
+                                <Text accessibilityLiveRegion="polite" style={cartScreenStyles.totalLabel}>
+                                    {t(pricingError ? "cart.pricingUnavailable" : "cart.pricingUpdating")}
+                                </Text>
+                            ) : <>
                             {subtotalLabel ? (
                                 <View style={cartScreenStyles.totalRow}>
                                     <Text style={cartScreenStyles.totalLabel}>{t("checkout.basketSubtotalLabel")}</Text>
@@ -485,6 +491,7 @@ export default function CartScreen() {
                                     )}
                                 </View>
                             ) : null}
+                            </>}
                         </View>
 
                         <Pressable
@@ -571,7 +578,7 @@ export default function CartScreen() {
         originalGrandTotalLabel,
         subtotalLabel,
         pricingError,
-        waitingForPricing,
+        pricingBlocked,
         t,
     ])
     useApplyScreenTemplate("feed", cartChromeTemplate)
@@ -588,7 +595,7 @@ export default function CartScreen() {
         </View>
     )
 
-    if (!isReady || (loading && !basket) || waitingForPricing) {
+    if (!isReady || (loading && !basket)) {
         return renderStateScreen(
             <View style={cartScreenStyles.stateLoadingRow}>
                 <ActivityIndicator accessibilityLabel={t("common.loading")} color={palette.primary} />
@@ -597,7 +604,7 @@ export default function CartScreen() {
         )
     }
 
-    if ((basketLoadError && !basket) || pricingError) {
+    if (basketLoadError && !basket) {
         return renderStateScreen(
             <>
                 <Text style={cartScreenStyles.errorTitle}>{t("cart.loadFailedTitle")}</Text>
@@ -683,6 +690,16 @@ export default function CartScreen() {
                 showsVerticalScrollIndicator={false}
             >
                 <View style={cartScreenStyles.contentSurface}>
+                    {pricingBlocked ? <View style={cartScreenStyles.summarySection}>
+                        <Text accessibilityLiveRegion="polite" style={cartScreenStyles.errorText}>
+                            {t(pricingError ? "cart.pricingUnavailable" : "cart.pricingUpdating")}
+                        </Text>
+                        {pricingError ? <Pressable accessibilityRole="button" accessibilityLabel={t("cart.retry")}
+                            onPress={() => { if (referralError) void reloadReferralProfile(); else void reloadQuote() }}
+                            style={cartScreenStyles.retryButton}>
+                            <Text style={cartScreenStyles.retryButtonText}>{t("cart.retry")}</Text>
+                        </Pressable> : <ActivityIndicator color={palette.primary} />}
+                    </View> : null}
                     <View style={[cartScreenStyles.summarySection, cartScreenStyles.sectionTop]}>
                         {isAuthenticated ? (
                             <View style={cartScreenStyles.summaryCard}>

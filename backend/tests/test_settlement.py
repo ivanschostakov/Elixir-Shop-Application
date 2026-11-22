@@ -42,6 +42,10 @@ class Redis:
         if self.data.get(key) == token:
             del self.data[key]
 
+    async def delete(self, *keys):
+        for key in keys:
+            self.data.pop(key, None)
+
 
 class Client:
     base_url = "https://example.test"
@@ -189,8 +193,49 @@ def test_concurrent_reads_are_coalesced():
         redis, client = Redis(), Client(handler)
         results = await asyncio.gather(*(service.get_account_settlement(CID, redis=redis, client=client, now=NOW) for _ in range(10)))
         assert len(calls) == 2
-        assert sum(result.status == "fresh" for result in results) == 1
+        assert all(result.status == "fresh" for result in results)
         await client.http.aclose()
+    asyncio.run(run())
+
+
+def test_invalidation_removes_the_cache_used_by_reads(monkeypatch):
+    from src.app.services.benefits import settlement_cache
+
+    async def run():
+        balance = 100000
+        calls = []
+        def handler(request):
+            calls.append(request)
+            return httpx.Response(200, json=report(balance) if "/report/" in request.url.path else card())
+        redis, client = Redis(), Client(handler)
+        monkeypatch.setattr(settlement_cache, "get_moysklad_client", lambda: client)
+        monkeypatch.setattr(settlement_cache, "get_cache_service", lambda: SimpleNamespace(client=redis))
+        try:
+            first = await service.get_account_settlement(CID, redis=redis, client=client, now=NOW)
+            balance = 150000
+            await settlement_cache.invalidate_account_settlement(CID)
+            # Model the one-second global request gate expiring.
+            redis.data.pop(f"{service.settlement_cache_prefix(client.base_url)}:gate", None)
+            second = await service.get_account_settlement(CID, redis=redis, client=client, now=NOW + 1)
+            assert first.balance_rubles == Decimal("1000.00")
+            assert second.balance_rubles == Decimal("1500.00")
+            assert len(calls) == 4
+        finally:
+            await client.http.aclose()
+    asyncio.run(run())
+
+
+def test_waiting_for_failed_refresh_does_not_authorize_stale_balance():
+    async def run():
+        async def handler(request):
+            await asyncio.sleep(0.02)
+            return httpx.Response(503)
+        redis, client = Redis(), Client(handler)
+        try:
+            results = await asyncio.gather(*(service.get_account_settlement(CID, redis=redis, client=client, now=NOW) for _ in range(4)))
+            assert all(result.status == "unavailable" and result.balance_rubles is None for result in results)
+        finally:
+            await client.http.aclose()
     asyncio.run(run())
 
 
