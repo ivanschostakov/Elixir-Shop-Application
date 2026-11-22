@@ -1,7 +1,8 @@
 # App Review customer access
 
-Apple Review uses the reserved customer username `app-review`, never an admin-panel
-login. The login code checks that username directly, with no environment flag,
+Apple Review uses the existing customer username `apple-review`; new review
+customers provisioned by the script use `app-review`. Neither is an admin-panel
+login. The login code checks these exact usernames directly, with no environment flag,
 customer-ID override or email override.
 
 Only the email OTP step is skipped. The existing account must be active and verified,

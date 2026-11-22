@@ -12,7 +12,7 @@ from .website import _sync_user_from_website_identity
 
 
 def _is_app_review_identity(user: User | None) -> bool:
-    return user is not None and user.username == "app-review"
+    return user is not None and user.username in {"app-review", "apple-review"}
 
 
 async def _get_login_user(payload: UserLoginPayload, db: AsyncSession) -> User:

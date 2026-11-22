@@ -9,10 +9,10 @@ from src.app.services.auth import service as auth
 from src.app.services.security import hash_password
 
 
-@pytest.fixture
-def review_user():
+@pytest.fixture(params=["app-review", "apple-review"])
+def review_user(request):
     return SimpleNamespace(
-        id=42, username="app-review", email="review@example.com",
+        id=42, username=request.param, email="review@example.com",
         is_active=True, is_verified=True,
         app_password_reset_at=None,
         password_hash=hash_password("test-review-password-only"),
@@ -21,10 +21,13 @@ def review_user():
 
 @pytest.mark.parametrize("username,expected", [
     ("app-review", True),
+    ("apple-review", True),
     ("customer", False),
     ("admin", False),
     ("App-Review", False),
     ("app-review-extra", False),
+    ("apple-review-extra", False),
+    ("Apple-Review", False),
     (None, False),
 ])
 def test_review_exception_matches_only_the_reserved_login(username, expected):

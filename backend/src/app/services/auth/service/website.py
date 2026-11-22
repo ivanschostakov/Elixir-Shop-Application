@@ -28,7 +28,7 @@ async def _sync_user_from_website_identity(*, identity: dict, requested_login: s
         user = (await db.execute(
             select(User).where(User.id == user.id).with_for_update().execution_options(populate_existing=True)
         )).scalar_one()
-        if user.app_password_reset_at is not None or user.username == "app-review":
+        if user.app_password_reset_at is not None or user.username in {"app-review", "apple-review"}:
             if user.is_active and verify_password(password, user.password_hash):
                 return user
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
