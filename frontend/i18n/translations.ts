@@ -1,4 +1,5 @@
 export const ruTranslations = {
+    "product.feedbackQuestionsTab": "Вопросы",
 
     "chat.addAttachment": "Прикрепить фото",
     "chat.removeAttachment": "Удалить фото",
@@ -904,6 +905,7 @@ export type Language = "ru" | "en" | "kz"
 export type TranslationKey = keyof typeof ruTranslations
 
 const enTranslations: Record<TranslationKey, string> = {
+    "product.feedbackQuestionsTab": "Questions",
 
     "chat.addAttachment": "Attach photo",
     "chat.removeAttachment": "Remove photo",
@@ -1829,6 +1831,7 @@ const enTranslations: Record<TranslationKey, string> = {
 }
 
 const kzTranslations: Record<TranslationKey, string> = {
+    "product.feedbackQuestionsTab": "Сұрақтар",
 
     "chat.addAttachment": "Фото тіркеу",
     "chat.removeAttachment": "Фотоны жою",

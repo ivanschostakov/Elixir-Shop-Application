@@ -420,6 +420,7 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
 
                     <View style={productScreenStyle.sectionStack}>
                         <ProductFeedbackPanels
+                            key={productId}
                             activePanel={activeFeedbackPanel}
                             onChangePanel={handleFeedbackPanelChange}
                             onSubmitQuestion={handleSubmitQuestion}

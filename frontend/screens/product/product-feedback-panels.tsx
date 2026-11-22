@@ -88,6 +88,7 @@ export function ProductFeedbackPanels({
 }: ProductFeedbackPanelsProps) {
     const productScreenStyle = useThemeStyles(createProductScreenStyle)
     const { accentPalette, palette } = useTheme()
+    const [composer, setComposer] = useState<ProductFeedbackPanelKey | null>(null)
     const [draftReviewValue, setDraftReviewValue] = useState(5)
     const [draftReviewText, setDraftReviewText] = useState("")
     const [draftReviewAttachments, setDraftReviewAttachments] = useState<UploadableReviewAttachment[]>([])
@@ -100,8 +101,16 @@ export function ProductFeedbackPanels({
 
     const renderReviewPanel = () => (
         <View style={productScreenStyle.feedbackExpandedCard}>
-            <Text style={productScreenStyle.feedbackPanelTitle}>{t("product.reviewsTitle")}</Text>
-            <Text style={productScreenStyle.reviewWriteLabel}>{t("product.writeReview")}</Text>
+            <View style={productScreenStyle.feedbackPanelHeader}>
+                <View style={productScreenStyle.feedbackHeadingCopy}>
+                    <Text style={productScreenStyle.feedbackPanelTitle}>{t("product.reviewsTitle")}</Text>
+                    {reviewTotalCount > 0 ? <View style={productScreenStyle.feedbackRatingSummary}><StarRating rating={reviewRatingAverage} size={14} /><Text style={productScreenStyle.feedbackRatingText}>{reviewRatingAverage.toFixed(1)}</Text></View> : null}
+                </View>
+                <Pressable accessibilityRole="button" accessibilityState={{ expanded: composer === "reviews" }} onPress={() => setComposer(current => current === "reviews" ? null : "reviews")} style={productScreenStyle.feedbackWriteButton}>
+                    <Text style={productScreenStyle.feedbackWriteText}>{t(composer === "reviews" ? "common.cancel" : "product.writeReview")}</Text>
+                </Pressable>
+            </View>
+            {composer === "reviews" ? <>
             {reviewEligibilityLoading ? (
                 <Text style={productScreenStyle.detailRichText}>{t("product.reviewEligibilityLoading")}</Text>
             ) : null}
@@ -182,6 +191,7 @@ export function ProductFeedbackPanels({
                                     setDraftReviewAttachments([])
                                     setHideSenderName(false)
                                     setReviewSubmitSuccess(true)
+                                    setComposer(null)
                                 })
                                 .catch((error: unknown) => {
                                     setReviewSubmitError(
@@ -211,6 +221,7 @@ export function ProductFeedbackPanels({
                                     allowsMultipleSelection: true,
                                     mediaTypes: ["images"],
                                     quality: 0.9,
+                                    selectionLimit: 4,
                                 })
                                 if (result.canceled) {
                                     return
@@ -223,8 +234,8 @@ export function ProductFeedbackPanels({
                                         fileName: asset.fileName ?? `review-image-${Date.now()}-${index + 1}.jpg`,
                                         mimeType: asset.mimeType ?? "image/jpeg",
                                     })),
-                                ])
-                            })()
+                                ].slice(0, 4))
+                            })().catch(() => setReviewSubmitError(t("product.reviewSubmitFailed")))
                         }}
                         style={({ pressed }) => [
                             productScreenStyle.reviewPhotoButton,
@@ -267,15 +278,14 @@ export function ProductFeedbackPanels({
                     {reviewSubmitError ? (
                         <Text style={productScreenStyle.reviewSubmitError}>{reviewSubmitError}</Text>
                     ) : null}
-                    {reviewSubmitSuccess ? (
-                        <Text style={productScreenStyle.detailRichText}>{t("product.reviewModerationNotice")}</Text>
-                    ) : null}
                 </View>
             ) : null}
+            </> : null}
+            {reviewSubmitSuccess ? <Text style={productScreenStyle.feedbackNotice}>{t("product.reviewModerationNotice")}</Text> : null}
             {reviewsLoading ? <Text style={productScreenStyle.detailRichText}>{t("product.reviewsLoading")}</Text> : null}
             {reviewsError ? <Text style={productScreenStyle.detailRichText}>{reviewsError}</Text> : null}
             {!reviewsLoading && !reviewsError && !reviews.length ? (
-                <Text style={productScreenStyle.detailRichText}>{t("product.reviewsEmpty")}</Text>
+                <Text style={productScreenStyle.feedbackEmpty}>{t("product.reviewsEmpty")}</Text>
             ) : null}
             {!reviewsLoading && !reviewsError
                 ? reviews.map((review) => (
@@ -319,9 +329,13 @@ export function ProductFeedbackPanels({
 
     const renderQuestionPanel = () => (
         <View style={productScreenStyle.feedbackExpandedCard}>
-            <Text style={productScreenStyle.feedbackPanelTitle}>{t("product.questionsTitle")}</Text>
-            <Text style={productScreenStyle.reviewWriteLabel}>{t("product.askQuestion")}</Text>
-            <View style={productScreenStyle.reviewComposer}>
+            <View style={productScreenStyle.feedbackPanelHeader}>
+                <Text style={productScreenStyle.feedbackPanelTitle}>{t("product.feedbackQuestionsTab")}</Text>
+                <Pressable accessibilityRole="button" accessibilityState={{ expanded: composer === "questions" }} onPress={() => setComposer(current => current === "questions" ? null : "questions")} style={productScreenStyle.feedbackWriteButton}>
+                    <Text style={productScreenStyle.feedbackWriteText}>{t(composer === "questions" ? "common.cancel" : "product.askQuestion")}</Text>
+                </Pressable>
+            </View>
+            {composer === "questions" ? <View style={productScreenStyle.reviewComposer}>
                 <TextInput
                     editable={!questionSubmitting}
                     maxLength={2000}
@@ -342,6 +356,7 @@ export function ProductFeedbackPanels({
                             .then(() => {
                                 setDraftQuestionText("")
                                 setQuestionSubmitSuccess(true)
+                                setComposer(null)
                             })
                             .catch((error: unknown) => {
                                 setQuestionSubmitError(
@@ -366,16 +381,14 @@ export function ProductFeedbackPanels({
                 {questionSubmitError ? (
                     <Text style={productScreenStyle.reviewSubmitError}>{questionSubmitError}</Text>
                 ) : null}
-                {questionSubmitSuccess ? (
-                    <Text style={productScreenStyle.detailRichText}>{t("product.questionModerationNotice")}</Text>
-                ) : null}
-            </View>
+            </View> : null}
+            {questionSubmitSuccess ? <Text style={productScreenStyle.feedbackNotice}>{t("product.questionModerationNotice")}</Text> : null}
             {questionLoading ? (
                 <Text style={productScreenStyle.detailRichText}>{t("product.questionsLoading")}</Text>
             ) : null}
             {questionError ? <Text style={productScreenStyle.detailRichText}>{questionError}</Text> : null}
             {!questionLoading && !questionError && !questions.length ? (
-                <Text style={productScreenStyle.detailRichText}>{t("product.questionsEmpty")}</Text>
+                <Text style={productScreenStyle.feedbackEmpty}>{t("product.questionsEmpty")}</Text>
             ) : null}
             {!questionLoading && !questionError
                 ? questions.map((question) => (
@@ -396,51 +409,17 @@ export function ProductFeedbackPanels({
 
     return (
         <View style={productScreenStyle.feedbackSection}>
-            <View style={productScreenStyle.feedbackSummaryRow}>
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: activePanel === "reviews" }}
-                    onPress={() => onChangePanel("reviews")}
-                    style={({ pressed }) => [
-                        productScreenStyle.feedbackSummaryCard,
-                        productScreenStyle.feedbackReviewsSummaryCard,
-                        activePanel === "reviews" && {
-                            borderColor: accentPalette.primary,
-                        },
-                        pressed && productScreenStyle.feedbackSummaryCardPressed,
-                    ]}
-                >
-                    <View style={productScreenStyle.feedbackSummaryValueRow}>
-                        <StarRating rating={reviewRatingAverage} size={18} />
-                        <Text style={productScreenStyle.feedbackSummaryValue}>
-                            {reviewTotalCount ? reviewRatingAverage.toFixed(1) : "—"}
-                        </Text>
-                    </View>
-                    <Text style={productScreenStyle.feedbackSummaryLabel}>
-                        {reviewTotalCount} {t("product.reviewsCount")}
-                    </Text>
-                </Pressable>
-                <Pressable
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: activePanel === "questions" }}
-                    onPress={() => onChangePanel("questions")}
-                    style={({ pressed }) => [
-                        productScreenStyle.feedbackSummaryCard,
-                        productScreenStyle.feedbackQuestionsSummaryCard,
-                        activePanel === "questions" && {
-                            borderColor: accentPalette.primary,
-                        },
-                        pressed && productScreenStyle.feedbackSummaryCardPressed,
-                    ]}
-                >
-                    <View style={productScreenStyle.feedbackSummaryValueRow}>
-                        <View style={[productScreenStyle.questionIcon, { backgroundColor: accentPalette.primaryMuted }]}>
-                            <Text style={[productScreenStyle.questionIconText, { color: accentPalette.primary }]}>?</Text>
+            <View accessibilityRole="tablist" style={productScreenStyle.feedbackTabs}>
+                {(["reviews", "questions"] as const).map(panel => (
+                    <Pressable key={panel} accessibilityRole="tab" accessibilityState={{ selected: activePanel === panel }}
+                        onPress={() => { setComposer(null); onChangePanel(panel) }}
+                        style={({ pressed }) => [productScreenStyle.feedbackTab, activePanel === panel && productScreenStyle.feedbackTabActive, pressed && { opacity: 0.7 }]}>
+                        <Text style={[productScreenStyle.feedbackTabLabel, activePanel === panel && { color: accentPalette.primary }]}>{t(panel === "reviews" ? "product.reviewsTitle" : "product.feedbackQuestionsTab")}</Text>
+                        <View style={[productScreenStyle.feedbackTabCount, activePanel === panel && { backgroundColor: accentPalette.primaryMuted }]}>
+                            <Text style={[productScreenStyle.feedbackTabCountText, activePanel === panel && { color: accentPalette.primary }]}>{panel === "reviews" ? reviewTotalCount : questionTotalCount}</Text>
                         </View>
-                        <Text style={productScreenStyle.feedbackSummaryValue}>{questionTotalCount}</Text>
-                    </View>
-                    <Text style={productScreenStyle.feedbackSummaryLabel}>{t("product.questionsCount")}</Text>
-                </Pressable>
+                    </Pressable>
+                ))}
             </View>
             {activePanel === "reviews" ? renderReviewPanel() : null}
             {activePanel === "questions" ? renderQuestionPanel() : null}
