@@ -233,6 +233,8 @@ export const createCheckoutScreenStyles = (colors: ThemePalette) => StyleSheet.c
         lineHeight: 17,
     },
     recipientEditorSheet: {
+        flexShrink: 1,
+        minHeight: 0,
         gap: 18,
         maxHeight: "100%",
         overflow: "hidden",
@@ -241,6 +243,7 @@ export const createCheckoutScreenStyles = (colors: ThemePalette) => StyleSheet.c
     },
     recipientEditorScroll: {
         flexShrink: 1,
+        minHeight: 0,
     },
     recipientEditorScrollContent: {
         gap: 18,

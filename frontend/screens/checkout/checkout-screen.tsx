@@ -43,6 +43,7 @@ import { useLanguage } from "@/providers/language-provider"
 import { getBasketErrorMessage } from "@/screens/cart/cart-screen.utils"
 import {
     ADD_NEW_ADDRESS_VALUE,
+    NO_ADDRESS_VALUE,
     ADD_NEW_RECIPIENT_VALUE,
     NO_RECIPIENT_VALUE,
     SELF_RECIPIENT_VALUE,
@@ -97,6 +98,7 @@ import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { updateGuestBasketCheckout, updateGuestCartItemQuantity } from "@/services/guest-cart"
 import { spacing } from "@/theme/spacing"
 import { formatAppliedDiscount } from "@/utils/discount-display"
+import { CheckoutAddressPicker } from "@/screens/checkout/checkout-address-picker"
 
 export default function CheckoutScreen() {
     const contentStyles = useThemeStyles(createContentStyles)
@@ -104,7 +106,7 @@ export default function CheckoutScreen() {
     const { palette } = useTheme()
     const { isAuthenticated, isReady, updatePersonalData, user } = useAuth()
     const { t } = useLanguage()
-    const { bottom: bottomInset } = useSafeAreaInsets()
+    const { bottom: bottomInset, top: topInset } = useSafeAreaInsets()
     const params = useLocalSearchParams<{ code?: string | string[], draftId?: string | string[] }>()
     const draftId = parseDraftId(params.draftId)
     const routePromoCode = normalizeTextInputValue((Array.isArray(params.code) ? params.code[0] : params.code) ?? "")
@@ -193,7 +195,7 @@ export default function CheckoutScreen() {
     const [isSavingRecipient, setIsSavingRecipient] = useState(false)
     const [isSavingAddress, setIsSavingAddress] = useState(false)
     const [selectedAddressValue, setSelectedAddressValue] = useState<number | typeof ADD_NEW_ADDRESS_VALUE | null>(null)
-    const [draftAddressValue, setDraftAddressValue] = useState<number | typeof ADD_NEW_ADDRESS_VALUE | null>(null)
+    const [draftAddressValue, setDraftAddressValue] = useState<number | typeof NO_ADDRESS_VALUE | typeof ADD_NEW_ADDRESS_VALUE>(NO_ADDRESS_VALUE)
     const [recipientForm, setRecipientForm] = useState<RecipientFormState>(createEmptyRecipientForm())
     const [recipientFormErrors, setRecipientFormErrors] = useState<RecipientFormErrors>({})
     const [recipientSaveError, setRecipientSaveError] = useState<string | null>(null)
@@ -466,7 +468,7 @@ export default function CheckoutScreen() {
         Keyboard.dismiss()
 
         if (section === "address") {
-            setDraftAddressValue(selectedAddressValue ?? activeAddressId ?? ADD_NEW_ADDRESS_VALUE)
+            setDraftAddressValue(selectedAddressValue === ADD_NEW_ADDRESS_VALUE ? NO_ADDRESS_VALUE : selectedAddressValue ?? activeAddressId ?? NO_ADDRESS_VALUE)
         }
         setOpenPickerSection(section)
     }, [activeAddressId, selectedAddressValue])
@@ -636,7 +638,7 @@ export default function CheckoutScreen() {
 
         if (!orderDraft.delivery_address) {
             setSelectedAddressValue(ADD_NEW_ADDRESS_VALUE)
-            setDraftAddressValue(ADD_NEW_ADDRESS_VALUE)
+            setDraftAddressValue(NO_ADDRESS_VALUE)
             return
         }
 
@@ -1442,15 +1444,11 @@ export default function CheckoutScreen() {
                                     <Picker.Item label={t("checkout.recipientAddNew")} value={ADD_NEW_RECIPIENT_VALUE} />
                                 </Picker>
                             ) : (
-                                <Picker
-                                    key="checkout-address"
+                                <CheckoutAddressPicker
+                                    addresses={availableAddresses}
                                     selectedValue={draftAddressValue}
-                                    onValueChange={(value) => {
-                                        const nextValue =
-                                            value === ADD_NEW_ADDRESS_VALUE
-                                                ? ADD_NEW_ADDRESS_VALUE
-                                                : Number(value)
-                                        setDraftAddressValue(nextValue)
+                                    onSelect={(nextValue) => {
+                                        setDraftAddressValue(nextValue === ADD_NEW_ADDRESS_VALUE ? NO_ADDRESS_VALUE : nextValue)
                                         closeCheckoutPicker()
 
                                         if (nextValue === ADD_NEW_ADDRESS_VALUE) {
@@ -1469,26 +1467,14 @@ export default function CheckoutScreen() {
                                         }, 0)
                                     }}
                                     style={contentStyles.browsePicker}
-                                >
-                                    {availableAddresses.map((address) => (
-                                        <Picker.Item
-                                            key={address.id}
-                                            label={address.full_address}
-                                            value={address.id}
-                                        />
-                                    ))}
-                                    <Picker.Item
-                                        label={t("checkout.addressAddNew")}
-                                        value={ADD_NEW_ADDRESS_VALUE}
-                                    />
-                                </Picker>
+                                />
                             )}
                         </View>
                     </View> : (
                     <KeyboardAvoidingView
                         behavior={Platform.OS === "ios" ? "padding" : "height"}
                         keyboardVerticalOffset={0}
-                        style={contentStyles.browsePickerBackdrop}
+                        style={[contentStyles.browsePickerBackdrop, { paddingTop: topInset + spacing.sm }]}
                     >
                         <Pressable
                             accessibilityRole="button"
