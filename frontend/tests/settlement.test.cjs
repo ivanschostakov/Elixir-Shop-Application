@@ -20,19 +20,10 @@ test("zero program and unknown never default to accumulation", () => {
     assert.equal(moduleExports.settlementProgramKey(2), "profile.settlement.programReferral")
 })
 
-test("account display does not call the legacy mutating referral summary", () => {
-    const screen = fs.readFileSync(path.join(__dirname, "../screens/profile/profile-settlement-screen.tsx"), "utf8")
+test("discount display uses the read-only account source", () => {
+    const screen = fs.readFileSync(path.join(__dirname, "../screens/profile/profile-discounts-screen.tsx"), "utf8")
     assert.ok(screen.includes("getMySettlement"))
     assert.ok(!screen.includes("getMyReferralProfile"))
     assert.ok(!screen.includes("bonus_rubles"))
     assert.ok(screen.includes("key={user.id}"))
-})
-
-test("the profile route always opens the authoritative account view", () => {
-    const loadTs = require("./load-ts.cjs")
-    const AccountView = () => null
-    const route = loadTs("screens/profile/profile-discounts-screen.tsx", {
-        "@/screens/profile/profile-settlement-screen": { __esModule: true, default: AccountView },
-    })
-    assert.equal(route.default, AccountView)
 })

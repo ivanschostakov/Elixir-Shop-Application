@@ -4,6 +4,12 @@ import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
 
 export const createProfileDiscountsScreenStyles = (colors: ThemePalette) => StyleSheet.create({
+    summaryDescription: { color: "rgba(255,255,255,0.88)", fontSize: 14, lineHeight: 20, marginTop: 12 },
+    refreshButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
+    sectionHeading: { gap: 6, paddingHorizontal: 4, paddingTop: 8 },
+    programValue: { fontSize: 30, lineHeight: 38, fontWeight: "700", marginTop: 8 },
+    ruleDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border },
+
     screen: {
         flex: 1,
         backgroundColor: colors.surface,
