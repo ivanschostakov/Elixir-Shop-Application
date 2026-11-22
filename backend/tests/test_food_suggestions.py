@@ -80,13 +80,19 @@ def test_public_photo_search_is_bounded_cached_and_fails_without_losing_recipes(
     Client.get = get
     monkeypatch.setattr(recipe_images.httpx, "AsyncClient", Client)
     async def scenario():
-        assert await recipe_images.find_recipe_image("chicken rice") is not None
-        assert await recipe_images.find_recipe_image("chicken rice") is not None
-        assert await recipe_images.find_recipe_image("https://private") is None
+        assert await recipe_images.find_recipe_candidates("chicken rice") != []
+        assert await recipe_images.find_recipe_candidates("chicken rice") != []
+        assert await recipe_images.find_recipe_candidates("https://private") == []
     asyncio.run(scenario())
     assert get.await_count == 1
     assert get.call_args.kwargs["params"]["gsrsearch"] == "chicken rice filetype:bitmap"
-    assert get.call_args.kwargs["params"]["gsrlimit"] == 4
+    assert get.call_args.kwargs["params"]["gsrlimit"] == 8
+    recipe_images._cache.clear()
+    get.reset_mock()
+    response.json = lambda: {}
+    assert asyncio.run(recipe_images.find_recipe_candidates("grilled chicken rice broccoli")) == []
+    assert get.await_count == 1
+    assert get.call_args.kwargs["params"]["gsrsearch"] == "grilled chicken rice broccoli filetype:bitmap"
     recipe_images._cache.clear()
     get.side_effect = recipe_images.httpx.ConnectError("Offline")
-    assert asyncio.run(recipe_images.find_recipe_image("rice bowl")) is None
+    assert asyncio.run(recipe_images.find_recipe_candidates("rice bowl")) == []

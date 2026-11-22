@@ -76,8 +76,7 @@ def suggestion_errors(output, context):
     return []
 
 
-async def illustrated_suggestions(recipes):
-    import asyncio
-    from .recipe_images import find_recipe_image
-    images = await asyncio.gather(*(find_recipe_image(recipe.image_query) for recipe in recipes))
-    return [FoodSuggestionRead(**recipe.model_dump(), image=image).model_dump(mode="json") for recipe, image in zip(recipes, images)]
+async def illustrated_suggestions(recipes, *, client, bot_model, resource_recorder):
+    from .recipe_photo_selection import select_recipe_photos
+    images, usage = await select_recipe_photos(recipes, client=client, bot_model=bot_model, resource_recorder=resource_recorder)
+    return [FoodSuggestionRead(**recipe.model_dump(), image=image).model_dump(mode="json") for recipe, image in zip(recipes, images)], usage

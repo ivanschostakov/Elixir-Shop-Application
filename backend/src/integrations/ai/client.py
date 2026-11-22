@@ -24,10 +24,12 @@ _professor_client: "ProfessorClient | None" = None
 
 
 class ProfessorClient(AsyncClient):
-    def __init__(self, api_key: str | None = OPENAI_API_KEY, proxy_url: str | None = OPENAI_PROXY_URL):
+    def __init__(self, api_key: str | None = OPENAI_API_KEY, proxy_url: str | None = OPENAI_PROXY_URL, **client_options):
         normalized_proxy_url = (proxy_url or "").strip() or None
-        http_client = httpx.AsyncClient(proxy=normalized_proxy_url) if normalized_proxy_url else None
-        super().__init__(api_key=api_key, http_client=http_client)
+        http_client = client_options.pop("http_client", None)
+        if http_client is None and normalized_proxy_url:
+            http_client = httpx.AsyncClient(proxy=normalized_proxy_url)
+        super().__init__(api_key=api_key, http_client=http_client, **client_options)
         self.__logger = logging.getLogger(self.__class__.__name__)
 
     @property
@@ -306,6 +308,32 @@ class ProfessorClient(AsyncClient):
             total_cached += row_cached
             total_output += row_output
             file_search_calls += self._count_output_items(current_response, "file_search_call")
+
+    async def inspect_images(self, *, input_text: str, instructions: str, image_contents: list[tuple[str, bytes]], output_schema: dict, bot_model: BotModel, resource_recorder=None) -> dict[str, Any]:
+        """A bounded, stateless check of public recipe photographs.
+
+        It has no chat conversation, profile, tools or uploaded provider files.
+        The caller includes its actual token usage in the original food request.
+        """
+        if not 1 <= len(image_contents) <= 12:
+            raise ValueError("Recipe inspection requires 1–12 photographs")
+        content = [{"type": "input_text", "text": input_text}]
+        for index, (mime, raw) in enumerate(image_contents):
+            if mime not in {"image/jpeg", "image/png", "image/webp"} or not 0 < len(raw) <= 2 * 1024 * 1024:
+                raise ValueError("Recipe inspection requires small JPEG, PNG or WebP photographs")
+            data_url = f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+            content.extend([{"type": "input_text", "text": f"Candidate {index}"}, {"type": "input_image", "image_url": data_url, "detail": "low"}])
+        response = await self.with_options(max_retries=0, timeout=40).responses.create(
+            model=self._resolve_model_name(bot_model), instructions=instructions,
+            input=[{"role": "user", "content": content}], tools=[], store=False,
+            reasoning={"effort": "none"}, max_output_tokens=512,
+            text=self._build_response_text_config(output_schema, "recipe_photo_selection"),
+        )
+        if resource_recorder and getattr(response, "id", None):
+            await resource_recorder("response", response.id)
+        input_tokens, cached_input_tokens, output_tokens = self._extract_v2_usage(response)
+        text = self._extract_v2_text(response)
+        return {"structured_output": self._extract_v2_structured_output(text), "input_tokens": input_tokens, "cached_input_tokens": cached_input_tokens, "output_tokens": output_tokens, "openai_model": str(getattr(response, "model", None) or self._resolve_model_name(bot_model))}
 
     async def send_message_v2(self, *, input_text: str, conversation_id: str | None, bot_model: BotModel, known_input_tokens: int = 0, file_contents: list[tuple[str, bytes]] | None = None, image_contents: list[tuple[str, bytes]] | None = None, user_id: int | None = None, trace_id: str | None = None, function_tools: list[dict[str, Any]] | None = None, function_tool_executor: Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None, max_tool_rounds: int = 4, output_schema: dict[str, Any] | None = None, output_schema_name: str = "ai_chat_output", companion_context: dict | None = None, replay_history: list[dict] | None = None, resource_recorder=None) -> dict[str, Any]:
         started_at = int(time.time())

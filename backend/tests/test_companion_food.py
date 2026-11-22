@@ -84,12 +84,12 @@ def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypa
     direct = AsyncMock(); monkeypatch.setattr(dialogue, "direct_reply", direct)
     operation = DialogueOperation(kind="entry", summary="Water", evidence="300 ml water", certain=False, entry=EntryData(kind="water", occurred_at=NOW, water_ml=300)) if water_only else meal()
     response = {"text": "Food calculated", "structured_output": {"assistant_text": "Food calculated", "companion_dialogue": DialogueTurn(operations=[operation]).model_dump(mode="json")},
-        "conversation_id": "conv_food", "input_tokens": 20, "output_tokens": 10, "openai_model": "mock"}
+        "conversation_id": "conv_food", "context_input_tokens": 20, "input_tokens": 20, "output_tokens": 10, "openai_model": "mock"}
     if help_mode == "suggest":
         from src.app.services.ai.companion import food_suggestions
         recipe = {"name": "Chicken and rice", "description": "Balanced meal", "portion": "1 bowl", "nutrition": {"kcal": 440, "protein": 30, "fat": 12, "carbs": 53}, "minutes": 25, "ingredients": ["Chicken 120 g", "Rice 60 g"], "steps": ["Cook rice", "Cook chicken and serve"], "image_query": "chicken rice"}
         response["structured_output"]["nutrition_suggestions"] = [recipe, {**recipe, "name": "Rice and chicken"}]
-        monkeypatch.setattr(food_suggestions, "illustrated_suggestions", AsyncMock(return_value=[{**recipe, "image": None}]))
+        monkeypatch.setattr(food_suggestions, "illustrated_suggestions", AsyncMock(return_value=([{**recipe, "image": None}], {"input_tokens": 11, "cached_input_tokens": 2, "output_tokens": 5, "openai_model": "mock"})))
     provider = SimpleNamespace(send_message_v2=AsyncMock(return_value=response))
     result = asyncio.run(chat.send_user_chat_message(db, user=SimpleNamespace(id=7), text="Chicken", attachments=None, professor_client=provider,
         allow_commerce=False, companion_profile=profile, client_request_id="food-estimate-request-1", dialogue_protocol=2, meal_estimate=True, nutrition_help=help_mode))
@@ -111,6 +111,11 @@ def test_food_estimate_pipeline_is_read_only_and_keeps_usage_accounting(monkeypa
     attach.assert_not_awaited(); direct.assert_not_awaited(); notify.assert_not_awaited()
     dialogue.workflow.assert_not_awaited()
     usage.assert_awaited_once()
+    billed = usage.call_args.args[1]
+    assert billed.input_tokens == (31 if help_mode == "suggest" else 20)
+    assert billed.output_tokens == (15 if help_mode == "suggest" else 10)
+    chat_update = chat.update_ai_chat.call_args.args[2]
+    assert chat_update.conversation_id == "conv_food" and chat_update.current_tokens == 20
     args = provider.send_message_v2.call_args.kwargs
     assert args["function_tools"] == [] and "dialogue" not in args["companion_context"]
     if help_mode == "suggest":

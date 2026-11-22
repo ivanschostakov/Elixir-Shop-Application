@@ -535,6 +535,15 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             }
             if final_validation_errors:
                 structured_retry["final_errors"] = final_validation_errors
+        food_suggestions = []
+        photo_usage = {}
+        if nutrition_help == "suggest" and structured_output is not None:
+            from .companion.food_suggestions import illustrated_suggestions
+            food_suggestions, photo_usage = await illustrated_suggestions(structured_output.nutrition_suggestions, client=professor_client, bot_model=selected_model, resource_recorder=record_resource)
+            # Search/vision must not outlive erasure or a revoked consent.
+            companion_profile = await companion_service.assert_session_active(db, user.id, companion_profile_id)
+            for field in ("input_tokens", "cached_input_tokens", "output_tokens"):
+                ai_result[field] = int(ai_result.get(field) or 0) + int(photo_usage.get(field) or 0)
         input_tokens = int(ai_result.get("input_tokens") or 0)
         cached_input_tokens = int(ai_result.get("cached_input_tokens") or 0)
         output_tokens = int(ai_result.get("output_tokens") or 0)
@@ -545,6 +554,8 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             reply_text = "Не удалось подготовить корректную запись после повторной проверки. Данные не изменены. Отправьте последнее уточнение ещё раз."
         interactive_payload = None
         assistant_context = _ai_message_context(tool_executor=tool_executor, ai_result=ai_result)
+        if photo_usage:
+            assistant_context["recipe_photo_usage"] = {key: photo_usage.get(key, 0) for key in ("input_tokens", "cached_input_tokens", "output_tokens", "openai_model")}
         if structured_retry is not None:
             assistant_context["structured_validation_retry"] = structured_retry
         resolved_openai_model = openai_model or professor_client._resolve_model_name(selected_model)
@@ -611,10 +622,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             reply_text = "Расчёт КБЖУ готов." if estimate else reply_text or "Опишите, что было в порции, или добавьте фото еды."
             meal_result = {"entry": estimate.model_dump(mode="json") if estimate else None, "message": reply_text}
             if nutrition_help == "suggest":
-                from .companion.food_suggestions import illustrated_suggestions
-                meal_result.update(next_meal=meal_context.model_dump(mode="json"), suggestions=await illustrated_suggestions(structured_output.nutrition_suggestions) if structured_output else [])
-                # Photo lookup is external I/O; recheck ownership/consent before persisting.
-                companion_profile = await companion_service.assert_session_active(db, user.id, companion_profile_id)
+                meal_result.update(next_meal=meal_context.model_dump(mode="json"), suggestions=food_suggestions)
             assistant_context.update(meal_estimate_request_id=client_request_id, meal_estimate=meal_result)
         ai_message = await create_ai_message(db, AIMessageCreate(user_id=user.id, chat_id=chat.id, text=reply_text or AI_CHAT_EMPTY_REPLY, sender=MessageSender.AI, context_json=assistant_context, is_sensitive=companion_profile is not None), commit=False)
         ai_message_id = ai_message.id
