@@ -19,7 +19,7 @@ npm run android
 npm run start
 ```
 
-`npm run start` now launches Metro for an Expo development build instead of Expo Go. Build the native client once with `npm run ios` or `npm run android`, then keep using `npm run start` while you work.
+`npm run start` launches Metro. Native development uses `npm run ios` or `npm run android`; release builds contain their JavaScript bundle.
 
 Useful commands:
 
@@ -32,7 +32,7 @@ npm run prebuild:clean
 npm run lint
 ```
 
-If you add a library with native code or change app config, run `npm run prebuild:clean` and rebuild the dev client so the native projects stay in sync.
+If you add a library with native code or change app config, run `npm run prebuild:clean` and rebuild the native app so the native projects stay in sync.
 
 ## iOS device builds with Xcode 27
 

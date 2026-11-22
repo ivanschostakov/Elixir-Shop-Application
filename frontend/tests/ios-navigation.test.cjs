@@ -24,7 +24,7 @@ test("iOS opens the shared home after authentication loads", () => {
     assert.equal(Index().type, Home)
 })
 
-test("iOS chat uses the shared consent-aware chat screen", () => {
+test("iOS chat opens the support screen", () => {
     const Chat = () => null
     const { default: Route } = loadTs("app/(protected)/chat.tsx", {
         "react/jsx-runtime": jsxRuntime,
@@ -32,19 +32,17 @@ test("iOS chat uses the shared consent-aware chat screen", () => {
         "@/screens/chat/chat-screen": { default: Chat },
     })
     assert.equal(Route().type, Chat)
-    assert.match(source("screens/chat/chat-screen.tsx"), /useAiChatEntryConsent/)
+    assert.match(source("screens/chat/chat-screen.tsx"), /SupportChatScreen/)
 })
 
-test("navigation no longer redirects or hides commerce and chat modes on iOS", () => {
+test("navigation keeps commerce and support available on iOS", () => {
     const shell = source("components/navigation/app-shell.tsx")
     assert.doesNotMatch(shell, /isRestrictedIosRoute|isIosRestrictedRoute|IOS_PRIMARY_APP_ROUTES/)
     assert.match(source("components/navigation/route-screen.tsx"), /primaryAppRoutes = PRIMARY_APP_ROUTES/)
     for (const file of [
         "components/footer/bottom-nav-template.tsx",
-        "screens/chat/chat-mode-switcher.tsx",
         "screens/profile/profile-screen.tsx",
         "screens/profile/profile-history-screen.tsx",
-        "screens/chat/mentor.tsx",
     ]) {
         assert.doesNotMatch(source(file), /Platform\.OS\s*[!=]==\s*"ios"/, file)
     }

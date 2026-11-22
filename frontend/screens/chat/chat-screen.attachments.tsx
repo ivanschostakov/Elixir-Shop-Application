@@ -1,446 +1,65 @@
-import { getAuthTokens } from "@/services/auth/session"
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import {
-    Image,
-    ActionSheetIOS,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    Text,
-    useWindowDimensions,
-    View,
-} from "react-native"
-import Svg, { Path } from "react-native-svg"
-
+import { useEffect, useRef } from "react"
+import { ActionSheetIOS, Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { useLanguage } from "@/providers/language-provider"
-import { spacing } from "@/theme/spacing"
-import type { AIAttachmentRead, UploadableChatAttachment } from "@/services/api/ai-chat.types"
-import {
-    getAttachmentDisplayName,
-    getReadAttachmentDisplayName,
-    getReadAttachmentUri,
-    isImageAttachment,
-    isUploadablePhotoAttachment,
-    normalizeImageAspectRatio,
-} from "@/screens/chat/chat-attachments"
-import { ATTACHMENT_ICON_COLOR, type AttachmentMode } from "@/screens/chat/chat-screen.constants"
-import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
-import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useTheme } from "@/providers/theme-provider"
-import CameraSvgIcon from "@/assets/icons/chat/camera-svgrepo-com.svg"
+import type { UploadableSupportAttachment } from "@/services/api/support.types"
 
-type AttachmentSheetProps = {
-    activeMode: AttachmentMode
-    allowFiles?: boolean
+export function AttachmentSheet({ bottomInset, onClose, onOpenCamera, onOpenNativeGallery, visible }: {
     bottomInset: number
     onClose: () => void
     onOpenCamera: () => void
     onOpenNativeGallery: () => void
-    onPickFiles: () => void
-    onSelectMode: (mode: AttachmentMode) => void
     visible: boolean
-}
-
-export function AttachmentSheet({
-    activeMode,
-    allowFiles = true,
-    bottomInset,
-    onClose,
-    onOpenCamera,
-    onOpenNativeGallery,
-    onPickFiles,
-    onSelectMode,
-    visible,
-}: AttachmentSheetProps) {
-    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
+}) {
     const { t } = useLanguage()
-    const { height } = useWindowDimensions()
-    const { isDark } = useTheme()
+    const { isDark, palette } = useTheme()
     const nativeSheetOpen = useRef(false)
     useEffect(() => {
         if (Platform.OS !== "ios" || !visible || nativeSheetOpen.current) return
         nativeSheetOpen.current = true
-        const actions = [onOpenNativeGallery, onOpenCamera, ...(allowFiles ? [onPickFiles] : [])]
-        const options = [t("chat.attachmentsSelectGallery"), t("chat.attachmentsCameraTitle"), ...(allowFiles ? [t("chat.attachmentsFileTitle")] : []), t("common.cancel")]
-        ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, userInterfaceStyle: isDark ? "dark" : "light" }, index => {
+        ActionSheetIOS.showActionSheetWithOptions({
+            options: [t("chat.attachmentsSelectGallery"), t("chat.attachmentsCameraTitle"), t("common.cancel")],
+            cancelButtonIndex: 2,
+            userInterfaceStyle: isDark ? "dark" : "light",
+        }, index => {
             nativeSheetOpen.current = false
             onClose()
-            actions[index]?.()
+            if (index === 0) onOpenNativeGallery()
+            if (index === 1) onOpenCamera()
         })
-    }, [allowFiles, isDark, onClose, onOpenCamera, onOpenNativeGallery, onPickFiles, t, visible])
-    const sheetHeight = Math.min(height * 0.72, 620)
-    const bottomControlOffset = Math.max(bottomInset, spacing.sm)
-
+    }, [isDark, onClose, onOpenCamera, onOpenNativeGallery, t, visible])
     if (Platform.OS === "ios") return null
-
-    return (
-        <Modal
-            animationType="fade"
-            onRequestClose={onClose}
-            statusBarTranslucent
-            transparent
-            visible={visible}
-        >
-            <View style={chatScreenStyles.attachmentModalRoot}>
-                <Pressable onPress={onClose} style={chatScreenStyles.attachmentBackdrop} />
-                <View
-                    style={[
-                        chatScreenStyles.attachmentSheet,
-                        {
-                            height: sheetHeight,
-                            paddingBottom: Math.max(bottomInset, spacing.sm),
-                        },
-                    ]}
-                >
-                    <View style={chatScreenStyles.attachmentSheetHeader}>
-                        <Pressable
-                            accessibilityLabel={t("nav.closeSearch")}
-                            onPress={onClose}
-                            style={chatScreenStyles.attachmentHeaderButton}
-                        >
-                            <Svg fill="none" height={24} viewBox="0 0 24 24" width={24}>
-                                <Path
-                                    d="m6 6 12 12M18 6 6 18"
-                                    stroke="#0A0A0A"
-                                    strokeLinecap="round"
-                                    strokeWidth={2.2}
-                                />
-                            </Svg>
-                        </Pressable>
-
-                        <View style={chatScreenStyles.attachmentTitleButton}>
-                            <Text numberOfLines={1} style={chatScreenStyles.attachmentSheetTitle}>
-                                {activeMode === "photo" || !allowFiles
-                                    ? t("chat.attachmentsPhotoTitle")
-                                    : t("chat.attachmentsFileTitle")}
-                            </Text>
-                        </View>
-
-                        <View style={chatScreenStyles.attachmentHeaderSpacer} />
-                    </View>
-                    <View style={chatScreenStyles.attachmentHandle} />
-
-                    <View style={chatScreenStyles.attachmentSheetBody}>
-                        {activeMode === "photo" || !allowFiles ? (
-                            <View style={chatScreenStyles.fileSheetBody}>
-                                <View style={chatScreenStyles.attachmentActionCard}>
-                                    <Pressable
-                                        onPress={onOpenNativeGallery}
-                                        style={chatScreenStyles.attachmentActionRow}
-                                    >
-                                        <GalleryActionIcon />
-                                        <Text style={chatScreenStyles.attachmentActionText}>
-                                            {t("chat.attachmentsSelectGallery")}
-                                        </Text>
-                                    </Pressable>
-                                    <View style={chatScreenStyles.attachmentActionDivider} />
-                                    <Pressable onPress={onOpenCamera} style={chatScreenStyles.attachmentActionRow}>
-                                        <CameraActionIcon />
-                                        <Text style={chatScreenStyles.attachmentActionText}>
-                                            {t("chat.attachmentsCameraTitle")}
-                                        </Text>
-                                    </Pressable>
-                                </View>
-                            </View>
-                        ) : (
-                            <View style={chatScreenStyles.fileSheetBody}>
-                                <View style={chatScreenStyles.attachmentActionCard}>
-                                    <Pressable
-                                        onPress={onOpenNativeGallery}
-                                        style={chatScreenStyles.attachmentActionRow}
-                                    >
-                                        <GalleryActionIcon />
-                                        <Text style={chatScreenStyles.attachmentActionText}>
-                                            {t("chat.attachmentsSelectGallery")}
-                                        </Text>
-                                    </Pressable>
-                                    <View style={chatScreenStyles.attachmentActionDivider} />
-                                    <Pressable onPress={onPickFiles} style={chatScreenStyles.attachmentActionRow}>
-                                        <FileActionIcon />
-                                        <Text style={chatScreenStyles.attachmentActionText}>
-                                            {t("chat.attachmentsSelectFiles")}
-                                        </Text>
-                                    </Pressable>
-                                </View>
-                            </View>
-                        )}
-                    </View>
-
-                    {allowFiles ? (
-                        <View style={[chatScreenStyles.attachmentModeBar, { bottom: bottomControlOffset }]}>
-                            <AttachmentModeButton
-                                active={activeMode === "photo"}
-                                icon={<GalleryActionIcon active={activeMode === "photo"} compact />}
-                                label={t("chat.attachmentsPhotoTab")}
-                                onPress={() => onSelectMode("photo")}
-                            />
-                            <AttachmentModeButton
-                                active={activeMode === "file"}
-                                icon={<FileActionIcon active={activeMode === "file"} compact />}
-                                label={t("chat.attachmentsFileTab")}
-                                onPress={() => onSelectMode("file")}
-                            />
-                        </View>
-                    ) : null}
-                </View>
+    return <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+        <View style={styles.modal}>
+            <Pressable accessibilityLabel={t("common.cancel")} onPress={onClose} style={StyleSheet.absoluteFill} />
+            <View style={[styles.sheet, { backgroundColor: palette.surface, paddingBottom: Math.max(bottomInset, 16) }]}>
+                <Pressable onPress={() => { onClose(); onOpenNativeGallery() }} style={styles.option}><Text style={{ color: palette.text }}>{t("chat.attachmentsSelectGallery")}</Text></Pressable>
+                <Pressable onPress={() => { onClose(); onOpenCamera() }} style={styles.option}><Text style={{ color: palette.text }}>{t("chat.attachmentsCameraTitle")}</Text></Pressable>
+                <Pressable onPress={onClose} style={styles.option}><Text style={{ color: palette.primary }}>{t("common.cancel")}</Text></Pressable>
             </View>
-        </Modal>
-    )
-}
-
-function AttachmentModeButton({
-    active,
-    icon,
-    label,
-    onPress,
-}: {
-    active: boolean
-    icon: ReactNode
-    label: string
-    onPress: () => void
-}) {
-    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
-    return (
-        <Pressable
-            onPress={onPress}
-            style={[
-                chatScreenStyles.attachmentModeButton,
-                active ? chatScreenStyles.attachmentModeButtonActive : null,
-            ]}
-        >
-            {icon}
-            <Text
-                style={[
-                    chatScreenStyles.attachmentModeLabel,
-                    active ? chatScreenStyles.attachmentModeLabelActive : null,
-                ]}
-            >
-                {label}
-            </Text>
-        </Pressable>
-    )
-}
-
-export function QueuedAttachmentStrip({
-    attachments,
-    onRemove,
-}: {
-    attachments: UploadableChatAttachment[]
-    onRemove: (attachmentIndex: number) => void
-}) {
-    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
-    if (!attachments.length) {
-        return null
-    }
-
-    return (
-        <ScrollView
-            contentContainerStyle={chatScreenStyles.queuedAttachmentContent}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={chatScreenStyles.queuedAttachmentScroll}
-        >
-            {attachments.map((attachment, attachmentIndex) => {
-                const isImage = isUploadablePhotoAttachment(attachment)
-
-                return (
-                    <View key={`${attachment.uri}-${attachmentIndex}`} style={chatScreenStyles.queuedAttachmentChip}>
-                        {isImage ? (
-                            <Image
-                                resizeMode="cover"
-                                source={{ uri: attachment.uri }}
-                                style={chatScreenStyles.queuedAttachmentThumbnail}
-                            />
-                        ) : (
-                            <View style={chatScreenStyles.queuedAttachmentIcon}>
-                                <FileActionIcon compact />
-                            </View>
-                        )}
-                        <Text numberOfLines={1} style={chatScreenStyles.queuedAttachmentName}>
-                            {getAttachmentDisplayName(attachment)}
-                        </Text>
-                        <Pressable
-                            onPress={() => onRemove(attachmentIndex)}
-                            style={chatScreenStyles.queuedAttachmentRemove}
-                        >
-                            <Svg fill="none" height={15} viewBox="0 0 24 24" width={15}>
-                                <Path
-                                    d="m7 7 10 10M17 7 7 17"
-                                    stroke="#0A0A0A"
-                                    strokeLinecap="round"
-                                    strokeWidth={2.2}
-                                />
-                            </Svg>
-                        </Pressable>
-                    </View>
-                )
-            })}
-        </ScrollView>
-    )
-}
-
-export function MessageAttachmentList({
-    attachments,
-    isUserMessage,
-    mediaWidth,
-}: {
-    attachments: AIAttachmentRead[]
-    isUserMessage: boolean
-    mediaWidth: number
-}) {
-    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
-    const imageAttachments = attachments.filter(isImageAttachment)
-    const documentAttachments = attachments.filter((attachment) => !isImageAttachment(attachment))
-
-    if (!imageAttachments.length && !documentAttachments.length) {
-        return null
-    }
-
-    return (
-        <View style={chatScreenStyles.messageAttachmentStack}>
-            {imageAttachments.length > 0 ? (
-                <View style={chatScreenStyles.messageImageStack}>
-                    {imageAttachments.map((attachment) => (
-                        <MessageImageAttachment
-                            attachment={attachment}
-                            key={attachment.id}
-                            mediaWidth={mediaWidth}
-                        />
-                    ))}
-                </View>
-            ) : null}
-            {documentAttachments.length > 0 ? (
-                <View style={chatScreenStyles.messageDocumentStack}>
-                    {documentAttachments.map((attachment) => (
-                        <View
-                            key={attachment.id}
-                            style={[
-                                chatScreenStyles.messageDocumentAttachment,
-                                isUserMessage ? chatScreenStyles.userMessageDocumentAttachment : null,
-                            ]}
-                        >
-                            <View style={chatScreenStyles.messageDocumentIcon}>
-                                <FileActionIcon compact />
-                            </View>
-                            <Text
-                                numberOfLines={2}
-                                style={[
-                                    chatScreenStyles.messageDocumentName,
-                                    isUserMessage ? chatScreenStyles.userMessageDocumentName : null,
-                                ]}
-                            >
-                                {getReadAttachmentDisplayName(attachment)}
-                            </Text>
-                        </View>
-                    ))}
-                </View>
-            ) : null}
         </View>
-    )
+    </Modal>
 }
-
-function MessageImageAttachment({
-    attachment,
-    mediaWidth,
-}: {
-    attachment: AIAttachmentRead
-    mediaWidth: number
+export function QueuedAttachmentStrip({ attachments, onRemove }: {
+    attachments: UploadableSupportAttachment[]
+    onRemove: (index: number) => void
 }) {
-    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
-    const uri = getReadAttachmentUri(attachment)
-    const [aspectRatio, setAspectRatio] = useState(1)
-
-    useEffect(() => {
-        let isMounted = true
-
-        if (attachment.is_private) return () => { isMounted = false }
-        Image.getSize(
-            uri,
-            (imageWidth, imageHeight) => {
-                if (isMounted) {
-                    setAspectRatio(normalizeImageAspectRatio(imageWidth, imageHeight))
-                }
-            },
-            () => undefined,
-        )
-
-        return () => {
-            isMounted = false
-        }
-    }, [uri, attachment.is_private])
-
-    return (
-        <Image
-            onLoad={(event) => {
-                const source = event.nativeEvent.source
-                setAspectRatio(normalizeImageAspectRatio(source.width, source.height))
-            }}
-            resizeMode="cover"
-            source={{ uri, ...(attachment.is_private ? { headers: { Authorization: `Bearer ${getAuthTokens()?.accessToken ?? ""}` }, cache: "reload" as const } : {}) }}
-            style={[
-                chatScreenStyles.messageImageAttachment,
-                {
-                    aspectRatio,
-                    width: mediaWidth,
-                },
-            ]}
-        />
-    )
-}
-
-function GalleryActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
+    const { t } = useLanguage()
     const { palette } = useTheme()
-    const iconColor = active ? palette.primary : ATTACHMENT_ICON_COLOR
-    const size = compact ? 22 : 30
-
-    return (
-        <Svg fill="none" height={size} viewBox="0 0 24 24" width={size}>
-            <Path
-                d="M4.5 7.2A2.7 2.7 0 0 1 7.2 4.5h9.6a2.7 2.7 0 0 1 2.7 2.7v9.6a2.7 2.7 0 0 1-2.7 2.7H7.2a2.7 2.7 0 0 1-2.7-2.7V7.2Z"
-                stroke={iconColor}
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-            />
-            <Path
-                d="m5.1 16.6 3.7-3.8 2.6 2.4 3.5-4.1 4 4.8M9.1 8.6h.1"
-                stroke={iconColor}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-            />
-        </Svg>
-    )
+    if (!attachments.length) return null
+    return <ScrollView horizontal contentContainerStyle={styles.queued} showsHorizontalScrollIndicator={false}>
+        {attachments.map((attachment, index) => <View key={`${attachment.uri}-${index}`} style={[styles.preview, { backgroundColor: palette.surface }]}>
+            <Image source={{ uri: attachment.uri }} style={styles.image} />
+            <Pressable accessibilityLabel={t("chat.removeAttachment")} onPress={() => onRemove(index)} style={styles.remove}><Text style={{ color: palette.text }}>×</Text></Pressable>
+        </View>)}
+    </ScrollView>
 }
-
-function CameraActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
-    const { palette } = useTheme()
-    const iconColor = active ? palette.primary : ATTACHMENT_ICON_COLOR
-    const size = compact ? 22 : 30
-
-    return <CameraSvgIcon color={iconColor} height={size} width={size} />
-}
-
-function FileActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
-    const { palette } = useTheme()
-    const iconColor = active ? palette.primary : ATTACHMENT_ICON_COLOR
-    const size = compact ? 22 : 30
-
-    return (
-        <Svg fill="none" height={size} viewBox="0 0 24 24" width={size}>
-            <Path
-                d="M7 3.8h6.2L18 8.6v11.6H7V3.8Z"
-                stroke={iconColor}
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-            />
-            <Path
-                d="M13 4v5h5M9.5 13h5M9.5 16h5"
-                stroke={iconColor}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-            />
-        </Svg>
-    )
-}
+const styles = StyleSheet.create({
+    modal: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.35)" },
+    sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16 },
+    option: { padding: 16, alignItems: "center" },
+    queued: { gap: 8, paddingBottom: 8 },
+    preview: { width: 76, height: 76, borderRadius: 12, overflow: "hidden" },
+    image: { width: "100%", height: "100%" },
+    remove: { position: "absolute", right: 0, top: 0, padding: 6, backgroundColor: "rgba(255,255,255,0.85)", borderRadius: 12 },
+})

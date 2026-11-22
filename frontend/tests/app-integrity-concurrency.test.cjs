@@ -36,14 +36,13 @@ function setup(t, overrides = {}) {
         "react-native": { Platform: { OS: "ios" } },
         "@/config/env": { API_BASE_URL: "https://example.test/api" },
         "@/services/auth/session": { getAuthTokens: () => ({ accessToken: "test" }) },
-        "@/services/telegram/telegram-web-app": {},
-    })
+            })
     return { ...module, stats: () => ({ generated, peak }) }
 }
 
-test("simultaneous mentor, chat and background requests do not rotate or race the iOS key", async t => {
+test("simultaneous support, catalog and background requests do not rotate or race the iOS key", async t => {
     const api = setup(t)
-    const results = await Promise.all(["ai-companion", "ai-chat:read", "ai-companion", "community:read"].map(action => api.getAppIntegrityHeaders(action)))
+    const results = await Promise.all(["support:write", "support:read", "support:write", "catalog:read"].map(action => api.getAppIntegrityHeaders(action)))
     assert.deepEqual(api.stats(), { generated: 1, peak: 1 })
     assert.equal(new Set(results.map(headers => headers["X-App-Integrity-Request-Hash"])).size, 4)
     assert.ok(results.every(headers => headers["X-App-Integrity-Key-Id"] === "key-1"))
@@ -52,7 +51,7 @@ test("simultaneous mentor, chat and background requests do not rotate or race th
 test("development builds still obtain real device proof", async t => {
     const api = setup(t)
     global.__DEV__ = true
-    const headers = await api.getAppIntegrityHeaders("ai-companion")
+    const headers = await api.getAppIntegrityHeaders("support:write")
     assert.equal(headers["X-App-Integrity-Key-Id"], "key-1")
     assert.match(headers["X-App-Integrity-Token"], /^assertion-/)
     assert.equal(api.stats().generated, 1)
@@ -65,7 +64,7 @@ test("a temporary Apple service error retries with the same key", async t => {
         if (keys.length === 1) throw Object.assign(new Error("Server unavailable"), { code: "ERR_APP_INTEGRITY_SERVER_UNAVAILABLE" })
         return "attestation"
     } })
-    await api.getAppIntegrityHeaders("ai-companion")
+    await api.getAppIntegrityHeaders("support:write")
     assert.deepEqual(keys, ["key-1", "key-1"])
     assert.equal(api.stats().generated, 1)
 })
@@ -76,8 +75,8 @@ test("permanent native failure is not bypassed and does not poison the queue", a
         if (++calls === 1) throw Object.assign(new Error("Not supported"), { code: "ERR_APP_INTEGRITY_FEATURE_UNSUPPORTED" })
         return "assertion"
     } })
-    await assert.rejects(api.getAppIntegrityHeaders("ai-companion"), api.AppIntegrityUnavailableError)
-    const headers = await api.getAppIntegrityHeaders("ai-companion")
+    await assert.rejects(api.getAppIntegrityHeaders("support:write"), api.AppIntegrityUnavailableError)
+    const headers = await api.getAppIntegrityHeaders("support:write")
     assert.equal(headers["X-App-Integrity-Token"], "assertion")
     assert.equal(api.stats().generated, 1)
 })
@@ -101,11 +100,11 @@ test("a hung native call has a deadline and releases the iOS request queue", asy
 
 test("key reset waits for an in-flight assertion before deleting its key", async t => {
     const api = setup(t)
-    const request = api.getAppIntegrityHeaders("ai-companion")
+    const request = api.getAppIntegrityHeaders("support:write")
     const reset = api.resetAppIntegrityState()
     assert.equal((await request)["X-App-Integrity-Key-Id"], "key-1")
     await reset
-    assert.equal((await api.getAppIntegrityHeaders("ai-companion"))["X-App-Integrity-Key-Id"], "key-2")
+    assert.equal((await api.getAppIntegrityHeaders("support:write"))["X-App-Integrity-Key-Id"], "key-2")
 })
 
 test("request client preserves device verification failures instead of inventing HTTP 503", async () => {
@@ -118,9 +117,8 @@ test("request client preserves device verification failures instead of inventing
         "@/services/auth/session": { getAuthTokens: () => null },
         "react-native": { Platform: { OS: "ios" } },
         "@/services/api/request-deadline": { RequestDeadlineError: class extends Error {}, fetchTextWithDeadline: async () => { fetched = true } },
-        "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
     })
-    await assert.rejects(api.apiGet("/mentor", undefined, { appIntegrityAction: "ai-companion" }), error => error === failure)
+    await assert.rejects(api.apiGet("/support", undefined, { appIntegrityAction: "support:write" }), error => error === failure)
     assert.equal(fetched, false)
 })
 
@@ -146,9 +144,8 @@ test("device verification is required for every session and platform", async () 
                 headers = options.headers
                 return { response: new Response(null, { status: 200 }), text: "{}" }
             } },
-            "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
-        })
-        await api.apiGet("/mentor", undefined, { auth, appIntegrityAction: "ai-companion" })
+            })
+        await api.apiGet("/support", undefined, { auth, appIntegrityAction: "support:write" })
         assert.equal(askedForProof, true)
         assert.equal(headers.get("Authorization"), auth ? "Bearer access" : null)
         assert.equal(headers.get("X-App-Platform"), platform)

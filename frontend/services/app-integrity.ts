@@ -3,7 +3,6 @@ import * as SecureStore from "expo-secure-store"
 import { Platform } from "react-native"
 import { ANDROID_CLOUD_PROJECT_NUMBER, API_BASE_URL } from "@/config/env"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
-import { getTelegramInitData } from "@/services/telegram/telegram-web-app"
 
 const IOS_APP_ATTEST_KEY_STORAGE_KEY = "elixirpeptide.appIntegrity.iosKeyId"
 const IOS_APP_ATTEST_REGISTERED_STORAGE_KEY = "elixirpeptide.appIntegrity.iosRegisteredKeyId"
@@ -372,19 +371,7 @@ export async function getAppIntegrityHeaders(action?: string): Promise<AppIntegr
         return {}
     }
 
-    if (Platform.OS === "web") {
-        const initData = getTelegramInitData()
-        if (!initData) {
-            return {}
-        }
-
-        return {
-            [APP_INTEGRITY_HEADERS.action]: action,
-            [APP_INTEGRITY_HEADERS.platform]: "telegram",
-            [APP_INTEGRITY_HEADERS.requestHash]: buildRequestHash(action),
-            [APP_INTEGRITY_HEADERS.token]: initData,
-        }
-    }
+    if (Platform.OS === "web") return {}
 
     try {
         if (Platform.OS === "android") {

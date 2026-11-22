@@ -7,7 +7,6 @@ import { getProductRoute, ROUTES } from "@/constants/routes"
 import { deleteMyPushToken, registerMyPushToken } from "@/services/api/users"
 
 const DEFAULT_ANDROID_CHANNEL_ID = "default"
-const COMMUNITY_ANDROID_CHANNEL_ID = "community_messages"
 const SUPPORT_ANDROID_CHANNEL_ID = "support_messages"
 
 let notificationsConfigured = false
@@ -76,13 +75,6 @@ async function ensureAndroidChannel() {
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#2383E2",
-    })
-    await Notifications.setNotificationChannelAsync(COMMUNITY_ANDROID_CHANNEL_ID, {
-        name: "Community messages",
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: "#2383E2",
-        sound: "default",
     })
     await Notifications.setNotificationChannelAsync(SUPPORT_ANDROID_CHANNEL_ID, {
         name: "Support messages",
@@ -222,23 +214,6 @@ function resolvePushTarget(data: PushNotificationData): Href | null {
         return null
     }
 
-    if (Platform.OS === "ios") {
-        if (type === "support_reply") {
-            const conversationId = asPositiveInt(data.conversation_id)
-            return {
-                pathname: ROUTES.chat,
-                params: {
-                    mode: "support",
-                    ...(conversationId ? { conversationId: String(conversationId) } : {}),
-                },
-            }
-        }
-        if (type === "order_status_changed") {
-            return ROUTES.profileHistory
-        }
-        return ROUTES.home
-    }
-
     switch (type) {
         case "order_status_changed": {
             const statusCode = asString(data.status_code)
@@ -283,27 +258,13 @@ function resolvePushTarget(data: PushNotificationData): Href | null {
             }
             return deepLink as Href
         }
-        case "ai_reply":
-            return ROUTES.chat
-        case "ai_companion":
-        case "ai_companion_supply":
-            return { pathname: ROUTES.chat, params: { mode: "ai", companion: "1" } }
         case "support_reply": {
             const conversationId = asPositiveInt(data.conversation_id)
             return {
                 pathname: ROUTES.chat,
                 params: {
-                    mode: "support",
                     ...(conversationId ? { conversationId: String(conversationId) } : {}),
                 },
-            }
-        }
-        case "community_message": {
-            const topicId = asPositiveInt(data.topic_id)
-            if (!topicId) return ROUTES.chat
-            return {
-                pathname: ROUTES.chat,
-                params: { mode: "community", topicId: String(topicId) },
             }
         }
         default:
@@ -371,7 +332,7 @@ export function attachPushOpenListener(navigate: PushNotificationNavigate) {
 }
 
 // Generic names for call sites that subscribe to more than order updates.
-// Keep the original exports for OTA compatibility with existing screens.
+// Preserve the names used by order-related screens.
 export const setPushNotificationCurrentPath = setOrderStatusNotificationCurrentPath
 export const syncPushNotifications = syncOrderStatusNotifications
 export const unregisterPushNotifications = unregisterOrderStatusNotifications

@@ -10,7 +10,7 @@ const packageLockPath = path.join(cwd, "package-lock.json");
 const nodeModulesPath = path.join(cwd, "node_modules");
 const lockHashPath = path.join(nodeModulesPath, ".package-lock.hash");
 const imageNodeModulesPath = "/opt/frontend-node_modules";
-const requiredModules = ["expo-audio"];
+const requiredModules = ["expo-camera"];
 
 function readPackageLockHash() {
   if (!fs.existsSync(packageLockPath)) {

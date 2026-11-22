@@ -34,7 +34,6 @@ test("an account change during device verification prevents sending the previous
         "react-native": { Platform: { OS: "ios" } },
         "@/services/api/request-deadline": { RequestDeadlineError: class extends Error {},
             fetchTextWithDeadline: async () => { fetched = true } },
-        "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
     })
     await assert.rejects(api.apiGet("/orders"), /Session changed/)
     assert.equal(fetched, false)

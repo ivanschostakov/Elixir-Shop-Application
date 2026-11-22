@@ -24,7 +24,7 @@ class ElixirSceneDelegate: UIResponder, UIWindowSceneDelegate {
     appDelegate.window = window
 
     // Release starts React Native only after UIKit has supplied its scene.
-    // Debug keeps Expo SDK 54's dev-launcher window and existing React host.
+    // Debug reuses the React host created during application launch.
     if window.rootViewController == nil, let factory = appDelegate.reactNativeFactory {
       var launchOptions = appDelegate.sceneLaunchOptions ?? [:]
       if let context = connectionOptions.urlContexts.first {

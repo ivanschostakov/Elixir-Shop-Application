@@ -17,7 +17,7 @@ import type {
 
 const ACTIVE_POLL_INTERVAL_MS = 5000
 
-export function useSupportChat(active: boolean, onUnreadChange: (count: number) => void) {
+export function useSupportChat() {
     const isFocused = useIsFocused()
     const [inbox, setInbox] = useState<SupportInbox | null>(null)
     const [selectedConversation, setSelectedConversation] = useState<SupportConversation | null>(null)
@@ -29,11 +29,10 @@ export function useSupportChat(active: boolean, onUnreadChange: (count: number) 
 
     const applyInbox = useCallback((next: SupportInbox) => {
         setInbox(next)
-        onUnreadChange(next.total_unread)
         if (next.active && selectedConversation?.id === next.active.id) {
             setSelectedConversation(next.active)
         }
-    }, [onUnreadChange, selectedConversation?.id])
+    }, [selectedConversation?.id])
 
     const refresh = useCallback(async (showSpinner = false) => {
         if (showSpinner) setRefreshing(true)
@@ -59,16 +58,16 @@ export function useSupportChat(active: boolean, onUnreadChange: (count: number) 
     }, [isFocused, refresh])
 
     useEffect(() => {
-        if (!isFocused || !active) return
+        if (!isFocused) return
         const interval = setInterval(() => {
             void refresh()
         }, ACTIVE_POLL_INTERVAL_MS)
         return () => clearInterval(interval)
-    }, [active, isFocused, refresh])
+    }, [isFocused, refresh])
 
     useEffect(() => {
         const conversation = selectedConversation ?? inbox?.active
-        if (!active || !conversation?.customer_unread_count) return
+        if (!isFocused || !conversation?.customer_unread_count) return
         void markMySupportConversationRead(conversation.id)
             .then(() => {
                 const nextTotalUnread = Math.max(
@@ -85,10 +84,9 @@ export function useSupportChat(active: boolean, onUnreadChange: (count: number) 
                 setSelectedConversation((current) => current?.id === conversation.id
                     ? { ...current, customer_unread_count: 0 }
                     : current)
-                onUnreadChange(nextTotalUnread)
             })
             .catch(() => undefined)
-    }, [active, inbox?.active, inbox?.total_unread, onUnreadChange, selectedConversation])
+    }, [isFocused, inbox?.active, inbox?.total_unread, selectedConversation])
 
     const createConversation = useCallback(async (payload: CreateSupportConversationPayload) => {
         setSending(true)

@@ -3,10 +3,10 @@ import { Animated, StyleSheet, View, type StyleProp, type ViewStyle } from "reac
 import { useTheme } from "@/providers/theme-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { motion } from "@/theme/motion"
-import { useChatReducedMotion } from "@/screens/chat/chat-mode-transition"
+import { useReducedMotion } from "@/hooks/use-reduced-motion"
 
 export function ContentReveal({ ready, children, style }: { ready: boolean; children: ReactNode; style?: StyleProp<ViewStyle> }) {
-    const reducedMotion = useChatReducedMotion()
+    const reducedMotion = useReducedMotion()
     const opacity = useRef(new Animated.Value(ready ? 1 : 0)).current
     useEffect(() => {
         opacity.stopAnimation()
@@ -22,7 +22,7 @@ export function ContentReveal({ ready, children, style }: { ready: boolean; chil
 export function QuietLoading({ loading, kind = "chat" }: { loading: boolean; kind?: "chat" | "content" }) {
     const { palette } = useTheme()
     const { t } = useLanguage()
-    const reducedMotion = useChatReducedMotion()
+    const reducedMotion = useReducedMotion()
     const [visible, setVisible] = useState(false)
     const opacity = useRef(new Animated.Value(0)).current
     useEffect(() => {

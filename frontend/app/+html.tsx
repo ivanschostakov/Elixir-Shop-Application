@@ -18,8 +18,6 @@ export default function Html({ children }: { children: ReactNode }) {
                             :root {
                                 --elixir-color-background: #FFFFFF;
                                 --elixir-color-page-background: #F3F5F8;
-                                --telegram-viewport-height: 100%;
-                                --telegram-viewport-stable-height: 100%;
                                 background: var(--elixir-color-page-background);
                             }
 
@@ -27,7 +25,6 @@ export default function Html({ children }: { children: ReactNode }) {
                             body,
                             #root {
                                 background: var(--elixir-color-page-background);
-                                min-height: var(--telegram-viewport-height);
                                 overscroll-behavior: none;
                             }
 
@@ -54,7 +51,6 @@ export default function Html({ children }: { children: ReactNode }) {
                         `,
                     }}
                 />
-                <script src="https://telegram.org/js/telegram-web-app.js"></script>
             </head>
             <body>{children}</body>
         </html>

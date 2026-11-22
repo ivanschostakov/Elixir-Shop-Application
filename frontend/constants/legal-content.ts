@@ -16,18 +16,6 @@ elixirpeptide@yandex.ru
 
 ## Соцсети
 
-### Telegram чат
-@peptide_rus
-
-### Telegram канал
-@peptide_slim
-
-### Telegram бот
-@elixirpeptidebot
-
-### Telegram поддержка
-@elixirpeptide
-
 ### Instagram
 @elixir.peptide
 

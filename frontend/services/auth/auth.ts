@@ -25,8 +25,6 @@ import type {
     RegistrationPayload,
     RegistrationStartedResponse,
     RegistrationVerifyPayload,
-    TelegramAuthPayload,
-    TelegramAuthResponse,
 } from "@/services/auth/auth.types"
 
 export type {
@@ -40,7 +38,6 @@ export type {
     RegistrationPayload,
     RegistrationStartedResponse,
     RegistrationVerifyPayload,
-    TelegramAuthResponse,
 } from "@/services/auth/auth.types"
 export { getErrorMessage as getAuthErrorMessage } from "@/utils/errors"
 
@@ -182,13 +179,6 @@ export async function resendRegistrationCode(payload: RegistrationCodeResendPayl
     )
 }
 
-export async function startTelegramSession(initData: string): Promise<TelegramAuthResponse> {
-    return apiPost<TelegramAuthResponse, TelegramAuthPayload>(
-        authPath("/telegram/session"),
-        { init_data: initData },
-        { auth: false, retryOnUnauthorized: false },
-    )
-}
 
 export async function refreshSession(): Promise<AuthTokens | null> {
     const tokens = getAuthTokens()

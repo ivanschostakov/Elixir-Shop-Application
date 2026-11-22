@@ -1,4 +1,8 @@
-import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
+export type UploadableSupportAttachment = {
+    uri: string
+    fileName?: string
+    mimeType?: string
+}
 
 export type SupportConversationStatus = "new" | "open" | "waiting_customer" | "waiting_team" | "resolved" | "spam"
 export type SupportPriority = "low" | "normal" | "high" | "urgent"
@@ -56,5 +60,5 @@ export type CreateSupportConversationPayload = {
 export type SendSupportMessagePayload = {
     clientMessageId: string
     message: string
-    attachments?: UploadableChatAttachment[]
+    attachments?: UploadableSupportAttachment[]
 }

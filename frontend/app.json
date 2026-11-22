@@ -25,8 +25,7 @@
       },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSLocationWhenInUseUsageDescription": "Allow Elixir Peptide to access your location so the delivery map can center on you.",
-        "NSMicrophoneUsageDescription": "Allow Elixir Peptide to record voice messages for AI chat."
+        "NSLocationWhenInUseUsageDescription": "Allow Elixir Peptide to access your location so the delivery map can center on you."
       }
     },
     "android": {
@@ -38,7 +37,6 @@
         "monochromeImage": "./assets/images/adaptive-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "requestLegacyExternalStorage": false,
       "package": "com.elixirpeptide.elixirpeptide",
       "versionCode": 2,
       "blockedPermissions": [
@@ -47,12 +45,12 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_IMAGES",
         "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.RECORD_AUDIO"
       ],
       "permissions": [
         "android.permission.CAMERA",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -90,14 +88,15 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Elixir Peptide to access your photos so you can attach images to chat messages.",
-          "cameraPermission": "Allow Elixir Peptide to use your camera to take photos you choose to attach to support, community, or AI chat messages."
+          "photosPermission": "Allow Elixir Peptide to access photos you choose to attach to customer support messages or product reviews.",
+          "cameraPermission": "Allow Elixir Peptide to use your camera to attach photos to customer support messages.",
+          "microphonePermission": false
         }
       ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Elixir Peptide to use your camera to take photos you choose to attach to support, community, or AI chat messages.",
+          "cameraPermission": "Allow Elixir Peptide to use your camera to attach photos to customer support messages.",
           "recordAudioAndroid": false
         }
       ],
@@ -108,12 +107,6 @@
         }
       ],
       "expo-secure-store",
-      [
-        "expo-audio",
-        {
-          "microphonePermission": "Allow Elixir Peptide to record voice messages for AI chat."
-        }
-      ],
       "expo-asset"
     ],
     "experiments": {
