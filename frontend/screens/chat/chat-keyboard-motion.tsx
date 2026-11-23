@@ -2,14 +2,14 @@ import { createContext, forwardRef, useContext, useEffect, useState, type ReactN
 import { Keyboard, Platform, ScrollView, StyleSheet, View, type ScrollViewProps, type ViewProps } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller"
-import { useDerivedValue, useSharedValue, type SharedValue } from "react-native-reanimated"
+import Reanimated, { useAnimatedStyle, useDerivedValue, useSharedValue, type SharedValue } from "react-native-reanimated"
 import { useTheme } from "@/providers/theme-provider"
 import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
 
 type Geometry = { dock: SharedValue<number>; padding: SharedValue<number> }
 const ComposerGeometry = createContext<Geometry | null>(null)
 
-/** Keep support messages and the composer on the system keyboard clock. */
+/** Separate geometry for each retained conversation, sharing the system keyboard clock. */
 export function ChatKeyboardPane({ children, style }: { children: ReactNode; style?: ViewProps["style"] }) {
     const dock = useSharedValue(0)
     const { bottom } = useSafeAreaInsets()
@@ -48,6 +48,14 @@ export const ChatComposerDock = forwardRef<View, ViewProps>(function ChatCompose
         {children}
     </KeyboardStickyView>
 })
+
+export function ChatKeyboardFloating(props: ViewProps) {
+    const { bottom } = useSafeAreaInsets()
+    const { height, progress } = useReanimatedKeyboardAnimation()
+    const motion = useAnimatedStyle(() => ({ transform: [{ translateY: height.value + progress.value * Math.max(0, bottom - 8) }] }))
+    if (Platform.OS !== "ios") return <View {...props} />
+    return <Reanimated.View {...props} style={[props.style, motion]} />
+}
 
 const styles = StyleSheet.create({
     pane: { flex: 1, minHeight: 0 },

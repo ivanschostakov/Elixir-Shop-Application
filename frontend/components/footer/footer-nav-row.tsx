@@ -5,7 +5,7 @@ import { useThemeStyles } from "@/hooks/use-theme-styles"
 
 export type FooterNavItem = { key: string; accessibilityLabel: string; icon: ReactNode; isActive: boolean; onPress: () => void }
 
-/** Shared navigation geometry for the main app. */
+/** Shared navigation geometry for the main app and the mentor. */
 export function FooterNavRow({ items, tabs = false }: { items: FooterNavItem[]; tabs?: boolean }) {
     const styles = useThemeStyles(createStickyFooterStyles)
     return <View accessibilityRole={tabs ? "tablist" : undefined} style={styles.navRow}>

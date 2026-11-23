@@ -1,5 +1,5 @@
 import { useContext } from "react"
-import { View } from "react-native"
+import { Platform, View } from "react-native"
 import { router } from "expo-router"
 
 import {
@@ -19,6 +19,7 @@ import { useBasket } from "@/hooks/basket/use-basket"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
+import { isMentorAvailable } from "@/screens/chat/chat-mode-policy"
 import { RouteTransitionContext } from "@/components/navigation/route-transition-context"
 import { FooterNavRow } from "@/components/footer/footer-nav-row"
 
@@ -54,7 +55,7 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
             accessibilityLabel: t("nav.chat"),
             icon: <SmileBubbleIcon color={pathname === ROUTES.chat ? accentPalette.primary : palette.mutedText} />,
             isActive: pathname === ROUTES.chat,
-            route: ROUTES.chat,
+            route: isMentorAvailable(Platform.OS) ? `${ROUTES.chat}?mode=ai` : ROUTES.chat,
         },
         {
             key: ROUTES.basket,

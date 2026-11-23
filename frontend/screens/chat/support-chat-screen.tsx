@@ -1,5 +1,7 @@
+import { requestChatRecordingPermission } from "@/screens/chat/chat-recording-permission"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
+    ActivityIndicator,
     Alert,
     Image,
     ImageBackground,
@@ -13,6 +15,12 @@ import {
     View,
 } from "react-native"
 import { useCameraPermissions } from "expo-camera"
+import {
+    RecordingPresets,
+    setAudioModeAsync,
+    useAudioRecorder,
+    useAudioRecorderState,
+} from "expo-audio"
 import * as ImagePicker from "expo-image-picker"
 import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
@@ -25,19 +33,28 @@ import { useSupportChat } from "@/hooks/chat/use-support-chat"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
-import type { SupportConversationStatus, UploadableSupportAttachment } from "@/services/api/support.types"
+import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
+import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
+import type { SupportConversationStatus } from "@/services/api/support.types"
 import { API_BASE_URL } from "@/services/api/constants"
 import { getAuthTokens } from "@/services/auth/session"
 import {
     createAttachmentFromImagePickerAsset,
+    formatVoiceDuration,
+    getVoiceRecordingFilename,
+    getVoiceRecordingMimeType,
 } from "@/screens/chat/chat-attachments"
 import { AttachmentSheet, QueuedAttachmentStrip } from "@/screens/chat/chat-screen.attachments"
 import {
+    type AttachmentMode,
     CHAT_BACKGROUND_DARK,
     CHAT_BACKGROUND_LIGHT,
+    CHAT_IDLE_AUDIO_MODE,
+    CHAT_RECORDING_AUDIO_MODE,
 } from "@/screens/chat/chat-screen.constants"
 import { ChatComposer } from "@/screens/chat/chat-composer"
 import { NativeChatAction, NativeChatMenu, NativeChatTitleMaterial } from "@/screens/chat/native-chat-controls"
+import type { ChatMode } from "@/screens/chat/chat-mode-switcher"
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { createSupportChatStyles } from "@/screens/chat/support-chat-screen.styles"
 import { QuietLoading } from "@/components/ui/quiet-loading"
@@ -45,7 +62,15 @@ import { spacing } from "@/theme/spacing"
 import { createUuid } from "@/utils/uuid"
 
 type SupportChatScreenProps = {
+    embedded?: boolean
+    headerInset?: number
+    active: boolean
+    communityUnreadCount: number
+    mode: ChatMode
+    onModeChange: (mode: ChatMode) => void
+    onUnreadChange: (count: number) => void
     requestedConversationId: number | null
+    supportUnreadCount: number
 }
 
 function messageTime(value: string) {
@@ -66,7 +91,13 @@ function attachmentSource(path: string) {
 }
 
 
-export function SupportChatScreen({ requestedConversationId }: SupportChatScreenProps) {
+export function SupportChatScreen({
+    embedded = false,
+    headerInset = 0,
+    active,
+    onUnreadChange,
+    requestedConversationId,
+}: SupportChatScreenProps) {
     const styles = useThemeStyles(createSupportChatStyles)
     const chatStyles = useThemeStyles(createChatScreenStyles)
     const { isDark, palette, themeName } = useTheme()
@@ -74,12 +105,18 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
     const router = useRouter()
     const { top, bottom } = useSafeAreaInsets()
     const [cameraPermission, requestCameraPermission] = useCameraPermissions()
+    const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
+    const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
     const scrollRef = useRef<ScrollView | null>(null)
     const chatScroll = useChatScroll(scrollRef, null)
     const [draft, setDraft] = useState("")
-    const [attachments, setAttachments] = useState<UploadableSupportAttachment[]>([])
+    const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
+    const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(74)
+    const voiceStarting = useRef(false)
+    const [voiceRecording, setVoiceRecording] = useState(false)
+    const [voiceTranscribing, setVoiceTranscribing] = useState(false)
     const {
         closePrevious,
         conversation,
@@ -92,16 +129,17 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
         refreshing,
         sendMessage,
         sending,
-    } = useSupportChat()
+    } = useSupportChat(active, onUnreadChange)
     const headerTop = top + 8
-    const contentTop = headerTop + 52
+    const contentTop = embedded ? headerInset : headerTop + 52
     const iosChat = Platform.OS === "ios"
     const isHistorical = Boolean(conversation && conversation.id !== inbox?.active?.id)
     const contentBottom = isHistorical ? 0 : composerHeight
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
+    const voiceStatusVisible = voiceRecording || voiceTranscribing
 
     useEffect(() => {
-        if (!requestedConversationId || conversation?.id === requestedConversationId) return
+        if (!active || !requestedConversationId || conversation?.id === requestedConversationId) return
         if (inbox?.active?.id === requestedConversationId) {
             closePrevious()
             return
@@ -109,12 +147,19 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
         if (inbox?.previous.some((item) => item.id === requestedConversationId)) {
             void openPrevious(requestedConversationId)
         }
-    }, [closePrevious, conversation?.id, inbox?.active?.id, inbox?.previous, openPrevious, requestedConversationId])
+    }, [active, closePrevious, conversation?.id, inbox?.active?.id, inbox?.previous, openPrevious, requestedConversationId])
 
 
 
+    useEffect(() => () => {
+        try {
+            void audioRecorder.stop().catch(() => undefined)
+        } catch {
+            // The native recorder may already be released during unmount.
+        }
+    }, [audioRecorder])
 
-    const appendAttachments = useCallback((items: UploadableSupportAttachment[]) => {
+    const appendAttachments = useCallback((items: UploadableChatAttachment[]) => {
         setAttachments((current) => [...current, ...items].slice(0, 4))
     }, [])
 
@@ -128,6 +173,7 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
             return
         }
         Keyboard.dismiss()
+        setAttachmentMode("photo")
         setAttachmentSheetVisible(true)
     }, [inbox?.active, t])
 
@@ -173,7 +219,7 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
 
     const submitSupportContent = useCallback(async (
         text: string,
-        pendingAttachments: UploadableSupportAttachment[],
+        pendingAttachments: UploadableChatAttachment[],
     ) => {
         if (!inbox?.active) {
             await createConversation({
@@ -191,7 +237,7 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
     }, [createConversation, inbox?.active, sendMessage])
 
     const handleSend = useCallback(async () => {
-        if (!hasComposerContent || sending || isHistorical) return
+        if (!hasComposerContent || sending || isHistorical || voiceRecording || voiceTranscribing) return
         const text = draft.trim()
         if (!inbox?.active && !text) {
             Alert.alert(t("chat.supportNewTitle"), t("chat.supportFirstMessageRequired"))
@@ -219,7 +265,70 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
         sending,
         submitSupportContent,
         t,
+        voiceRecording,
+        voiceTranscribing,
     ])
+
+    const startVoiceRecording = useCallback(async () => {
+        if (voiceStarting.current || sending || voiceTranscribing) return
+        voiceStarting.current = true
+        Keyboard.dismiss()
+        try {
+            if (!await requestChatRecordingPermission(t)) return
+            await setAudioModeAsync(CHAT_RECORDING_AUDIO_MODE)
+            await audioRecorder.prepareToRecordAsync()
+            audioRecorder.record()
+            setVoiceRecording(true)
+        } catch {
+            setVoiceRecording(false)
+            Alert.alert(t("chat.voiceTranscriptionFailedTitle"), t("chat.voiceTranscriptionFailedMessage"))
+            await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined)
+        } finally {
+            voiceStarting.current = false
+        }
+    }, [audioRecorder, sending, t, voiceTranscribing])
+
+    const stopVoiceRecording = useCallback(async () => {
+        if (!voiceRecording || voiceTranscribing) return
+        setVoiceRecording(false)
+        setVoiceTranscribing(true)
+        let transcribedText = ""
+        try {
+            await audioRecorder.stop()
+            const audioUri = audioRecorder.uri ?? audioRecorder.getStatus().url
+            await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE)
+            if (!audioUri) throw new Error("Missing recording uri")
+            const transcription = await transcribeMyAiChatVoice({
+                fileName: getVoiceRecordingFilename(audioUri),
+                mimeType: getVoiceRecordingMimeType(audioUri),
+                uri: audioUri,
+            })
+            transcribedText = transcription.text.trim()
+            if (!transcribedText) throw new Error("Empty transcription")
+        } catch {
+            Alert.alert(t("chat.voiceTranscriptionFailedTitle"), t("chat.voiceTranscriptionFailedMessage"))
+        } finally {
+            setVoiceTranscribing(false)
+            await setAudioModeAsync(CHAT_IDLE_AUDIO_MODE).catch(() => undefined)
+        }
+        if (!transcribedText) return
+        try {
+            await submitSupportContent(transcribedText, [])
+        } catch (sendError) {
+            Alert.alert(
+                t("chat.supportSendFailedTitle"),
+                sendError instanceof Error ? sendError.message : t("chat.supportSendFailedMessage"),
+            )
+        }
+    }, [audioRecorder, submitSupportContent, t, voiceRecording, voiceTranscribing])
+
+    const handleVoiceButtonPress = useCallback(async () => {
+        if (voiceRecording) {
+            await stopVoiceRecording()
+            return
+        }
+        await startVoiceRecording()
+    }, [startVoiceRecording, stopVoiceRecording, voiceRecording])
 
     const statusLabels: Record<SupportConversationStatus, string> = {
         new: t("chat.supportStatusNew"),
@@ -232,16 +341,19 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
 
     const historyItems = [...(inbox?.active ? [inbox.active] : []), ...(inbox?.previous ?? [])]
 
+    if (!active && !embedded) {
+        return null
+    }
 
     return (
         <ChatKeyboardPane style={styles.overlay}>
-            <View style={styles.screen}>
-                <>
+            <View style={[styles.screen, embedded ? { backgroundColor: "transparent" } : null]}>
+                {!embedded ? <>
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_LIGHT} style={[chatStyles.backgroundImage, themeName === "dark" ? chatStyles.backgroundImageHidden : null]} />
                 <ImageBackground imageStyle={chatStyles.backgroundImageAsset} resizeMode="cover" source={CHAT_BACKGROUND_DARK} style={[chatStyles.backgroundImage, themeName === "dark" ? null : chatStyles.backgroundImageHidden]} />
                 <View pointerEvents="none" style={[chatStyles.backgroundScrim, isDark ? chatStyles.backgroundScrimDark : chatStyles.backgroundScrimLight]} />
-                </>
-                <View style={[styles.header, { top: headerTop }]}>
+                </> : null}
+                {!embedded ? <View style={[styles.header, { top: headerTop }]}>
                     <View style={styles.backControl}>
                         {NativeChatAction ? <NativeChatAction
                             action="back" dark={isDark} label={t("nav.back")}
@@ -255,10 +367,10 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
                         {NativeChatTitleMaterial ? <NativeChatTitleMaterial dark={isDark} pointerEvents="none" style={styles.titleMaterial} /> : <View pointerEvents="none" style={styles.titleFallback} />}
                         <Text accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>{t("chat.supportTitle")}</Text>
                     </View>
-                </View>
+                </View> : null}
 
                 <KeyboardAvoidingView
-                    enabled={!iosChat}
+                    enabled={!embedded && !iosChat}
                     behavior={iosChat ? "padding" : "height"}
                     contentContainerStyle={chatStyles.keyboardContent}
                     keyboardVerticalOffset={0}
@@ -370,6 +482,18 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
                                 pointerEvents={iosChat ? "box-none" : "auto"}
                                 style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay]}
                             >
+                                {voiceStatusVisible ? (
+                                    <View style={chatStyles.voiceStatusPill}>
+                                        {voiceTranscribing
+                                            ? <ActivityIndicator color={palette.primary} size="small" />
+                                            : <View style={chatStyles.voiceStatusDot} />}
+                                        <Text style={chatStyles.voiceStatusText}>
+                                            {voiceTranscribing
+                                                ? t("chat.voiceTranscribing")
+                                                : `${t("chat.voiceRecording")} ${formatVoiceDuration(audioRecorderState.durationMillis)}`}
+                                        </Text>
+                                    </View>
+                                ) : null}
                                 <QueuedAttachmentStrip
                                     attachments={attachments}
                                     onRemove={(index) => {
@@ -379,23 +503,30 @@ export function SupportChatScreen({ requestedConversationId }: SupportChatScreen
                                 <ChatComposer
                                     value={draft}
                                     onChangeText={setDraft}
-                                    placeholder={t("chat.supportInputPlaceholder")}
+                                    placeholder={voiceRecording ? t("chat.voiceRecording") : t("chat.supportInputPlaceholder")}
                                     onAttachment={openAttachmentSheet}
-                                    onAction={() => { void handleSend() }}
+                                    onAction={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }}
                                     hasContent={hasComposerContent}
-                                    disabled={sending || !hasComposerContent}
-                                    busy={sending}
+                                    disabled={sending || voiceTranscribing}
+                                    attachmentDisabled={voiceStatusVisible}
+                                    recording={voiceRecording}
+                                    busy={sending || voiceTranscribing}
+                                    transcribing={voiceTranscribing}
                                 />
                             </ChatComposerDock>
                         ) : null}
                     </View>
                 </KeyboardAvoidingView>
-                {iosChat ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
+                {!embedded && iosChat ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
                 <AttachmentSheet
+                    activeMode={attachmentMode}
+                    allowFiles={false}
                     bottomInset={bottom}
                     onClose={closeAttachmentSheet}
                     onOpenCamera={() => { void openCamera() }}
                     onOpenNativeGallery={() => { void openGallery() }}
+                    onPickFiles={() => undefined}
+                    onSelectMode={setAttachmentMode}
                     visible={attachmentSheetVisible}
                 />
             </View>

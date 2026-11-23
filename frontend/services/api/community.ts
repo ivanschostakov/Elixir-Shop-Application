@@ -1,0 +1,82 @@
+import { apiDelete, apiGet, apiPatch, apiPost, apiPostMultipart } from "@/services/api/client"
+import type { CommunityAuthor, CommunityMessage, CommunityMessagePage, CommunityNotificationSettings, CommunityReaction, CommunityStatus, CommunityTopicList, SendCommunityMessagePayload } from "@/services/api/community.types"
+
+const communityEndpoint = "/v1/users/me/community"
+const readOptions = { appIntegrityAction: "community:read" }
+
+export type CommunityReportReason = "spam" | "harassment" | "dangerous_content" | "inappropriate_content" | "other"
+
+export function reportCommunityMessage(topicId: number, messageId: number, reason: CommunityReportReason, details: string) {
+    return apiPost<{ id: number; status: "pending" | "dismissed" | "removed" }, { reason: CommunityReportReason; details: string }>(
+        `${communityEndpoint}/topics/${topicId}/messages/${messageId}/reports`,
+        { reason, details }, { appIntegrityAction: "community:send" },
+    )
+}
+
+export function getCommunityStatus(refresh = false) {
+    return apiGet<CommunityStatus>(`${communityEndpoint}/status`, refresh ? { refresh: true } : undefined, readOptions)
+}
+
+export function getCommunityTopics() {
+    return apiGet<CommunityTopicList>(`${communityEndpoint}/topics`, undefined, readOptions)
+}
+
+export function setCommunityNotificationsMuted(muted: boolean, topicId?: number) {
+    const path = topicId == null ? `${communityEndpoint}/notifications` : `${communityEndpoint}/topics/${topicId}/notifications`
+    return apiPatch<CommunityNotificationSettings, { muted: boolean }>(path, { muted }, readOptions)
+}
+
+export function getCommunityMessages(topicId: number, options: { beforeId?: number; afterId?: number; changedAfter?: string; changedAfterId?: number; limit?: number } = {}) {
+    return apiGet<CommunityMessagePage>(`${communityEndpoint}/topics/${topicId}/messages`, { before_id: options.beforeId, after_id: options.afterId, changed_after: options.changedAfter, changed_after_id: options.changedAfterId, limit: options.limit ?? 50 }, readOptions)
+}
+
+export function sendCommunityMessage(topicId: number, payload: SendCommunityMessagePayload) {
+    const formData = new FormData()
+    formData.append("client_id", payload.clientId)
+    formData.append("text", payload.text)
+    if (payload.replyToMessageId) formData.append("reply_to_message_id", String(payload.replyToMessageId))
+    for (const attachment of payload.attachments ?? []) {
+        formData.append("attachments", { uri: attachment.uri, name: attachment.fileName ?? "attachment", type: attachment.mimeType ?? "application/octet-stream" } as unknown as Blob)
+    }
+    return apiPostMultipart<CommunityMessage>(`${communityEndpoint}/topics/${topicId}/messages`, formData, { appIntegrityAction: "community:send" })
+}
+
+export function markCommunityTopicRead(topicId: number, lastMessageId: number) {
+    return apiPost<{ ok: boolean }, { last_message_id: number }>(`${communityEndpoint}/topics/${topicId}/read`, { last_message_id: lastMessageId }, readOptions)
+}
+
+export function editCommunityMessage(topicId: number, messageId: number, text: string) {
+    return apiPatch<CommunityMessage, { text: string }>(
+        `${communityEndpoint}/topics/${topicId}/messages/${messageId}`,
+        { text },
+        { appIntegrityAction: "community:send" },
+    )
+}
+
+export function deleteCommunityMessage(topicId: number, messageId: number) {
+    return apiDelete<void>(
+        `${communityEndpoint}/topics/${topicId}/messages/${messageId}`,
+        { appIntegrityAction: "community:send" },
+    )
+}
+
+export function toggleCommunityMessageReaction(topicId: number, messageId: number, emoji: string) {
+    return apiPost<CommunityReaction[], { emoji: string }>(
+        `${communityEndpoint}/topics/${topicId}/messages/${messageId}/reactions`,
+        { emoji },
+        { appIntegrityAction: "community:send" },
+    )
+}
+
+
+export function getBlockedCommunityAuthors() {
+    return apiGet<CommunityAuthor[]>(`${communityEndpoint}/blocks`, undefined, readOptions)
+}
+
+export function blockCommunityAuthor(authorId: number) {
+    return apiPost<void, Record<string, never>>(`${communityEndpoint}/blocks/${authorId}`, {}, { appIntegrityAction: "community:send" })
+}
+
+export function unblockCommunityAuthor(authorId: number) {
+    return apiDelete<void>(`${communityEndpoint}/blocks/${authorId}`, { appIntegrityAction: "community:send" })
+}

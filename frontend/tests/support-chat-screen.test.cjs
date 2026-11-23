@@ -29,6 +29,14 @@ function setup() {
         react, "react/jsx-runtime": runtime,
         "react-native": { ...native, Platform: { OS: "ios" }, Alert: { alert: () => {} }, Keyboard: { dismiss: () => {} } },
         "expo-camera": { useCameraPermissions: () => [{ granted: true }, async () => ({ granted: true })] },
+        "expo-audio": {
+            RecordingPresets: { HIGH_QUALITY: {} },
+            setAudioModeAsync: async () => {},
+            useAudioRecorder: () => ({ prepareToRecordAsync: async () => {}, record: () => {}, stop: async () => {}, uri: "file:///voice.m4a" }),
+            useAudioRecorderState: () => ({ durationMillis: 1000 }),
+        },
+        "@/screens/chat/chat-recording-permission": { requestChatRecordingPermission: async () => true },
+        "@/services/api/ai-chat": { transcribeMyAiChatVoice: async () => ({ text: "Spoken order question" }) },
         "expo-image-picker": { launchImageLibraryAsync: async () => ({ canceled: false, assets: [{ uri: "file:///photo.jpg", fileName: "photo.jpg" }] }) },
         "expo-router": { useRouter: () => ({ push: () => {} }) },
         "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 59, bottom: 34 }) },
@@ -42,7 +50,10 @@ function setup() {
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false, themeName: "light", palette: {} }) },
         "@/services/api/constants": { API_BASE_URL: "https://example.test/api" },
         "@/services/auth/session": { getAuthTokens: () => null },
-        "@/screens/chat/chat-attachments": { createAttachmentFromImagePickerAsset: asset => ({ uri: asset.uri, fileName: asset.fileName, mimeType: "image/jpeg" }) },
+        "@/screens/chat/chat-attachments": {
+            createAttachmentFromImagePickerAsset: asset => ({ uri: asset.uri, fileName: asset.fileName, mimeType: "image/jpeg" }),
+            formatVoiceDuration: () => "0:01", getVoiceRecordingFilename: () => "voice.m4a", getVoiceRecordingMimeType: () => "audio/mp4",
+        },
         "@/screens/chat/chat-screen.attachments": { AttachmentSheet: "AttachmentSheet", QueuedAttachmentStrip: "QueuedAttachments" },
         "@/screens/chat/chat-screen.constants": { CHAT_BACKGROUND_LIGHT: "light", CHAT_BACKGROUND_DARK: "dark" },
         "@/screens/chat/chat-composer": { ChatComposer: "Composer" },
@@ -53,7 +64,7 @@ function setup() {
         "@/theme/spacing": { spacing: { sm: 8, md: 16 } },
         "@/utils/uuid": { createUuid: () => "stable-message-id" },
     })
-    const render = () => { cursor = 0; return SupportChatScreen({ requestedConversationId: null }) }
+    const render = () => { cursor = 0; return SupportChatScreen({ active: true, onUnreadChange: () => {}, requestedConversationId: null }) }
     function find(tree, type) {
         if (!tree || typeof tree !== "object") return undefined
         if (Array.isArray(tree)) return tree.map(item => find(item, type)).find(Boolean)
@@ -68,12 +79,24 @@ test("support opens with text composer and creates a conversation without anothe
     const h = setup()
     const composer = h.find(h.render(), "Composer")
     assert.equal(composer.props.placeholder, "chat.supportInputPlaceholder")
-    assert.equal(composer.props.disabled, true)
+    assert.equal(composer.props.hasContent, false)
     composer.props.onChangeText("Question about order")
     h.find(h.render(), "Composer").props.onAction()
     await flush()
     assert.deepEqual(h.requests, [{ kind: "create", payload: { client_message_id: "stable-message-id", subject: "Question about order", message: "Question about order" } }])
     assert.equal(h.find(h.render(), "Composer").props.value, "")
+})
+
+test("support records voice and sends the transcription to support", async () => {
+    const h = setup()
+    h.find(h.render(), "Composer").props.onAction()
+    await flush()
+    const recording = h.find(h.render(), "Composer")
+    assert.equal(recording.props.recording, true)
+    recording.props.onAction()
+    await flush()
+    assert.deepEqual(h.requests, [{ kind: "create", payload: { client_message_id: "stable-message-id", subject: "Spoken order question", message: "Spoken order question" } }])
+    assert.equal(h.find(h.render(), "Composer").props.recording, false)
 })
 
 test("support keeps the draft after a send failure", async () => {

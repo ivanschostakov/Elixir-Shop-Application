@@ -1,32 +1,6 @@
 const assert = require("node:assert/strict")
 const test = require("node:test")
 const loadTs = require("./load-ts.cjs")
-const jsxRuntime = { jsx: (type, props, key) => ({ type, props, key }) }
-
-test("old chat links cannot select removed modes and account changes remount support", () => {
-    const Support = () => null
-    let params = {}
-    let user = { id: 1 }
-    const { default: Chat } = loadTs("screens/chat/chat-screen.tsx", {
-        "react/jsx-runtime": jsxRuntime,
-        "expo-router": { useLocalSearchParams: () => params },
-        "@/providers/auth-provider": { useAuth: () => ({ user }) },
-        "@/screens/chat/support-chat-screen": { SupportChatScreen: Support },
-    })
-    for (const mode of [undefined, "support", "ai", "community", "mentor"]) {
-        params = { mode, companion: "1", topicId: "8", conversationId: "17" }
-        const screen = Chat()
-        assert.equal(screen.type, Support)
-        assert.deepEqual(screen.props, { requestedConversationId: 17 })
-        assert.equal(screen.key, 1)
-    }
-    for (const value of [undefined, "abc", "-1", "0", "Infinity", "1.5"]) {
-        params = { conversationId: value }
-        assert.equal(Chat().props.requestedConversationId, null)
-    }
-    user = { id: 2 }
-    assert.equal(Chat().key, 2)
-})
 
 test("support requests retain integrity and attachments and never call AI endpoints", async () => {
     const calls = []
@@ -57,7 +31,7 @@ test("support requests retain integrity and attachments and never call AI endpoi
     }
 })
 
-test("removed notification types cannot reopen retired functions; support and orders still work", async () => {
+test("notifications open the restored AI, Mentor, Community and support destinations", async () => {
     let onResponse
     let unsubscribed = false
     const navigations = []
@@ -76,9 +50,14 @@ test("removed notification types cannot reopen retired functions; support and or
     let id = 0
     const deliver = data => onResponse({ notification: { request: { identifier: String(++id), content: { data } } } })
     for (const type of ["ai_reply", "ai_companion", "ai_companion_supply", "community_message"]) deliver({ type, topic_id: 5 })
-    assert.deepEqual(navigations, [])
+    assert.deepEqual(navigations.splice(0), [
+        { pathname: "/chat", params: { mode: "ai" } },
+        { pathname: "/chat", params: { mode: "ai", companion: "1" } },
+        { pathname: "/chat", params: { mode: "ai", companion: "1" } },
+        { pathname: "/chat", params: { mode: "community", topicId: "5" } },
+    ])
     deliver({ type: "support_reply", conversation_id: 12 })
-    assert.deepEqual(navigations.pop(), { pathname: "/chat", params: { conversationId: "12" } })
+    assert.deepEqual(navigations.pop(), { pathname: "/chat", params: { mode: "support", conversationId: "12" } })
     deliver({ type: "abandoned_cart" })
     assert.equal(navigations.pop(), "/basket")
     dispose()

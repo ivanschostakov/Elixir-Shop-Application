@@ -1,6 +1,7 @@
 import { API_BASE_URL } from "@/services/api/constants"
 
 const API_MEDIA_PATH_PREFIXES = [
+    "/api/v1/community-media/",
     "/media/avatars/",
 ]
 

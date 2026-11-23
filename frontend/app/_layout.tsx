@@ -8,7 +8,9 @@ import { KeyboardProvider } from "react-native-keyboard-controller"
 
 import AppShell from "@/components/navigation/app-shell"
 import { VersionGate } from "@/components/navigation/version-gate"
+import { TelegramWebAppGate } from "@/components/telegram/telegram-web-app-gate"
 import { AuthProvider } from "@/providers/auth-provider"
+import { AiConsentProvider } from "@/providers/ai-consent-provider"
 import { LanguageProvider } from "@/providers/language-provider"
 import { ThemeProvider, useTheme } from "@/providers/theme-provider"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
@@ -102,7 +104,9 @@ function RootLayoutContent() {
                     <LanguageProvider>
                         <VersionGate>
                             <AuthProvider>
-                                <AppShell />
+                                <TelegramWebAppGate>
+                                    <AiConsentProvider><AppShell /></AiConsentProvider>
+                                </TelegramWebAppGate>
                             </AuthProvider>
                         </VersionGate>
                     </LanguageProvider>

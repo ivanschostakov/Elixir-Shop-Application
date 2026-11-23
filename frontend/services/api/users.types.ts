@@ -47,6 +47,10 @@ export type CustomerEventName =
     | "checkout_failed"
     | "order_created"
     | "order_paid"
+    | "ai_chat_message_sent"
+    | "ai_recommendation_shown"
+    | "ai_action_clicked"
+    | "ai_action_completed"
 
 export type CustomerAttributionPayload = {
     source?: string | null
@@ -75,7 +79,7 @@ export type CustomerIntelligenceSyncPayload = {
     }
     consents?: {
         purpose: "analytics" | "marketing" | "personalization"
-        channel?: "all" | "push" | "email"
+        channel?: "all" | "push" | "email" | "telegram"
         is_granted: boolean
         source?: "app" | "api" | "worker" | "webhook" | "admin"
         policy_version?: string | null

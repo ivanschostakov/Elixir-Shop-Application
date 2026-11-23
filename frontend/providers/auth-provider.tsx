@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { usePathname } from "expo-router"
-import { AppState, type AppStateStatus } from "react-native"
+import { AppState, Platform, type AppStateStatus } from "react-native"
+import { isMentorAvailable } from "@/screens/chat/chat-mode-policy"
 
 import {
     authenticate,
@@ -52,6 +53,7 @@ import {
 import { syncCustomerIntelligenceSession } from "@/services/customer-intelligence"
 import { heartbeatMyPresence } from "@/services/api/users"
 import { ApiError } from "@/services/api/client"
+import { startCompanionTimezoneSync } from "@/services/companion-timezone-sync"
 
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 60_000
 
@@ -104,6 +106,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }, [])
     const [isReady, setIsReady] = useState(false)
     const pathname = usePathname()
+    const timezoneUserId = user?.id
+    const mentorAvailable = isMentorAvailable(Platform.OS)
+
+    useEffect(() => {
+        if (timezoneUserId != null && mentorAvailable) return startCompanionTimezoneSync()
+    }, [timezoneUserId, mentorAvailable])
 
     useEffect(() => {
         return subscribeAuthSession((tokens) => {

@@ -1,13 +1,18 @@
 import UIKit
 
 enum ChatAction: String {
-  case back, attachment, send, busy
+  case back, settings, attachment, latest, mentor, microphone, send, stop, busy
 
   var symbol: String? {
     switch self {
     case .back: return "chevron.left"
+    case .settings: return "gearshape"
     case .attachment: return "paperclip"
+    case .latest: return "chevron.down"
+    case .mentor: return "leaf"
+    case .microphone: return "mic"
     case .send: return "paperplane.fill"
+    case .stop: return "stop.fill"
     case .busy: return nil
     }
   }
@@ -15,9 +20,10 @@ enum ChatAction: String {
 
 final class ChatActionButton: UIButton {
   private var displayedAction: ChatAction?
+  private var displayedTitle = ""
 
-  func setChatAction(_ action: ChatAction) {
-    guard displayedAction != action else { return }
+  func setChatAction(_ action: ChatAction, title: String = "") {
+    guard displayedAction != action || displayedTitle != title else { return }
 
     var next: UIButton.Configuration
     if #available(iOS 26.0, *) {
@@ -30,7 +36,21 @@ final class ChatActionButton: UIButton {
     tintColor = .systemBlue
     next.cornerStyle = .capsule
     next.contentInsets = .zero
-    next.baseForegroundColor = action == .send ? .white : .label
+    if !title.isEmpty {
+      next.title = title
+      next.titleAlignment = .leading
+      next.titleLineBreakMode = .byWordWrapping
+      next.imagePadding = 11
+      next.contentInsets = .init(top: 8, leading: 16, bottom: 8, trailing: 16)
+      next.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+        var result = attributes
+        result.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        return result
+      }
+    }
+    contentHorizontalAlignment = title.isEmpty ? .center : .leading
+    titleLabel?.numberOfLines = 2
+    next.baseForegroundColor = action == .send ? .white : (action == .stop ? .systemRed : (action == .mentor ? .systemGreen : .label))
     next.preferredSymbolConfigurationForImage = .init(pointSize: 18, weight: .semibold)
     if let symbol = action.symbol, let image = UIImage(systemName: symbol) {
       next.image = action == .send ? image.withTintColor(.white, renderingMode: .alwaysOriginal) : image
@@ -51,6 +71,7 @@ final class ChatActionButton: UIButton {
       backgroundColor = fill
     }
     displayedAction = action
+    displayedTitle = title
   }
 
   override func layoutSubviews() {
