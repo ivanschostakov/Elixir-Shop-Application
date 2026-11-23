@@ -19,9 +19,10 @@ import { goalLabels } from "@/screens/chat/mentor-data"
 import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
 import { MentorNutritionEditor, nutritionEditorPages } from "@/screens/chat/mentor-meal-screens"
+import { MentorWellbeingEditor } from "@/screens/chat/mentor-wellbeing-form"
 
 type Page = "meal_group" | "water" | "food_help" | "meal_reminders" | "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
-type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry; mealType?: import("@/services/api/companion").MealType; mealKey?: string; parentMeal?: boolean; helpMode?: "suggest" | "product"; entryKind?: EntryData["kind"] }
+type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry; date?: string; mealType?: import("@/services/api/companion").MealType; mealKey?: string; parentMeal?: boolean; helpMode?: "suggest" | "product"; entryKind?: EntryData["kind"] }
 type Controller = ReturnType<typeof useCompanion>
 const unitLabels: Record<Unit, string> = { get mg() { return mt("мг") }, get mcg() { return mt("мкг") }, get g() { return mt("г") }, get ml() { return mt("мл") }, get capsule() { return mt("капсул") }, get tablet() { return mt("таблеток") }, get IU() { return mt("МЕ") } }
 const settingsDefault: CompanionSettings = { timezone: "UTC", nutrition_auto_eligible: false, course_reminders: false, daily_time: null, weight_time: null, weekly_time: null, weekly_day: 6, supply_reminders: false, supply_days: 7 }
@@ -46,6 +47,7 @@ export function useCompanion(enabled = true) {
     const retryKeys = useRef(new Map<string, string>())
     const [error, setError] = useState("")
     const [editor, setEditor] = useState<Editor | null>(null)
+    const [wellbeingRevision, setWellbeingRevision] = useState(0)
     const [mentorQuestion, setMentorQuestion] = useState<MentorQuestion | null>(null)
     const askMentor = (text: string) => { setEditor(null); setMentorQuestion({ id: requestKey(), text }) }
     const questionHandled = useCallback((id: string) => setMentorQuestion(current => current?.id === id ? null : current), [])
@@ -98,6 +100,7 @@ export function useCompanion(enabled = true) {
             retryKeys.current.set(identity, key)
             const result = await actCompanion({ ...payload, request_key: key, ...(payload.settings ? { settings: { ...payload.settings, timezone: deviceCompanionTimezone() } } : {}) })
             retryKeys.current.delete(identity)
+            if (action.entry?.kind === "wellbeing" || action.kind === "delete_entry") setWellbeingRevision(value => value + 1)
             refreshSequence.current++; setState({ ...result.state, received_at: Date.now() }); setInitialized(true)
             return result.state
         } finally { busyRef.current = false; setBusy(false) }
@@ -105,7 +108,7 @@ export function useCompanion(enabled = true) {
     const attempt = async (operation: () => Promise<unknown>) => {
         try { await operation() } catch (e) { if (!(e instanceof CompanionActionCancelled)) setError(getErrorMessage(e)) }
     }
-    return { state, initialized, setState, clock, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => 2 as const, busy, error, setError, editor, setEditor, mentorQuestion, askMentor, questionHandled, mentorPage, setMentorPage, refresh, perform, attempt }
+    return { state, initialized, setState, clock, wellbeingRevision, enabled: !!state?.profile?.enabled, resolveEnabled, resolveProtocol: () => 2 as const, busy, error, setError, editor, setEditor, mentorQuestion, askMentor, questionHandled, mentorPage, setMentorPage, refresh, perform, attempt }
 }
 
 function Copy({ children }: { children: React.ReactNode }) {
@@ -122,7 +125,7 @@ function Button({ label, onPress, disabled = false, primary = false, selected = 
 function Field({ label, value, onChange, numeric = false, multiline = false, disabled = false }: { label: string; value: unknown; onChange: (value: string) => void; numeric?: boolean; multiline?: boolean; disabled?: boolean }) {
     useLanguage()
     const colors = useMentorPalette()
-    return <View style={styles.field}><Text style={[styles.fieldLabel, { color: colors.muted }]}>{label}</Text><TextInput accessibilityLabel={label} editable={!disabled} value={value == null ? "" : String(value)} onChangeText={text => onChange(numeric ? text.replace(/,/g, ".") : text)} keyboardType={numeric ? "decimal-pad" : "default"} autoCapitalize="none" multiline={multiline} textAlignVertical={multiline ? "top" : "center"} selectionColor={colors.greenBright} style={[styles.input, multiline ? styles.multilineInput : null, { color: colors.text, backgroundColor: colors.soft, borderColor: colors.border, opacity: disabled ? 0.55 : 1 }]} /></View>
+    return <View style={styles.field}><Text style={[styles.fieldLabel, { color: colors.muted }]}>{label}</Text><TextInput accessibilityLabel={label} editable={!disabled} value={value == null ? "" : String(value)} onChangeText={text => onChange(numeric ? text.replace(/,/g, ".") : text)} keyboardType={numeric ? "decimal-pad" : "default"} autoCapitalize="none" multiline={multiline} textAlignVertical={multiline ? "top" : "center"} selectionColor={colors.greenBright} style={[styles.input, multiline ? styles.multilineInput : null, { color: colors.text, backgroundColor: colors.input, borderColor: colors.border, opacity: disabled ? 0.55 : 1 }]} /></View>
 }
 function Toggle({ label, value, onChange, disabled = false }: { label: string; value: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
     useLanguage()
@@ -200,6 +203,8 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     if (c.editor) lastEditor.current = c.editor
     const displayEditor = c.editor ?? lastEditor.current
     const nutritionEditor = nutritionEditorPages.has(displayEditor?.page ?? "")
+    const wellbeingEditor = displayEditor?.page === "wellbeing"
+    const fullScreenEditor = nutritionEditor || wellbeingEditor
     useEffect(() => { if (!c.editor) setEditorShown(false) }, [c.editor])
     useEffect(() => { if (openRequested && hasProfile && c.state?.dialogue_protocol !== 2) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor, c.state?.dialogue_protocol])
     if (Platform.OS === "web" || !c.state?.available) return null
@@ -208,9 +213,9 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     return <View testID="companion-panel" style={navigationVisible && !dialogue ? [styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }] : undefined}>
         {navigationVisible ? dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label={mt("Мой курс · дневник · прогресс")} disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} /> : null}
         {c.error && !workspaceVisible ? <><Copy>{c.error}</Copy><Button label={mt("Обновить")} onPress={() => void changed()} /></> : null}
-        <Modal visible={!!c.editor} animationType="slide" presentationStyle={nutritionEditor ? "fullScreen" : "pageSheet"} onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>
-            <AppFormLayout style={{ flex: 1, backgroundColor: nutritionEditor ? colors.surface : colors.mint }} androidBehavior={null}>
-                {nutritionEditor ? <MentorNutritionEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} shown={editorShown} onClose={() => c.setEditor(null)} /> : <>
+        <Modal visible={!!c.editor} animationType="slide" presentationStyle={fullScreenEditor ? "fullScreen" : "pageSheet"} onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>
+            <AppFormLayout style={{ flex: 1, backgroundColor: fullScreenEditor ? colors.surface : colors.mint }} androidBehavior={null}>
+                {wellbeingEditor ? <MentorWellbeingEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} onClose={() => c.setEditor(null)} /> : nutritionEditor ? <MentorNutritionEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} shown={editorShown} onClose={() => c.setEditor(null)} /> : <>
                 <View style={[styles.modalHeader, { backgroundColor: colors.surface }]}>
                     <View style={styles.modalBrandRow}>
                         <View style={[styles.modalAvatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={27} /></View>
@@ -241,7 +246,7 @@ function CompanionContent({ controller: c, onChanged }: { controller: Controller
     const open = (page: Page) => { c.setError(""); c.setEditor({ page }) }
     const save = async (action: CompanionAction) => { await c.perform(action); c.setEditor(state.dialogue_protocol === 2 ? null : { page: "home" }); await onChanged() }
     if (page === "consent") return <ConsentForm controller={c} onSave={save} />
-    if (["profile", "meal", "weight", "wellbeing", "nutrition", "plan", "settings"].includes(page)) return <ManualForm controller={c} onSave={save} onChanged={onChanged} />
+    if (["profile", "meal", "weight", "nutrition", "plan", "settings"].includes(page)) return <ManualForm controller={c} onSave={save} onChanged={onChanged} />
     if (page === "summary" || page === "journal" || page === "events" || page === "supply") return <ReviewPanel controller={c} onChanged={onChanged} />
     return <>
         <Copy>{mt("Сопровождение ")}{profile?.enabled ? mt("включено") : mt("выключено")}{mt(". Данные сохраняются после подтверждения; AI не назначает препараты и не меняет дозировки.")}</Copy>
@@ -339,10 +344,9 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             <NutritionFields value={nutrition} disabled={calculating || c.busy} onChange={value => { setNutrition(value); setRuleVersion(undefined); setSuggestionNote(mt("Ручные значения — проверьте перед сохранением.")) }} />
             <Button label={mt("Подтвердить КБЖУ")} primary disabled={c.busy || calculating} onPress={() => save({ kind: "nutrition", nutrition, nutrition_rule_version: ruleVersion })} />
         </> : null}
-        {["meal", "weight", "wellbeing"].includes(page) ? <>
+        {["meal", "weight"].includes(page) ? <>
             {page === "meal" ? <><Field label={mt("Что съели")} value={entry.name} onChange={name => setEntry({ ...entry, name })} /><Field label={mt("Порция, г (если известна)")} value={entry.portion_g} numeric onChange={text => setEntry({ ...entry, portion_g: numberOrNull(text) })} /><NutritionFields value={entry.nutrition ?? emptyNutrition()} onChange={nutrition => setEntry({ ...entry, nutrition })} /><Toggle label={mt("Приблизительная оценка")} value={!!entry.estimated} onChange={estimated => setEntry({ ...entry, estimated })} />{entry.estimated ? <Field label={mt("Допущения оценки")} value={entry.assumptions} onChange={assumptions => setEntry({ ...entry, assumptions })} /> : null}<Copy>{mt("Можно отправить фото еды в чат — AI предложит оценку для подтверждения.")}</Copy></> : null}
             {page === "weight" ? <Field label={mt("Вес, кг")} value={entry.weight_kg} numeric onChange={text => setEntry({ ...entry, weight_kg: numberOrNull(text) })} /> : null}
-            {page === "wellbeing" ? <>{(["wellbeing", "appetite", "energy", "sleep_hours"] as const).map((key, i) => <Field key={key} label={[mt("Самочувствие, 1–5"), mt("Аппетит, 1–5"), mt("Энергия, 1–5"), mt("Сон, часов")][i]} value={entry[key]} numeric onChange={text => setEntry({ ...entry, [key]: numberOrNull(text) })} />)}</> : null}
             <Field label={mt("Комментарий")} multiline value={entry.note} onChange={note => setEntry({ ...entry, note })} />
             <Button label={editor.entry ? mt("Сохранить исправление") : mt("Подтвердить запись")} primary disabled={c.busy} onPress={() => void c.attempt(() => onSave({ kind: "entry", entry: { ...entry, occurred_at: editor.entry?.occurred_at ?? new Date().toISOString() }, resource_id: editor.entry?.id, expected_version: editor.entry?.version }))} />
         </> : null}

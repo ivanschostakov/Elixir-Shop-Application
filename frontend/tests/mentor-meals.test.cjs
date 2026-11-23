@@ -34,6 +34,7 @@ test("a late refresh cannot overwrite the complete state returned after a succes
     const react = { useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], value => { slots[i] = typeof value === "function" ? value(slots[i]) : value }] }, useRef(initial) { const i = cursor++; return slots[i] ??= { current: initial } }, useCallback: fn => fn, useEffect() {} }
     const { useCompanion } = loadTs("screens/chat/companion.tsx", {
         react, "@react-navigation/native": { useIsFocused: () => true },
+        "@/screens/chat/mentor-wellbeing-form": { MentorWellbeingEditor: "WellbeingEditor" },
         "@/components/platform/app-form-layout": { AppFormLayout: "KeyboardAvoidingView" },
         "react-native": { Platform: { OS: "ios" }, StyleSheet: { create: value => value } },
         "@/providers/language-provider": { useLanguage() {} }, "@/hooks/chat/use-device-clock": { useDeviceClock: () => clock },

@@ -7,8 +7,8 @@ import { useTheme } from "@/providers/theme-provider"
 export function useMentorPalette() {
     const { isDark } = useTheme()
     return isDark
-        ? { green: "#8AD4AF", greenBright: "#31855E", text: "#EDF7F0", muted: "#A3B8AB", soft: "#203B30", mint: "#1C3D2E", surface: "#142A21", border: "#355144", blue: "#64B7FF" }
-        : { green: "#1C694B", greenBright: "#38976A", text: "#202923", muted: "#7D8781", soft: "#F0F6F1", mint: "#E8F5EC", surface: "#FFFFFF", border: "#DDE6DF", blue: "#138DE5" }
+        ? { green: "#8AD4AF", greenBright: "#31855E", text: "#EDF7F0", muted: "#A3B8AB", soft: "#171A1D", mint: "#171A1D", surface: "#171A1D", input: "#24282D", border: "#3B4248", blue: "#64B7FF" }
+        : { green: "#1C694B", greenBright: "#38976A", text: "#202923", muted: "#7D8781", soft: "#FFFFFF", mint: "#FFFFFF", surface: "#FFFFFF", input: "#ECEEF0", border: "#DDE1E4", blue: "#138DE5" }
 }
 export type MentorIconName = "leaf" | "plus" | "workout" | "book" | "smile" | "progress" | "adjust" | "calendar" | "food" | "more" | "back" | "chat" | "profile" | "settings" | "clock" | "camera" | "search" | "scale"
 export function MentorIcon({ name, size = 22, color }: { name: MentorIconName; size?: number; color?: string }) {
@@ -29,7 +29,7 @@ export function MentorField({ label, value, onChange, numeric, disabled }: { lab
     const colors = useMentorPalette()
     const inputRef = useRef<TextInput | null>(null)
     const onFieldFocus = useChatFormFocus()
-    return <View style={{ gap: 5, flexGrow: 1, flexBasis: 100 }}><MentorText muted>{label}</MentorText><TextInput ref={inputRef} onFocus={() => onFieldFocus?.(inputRef.current)} onBlur={() => onFieldFocus?.(null)} accessibilityLabel={label} editable={!disabled} value={value == null ? "" : String(value)} onChangeText={text => onChange(numeric ? text.replace(/,/g, ".") : text)} keyboardType={numeric ? "decimal-pad" : "default"} style={[mentorStyles.input, { color: colors.text, backgroundColor: colors.soft, borderColor: colors.border }]} /></View>
+    return <View style={{ gap: 5, flexGrow: 1, flexBasis: 100 }}><MentorText muted>{label}</MentorText><TextInput ref={inputRef} onFocus={() => onFieldFocus?.(inputRef.current)} onBlur={() => onFieldFocus?.(null)} accessibilityLabel={label} editable={!disabled} value={value == null ? "" : String(value)} onChangeText={text => onChange(numeric ? text.replace(/,/g, ".") : text)} keyboardType={numeric ? "decimal-pad" : "default"} style={[mentorStyles.input, { color: colors.text, backgroundColor: colors.input, borderColor: colors.border }]} /></View>
 }
 export function MentorTabs<T extends string>({ items, value, onChange }: { items: Record<T, string>; value: T | null; onChange: (value: T) => void }) {
     const colors = useMentorPalette()

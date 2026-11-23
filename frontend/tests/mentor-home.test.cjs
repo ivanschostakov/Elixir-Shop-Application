@@ -70,6 +70,7 @@ function harness(file, overrides = {}) {
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
         "@/components/platform/app-icon-button": { AppIconButton: "IconButton", hasNativeControls: false },
         "@/components/platform/app-surface": { AppSurface: "SharedSurface", AppComposerSurface: "ComposerSurface" },
+        "@/screens/chat/mentor-wellbeing": { MentorWellbeingScreen: "WellbeingScreen" },
         "@/components/platform/app-menu": { AppMenu: "Menu" },
         "@/components/platform/app-form-layout": { AppFormLayout: "KeyboardAvoidingView" },
         "@/components/platform/native-controls": { NativeChatAction: null, nativeChatSettingsActionAvailable: false },
@@ -117,9 +118,9 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     assert.ok(nodes(page("course")).some(node => node.props.name === "course"))
     assert.equal(find(page("course"), "Header").props.title, "Мой курс")
     find(render(), "Tabs").props.onSelect("wellbeing")
-    assert.ok(nodes(page("wellbeing")).some(node => node.props.testID === "mentor-placeholder-wellbeing"))
+    assert.ok(nodes(page("wellbeing")).some(node => node.type === "WellbeingScreen" && node.props.controller === c))
     find(page("workouts"), "Header").props.onBack(); assert.equal(closed, 1)
-    find(page("wellbeing"), "Header").props.onBack(); assert.equal(closed, 2)
+    find(page("wellbeing"), "WellbeingScreen").props.onClose(); assert.equal(closed, 2)
     find(render(), "Tabs").props.onSelect("chat")
     assert.equal(find(render(), "Pages").props.footerVisible, false, "Fullscreen mentor chat hides navigation without resizing its viewport")
     assert.equal(find(page("chat"), "Chat").props.active, false, "History loading waits until the transition settles")

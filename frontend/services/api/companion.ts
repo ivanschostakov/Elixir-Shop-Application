@@ -33,7 +33,8 @@ export type Measurement = { waist_cm?: Numeric | null; chest_cm?: Numeric | null
 export type EntryData = {
     kind: "meal" | "water" | "weight" | "wellbeing" | "workout" | "measurement" | "progress_photo"; occurred_at: string; name?: string | null; portion_g?: Numeric | null
     nutrition?: Nutrition | null; weight_kg?: Numeric | null; wellbeing?: number | null; appetite?: number | null
-    energy?: number | null; sleep_hours?: Numeric | null; note?: string; estimated?: boolean; assumptions?: string
+    energy?: number | null; sleep_hours?: Numeric | null; mood?: number | null; stress?: number | null; sleep_quality?: number | null
+    note?: string; estimated?: boolean; assumptions?: string
     workout?: Workout | null; measurement?: Measurement | null; favorite?: boolean
     meal_type?: MealType | null; meal_key?: string | null; water_ml?: number | null; food_photo_attachment_ids?: number[]
     photo_attachment_ids?: number[]

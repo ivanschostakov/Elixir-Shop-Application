@@ -75,10 +75,10 @@ function Water({ c, close }: { c: Controller; close: () => void }) {
         <View style={[styles.waterCard, { backgroundColor: colors.soft }]}><MentorQuestionIcon name="water" size={42} color={colors.blue} /><Text style={[styles.total, { color: colors.blue }]}>{number(consumed)}<Text style={styles.value}> / {number(waterTarget(c.state))} {mt("мл")}</Text></Text></View>
         <View style={styles.choices}>{[200, 250, 500].map(ml => <Action key={ml} label={mt("{0} мл", [ml])} secondary onPress={() => setAmount(String(ml))} />)}</View>
         <Text style={[styles.caption, { color: colors.muted }]}>{mt("Свой объём, мл")}</Text>
-        <TextInput accessibilityLabel={mt("Объём воды, мл")} value={amount} onChangeText={setAmount} keyboardType="number-pad" maxLength={5} style={[styles.input, { color: colors.text, borderColor: colors.border }]} />
+        <TextInput accessibilityLabel={mt("Объём воды, мл")} value={amount} onChangeText={setAmount} keyboardType="number-pad" maxLength={5} style={[styles.input, { color: colors.text, backgroundColor: colors.input, borderColor: colors.border }]} />
         <Action label={mt("Добавить воду")} onPress={() => void add()} busy={c.busy} />
         <Action label={mt("Изменить дневной ориентир")} secondary onPress={() => setEditingGoal(value => !value)} />
-        {editingGoal ? <><TextInput accessibilityLabel={mt("Ориентир воды, мл")} value={goal} onChangeText={setGoal} keyboardType="number-pad" maxLength={5} style={[styles.input, { color: colors.text, borderColor: colors.border }]} /><Action label={mt("Сохранить ориентир")} busy={c.busy} onPress={() => void saveGoal()} /></> : null}
+        {editingGoal ? <><TextInput accessibilityLabel={mt("Ориентир воды, мл")} value={goal} onChangeText={setGoal} keyboardType="number-pad" maxLength={5} style={[styles.input, { color: colors.text, backgroundColor: colors.input, borderColor: colors.border }]} /><Action label={mt("Сохранить ориентир")} busy={c.busy} onPress={() => void saveGoal()} /></> : null}
         {error ? <Text accessibilityRole="alert" style={{ color: colors.text }}>{error}</Text> : null}
     </Page>
 }

@@ -7,7 +7,7 @@ export function MentorCustomAnswer({ label, placeholder, value, onChange, onCanc
     label: string; placeholder: string; value: string; onChange: (value: string) => void; onCancel: () => void; disabled: boolean; maxLength?: number
 }) {
     const colors = useMentorPalette()
-    return <View style={[styles.card, { backgroundColor: colors.soft, borderColor: colors.border }]}>
+    return <View style={[styles.card, { backgroundColor: colors.input, borderColor: colors.border }]}>
         <View style={styles.header}>
             <MentorQuestionIcon name="custom" size={20} color={colors.green} />
             <Text style={[styles.label, { color: colors.green }]}>{label}</Text>

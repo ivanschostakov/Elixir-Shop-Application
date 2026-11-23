@@ -171,3 +171,68 @@ test("picker changes commit only on Done; cancellation discards the draft and fo
     assert.equal(find(Picker).props.selectedValue, "price")
     assert.deepEqual(changes, ["price"])
 })
+
+test("native level sliders save only deliberate touches and report each bounded level while dragging", () => {
+    for (const platform of ["ios", "android"]) {
+        const changes = []
+        const { AppLevelSlider } = load("components/platform/app-level-slider.tsx", {
+            ...base, react: { useRef: value => ({ current: value }) },
+            "react-native": { Platform: { OS: platform }, View: "View", StyleSheet: { create: value => value } },
+            "@react-native-community/slider": { default: "SystemSlider" },
+        })
+        const props = { label: "Energy", value: null, maximum: 5, valueText: "Move the slider", onChange: value => changes.push(value), color: "green", trackColor: "gray" }
+        const slider = AppLevelSlider(props).props.children
+        assert.equal(slider.type, "SystemSlider")
+        assert.equal(slider.props.accessibilityValue.now, undefined)
+        assert.deepEqual(changes, [], "the midpoint is not a guessed health record")
+        slider.props.onSlidingStart(3)
+        slider.props.onValueChange(4.1)
+        slider.props.onValueChange(4.2)
+        slider.props.onSlidingComplete(4)
+        assert.deepEqual(changes, [3, 4])
+        slider.props.onValueChange(NaN)
+        slider.props.onValueChange(99)
+        assert.deepEqual(changes, [3, 4, 5])
+        const disabled = AppLevelSlider({ ...props, disabled: true }).props.children
+        disabled.props.onSlidingStart(2)
+        assert.deepEqual(changes, [3, 4, 5])
+    }
+})
+
+test("step transitions reverse from the presented positions on rapid Back taps without fading native controls", () => {
+    const instances = new Map(), effects = [], values = []
+    let slots, cursor
+    const hooks = { useEffect(fn, deps) { const i = cursor++; if (!slots[i] || deps.some((value, j) => value !== slots[i].deps[j])) effects.push(() => { slots[i]?.cleanup?.(); slots[i] = { deps, cleanup: fn() } }) } }
+    const reanimated = {
+        default: { View: "AnimatedView" }, Easing: { bezier: () => "easing" }, ReduceMotion: { System: "system" },
+        runOnUI: fn => fn, withTiming: (target, config) => ({ target, config }), cancelAnimation: value => { value.animation = null },
+        useSharedValue(initial) {
+            const i = cursor++
+            if (!slots[i]) {
+                const value = { current: initial, animation: null, get value() { return this.current }, set value(next) { if (typeof next === "object") this.animation = { ...next, from: this.current }; else { this.current = next; this.animation = null } } }
+                slots[i] = value; values.push(value)
+            }
+            return slots[i]
+        },
+        useAnimatedStyle: sample => ({ sample }),
+    }
+    const { AppStepTransition } = load("components/platform/app-step-transition.tsx", {
+        ...base, react: hooks, "react-native": { View: "View", StyleSheet: { create: value => value, absoluteFill: {} } }, "react-native-reanimated": reanimated,
+    })
+    const render = (step, direction) => AppStepTransition({ step, direction, count: 6, render: index => `Page ${index}` }).props.children.map((pane, index) => {
+        slots = instances.get(index) ?? []; instances.set(index, slots); cursor = 0
+        const result = pane.type(pane.props); effects.splice(0).forEach(fn => fn()); return result
+    })
+    const advance = fraction => { for (const value of values) if (value.animation) value.current = value.animation.from + (value.animation.target - value.animation.from) * fraction }
+    render(0, 1); render(1, 1); advance(0.4)
+    const before = render(1, 1).map(pane => pane.props.style.at(-1).sample())
+    const reverse = render(0, -1).map(pane => pane.props.style.at(-1).sample())
+    assert.deepEqual(reverse, before)
+    assert.ok(reverse.every(style => style.opacity === undefined))
+    for (const value of values.filter(value => value.animation)) {
+        assert.equal(value.animation.config.duration, 240)
+        assert.equal(value.animation.config.reduceMotion, "system")
+    }
+    advance(1)
+    assert.equal(render(0, -1)[0].props.style.at(-1).sample().transform[0].translateX, "0%")
+})

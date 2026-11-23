@@ -268,6 +268,9 @@ class EntryData(StrictModel):
     appetite: int | None = Field(default=None, ge=1, le=5)
     energy: int | None = Field(default=None, ge=1, le=5)
     sleep_hours: Decimal | None = Field(default=None, ge=0, le=24)
+    mood: int | None = Field(default=None, ge=1, le=3, description="1 low, 2 steady, 3 uplifted; self-reported")
+    stress: int | None = Field(default=None, ge=1, le=5, description="1 calm through 5 very tense; self-reported")
+    sleep_quality: int | None = Field(default=None, ge=1, le=3, description="1 poorly rested, 2 somewhat rested, 3 well rested")
     note: str = Field(default="", max_length=4000)
     estimated: bool = False
     assumptions: str = Field(default="", max_length=1500)
@@ -296,7 +299,9 @@ class EntryData(StrictModel):
             raise ValueError("Food photo IDs must be unique")
         if self.kind == "weight" and self.weight_kg is None:
             raise ValueError("Weight is required")
-        if self.kind == "wellbeing" and not self.note and all(v is None for v in (self.wellbeing, self.appetite, self.energy, self.sleep_hours)):
+        if self.kind != "wellbeing" and any(v is not None for v in (self.mood, self.stress, self.sleep_quality)):
+            raise ValueError("Mood, stress and sleep quality belong to a wellbeing record")
+        if self.kind == "wellbeing" and not self.note and all(v is None for v in (self.wellbeing, self.appetite, self.energy, self.sleep_hours, self.mood, self.stress, self.sleep_quality)):
             raise ValueError("A wellbeing value or note is required")
         for name in ("workout", "measurement"):
             if (getattr(self, name) is not None) != (self.kind == name):

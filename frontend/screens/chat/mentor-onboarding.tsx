@@ -71,7 +71,7 @@ export function MentorOnboarding({ visible, value, onChange, onClose, onSave, sa
 
     const field = (label: string, fieldName: "age" | "height" | "weight" | "targetWeight", unit: string, active: boolean) => <View style={styles.field}>
         <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
-        <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={[styles.inputWrap, { borderColor: colors.border, backgroundColor: colors.input }]}>
             <TextInput accessibilityLabel={label} value={value[fieldName]} onChangeText={text => change({ [fieldName]: text.replace(/,/g, ".") })}
                 editable={active && !saving} keyboardType={fieldName === "age" ? "number-pad" : "decimal-pad"} maxLength={7}
                 keyboardAppearance={colors.surface === "#FFFFFF" ? "light" : "dark"} selectionColor={colors.greenBright}
@@ -105,7 +105,7 @@ export function MentorOnboarding({ visible, value, onChange, onClose, onSave, sa
                             {index === 2 ? <View style={styles.groups}>{field(mt("Рост"), "height", mt("см"), active)}{field(mt("Текущий вес"), "weight", mt("кг"), active)}</View> : null}
                             {index === 3 ? <View accessibilityRole="radiogroup" style={styles.choices}>{mentorActivityChoices.map(item => choice(item.label, value.activity === item.value, () => change({ activity: item.value }), disabled, item.icon, item.example))}</View> : null}
                             {index === 4 ? <View style={styles.groups}>
-                                <View style={[styles.targetCard, { backgroundColor: colors.soft, borderColor: colors.border }]}>
+                                <View style={[styles.targetCard, { backgroundColor: colors.input, borderColor: colors.border }]}>
                                     <TextInput accessibilityLabel={mt("Желаемый вес")} value={value.targetWeight} onChangeText={targetWeight => change({ targetWeight: targetWeight.replace(/,/g, ".") })} editable={!disabled} placeholder="—" placeholderTextColor={colors.muted} keyboardType="decimal-pad" maxLength={7} selectionColor={colors.greenBright} style={[styles.targetInput, { color: colors.green }]} />
                                     <Text style={[styles.targetUnit, { color: colors.muted }]}>{mt("кг")}</Text>
                                 </View>
