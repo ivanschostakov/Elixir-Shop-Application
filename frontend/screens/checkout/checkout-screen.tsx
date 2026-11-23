@@ -1,3 +1,5 @@
+import { AppFormLayout } from "@/components/platform/app-form-layout"
+import { AppPickerPanel } from "@/components/platform/app-picker"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Picker } from "@react-native-picker/picker"
 import {
@@ -5,7 +7,6 @@ import {
     Alert,
     Image,
     Keyboard,
-    KeyboardAvoidingView,
     Modal,
     type NativeScrollEvent,
     type NativeSyntheticEvent,
@@ -1385,44 +1386,7 @@ export default function CheckoutScreen() {
                     transparent
                     visible={openPickerSection !== null || isRecipientEditorOpen}
                 >
-                    {!isRecipientEditorOpen ? <View style={contentStyles.browsePickerBackdrop}>
-                        <Pressable
-                            accessibilityRole="button"
-                            onPress={closeCheckoutPicker}
-                            style={contentStyles.browsePickerDismissArea}
-                        />
-
-                        <View
-                            style={[
-                                contentStyles.browsePickerSheet,
-                                { paddingBottom: Math.max(spacing.lg, bottomInset + spacing.sm) },
-                            ]}
-                        >
-                            <View style={contentStyles.browsePickerHeader}>
-                                <Text style={contentStyles.browsePickerTitle}>
-                                    {openPickerSection === "recipient"
-                                        ? t("checkout.recipientTitle")
-                                        : t("checkout.addressSectionTitle")}
-                                </Text>
-
-                                <View style={contentStyles.browsePickerActions}>
-                                    <Pressable
-                                        accessibilityLabel={t("common.cancel")}
-                                        accessibilityRole="button"
-                                        onPress={closeCheckoutPicker}
-                                        style={({ pressed }) => [
-                                            contentStyles.browsePickerAction,
-                                            pressed && contentStyles.browsePickerActionPressed,
-                                        ]}
-                                    >
-                                        <Text style={contentStyles.browsePickerActionText}>
-                                            {t("common.cancel")}
-                                        </Text>
-                                    </Pressable>
-
-                                </View>
-                            </View>
-
+                    {!isRecipientEditorOpen ? <AppPickerPanel title={openPickerSection === "recipient" ? t("checkout.recipientTitle") : t("checkout.addressSectionTitle")} onCancel={closeCheckoutPicker}>
                             {optionsLoading ? (
                                 <View style={checkoutScreenStyles.selectorLoadingRow}>
                                     <ActivityIndicator size="small" />
@@ -1480,11 +1444,8 @@ export default function CheckoutScreen() {
                                     style={contentStyles.browsePicker}
                                 />
                             )}
-                        </View>
-                    </View> : (
-                    <KeyboardAvoidingView
-                        behavior={Platform.OS === "ios" ? "padding" : "height"}
-                        keyboardVerticalOffset={0}
+                    </AppPickerPanel> : (
+                    <AppFormLayout
                         style={[contentStyles.browsePickerBackdrop, { paddingTop: topInset + spacing.sm }]}
                     >
                         <Pressable
@@ -1665,7 +1626,7 @@ export default function CheckoutScreen() {
                                 </Pressable>
                             </ScrollView>
                         </View>
-                    </KeyboardAvoidingView>
+                    </AppFormLayout>
                     )}
                 </Modal>
             </View>

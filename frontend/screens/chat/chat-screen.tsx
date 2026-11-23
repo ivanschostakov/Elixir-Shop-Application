@@ -26,7 +26,6 @@ import * as DocumentPicker from "expo-document-picker"
 import * as ImagePicker from "expo-image-picker"
 import * as SecureStore from "expo-secure-store"
 import { useLocalSearchParams, useRouter } from "expo-router"
-import Svg, { Path } from "react-native-svg"
 
 import { EmptyState } from "@/components/content/empty-state"
 import { useApplyScreenTemplate } from "@/components/templates/screen-template.hooks"
@@ -47,13 +46,13 @@ import { mentorText as mt } from "@/i18n/mentor-translations"
 import { MentorSetup } from "@/screens/chat/mentor-setup"
 import { MENTOR_SHORTCUT_HEIGHT, MentorShortcut } from "@/screens/chat/mentor-shortcut"
 import { ChatBackdrop } from "@/screens/chat/chat-backdrop"
-import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
+import { AppEdgeMaterial as ChatEdgeBlur } from "@/components/platform/app-edge-material"
 import { ContentReveal, QuietLoading } from "@/components/ui/quiet-loading"
-import { ChatKeyboardLayout } from "@/screens/chat/chat-keyboard-layout"
-import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock, ChatKeyboardFloating } from "@/screens/chat/chat-keyboard-motion"
+import { ChatKeyboardLayout } from "@/components/platform/chat-keyboard-layout"
+import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock, ChatKeyboardFloating } from "@/components/platform/chat-layout"
 import { ChatTopicTitle, type ChatTopicNavigation } from "@/screens/chat/chat-topic-title"
 import { ChatComposer } from "@/screens/chat/chat-composer"
-import { NativeChatAction, NativeComposerMaterial } from "@/screens/chat/native-chat-controls"
+import { AppIconButton, hasNativeControls } from "@/components/platform/app-icon-button"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
 import { trackCustomerEvent } from "@/services/customer-intelligence"
 import type {
@@ -90,7 +89,6 @@ import {
     isImageAttachment,
 } from "@/screens/chat/chat-attachments"
 import {
-    type AttachmentMode,
     CHAT_IDLE_AUDIO_MODE,
     CHAT_RECORDING_AUDIO_MODE,
     INTERNAL_PRODUCT_LINK_PATTERN,
@@ -143,7 +141,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
     const { t } = useLanguage()
     const { isDark, palette } = useTheme()
     const { width: screenWidth } = useWindowDimensions()
-    const { top: topInset, bottom: bottomInset } = useSafeAreaInsets()
+    const { top: topInset } = useSafeAreaInsets()
     const [cameraPermission, requestCameraPermission] = useCameraPermissions()
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
@@ -151,7 +149,6 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
     const [activeActionId, setActiveActionId] = useState<string | null>(null)
     const [activeBasketVariantId, setActiveBasketVariantId] = useState<number | null>(null)
-    const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const voiceStarting = useRef(false)
     const [voiceRecording, setVoiceRecording] = useState(false)
@@ -173,7 +170,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
         ? parsedRequestedConversationId
         : null
     const iosChat = Platform.OS === "ios"
-    const nativeIosChat = iosChat && NativeChatAction !== null && NativeComposerMaterial !== null
+    const nativeIosChat = iosChat && hasNativeControls
     const simpleIosChat = iosChat && !nativeIosChat
     const [composerDockHeight, setComposerDockHeight] = useState(0)
     const [followingLatest, setFollowingLatest] = useState(true)
@@ -219,7 +216,6 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
     }, [mentorChat, screenActive, aiContentReady, composerDockHeight, settleFollowingConversation])
     const showConversation = useCallback(() => { followLatest() }, [followLatest])
     const openMentor = useCallback(() => { mentorExitToShop.current = false; Keyboard.dismiss(); setMentorInitialTab("nutrition"); setMentorVisited(true); setMentorOpen(true) }, [])
-    const cameraPermissionPromptedRef = useRef(false)
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const messageMediaWidth = Math.min(screenWidth * 0.68, MESSAGE_IMAGE_MAX_WIDTH)
     const messageTextWidth = Math.max(180, Math.min(screenWidth * 0.74, 330))
@@ -288,26 +284,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
         mode: "fullscreen",
     }, !mentorChat)
 
-    useEffect(() => {
-        if (
-            !attachmentSheetVisible ||
-            attachmentMode !== "photo" ||
-            cameraPermissionPromptedRef.current ||
-            cameraPermission === null ||
-            cameraPermission.granted ||
-            !cameraPermission.canAskAgain
-        ) {
-            return
-        }
 
-        cameraPermissionPromptedRef.current = true
-        void requestCameraPermission()
-    }, [
-        attachmentMode,
-        attachmentSheetVisible,
-        cameraPermission,
-        requestCameraPermission,
-    ])
 
 
 
@@ -338,16 +315,11 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
 
     const handleOpenAttachmentSheet = useCallback(() => {
         Keyboard.dismiss()
-        setAttachmentMode("photo")
         setAttachmentSheetVisible(true)
     }, [])
 
     const handleCloseAttachmentSheet = useCallback(() => {
         setAttachmentSheetVisible(false)
-    }, [])
-
-    const handleSelectAttachmentMode = useCallback((mode: AttachmentMode) => {
-        setAttachmentMode(mode)
     }, [])
 
     const handleOpenNativeGallery = useCallback(async () => {
@@ -791,24 +763,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
             style={[chatScreenStyles.fixedHeader, chatScreenStyles.mentorHeader, overlaysChatChrome && chatScreenStyles.headerOverlay, { paddingTop: topBarOffset }]}
         >
         <View pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={chatScreenStyles.topBarRow}>
-            {nativeIosChat && NativeChatAction ? (
-                <NativeChatAction action="back" dark={isDark} label={t("nav.back")} onAction={handleBack} style={chatScreenStyles.nativeChatButton} />
-            ) : <Pressable
-                accessibilityLabel={t("nav.back")}
-                accessibilityRole="button"
-                onPress={handleBack}
-                style={({ pressed }) => [chatScreenStyles.topBackButton, chatScreenStyles.mentorBackButton, iosChat && [chatScreenStyles.privateChatButton, { backgroundColor: inputBackgroundColor }], iosChat && pressed && chatScreenStyles.circleButtonPressed]}
-            >
-                <Svg fill="none" height={20} viewBox="0 0 24 24" width={20}>
-                    <Path
-                        d="M15.5 5.5 9 12l6.5 6.5"
-                        stroke={iosChat ? palette.text : "#12161A"}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2.2}
-                    />
-                </Svg>
-            </Pressable>}
+            <AppIconButton action="back" dark={isDark} label={t("nav.back")} onPress={handleBack} backgroundColor={inputBackgroundColor} color={palette.text} style={chatScreenStyles.nativeChatButton} />
             {mentorChat ? <ChatTopicTitle title={mt("Наставник")} /> : chatMode === "community" && topicNavigation ? <ChatTopicTitle title={topicNavigation.title} notifications={topicNavigation.notifications} /> : <ChatModeSwitcher mode={chatMode} solidStyle={simpleIosChat} nativeDark={nativeIosChat ? isDark : undefined} mentorStyle onChange={handleChatModeChange} supportUnreadCount={supportUnread} unreadCount={communityUnread} />}
         </View>
         </View>
@@ -978,28 +933,8 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
 
                         {iosChat && !followingLatest && aiContentReady && messages.length > 0 ? (
                             <ChatKeyboardFloating pointerEvents="box-none" style={{ position: "absolute", right: 8, bottom: composerDockHeight + 8, zIndex: 13 }}>
-                            {nativeIosChat && NativeChatAction ? (
-                                <NativeChatAction
-                                    action="latest"
-                                    dark={isDark}
-                                    label={t("chat.jumpToLatest")}
-                                    onAction={() => followLatest(!reduceMotion)}
-                                    style={[chatScreenStyles.jumpToLatest, chatScreenStyles.nativeJumpToLatest, { bottom: 0, position: "relative" }]}
-                                />
-                            ) : <Pressable
-                                accessibilityLabel={t("chat.jumpToLatest")}
-                                accessibilityRole="button"
-                                onPress={() => followLatest(!reduceMotion)}
-                                style={({ pressed }) => [
-                                    chatScreenStyles.jumpToLatest,
-                                    { bottom: 0, position: "relative", backgroundColor: inputBackgroundColor },
-                                    pressed && chatScreenStyles.circleButtonPressed,
-                                ]}
-                            >
-                                <Svg fill="none" width={21} height={21} viewBox="0 0 24 24">
-                                    <Path d="m5 9 7 7 7-7" stroke={palette.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                                </Svg>
-                            </Pressable>}
+                            <AppIconButton action="latest" dark={isDark} label={t("chat.jumpToLatest")} onPress={() => followLatest(!reduceMotion)} backgroundColor={inputBackgroundColor} color={palette.text}
+                                style={[chatScreenStyles.jumpToLatest, chatScreenStyles.nativeJumpToLatest, { bottom: 0, position: "relative" }]} />
                             </ChatKeyboardFloating>
                         ) : null}
 
@@ -1056,8 +991,6 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
                         </ChatComposerDock>
                 </View>
                 <AttachmentSheet
-                    activeMode={attachmentMode}
-                    bottomInset={bottomInset}
                     onClose={handleCloseAttachmentSheet}
                     onOpenCamera={() => {
                         void handleOpenCamera()
@@ -1068,7 +1001,6 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
                     onPickFiles={() => {
                         void handlePickFiles()
                     }}
-                    onSelectMode={handleSelectAttachmentMode}
                     visible={attachmentSheetVisible}
                 />
                 </ChatKeyboardPane>

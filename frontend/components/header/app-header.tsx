@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { Alert, Animated, Pressable, Text, View, useWindowDimensions } from "react-native"
-import { BlurView } from "expo-blur"
+import { AppBlurSurface as BlurView } from "@/components/platform/app-blur-surface"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { Path, Svg } from "react-native-svg"
 

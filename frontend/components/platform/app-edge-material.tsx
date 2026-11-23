@@ -1,9 +1,9 @@
-import { BlurView } from "expo-blur"
+import { AppBlurSurface as BlurView } from "@/components/platform/app-blur-surface"
 import type { StyleProp, ViewStyle } from "react-native"
 
-import { NativeComposerMaterial } from "@/screens/chat/native-chat-controls"
+import { NativeComposerMaterial } from "@/components/platform/native-controls"
 
-export function ChatEdgeBlur({ dark, topEdge = false, style }: {
+export function AppEdgeMaterial({ dark, topEdge = false, style }: {
     dark: boolean
     topEdge?: boolean
     style: StyleProp<ViewStyle>

@@ -25,17 +25,20 @@ function renderSwitcher(platform, mode, onChange, solidStyle = false, nativeDark
     class Value {
         interpolate(config) { return config }
     }
-    const { ChatModeSwitcher } = loadTs("screens/chat/chat-mode-switcher.tsx", {
+    const mocks = {
         react: { useEffect: () => {}, useRef: value => ({ current: value }), useState: () => [320, () => {}] },
         "react-native": { Animated: { Value, View: "AnimatedView" }, Platform: { OS: platform }, Pressable: "Pressable", StyleSheet: { create: value => value }, Text: "Text", View: "View" },
         "@/providers/language-provider": { useLanguage: () => ({ t: key => key }) },
         "@/hooks/use-theme-styles": { useThemeStyles: () => ({ solidModeSwitcher: "solidTrack", solidModeSelection: "solidSelection" }) },
         "@/screens/chat/community-chat-screen.styles": { createCommunityChatStyles: () => ({}) },
-        "@/screens/chat/chat-mode-transition": { useChatReducedMotion: () => true },
-        "@/screens/chat/chat-mode-policy": policy,
-        "@/screens/chat/native-chat-controls": { NativeChatModeControl: "NativeChatModeControl", nativeChatInlineBadgesAvailable: inlineBadges },
+        "@/hooks/use-reduced-motion": { useReducedMotion: () => true },
+        "@/components/platform/native-controls": { NativeChatModeControl: inlineBadges ? "NativeChatModeControl" : null },
+    }
+    const { AppSegmentedControl } = loadTs("components/platform/app-segmented-control.tsx", mocks)
+    const { ChatModeSwitcher } = loadTs("screens/chat/chat-mode-switcher.tsx", { ...mocks,
+        "@/components/platform/app-segmented-control": { AppSegmentedControl },
     })
-    return ChatModeSwitcher({ mode, onChange, unreadCount: 5, mentorStyle: true, solidStyle, nativeDark })
+    return AppSegmentedControl(ChatModeSwitcher({ mode, onChange, unreadCount: 5, mentorStyle: true, solidStyle, nativeDark }).props)
 }
 
 function elements(tree) {
@@ -51,7 +54,7 @@ test("iOS switcher exposes working AI, community and support tabs", () => {
     assert.equal(tabs.length, 3)
     assert.equal(tabs[2].props.accessibilityState.selected, true)
     for (const [index, tab] of tabs.entries()) {
-        assert.equal(tab.props.style.at(-1).flex, [0.3, 0.4, 0.3][index])
+        assert.equal(tab.props.style.findLast(style => style?.flex).flex, [0.3, 0.4, 0.3][index])
         tab.props.onPress()
     }
     assert.deepEqual(changes, ["ai", "community", "support"])
@@ -90,9 +93,9 @@ test("the iOS selector passes the selection and unread count to UIKit", () => {
 })
 
 test("native chat controls and edge blur respect the installed interface version", () => {
-    for (const [platform, module] of [["ios", null], ["ios", {}], ["ios", { interfaceVersion: 2 }], ["ios", { interfaceVersion: 3 }], ["ios", { interfaceVersion: 4 }], ["ios", { interfaceVersion: 5 }], ["ios", { interfaceVersion: 6 }], ["ios", { interfaceVersion: 8 }], ["ios", { interfaceVersion: 9 }], ["android", null], ["web", null]]) {
+    for (const [platform, module] of [["ios", null], ["ios", {}], ["ios", { interfaceVersion: 2 }], ["ios", { interfaceVersion: 3 }], ["ios", { interfaceVersion: 4 }], ["ios", { interfaceVersion: 5 }], ["ios", { interfaceVersion: 6 }], ["ios", { interfaceVersion: 8 }], ["ios", { interfaceVersion: 9 }], ["ios", { interfaceVersion: 10 }], ["android", null], ["web", null]]) {
         const registeredViews = []
-        const controls = loadTs("screens/chat/native-chat-controls.tsx", {
+        const controls = loadTs("components/platform/native-controls.tsx", {
             expo: {
                 requireOptionalNativeModule: () => module,
                 requireNativeView: (_moduleName, viewName) => {
@@ -103,18 +106,14 @@ test("native chat controls and edge blur respect the installed interface version
             },
             "react-native": { Platform: { OS: platform } },
         })
-        const available = platform === "ios" && (module?.interfaceVersion ?? 0) >= 9
+        const available = platform === "ios" && (module?.interfaceVersion ?? 0) >= 10
         assert.equal(controls.NativeChatModeControl, available ? "ModeControl" : null)
         assert.equal(controls.NativeChatAction, available ? "ActionControl" : null)
-        assert.equal(controls.nativeChatInlineBadgesAvailable, available)
-        assert.equal(controls.nativeChatMentorActionAvailable, available)
-        assert.equal(controls.nativeChatSettingsActionAvailable, available)
-        assert.equal(controls.nativeChatMentorGreetingAvailable, available)
-        assert.deepEqual(registeredViews, available ? ["ModeControl", "ActionControl", "ComposerMaterial", "InputMaterial", "KeyboardMaterial", "MenuControl", "TitleMaterial"] : [])
-        assert.equal(controls.NativeChatInputMaterial, available ? "InputMaterial" : null, "Older installed builds never request an unregistered view")
-        const { ChatEdgeBlur } = loadTs("screens/chat/chat-edge-blur.tsx", {
-            "expo-blur": { BlurView: "BlurView" },
-            "@/screens/chat/native-chat-controls": controls,
+        assert.equal(controls.nativeControlsAvailable, available)
+        assert.deepEqual(registeredViews, available ? ["ModeControl", "ActionControl", "ComposerMaterial", "KeyboardMaterial"] : [])
+        const { AppEdgeMaterial: ChatEdgeBlur } = loadTs("components/platform/app-edge-material.tsx", {
+            "@/components/platform/app-blur-surface": { AppBlurSurface: "BlurView" },
+            "@/components/platform/native-controls": controls,
         })
         const style = { height: 100 }
         const blur = ChatEdgeBlur({ dark: true, topEdge: true, style })
@@ -142,7 +141,7 @@ test("Mentor and Community are available to all native customers", () => {
 })
 
 test("older installed builds keep unread counts until their native client is rebuilt", () => {
-    const native = renderSwitcher("ios", "community", () => {}, false, false, false)
-    assert.deepEqual(native.props.labels, ["chat.modeAi", "chat.modeGroup · 5", "chat.modeSupport"])
-    assert.equal(native.props.badges, undefined)
+    const nodes = elements(renderSwitcher("ios", "community", () => {}, false, false, false))
+    assert.equal(nodes.filter(node => node.props?.accessibilityRole === "tab").length, 3)
+    assert.ok(nodes.some(node => node.props?.children === "5"))
 })

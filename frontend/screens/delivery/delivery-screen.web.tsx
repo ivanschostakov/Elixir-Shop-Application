@@ -1,4 +1,4 @@
-import { BlurView } from "expo-blur"
+import { AppBlurSurface as BlurView } from "@/components/platform/app-blur-surface"
 import * as Clipboard from "expo-clipboard"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Alert, Linking, Pressable, ScrollView, View, useWindowDimensions } from "react-native"

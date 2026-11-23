@@ -8,7 +8,7 @@ import { MentorNutritionSummary } from "@/screens/chat/mentor-nutrition-summary"
 import { MentorQuestionIcon, type MentorQuestionIconName } from "@/screens/chat/mentor-question-icon"
 import { MentorMealIcon } from "@/screens/chat/mentor-icons"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
-import { NativeChatAction, nativeChatSettingsActionAvailable } from "@/screens/chat/native-chat-controls"
+import { AppIconButton } from "@/components/platform/app-icon-button"
 import { mealGroups, mealLabel, suggestedMeal, waterTarget } from "@/screens/chat/mentor-meals-data"
 import type { CompanionEntry, CompanionState, MealType } from "@/services/api/companion"
 
@@ -24,12 +24,10 @@ export function MentorHomeHeader({ onBack, onSettings, title, backLabel }: { onB
     const { isDark } = useTheme()
     const label = backLabel ?? (title ? mt("Назад") : mt("На главную магазина"))
     return <View style={styles.header}>
-        {NativeChatAction ? <NativeChatAction action="back" dark={isDark} label={label} onAction={onBack} style={styles.iconButton} /> :
-            <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onBack} style={styles.iconButton}><MentorQuestionIcon name="back" size={24} color={colors.text} /></Pressable>}
+        <AppIconButton action="back" dark={isDark} label={label} onPress={onBack} appearance="plain" color={colors.text} style={styles.iconButton} />
         {title ? <Text accessibilityRole="header" style={[styles.headerTitle, { color: colors.text }]}>{title}</Text> :
             <View style={styles.brand}><MentorQuestionIcon name="leaf" size={27} color={colors.green} /><Text accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit style={[styles.brandName, { color: colors.text }]}>{mt("Наставник")}</Text></View>}
-        {onSettings ? NativeChatAction && nativeChatSettingsActionAvailable ? <NativeChatAction action="settings" dark={isDark} label={mt("Настройки наставника")} onAction={onSettings} style={styles.iconButton} /> :
-            <Pressable accessibilityRole="button" accessibilityLabel={mt("Настройки наставника")} onPress={onSettings} style={[styles.iconButton, { backgroundColor: colors.soft, borderRadius: 22 }]}><MentorQuestionIcon name="settings" size={23} color={colors.green} /></Pressable> : <View style={styles.iconButton} />}
+        {onSettings ? <AppIconButton action="settings" dark={isDark} label={mt("Настройки наставника")} onPress={onSettings} backgroundColor={colors.soft} color={colors.green} style={styles.iconButton} /> : <View style={styles.iconButton} />}
     </View>
 }
 

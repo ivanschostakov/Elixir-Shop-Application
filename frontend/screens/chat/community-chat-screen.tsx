@@ -1,3 +1,4 @@
+import { AppFormLayout } from "@/components/platform/app-form-layout"
 import { requestChatRecordingPermission } from "@/screens/chat/chat-recording-permission"
 import { ChatComposer } from "@/screens/chat/chat-composer"
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -8,7 +9,6 @@ import {
     Image,
     ImageBackground,
     Keyboard,
-    KeyboardAvoidingView,
     Linking,
     Modal,
     type NativeScrollEvent,
@@ -20,7 +20,7 @@ import {
     Text,
     View,
 } from "react-native"
-import { BlurView } from "expo-blur"
+import { AppBlurSurface as BlurView } from "@/components/platform/app-blur-surface"
 import { useCameraPermissions } from "expo-camera"
 import * as Clipboard from "expo-clipboard"
 import {
@@ -35,11 +35,11 @@ import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import Svg, { Path } from "react-native-svg"
 
-import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock } from "@/screens/chat/chat-keyboard-motion"
+import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock } from "@/components/platform/chat-layout"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
 import { ChatTopicTitle, type ChatTopicNavigation } from "@/screens/chat/chat-topic-title"
 import { CommunityGroupNotificationSwitch, CommunityNotificationButton } from "@/screens/chat/community-notifications"
-import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
+import { AppEdgeMaterial as ChatEdgeBlur } from "@/components/platform/app-edge-material"
 import { ROUTES } from "@/constants/routes"
 import { useCommunityChat } from "@/hooks/chat/use-community-chat"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
@@ -61,7 +61,6 @@ import { ChatModeSwitcher, type ChatMode } from "@/screens/chat/chat-mode-switch
 import { CommunityReportForm } from "@/screens/chat/community-report-form"
 import { AttachmentSheet, QueuedAttachmentStrip } from "@/screens/chat/chat-screen.attachments"
 import {
-    type AttachmentMode,
     CHAT_BACKGROUND_DARK,
     CHAT_BACKGROUND_LIGHT,
     CHAT_IDLE_AUDIO_MODE,
@@ -137,7 +136,6 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     const pushPermissionRequestedRef = useRef(false)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
-    const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(110)
     const voiceStarting = useRef(false)
@@ -250,7 +248,6 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
 
     const openAttachmentSheet = useCallback(() => {
         Keyboard.dismiss()
-        setAttachmentMode("photo")
         setAttachmentSheetVisible(true)
     }, [])
 
@@ -512,7 +509,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
 
                 {chat.status?.access === "granted" && chat.selectedTopic ? (
                     <>
-                        <KeyboardAvoidingView enabled={!embedded && !iosChat} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={0} style={styles.topicKeyboardLayer}>
+                        <AppFormLayout enabled={!embedded && !iosChat}   style={styles.topicKeyboardLayer}>
                             <View style={chatStyles.keyboardContent}>
                                 <ChatMessageScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + spacing.sm, paddingBottom: iosChat ? spacing.sm : composerHeight + spacing.sm }]} keyboardDismissMode={iosChat ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} onScrollBeginDrag={chatScroll.onScrollBeginDrag} onContentSizeChange={chatScroll.onContentSizeChange} onLayout={chatScroll.onLayout} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} automaticallyAdjustsScrollIndicatorInsets={iosChat ? false : undefined} scrollIndicatorInsets={iosChat ? { top: contentTop, bottom: composerHeight } : undefined} style={styles.messageScroll}>
                                     {chat.hasMore ? <Pressable disabled={chat.loadingOlder} onPress={() => { void chat.loadOlder() }} style={styles.loadOlder}>{chat.loadingOlder ? <ActivityIndicator color={palette.primary} size="small" /> : <Text style={styles.loadOlderText}>{t("chat.communityLoadOlder")}</Text>}</Pressable> : null}
@@ -538,11 +535,11 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                                     {chat.selectedTopic.is_closed ? <View accessibilityRole="text" style={styles.closedNotice}><Text style={styles.closedNoticeText}>{t("chat.communityClosedMessage")}</Text></View> : <ChatComposer value={draft} onChangeText={setDraft} placeholder={voiceRecording ? t("chat.voiceRecording") : editingMessage ? t("chat.communityEditingMessage") : t("chat.communityInputPlaceholder")} onAttachment={openAttachmentSheet} onAction={() => { if (voiceRecording || !hasComposerContent) void handleVoiceButtonPress(); else void handleSend() }} hasContent={hasComposerContent} disabled={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} attachmentDisabled={Boolean(editingMessage) || voiceStatusVisible} recording={voiceRecording} busy={chat.sending || Boolean(chat.mutatingMessageId) || voiceTranscribing} transcribing={voiceTranscribing} />}
                                 </ChatComposerDock>
                             </View>
-                        </KeyboardAvoidingView>
+                        </AppFormLayout>
                     </>
                 ) : null}
                 {!embedded && iosChat ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
-                <AttachmentSheet activeMode={attachmentMode} bottomInset={bottom} onClose={closeAttachmentSheet} onOpenCamera={() => { void openCamera() }} onOpenNativeGallery={() => { void openGallery() }} onPickFiles={() => { void pickFiles() }} onSelectMode={setAttachmentMode} visible={attachmentSheetVisible} />
+                <AttachmentSheet visible={attachmentSheetVisible} onClose={closeAttachmentSheet} onOpenCamera={() => { void openCamera() }} onOpenNativeGallery={() => { void openGallery() }} onPickFiles={() => { void pickFiles() }} />
                 <Modal visible={blocksVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setBlocksVisible(false)}>
                     <View style={{ flex: 1, paddingTop: Math.max(top, spacing.md), backgroundColor: palette.background }}>
                         <View style={{ padding: spacing.lg, gap: spacing.md }}>
@@ -692,9 +689,7 @@ function CommunityMessageActionMenu({ message, onBlock, onClose, onCopy, onDelet
     const [reporting, setReporting] = useState(false)
     const [reportBusy, setReportBusy] = useState(false)
     const reactions = Array.isArray(message.reactions) ? message.reactions : []
-    const androidBlurProps = Platform.OS === "android"
-        ? { experimentalBlurMethod: "dimezisBlurView" as const }
-        : {}
+
 
     return (
         <Modal animationType="fade" onRequestClose={() => { if (!reportBusy) onClose() }} presentationStyle="overFullScreen" statusBarTranslucent transparent visible>
@@ -704,11 +699,11 @@ function CommunityMessageActionMenu({ message, onBlock, onClose, onCopy, onDelet
                     pointerEvents="none"
                     style={styles.messageMenuBackdropBlur}
                     tint={isDark ? "dark" : "light"}
-                    {...androidBlurProps}
+                    androidBlur
                 />
                 <Pressable accessibilityLabel={t("common.cancel")} onPress={onClose} style={styles.messageMenuBackdropDismiss} />
                 <View style={[styles.messageMenuStack, { paddingBottom: Math.max(bottom, spacing.md) + 72 }]}>
-                    <BlurView intensity={85} style={styles.messageMenuReactionBar} tint={isDark ? "dark" : "light"} {...androidBlurProps}>
+                    <BlurView intensity={85} style={styles.messageMenuReactionBar} tint={isDark ? "dark" : "light"} androidBlur>
                         <ScrollView contentContainerStyle={styles.messageMenuReactionContent} horizontal showsHorizontalScrollIndicator={false}>
                             {COMMUNITY_REACTION_EMOJIS.map((emoji) => {
                                 const selected = reactions.some((reaction) => reaction.emoji === emoji && reaction.reacted_by_me)
@@ -731,7 +726,7 @@ function CommunityMessageActionMenu({ message, onBlock, onClose, onCopy, onDelet
                         </ScrollView>
                     </BlurView>
                     <CommunityMessageMenuPreview message={message} />
-                    <BlurView intensity={90} style={styles.messageMenuCard} tint={isDark ? "dark" : "light"} {...androidBlurProps}>
+                    <BlurView intensity={90} style={styles.messageMenuCard} tint={isDark ? "dark" : "light"} androidBlur>
                         <CommunityMessageMenuAction icon="reply" label={t("chat.communityReplyAction")} onPress={onReply} />
                         {message.text.trim() ? <CommunityMessageMenuAction icon="copy" label={t("chat.communityCopyAction")} onPress={onCopy} /> : null}
                         {message.can_edit ? <CommunityMessageMenuAction icon="edit" label={t("chat.communityEditAction")} onPress={onEdit} /> : null}

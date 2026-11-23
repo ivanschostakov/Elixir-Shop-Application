@@ -1,8 +1,9 @@
+import { Platform } from "react-native"
+import { shadows } from "@/theme/shadows"
 import { useEffect, useMemo, useRef, useState } from "react"
 import * as SecureStore from "expo-secure-store"
 import {
     ActivityIndicator,
-    Platform,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -194,17 +195,7 @@ const createFirstLaunchLegalStyles = (colors: ThemePalette) => StyleSheet.create
         paddingTop: spacing.sm,
         paddingHorizontal: spacing.md,
         backgroundColor: colors.pageBackground,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 -4px 16px rgba(0, 0, 0, 0.12)",
-            },
-            default: {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: -4 },
-                shadowOpacity: 0.12,
-                shadowRadius: 16,
-            },
-        }),
+        ...shadows.footerFooterBase,
     },
     ctaButton: {
         minHeight: 52,

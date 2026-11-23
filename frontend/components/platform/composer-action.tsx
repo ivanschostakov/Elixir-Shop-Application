@@ -4,7 +4,7 @@ import Svg, { Path, Rect } from "react-native-svg"
 
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
-import { useChatReducedMotion } from "@/screens/chat/chat-mode-transition"
+import { useReducedMotion } from "@/hooks/use-reduced-motion"
 import { motion } from "@/theme/motion"
 
 export function AdminComposerAction({ active, backgroundColor, busy, disabled, onPress, recording, transcribing }: {
@@ -18,7 +18,7 @@ export function AdminComposerAction({ active, backgroundColor, busy, disabled, o
 }) {
     const { t } = useLanguage()
     const { palette } = useTheme()
-    const reducedMotion = useChatReducedMotion()
+    const reducedMotion = useReducedMotion()
     const state = busy ? "busy" : recording ? "stop" : active ? "send" : "mic"
     const values = useRef({
         mic: new Animated.Value(state === "mic" ? 1 : 0),

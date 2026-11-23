@@ -1,4 +1,5 @@
-import { Platform, StyleSheet } from "react-native"
+import { shadows } from "@/theme/shadows"
+import { StyleSheet } from "react-native"
 
 import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
@@ -432,17 +433,7 @@ export const createPaymentScreenStyles = (colors: ThemePalette) => StyleSheet.cr
         paddingHorizontal: spacing.lg,
         paddingTop: spacing.sm,
         paddingBottom: spacing.md,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
-            },
-            default: {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.04,
-                shadowRadius: 16,
-            },
-        }),
+        ...shadows.productSimilarRailCard,
         width: "100%",
     },
     sectionToggle: {

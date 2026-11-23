@@ -1,5 +1,6 @@
+import { useAppActionSheet } from "@/components/platform/app-action-sheet"
 import { useEffect, useRef, useState } from "react"
-import { ActivityIndicator, ActionSheetIOS, Alert, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Alert, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import * as ImagePicker from "expo-image-picker"
 import { RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio"
 import { useLanguage } from "@/providers/language-provider"
@@ -29,6 +30,7 @@ type Controller = ReturnType<typeof useCompanion>
 
 export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpMode }: { controller: Controller; shown: boolean; onClose: () => void; onSaved: () => Promise<void>; helpMode?: "suggest" | "product" }) {
     const { t } = useLanguage()
+    const showActionSheet = useAppActionSheet()
     const { isDark } = useTheme()
     const colors = useMentorPalette()
     const original = useRef<CompanionEntry | undefined>(c.editor?.entry).current
@@ -113,8 +115,10 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpM
     const photoOptions = () => {
         if (busy) return
         Keyboard.dismiss()
-        if (Platform.OS === "ios") ActionSheetIOS.showActionSheetWithOptions({ options: [mt("Отмена"), mt("Сделать фото"), mt("Выбрать из галереи")], cancelButtonIndex: 0, userInterfaceStyle: isDark ? "dark" : "light" }, selected => { if (selected > 0) void pickPhoto(selected === 1) })
-        else Alert.alert(mt("Фото еды"), undefined, [{ text: mt("Сделать фото"), onPress: () => void pickPhoto(true) }, { text: mt("Выбрать из галереи"), onPress: () => void pickPhoto(false) }, { text: mt("Отмена"), style: "cancel" }])
+        showActionSheet({ title: mt("Фото еды"), actions: [
+            { id: "camera", label: mt("Сделать фото"), onPress: () => void pickPhoto(true) },
+            { id: "gallery", label: mt("Выбрать из галереи"), onPress: () => void pickPhoto(false) },
+        ] })
     }
     const voice = async () => {
         if (phaseRef.current === "recording") {

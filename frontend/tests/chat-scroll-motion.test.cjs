@@ -80,14 +80,14 @@ test("Android retains its resize-based bottom follow", t => {
 })
 
 test("every composer gets the same spacing, safe area and keyboard gap", () => {
-    const { ChatComposerDock } = loadTs("screens/chat/chat-keyboard-motion.tsx", {
+    const { ChatComposerDock } = loadTs("components/platform/chat-layout.tsx", {
         react: { createContext: () => ({}), forwardRef: fn => fn, useContext: () => null, useEffect: () => {}, useState: () => [false, () => {}] },
         "react-native": { Platform: { OS: "ios" }, StyleSheet: { create: value => value, absoluteFillObject: { position: "absolute" } } },
         "react-native-safe-area-context": { useSafeAreaInsets: () => ({ bottom: 34 }) },
         "react-native-keyboard-controller": { KeyboardStickyView: "KeyboardStickyView" },
         "react-native-reanimated": {},
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
-        "@/screens/chat/chat-edge-blur": { ChatEdgeBlur: "ChatEdgeBlur" },
+        "@/components/platform/app-edge-material": { AppEdgeMaterial: "ChatEdgeBlur" },
     })
     for (const screenStyle of [{ paddingTop: 4 }, { paddingTop: 8, paddingHorizontal: 16 }, { paddingBottom: 90 }]) {
         const dock = ChatComposerDock({ children: "shared input", style: screenStyle }, null)

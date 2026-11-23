@@ -1,3 +1,4 @@
+import { AppFormLayout } from "@/components/platform/app-form-layout"
 import { requestChatRecordingPermission } from "@/screens/chat/chat-recording-permission"
 import { useCallback, useEffect, useRef, useState } from "react"
 import {
@@ -6,9 +7,7 @@ import {
     Image,
     ImageBackground,
     Keyboard,
-    KeyboardAvoidingView,
     Platform,
-    Pressable,
     RefreshControl,
     ScrollView,
     Text,
@@ -25,8 +24,8 @@ import * as ImagePicker from "expo-image-picker"
 import { useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
-import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock } from "@/screens/chat/chat-keyboard-motion"
-import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
+import { ChatKeyboardPane, ChatMessageScrollView, ChatComposerDock } from "@/components/platform/chat-layout"
+import { AppEdgeMaterial as ChatEdgeBlur } from "@/components/platform/app-edge-material"
 import { ROUTES } from "@/constants/routes"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
 import { useSupportChat } from "@/hooks/chat/use-support-chat"
@@ -46,14 +45,15 @@ import {
 } from "@/screens/chat/chat-attachments"
 import { AttachmentSheet, QueuedAttachmentStrip } from "@/screens/chat/chat-screen.attachments"
 import {
-    type AttachmentMode,
     CHAT_BACKGROUND_DARK,
     CHAT_BACKGROUND_LIGHT,
     CHAT_IDLE_AUDIO_MODE,
     CHAT_RECORDING_AUDIO_MODE,
 } from "@/screens/chat/chat-screen.constants"
 import { ChatComposer } from "@/screens/chat/chat-composer"
-import { NativeChatAction, NativeChatMenu, NativeChatTitleMaterial } from "@/screens/chat/native-chat-controls"
+import { AppIconButton } from "@/components/platform/app-icon-button"
+import { AppSurface } from "@/components/platform/app-surface"
+import { AppMenu } from "@/components/platform/app-menu"
 import type { ChatMode } from "@/screens/chat/chat-mode-switcher"
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { createSupportChatStyles } from "@/screens/chat/support-chat-screen.styles"
@@ -103,7 +103,7 @@ export function SupportChatScreen({
     const { isDark, palette, themeName } = useTheme()
     const { t } = useLanguage()
     const router = useRouter()
-    const { top, bottom } = useSafeAreaInsets()
+    const { top } = useSafeAreaInsets()
     const [cameraPermission, requestCameraPermission] = useCameraPermissions()
     const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY)
     const audioRecorderState = useAudioRecorderState(audioRecorder, 200)
@@ -111,7 +111,6 @@ export function SupportChatScreen({
     const chatScroll = useChatScroll(scrollRef, null)
     const [draft, setDraft] = useState("")
     const [attachments, setAttachments] = useState<UploadableChatAttachment[]>([])
-    const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("photo")
     const [attachmentSheetVisible, setAttachmentSheetVisible] = useState(false)
     const [composerHeight, setComposerHeight] = useState(74)
     const voiceStarting = useRef(false)
@@ -173,7 +172,6 @@ export function SupportChatScreen({
             return
         }
         Keyboard.dismiss()
-        setAttachmentMode("photo")
         setAttachmentSheetVisible(true)
     }, [inbox?.active, t])
 
@@ -355,25 +353,19 @@ export function SupportChatScreen({
                 </> : null}
                 {!embedded ? <View style={[styles.header, { top: headerTop }]}>
                     <View style={styles.backControl}>
-                        {NativeChatAction ? <NativeChatAction
-                            action="back" dark={isDark} label={t("nav.back")}
-                            onAction={() => router.canGoBack() ? router.back() : router.replace(ROUTES.discover)}
-                            style={styles.nativeBackButton}
-                        /> : <Pressable accessibilityLabel={t("nav.back")} accessibilityRole="button"
-                            onPress={() => router.canGoBack() ? router.back() : router.replace(ROUTES.discover)}
-                            style={styles.backButton}><Text style={styles.backText}>‹</Text></Pressable>}
+                        <AppIconButton action="back" dark={isDark} label={t("nav.back")} onPress={() => router.canGoBack() ? router.back() : router.replace(ROUTES.discover)} backgroundColor={palette.surfaceOverlay} color={palette.text} style={styles.nativeBackButton} />
                     </View>
                     <View style={styles.titlePill}>
-                        {NativeChatTitleMaterial ? <NativeChatTitleMaterial dark={isDark} pointerEvents="none" style={styles.titleMaterial} /> : <View pointerEvents="none" style={styles.titleFallback} />}
+                        <AppSurface dark={isDark} fallbackColor={palette.surfaceOverlay} pointerEvents="none" style={styles.titleMaterial} />
                         <Text accessibilityRole="header" numberOfLines={1} style={styles.headerTitle}>{t("chat.supportTitle")}</Text>
                     </View>
                 </View> : null}
 
-                <KeyboardAvoidingView
+                <AppFormLayout
                     enabled={!embedded && !iosChat}
-                    behavior={iosChat ? "padding" : "height"}
+
                     contentContainerStyle={chatStyles.keyboardContent}
-                    keyboardVerticalOffset={0}
+
                     style={styles.keyboard}
                 >
                     <View style={chatStyles.keyboardContent}>
@@ -398,41 +390,11 @@ export function SupportChatScreen({
                             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { void refresh() }} tintColor={palette.primary} />}
                             style={styles.messages}
                         >
-                        {NativeChatMenu && inbox?.previous.length ? (
-                            <NativeChatMenu
-                                dark={isDark}
-                                label={t("chat.supportHistory")}
-                                labels={historyItems.map(item => item.id === inbox.active?.id ? t("chat.supportCurrent") : item.subject || `#${item.id}`)}
-                                details={historyItems.map(item => `${statusLabels[item.status]} · ${historyDate(item.last_message_at)}`)}
-                                selectedIndex={historyItems.findIndex(item => item.id === conversation?.id)}
-                                onSelect={({ nativeEvent: { index } }) => {
-                                    const item = historyItems[index]
-                                    if (!item) return
-                                    if (item.id === inbox.active?.id) closePrevious()
-                                    else void openPrevious(item.id)
-                                }}
-                                style={{ height: 44, marginBottom: spacing.md }}
-                            />
-                        ) : inbox?.previous.length ? (
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyRow}>
-                                {inbox.active && isHistorical ? (
-                                    <Pressable onPress={closePrevious} style={styles.historyCard}>
-                                        <Text style={styles.historyTitle}>{t("chat.supportCurrent")}</Text>
-                                        <Text style={styles.historyMeta}>{inbox.active.subject}</Text>
-                                    </Pressable>
-                                ) : null}
-                                {inbox.previous.map((item) => (
-                                    <Pressable
-                                        key={item.id}
-                                        onPress={() => { void openPrevious(item.id) }}
-                                        style={[styles.historyCard, conversation?.id === item.id ? styles.historyCardActive : null]}
-                                    >
-                                        <Text numberOfLines={1} style={styles.historyTitle}>{item.subject || `#${item.id}`}</Text>
-                                        <Text style={styles.historyMeta}>{statusLabels[item.status]} · {historyDate(item.last_message_at)}</Text>
-                                    </Pressable>
-                                ))}
-                            </ScrollView>
-                        ) : null}
+                        {inbox?.previous.length ? <AppMenu dark={isDark} label={t("chat.supportHistory")} color={palette.text} fallbackColor={palette.surfaceOverlay}
+                            options={historyItems.map(item => ({ id: String(item.id), label: item.id === inbox.active?.id ? t("chat.supportCurrent") : item.subject || `#${item.id}`, detail: `${statusLabels[item.status]} · ${historyDate(item.last_message_at)}` }))}
+                            value={conversation ? String(conversation.id) : undefined}
+                            onChange={id => { if (Number(id) === inbox.active?.id) closePrevious(); else void openPrevious(Number(id)) }}
+                            style={{ minHeight: 44, marginBottom: spacing.md }} /> : null}
 
                         <QuietLoading loading={!inbox && !error} />
                         {inbox && !loading && !conversation ? (
@@ -516,17 +478,14 @@ export function SupportChatScreen({
                             </ChatComposerDock>
                         ) : null}
                     </View>
-                </KeyboardAvoidingView>
+                </AppFormLayout>
                 {!embedded && iosChat ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
                 <AttachmentSheet
-                    activeMode={attachmentMode}
                     allowFiles={false}
-                    bottomInset={bottom}
                     onClose={closeAttachmentSheet}
                     onOpenCamera={() => { void openCamera() }}
                     onOpenNativeGallery={() => { void openGallery() }}
                     onPickFiles={() => undefined}
-                    onSelectMode={setAttachmentMode}
                     visible={attachmentSheetVisible}
                 />
             </View>

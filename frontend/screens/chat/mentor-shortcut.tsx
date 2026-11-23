@@ -1,8 +1,8 @@
-import { Pressable, StyleSheet, Text, View } from "react-native"
+import { Pressable, StyleSheet, Text } from "react-native"
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
-import { NativeChatTitleMaterial } from "@/screens/chat/native-chat-controls"
+import { AppSurface } from "@/components/platform/app-surface"
 import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
 import type { ProfileData } from "@/services/api/companion"
 
@@ -16,7 +16,7 @@ export function MentorShortcut({ onPress, disabled = false, goal }: { onPress: (
     const accessibilityLabel = title.replace("\n", ". ")
     return <Pressable testID="mentor-open-shortcut" accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityState={{ disabled }} disabled={disabled} onPress={onPress}
         style={({ pressed }) => [styles.button, { opacity: disabled ? 0.45 : pressed ? 0.7 : 1 }]}>
-        {NativeChatTitleMaterial ? <NativeChatTitleMaterial dark={isDark} pointerEvents="none" style={StyleSheet.absoluteFill} /> : <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.fallback, { backgroundColor: palette.surface }]} />}
+        <AppSurface dark={isDark} fallbackColor={palette.surface} radius={29} pointerEvents="none" style={StyleSheet.absoluteFill} />
         <MentorIcon name="leaf" size={25} color={colors.green} />
         <Text numberOfLines={2} style={[styles.label, { color: colors.green }]}>{title}</Text>
     </Pressable>

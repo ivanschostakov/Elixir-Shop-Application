@@ -1,11 +1,10 @@
+import { AppFormLayout } from "@/components/platform/app-form-layout"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
     ActivityIndicator,
     Alert,
     Keyboard,
-    KeyboardAvoidingView,
     Modal,
-    Platform,
     Pressable,
     Text,
     TextInput,
@@ -231,9 +230,9 @@ export default function PersonalDataScreen() {
     }, [handleSave, hasPendingPersonalDataChanges, isSaving, stickyFooterStyles, t])
 
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+        <AppFormLayout
+            androidBehavior={null}
+            iosOffset={12}
             style={ProfileScreenStyles.screen}
         >
             <Modal visible={Boolean(verificationEmail)} onRequestClose={() => setVerificationEmail(null)}>
@@ -339,6 +338,6 @@ export default function PersonalDataScreen() {
                     }}
                 />
             </FeedTemplate>
-        </KeyboardAvoidingView>
+        </AppFormLayout>
     )
 }

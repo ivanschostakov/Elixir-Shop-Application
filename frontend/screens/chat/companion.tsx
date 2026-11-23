@@ -1,8 +1,9 @@
+import { AppFormLayout } from "@/components/platform/app-form-layout"
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useIsFocused } from "@react-navigation/native"
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from "react-native"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { getErrorMessage } from "@/utils/errors"
 import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, getCompanionEntries, getCompanionEvents, getCompanionSummary, getCompanionSupply, getNutritionSuggestion, requestKey } from "@/services/api/companion"
@@ -208,7 +209,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
         {navigationVisible ? dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label={mt("Мой курс · дневник · прогресс")} disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} /> : null}
         {c.error && !workspaceVisible ? <><Copy>{c.error}</Copy><Button label={mt("Обновить")} onPress={() => void changed()} /></> : null}
         <Modal visible={!!c.editor} animationType="slide" presentationStyle={nutritionEditor ? "fullScreen" : "pageSheet"} onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>
-            <KeyboardAvoidingView style={{ flex: 1, backgroundColor: nutritionEditor ? colors.surface : colors.mint }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+            <AppFormLayout style={{ flex: 1, backgroundColor: nutritionEditor ? colors.surface : colors.mint }} androidBehavior={null}>
                 {nutritionEditor ? <MentorNutritionEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} shown={editorShown} onClose={() => c.setEditor(null)} /> : <>
                 <View style={[styles.modalHeader, { backgroundColor: colors.surface }]}>
                     <View style={styles.modalBrandRow}>
@@ -226,7 +227,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
                     </View>
                 </ScrollView>
                 </>}
-            </KeyboardAvoidingView>
+            </AppFormLayout>
         </Modal>
     </View>
 }

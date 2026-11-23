@@ -1,3 +1,4 @@
+import { ActionSheetProvider } from "@expo/react-native-action-sheet"
 import { useEffect } from "react"
 import { Asset } from "expo-asset"
 import { router } from "expo-router"
@@ -101,7 +102,7 @@ function RootLayoutContent() {
         <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
             <SafeAreaProvider>
                 <KeyboardProvider enabled={Platform.OS === "ios"} preload={false}>
-                    <LanguageProvider>
+                    <LanguageProvider><ActionSheetProvider>
                         <VersionGate>
                             <AuthProvider>
                                 <TelegramWebAppGate>
@@ -109,7 +110,7 @@ function RootLayoutContent() {
                                 </TelegramWebAppGate>
                             </AuthProvider>
                         </VersionGate>
-                    </LanguageProvider>
+                    </ActionSheetProvider></LanguageProvider>
                 </KeyboardProvider>
             </SafeAreaProvider>
         </GestureHandlerRootView>

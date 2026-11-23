@@ -1,5 +1,5 @@
 import { Platform, StyleSheet, View } from "react-native"
-import { BlurView } from "expo-blur"
+import { AppBlurSurface as BlurView } from "@/components/platform/app-blur-surface"
 import { LinearGradient } from "expo-linear-gradient"
 
 type EdgeBlurProps = {

@@ -1,3 +1,4 @@
+import { AppCalendar } from "@/components/platform/app-calendar"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     ActivityIndicator,
@@ -12,9 +13,9 @@ import {
 } from "react-native"
 import type { StyleProp, TextStyle, ViewStyle } from "react-native"
 import { router } from "expo-router"
-import { Picker } from "@react-native-picker/picker"
+import { AppPickerSheetField, type AppPickerOption as PickerOption } from "@/components/platform/app-picker"
 import LottieView from "lottie-react-native"
-import { CalendarList, LocaleConfig } from "react-native-calendars"
+import { LocaleConfig } from "react-native-calendars"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { ContentTabBar, type ContentTabBarItem } from "@/components/content/content-tab-bar"
@@ -79,25 +80,6 @@ if (!LocaleConfig.locales[HISTORY_CALENDAR_LOCALE]) {
 
 LocaleConfig.defaultLocale = HISTORY_CALENDAR_LOCALE
 
-type PickerOption<TValue extends string> = {
-    key: string
-    label: string
-    value: TValue
-}
-
-type PickerSheetFieldProps<TValue extends string> = {
-    disabled?: boolean
-    label: string
-    onChange: (value: TValue) => void
-    options: readonly PickerOption<TValue>[]
-    selectedValue: TValue
-    title: string
-    valueLabel: string
-    wrapStyle?: StyleProp<ViewStyle>
-    labelStyle?: StyleProp<TextStyle>
-    triggerStyle?: StyleProp<ViewStyle>
-}
-
 type DateRangeSheetFieldProps = {
     label: string
     onChange: (range: Pick<ProfileHistoryFilters, "createdFrom" | "createdTo">) => void
@@ -106,133 +88,6 @@ type DateRangeSheetFieldProps = {
     wrapStyle?: StyleProp<ViewStyle>
     labelStyle?: StyleProp<TextStyle>
     triggerStyle?: StyleProp<ViewStyle>
-}
-
-function PickerSheetField<TValue extends string>({
-    disabled = false,
-    label,
-    onChange,
-    options,
-    selectedValue,
-    title,
-    valueLabel,
-    wrapStyle,
-    labelStyle,
-    triggerStyle,
-}: PickerSheetFieldProps<TValue>) {
-    const contentStyles = useThemeStyles(createContentStyles)
-    const { t } = useLanguage()
-    const { bottom: bottomInset } = useSafeAreaInsets()
-    const [isOpen, setIsOpen] = useState(false)
-    const [draftValue, setDraftValue] = useState(selectedValue)
-
-    useEffect(() => {
-        if (!isOpen) {
-            setDraftValue(selectedValue)
-        }
-    }, [isOpen, selectedValue])
-
-    return (
-        <>
-            <View style={wrapStyle}>
-                <Text style={labelStyle}>{label}</Text>
-
-                <Pressable
-                    accessibilityLabel={label}
-                    accessibilityRole="button"
-                    disabled={disabled}
-                    onPress={() => setIsOpen(true)}
-                    style={({ pressed }) => [
-                        contentStyles.browseTrigger,
-                        !disabled && contentStyles.browseTriggerActive,
-                        triggerStyle,
-                        pressed && !disabled && contentStyles.browseTriggerPressed,
-                    ]}
-                >
-                    <Text
-                        numberOfLines={1}
-                        style={[
-                            contentStyles.browseTriggerValue,
-                            disabled && contentStyles.browseTriggerPlaceholderValue,
-                        ]}
-                    >
-                        {valueLabel}
-                    </Text>
-                </Pressable>
-            </View>
-
-            <Modal
-                animationType="fade"
-                onRequestClose={() => setIsOpen(false)}
-                transparent
-                visible={isOpen}
-            >
-                <View style={contentStyles.browsePickerBackdrop}>
-                    <Pressable
-                        accessibilityRole="button"
-                        onPress={() => setIsOpen(false)}
-                        style={contentStyles.browsePickerDismissArea}
-                    />
-
-                    <View
-                        style={[
-                            contentStyles.browsePickerSheet,
-                            { paddingBottom: Math.max(spacing.lg, bottomInset + spacing.sm) },
-                        ]}
-                    >
-                        <View style={contentStyles.browsePickerHeader}>
-                            <Text style={contentStyles.browsePickerTitle}>{title}</Text>
-
-                            <View style={contentStyles.browsePickerActions}>
-                                <Pressable
-                                    accessibilityLabel={t("common.cancel")}
-                                    accessibilityRole="button"
-                                    onPress={() => setIsOpen(false)}
-                                    style={({ pressed }) => [
-                                        contentStyles.browsePickerAction,
-                                        pressed && contentStyles.browsePickerActionPressed,
-                                    ]}
-                                >
-                                    <Text style={contentStyles.browsePickerActionText}>
-                                        {t("common.cancel")}
-                                    </Text>
-                                </Pressable>
-
-                                <Pressable
-                                    accessibilityLabel={t("common.done")}
-                                    accessibilityRole="button"
-                                    onPress={() => {
-                                        onChange(draftValue)
-                                        setIsOpen(false)
-                                    }}
-                                    style={({ pressed }) => [
-                                        contentStyles.browsePickerPrimaryAction,
-                                        pressed && contentStyles.browsePickerActionPressed,
-                                    ]}
-                                >
-                                    <Text style={contentStyles.browsePickerPrimaryActionText}>
-                                        {t("common.done")}
-                                    </Text>
-                                </Pressable>
-                            </View>
-                        </View>
-
-                        <Picker
-                            selectedValue={draftValue}
-                            onValueChange={(value) => {
-                                setDraftValue(value as TValue)
-                            }}
-                            style={contentStyles.browsePicker}
-                        >
-                            {options.map((option) => (
-                                <Picker.Item key={option.key} label={option.label} value={option.value} />
-                            ))}
-                        </Picker>
-                    </View>
-                </View>
-            </Modal>
-        </>
-    )
 }
 
 export function DateRangeSheetField({
@@ -362,7 +217,7 @@ export function DateRangeSheetField({
 
                         <View style={profileHistoryScreenStyles.dateSheetBody}>
                             <View style={profileHistoryScreenStyles.calendarWrap}>
-                                <CalendarList
+                                <AppCalendar paged
                                     calendarWidth={Math.max(Math.round(width), 320)}
                                     current={visibleMonth}
                                     futureScrollRange={12}
@@ -768,7 +623,7 @@ export default function ProfileHistoryScreen() {
                                 wrapStyle={contentStyles.browseSectionCompact}
                             />
 
-                            <PickerSheetField
+                            <AppPickerSheetField
                                 label={t("profile.history.statusField")}
                                 labelStyle={[
                                     contentStyles.browseSectionLabel,

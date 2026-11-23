@@ -1,4 +1,5 @@
-import { Platform, StyleSheet } from "react-native"
+import { shadows } from "@/theme/shadows"
+import { StyleSheet } from "react-native"
 
 import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
@@ -11,17 +12,7 @@ export const createStickyFooterStyles = (colors: ThemePalette) => StyleSheet.cre
         backgroundColor: colors.background,
         borderTopLeftRadius: spacing.xl,
         borderTopRightRadius: spacing.xl,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 -4px 16px rgba(0, 0, 0, 0.12)",
-            },
-            default: {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: -4 },
-                shadowOpacity: 0.12,
-                shadowRadius: 16,
-            },
-        }),
+        ...shadows.footerFooterBase,
         paddingBottom: spacing.md,
     },
     elevatedSurface: {

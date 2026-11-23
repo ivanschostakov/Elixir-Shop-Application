@@ -1,4 +1,5 @@
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from "react-native"
+import { AppFormLayout } from "@/components/platform/app-form-layout"
+import { Pressable, ScrollView, Text, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { Path, Svg } from "react-native-svg"
 
@@ -12,8 +13,7 @@ export default function AuthFormLayout({ backAction, children, error, scrollRef,
     const authSharedStyles = useThemeStyles(createAuthSharedStyles)
     const { palette } = useTheme()
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
+        <AppFormLayout
             style={authSharedStyles.keyboard}
         >
             <SafeAreaView style={authSharedStyles.container}>
@@ -50,6 +50,6 @@ export default function AuthFormLayout({ backAction, children, error, scrollRef,
                     </View>
                 </ScrollView>
             </SafeAreaView>
-        </KeyboardAvoidingView>
+        </AppFormLayout>
     )
 }

@@ -1,4 +1,5 @@
-import { BlurView } from "expo-blur"
+import { AppFormLayout } from "@/components/platform/app-form-layout"
+import { AppBlurSurface as BlurView } from "@/components/platform/app-blur-surface"
 import { selectVisibleMarkers } from "@/utils/delivery/visible-markers"
 import * as Clipboard from "expo-clipboard"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
@@ -9,7 +10,6 @@ import {
     AppState,
     Easing,
     Keyboard,
-    KeyboardAvoidingView,
     Linking,
     Platform,
     Pressable,
@@ -1401,8 +1401,7 @@ export default function DeliveryScreen() {
                         />
                     </Animated.View>
 
-                    <KeyboardAvoidingView
-                        behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    <AppFormLayout
                         pointerEvents="box-none"
                         style={deliveryScreenStyles.floatingControlsFrame}
                     >
@@ -1476,7 +1475,7 @@ export default function DeliveryScreen() {
                                 />
                             </StickyFooterSurface>
                         </Animated.View>
-                    </KeyboardAvoidingView>
+                    </AppFormLayout>
                 </View>
             }
             overlay={null}

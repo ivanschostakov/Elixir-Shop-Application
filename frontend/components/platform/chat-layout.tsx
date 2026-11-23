@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { KeyboardChatScrollView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller"
 import Reanimated, { useAnimatedStyle, useDerivedValue, useSharedValue, type SharedValue } from "react-native-reanimated"
 import { useTheme } from "@/providers/theme-provider"
-import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
+import { AppEdgeMaterial as ChatEdgeBlur } from "@/components/platform/app-edge-material"
 
 type Geometry = { dock: SharedValue<number>; padding: SharedValue<number> }
 const ComposerGeometry = createContext<Geometry | null>(null)

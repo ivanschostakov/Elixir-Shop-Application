@@ -13,21 +13,4 @@ export type ProductBrowseControlsProps = {
 
 export type CategorySelectionValue = number | "all" | "new"
 
-export type PickerOption<TValue extends number | string> = {
-    key: string
-    label: string
-    value: TValue
-}
-
-export type PickerSheetFieldProps<TValue extends number | string> = {
-    disabled?: boolean
-    label: string
-    onChange: (value: TValue) => void
-    options: readonly PickerOption<TValue>[]
-    selectedValue: TValue
-    title: string
-    valueLabel: string
-    wrapStyle?: object
-    labelStyle?: object
-    triggerStyle?: object
-}
+export type { AppPickerOption as PickerOption } from "@/components/platform/app-picker"

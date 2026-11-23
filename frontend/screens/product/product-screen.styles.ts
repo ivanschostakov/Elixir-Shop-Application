@@ -1,4 +1,5 @@
-import { Platform, StyleSheet } from "react-native"
+import { shadows } from "@/theme/shadows"
+import { StyleSheet } from "react-native"
 
 import type { ThemePalette } from "@/theme/colors"
 import { spacing } from "@/theme/spacing"
@@ -40,17 +41,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         borderRadius: spacing.lg,
         overflow: "hidden",
         width: "100%",
-        ...Platform.select({
-            web: {
-                boxShadow: "0 8px 18px rgba(0, 0, 0, 0.06)",
-            },
-            default: {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.06,
-                shadowRadius: 18,
-            },
-        }),
+        ...shadows.productImageCard,
         paddingBottom: spacing.xs,
     },
     image: {
@@ -249,17 +240,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         borderRadius: spacing.lg,
         overflow: "hidden",
         paddingVertical: spacing.md,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
-            },
-            default: {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.04,
-                shadowRadius: 16,
-            },
-        }),
+        ...shadows.productSimilarRailCard,
         width: "100%",
     },
     variantCard: {
@@ -271,17 +252,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         paddingTop: spacing.sm,
         paddingBottom: spacing.sm,
         marginBottom: spacing.md,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.05)",
-            },
-            default: {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.05,
-                shadowRadius: 16,
-            },
-        }),
+        ...shadows.productVariantCard,
         width: "100%",
     },
     variantLabel: {
@@ -367,17 +338,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         paddingHorizontal: spacing.lg,
         paddingTop: spacing.sm,
         paddingBottom: spacing.md,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
-            },
-            default: {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.04,
-                shadowRadius: 16,
-            },
-        }),
+        ...shadows.productSimilarRailCard,
         width: "100%",
     },
     feedbackSection: { gap: 12, width: "100%" },
@@ -397,17 +358,7 @@ export const createProductScreenStyle = (colors: ThemePalette) => StyleSheet.cre
         minHeight: 96,
         paddingHorizontal: spacing.md,
         paddingVertical: spacing.md,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 8px 16px rgba(0, 0, 0, 0.04)",
-            },
-            default: {
-                shadowColor: "#000000",
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.04,
-                shadowRadius: 16,
-            },
-        }),
+        ...shadows.productSimilarRailCard,
     },
     feedbackReviewsSummaryCard: {
         flex: 1.35,

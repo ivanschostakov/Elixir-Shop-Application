@@ -1,5 +1,6 @@
+import { AppFormLayout } from "@/components/platform/app-form-layout"
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react"
-import { Animated, Easing, Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { Animated, Easing, Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
@@ -82,7 +83,7 @@ export function MentorOnboarding({ visible, value, onChange, onClose, onSave, sa
 
     return <Modal visible={visible} onDismiss={onDismiss} animationType={reducedMotion ? "none" : "fade"} presentationStyle="fullScreen" onRequestClose={children ? onClose : back}>
         {children ? <View style={[styles.screen, { backgroundColor: colors.surface, paddingTop: contentSafeTop ? insets.top : 0, paddingBottom: contentSafeBottom ? Math.max(insets.bottom, 12) : 0 }]}>{children}</View> :
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={[styles.screen, { backgroundColor: colors.surface, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 12) }]}>
+        <AppFormLayout androidBehavior={null} style={[styles.screen, { backgroundColor: colors.surface, paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 12) }]}>
             <MentorFlowHeader section={mt("Обязательная часть")} step={step} total={5} onBack={step ? back : undefined} onClose={onClose} busy={saving} />
             <View testID="mentor-onboarding-transition" style={styles.viewport}>
                 {[0, 1, 2, 3, 4].map(index => {
@@ -117,7 +118,7 @@ export function MentorOnboarding({ visible, value, onChange, onClose, onSave, sa
                 {validation || error ? <Text accessibilityRole="alert" style={styles.error}>{validation || error}</Text> : null}
                 <MentorFlowButton testID="mentor-onboarding-next" label={mt(step === 4 ? "Рассчитать КБЖУ" : "Дальше")} onPress={next} busy={saving} />
             </View>
-        </KeyboardAvoidingView>}
+        </AppFormLayout>}
     </Modal>
 }
 

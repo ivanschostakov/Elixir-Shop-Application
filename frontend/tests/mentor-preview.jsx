@@ -12,7 +12,7 @@ import { ChatModePane, ChatModeTransition } from "@/screens/chat/chat-mode-trans
 import { MentorModeToggle } from "@/screens/chat/mentor-mode-toggle"
 import { SendActionButton } from "@/screens/chat/chat-screen.core-components"
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
-import { ChatKeyboardLayout } from "@/screens/chat/chat-keyboard-layout"
+import { ChatKeyboardLayout } from "@/components/platform/chat-keyboard-layout"
 import { ChatComposerInput } from "@/screens/chat/chat-composer-input"
 import { ChatFormFocusProvider } from "@/screens/chat/chat-form-focus"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"

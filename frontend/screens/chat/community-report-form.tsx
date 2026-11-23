@@ -1,5 +1,6 @@
+import { AppFormLayout } from "@/components/platform/app-form-layout"
 import { useRef, useState } from "react"
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 import { useLanguage } from "@/providers/language-provider"
@@ -38,7 +39,7 @@ export function CommunityReportForm({ message, onClose, onBusyChange }: { messag
         <Text style={{ color: palette.text }}>{t("chat.communityReportSentBody")}</Text>
         <Pressable accessibilityRole="button" onPress={close} style={{ padding: 16, backgroundColor: palette.primary, borderRadius: 12, alignItems: "center" }}><Text style={{ color: "#fff" }}>{t("common.done")}</Text></Pressable>
     </View>
-    return <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1, backgroundColor: palette.background }}>
+    return <AppFormLayout androidBehavior={null} style={{ flex: 1, backgroundColor: palette.background }}>
             <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 24, paddingTop: Math.max(insets.top, 24), paddingBottom: Math.max(insets.bottom, 24), gap: 16 }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                     <Text accessibilityRole="header" style={{ flex: 1, color: palette.text, fontSize: 22, fontWeight: "600" }}>{t("chat.communityReportAction")}</Text>
@@ -56,5 +57,5 @@ export function CommunityReportForm({ message, onClose, onBusyChange }: { messag
                     {sending ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "600" }}>{t("chat.communityReportSend")}</Text>}
                 </Pressable>
             </ScrollView>
-        </KeyboardAvoidingView>
+        </AppFormLayout>
 }

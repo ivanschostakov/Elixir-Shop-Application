@@ -72,12 +72,12 @@ test("stationary chat chrome and retained conversations share keyboard motion wi
 
 test("keyboard shell keeps its screen geometry while conversation and composer track the keyboard", () => {
     const renderShell = platform => {
-        const { ChatKeyboardLayout } = loadTs("screens/chat/chat-keyboard-layout.tsx", {
+        const { ChatKeyboardLayout } = loadTs("components/platform/chat-keyboard-layout.tsx", {
             react: { useEffect: () => {}, useRef: value => ({ current: value }) },
             "react-native": { Animated: { Value: class {}, View: "AnimatedView" }, View: "View", KeyboardAvoidingView: "KeyboardAvoidingView", Platform: { OS: platform }, StyleSheet: { create: value => value } },
             "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
-            "@/screens/chat/chat-edge-blur": { ChatEdgeBlur: "ChatEdgeBlur" },
-            "@/screens/chat/native-chat-controls": { NativeChatKeyboardMaterial: "NativeChatKeyboardMaterial" },
+            "@/components/platform/app-edge-material": { ChatEdgeBlur: "ChatEdgeBlur" },
+            "@/components/platform/native-controls": { NativeChatKeyboardMaterial: "NativeChatKeyboardMaterial" },
         })
         const tree = ChatKeyboardLayout({ children: "chat content" })
         const [backing, avoidance] = tree.props.children

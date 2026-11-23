@@ -24,6 +24,8 @@ function harness(file, overrides = {}) {
         react, "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
         "react-native": { View: "View", Text: "Text", Pressable: "Pressable", TextInput: "TextInput", Modal: "Modal", ScrollView: "ScrollView", Switch: "Switch", ActivityIndicator: "Spinner", KeyboardAvoidingView: "KeyboardAvoidingView", Keyboard: { dismiss() {} }, Platform: { OS: "ios" }, Easing: { bezier() {} }, StyleSheet: { create: value => value, absoluteFill: {}, absoluteFillObject: {} }, Animated: { Value, View: "AnimatedView", timing: (value, config) => ({ start() { animations.push(config); value.setValue(config.toValue) }, stop() {} }) } },
         "@react-native-picker/picker": { Picker: Object.assign("Picker", { Item: "PickerItem" }) },
+        "@/components/platform/app-form-layout": { AppFormLayout: "KeyboardAvoidingView" },
+        "react-native-svg": { default: "Svg", Path: "Path" },
         "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 47, bottom: 34 }) },
         "@/providers/language-provider": { useLanguage() {} },
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false, palette: { surface: "#FFFFFF" } }) },
@@ -293,17 +295,17 @@ test("each reminder has an independently editable time while disabled and weekly
 test("time selection uses UIDatePicker on iOS and the system time dialog on Android", () => {
     let saved, opened
     const picker = { default: "SystemTimePicker", DateTimePickerAndroid: { open: options => { opened = options } } }
-    const props = { label: "Отметить вес", value: "08:00", onChange: value => { saved = value }, disabled: false }
-    const ios = harness("screens/chat/mentor-reminder-time.tsx", { "@react-native-community/datetimepicker": picker })
-    const view = ios.render("MentorReminderTime", props)
+    const props = { locale: "ru", dark: false, colors: {}, label: "Отметить вес", value: "08:00", onChange: value => { saved = value }, disabled: false }
+    const ios = harness("components/platform/app-date-time-picker.tsx", { "@react-native-community/datetimepicker": picker })
+    const view = ios.render("AppTimePicker", props)
     const native = nodes(view).find(node => node.type === "SystemTimePicker")
     assert.equal(native.props.mode, "time"); assert.equal(native.props.display, "compact"); assert.equal(native.props.value.getHours(), 8)
     const picked = new Date(); picked.setHours(17, 35, 0, 0)
     native.props.onChange({ type: "dismissed" }, picked); assert.equal(saved, undefined)
     native.props.onChange({ type: "set" }, picked); assert.equal(saved, "17:35")
-    const android = harness("screens/chat/mentor-reminder-time.tsx", { "@react-native-community/datetimepicker": picker,
+    const android = harness("components/platform/app-date-time-picker.tsx", { "@react-native-community/datetimepicker": picker,
         "react-native": { View: "View", Text: "Text", Pressable: "Pressable", Keyboard: { dismiss() {} }, Platform: { OS: "android" }, StyleSheet: { create: v => v } } })
-    android.render("MentorReminderTime", props).props.onPress()
+    android.render("AppTimePicker", props).props.onPress()
     assert.equal(opened.mode, "time"); assert.equal(opened.is24Hour, true)
     opened.onChange({ type: "set" }, picked); assert.equal(saved, "17:35")
 })
@@ -348,12 +350,16 @@ test("adult onboarding calculates directly without an extra confirmation dialog"
 test("the mentor invitation shares its leaf icon and keeps native glass on installed builds", () => {
     for (const native of [true, false]) {
         const h = harness("screens/chat/mentor-shortcut.tsx", {
-            "@/screens/chat/native-chat-controls": { NativeChatAction: "NativeAction", NativeChatTitleMaterial: "NativeGlass", nativeChatMentorActionAvailable: true, nativeChatMentorGreetingAvailable: native },
+            "@/components/platform/app-icon-button": { AppIconButton: "IconButton", hasNativeControls: false },
+        "@/components/platform/app-surface": { AppSurface: "SharedSurface", AppComposerSurface: "ComposerSurface" },
+        "@/components/platform/app-menu": { AppMenu: "Menu" },
+        "@/components/platform/app-form-layout": { AppFormLayout: "KeyboardAvoidingView" },
+        "@/components/platform/native-controls": { NativeChatAction: "NativeAction", NativeChatTitleMaterial: "NativeGlass", nativeChatMentorActionAvailable: true, nativeChatMentorGreetingAvailable: native },
         })
         let opened = 0
         const tree = h.render("MentorShortcut", { onPress: () => opened++, goal: "weight_loss" })
         const button = nodes(tree).find(node => node.props.testID === "mentor-open-shortcut")
-        assert.ok(nodes(tree).some(node => node.type === "NativeGlass"))
+        assert.ok(nodes(tree).some(node => node.type === "SharedSurface"))
         assert.ok(nodes(tree).some(node => node.type === "Icon" && node.props.name === "leaf"))
         button.props.onPress()
         assert.equal(nodes(tree).filter(node => node.type === "NativeAction" || node.type === "Pressable").length, 1)

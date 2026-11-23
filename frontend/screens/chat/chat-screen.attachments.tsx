@@ -1,20 +1,17 @@
+import { ATTACHMENT_ICON_COLOR } from "@/screens/chat/chat-screen.constants"
+import { AppActionSheet } from "@/components/platform/app-action-sheet"
 import { getAuthTokens } from "@/services/auth/session"
-import { useEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useState } from "react"
 import {
     Image,
-    ActionSheetIOS,
-    Modal,
-    Platform,
     Pressable,
     ScrollView,
     Text,
-    useWindowDimensions,
     View,
 } from "react-native"
 import Svg, { Path } from "react-native-svg"
 
 import { useLanguage } from "@/providers/language-provider"
-import { spacing } from "@/theme/spacing"
 import type { AIAttachmentRead, UploadableChatAttachment } from "@/services/api/ai-chat.types"
 import {
     getAttachmentDisplayName,
@@ -24,202 +21,26 @@ import {
     isUploadablePhotoAttachment,
     normalizeImageAspectRatio,
 } from "@/screens/chat/chat-attachments"
-import { ATTACHMENT_ICON_COLOR, type AttachmentMode } from "@/screens/chat/chat-screen.constants"
 import { createChatScreenStyles } from "@/screens/chat/chat-screen.styles"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useTheme } from "@/providers/theme-provider"
-import CameraSvgIcon from "@/assets/icons/chat/camera-svgrepo-com.svg"
 
 type AttachmentSheetProps = {
-    activeMode: AttachmentMode
     allowFiles?: boolean
-    bottomInset: number
     onClose: () => void
     onOpenCamera: () => void
     onOpenNativeGallery: () => void
     onPickFiles: () => void
-    onSelectMode: (mode: AttachmentMode) => void
     visible: boolean
 }
 
-export function AttachmentSheet({
-    activeMode,
-    allowFiles = true,
-    bottomInset,
-    onClose,
-    onOpenCamera,
-    onOpenNativeGallery,
-    onPickFiles,
-    onSelectMode,
-    visible,
-}: AttachmentSheetProps) {
-    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
+export function AttachmentSheet({ allowFiles = true, onClose, onOpenCamera, onOpenNativeGallery, onPickFiles, visible }: AttachmentSheetProps) {
     const { t } = useLanguage()
-    const { height } = useWindowDimensions()
-    const { isDark } = useTheme()
-    const nativeSheetOpen = useRef(false)
-    useEffect(() => {
-        if (Platform.OS !== "ios" || !visible || nativeSheetOpen.current) return
-        nativeSheetOpen.current = true
-        const actions = [onOpenNativeGallery, onOpenCamera, ...(allowFiles ? [onPickFiles] : [])]
-        const options = [t("chat.attachmentsSelectGallery"), t("chat.attachmentsCameraTitle"), ...(allowFiles ? [t("chat.attachmentsFileTitle")] : []), t("common.cancel")]
-        ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex: options.length - 1, userInterfaceStyle: isDark ? "dark" : "light" }, index => {
-            nativeSheetOpen.current = false
-            onClose()
-            actions[index]?.()
-        })
-    }, [allowFiles, isDark, onClose, onOpenCamera, onOpenNativeGallery, onPickFiles, t, visible])
-    const sheetHeight = Math.min(height * 0.72, 620)
-    const bottomControlOffset = Math.max(bottomInset, spacing.sm)
-
-    if (Platform.OS === "ios") return null
-
-    return (
-        <Modal
-            animationType="fade"
-            onRequestClose={onClose}
-            statusBarTranslucent
-            transparent
-            visible={visible}
-        >
-            <View style={chatScreenStyles.attachmentModalRoot}>
-                <Pressable onPress={onClose} style={chatScreenStyles.attachmentBackdrop} />
-                <View
-                    style={[
-                        chatScreenStyles.attachmentSheet,
-                        {
-                            height: sheetHeight,
-                            paddingBottom: Math.max(bottomInset, spacing.sm),
-                        },
-                    ]}
-                >
-                    <View style={chatScreenStyles.attachmentSheetHeader}>
-                        <Pressable
-                            accessibilityLabel={t("nav.closeSearch")}
-                            onPress={onClose}
-                            style={chatScreenStyles.attachmentHeaderButton}
-                        >
-                            <Svg fill="none" height={24} viewBox="0 0 24 24" width={24}>
-                                <Path
-                                    d="m6 6 12 12M18 6 6 18"
-                                    stroke="#0A0A0A"
-                                    strokeLinecap="round"
-                                    strokeWidth={2.2}
-                                />
-                            </Svg>
-                        </Pressable>
-
-                        <View style={chatScreenStyles.attachmentTitleButton}>
-                            <Text numberOfLines={1} style={chatScreenStyles.attachmentSheetTitle}>
-                                {activeMode === "photo" || !allowFiles
-                                    ? t("chat.attachmentsPhotoTitle")
-                                    : t("chat.attachmentsFileTitle")}
-                            </Text>
-                        </View>
-
-                        <View style={chatScreenStyles.attachmentHeaderSpacer} />
-                    </View>
-                    <View style={chatScreenStyles.attachmentHandle} />
-
-                    <View style={chatScreenStyles.attachmentSheetBody}>
-                        {activeMode === "photo" || !allowFiles ? (
-                            <View style={chatScreenStyles.fileSheetBody}>
-                                <View style={chatScreenStyles.attachmentActionCard}>
-                                    <Pressable
-                                        onPress={onOpenNativeGallery}
-                                        style={chatScreenStyles.attachmentActionRow}
-                                    >
-                                        <GalleryActionIcon />
-                                        <Text style={chatScreenStyles.attachmentActionText}>
-                                            {t("chat.attachmentsSelectGallery")}
-                                        </Text>
-                                    </Pressable>
-                                    <View style={chatScreenStyles.attachmentActionDivider} />
-                                    <Pressable onPress={onOpenCamera} style={chatScreenStyles.attachmentActionRow}>
-                                        <CameraActionIcon />
-                                        <Text style={chatScreenStyles.attachmentActionText}>
-                                            {t("chat.attachmentsCameraTitle")}
-                                        </Text>
-                                    </Pressable>
-                                </View>
-                            </View>
-                        ) : (
-                            <View style={chatScreenStyles.fileSheetBody}>
-                                <View style={chatScreenStyles.attachmentActionCard}>
-                                    <Pressable
-                                        onPress={onOpenNativeGallery}
-                                        style={chatScreenStyles.attachmentActionRow}
-                                    >
-                                        <GalleryActionIcon />
-                                        <Text style={chatScreenStyles.attachmentActionText}>
-                                            {t("chat.attachmentsSelectGallery")}
-                                        </Text>
-                                    </Pressable>
-                                    <View style={chatScreenStyles.attachmentActionDivider} />
-                                    <Pressable onPress={onPickFiles} style={chatScreenStyles.attachmentActionRow}>
-                                        <FileActionIcon />
-                                        <Text style={chatScreenStyles.attachmentActionText}>
-                                            {t("chat.attachmentsSelectFiles")}
-                                        </Text>
-                                    </Pressable>
-                                </View>
-                            </View>
-                        )}
-                    </View>
-
-                    {allowFiles ? (
-                        <View style={[chatScreenStyles.attachmentModeBar, { bottom: bottomControlOffset }]}>
-                            <AttachmentModeButton
-                                active={activeMode === "photo"}
-                                icon={<GalleryActionIcon active={activeMode === "photo"} compact />}
-                                label={t("chat.attachmentsPhotoTab")}
-                                onPress={() => onSelectMode("photo")}
-                            />
-                            <AttachmentModeButton
-                                active={activeMode === "file"}
-                                icon={<FileActionIcon active={activeMode === "file"} compact />}
-                                label={t("chat.attachmentsFileTab")}
-                                onPress={() => onSelectMode("file")}
-                            />
-                        </View>
-                    ) : null}
-                </View>
-            </View>
-        </Modal>
-    )
-}
-
-function AttachmentModeButton({
-    active,
-    icon,
-    label,
-    onPress,
-}: {
-    active: boolean
-    icon: ReactNode
-    label: string
-    onPress: () => void
-}) {
-    const chatScreenStyles = useThemeStyles(createChatScreenStyles)
-    return (
-        <Pressable
-            onPress={onPress}
-            style={[
-                chatScreenStyles.attachmentModeButton,
-                active ? chatScreenStyles.attachmentModeButtonActive : null,
-            ]}
-        >
-            {icon}
-            <Text
-                style={[
-                    chatScreenStyles.attachmentModeLabel,
-                    active ? chatScreenStyles.attachmentModeLabelActive : null,
-                ]}
-            >
-                {label}
-            </Text>
-        </Pressable>
-    )
+    return <AppActionSheet visible={visible} onClose={onClose} actions={[
+        { id: "gallery", label: t("chat.attachmentsSelectGallery"), onPress: onOpenNativeGallery },
+        { id: "camera", label: t("chat.attachmentsCameraTitle"), onPress: onOpenCamera },
+        ...(allowFiles ? [{ id: "file", label: t("chat.attachmentsFileTitle"), onPress: onPickFiles }] : []),
+    ]} />
 }
 
 export function QueuedAttachmentStrip({
@@ -389,37 +210,6 @@ function MessageImageAttachment({
     )
 }
 
-function GalleryActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
-    const { palette } = useTheme()
-    const iconColor = active ? palette.primary : ATTACHMENT_ICON_COLOR
-    const size = compact ? 22 : 30
-
-    return (
-        <Svg fill="none" height={size} viewBox="0 0 24 24" width={size}>
-            <Path
-                d="M4.5 7.2A2.7 2.7 0 0 1 7.2 4.5h9.6a2.7 2.7 0 0 1 2.7 2.7v9.6a2.7 2.7 0 0 1-2.7 2.7H7.2a2.7 2.7 0 0 1-2.7-2.7V7.2Z"
-                stroke={iconColor}
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-            />
-            <Path
-                d="m5.1 16.6 3.7-3.8 2.6 2.4 3.5-4.1 4 4.8M9.1 8.6h.1"
-                stroke={iconColor}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-            />
-        </Svg>
-    )
-}
-
-function CameraActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
-    const { palette } = useTheme()
-    const iconColor = active ? palette.primary : ATTACHMENT_ICON_COLOR
-    const size = compact ? 22 : 30
-
-    return <CameraSvgIcon color={iconColor} height={size} width={size} />
-}
 
 function FileActionIcon({ active = false, compact = false }: { active?: boolean; compact?: boolean }) {
     const { palette } = useTheme()

@@ -1,8 +1,8 @@
 import { useEffect, useRef, type ReactNode } from "react"
 import { Animated, Dimensions, Keyboard, Platform, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native"
 import { useTheme } from "@/providers/theme-provider"
-import { ChatEdgeBlur } from "@/screens/chat/chat-edge-blur"
-import { NativeChatKeyboardMaterial } from "@/screens/chat/native-chat-controls"
+import { AppEdgeMaterial as ChatEdgeBlur } from "@/components/platform/app-edge-material"
+import { NativeChatKeyboardMaterial } from "@/components/platform/native-controls"
 
 /** Keep screen and header geometry fixed; each conversation follows the keyboard on the UI thread. */
 export function ChatKeyboardLayout({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {

@@ -1,5 +1,6 @@
+import { shadows } from "@/theme/shadows"
 import { DELIVERY_SUGGEST_ICON_BADGE_SIZE } from "@/components/delivery/delivery-suggest-icon.constants"
-import { Platform, StyleSheet } from "react-native"
+import { StyleSheet } from "react-native"
 import { spacing } from "@/theme/spacing"
 import type { ThemePalette } from "@/theme/colors"
 
@@ -52,18 +53,7 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         backgroundColor: colors.surfaceOverlaySoft,
         borderWidth: 1,
         borderColor: "rgba(17,24,39,0.06)",
-        ...Platform.select({
-            web: {
-                boxShadow: "0 10px 30px rgba(17, 24, 39, 0.08)",
-            },
-            default: {
-                shadowColor: "#111827",
-                shadowOffset: { width: 0, height: 8 },
-                shadowOpacity: 0.08,
-                shadowRadius: 20,
-                elevation: 4,
-            },
-        }),
+        ...shadows.deliveryLoadingCard,
     },
     loadingText: {
         marginLeft: spacing.sm,
@@ -122,18 +112,7 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         flexDirection: "row",
         position: "relative",
         padding: 4,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 12px 30px rgba(17, 24, 39, 0.12)",
-            },
-            default: {
-                shadowColor: "#111827",
-                shadowOffset: { width: 0, height: 10 },
-                shadowOpacity: 0.12,
-                shadowRadius: 20,
-                elevation: 8,
-            },
-        }),
+        ...shadows.deliveryDeliveryModeCard,
     },
     deliveryModeIndicator: {
         backgroundColor: colors.primary,
@@ -172,18 +151,7 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         borderWidth: 1,
         gap: spacing.sm,
         padding: spacing.md,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 16px 34px rgba(17, 24, 39, 0.12)",
-            },
-            default: {
-                shadowColor: "#111827",
-                shadowOffset: { width: 0, height: 12 },
-                shadowOpacity: 0.14,
-                shadowRadius: 24,
-                elevation: 10,
-            },
-        }),
+        ...shadows.deliveryDoorDeliveryCard,
     },
     doorDeliveryHeader: {
         gap: 2,
@@ -420,18 +388,7 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         borderTopLeftRadius: 40,
         borderTopRightRadius: 40,
         minHeight: 82,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 -10px 28px rgba(17, 24, 39, 0.14)",
-            },
-            default: {
-                shadowColor: "#111827",
-                shadowOffset: { width: 0, height: -8 },
-                shadowOpacity: 0.14,
-                shadowRadius: 22,
-                elevation: 18,
-            },
-        }),
+        ...shadows.deliveryBottomSearchPanelSurface,
     },
     bottomSearchPanelContent: {
         justifyContent: "center",
@@ -524,18 +481,7 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         backgroundColor: colors.background,
         borderWidth: 1,
         borderColor: "rgba(0,0,0,0.08)",
-        ...Platform.select({
-            web: {
-                boxShadow: "0 2px 10px rgba(0, 0, 0, 0.14)",
-            },
-            default: {
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.14,
-                shadowRadius: 10,
-                elevation: 6,
-            },
-        }),
+        ...shadows.deliverySearchField,
     },
     searchFieldFooter: {
         backgroundColor: "transparent",
@@ -543,18 +489,7 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         borderWidth: 0,
         borderRadius: 0,
         minHeight: 44,
-        ...Platform.select({
-            web: {
-                boxShadow: "none",
-            },
-            default: {
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 0,
-                shadowRadius: 0,
-                elevation: 0,
-            },
-        }),
+        ...shadows.deliverySearchFieldFooter,
     },
     searchInputIcon: {
         width: 42,
@@ -566,18 +501,7 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         marginBottom: spacing.sm,
         backgroundColor: colors.background,
         borderRadius: spacing.xl,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 0 12px rgba(0, 0, 0, 0.12)",
-            },
-            default: {
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 0 },
-                shadowOpacity: 0.12,
-                shadowRadius: 12,
-                elevation: 8,
-            },
-        }),
+        ...shadows.deliveryResultsBox,
         overflow: "hidden",
     },
     resultRow: {
@@ -655,18 +579,7 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         height: 52,
         justifyContent: "center",
         width: 52,
-        ...Platform.select({
-            web: {
-                boxShadow: "0 12px 30px rgba(17, 24, 39, 0.16)",
-            },
-            default: {
-                shadowColor: "#111827",
-                shadowOffset: { width: 0, height: 10 },
-                shadowOpacity: 0.14,
-                shadowRadius: 20,
-                elevation: 8,
-            },
-        }),
+        ...shadows.deliveryCornerButton,
     },
     cornerButtonPressed: {
         opacity: 0.72,

@@ -37,6 +37,7 @@ function harness(options = {}) {
     const module = loadTs("screens/chat/mentor-food.tsx", {
         react, "react/jsx-runtime": { jsx, jsxs: jsx },
         "react-native": { ActivityIndicator: "Spinner", ActionSheetIOS: { showActionSheetWithOptions: (_, fn) => fn(2) }, Alert: { alert: (title, message, buttons) => { calls.alerts.push({ title, message, buttons }); if (!calls.keepAlert) buttons.find(button => button.text === "Рассчитать так")?.onPress() } }, Image: "Image", Keyboard: { dismiss() {} }, Platform: { OS: "ios" }, Pressable: "Button", ScrollView: "ScrollView", Text: "Text", TextInput: "Input", View: "View", StyleSheet: { create: x => x } },
+        "@/components/platform/app-action-sheet": { useAppActionSheet: () => options => options.actions.find(action => action.id === "gallery")?.onPress() },
         "expo-image-picker": { launchImageLibraryAsync: async () => ({ canceled: false, assets: [{ uri: "file:///food.jpg" }] }) },
         "expo-audio": { RecordingPresets: { HIGH_QUALITY: {} }, setAudioModeAsync: async () => {}, useAudioRecorder: () => recorder, useAudioRecorderState: () => ({ durationMillis: 0 }) },
         "@/providers/language-provider": { useLanguage: () => ({ t: x => x }) }, "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },

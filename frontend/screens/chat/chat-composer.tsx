@@ -1,12 +1,11 @@
 import type { Ref } from "react"
-import { Pressable, StyleSheet, View, type TextInput } from "react-native"
+import { StyleSheet, View, type TextInput } from "react-native"
 
-import AttachmentIcon from "@/assets/icons/chat/attachment-svgrepo-com.svg"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
-import { AdminComposerAction } from "@/screens/chat/admin-composer-action"
 import { ChatComposerInput } from "@/screens/chat/chat-composer-input"
-import { NativeChatAction, NativeChatInputMaterial } from "@/screens/chat/native-chat-controls"
+import { AppIconButton } from "@/components/platform/app-icon-button"
+import { AppComposerSurface } from "@/components/platform/app-surface"
 
 /** One composer and recording affordance for every conversation. */
 export function ChatComposer({ value, onChangeText, placeholder, inputRef, onFocus, onBlur, onAttachment, onAction, hasContent, disabled = false, attachmentDisabled = false, recording = false, busy = false, transcribing = false }: {
@@ -33,13 +32,13 @@ export function ChatComposer({ value, onChangeText, placeholder, inputRef, onFoc
     const fill = isDark ? "#263040" : "#F2FAF5"
 
     return <View testID="chat-composer" style={styles.row}>
-        {NativeChatAction ? <NativeChatAction action="attachment" dark={isDark} disabled={attachmentDisabled} label={t("chat.communityAddAttachment")} onAction={onAttachment} style={styles.action} /> : <Pressable accessibilityRole="button" accessibilityLabel={t("chat.communityAddAttachment")} disabled={attachmentDisabled} onPress={onAttachment} style={({ pressed }) => [styles.action, styles.fallbackAttachment, { backgroundColor: fill, opacity: attachmentDisabled ? 0.5 : pressed ? 0.75 : 1 }]}><AttachmentIcon width={24} height={24} color={palette.text} /></Pressable>}
+        <AppIconButton action="attachment" dark={isDark} disabled={attachmentDisabled} label={t("chat.communityAddAttachment")} onPress={onAttachment} backgroundColor={fill} color={palette.text} style={styles.action} />
         <View style={styles.entry}>
-            {NativeChatInputMaterial ? <NativeChatInputMaterial dark={isDark} joined={joined} pointerEvents="none" style={StyleSheet.absoluteFill} /> : <View pointerEvents="none" style={[styles.surface, { right: joined ? 0 : 50, backgroundColor: fill, borderColor: palette.border }]} />}
+            <AppComposerSurface dark={isDark} joined={joined} fallbackColor={fill} borderColor={palette.border} />
             <View style={styles.inputWrap}>
                 <ChatComposerInput inputRef={inputRef} accessibilityLabel={placeholder} editable={!recording && !transcribing} onFocus={onFocus} onBlur={onBlur} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={palette.mutedText} selectionColor="#078AFF" style={[styles.input, { color: palette.text }]} value={value} keyboardAppearance={isDark ? "dark" : "light"} />
             </View>
-            {NativeChatAction ? <NativeChatAction action={action} dark={isDark} disabled={disabled} label={label} onAction={onAction} style={styles.action} /> : <AdminComposerAction active={joined} backgroundColor={fill} busy={busy} disabled={disabled} onPress={onAction} recording={recording} transcribing={transcribing} />}
+            <AppIconButton action={action} dark={isDark} disabled={disabled} label={label} onPress={onAction} appearance="composer" backgroundColor={fill} transcribing={transcribing} style={styles.action} />
         </View>
     </View>
 }
