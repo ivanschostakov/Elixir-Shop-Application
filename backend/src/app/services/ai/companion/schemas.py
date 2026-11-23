@@ -23,7 +23,15 @@ class WorkoutExercisePlan(StrictModel):
     name: str = Field(min_length=1, max_length=200)
     sets: int = Field(ge=1, le=30)
     target_reps: int | None = Field(default=None, ge=1, le=1000)
+    target_reps_max: int | None = Field(default=None, ge=1, le=1000)
     target_weight_kg: Decimal | None = Field(default=None, ge=0, le=1000)
+    rest_seconds: int | None = Field(default=None, ge=0, le=1800)
+
+    @model_validator(mode="after")
+    def valid_rep_range(self):
+        if self.target_reps_max is not None and (self.target_reps is None or self.target_reps_max < self.target_reps):
+            raise ValueError("The upper rep target requires a lower target and cannot be smaller")
+        return self
 
 
 class WorkoutDay(StrictModel):
@@ -31,6 +39,7 @@ class WorkoutDay(StrictModel):
     name: str = Field(min_length=1, max_length=200)
     weekdays: list[int] = Field(min_length=1, max_length=7)
     exercises: list[WorkoutExercisePlan] = Field(min_length=1, max_length=30)
+    duration_minutes: int | None = Field(default=None, ge=1, le=300)
 
     @model_validator(mode="after")
     def unique_schedule(self):
@@ -72,6 +81,17 @@ class WorkoutExercise(StrictModel):
     key: str = Field(min_length=1, max_length=80)
     name: str = Field(min_length=1, max_length=200)
     sets: list[WorkoutSet] = Field(min_length=1, max_length=30)
+    target_sets: int | None = Field(default=None, ge=1, le=30)
+    target_reps: int | None = Field(default=None, ge=1, le=1000)
+    target_reps_max: int | None = Field(default=None, ge=1, le=1000)
+    target_weight_kg: Decimal | None = Field(default=None, ge=0, le=1000)
+    rest_seconds: int | None = Field(default=None, ge=0, le=1800)
+
+    @model_validator(mode="after")
+    def valid_rep_range(self):
+        if self.target_reps_max is not None and (self.target_reps is None or self.target_reps_max < self.target_reps):
+            raise ValueError("The upper rep target requires a lower target and cannot be smaller")
+        return self
 
 
 class WorkoutData(StrictModel):
@@ -82,6 +102,15 @@ class WorkoutData(StrictModel):
     duration_seconds: int = Field(default=0, ge=0, le=86400)
     current_exercise_index: int = Field(default=0, ge=0, le=30)
     exercises: list[WorkoutExercise] = Field(min_length=1, max_length=30)
+    timer_started_at: datetime | None = None
+    rest_ends_at: datetime | None = None
+
+    @field_validator("timer_started_at", "rest_ends_at")
+    @classmethod
+    def aware_timer(cls, value):
+        if value is not None and value.tzinfo is None:
+            raise ValueError("Workout timers require an explicit timezone")
+        return value
 
     @model_validator(mode="after")
     def valid_progress(self):

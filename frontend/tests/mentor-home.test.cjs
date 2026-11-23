@@ -71,6 +71,7 @@ function harness(file, overrides = {}) {
         "@/components/platform/app-icon-button": { AppIconButton: "IconButton", hasNativeControls: false },
         "@/components/platform/app-surface": { AppSurface: "SharedSurface", AppComposerSurface: "ComposerSurface" },
         "@/screens/chat/mentor-wellbeing": { MentorWellbeingScreen: "WellbeingScreen" },
+        "@/screens/chat/mentor-training": { MentorTrainingScreen: "TrainingScreen" },
         "@/components/platform/app-menu": { AppMenu: "Menu" },
         "@/components/platform/app-form-layout": { AppFormLayout: "KeyboardAvoidingView" },
         "@/components/platform/native-controls": { NativeChatAction: null, nativeChatSettingsActionAvailable: false },
@@ -112,14 +113,14 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     find(settings, "Header").props.onBack()
     find(render(), "Tabs").props.onSelect("workouts")
     assert.equal(find(render(), "Tabs").props.active, "workouts")
-    assert.ok(nodes(page("workouts")).some(node => node.props.testID === "mentor-placeholder-workouts"))
+    assert.equal(find(page("workouts"), "TrainingScreen").props.controller, c)
     find(render(), "Tabs").props.onSelect("course")
     assert.ok(nodes(page("course")).some(node => node.props.testID === "mentor-placeholder-course"))
     assert.ok(nodes(page("course")).some(node => node.props.name === "course"))
     assert.equal(find(page("course"), "Header").props.title, "Мой курс")
     find(render(), "Tabs").props.onSelect("wellbeing")
     assert.ok(nodes(page("wellbeing")).some(node => node.type === "WellbeingScreen" && node.props.controller === c))
-    find(page("workouts"), "Header").props.onBack(); assert.equal(closed, 1)
+    find(page("workouts"), "TrainingScreen").props.onClose(); assert.equal(closed, 1)
     find(page("wellbeing"), "WellbeingScreen").props.onClose(); assert.equal(closed, 2)
     find(render(), "Tabs").props.onSelect("chat")
     assert.equal(find(render(), "Pages").props.footerVisible, false, "Fullscreen mentor chat hides navigation without resizing its viewport")

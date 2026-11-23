@@ -27,3 +27,4 @@ class AIChatSendResult:
     turn_meta: dict[str, int | str | None]
     basket_updated: bool = False
     meal_estimate: dict | None = None
+    workout_draft: dict | None = None

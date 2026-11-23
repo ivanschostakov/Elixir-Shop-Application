@@ -10,6 +10,7 @@ from src.app.modules.auth.dependencies import get_current_user
 from src.app.services.ai.companion import service
 from src.app.services.ai.companion.schemas import Action, EntryData, Settings, StrictModel
 from src.app.services.ai.companion.food_suggestions import FoodSuggestionRead, MealSuggestionContext
+from src.app.services.ai.companion.workout_drafts import WorkoutDraftRead, WorkoutDraftRequest
 from src.app.services.ai.companion.mentor import FavoriteMealsRead, MentorDashboard, ProgressSummary, dashboard
 from src.app.services.ai.companion.photos import ProgressPhotosRead, serialize_entries
 from src.app.services.ai.companion.timezones import normalize_timezone, timezone_info
@@ -142,7 +143,7 @@ async def nutrition(user: User = Depends(native_access), db: AsyncSession = Depe
     return await service.nutrition_suggestion(db, user.id)
 
 
-async def _message(request, text, client_request_id, attachments, dialogue_protocol, user, db, *, meal_estimate=False, nutrition_help=None):
+async def _message(request, text, client_request_id, attachments, dialogue_protocol, user, db, *, meal_estimate=False, nutrition_help=None, workout_request=None):
     if dialogue_protocol != 2:
         raise HTTPException(426, detail={"code": "mentor_client_update_required", "message": "Обновите приложение для работы с наставником."})
     await require_ai_data_consent(db, user.id)
@@ -177,7 +178,11 @@ async def _message(request, text, client_request_id, attachments, dialogue_proto
     try:
         await record_app_ai_activity(db, request=request, user=user, event_type="message_requested", details={"message_length": len(text), "attachments_count": len(attachments or []), "mode": "companion"})
         async with asyncio.timeout(540):
-            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=False, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2, **({"meal_estimate": True, **({"nutrition_help": nutrition_help} if nutrition_help else {})} if meal_estimate else {}))
+            result = await send_user_chat_message(db, user=user, text=text.strip(), attachments=attachments, professor_client=get_professor_client(), allow_commerce=False, companion_profile=profile, client_request_id=client_request_id, dialogue_protocol=2, **({"meal_estimate": True, **({"nutrition_help": nutrition_help} if nutrition_help else {})} if meal_estimate else {}), **({"workout_request": workout_request} if workout_request is not None else {}))
+        if workout_request is not None:
+            if result.workout_draft is None:
+                raise HTTPException(409, "Не удалось восстановить черновик. Повторите запрос.")
+            return WorkoutDraftRead.model_validate(result.workout_draft)
         if meal_estimate:
             if result.meal_estimate is None:
                 raise HTTPException(409, "Не удалось восстановить расчёт. Попробуйте ещё раз.")
@@ -196,6 +201,19 @@ class MealEstimateRead(StrictModel):
     message: str
     suggestions: list[FoodSuggestionRead] = Field(default_factory=list, max_length=3)
     next_meal: MealSuggestionContext | None = None
+
+
+@companion_router.post("/workout-draft", response_model=WorkoutDraftRead)
+async def workout_draft(request: Request, payload: str = Form(..., max_length=200000), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    try:
+        draft_request = WorkoutDraftRequest.model_validate_json(payload)
+    except ValidationError as error:
+        raise HTTPException(422, "Проверьте данные программы и расписание") from error
+    if len(attachments or []) > 3 or any(not (photo.content_type or "").lower().startswith("image/") for photo in attachments or []):
+        raise HTTPException(422, "Можно добавить до трёх фотографий")
+    # The shared pipeline validates image bytes, stores private attachments and registers
+    # provider resources for erasure. No plan/entry action runs until the user saves.
+    return await _message(request, draft_request.text or "Составить план тренировок", client_request_id, attachments, 2, user, db, workout_request=draft_request)
 
 
 @companion_router.post("/messages")
@@ -233,6 +251,21 @@ async def meal_estimate(request: Request, text: str = Form("", max_length=4000),
 async def meal_library(user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
     from src.app.services.ai.companion.meals import library
     return await library(db, user.id)
+
+
+@companion_router.get("/workouts")
+async def workout_library(from_date: date, to_date: date, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import select
+    from src.database.models.ai.companion import AICompanionEntry
+    await service.require_consent(db, user.id)
+    start, end = await bounds(db, user.id, from_date, to_date)
+    base = select(AICompanionEntry).where(AICompanionEntry.user_id == user.id, AICompanionEntry.kind == "workout", AICompanionEntry.occurred_at <= service.now_utc())
+    ordered = base.order_by(AICompanionEntry.occurred_at.desc(), AICompanionEntry.id.desc())
+    recent = list((await db.execute(ordered.limit(201))).scalars())
+    running = list((await db.execute(ordered.where(AICompanionEntry.data["workout"]["status"].as_string() == "in_progress").limit(51))).scalars())
+    period = await service.entries_for(db, user.id, start, min(end, service.now_utc() + timedelta(microseconds=1)), "workout", limit=1001)
+    rows = {row.id: row for row in [*recent[:200], *running[:50], *period[:1000]]}
+    return {"entries": [service.dump(row) for row in sorted(rows.values(), key=lambda row: (row.occurred_at, row.id), reverse=True)], "may_have_more": len(recent) > 200 or len(running) > 50 or len(period) > 1000}
 
 
 @companion_router.post("/nutrition-help", response_model=MealEstimateRead)

@@ -11,14 +11,18 @@ import type { useCompanion } from "@/screens/chat/companion"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import { getCompanionEntries, type CompanionEntry } from "@/services/api/companion"
 import { getErrorMessage } from "@/utils/errors"
-import { loadWellbeingMonth, sleepDurationLabel, wellbeingDateLabel, wellbeingDays, wellbeingDraft, wellbeingLabels } from "@/screens/chat/mentor-wellbeing-data"
-import { WellbeingIcon } from "@/screens/chat/mentor-wellbeing-icons"
+import { loadWellbeingMonth, wellbeingDateLabel, wellbeingDays, wellbeingDraft, wellbeingSummary } from "@/screens/chat/mentor-wellbeing-data"
+import { WellbeingIcon, type WellbeingIconName } from "@/screens/chat/mentor-wellbeing-icons"
 import { wellbeingStyles as styles } from "@/screens/chat/mentor-wellbeing.styles"
 
 type Controller = ReturnType<typeof useCompanion>
 const months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
 const weekdays = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]
 const shortWeekdays = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
+const overview: { index: number; icon: WellbeingIconName; level: number }[] = [
+    { index: 0, icon: "face", level: 4 }, { index: 1, icon: "energy", level: 2 },
+    { index: 4, icon: "moon", level: 2 }, { index: 6, icon: "apple", level: 1 },
+]
 
 export function MentorWellbeingScreen({ controller: c, active, onClose, onSettings }: { controller: Controller; active: boolean; onClose: () => void; onSettings: () => void }) {
     const { language } = useLanguage()
@@ -29,9 +33,14 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
     const [height, setHeight] = useState(Math.max(360, window.height - 160))
     const dense = height < 560
     const compact = height < 680
-    const weekMargin = dense ? 0 : compact ? 2 : 6
-    const cardHeight = dense ? 78 : 100
-    const calendarRoom = height - 56 - (dense ? 64 : 80) - cardHeight - (dense ? 62 : 74) - (dense ? 30 : 56)
+    const gap = dense ? 6 : compact ? 8 : 12
+    const weekMargin = dense ? 0 : compact ? 2 : 4
+    const introHeight = dense ? 50 : compact ? 58 : 64
+    const metricHeight = dense ? 48 : compact ? 60 : 72
+    const dateHeight = dense ? 28 : 36
+    const cardHeight = dateHeight + gap + metricHeight * 2
+    const footerHeight = dense ? 80 : 96
+    const calendarRoom = height - 56 - introHeight - cardHeight - footerHeight - gap * 2 - (dense ? 0 : 6)
     const daySize = Math.max(20, Math.min(40, Math.floor((calendarRoom - 80) / 6 - weekMargin * 2)))
     const calendarHeight = 80 + 6 * (daySize + weekMargin * 2)
     const [month, setMonth] = useState(today.slice(0, 7))
@@ -73,11 +82,12 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
     }, [ready, c, today])
     const marks: NonNullable<CalendarProps["markedDates"]> = Object.fromEntries(Object.keys(days).map(day => [day, { marked: true, dotColor: colors.greenBright }]))
     marks[selected] = { ...marks[selected], selected: true, selectedColor: colors.green, selectedTextColor: "#FFFFFF" }
-    const summary = entry ? wellbeingDraft(entry.data) : null
+    const summary = wellbeingSummary(wellbeingDraft(entry?.data))
+    const statusLabel = loading ? mt("Загружаем записи") : entry ? mt("Заполнено") : error ? mt("Нет данных") : mt("Пока нет записи")
     const buttonLabel = error ? mt("Попробовать ещё раз") : entry ? mt("Изменить запись") : mt("Заполнить анкету")
     return <View testID="mentor-wellbeing" onLayout={event => setHeight(event.nativeEvent.layout.height)} style={[styles.screen, { backgroundColor: colors.surface }]}>
         <MentorHomeHeader title={mt("Самочувствие")} onBack={onClose} onSettings={onSettings} />
-        <View style={{ flex: 1, minHeight: 0, width: "100%", maxWidth: 560, alignSelf: "center", paddingHorizontal: 24, paddingTop: dense ? 4 : 10, paddingBottom: 8, gap: dense ? 6 : 12 }}>
+        <View style={[styles.mainBody, { paddingTop: dense ? 0 : 6, gap }]}>
             <AppCalendar key={`${language}|${isDark}|${daySize}|${weekMargin}`} current={`${month}-01`} maxDate={today} firstDay={1} hideExtraDays disableMonthChange disableAllTouchEventsForDisabledDays disableArrowRight={month >= today.slice(0, 7)} disabledByDefault={!ready}
                 markedDates={marks} onMonthChange={date => {
                     const next = date.dateString.slice(0, 7)
@@ -95,17 +105,28 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
                     </Pressable>
                 }}
                 theme={{ calendarBackground: colors.surface, textSectionTitleColor: colors.muted, monthTextColor: colors.text, dayTextColor: colors.text, todayTextColor: colors.greenBright, textDisabledColor: colors.muted, arrowColor: colors.green, weekVerticalMargin: weekMargin, textMonthFontWeight: "700", textDayFontSize: dense ? 14 : 17, textMonthFontSize: dense ? 18 : 21, textDayHeaderFontSize: dense ? 10 : 12 }} style={[styles.calendar, { height: calendarHeight }]} />
-            <View style={{ gap: 5 }}><Text accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[styles.title, { color: colors.text, fontSize: dense ? 28 : 32 }]}>{mt("Как вы себя чувствуете?")}</Text><Text style={[styles.subtitle, { color: colors.muted, fontSize: dense ? 13 : 16, lineHeight: dense ? 18 : 22 }]}>{mt("Отмечайте состояние каждый день")}</Text></View>
-            <View testID="wellbeing-day-card" style={[styles.card, { height: cardHeight, backgroundColor: colors.surface, paddingHorizontal: 0, paddingVertical: dense ? 6 : 10, gap: dense ? 8 : 12 }]}>
-                <View style={styles.row}><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.sectionTitle, { color: colors.text, fontSize: dense ? 18 : 20, flex: 1 }]}>{wellbeingDateLabel(selected)}{!loading && !error && !entry ? ` (${mt("Пока нет записи").toLocaleLowerCase()})` : ""}</Text><View style={{ width: 20, height: 20 }}>{loading ? <ActivityIndicator accessibilityLabel={mt("Загружаем записи")} color={colors.greenBright} /> : null}</View></View>
-                {error ? <Text accessibilityRole="alert" numberOfLines={2} style={{ color: colors.text, fontSize: 12, lineHeight: 14 }}>{error}</Text> : entry && summary ? <View style={[styles.row, { justifyContent: "flex-start" }]}>
-                    <WellbeingIcon name="face" level={summary.wellbeing ?? 3} size={dense ? 28 : 38} color={colors.green} />
-                    <View style={{ flex: 1, gap: 2 }}><Text numberOfLines={1} style={{ color: colors.text, fontWeight: "700", fontSize: dense ? 15 : 17 }}>{summary.wellbeing == null ? mt("Ваша запись") : mt(wellbeingLabels[summary.wellbeing - 1])}</Text>
-                        {!dense ? <Text numberOfLines={1} adjustsFontSizeToFit style={{ color: colors.muted, fontSize: 13 }}>{mt("Энергия")} {summary.energy == null ? "—" : mt("{0} из 5", [summary.energy])} · {mt("Сон")} {sleepDurationLabel(summary.sleepMinutes)}</Text> : null}</View>
-                </View> : null}
+            <View style={{ height: introHeight, gap: 4 }}><Text accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={[styles.title, { color: colors.text, fontSize: dense ? 26 : compact ? 28 : 32, lineHeight: dense ? 30 : compact ? 34 : 38 }]}>{mt("Как вы себя чувствуете?")}</Text><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.subtitle, { color: colors.muted, fontSize: dense ? 12 : compact ? 14 : 16, lineHeight: dense ? 16 : compact ? 20 : 22 }]}>{mt("Отмечайте состояние каждый день")}</Text></View>
+            <View testID="wellbeing-day-card" style={{ height: cardHeight, gap }}>
+                <View style={[styles.row, { height: dateHeight }]}>
+                    <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8} style={[styles.sectionTitle, { color: colors.text, fontSize: dense ? 18 : 22, flex: 1 }]}>{wellbeingDateLabel(selected)}</Text>
+                    <View style={[styles.statusBadge, { backgroundColor: colors.input, maxWidth: "52%" }]}>
+                        {loading ? <ActivityIndicator size="small" accessibilityLabel={mt("Загружаем записи")} color={colors.green} /> : null}
+                        <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.statusLabel, { color: colors.muted }]}>{statusLabel}</Text>
+                    </View>
+                </View>
+                <View testID="wellbeing-overview" style={{ borderTopWidth: 1, borderColor: colors.border }}>
+                    {[0, 1].map(row => <View key={row} style={[styles.metricRow, { height: metricHeight, borderBottomColor: colors.border }]}>
+                        {overview.slice(row * 2, row * 2 + 2).map(({ index, icon, level }, column) => <View key={icon} testID={`wellbeing-metric-${icon}`} style={[styles.metricCell, column === 1 ? styles.metricCellRight : null]}>
+                            {column === 1 ? <View style={[styles.metricDivider, { backgroundColor: colors.border }]} /> : null}
+                            <WellbeingIcon name={icon} level={level} size={dense ? 24 : 32} color={colors.green} />
+                            <View style={styles.metricCopy}><Text numberOfLines={1} adjustsFontSizeToFit style={[styles.metricLabel, { color: colors.muted, fontSize: dense ? 12 : 15 }]}>{summary[index][0]}</Text><Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} style={[styles.metricValue, { color: colors.text, fontSize: dense ? 15 : 18 }]}>{summary[index][1]}</Text></View>
+                        </View>)}
+                    </View>)}
+                </View>
             </View>
         </View>
-        <View testID="wellbeing-action-footer" style={[styles.footer, { paddingBottom: 10, backgroundColor: colors.surface }]}>
+        <View testID="wellbeing-action-footer" style={[styles.footer, { height: footerHeight, paddingTop: 0, paddingBottom: 10, gap: 0, backgroundColor: colors.surface, justifyContent: "flex-end" }]}>
+            <View style={{ height: dense ? 16 : 32, justifyContent: "center" }}>{error ? <Text accessibilityRole="alert" numberOfLines={dense ? 1 : 2} style={[styles.mainError, { color: colors.text }]}>{error}</Text> : null}</View>
             <Pressable accessibilityRole="button" accessibilityLabel={buttonLabel} accessibilityState={{ disabled: !ready && !error || c.busy }} disabled={!ready && !error || c.busy} onPress={() => error ? setRevision(value => value + 1) : open(selected, entry)} style={({ pressed }) => [styles.primary, { backgroundColor: colors.greenBright, opacity: !ready && !error || c.busy ? 0.45 : pressed ? 0.8 : 1 }]}><Text style={styles.primaryLabel}>{buttonLabel}</Text></Pressable>
         </View>
     </View>

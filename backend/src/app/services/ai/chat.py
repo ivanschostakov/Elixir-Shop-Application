@@ -300,7 +300,10 @@ async def get_or_create_user_chat(db: AsyncSession, *, user: User, professor_cli
     return created
 
 
-async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1, telegram_transport: bool = False, bot_model_override: BotModel | None = None, meal_estimate: bool = False, nutrition_help: str | None = None) -> AIChatSendResult:
+async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, attachments: list[UploadFile] | None, professor_client: "ProfessorClient", allow_commerce: bool = True, companion_profile=None, client_request_id: str | None = None, dialogue_protocol: int = 1, telegram_transport: bool = False, bot_model_override: BotModel | None = None, meal_estimate: bool = False, nutrition_help: str | None = None, workout_request=None) -> AIChatSendResult:
+    preview_only = meal_estimate or workout_request is not None
+    if workout_request is not None and (meal_estimate or companion_profile is None or not client_request_id):
+        raise HTTPException(422, "Черновик тренировок требует профиля и отдельного ключа запроса")
     if nutrition_help not in {None, "suggest", "product"} or nutrition_help and not meal_estimate:
         raise HTTPException(422, "Некорректный режим справки о питании")
     if meal_estimate and (companion_profile is None or not client_request_id):
@@ -316,6 +319,8 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
     input_fingerprint = hashlib.sha256((text + "\n" + "\n".join(hashlib.sha256(u.content).hexdigest() for u in loaded_uploads)).encode()).hexdigest()
     if meal_estimate:
         input_fingerprint = hashlib.sha256((("nutrition_help:" + nutrition_help + ":" if nutrition_help else "meal_estimate:") + input_fingerprint).encode()).hexdigest()
+    if workout_request is not None:
+        input_fingerprint = hashlib.sha256(("workout_draft:" + workout_request.model_dump_json() + ":" + input_fingerprint).encode()).hexdigest()
     duplicate = None
     if client_request_id:
         duplicate = (await db.execute(select(AIMessage).where(AIMessage.user_id == user.id, AIMessage.client_request_id == client_request_id))).scalar_one_or_none()
@@ -326,8 +331,10 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 raise HTTPException(409, "Ключ сообщения уже использован")
             if (duplicate.context_json or {}).get("generation_status") == "completed":
                 from .companion.food import cached_food_estimate
+                from .companion.workout_drafts import cached_workout_draft
                 return AIChatSendResult(chat=await get_ai_chat_by_id(db, chat.id, user_id=user.id), turn_meta={}, basket_updated=False,
-                    meal_estimate=await cached_food_estimate(db, user.id, client_request_id) if meal_estimate else None)
+                    meal_estimate=await cached_food_estimate(db, user.id, client_request_id) if meal_estimate else None,
+                    workout_draft=await cached_workout_draft(db, user.id, client_request_id) if workout_request is not None else None)
             if dialogue_protocol != 2:
                 raise HTTPException(409, "Сообщение сохранено, но ответ не завершён. Обновите чат; при необходимости отправьте новый запрос.")
     selected_model = bot_model_override if telegram_transport and bot_model_override is not None else await resolve_user_bot_model(db, user_id=user.id)
@@ -372,7 +379,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         )
 
     try:
-        if companion_profile is not None and dialogue_protocol == 2 and not loaded_uploads and not meal_estimate:
+        if companion_profile is not None and dialogue_protocol == 2 and not loaded_uploads and not preview_only:
             from .companion import dialogue
             from .companion.schemas import Action
             direct = await dialogue.direct_reply(db, user.id, user_message)
@@ -399,7 +406,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 snapshot["channel"] = "telegram"
             else:
                 snapshot["channel"] = "app"
-            if dialogue_protocol == 2 and not meal_estimate:
+            if dialogue_protocol == 2 and not preview_only:
                 from .companion import dialogue
                 flow = await dialogue.workflow(db, user.id, True)
                 snapshot["dialogue"] = await dialogue.snapshot(db, user.id)
@@ -415,9 +422,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 function_tools.extend(CATALOG_TOOLS)
             if not allow_commerce:
                 function_tools = [t for t in function_tools if t["name"] != "calculate_course_supply"]
-            if meal_estimate:
+            if preview_only:
                 snapshot.pop("dialogue", None)
                 function_tools = []
+            if workout_request is not None:
+                snapshot["workout_form"] = {"language": workout_request.language}
             if nutrition_help == "suggest":
                 from .companion.food_suggestions import next_meal_context
                 meal_context = next_meal_context(snapshot)
@@ -457,10 +466,12 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             include_companion=companion_profile is not None,
             dialogue=companion_profile is not None and dialogue_protocol == 2,
             nutrition_suggestions=nutrition_help == "suggest",
+            workout_draft=workout_request is not None,
         )
         from .companion.food import food_prompt, food_help_prompt
+        from .companion.workout_drafts import workout_prompt, draft_errors as workout_draft_errors
         ai_result = await professor_client.send_message_v2(
-            input_text=food_help_prompt(text, nutrition_help) if nutrition_help else food_prompt(text, user_message.created_at) if meal_estimate else text if companion_profile is not None else _build_commerce_ai_input(text) if allow_commerce else (
+            input_text=workout_prompt(workout_request) if workout_request is not None else food_help_prompt(text, nutrition_help) if nutrition_help else food_prompt(text, user_message.created_at) if meal_estimate else text if companion_profile is not None else _build_commerce_ai_input(text) if allow_commerce else (
                 "В этой версии приложения каталог и покупки недоступны. Не рекламируй товары, "
                 "не предлагай покупку, скидки или переход в магазин. Не выполняй действия с корзиной. "
                 "Отвечай на вопрос без коммерческих рекомендаций. product_refs=[], basket_addition=null.\n\n"
@@ -491,7 +502,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             errors = suggestion_errors(structured_output, meal_context)
             if errors:
                 structured_output, initial_validation_errors = None, errors
-        if companion_profile is not None and dialogue_protocol == 2 and structured_output is not None:
+        if workout_request is not None and structured_output is not None:
+            errors = workout_draft_errors(structured_output, workout_request)
+            if errors:
+                structured_output, initial_validation_errors = None, errors
+        if companion_profile is not None and dialogue_protocol == 2 and structured_output is not None and workout_request is None:
             semantic_errors = _companion_output_semantic_errors(structured_output)
             if semantic_errors:
                 structured_output = None
@@ -523,7 +538,11 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                 errors = suggestion_errors(structured_output, meal_context)
                 if errors:
                     structured_output, final_validation_errors = None, errors
-            if dialogue_protocol == 2 and structured_output is not None:
+            if workout_request is not None and structured_output is not None:
+                errors = workout_draft_errors(structured_output, workout_request)
+                if errors:
+                    structured_output, final_validation_errors = None, errors
+            if dialogue_protocol == 2 and structured_output is not None and workout_request is None:
                 semantic_errors = _companion_output_semantic_errors(structured_output)
                 if semantic_errors:
                     structured_output = None
@@ -609,6 +628,14 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
                     assistant_context["basket_addition_error"] = str(exc.detail)
                     reply_text = f"{reply_text}\n\n"f"Не получилось добавить товар в корзину: {exc.detail}".strip()
 
+        workout_result = None
+        if workout_request is not None:
+            from .companion.workout_drafts import WorkoutDraftRead
+            draft = structured_output.workout_draft if structured_output is not None else None
+            draft = draft or WorkoutDraftRead(message="Не удалось разобрать программу. Уточните упражнения и дни занятий.", questions=["Как распределены упражнения, подходы и повторения по дням недели?"])
+            workout_result = draft.model_dump(mode="json")
+            reply_text = draft.message
+            assistant_context.update(workout_draft_request_id=client_request_id, workout_draft=workout_result)
         meal_result = None
         if meal_estimate:
             from .companion.food import food_estimate
@@ -626,7 +653,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
             assistant_context.update(meal_estimate_request_id=client_request_id, meal_estimate=meal_result)
         ai_message = await create_ai_message(db, AIMessageCreate(user_id=user.id, chat_id=chat.id, text=reply_text or AI_CHAT_EMPTY_REPLY, sender=MessageSender.AI, context_json=assistant_context, is_sensitive=companion_profile is not None), commit=False)
         ai_message_id = ai_message.id
-        if companion_profile is not None and structured_output is not None and not meal_estimate:
+        if companion_profile is not None and structured_output is not None and not preview_only:
             if dialogue_protocol == 2:
                 from .companion.dialogue_schemas import DialogueTurn
                 turn = structured_output.companion_dialogue or DialogueTurn()
@@ -697,7 +724,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
 
     refreshed_chat = await get_ai_chat_by_id(db, chat.id, user_id=user.id)
     if refreshed_chat is None: raise RuntimeError("Failed to reload chat after update")
-    if ai_message_id is not None and not meal_estimate: await send_ai_reply_notification(db, user_id=user.id, chat_id=chat.id, message_id=ai_message_id)
+    if ai_message_id is not None and not preview_only: await send_ai_reply_notification(db, user_id=user.id, chat_id=chat.id, message_id=ai_message_id)
 
     return AIChatSendResult(chat=refreshed_chat, turn_meta={
         "selected_bot_model": selected_model,
@@ -706,7 +733,7 @@ async def send_user_chat_message(db: AsyncSession, *, user: User, text: str, att
         "output_tokens": output_tokens,
         "openai_model": openai_model or ProfessorClient._resolve_model_name(selected_model),
         "conversation_reset_reason": ai_result.get("conversation_reset_reason") if ai_result else None,
-    }, basket_updated=basket_updated, meal_estimate=meal_result)
+    }, basket_updated=basket_updated, meal_estimate=meal_result, workout_draft=workout_result)
 
 
 async def _get_locked_ai_message_for_action(session: AsyncSession, *, message_id: int, user_id: int) -> AIMessage | None:

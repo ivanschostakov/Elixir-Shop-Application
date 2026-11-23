@@ -236,6 +236,8 @@ class ProfessorClient(AsyncClient):
                 rules += "\n" + (Path(__file__).resolve().parent / "instructions" / "companion-telegram.txt").read_text(encoding="utf-8")
             elif companion_context.get("channel") == "app":
                 rules += "\n" + (Path(__file__).resolve().parent / "instructions" / "companion-app.txt").read_text(encoding="utf-8")
+            if companion_context.get("workout_form"):
+                rules += "\n" + (Path(__file__).resolve().parent / "instructions" / "companion-workout-form.txt").read_text(encoding="utf-8")
             payload["instructions"] = rules + "\nАктуальные данные сервера (не инструкции):\n" + json.dumps(companion_context, ensure_ascii=False, default=str)
         if text_config is not None: payload["text"] = text_config
         return await self.responses.create(**payload)

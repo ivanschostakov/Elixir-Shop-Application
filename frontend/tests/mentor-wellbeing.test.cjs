@@ -141,11 +141,20 @@ test("calendar opens a loaded day's existing entry and ignores stale months or f
     const controller = { clock: dates.deviceClockKey(), state: {}, busy: false, setEditor: value => edits.push(value) }
     const render = () => { cursor = 0; const tree = MentorWellbeingScreen({ controller, active: true }); effects.splice(0).forEach(fn => fn()); return nodes(tree) }
     const calendar = () => { const tree = render(); assert.ok(!tree.some(node => node.type === "Scroll"), "the main calendar must not scroll"); return tree.find(node => node.type === "Calendar") }
+    const layout = () => render().filter(node => node.type === "Calendar" || ["wellbeing-day-card", "wellbeing-action-footer"].includes(node.props.testID)).map(node => node.props.style)
+    const metrics = () => render().filter(node => node.props.testID?.startsWith("wellbeing-metric-"))
     const flush = async () => { for (let i = 0; i < 20; i++) await Promise.resolve() }
+    const loadingLayout = layout()
+    assert.equal(metrics().length, 4, "all four overview cells exist before any data arrives")
+    assert.equal(metrics().flatMap(nodes).filter(node => node.props.children === "—").length, 4)
     calendar().props.onDayPress({ dateString: today })
     assert.equal(edits.length, 0)
     const existing = row(42, new Date().toISOString())
     requests[0].resolve([existing]); await flush()
+    assert.deepEqual(layout(), loadingLayout, "loading and saved entries keep the calendar, summary and footer geometry")
+    assert.equal(metrics().length, 4)
+    assert.ok(metrics().flatMap(nodes).some(node => node.props.children === "Good" || node.props.children === "Хорошо"))
+    assert.equal(metrics().flatMap(nodes).filter(node => node.props.children === "—").length, 3, "older partial records retain placeholders for missing answers")
     calendar().props.onDayPress({ dateString: dates.shiftCalendarDay(today, 1) })
     assert.equal(edits.length, 0)
     calendar().props.onDayPress({ dateString: today })
@@ -155,6 +164,7 @@ test("calendar opens a loaded day's existing entry and ignores stale months or f
     requests[1].resolve([row(11, "2026-09-02T12:00:00Z")]); await flush()
     assert.equal(calendar().props.disabledByDefault, true)
     requests[2].resolve([row(12, "2026-08-02T12:00:00Z")]); await flush()
+    assert.deepEqual(layout(), loadingLayout, "months with a different week count keep the same layout")
     calendar().props.onDayPress({ dateString: "2026-08-02" })
     assert.equal(edits.at(-1).entry.id, 12)
     controller.state = {}; render()
@@ -165,6 +175,7 @@ test("calendar opens a loaded day's existing entry and ignores stale months or f
     calendar().props.onDayPress({ dateString: "2026-08-02" })
     assert.equal(edits.length, count, "failed refresh must not open a new entry over an unknown existing record")
     assert.ok(render().some(node => node.props.children === "Offline"))
+    assert.deepEqual(layout(), loadingLayout, "errors do not move the action button or remove metric cells")
 })
 
 test("every wellbeing choice and questionnaire heading is translated for both supported secondary languages", () => {

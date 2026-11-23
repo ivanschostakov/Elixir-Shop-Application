@@ -27,8 +27,9 @@ export type CourseItem = {
     package_unit?: Unit | null; home_amount: Numeric | null; package_source_name?: string | null
 }
 export type PlanData = { name: string; timezone: string; items: CourseItem[]; source?: "user_supplied_plan" | "ai_recommended_plan" }
-export type WorkoutPlan = { name: string; start_date: string; end_date: string | null; days: { key: string; name: string; weekdays: number[]; exercises: { key: string; name: string; sets: number; target_reps: number | null; target_weight_kg: Numeric | null }[] }[] }
-export type Workout = { name: string; plan_day_key: string | null; scheduled_date: string | null; status: "in_progress" | "completed"; duration_seconds: number; current_exercise_index: number; exercises: { key: string; name: string; sets: { weight_kg: Numeric | null; reps: number | null; completed: boolean }[] }[] }
+export type WorkoutTargets = { target_reps: number | null; target_reps_max?: number | null; target_weight_kg: Numeric | null; rest_seconds?: number | null }
+export type WorkoutPlan = { name: string; start_date: string; end_date: string | null; days: { key: string; name: string; weekdays: number[]; duration_minutes?: number | null; exercises: (WorkoutTargets & { key: string; name: string; sets: number })[] }[] }
+export type Workout = { name: string; plan_day_key: string | null; scheduled_date: string | null; status: "in_progress" | "completed"; duration_seconds: number; current_exercise_index: number; timer_started_at?: string | null; rest_ends_at?: string | null; exercises: (Partial<WorkoutTargets> & { target_sets?: number | null; key: string; name: string; sets: { weight_kg: Numeric | null; reps: number | null; completed: boolean }[] })[] }
 export type Measurement = { waist_cm?: Numeric | null; chest_cm?: Numeric | null; hips_cm?: Numeric | null; arm_cm?: Numeric | null; thigh_cm?: Numeric | null; body_fat_percent?: Numeric | null }
 export type EntryData = {
     kind: "meal" | "water" | "weight" | "wellbeing" | "workout" | "measurement" | "progress_photo"; occurred_at: string; name?: string | null; portion_g?: Numeric | null
