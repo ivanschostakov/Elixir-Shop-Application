@@ -17,20 +17,38 @@
     },
     "testing": {
       "environment": "production",
+      "env": {
+        "SHARP_IGNORE_GLOBAL_LIBVIPS": "1"
+      },
       "distribution": "store",
       "autoIncrement": true,
+      "ios": {
+        "image": "macos-tahoe-26.6-xcode-27.2"
+      },
       "android": {
         "buildType": "app-bundle"
       }
     },
     "testflight": {
       "environment": "production",
+      "env": {
+        "SHARP_IGNORE_GLOBAL_LIBVIPS": "1"
+      },
       "distribution": "store",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "ios": {
+        "image": "macos-tahoe-26.6-xcode-27.2"
+      }
     },
     "production": {
       "environment": "production",
-      "autoIncrement": true
+      "env": {
+        "SHARP_IGNORE_GLOBAL_LIBVIPS": "1"
+      },
+      "autoIncrement": true,
+      "ios": {
+        "image": "macos-tahoe-26.6-xcode-27.2"
+      }
     }
   },
   "submit": {
