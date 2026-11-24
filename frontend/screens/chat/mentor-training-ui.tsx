@@ -1,5 +1,7 @@
 import type { ReactNode } from "react"
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native"
+import { Picker } from "@react-native-picker/picker"
+import { mentorText as mt } from "@/i18n/mentor-translations"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { MentorHomeHeader } from "@/screens/chat/mentor-home"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
@@ -33,6 +35,32 @@ export function TrainingField({ label, value, onChange, multiline, numeric, disa
     const input = <TextInput accessibilityLabel={label} value={value} onChangeText={onChange} placeholder={placeholder ?? label} placeholderTextColor={colors.muted} editable={!disabled} multiline={multiline} textAlignVertical={multiline ? "top" : "center"} keyboardType={numeric ? "decimal-pad" : "default"} maxLength={maxLength} selectionColor={colors.greenBright} style={[trainingStyles.input, multiline && trainingStyles.textarea, { backgroundColor: colors.input, color: colors.text }]} />
     return labeled ? <View style={{ gap: 6 }}><Text style={[trainingStyles.caption, { color: colors.muted }]}>{label}</Text>{input}</View> : input
 }
+export function TrainingDurationPicker({ minutes, onChange, minMinutes = 15, maxMinutes = 180, optional = false, disabled = false }: { minutes: number | null; onChange: (minutes: number | null) => void; minMinutes?: number; maxMinutes?: number; optional?: boolean; disabled?: boolean }) {
+    const colors = useMentorPalette()
+    const value = minutes ?? minMinutes, hours = Math.floor(value / 60), remainder = value % 60
+    const firstHour = Math.floor(minMinutes / 60), lastHour = Math.floor(maxMinutes / 60)
+    const minuteBounds = (hour: number) => [Math.max(0, minMinutes - hour * 60), Math.min(59, maxMinutes - hour * 60)] as const
+    const [firstMinute, lastMinute] = minuteBounds(hours)
+    const wheelStyle = { flex: 1, height: Platform.OS === "ios" ? 180 : 54, color: colors.text }
+    return <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: colors.input, borderRadius: 18, overflow: "hidden" }}>
+        <Picker accessibilityLabel={mt("Часы")} enabled={!disabled} selectedValue={optional && minutes == null ? -1 : hours} mode="dropdown" style={wheelStyle} itemStyle={{ color: colors.text, fontSize: 21, fontWeight: "600" }} onValueChange={value => {
+            const hour = Number(value)
+            if (optional && hour === -1) { onChange(null); return }
+            if (!Number.isInteger(hour) || hour < firstHour || hour > lastHour) return
+            const [first, last] = minuteBounds(hour)
+            onChange(hour * 60 + Math.max(first, Math.min(last, minutes == null ? 0 : remainder)))
+        }}>
+            {optional ? <Picker.Item label={mt("Не указано")} value={-1} /> : null}
+            {Array.from({ length: lastHour - firstHour + 1 }, (_, index) => index + firstHour).map(hour => <Picker.Item key={hour} label={mt("{0} ч", [hour])} value={hour} />)}
+        </Picker>
+        <Picker accessibilityLabel={mt("Минуты")} enabled={!disabled && !(optional && minutes == null) && firstMinute !== lastMinute} selectedValue={optional && minutes == null ? -1 : remainder} mode="dropdown" style={wheelStyle} itemStyle={{ color: colors.text, fontSize: 21, fontWeight: "600" }} onValueChange={value => {
+            const minute = Number(value)
+            if (Number.isInteger(minute) && minute >= firstMinute && minute <= lastMinute) onChange(hours * 60 + minute)
+        }}>
+            {optional && minutes == null ? <Picker.Item label="—" value={-1} /> : Array.from({ length: lastMinute - firstMinute + 1 }, (_, index) => index + firstMinute).map(minute => <Picker.Item key={minute} label={mt("{0} мин", [minute])} value={minute} />)}
+        </Picker>
+    </View>
+}
 export function TrainingHeading({ title, subtitle }: { title: string; subtitle?: string }) {
     const colors = useMentorPalette()
     return <View style={{ gap: 6 }}><Text accessibilityRole="header" style={[trainingStyles.title, { color: colors.text }]}>{title}</Text>{subtitle ? <Text style={[trainingStyles.subtitle, { color: colors.muted }]}>{subtitle}</Text> : null}</View>
@@ -47,7 +75,7 @@ export const trainingStyles = StyleSheet.create({
     row: { flexDirection: "row", alignItems: "center", gap: 12 }, spread: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 10 },
     primary: { minHeight: 54, borderRadius: 18, paddingHorizontal: 16, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 }, primaryLabel: { fontSize: 18, lineHeight: 24, fontWeight: "700", textAlign: "center", flexShrink: 1 },
     textAction: { minHeight: 44, justifyContent: "center", alignItems: "center", paddingHorizontal: 8, flexDirection: "row", gap: 8 }, textActionLabel: { fontSize: 16, lineHeight: 22, fontWeight: "600", textAlign: "center", flexShrink: 1 },
-    footer: { paddingTop: 10, paddingHorizontal: 22, gap: 5, width: "100%", maxWidth: 560, alignSelf: "center" }, errorSlot: { height: 36, justifyContent: "center" }, error: { fontSize: 12, lineHeight: 16 },
+    footer: { paddingTop: 10, paddingHorizontal: 22, gap: 5, width: "100%", maxWidth: 560, alignSelf: "center" },
     choice: { minHeight: 54, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 13, flexDirection: "row", alignItems: "center", gap: 12, borderBottomWidth: StyleSheet.hairlineWidth }, choiceLabel: { flex: 1, fontSize: 17, lineHeight: 23, fontWeight: "600" },
     pill: { flex: 1, minHeight: 46, borderRadius: 14, paddingHorizontal: 9, paddingVertical: 10, flexDirection: "row", alignItems: "center" },
     input: { minHeight: 50, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, fontSize: 17, lineHeight: 24, fontWeight: "500" }, textarea: { height: 194 }, caption: { fontSize: 13, lineHeight: 19 },

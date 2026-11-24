@@ -80,7 +80,7 @@ function harness(file, overrides = {}, controller = { state: state(), clock: "UT
         "@/services/api/companion": { requestKey: () => `workout-request-${++sequence}`, getCompanionEntries: async () => ({ entries: controller.state.entries }) },
         "@/services/api/companion-workouts": { requestWorkoutDraft: async () => ({ plan: plan(), message: "Ready", questions: [] }), getWorkoutLibrary: async () => ({ entries: [] }) },
         "@/screens/chat/mentor-training-data": data,
-        "@/screens/chat/mentor-training-ui": { TrainingAction: "Action", TrainingChoice: "Choice", TrainingField: "Field", TrainingFrame: "Frame", TrainingHeading: "Heading", TrainingIcon: "Icon", trainingStyles: {} },
+        "@/screens/chat/mentor-training-ui": { TrainingAction: "Action", TrainingChoice: "Choice", TrainingDurationPicker: "DurationPicker", TrainingField: "Field", TrainingFrame: "Frame", TrainingHeading: "Heading", TrainingIcon: "Icon", trainingStyles: {} },
         "@/screens/chat/mentor-training-plan": { MentorTrainingPlan: "Planner" },
         "@/screens/chat/mentor-training-session": { MentorTrainingSession: "Session" },
         "@/screens/chat/mentor-data": old, "@/screens/chat/mentor-home-data": home, "@/screens/chat/companion-timezones": dates,
@@ -97,7 +97,7 @@ function fillSetup(h) {
     const tap = (type, label) => h.find(type, label, p).props.onPress()
     tap("Choice", "Набрать мышцы"); tap("Choice", "Новичок"); tap("Action", "Далее")
     tap("Choice", "Зал"); tap("Choice", "Гантели"); tap("Action", "Далее")
-    tap("Choice", "Пн"); tap("Action", "Далее"); tap("Action", "Далее")
+    tap("Choice", "Пн"); h.find("DurationPicker", null, p).props.onChange(95); tap("Action", "Далее"); tap("Action", "Далее")
 }
 
 test("questionnaire photos are optional; Skip omits selected images and a draft never auto-saves", async t => {
@@ -106,7 +106,7 @@ test("questionnaire photos are optional; Skip omits selected images and a draft 
     fillSetup(h); h.find("Button", "Фото спереди", p).props.onPress(); await flush()
     assert.ok(nodes(h.render(p)).some(node => node.type === "Image"))
     h.find("Action", "Пропустить", p).props.onPress(); await flush()
-    assert.equal(requests.length, 1); assert.deepEqual(requests[0][1], []); assert.deepEqual(requests[0][0].setup.weekdays, [0]); assert.equal(h.calls.saved.length, 0)
+    assert.equal(requests.length, 1); assert.deepEqual(requests[0][1], []); assert.deepEqual(requests[0][0].setup.weekdays, [0]); assert.equal(requests[0][0].setup.minutes, 95); assert.equal(h.calls.saved.length, 0)
     h.find("Action", "Сохранить план", p).props.onPress(); await flush()
     assert.equal(h.calls.saved[0].kind, "workout_plan"); assert.equal(h.calls.closed, 1)
 })
@@ -123,7 +123,7 @@ test("import retries the same key, asks for missing details and blocks remote pl
     assert.match(requests[2][0].text, /Bench press.*\nWhich days\?\nMonday/); assert.notEqual(requests[1][2], requests[2][2]); assert.equal(h.calls.saved.length, 0)
     h.controller.state.profile.data.workout_plan = { ...plan(), name: "Changed elsewhere" }
     h.find("Action", "Сохранить план", p).props.onPress(); await flush(); assert.equal(h.calls.saved.length, 0)
-    assert.ok(nodes(h.render(p)).some(node => String(node.props.children).includes("другом устройстве")))
+    assert.ok(h.alerts.some(([, message]) => message.includes("другом устройстве")))
 })
 
 test("set logging requires actuals, ignores double taps and retries an identical versioned action", async t => {
@@ -131,9 +131,16 @@ test("set logging requires actuals, ignores double taps and retries an identical
     const h = harness("screens/chat/mentor-training-session.tsx"); t.after(h.cleanup); h.controller.state.entries = [initial]
     const p = { entry: initial }
     h.find("Button", "Подход 1 выполнен", p).props.onPress(); await flush(); assert.equal(h.calls.saved.length, 0)
+    assert.match(h.alerts.at(-1)[1], /от 0 до 1000 кг/)
+    h.find("Field", "Вес в подходе 1", p).props.onChange("100"); h.find("Field", "Повторения в подходе 1", p).props.onChange("1500")
+    h.find("Button", "Подход 1 выполнен", p).props.onPress(); await flush()
+    assert.equal(h.calls.saved.length, 0); assert.match(h.alerts.at(-1)[1], /от 1 до 1000/)
+    const footer = nodes(h.render(p)).find(node => node.type === "Frame").props.footer
+    assert.equal(nodes(footer).some(node => node.type === "View"), false, "native alerts do not reserve footer space")
     h.find("Field", "Вес в подходе 1", p).props.onChange("32,5"); h.find("Field", "Повторения в подходе 1", p).props.onChange("8")
     h.fail(); const check = h.find("Button", "Подход 1 выполнен", p); check.props.onPress(); check.props.onPress(); await flush()
     assert.equal(h.calls.saved.length, 1); assert.equal(h.calls.saved[0].expected_version, 3)
+    assert.equal(h.alerts.at(-1)[1], "Connection lost")
     assert.equal(h.calls.saved[0].entry.workout.exercises[0].sets[0].weight_kg, 32.5); assert.equal(h.calls.saved[0].entry.workout.exercises[0].sets[1].completed, false)
     h.fail(false); h.find("Action", "Повторить сохранение", p).props.onPress(); await flush()
     assert.strictEqual(h.calls.saved[0], h.calls.saved[1]); assert.equal(h.calls.updated[0].version, 4)
@@ -145,7 +152,7 @@ test("Back persists typed unfinished sets and Finish rejects zero completed work
     const initial = entry(12, data.beginTraining(plan().days[0], "2026-11-23", "2026-11-23T12:00:00Z"))
     const h = harness("screens/chat/mentor-training-session.tsx"); t.after(h.cleanup); h.controller.state.entries = [initial]
     const p = { entry: initial }
-    h.find("Action", "Завершить тренировку", p).props.onPress(); assert.equal(h.alerts.length, 0)
+    h.find("Action", "Завершить тренировку", p).props.onPress(); assert.match(h.alerts.at(-1)[1], /хотя бы один выполненный подход/)
     h.find("Field", "Вес в подходе 1", p).props.onChange("20"); nodes(h.render(p)).find(node => node.type === "Frame").props.onBack(); await flush()
     assert.equal(h.calls.saved.length, 1); assert.equal(h.calls.closed, 1)
     assert.equal(h.calls.saved[0].entry.workout.exercises[0].sets[0].weight_kg, 20); assert.equal(h.calls.saved[0].entry.workout.exercises[0].sets[0].completed, false)
@@ -183,4 +190,48 @@ test("AI drafts require consent and upload a private multipart preview through t
         await api.getWorkoutLibrary("2026-11-23", "2026-11-30")
         assert.deepEqual(calls.at(-1), ["read", "/users/me/ai-chat/companion/workouts", { from_date: "2026-11-23", to_date: "2026-11-30" }, { appIntegrityAction: "ai-companion" }])
     } finally { global.FormData = original }
+})
+
+
+test("history read failures show one native alert and retain an explicit retry without inline error space", async t => {
+    let fail = true, reads = 0
+    const c = { state: state(), clock: "UTC|0|2026-11-23", busy: false }; c.state.profile.data.workout_plan = plan()
+    const h = harness("screens/chat/mentor-training.tsx", { "@/services/api/companion-workouts": { getWorkoutLibrary: async () => { reads++; if (fail) throw Error("History unavailable"); return { entries: [] } } } }, c); t.after(h.cleanup)
+    const p = { active: true, onSettings() {} }
+    h.render(p); await flush(); h.render(p); h.render(p)
+    assert.deepEqual(h.alerts, [["Тренировки", "History unavailable"]]); assert.equal(reads, 1)
+    assert.equal(nodes(h.render(p)).some(node => node.props.accessibilityRole === "alert"), false)
+    assert.equal(h.find("Action", "Начать тренировку", p).props.disabled, true)
+    fail = false; h.find("Action", "Повторить загрузку", p).props.onPress(); h.render(p); await flush()
+    assert.equal(h.find("Action", "Начать тренировку", p).props.disabled, false); assert.equal(reads, 2)
+})
+
+
+test("native duration wheels select individual hours and minutes within limits and retain optional empty durations", () => {
+    const jsx = (type, props) => ({ type, props })
+    const Picker = Object.assign(function Picker() {}, { Item: "PickerItem" })
+    const { TrainingDurationPicker } = load("screens/chat/mentor-training-ui.tsx", {
+        "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+        "react-native": { Platform: { OS: "ios" }, View: "View", StyleSheet: { create: value => value, hairlineWidth: 0.5 } },
+        "@react-native-picker/picker": { Picker },
+        "react-native-safe-area-context": {},
+        "@/screens/chat/mentor-home": {},
+        "@/screens/chat/mentor-ui": { useMentorPalette: () => ({ text: "#202923", input: "#ECEEF0" }) },
+        ...Object.fromEntries(["check", "dumbbell", "pencil-line", "camera", "x", "chevron-left", "chevron-right"].map(icon => [`@/assets/icons/mentor/${icon}.svg`, "Icon"])),
+    })
+    let minutes = 45
+    const wheels = (extra = {}) => nodes(TrainingDurationPicker({ minutes, onChange: value => { minutes = value }, ...extra })).filter(node => node.type === Picker)
+    wheels()[1].props.onValueChange(37); assert.equal(minutes, 37)
+    wheels()[0].props.onValueChange(1); assert.equal(minutes, 97)
+    wheels()[0].props.onValueChange(3); assert.equal(minutes, 180)
+    assert.deepEqual(nodes(wheels()[1]).filter(node => node.type === "PickerItem").map(node => node.props.value), [0])
+    wheels()[0].props.onValueChange(0); assert.equal(minutes, 15)
+    assert.equal(nodes(wheels()[1]).find(node => node.type === "PickerItem").props.value, 15)
+    wheels()[1].props.onValueChange(0); assert.equal(minutes, 15, "a delayed native event cannot select an invalid duration")
+    minutes = null
+    const optional = { optional: true, minMinutes: 1, maxMinutes: 300 }
+    assert.equal(wheels(optional)[0].props.selectedValue, -1); assert.equal(wheels(optional)[1].props.enabled, false)
+    wheels(optional)[0].props.onValueChange(2); assert.equal(minutes, 120)
+    wheels(optional)[1].props.onValueChange(17); assert.equal(minutes, 137)
+    wheels(optional)[0].props.onValueChange(-1); assert.equal(minutes, null)
 })

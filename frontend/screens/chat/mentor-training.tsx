@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Modal, Pressable, ScrollView, Text, View } from "react-native"
+import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native"
 import { AppFormLayout } from "@/components/platform/app-form-layout"
 import { mentorDateLabel, mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
@@ -17,13 +17,15 @@ import { requestKey, type CompanionAction, type CompanionEntry } from "@/service
 import { getWorkoutLibrary } from "@/services/api/companion-workouts"
 import { getErrorMessage } from "@/utils/errors"
 
+const showAlert = (message: string) => Alert.alert(mt("Тренировки"), message)
+
 type Controller = ReturnType<typeof useCompanion>
 export function MentorTrainingScreen({ controller: c, active, onClose, onSettings }: { controller: Controller; active: boolean; onClose: () => void; onSettings: () => void }) {
     useLanguage()
     const colors = useMentorPalette(), today = mentorHomeData(c.state, c.clock).date
     const [selected, setSelected] = useState(today), [block, setBlock] = useState(0)
     const [library, setLibrary] = useState<CompanionEntry[]>([]), [loaded, setLoaded] = useState(false), [loadError, setLoadError] = useState("")
-    const [refresh, setRefresh] = useState(0), [error, setError] = useState(""), [busy, setBusy] = useState(false), [retry, setRetry] = useState(false)
+    const [refresh, setRefresh] = useState(0), [busy, setBusy] = useState(false), [retry, setRetry] = useState(false)
     const [planner, setPlanner] = useState<"generate" | "import" | "edit" | null>(null), [session, setSession] = useState<CompanionEntry | null>(null), [history, setHistory] = useState(false)
     const sessionBack = useRef<(() => void) | null>(null)
     const locked = useRef(false), previousToday = useRef(today), alive = useRef(true)
@@ -37,7 +39,7 @@ export function MentorTrainingScreen({ controller: c, active, onClose, onSetting
         if (!active || !profileId) return
         let current = true
         setLoadError("")
-        getWorkoutLibrary(from, to).then(result => { if (current) { setLibrary(result.entries); setLoaded(true) } }).catch(failure => { if (current) setLoadError(getErrorMessage(failure)) })
+        getWorkoutLibrary(from, to).then(result => { if (current) { setLibrary(result.entries); setLoaded(true) } }).catch(failure => { if (current) { const message = getErrorMessage(failure); setLoadError(message); showAlert(message) } })
         return () => { current = false }
     }, [active, from, to, profileId, c.state?.profile?.version, stateSignature, refresh, c.clock])
     const entries = mergeTrainingEntries(library, c.state?.entries ?? [])
@@ -47,7 +49,7 @@ export function MentorTrainingScreen({ controller: c, active, onClose, onSetting
     const running = entries.find(entry => entry.data.workout?.status === "in_progress")
     const target = current ?? running
     const disabled = busy || c.busy || retry
-    const choose = (date: string) => { if (disabled) return; setSelected(date); setBlock(0); setError("") }
+    const choose = (date: string) => { if (disabled) return; setSelected(date); setBlock(0) }
     const updated = (entry: CompanionEntry) => { setLibrary(value => mergeTrainingEntries(value, [entry])); setRefresh(value => value + 1) }
     const start = async () => {
         if (locked.current || callbacks.current.busy) return
@@ -55,11 +57,11 @@ export function MentorTrainingScreen({ controller: c, active, onClose, onSetting
             if (target) { setSession(target); return }
             if (!day || selected !== today || !loaded || loadError || !plan) return
             const validation = validateTrainingPlan(plan)
-            if (validation) { setError(validation); return }
+            if (validation) { showAlert(validation); return }
             const instant = mentorHomeData(callbacks.current.state, callbacks.current.clock).instant
             pending.current = { kind: "entry", request_key: requestKey(), entry: { kind: "workout", occurred_at: instant, workout: beginTraining(day, selected, instant) } }
         }
-        locked.current = true; setBusy(true); setError("")
+        locked.current = true; setBusy(true)
         try {
             const action = pending.current
             const state = await callbacks.current.perform(action)
@@ -72,13 +74,13 @@ export function MentorTrainingScreen({ controller: c, active, onClose, onSetting
         } catch (failure) {
             if (alive.current) {
                 if (failure instanceof CompanionActionCancelled) { pending.current = null; setRetry(false) }
-                else { setError(getErrorMessage(failure)); setRetry(true) }
+                else { showAlert(getErrorMessage(failure)); setRetry(true) }
             }
         } finally { locked.current = false; if (alive.current) setBusy(false) }
     }
     const checkSavedStart = async () => {
         if (locked.current || callbacks.current.busy) return
-        locked.current = true; setBusy(true); setError("")
+        locked.current = true; setBusy(true)
         try {
             const result = await getWorkoutLibrary(from, to)
             if (!alive.current) return
@@ -87,14 +89,14 @@ export function MentorTrainingScreen({ controller: c, active, onClose, onSetting
             const saved = result.entries.find(entry => expected && entry.data.workout?.plan_day_key === expected.plan_day_key && entry.data.workout?.scheduled_date === expected.scheduled_date)
             pending.current = null; setRetry(false)
             if (saved) setSession(saved)
-            else setError(mt("Запись не найдена. Можно начать тренировку заново."))
-        } catch (failure) { if (alive.current) setError(getErrorMessage(failure)) }
+            else showAlert(mt("Запись не найдена. Можно начать тренировку заново."))
+        } catch (failure) { if (alive.current) showAlert(getErrorMessage(failure)) }
         finally { locked.current = false; if (alive.current) setBusy(false) }
     }
     const closeModal = () => { if (!locked.current && !callbacks.current.busy) { setPlanner(null); setHistory(false) } }
     const label = retry ? mt("Повторить сохранение") : target ? mt(target.data.workout?.status === "completed" ? "Посмотреть тренировку" : "Продолжить тренировку") : selected > today ? mt("Тренировка запланирована") : selected < today ? mt("Нет записи за этот день") : day ? mt("Начать тренировку") : mt("День отдыха")
     const showDate = (date: string) => mentorDateLabel(new Date(`${date}T12:00:00Z`), { day: "numeric", month: "long" })
-    const openPlanner = (mode: "generate" | "import" | "edit") => { if (!disabled) { setPlanner(mode); setError("") } }
+    const openPlanner = (mode: "generate" | "import" | "edit") => { if (!disabled) { setPlanner(mode) } }
     return <View style={styles.screen}>
         <MentorHomeHeader title={mt("Тренировки")} onBack={onClose} onSettings={onSettings} />
         {!plan ? <View style={[styles.body, styles.fill, { justifyContent: "center", gap: 28 }]}>
@@ -114,6 +116,7 @@ export function MentorTrainingScreen({ controller: c, active, onClose, onSetting
                 {days.length > 1 ? <View style={styles.row}>{days.map((item, index) => <TrainingAction key={item.key} label={item.name} secondary disabled={disabled || block === index} onPress={() => setBlock(index)} />)}</View> : null}
                 <Text style={[styles.section, { color: colors.text }]}>{current?.data.workout?.name ?? day?.name ?? mt("День отдыха")}</Text>
                 <Text style={[styles.caption, { color: colors.muted }]}>{day ? mt("Упражнений: {0}", [day.exercises.length]) + (day.duration_minutes ? ` · ${mt("{0} мин", [day.duration_minutes])}` : "") : mt("Можно отдохнуть и восстановиться")}</Text>
+                {running && !current ? <Text style={[styles.caption, { color: colors.muted }]}>{mt("Не закончена тренировка: {0}", [running.data.workout!.name])}</Text> : null}
             </View>
             <ScrollView style={styles.fill} contentContainerStyle={[styles.body, { paddingTop: 0 }]} keyboardShouldPersistTaps="handled">
                 {(current?.data.workout?.exercises ?? day?.exercises ?? []).map((exercise, index) => {
@@ -123,7 +126,6 @@ export function MentorTrainingScreen({ controller: c, active, onClose, onSetting
                 })}
             </ScrollView>
             <View style={[styles.footer, { paddingBottom: 14 }]}>
-                <View style={styles.errorSlot}>{error || loadError ? <Text accessibilityRole="alert" numberOfLines={2} style={[styles.error, { color: colors.text }]}>{error || loadError}</Text> : running && !current ? <Text numberOfLines={2} style={[styles.caption, { color: colors.muted }]}>{mt("Не закончена тренировка: {0}", [running.data.workout!.name])}</Text> : null}</View>
                 {loadError && !retry ? <TrainingAction label={mt("Повторить загрузку")} secondary onPress={() => setRefresh(value => value + 1)} /> : null}
                 <TrainingAction label={mt("История тренировок")} secondary disabled={disabled} onPress={() => setHistory(true)} />
                 <TrainingAction label={label} busy={busy} disabled={c.busy || !retry && !target && (!day || selected !== today || !loaded || !!loadError)} onPress={() => void start()} />

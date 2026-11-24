@@ -12,6 +12,8 @@ import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import { getCompanionEntries, requestKey, type CompanionAction, type CompanionEntry } from "@/services/api/companion"
 import { getErrorMessage } from "@/utils/errors"
 
+const showAlert = (message: string) => Alert.alert(mt("Тренировка"), message)
+
 type Controller = ReturnType<typeof useCompanion>
 export function MentorTrainingSession({ controller: c, entry, onUpdated, onClose, registerBack }: { controller: Controller; entry: CompanionEntry; onUpdated: (entry: CompanionEntry) => void; onClose: () => void; registerBack?: (handler: (() => void) | null) => void }) {
     const colors = useMentorPalette()
@@ -25,18 +27,18 @@ export function MentorTrainingSession({ controller: c, entry, onUpdated, onClose
     }
     const [draft, setDraft] = useState<TrainingSessionDraft>(() => initialize(entry)), [now, setNow] = useState(currentTime)
     const draftRef = useRef(draft), record = useRef(entry), clean = useRef(JSON.stringify(draft))
-    const [error, setError] = useState(""), [busy, setBusy] = useState(false), [retry, setRetry] = useState(false)
+    const [busy, setBusy] = useState(false), [retry, setRetry] = useState(false)
     const locked = useRef(false), alive = useRef(true)
     const pending = useRef<{ action: CompanionAction; close: boolean } | null>(null)
     useEffect(() => { alive.current = true; const timer = setInterval(() => setNow(currentTime()), 1000); return () => { alive.current = false; clearInterval(timer) } }, [])
-    const change = (next: TrainingSessionDraft) => { draftRef.current = next; setDraft(next); setNow(currentTime()); setError("") }
+    const change = (next: TrainingSessionDraft) => { draftRef.current = next; setDraft(next); setNow(currentTime()) }
     const disabled = busy || c.busy || retry, readonly = draft.status === "completed"
     const index = Math.min(draft.current_exercise_index, draft.exercises.length - 1), exercise = draft.exercises[index]
     const elapsed = trainingElapsed(draft, now)
     const rest = Math.max(0, Math.ceil((Date.parse(draft.rest_ends_at ?? "") - now) / 1000) || 0)
     const sendPending = async () => {
         if (locked.current || callbacks.current.c.busy || !pending.current) return
-        locked.current = true; setBusy(true); setError("")
+        locked.current = true; setBusy(true)
         try {
             const request = pending.current
             const state = await callbacks.current.c.perform(request.action)
@@ -54,7 +56,7 @@ export function MentorTrainingSession({ controller: c, entry, onUpdated, onClose
         } catch (failure) {
             if (!alive.current) return
             if (failure instanceof CompanionActionCancelled) { pending.current = null; setRetry(false) }
-            else { setError(getErrorMessage(failure)); setRetry(true) }
+            else { showAlert(getErrorMessage(failure)); setRetry(true) }
         } finally { locked.current = false; if (alive.current) setBusy(false) }
     }
     const save = (next: TrainingSessionDraft, close = false) => {
@@ -63,7 +65,7 @@ export function MentorTrainingSession({ controller: c, entry, onUpdated, onClose
             const workout = trainingSessionPayload({ ...next, duration_seconds: trainingElapsed(next, currentTime()) })
             pending.current = { close, action: { kind: "entry", resource_id: record.current.id, expected_version: record.current.version, request_key: requestKey(), entry: { ...record.current.data, workout } } }
             change(next); void sendPending()
-        } catch (failure) { setError(getErrorMessage(failure)) }
+        } catch (failure) { showAlert(getErrorMessage(failure)) }
     }
     const back = () => {
         if (busy || c.busy) return
@@ -84,7 +86,7 @@ export function MentorTrainingSession({ controller: c, entry, onUpdated, onClose
             if (!saved?.data.workout) throw new Error(mt("Тренировка больше недоступна"))
             record.current = saved; callbacks.current.onUpdated(saved); pending.current = null
             if (alive.current) { const next = initialize(saved); change(next); clean.current = JSON.stringify(next); setRetry(false) }
-        } catch (failure) { if (alive.current) setError(getErrorMessage(failure)) }
+        } catch (failure) { if (alive.current) showAlert(getErrorMessage(failure)) }
         finally { locked.current = false; if (alive.current) setBusy(false) }
     } }])
     const updateSet = (setIndex: number, field: "weight" | "reps", value: string) => change({ ...draft, exercises: draft.exercises.map((item, i) => i === index ? { ...item, sets: item.sets.map((set, j) => j === setIndex ? { ...set, [field]: value, completed: false } : set) } : item) })
@@ -96,13 +98,12 @@ export function MentorTrainingSession({ controller: c, entry, onUpdated, onClose
     const finish = () => {
         try {
             const workout = trainingSessionPayload(draftRef.current)
-            if (!canFinishWorkout(workout)) { setError(mt("Отметьте хотя бы один выполненный подход")); return }
+            if (!canFinishWorkout(workout)) { showAlert(mt("Отметьте хотя бы один выполненный подход")); return }
             const totals = workoutTotals(workout)
             Alert.alert(mt("Завершить тренировку?"), mt("В историю попадут только выполненные подходы: {0}", [totals.sets]), [{ text: mt("Продолжить"), style: "cancel" }, { text: mt("Завершить"), onPress: () => save({ ...draftRef.current, status: "completed", rest_ends_at: null, current_exercise_index: draftRef.current.exercises.length }, true) }])
-        } catch (failure) { setError(getErrorMessage(failure)) }
+        } catch (failure) { showAlert(getErrorMessage(failure)) }
     }
     return <TrainingFrame title={mt(readonly ? "Тренировка завершена" : "Тренировка")} onBack={back} footer={<>
-        <View style={styles.errorSlot}>{error ? <Text accessibilityRole="alert" numberOfLines={2} style={[styles.error, { color: colors.text }]}>{error}</Text> : null}</View>
         {retry ? <><TrainingAction label={mt("Повторить сохранение")} busy={busy} disabled={c.busy} onPress={() => void sendPending()} /><TrainingAction label={mt("Загрузить сохранённое")} secondary disabled={busy} onPress={reload} /></> : readonly ? <TrainingAction label={mt("Готово")} onPress={onClose} /> : <>
             {index < draft.exercises.length - 1 ? <TrainingAction label={mt("Следующее упражнение")} busy={busy} disabled={c.busy} onPress={() => save({ ...draft, current_exercise_index: index + 1, rest_ends_at: null })} /> : null}
             <TrainingAction label={mt("Завершить тренировку")} secondary={index < draft.exercises.length - 1} busy={busy && index === draft.exercises.length - 1} disabled={disabled} onPress={finish} />
