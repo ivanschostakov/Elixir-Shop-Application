@@ -23,3 +23,14 @@ class IosAppAttestRegisterPayload(BaseModel):
 class IosAppAttestRegisterRead(BaseModel):
     key_id: str
     environment: str
+
+
+class IosAppAttestVerifyPayload(BaseModel):
+    key_id: str = Field(min_length=1, max_length=128)
+    challenge: str = Field(min_length=1, max_length=128)
+    assertion: str = Field(min_length=1, max_length=16384)
+    action: str = Field(min_length=1, max_length=32)
+
+
+class IosAppAttestVerifyRead(BaseModel):
+    grant: str

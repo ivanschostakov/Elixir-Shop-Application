@@ -2,16 +2,17 @@ const assert = require("node:assert/strict")
 const test = require("node:test")
 const loadTs = require("./load-ts.cjs")
 
-function setup(t, overrides = {}) {
+function setup(t, overrides = {}, fetchOverride) {
     const oldFetch = global.fetch
     const oldDev = global.__DEV__
     global.__DEV__ = false
     t.after(() => { global.fetch = oldFetch; global.__DEV__ = oldDev })
     const values = new Map()
     let challenge = 0, generated = 0, active = 0, peak = 0
-    global.fetch = async url => new Response(JSON.stringify(url.endsWith("/challenge")
+    global.fetch = fetchOverride ?? (async (url, init) => new Response(JSON.stringify(url.endsWith("/challenge")
         ? { challenge: `challenge-${++challenge}` }
-        : { key_id: "key-1", environment: "production" }), { status: 200 })
+        : url.endsWith("/verify") ? { grant: JSON.parse(init.body).assertion }
+        : { key_id: "key-1", environment: "production" }), { status: 200 }))
     const native = {
         isSupported: true,
         generateKeyAsync: async () => `key-${++generated}`,
@@ -54,7 +55,7 @@ test("development builds still obtain real device proof", async t => {
     global.__DEV__ = true
     const headers = await api.getAppIntegrityHeaders("ai-companion")
     assert.equal(headers["X-App-Integrity-Key-Id"], "key-1")
-    assert.match(headers["X-App-Integrity-Token"], /^assertion-/)
+    assert.match(headers["X-App-Integrity-Token"], /^ios-grant:assertion-/)
     assert.equal(api.stats().generated, 1)
 })
 
@@ -78,7 +79,7 @@ test("permanent native failure is not bypassed and does not poison the queue", a
     } })
     await assert.rejects(api.getAppIntegrityHeaders("ai-companion"), api.AppIntegrityUnavailableError)
     const headers = await api.getAppIntegrityHeaders("ai-companion")
-    assert.equal(headers["X-App-Integrity-Token"], "assertion")
+    assert.equal(headers["X-App-Integrity-Token"], "ios-grant:assertion")
     assert.equal(api.stats().generated, 1)
 })
 
@@ -94,7 +95,7 @@ test("a hung native call has a deadline and releases the iOS request queue", asy
     } })
     await assert.rejects(api.getAppIntegrityHeaders("orders:create"), /integrity_timeout/)
     const headers = await api.getAppIntegrityHeaders("orders:create")
-    assert.equal(headers["X-App-Integrity-Token"], "second-assertion")
+    assert.equal(headers["X-App-Integrity-Token"], "ios-grant:second-assertion")
     finishLate("expired-assertion")
     assert.equal(api.stats().generated, 1)
 })
@@ -106,6 +107,60 @@ test("key reset waits for an in-flight assertion before deleting its key", async
     assert.equal((await request)["X-App-Integrity-Key-Id"], "key-1")
     await reset
     assert.equal((await api.getAppIntegrityHeaders("ai-companion"))["X-App-Integrity-Key-Id"], "key-2")
+})
+
+test("server acknowledges counters in order while a community request overtakes a slow upload", async t => {
+    let counter = 0, acknowledged = 0, challenge = 0, releaseUpload, uploadStarted
+    const started = new Promise(resolve => { uploadStarted = resolve })
+    const upload = new Promise(resolve => { releaseUpload = resolve })
+    const grants = new Set()
+    const integrity = setup(t, {
+        generateAssertionAsync: async () => {
+            assert.equal(acknowledged, counter, "previous proof must reach the server first")
+            return String(++counter)
+        },
+    }, async (url, init) => {
+        if (url.endsWith("/challenge")) return Response.json({ challenge: `nonce-${++challenge}` })
+        if (url.endsWith("/register")) return Response.json({ key_id: "key-1", environment: "production" })
+        if (url.endsWith("/verify")) {
+            const payload = JSON.parse(init.body)
+            await new Promise(resolve => setTimeout(resolve, 10))
+            assert.equal(Number(payload.assertion), acknowledged + 1)
+            acknowledged = Number(payload.assertion)
+            const grant = `permit-${acknowledged}`
+            grants.add(`ios-grant:${grant}`)
+            return Response.json({ grant })
+        }
+        const token = init.headers.get("X-App-Integrity-Token")
+        assert.ok(grants.delete(token), "a request needs its own verified single-use permit")
+        if (url.endsWith("/upload")) { uploadStarted(); await upload }
+        return Response.json({ ok: true })
+    })
+    const api = loadTs("services/api/client.ts", {
+        "@/services/api/constants": { API_BASE_URL: "https://example.test" },
+        "@/services/app-integrity": integrity,
+        "@/services/auth/session": { getAuthTokens: () => ({ accessToken: "test", sessionId: 1 }) },
+        "react-native": { Platform: { OS: "ios" } },
+        "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
+        "@/services/api/request-deadline": loadTs("services/api/request-deadline.ts"),
+    })
+    const slow = api.apiPostMultipart("/upload", new FormData(), { appIntegrityAction: "ai-companion" })
+    try {
+        await started
+        assert.deepEqual(await api.apiGet("/community", undefined, { appIntegrityAction: "community:read" }), { ok: true })
+        assert.equal(acknowledged, 2)
+    } finally { releaseUpload() }
+    assert.deepEqual(await slow, { ok: true })
+})
+
+test("a rejected preverification never produces request headers", async t => {
+    let challenge = 0
+    const api = setup(t, {}, async url => {
+        if (url.endsWith("/challenge")) return Response.json({ challenge: `nonce-${++challenge}` })
+        if (url.endsWith("/verify")) return Response.json({ detail: "App integrity check failed" }, { status: 403 })
+        return Response.json({ key_id: "key-1", environment: "production" })
+    })
+    await assert.rejects(api.getAppIntegrityHeaders("ai-companion"), api.AppIntegrityUnavailableError)
 })
 
 test("request client preserves device verification failures instead of inventing HTTP 503", async () => {

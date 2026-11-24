@@ -191,3 +191,30 @@ def test_ios_register_route_returns_registered_key(monkeypatch: pytest.MonkeyPat
 
     assert response.status_code == 200, response.text
     assert response.json() == {"key_id": "key-id", "environment": "production"}
+
+
+def test_ios_preverify_route_returns_a_user_bound_grant(monkeypatch, guarded_app_overrides):
+    verify = AsyncMock(return_value=SimpleNamespace(challenge="one-use-grant"))
+    monkeypatch.setattr(app_integrity_router_module, "preverify_ios_app_attest_assertion", verify)
+    with TestClient(app) as client:
+        response = client.post("/api/v1/app-integrity/ios/verify", json={
+            "key_id": "key-id", "challenge": "server-challenge", "assertion": "signed-assertion", "action": "ai-companion",
+        })
+    assert response.status_code == 200
+    assert response.json() == {"grant": "one-use-grant"}
+    assert verify.call_args.kwargs["user_id"] == 123
+    assert verify.call_args.kwargs["action"] == "ai-companion"
+
+
+def test_clients_cannot_issue_verified_grants_themselves(guarded_app_overrides):
+    with TestClient(app) as client:
+        response = client.post("/api/v1/app-integrity/ios/challenge", json={"purpose": "ios_verified:forged", "action": "ai-companion"})
+    assert response.status_code == 422
+
+
+def test_ios_preverification_requires_authentication():
+    with TestClient(app) as client:
+        response = client.post("/api/v1/app-integrity/ios/verify", json={
+            "key_id": "key-id", "challenge": "server-challenge", "assertion": "signed-assertion", "action": "ai-companion",
+        })
+    assert response.status_code == 401

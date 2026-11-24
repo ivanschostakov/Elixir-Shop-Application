@@ -22,7 +22,7 @@ from src.app.services.auth.service import verify_telegram_init_data_for_user
 from src.database import get_db
 from src.database.models import AppAttestKey, AppIntegrityChallenge, User
 
-from .common import csv_values, is_truthy_verdict
+from .common import csv_values, is_truthy_verdict, sha256
 from .constants import (
     APP_INTEGRITY_ACTION_HEADER,
     APP_INTEGRITY_ANDROID_ALLOWED_DEVICE_VERDICTS,
@@ -46,6 +46,12 @@ from .types import AppIntegrityVerifierUnavailable
 log = logging.getLogger(__name__)
 
 _google_credentials: Any | None = None
+IOS_ASSERTION_GRANT_PREFIX = "ios-grant:"
+
+
+def _ios_grant_purpose(key_id: str) -> str:
+    """Bind permits to a key within the existing 32-character purpose column."""
+    return sha256(("ios_verified:" + key_id).encode()).hex()[:32]
 
 
 def _google_access_token_sync() -> str:
@@ -167,12 +173,22 @@ async def register_ios_app_attest_key(db: AsyncSession, *, user_id: int, key_id:
 async def _verify_ios_app_attest_assertion(db: AsyncSession, *, user_id: int, key_id: str | None, assertion: str, challenge: str, action: str) -> tuple[bool, str | None]:
     if not key_id: return False, "missing iOS key id"
 
-    challenge_record = await _consume_app_integrity_challenge(db, user_id=user_id, platform="ios", purpose="assertion", challenge=challenge, action=action)
+    preverified = assertion.startswith(IOS_ASSERTION_GRANT_PREFIX)
+    if preverified and assertion != IOS_ASSERTION_GRANT_PREFIX + challenge:
+        return False, "invalid iOS assertion grant"
+    purpose = _ios_grant_purpose(key_id) if preverified else "assertion"
+    challenge_record = await _consume_app_integrity_challenge(db, user_id=user_id, platform="ios", purpose=purpose, challenge=challenge, action=action)
     if challenge_record is None: return False, "invalid iOS challenge"
 
     await db.commit()
     app_attest_key = (await db.execute(select(AppAttestKey).where(AppAttestKey.user_id == user_id, AppAttestKey.key_id == key_id,AppAttestKey.is_active.is_(True)).with_for_update())).scalar_one_or_none()
     if app_attest_key is None: return False, "unregistered iOS key"
+
+    if preverified:
+        # This single-use, user/action/key-bound permit already passed the strict
+        # signature and counter checks before the client started its slow upload.
+        await db.commit()
+        return True, None
 
     try: assertion_counter = verify_ios_assertion_signature( public_key_pem=app_attest_key.public_key_pem, challenge=challenge, assertion_b64=assertion, key_id=key_id)
     except ValueError as exc:
@@ -187,6 +203,16 @@ async def _verify_ios_app_attest_assertion(db: AsyncSession, *, user_id: int, ke
     app_attest_key.counter = assertion_counter
     await db.commit()
     return True, None
+
+
+async def preverify_ios_app_attest_assertion(db: AsyncSession, *, user_id: int, key_id: str, assertion: str, challenge: str, action: str) -> AppIntegrityChallenge:
+    if assertion.startswith(IOS_ASSERTION_GRANT_PREFIX):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="A raw App Attest assertion is required")
+    verified, reason = await _verify_ios_app_attest_assertion(db, user_id=user_id, key_id=key_id, assertion=assertion, challenge=challenge, action=action)
+    if not verified:
+        log.warning("iOS App Attest preverification rejected user_id=%s action=%s reason=%s", user_id, action, reason)
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="App integrity check failed")
+    return await create_app_integrity_challenge(db, user_id=user_id, platform="ios", purpose=_ios_grant_purpose(key_id), action=action)
 
 
 async def _verify_with_remote_service(request: Request, *, action: str, token: str, platform: str, request_hash: str) -> bool:

@@ -348,12 +348,20 @@ async function getIosIntegrityHeaders(action: string, signal: AbortSignal): Prom
             const keyId = await ensureIosKeyRegistered(signal)
             const { challenge } = await fetchIosChallenge("assertion", action)
             const token = await retryIosService(() => AppIntegrity.generateAssertionAsync(keyId, challenge), signal)
+            // Keep the key queue until the server acknowledges the counter, not
+            // until a potentially long upload or AI response has completed.
+            const { grant } = await appIntegrityFetch<{ grant: string }>("/v1/app-integrity/ios/verify", {
+                method: "POST",
+                body: JSON.stringify({ key_id: keyId, challenge, assertion: token, action }),
+            })
+            checkDeadline(signal)
+            if (typeof grant !== "string" || !grant) throw new Error("invalid_ios_assertion_grant")
             return {
                 [APP_INTEGRITY_HEADERS.action]: action,
                 [APP_INTEGRITY_HEADERS.keyId]: keyId,
                 [APP_INTEGRITY_HEADERS.platform]: "ios",
-                [APP_INTEGRITY_HEADERS.requestHash]: challenge,
-                [APP_INTEGRITY_HEADERS.token]: token,
+                [APP_INTEGRITY_HEADERS.requestHash]: grant,
+                [APP_INTEGRITY_HEADERS.token]: `ios-grant:${grant}`,
             }
         } catch (error) {
             checkDeadline(signal)
