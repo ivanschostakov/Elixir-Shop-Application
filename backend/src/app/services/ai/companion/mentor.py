@@ -208,7 +208,7 @@ async def dashboard(db, user_id):
     scheduled = []
     plan = data.workout_plan
     if plan and plan.start_date <= today and (plan.end_date is None or today <= plan.end_date):
-        scheduled = [day for day in plan.days if today.weekday() in day.weekdays]
+        scheduled = plan.scheduled(today)
     linked = set()
     for day in scheduled:
         matches = [e for e in workouts if e.data["workout"].get("plan_day_key") == day.key and e.data["workout"].get("scheduled_date") == today.isoformat()]

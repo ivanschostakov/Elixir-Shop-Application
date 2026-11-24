@@ -26,7 +26,7 @@ def local_due(day, value, zone):
     return utc if utc.astimezone(zone).replace(tzinfo=None) == local.replace(tzinfo=None) else None
 
 
-async def schedule_recurring(db, profile, now):
+async def schedule_recurring(db, profile, now, *, include_meals=True):
     settings = Settings.model_validate(profile.settings)
     zone = timezone_info(settings.timezone)
     today = now.astimezone(zone).date()
@@ -39,7 +39,7 @@ async def schedule_recurring(db, profile, now):
         kinds.append(("supply", time(12)))
     if settings.inactivity_days is not None:
         await schedule_inactivity(db, profile, settings, now)
-    if settings.meal_reminders:
+    if include_meals and settings.meal_reminders:
         from .meals import history_and_habits, meal_type
         meals, habits = await history_and_habits(db, profile.user_id, settings, now)
         logged = {meal_type(entry, zone) for entry in meals if entry.occurred_at.astimezone(zone).date() == today}
@@ -137,7 +137,11 @@ async def reminder_text(db, row, profile):
         tracked = set((await db.execute(select(AICompanionEntry.kind).where(AICompanionEntry.user_id == row.user_id).distinct())).scalars())
         nutrition_goal = profile.data.get("goal") in {"weight_loss", "weight_gain", "maintain"}
         questions = []
-        topics = settings.checkin_topics
+        topics = set(settings.checkin_topics)
+        if "wellbeing" in settings.mobile.topics:
+            topics.discard("wellbeing")
+        if not topics:
+            return None
         if "course" in topics and summary["events"]["pending"]:
             questions.append("В расписании есть события без отметки. Что удалось выполнить, а что пропустили?")
         if "nutrition" in topics and (nutrition_goal or "meal" in tracked) and not summary["meals_logged"]:
@@ -185,14 +189,7 @@ async def reminder_text(db, row, profile):
     return text + " " + summary["coverage_note"]
 
 
-async def deliver_reminder(db, row, profile, now):
-    from src.app.services.push_notifications import _build_push_messages, _send_expo_push_messages, _delete_invalid_push_tokens
-    body = await reminder_text(db, row, profile)
-    # Do not send an overdue injection reminder after a long worker outage.
-    grace = timedelta(minutes=30) if row.kind == "course" else timedelta(hours=1) if row.kind == "checkin" or row.kind.startswith("meal_") else timedelta(hours=12)
-    if not body or now - row.due_at > grace:
-        row.status = "cancelled"
-        return
+async def save_reminder_message(db, row, body):
     if row.message_id is None:
         chat = (await db.execute(select(AIChat).where(AIChat.user_id == row.user_id, AIChat.scope == "mentor"))).scalar_one_or_none()
         if chat is None:
@@ -203,6 +200,17 @@ async def deliver_reminder(db, row, profile, now):
         db.add(message)
         await db.flush()
         row.message_id = message.id
+
+
+async def deliver_reminder(db, row, profile, now):
+    from src.app.services.push_notifications import _build_push_messages, _send_expo_push_messages, _delete_invalid_push_tokens
+    body = await reminder_text(db, row, profile)
+    # Do not send an overdue injection reminder after a long worker outage.
+    grace = timedelta(minutes=30) if row.kind == "course" else timedelta(hours=1) if row.kind == "checkin" or row.kind.startswith("meal_") else timedelta(hours=12)
+    if not body or now - row.due_at > grace:
+        row.status = "cancelled"
+        return
+    await save_reminder_message(db, row, body)
     data = {"type": "ai_companion_supply" if row.kind == "supply" else "ai_companion", "reminder_id": row.id, "message_id": row.message_id, "event_id": row.event_id}
     tokens = list((await db.execute(select(UserPushToken).where(UserPushToken.user_id == row.user_id, UserPushToken.platform.in_(["ios", "android"])))).scalars().all())
     messages = _build_push_messages(tokens, title="Наставник" if row.kind.startswith("meal_") else "Elixir", body=body if row.kind.startswith("meal_") else "Есть обновление в вашем чате.", data=data)
@@ -244,13 +252,19 @@ async def process_reminders():
                 except Exception:
                     continue
                 now = service.now_utc()
-                await schedule_recurring(db, profile, now)
+                await schedule_recurring(db, profile, now, include_meals=False)
+                await db.flush()
+                from . import mobile_push
+                live = await mobile_push.schedule(db, profile, now)
                 await db.flush()
                 rows = list((await db.execute(select(AICompanionReminder).where(AICompanionReminder.user_id == user_id, AICompanionReminder.status == "pending", AICompanionReminder.due_at <= now, or_(AICompanionReminder.next_attempt_at.is_(None), AICompanionReminder.next_attempt_at <= now)).order_by(AICompanionReminder.due_at).limit(20))).scalars().all())
                 for row in rows:
                     previous_attempts = row.attempts
                     try:
-                        await deliver_reminder(db, row, profile, now)
+                        if row.kind == "mobile" or (row.context or {}).get("mobile"):
+                            await mobile_push.deliver(db, row, profile, now, live)
+                        else:
+                            await deliver_reminder(db, row, profile, now)
                     except Exception:
                         # Persist retry state without logging medical content or push tokens.
                         row.attempts = previous_attempts + 1

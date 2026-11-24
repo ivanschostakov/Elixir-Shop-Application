@@ -62,6 +62,6 @@ def food_estimate(turn, occurred_at: datetime) -> EntryData | None:
 async def cached_food_estimate(db, user_id, request_id):
     row = (await db.execute(select(AIMessage).where(
         AIMessage.user_id == user_id,
-        AIMessage.context_json["meal_estimate_request_id"].astext == request_id,
+        AIMessage.context_json["meal_estimate_request_id"].as_string() == request_id,
     ).order_by(AIMessage.id.desc()).limit(1))).scalar_one_or_none()
     return (row.context_json or {}).get("meal_estimate") if row else None

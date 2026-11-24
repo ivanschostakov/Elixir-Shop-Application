@@ -1,6 +1,6 @@
 import { useAppActionSheet } from "@/components/platform/app-action-sheet"
 import { useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Alert, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Alert, AppState, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import * as ImagePicker from "expo-image-picker"
 import { RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio"
 import { useLanguage } from "@/providers/language-provider"
@@ -18,7 +18,7 @@ import { MentorMealSelector } from "@/screens/chat/mentor-meal-selector"
 import { mentorHomeNumber } from "@/screens/chat/mentor-home-data"
 import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 import { useMentorPalette } from "@/screens/chat/mentor-ui"
-import { askNutritionHelp, estimateCompanionFood } from "@/services/api/companion-food"
+import { askNutritionHelp, estimateCompanionFood, markFoodEstimateSeen } from "@/services/api/companion-food"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import { AiConsentDeclinedError } from "@/services/api/ai-data-consent"
 import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
@@ -39,9 +39,9 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpM
     const [recipe, setRecipe] = useState<CompanionEntry | null>(original ?? null)
     const [answer, setAnswer] = useState("")
     const previousPhoto = recipe?.photo_attachments?.[0]
-    const [text, setText] = useState(() => foodDescription(original?.data ?? c.editor?.proposal?.entry))
+    const [text, setText] = useState(() => foodDescription(c.editor?.estimate ?? original?.data ?? c.editor?.proposal?.entry))
     const [photo, setPhoto] = useState<UploadableChatAttachment | null>(null)
-    const [estimate, setEstimate] = useState<EntryData | null>(null)
+    const [estimate, setEstimate] = useState<EntryData | null>(c.editor?.estimate ?? null)
     const [phase, setPhase] = useState<Phase>("idle")
     const [error, setError] = useState("")
     const input = useRef<TextInput>(null)
@@ -80,7 +80,7 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpM
         const fingerprint = JSON.stringify([text.trim(), photo, previousPhoto?.id, helpMode])
         if (estimateRequest.current?.fingerprint !== fingerprint) estimateRequest.current = { fingerprint, key: requestKey() }
         try {
-            const result = helpMode ? await askNutritionHelp(helpMode, text || mt("Что можно съесть с учётом оставшихся КБЖУ и моих предпочтений?"), photo, estimateRequest.current.key) : await estimateCompanionFood(text, photo, estimateRequest.current.key, previousPhoto?.id)
+            const result = helpMode ? await askNutritionHelp(helpMode, text || mt("Что можно съесть с учётом оставшихся КБЖУ и моих предпочтений?"), photo, estimateRequest.current.key) : await estimateCompanionFood(text, photo, estimateRequest.current.key, previousPhoto?.id, { original_id: original?.id, original_version: original?.version, meal_type: selectedMeal, meal_key: c.editor?.mealKey })
             if (!alive.current) return
             if (helpMode) { setAnswer(result.message); return }
             if (!result.entry) { setError(result.message || mt("Не удалось рассчитать КБЖУ. Уточните описание еды.")); input.current?.focus(); return }
@@ -90,12 +90,21 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpM
         } catch (e) { if (alive.current && !(e instanceof AiConsentDeclinedError)) setError(getErrorMessage(e)) }
         finally { transition("idle") }
     }
+    useEffect(() => {
+        const key = estimateRequest.current?.key
+        if (!shown || !key || !estimate?.food_photo_attachment_ids?.length) return
+        const seen = () => { if (AppState.currentState === "active") void markFoodEstimateSeen(key).catch(() => undefined) }
+        seen()
+        const listener = AppState.addEventListener("change", seen)
+        return () => listener.remove()
+    }, [estimate, shown])
     const save = async () => {
         if (phaseRef.current !== "idle" || c.busy || !estimate) return
         transition("saving"); setError("")
         try {
             saveRequest.current ??= foodSaveAction(estimate, text, requestKey(), original, new Date(), selectedMeal, c.editor?.mealKey)
-            await c.perform(saveRequest.current)
+            const estimateId = estimateRequest.current?.key ?? c.editor?.estimateRequest
+            await c.perform(estimateId && estimate.food_photo_attachment_ids?.length ? { ...saveRequest.current, meal_estimate_request: estimateId } : saveRequest.current)
             if (alive.current) await onSaved()
         } catch (e) { if (alive.current) setError(getErrorMessage(e)) }
         finally { transition("idle") }

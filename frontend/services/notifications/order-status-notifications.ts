@@ -1,7 +1,7 @@
 import Constants from "expo-constants"
 import * as Notifications from "expo-notifications"
 import { type Href } from "expo-router"
-import { Platform } from "react-native"
+import { AppState, Platform } from "react-native"
 
 import { getProductRoute, ROUTES } from "@/constants/routes"
 import { deleteMyPushToken, registerMyPushToken } from "@/services/api/users"
@@ -55,12 +55,16 @@ function ensureNotificationsConfigured() {
     }
 
     Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-            shouldShowBanner: true,
-            shouldShowList: true,
-            shouldPlaySound: true,
-            shouldSetBadge: false,
-        }),
+        handleNotification: async notification => {
+            const data = notification.request.content.data
+            const show = !((data?.type === "mentor_notice" || data?.mentor_notice === true) && ["rest", "empty", "photo"].includes(String(data.kind)) && AppState.currentState === "active")
+            return {
+                shouldShowBanner: show,
+                shouldShowList: show,
+                shouldPlaySound: show,
+                shouldSetBadge: false,
+            }
+        },
     })
 
     notificationsConfigured = true
@@ -110,6 +114,7 @@ async function hasPushPermissions(options: OrderStatusNotificationSyncOptions) {
 async function getExpoPushToken(options: OrderStatusNotificationSyncOptions) {
     ensureNotificationsConfigured()
     await ensureAndroidChannel()
+    await import("./mentor-push").then(m => m.registerMentorCategories()).catch(() => undefined)
 
     const isGranted = await hasPushPermissions(options)
     if (!isGranted) {
@@ -180,6 +185,7 @@ export async function unregisterOrderStatusNotifications() {
         return
     }
 
+    await (await import("./mentor-push")).syncMentorSessionTimers(null).catch(() => undefined)
     if (!registeredExpoPushToken) {
         return
     }
@@ -198,6 +204,7 @@ export async function unregisterOrderStatusNotifications() {
 }
 
 export function resetOrderStatusNotifications() {
+    if (Platform.OS !== "web") void import("./mentor-push").then(m => m.syncMentorSessionTimers(null)).catch(() => undefined)
     registeredExpoPushToken = null
     registeredRoutePath = null
 }
@@ -217,7 +224,7 @@ function asPositiveInt(value: unknown): number | null {
 }
 
 function resolvePushTarget(data: PushNotificationData): Href | null {
-    const type = asString(data.type)
+    const type = data.mentor_notice === true ? "mentor_notice" : asString(data.type)
     if (!type) {
         return null
     }
@@ -266,6 +273,9 @@ function resolvePushTarget(data: PushNotificationData): Href | null {
             }
             return deepLink as Href
         }
+        case "mentor_notice":
+            if (!asPositiveInt(data.profile) || typeof data.key !== "string" || data.key.length > 200) return null
+            return { pathname: "/mentor-notice", params: { profile: String(data.profile), notice: data.key, action: String(data.action ?? "") } } as Href
         case "ai_reply":
             return { pathname: ROUTES.chat, params: { mode: "ai" } }
         case "ai_companion":
@@ -327,6 +337,7 @@ export function attachPushOpenListener(navigate: PushNotificationNavigate) {
             return
         }
 
+        if (data.type === "mentor_notice" || data.mentor_notice === true) data.action = response.actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER ? "" : response.actionIdentifier
         const target = resolvePushTarget(data)
         if (!target) {
             return

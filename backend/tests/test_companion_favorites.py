@@ -59,7 +59,7 @@ def test_favorites_require_current_consent(monkeypatch):
 
 
 @pytest.mark.skipif(not URL, reason="Needs isolated companion_test DB")
-def test_old_favorites_are_returned_but_other_users_and_future_meals_are_not():
+def test_old_favorites_are_returned_but_other_users_and_future_meals_are_not(monkeypatch):
     async def run():
         async with database() as (db, user):
             await enable(db, user)
@@ -68,7 +68,11 @@ def test_old_favorites_are_returned_but_other_users_and_future_meals_are_not():
                 return EntryData(kind="meal", name="Favorite", occurred_at=at, favorite=favorite, nutrition=Nutrition(kcal=100, protein=5, fat=4, carbs=12))
             await act(db, user, "entry", entry=meal(now - timedelta(days=365), True))
             await act(db, user, "entry", entry=meal(now, False))
-            await act(db, user, "entry", entry=meal(now + timedelta(minutes=4), True))
+            # Save at its actual time, then query an earlier instant. Submitting a
+            # future meal to the normal API intentionally normalizes device skew.
+            with monkeypatch.context() as later:
+                later.setattr(service, "now_utc", lambda: now + timedelta(minutes=4))
+                await act(db, user, "entry", entry=meal(now + timedelta(minutes=4), True))
             foreign = User(name="Other", surname="Favorites", password_hash="unused")
             db.add(foreign)
             await db.flush()

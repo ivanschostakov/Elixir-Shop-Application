@@ -1,7 +1,6 @@
 import { ActionSheetProvider } from "@expo/react-native-action-sheet"
 import { useEffect } from "react"
 import { Asset } from "expo-asset"
-import { router } from "expo-router"
 import { AppState, Platform, type AppStateStatus } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider } from "react-native-safe-area-context"
@@ -15,8 +14,6 @@ import { AiConsentProvider } from "@/providers/ai-consent-provider"
 import { LanguageProvider } from "@/providers/language-provider"
 import { ThemeProvider, useTheme } from "@/providers/theme-provider"
 import { logDeliveryFlow } from "@/services/diagnostics/delivery-flow-logger"
-import { attachPushOpenListener } from "@/services/notifications/order-status-notifications"
-import { trackPushEngagement } from "@/services/customer-intelligence"
 import { rootLayoutStyles } from "@/components/navigation/root-layout.styles"
 
 type GlobalErrorHandler = (error: unknown, isFatal?: boolean) => void
@@ -85,17 +82,6 @@ function RootLayoutContent() {
         }
 
         void Asset.loadAsync(CHAT_BACKGROUND_ASSETS).catch(() => undefined)
-    }, [])
-
-    useEffect(() => {
-        if (Platform.OS === "web") {
-            return
-        }
-
-        return attachPushOpenListener((target, data) => {
-            void trackPushEngagement(data).catch(() => undefined)
-            router.push(target)
-        })
     }, [])
 
     return (

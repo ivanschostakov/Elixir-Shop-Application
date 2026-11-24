@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { usePathname } from "expo-router"
+import { router, usePathname, useRootNavigationState } from "expo-router"
 import { DarkTheme, DefaultTheme, ThemeProvider as NavigationThemeProvider } from "@react-navigation/native"
 import { Image, Platform, Text, View } from "react-native"
 import { AppStack } from "@/components/navigation/app-stack"
@@ -12,9 +12,22 @@ import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { setTelegramChromeColors } from "@/services/telegram/telegram-web-app"
 import { darkColors, lightColors } from "@/theme/colors"
 
+import { attachPushOpenListener } from "@/services/notifications/order-status-notifications"
+import { trackPushEngagement } from "@/services/customer-intelligence"
+
 function AppShellContent() {
     const appShellStyles = useThemeStyles(createAppShellStyles)
     const pathname = usePathname()
+    const navigationKey = useRootNavigationState()?.key
+    useEffect(() => {
+        if (!navigationKey || Platform.OS === "web") return
+        return attachPushOpenListener((target, data) => {
+            // Answers to wellness questions belong in the private diary.
+            const properties = data.mentor_notice === true || data.type === "mentor_notice" ? { type: "ai_companion" } : data
+            void trackPushEngagement(properties).catch(() => undefined)
+            router.push(target)
+        })
+    }, [navigationKey])
     const { top: topInset } = useAppSafeAreaInsets()
     const { accentPalette, isDark } = useTheme()
     const [routeAnimation, setRouteAnimation] = useState<RouteAnimation>("slide_from_right")

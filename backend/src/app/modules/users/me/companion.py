@@ -232,7 +232,8 @@ async def read_messages(user: User = Depends(native_access), db: AsyncSession = 
 
 
 @companion_router.post("/meal-estimate", response_model=MealEstimateRead)
-async def meal_estimate(request: Request, text: str = Form("", max_length=4000), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db), photo_attachment_id: int | None = Form(None, gt=0)):
+async def meal_estimate(request: Request, text: str = Form("", max_length=4000), client_request_id: str = Form(..., min_length=8, max_length=64), attachments: list[UploadFile] | None = File(None), user: User = Depends(native_access), db: AsyncSession = Depends(get_db), photo_attachment_id: int | None = Form(None, gt=0), original_id: int | None = Form(None, gt=0), original_version: int | None = Form(None, gt=0),
+                        meal_type: Literal["breakfast", "lunch", "dinner", "extra"] | None = Form(None), meal_key: str | None = Form(None, max_length=64)):
     if isinstance(photo_attachment_id, int):
         from io import BytesIO
         from src.app.services.ai.companion.photos import owned_photos
@@ -244,7 +245,13 @@ async def meal_estimate(request: Request, text: str = Form("", max_length=4000),
         attachments = [*(attachments or []), UploadFile(BytesIO(photo.path.read_bytes()), filename=photo.original_filename or photo.filename, headers=Headers({"content-type": photo.mime_type}))]
     if not text.strip() and not attachments:
         raise HTTPException(422, "Опишите еду или добавьте фото")
-    return await _message(request, text.strip() or "Оцените КБЖУ еды на фото.", client_request_id, attachments, 2, user, db, meal_estimate=True)
+    result = await _message(request, text.strip() or "Оцените КБЖУ еды на фото.", client_request_id, attachments, 2, user, db, meal_estimate=True)
+    result = MealEstimateRead.model_validate(result)
+    if attachments and result.entry and result.entry.food_photo_attachment_ids:
+        from src.app.services.ai.companion.mobile_push import photo_ready
+        await photo_ready(db, user.id, client_request_id, original_id, original_version, meal_type, meal_key)
+        await db.commit()
+    return result
 
 
 @companion_router.get("/meals")
@@ -322,3 +329,36 @@ async def erase(confirm: bool = False, user: User = Depends(native_access), db: 
     await service.erase_companion(db, user.id)
     await db.commit()
     return {"ok": True, "external_cleanup": "queued"}
+
+class NoticeRequest(StrictModel):
+    profile: int = Field(gt=0)
+    key: str = Field(min_length=1, max_length=200)
+    action: str | None = Field(default=None, max_length=40)
+    minutes: int = Field(default=30, ge=1, le=720)
+    ml: int | None = Field(default=None, gt=0, le=10000)
+    score: int | None = Field(default=None, ge=1, le=5)
+    start_workout: bool = False
+    duration_minutes: int | None = Field(default=None, ge=1, le=1440)
+
+
+@companion_router.post("/mobile-notice")
+async def mobile_notice(payload: NoticeRequest, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    from src.app.services.ai.companion.push_actions import resolve
+    result = await resolve(db, user.id, payload.profile, payload.key, payload.action, payload.minutes, payload.ml, payload.score, payload.start_workout, payload.duration_minutes)
+    await db.commit()
+    return result
+
+@companion_router.post("/meal-estimate/{request_key}/seen")
+async def estimate_seen(request_key: str, user: User = Depends(native_access), db: AsyncSession = Depends(get_db)):
+    import hashlib
+    from sqlalchemy import select
+    from src.database.models.ai.companion import AICompanionReminder
+    await db.execute(select(User.id).where(User.id == user.id).with_for_update())
+    await service.require_consent(db, user.id)
+    key = "photo:" + hashlib.sha256(request_key.encode()).hexdigest()
+    row = await db.scalar(select(AICompanionReminder).where(AICompanionReminder.user_id == user.id, AICompanionReminder.dedupe_key == key))
+    if row and row.status == "pending":
+        row.context = {**(row.context or {}), "photo_seen": True}
+        row.status = "cancelled"
+    await db.commit()
+    return {"ok": True}

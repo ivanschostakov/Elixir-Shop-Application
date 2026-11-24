@@ -1,3 +1,4 @@
+import type { MealType, Nutrition } from "@/services/api/companion"
 import { useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native"
 import { mentorText as mt } from "@/i18n/mentor-translations"
@@ -21,7 +22,7 @@ export function DishPhoto({ recipe, large = false }: { recipe: FoodSuggestion; l
     </View>
 }
 
-export function MentorFoodSuggestions({ controller: c, shown, onClose }: { controller: ReturnType<typeof useCompanion>; shown: boolean; onClose: () => void }) {
+export function MentorFoodSuggestions({ controller: c, shown, onClose, gaps, meal }: { controller: ReturnType<typeof useCompanion>; shown: boolean; onClose: () => void; gaps?: Partial<Nutrition>; meal?: MealType }) {
     useLanguage()
     const colors = useMentorPalette()
     const [result, setResult] = useState<FoodEstimate | null>(null), [selected, setSelected] = useState<FoodSuggestion | null>(null)
@@ -30,7 +31,7 @@ export function MentorFoodSuggestions({ controller: c, shown, onClose }: { contr
     const request = useRef<string | null>(null), pending = useRef<Promise<FoodEstimate> | null>(null), alive = useRef(true), handoff = useRef(false)
     const load = () => {
         if (!request.current) request.current = requestKey()
-        if (!pending.current) pending.current = askNutritionHelp("suggest", mt("Подберите блюда на следующий приём пищи с учётом моего дневника и оставшихся КБЖУ."), null, request.current)
+        if (!pending.current) pending.current = askNutritionHelp("suggest", gaps ? mt("Подбери порцию для приёма пищи «{0}» под остаток калорий и нутриентов {1}.", [mealLabel(meal ?? "lunch"), JSON.stringify(gaps)]) : mt("Подберите блюда на следующий приём пищи с учётом моего дневника и оставшихся КБЖУ."), null, request.current)
         setBusy(true); setError("")
         void pending.current.then(value => {
             if (!alive.current) return
@@ -47,7 +48,7 @@ export function MentorFoodSuggestions({ controller: c, shown, onClose }: { contr
         const question = selected ? mt("Хочу приготовить «{0}»: {1}. Ингредиенты: {2}. Примерно {3} ккал, белки {4} г, жиры {5} г, углеводы {6} г на порцию. Подойдёт ли это мне на следующий приём пищи с учётом оставшихся КБЖУ и моих предпочтений?", [selected.name, selected.portion, selected.ingredients.join("; "), number(selected.nutrition.kcal), number(selected.nutrition.protein), number(selected.nutrition.fat), number(selected.nutrition.carbs)]) : mt("Что мне лучше съесть на следующий приём пищи с учётом моего дневника, оставшихся КБЖУ и предпочтений?")
         c.askMentor(question)
     }
-    const context = result?.next_meal
+    const context = gaps ? null : result?.next_meal
     return <>
         <MentorHomeHeader title={selected ? mt("Рецепт") : mt("Что поесть?")} onBack={() => selected ? setSelected(null) : onClose()} />
         <ScrollView ref={scroll} keyboardShouldPersistTaps="handled" contentContainerStyle={styles.body}>
@@ -63,7 +64,7 @@ export function MentorFoodSuggestions({ controller: c, shown, onClose }: { contr
                 {selected.steps.map((step, i) => <View key={i} style={styles.step}><View style={[styles.stepNumber, { backgroundColor: colors.soft }]}><Text style={[styles.stepText, { color: colors.green }]}>{i + 1}</Text></View><Text style={[styles.copy, { color: colors.text, flex: 1 }]}>{step}</Text></View>)}
                 {selected.image ? <Pressable accessibilityRole="link" onPress={() => void Linking.openURL(selected.image!.source_url).catch(() => setError(mt("Не удалось открыть ссылку")))}><Text style={[styles.credit, { color: colors.muted }]}>{mt("Фото похожего блюда")} · {selected.image.author || "Wikimedia Commons"} · {selected.image.license}</Text></Pressable> : null}
             </> : <>
-                <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{busy ? mt("Подбираем для вас") : context ? mealLabel(context.meal_type) : mt("На следующий приём пищи")}</Text>
+                <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>{busy ? mt("Подбираем для вас") : meal ? mealLabel(meal) : context ? mealLabel(context.meal_type) : mt("На следующий приём пищи")}</Text>
                 {busy ? <><Text style={[styles.caption, { color: colors.muted }]}>{mt("Учитываем дневник, КБЖУ и ваши предпочтения")}</Text><ActivityIndicator color={colors.green} style={{ padding: 12 }} />{[0, 1].map(i => <View key={i} style={[styles.skeleton, { backgroundColor: colors.soft }]} />)}</> : null}
                 {!busy && context?.budget ? <View style={[styles.budget, { backgroundColor: colors.soft }]}><Text style={[styles.budgetValue, { color: colors.green }]}>{Number(context.budget.kcal) > 0 ? mt("Около {0} ккал на приём", [number(context.budget.kcal)]) : mt("Дневной ориентир набран")}</Text><Text style={[styles.caption, { color: colors.muted }]}>{mt("Осталось на сегодня: {0} ккал", [number(context.remaining?.kcal)])}</Text></View> : null}
                 {!busy ? result?.suggestions?.map(recipe => <Pressable key={recipe.name} accessibilityRole="button" accessibilityLabel={mt("Открыть рецепт: {0}", [recipe.name])} onPress={() => setSelected(recipe)} style={({ pressed }) => [styles.card, { backgroundColor: colors.soft, opacity: pressed ? 0.8 : 1 }]}>
@@ -72,7 +73,7 @@ export function MentorFoodSuggestions({ controller: c, shown, onClose }: { contr
                 </Pressable>) : null}
             </>}
             {error ? <View style={styles.error}><Text accessibilityRole="alert" style={[styles.copy, { color: colors.text }]}>{error}</Text>{!selected ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Попробовать ещё раз")} disabled={busy} onPress={load}><Text style={[styles.linkText, { color: colors.green }]}>{mt("Попробовать ещё раз")}</Text></Pressable> : null}</View> : null}
-            {!busy ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Спросить наставника")} onPress={ask} style={({ pressed }) => [styles.ask, { backgroundColor: colors.greenBright, opacity: pressed ? 0.75 : 1 }]}><MentorQuestionIcon name="message" size={23} color="#FFFFFF" /><Text style={styles.askText}>{mt("Спросить наставника")}</Text></Pressable> : null}
+            {!gaps && !busy ? <Pressable accessibilityRole="button" accessibilityLabel={mt("Спросить наставника")} onPress={ask} style={({ pressed }) => [styles.ask, { backgroundColor: colors.greenBright, opacity: pressed ? 0.75 : 1 }]}><MentorQuestionIcon name="message" size={23} color="#FFFFFF" /><Text style={styles.askText}>{mt("Спросить наставника")}</Text></Pressable> : null}
         </ScrollView>
     </>
 }

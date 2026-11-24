@@ -72,6 +72,7 @@ function harness(file, overrides = {}) {
         "@/components/platform/app-surface": { AppSurface: "SharedSurface", AppComposerSurface: "ComposerSurface" },
         "@/screens/chat/mentor-wellbeing": { MentorWellbeingScreen: "WellbeingScreen" },
         "@/screens/chat/mentor-training": { MentorTrainingScreen: "TrainingScreen" },
+        "@/screens/chat/mentor-goal-celebration": { MentorGoalCelebration: "GoalCelebration" },
         "@/components/platform/app-menu": { AppMenu: "Menu" },
         "@/components/platform/app-form-layout": { AppFormLayout: "KeyboardAvoidingView" },
         "@/components/platform/native-controls": { NativeChatAction: null, nativeChatSettingsActionAvailable: false },
@@ -154,6 +155,36 @@ test("calorie and macro animations reach clamped fractions, update from the curr
     b.render("MentorMacroProgress", { amount: 30, target: 60, label: "Fat", index: 1 })
     const bar = find(b.render("MentorMacroProgress", { amount: 30, target: 60, label: "Fat", index: 1 }), "AnimatedView")
     assert.equal(bar.props.style.at(-1).width, "50%")
+})
+
+test("daily nutrition confetti waits for a real crossing and combines goals after the editor closes", () => {
+    let reduced = false
+    const h = harness("screens/chat/mentor-goal-celebration.tsx", {
+        "lottie-react-native": { default: "Lottie" },
+        "@/assets/stickers/nutrition-confetti.json": require("../assets/stickers/nutrition-confetti.json"),
+        "@/screens/chat/chat-mode-transition": { useChatReducedMotion: () => reduced },
+        "@/screens/chat/mentor-data": numbers,
+    })
+    const day = state().mentor.today
+    const render = (protein, water, visible = true, proteinTarget = 130, fat = 48) => {
+        const today = { ...day, nutrition: { target: { ...target, protein: proteinTarget }, consumed: { ...day.nutrition.consumed, protein, fat } }, water: { consumed_ml: water, target_ml: 1500 } }
+        const props = { today, visible, top: 0 }
+        h.render("MentorGoalCelebration", props)
+        return h.render("MentorGoalCelebration", props)
+    }
+    assert.equal(render(96, 1200), null)
+    assert.equal(render(96, 1200, true, 95), null, "lowering a target alone is silent")
+    assert.equal(render(96, 1200, true, 130), null)
+    assert.equal(render(131, 1500, false, 130, 60), null)
+    const receipt = render(131, 1500, true, 130, 60)
+    assert.equal(nodes(receipt).filter(node => node.type === "Lottie").length, 1)
+    assert.match(find(receipt, "Text").props.children, /Жиры, Вода/)
+    reduced = true
+    assert.equal(find(render(132, 1500), "Lottie"), undefined)
+    assert.ok(find(render(132, 1500), "Text"))
+    assert.equal(render(90, 1200, false), null)
+    assert.equal(render(90, 1200), null)
+    assert.equal(render(132, 1500, true, 130, 60), null, "corrections and repeat saves don't replay celebrated goals")
 })
 
 

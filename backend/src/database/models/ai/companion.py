@@ -63,6 +63,7 @@ class AICompanionReminder(Base, IdPkMixin, TimestampMixin):
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), index=True)
     event_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("ai_companion_events.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    context: Mapped[dict[str, Any] | None] = mapped_column(Json, nullable=True)
     dedupe_key: Mapped[str] = mapped_column(String(200), nullable=False)
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     status: Mapped[str] = mapped_column(String(24), default="pending", nullable=False)

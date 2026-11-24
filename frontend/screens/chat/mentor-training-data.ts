@@ -12,7 +12,7 @@ export const trainingEquipment = { dumbbells: "Гантели", barbell: "Шта
 
 export const trainingWeekday = (day: string) => (new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7
 export const trainingWeek = (day: string) => Array.from({ length: 7 }, (_, index) => shiftCalendarDay(day, index - trainingWeekday(day)))
-export const scheduledTraining = (plan: WorkoutPlan | null | undefined, day: string) => plan && day >= plan.start_date && (!plan.end_date || day <= plan.end_date) ? plan.days.filter(item => item.weekdays.includes(trainingWeekday(day))) : []
+export const scheduledTraining = (plan: WorkoutPlan | null | undefined, day: string) => plan && day >= plan.start_date && (!plan.end_date || day <= plan.end_date) ? plan.days.filter(item => plan.moves?.some(move => move.day_key === item.key && move.destination === day) || (item.weekdays.includes(trainingWeekday(day)) && !plan.moves?.some(move => move.day_key === item.key && move.original === day))) : []
 export const trainingRepLabel = (exercise: Partial<WorkoutTargets> & { sets?: number | unknown[]; target_sets?: number | null }) => {
     const sets = exercise.target_sets ?? (typeof exercise.sets === "number" ? exercise.sets : undefined)
     const reps = exercise.target_reps == null ? "—" : exercise.target_reps_max && exercise.target_reps_max !== exercise.target_reps ? `${exercise.target_reps}–${exercise.target_reps_max}` : String(exercise.target_reps)

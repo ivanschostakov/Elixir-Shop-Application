@@ -7,7 +7,7 @@ import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Style
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { getErrorMessage } from "@/utils/errors"
 import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, getCompanionEntries, getCompanionEvents, getCompanionSummary, getCompanionSupply, getNutritionSuggestion, requestKey } from "@/services/api/companion"
-import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
+import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, MobileReminders, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
 import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
 import { calendarDate, deviceCompanionTimezone, formatCompanionDate as dateLabel, shiftCalendarDay } from "@/screens/chat/companion-timezones"
@@ -22,7 +22,7 @@ import { MentorNutritionEditor, nutritionEditorPages } from "@/screens/chat/ment
 import { MentorWellbeingEditor } from "@/screens/chat/mentor-wellbeing-form"
 
 type Page = "meal_group" | "water" | "food_help" | "meal_reminders" | "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
-type Editor = { page: Page; proposal?: Proposal; entry?: CompanionEntry; date?: string; mealType?: import("@/services/api/companion").MealType; mealKey?: string; parentMeal?: boolean; helpMode?: "suggest" | "product"; entryKind?: EntryData["kind"] }
+type Editor = { page: Page; estimate?: EntryData; estimateRequest?: string; proposal?: Proposal; entry?: CompanionEntry; date?: string; mealType?: import("@/services/api/companion").MealType; mealKey?: string; parentMeal?: boolean; helpMode?: "suggest" | "product"; entryKind?: EntryData["kind"] }
 type Controller = ReturnType<typeof useCompanion>
 const unitLabels: Record<Unit, string> = { get mg() { return mt("мг") }, get mcg() { return mt("мкг") }, get g() { return mt("г") }, get ml() { return mt("мл") }, get capsule() { return mt("капсул") }, get tablet() { return mt("таблеток") }, get IU() { return mt("МЕ") } }
 const settingsDefault: CompanionSettings = { timezone: "UTC", nutrition_auto_eligible: false, course_reminders: false, daily_time: null, weight_time: null, weekly_time: null, weekly_day: 6, supply_reminders: false, supply_days: 7 }
@@ -105,6 +105,11 @@ export function useCompanion(enabled = true) {
             return result.state
         } finally { busyRef.current = false; setBusy(false) }
     }
+    useEffect(() => {
+        if (enabled && state && (!state.available || state.as_of) && Platform.OS !== "web") {
+            void import("@/services/notifications/mentor-push").then(module => module.syncMentorSessionTimers(state)).catch(() => undefined)
+        }
+    }, [enabled, state])
     const attempt = async (operation: () => Promise<unknown>) => {
         try { await operation() } catch (e) { if (!(e instanceof CompanionActionCancelled)) setError(getErrorMessage(e)) }
     }
@@ -286,6 +291,37 @@ function ConsentForm({ controller: c, onSave }: { controller: Controller; onSave
     </>
 }
 
+const pushDefaults: MobileReminders = {
+    topics: [], water_time: "15:00", workout_time: "18:00", wellbeing_time: "09:00", bedtime: "22:30", stress_time: "20:00",
+    short_sleep_hours: 7, effort_delay: 30, water_portion: 250,
+}
+const pushGroups = [
+    ["Питание и вода", [["nutrition", "Остаток КБЖУ перед едой"], ["meal_balance", "Треть дневной цели за приём"], ["water", "Стакан воды"], ["photo", "Готова оценка блюда по фото"], ["post_water", "Вода после тренировки"]]],
+    ["Тренировки", [["training", "Запланированное занятие"], ["energy", "Короткая тренировка при низкой энергии"], ["rest", "Конец отдыха между подходами"], ["unfinished", "Незавершённое занятие"], ["reschedule", "Перенос на свободный день"], ["program", "Завершение программы"], ["effort", "Оценка нагрузки после занятия"]]],
+    ["Самочувствие", [["wellbeing", "Дневная отметка"], ["bedtime", "Вечернее напоминание после короткого сна"], ["sleep", "Утренний вопрос после напоминания о сне"], ["stress", "Вечерний вопрос после сильного стресса"]]],
+] as const
+
+function MobilePushSettings({ value, update }: { value: MobileReminders; update: (next: MobileReminders) => void }) {
+    const times = [
+        ["water_time", "Время напоминания о воде", ["water"]],
+        ["workout_time", "Время тренировки", ["training", "energy", "reschedule"]],
+        ["wellbeing_time", "Время дневной отметки", ["wellbeing", "sleep"]],
+        ["bedtime", "Время подготовки ко сну", ["bedtime"]],
+        ["stress_time", "Время вечернего вопроса", ["stress"]],
+    ] as const
+    return <><Copy>{mt("Мобильные уведомления")}</Copy>
+        {pushGroups.map(([heading, group]) => <View key={heading} style={{ gap: 8 }}><Copy>{mt(heading)}</Copy>
+            {group.map(([topic, label]) => <Toggle key={topic} label={mt(label)} value={value.topics.includes(topic)}
+                onChange={on => update({ ...value, topics: on ? [...value.topics, topic] : value.topics.filter(x => x !== topic) })} />)}
+        </View>)}
+        {times.filter(([, , topics]) => topics.some(t => value.topics.includes(t))).map(([key, label]) =>
+            <Field key={key} label={mt(label)} value={value[key].slice(0, 5)} onChange={text => update({ ...value, [key]: text })} />)}
+        {value.topics.includes("water") && <Field label={mt("Обычная порция воды, мл")} value={value.water_portion} numeric onChange={t => update({ ...value, water_portion: Number(t) })} />}
+        {value.topics.includes("bedtime") && <Field label={mt("Короткая ночь — меньше скольких часов?")} value={value.short_sleep_hours} numeric onChange={t => update({ ...value, short_sleep_hours: Number(t) })} />}
+        {value.topics.includes("effort") && <Field label={mt("Спросить о нагрузке через сколько минут?")} value={value.effort_delay} numeric onChange={t => update({ ...value, effort_delay: Number(t) })} />}
+    </>
+}
+
 function ManualForm({ controller: c, onSave, onChanged }: { controller: Controller; onSave: (action: CompanionAction) => Promise<void>; onChanged: () => Promise<void> }) {
     useLanguage()
     const editor = c.editor!
@@ -352,6 +388,7 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
         </> : null}
         {page === "plan" ? <><Copy>{mt("Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.")}</Copy><Field label={mt("Название курса")} value={plan.name} onChange={name => setPlan({ ...plan, name })} /><Copy>{plan.timezone === deviceCompanionTimezone() ? mt("Время определяется по телефону автоматически.") : mt("Исходная схема записана в {0}. Её время не сдвигается при поездке; события в дневнике показаны по времени телефона.", [plan.timezone])}</Copy><PlanFields plan={plan} onChange={setPlan} /><Button label={mt("Подтвердить и сохранить курс")} primary disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
         {page === "settings" ? <>
+            <MobilePushSettings value={{ ...pushDefaults, ...settings.mobile }} update={mobile => setSettings({ ...settings, mobile })} />
             <Copy>{mt("Push включается в настройках уведомлений приложения. Здесь задаётся, о чём и когда напоминать. Пустое время выключает напоминание.")}</Copy>
             <Copy>{mt("Дневник и ежедневные напоминания используют время телефона автоматически. При поездке старые записи отображаются в новом местном времени; подтверждённые события курса не переносятся.")}</Copy>
             <Toggle label={mt("Напоминать о событиях курса")} value={settings.course_reminders} onChange={course_reminders => setSettings({ ...settings, course_reminders })} />
@@ -363,7 +400,13 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
             <Field label={mt("День недельной сводки: 0 пн … 6 вс")} value={settings.weekly_day} numeric onChange={text => setSettings({ ...settings, weekly_day: Number(text) })} />
             <Toggle label={mt("Напоминать о нехватке запаса")} value={settings.supply_reminders} onChange={supply_reminders => setSettings({ ...settings, supply_reminders })} />
             <Field label={mt("Проверять запас на ближайшие N дней")} value={settings.supply_days} numeric onChange={text => setSettings({ ...settings, supply_days: Number(text) })} />
-            <Button label={mt("Сохранить настройки")} primary disabled={c.busy} onPress={() => save({ kind: "settings", settings })} />
+            <Button label={mt("Сохранить настройки")} primary disabled={c.busy} onPress={() => void c.attempt(async () => {
+                if (settings.mobile?.topics.length) {
+                    const { syncPushNotifications } = await import("@/services/notifications/order-status-notifications")
+                    if (!await syncPushNotifications({ requestPermissions: true })) throw new Error(mt("Разрешите уведомления на телефоне или продолжите без напоминаний."))
+                }
+                await onSave({ kind: "settings", expected_version: version, settings })
+            })} />
             <Button label={mt("Выключить сопровождение")} disabled={c.busy} onPress={() => Alert.alert(mt("Выключить?"), mt("Напоминания прекратятся; дневник сохранится. Обычный чат начнёт новый контекст."), [{ text: mt("Отмена") }, { text: mt("Выключить"), onPress: () => void c.attempt(async () => { await c.perform({ kind: "disable", expected_version: version }); c.setEditor(null); await c.refresh() }) }])} />
             <Button label={mt("Удалить данные сопровождения")} danger disabled={c.busy} onPress={() => Alert.alert(mt("Удалить без восстановления?"), mt("Будут удалены профиль, курс, дневник и сообщения сопровождения. Удаление копий диалогов и файлов у OpenAI будет поставлено в очередь с повторными попытками."), [{ text: mt("Отмена") }, { text: mt("Удалить"), style: "destructive", onPress: () => void c.attempt(async () => { await eraseCompanion(); c.setEditor(null); await onChanged() }) }])} />
         </> : null}

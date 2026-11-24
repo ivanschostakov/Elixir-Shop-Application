@@ -50,7 +50,22 @@ class WorkoutDay(StrictModel):
         return self
 
 
+class WorkoutMove(StrictModel):
+    day_key: str = Field(min_length=1, max_length=80)
+    original: date
+    destination: date
+
+
 class WorkoutPlan(StrictModel):
+    moves: list[WorkoutMove] = Field(default_factory=list, max_length=730)
+
+    def scheduled(self, day: date):
+        if day < self.start_date or (self.end_date and day > self.end_date):
+            return []
+        removed = {m.day_key for m in self.moves if m.original == day}
+        added = {m.day_key for m in self.moves if m.destination == day}
+        return [d for d in self.days if d.key in added or (d.key not in removed and day.weekday() in d.weekdays)]
+
     name: str = Field(min_length=1, max_length=200)
     start_date: date
     end_date: date | None = None
@@ -62,6 +77,17 @@ class WorkoutPlan(StrictModel):
             raise ValueError("Workout plan ends before it starts")
         if len({day.key for day in self.days}) != len(self.days):
             raise ValueError("Workout day keys must be unique")
+        days = {day.key: day for day in self.days}
+        removed = {(move.original, move.day_key) for move in self.moves}
+        if len(removed) != len(self.moves) or len({move.destination for move in self.moves}) != len(self.moves):
+            raise ValueError("A workout occurrence can only be moved once to a free date")
+        for move in self.moves:
+            original = days.get(move.day_key)
+            if (not original or move.original.weekday() not in original.weekdays or
+                    not self.start_date <= move.original < move.destination or (self.end_date and move.destination > self.end_date)):
+                raise ValueError("Invalid workout occurrence or destination")
+            if any(move.destination.weekday() in d.weekdays and (move.destination, d.key) not in removed for d in self.days):
+                raise ValueError("The destination is already scheduled")
         return self
 
 
@@ -95,6 +121,9 @@ class WorkoutExercise(StrictModel):
 
 
 class WorkoutData(StrictModel):
+    reported_duration_seconds: int | None = Field(default=None, ge=60, le=86400)
+    finished_at: datetime | None = None
+    effort: Literal["easy", "right", "hard"] | None = None
     name: str = Field(min_length=1, max_length=200)
     plan_day_key: str | None = Field(default=None, min_length=1, max_length=80)
     scheduled_date: date | None = None
@@ -198,7 +227,29 @@ class OnboardingDetails(StrictModel):
     training_conditions: str | None = Field(default=None, max_length=2000)
 
 
+class MobileReminders(StrictModel):
+    topics: list[Literal["nutrition", "water", "meal_balance", "photo", "training", "rest", "unfinished",
+                         "post_water", "reschedule", "program", "effort", "wellbeing", "energy", "bedtime",
+                         "stress", "sleep"]] = Field(default_factory=list, max_length=16)
+    water_time: time = time(15)
+    workout_time: time = time(18)
+    wellbeing_time: time = time(9)
+    bedtime: time = time(22, 30)
+    stress_time: time = time(20)
+    effort_delay: int = Field(default=30, ge=5, le=240)
+    short_sleep_hours: float = Field(default=7, gt=0, le=24)
+    water_portion: int = Field(default=250, ge=1, le=2000)
+
+    @field_validator("water_time", "workout_time", "wellbeing_time", "bedtime", "stress_time")
+    @classmethod
+    def wall_clock(cls, value):
+        if value.tzinfo is not None:
+            raise ValueError("Expected local time")
+        return value
+
+
 class Settings(StrictModel):
+    mobile: MobileReminders = Field(default_factory=MobileReminders)
     timezone: str = "Europe/Moscow"
     nutrition_auto_eligible: bool = False
     course_reminders: bool = False
@@ -299,6 +350,7 @@ class EntryData(StrictModel):
     wellbeing: int | None = Field(default=None, ge=1, le=5)
     appetite: int | None = Field(default=None, ge=1, le=5)
     energy: int | None = Field(default=None, ge=1, le=5)
+    stress_change: Literal["calmer", "same", "tenser"] | None = None
     sleep_hours: Decimal | None = Field(default=None, ge=0, le=24)
     mood: int | None = Field(default=None, ge=1, le=3, description="1 low, 2 steady, 3 uplifted; self-reported")
     stress: int | None = Field(default=None, ge=1, le=5, description="1 calm through 5 very tense; self-reported")
@@ -331,7 +383,7 @@ class EntryData(StrictModel):
             raise ValueError("Food photo IDs must be unique")
         if self.kind == "weight" and self.weight_kg is None:
             raise ValueError("Weight is required")
-        if self.kind != "wellbeing" and any(v is not None for v in (self.mood, self.stress, self.sleep_quality)):
+        if self.kind != "wellbeing" and any(v is not None for v in (self.mood, self.stress, self.sleep_quality, self.stress_change)):
             raise ValueError("Mood, stress and sleep quality belong to a wellbeing record")
         if self.kind == "wellbeing" and not self.note and all(v is None for v in (self.wellbeing, self.appetite, self.energy, self.sleep_hours, self.mood, self.stress, self.sleep_quality)):
             raise ValueError("A wellbeing value or note is required")
@@ -369,6 +421,7 @@ class Proposal(StrictModel):
 
 
 class Action(StrictModel):
+    meal_estimate_request: str | None = Field(default=None, min_length=8, max_length=64)
     request_key: str = Field(min_length=8, max_length=64)
     record_now: bool = False
     kind: Literal["enable", "disable", "onboard", "onboarding_details", "profile", "settings", "plan", "plan_status", "workout_plan", "entry", "delete_entry", "event", "confirm", "cancel", "nutrition", "dialogue_confirm", "dialogue_cancel", "dialogue_undo", "dialogue_edit"]

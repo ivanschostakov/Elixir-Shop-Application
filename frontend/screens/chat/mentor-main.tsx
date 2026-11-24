@@ -13,6 +13,7 @@ import { useMentorPalette } from "@/screens/chat/mentor-ui"
 import type { MentorQuestion } from "@/hooks/chat/use-mentor-question"
 import { MentorTrainingScreen } from "@/screens/chat/mentor-training"
 import { MentorWellbeingScreen } from "@/screens/chat/mentor-wellbeing"
+import { MentorGoalCelebration } from "@/screens/chat/mentor-goal-celebration"
 
 type Controller = ReturnType<typeof useCompanion>
 export type MentorChatRenderer = (props: { active: boolean; onBack: () => void; question?: MentorQuestion | null; onQuestionHandled?: (id: string) => void }) => ReactNode
@@ -58,13 +59,15 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
     const openSettings = () => { Keyboard.dismiss(); setNavigation(current => ({ ...current, settingsOpen: true, direction: 1, revision: current.revision + 1 })) }
     const closeSettings = () => setNavigation(current => ({ ...current, settingsOpen: false, direction: -1, revision: current.revision + 1 }))
     const settled = useCallback((page: MentorPage) => { if (page === (route.current.settingsOpen ? "settings" : route.current.tab)) setChatInteractive(page === "chat") }, [])
+    const home = mentorHomeData(c.state, c.clock)
+    const today = c.state?.mentor?.today
     const settings: { label: string; icon: MentorQuestionIconName; action: () => void }[] = [
         { label: mt("Мой профиль"), icon: "profile", action: () => c.setEditor({ page: "profile" }) },
         { label: mt("Настроить питание"), icon: "food", action: () => c.setEditor({ page: "nutrition" }) },
         { label: mt("Записать вес"), icon: "weight", action: () => c.setEditor({ page: "weight" }) },
         { label: mt("Напоминания о еде"), icon: "clock", action: () => c.setEditor({ page: "meal_reminders" }) },
         { label: mt("Настройки и напоминания"), icon: "settings", action: () => c.setEditor({ page: "settings" }) },
-        ...(mentorHomeData(c.state, c.clock).optionalIncomplete ? [{ label: mt("Продолжить заполнение"), icon: "custom" as const, action: onContinue }] : []),
+        ...(home.optionalIncomplete ? [{ label: mt("Продолжить заполнение"), icon: "custom" as const, action: onContinue }] : []),
     ]
     const render = (page: MentorPage) => {
         if (page === "nutrition") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeScreen state={c.state} clock={c.clock} animationKey={entrance} error={c.error} busy={c.busy} onRefresh={() => void c.refresh()} onClose={onClose}
@@ -82,6 +85,8 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
         <MentorTabPages active={settingsOpen ? "settings" : tab} direction={direction} transitionKey={revision} render={render} onSelect={select} onSettled={settled}
             footerHeight={footerHeight} footerVisible={tab !== "chat" || settingsOpen} footer={<MentorBottomNavigation active={tab} onSelect={select} />} />
         <CompanionPanel controller={c} onChanged={unchanged} workspaceVisible navigationVisible={false} />
+        {visible && c.state?.profile?.enabled && today && today.date === home.date &&
+            <MentorGoalCelebration key={`${c.state.profile.id}:${today.date}`} today={today} visible={tab === "nutrition" && !settingsOpen && !c.editor} top={top} />}
     </View>
 }
 
