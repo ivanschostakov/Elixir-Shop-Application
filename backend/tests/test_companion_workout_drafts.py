@@ -33,7 +33,12 @@ def test_workout_schema_validates_ranges_and_preserves_legacy_plans_and_sessions
         WorkoutPlan.model_validate(p)
     legacy = {"name": "Old session", "exercises": [{"key": "squat", "name": "Squat", "sets": [{"weight_kg": 0, "reps": 8, "completed": True}]}]}
     assert WorkoutData.model_validate(legacy).timer_started_at is None
-    for field in ["timer_started_at", "rest_ends_at"]:
+    assert WorkoutData.model_validate(legacy).paused_at is None
+    paused = WorkoutData.model_validate({**legacy, "paused_at": NOW, "duration_seconds": 600})
+    assert WorkoutData.model_validate_json(paused.model_dump_json()).paused_at == NOW
+    completed = WorkoutData.model_validate({**paused.model_dump(), "status": "completed", "rest_ends_at": NOW})
+    assert completed.paused_at is None and completed.rest_ends_at is None
+    for field in ["timer_started_at", "rest_ends_at", "paused_at"]:
         with pytest.raises(ValidationError):
             WorkoutData.model_validate({**legacy, field: "2026-11-23T12:00:00"})
     with pytest.raises(ValidationError):
@@ -184,6 +189,21 @@ def test_saved_snapshots_and_library_preserve_old_running_sessions_and_user_isol
             record = result["entries"][0]
             assert record["data"]["workout"]["name"] == "Old upper"
             assert record["data"]["workout"]["exercises"][0]["target_reps"] == 8
+            from src.app.services.ai.companion.schemas import Action
+            snapshot.paused_at = old_time + timedelta(seconds=60)
+            snapshot.duration_seconds = 60
+            pause_action = Action(kind="entry", request_key="workout-pause-retry", resource_id=record["id"], expected_version=record["version"], entry=EntryData(kind="workout", occurred_at=old_time, workout=snapshot))
+            first_pause = await service.apply_action(db, user.id, pause_action); await db.commit()
+            assert await service.apply_action(db, user.id, pause_action) == first_pause
+            paused_record = (await workout_library(date(2026, 11, 23), date(2026, 11, 30), user, db))["entries"][0]
+            assert paused_record["version"] == record["version"] + 1
+            assert datetime.fromisoformat(paused_record["data"]["workout"]["paused_at"]) == snapshot.paused_at
+            assert paused_record["data"]["workout"]["status"] == "in_progress"
+            snapshot.paused_at = None
+            snapshot.timer_started_at = NOW - timedelta(seconds=60)
+            await act(db, user, "entry", resource_id=record["id"], expected_version=paused_record["version"], entry=EntryData(kind="workout", occurred_at=old_time, workout=snapshot))
+            record = (await workout_library(date(2026, 11, 23), date(2026, 11, 30), user, db))["entries"][0]
+            assert record["data"]["workout"]["paused_at"] is None
             snapshot.status = "completed"; snapshot.duration_seconds = 120
             snapshot.exercises[0].sets[0].weight_kg = Decimal(0); snapshot.exercises[0].sets[0].reps = 8; snapshot.exercises[0].sets[0].completed = True
             await act(db, user, "entry", resource_id=record["id"], expected_version=record["version"], entry=EntryData(kind="workout", occurred_at=old_time, workout=snapshot))

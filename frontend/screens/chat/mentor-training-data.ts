@@ -68,5 +68,19 @@ export function trainingSessionPayload(draft: TrainingSessionDraft): Workout {
         return { weight_kg: weight, reps, completed: set.completed }
     }) })) }
 }
-export const trainingElapsed = (workout: Pick<Workout, "duration_seconds" | "timer_started_at" | "status">, now: number) => workout.status === "completed" || !workout.timer_started_at ? workout.duration_seconds : Math.min(86400, Math.max(workout.duration_seconds, Math.floor((now - Date.parse(workout.timer_started_at)) / 1000) || 0))
+export const trainingElapsed = (workout: Pick<Workout, "duration_seconds" | "timer_started_at" | "paused_at" | "status">, now: number) => workout.status === "completed" || !workout.timer_started_at ? workout.duration_seconds : Math.min(86400, Math.max(workout.duration_seconds, Math.floor(((workout.paused_at ? Date.parse(workout.paused_at) : now) - Date.parse(workout.timer_started_at)) / 1000) || 0))
+export const trainingRest = (workout: Pick<Workout, "rest_ends_at" | "paused_at">, now: number) => Math.max(0, Math.ceil((Date.parse(workout.rest_ends_at ?? "") - (workout.paused_at ? Date.parse(workout.paused_at) : now)) / 1000) || 0)
+
+export function pauseTraining<T extends Workout | TrainingSessionDraft>(workout: T, now: number): T {
+    if (workout.status !== "in_progress" || workout.paused_at) return workout
+    return { ...workout, duration_seconds: trainingElapsed(workout, now), paused_at: new Date(now).toISOString() }
+}
+export function resumeTraining<T extends Workout | TrainingSessionDraft>(workout: T, now: number): T {
+    if (workout.status !== "in_progress" || !workout.paused_at) return workout
+    const elapsed = trainingElapsed(workout, now), gap = Math.max(0, now - Date.parse(workout.paused_at))
+    const started = Date.parse(workout.timer_started_at ?? ""), rest = Date.parse(workout.rest_ends_at ?? "")
+    return { ...workout, paused_at: null, duration_seconds: elapsed,
+        timer_started_at: new Date(Number.isFinite(started) ? started + gap : now - elapsed * 1000).toISOString(),
+        rest_ends_at: trainingRest(workout, now) > 0 ? new Date(rest + gap).toISOString() : null }
+}
 export const trainingTimer = (seconds: number) => `${String(Math.floor(Math.max(0, seconds) / 60)).padStart(2, "0")}:${String(Math.floor(Math.max(0, seconds)) % 60).padStart(2, "0")}`

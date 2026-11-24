@@ -104,8 +104,9 @@ class WorkoutData(StrictModel):
     exercises: list[WorkoutExercise] = Field(min_length=1, max_length=30)
     timer_started_at: datetime | None = None
     rest_ends_at: datetime | None = None
+    paused_at: datetime | None = None
 
-    @field_validator("timer_started_at", "rest_ends_at")
+    @field_validator("timer_started_at", "rest_ends_at", "paused_at")
     @classmethod
     def aware_timer(cls, value):
         if value is not None and value.tzinfo is None:
@@ -125,6 +126,8 @@ class WorkoutData(StrictModel):
             raise ValueError("Log at least one actual set before finishing the workout")
         if self.status == "completed":
             self.current_exercise_index = len(self.exercises)
+            self.paused_at = None
+            self.rest_ends_at = None
         return self
 
 

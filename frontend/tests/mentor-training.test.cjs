@@ -235,3 +235,83 @@ test("native duration wheels select individual hours and minutes within limits a
     wheels(optional)[1].props.onValueChange(17); assert.equal(minutes, 137)
     wheels(optional)[0].props.onValueChange(-1); assert.equal(minutes, null)
 })
+
+
+test("workout pause freezes elapsed time and rest across reopening and repeated pauses", () => {
+    const start = Date.parse("2026-11-23T12:00:00Z")
+    const workout = { ...data.beginTraining(plan().days[0], "2026-11-23", new Date(start).toISOString()), rest_ends_at: new Date(start + 90000).toISOString() }
+    const paused = data.pauseTraining(workout, start + 60000)
+    assert.equal(data.trainingElapsed(paused, start + 3600000), 60)
+    assert.equal(data.trainingRest(paused, start + 3600000), 30)
+    assert.equal(data.pauseTraining(paused, start + 3600000), paused)
+    const reloaded = JSON.parse(JSON.stringify(data.trainingSessionPayload(data.trainingSessionDraft(paused))))
+    const resumed = data.resumeTraining(reloaded, start + 3600000)
+    assert.equal(resumed.paused_at, null)
+    assert.equal(data.trainingElapsed(resumed, start + 3620000), 80)
+    assert.equal(data.trainingRest(resumed, start + 3620000), 10)
+    const pausedAgain = data.pauseTraining(resumed, start + 3620000)
+    const resumedAgain = data.resumeTraining(pausedAgain, start + 7200000)
+    assert.equal(data.trainingElapsed(resumedAgain, start + 7210000), 90)
+    assert.equal(data.trainingRest(resumedAgain, start + 7210000), 0)
+    const completed = { ...resumedAgain, status: "completed", duration_seconds: 90 }
+    assert.equal(data.pauseTraining(completed, start + 9000000), completed)
+})
+
+test("pause saves once, locks set editing and resumes the same versioned session without counting downtime", async t => {
+    const initial = entry(12, { ...data.beginTraining(plan().days[0], "2026-11-23", "2026-11-23T12:00:00Z"), rest_ends_at: "2026-11-23T12:11:00Z" })
+    const h = harness("screens/chat/mentor-training-session.tsx"); t.after(h.cleanup)
+    h.controller.state = { ...h.controller.state, as_of: "2026-11-23T12:10:00Z", received_at: Date.now(), entries: [initial] }
+    const p = { entry: initial }
+    const pause = h.find("Action", "Пауза", p); pause.props.onPress(); pause.props.onPress(); await flush()
+    assert.equal(h.calls.saved.length, 1)
+    const stopped = h.calls.saved[0].entry.workout
+    assert.ok(stopped.paused_at); assert.equal(stopped.status, "in_progress"); assert.equal(stopped.duration_seconds, 600)
+    assert.equal(h.find("Field", "Вес в подходе 1", p).props.disabled, true)
+    assert.equal(h.find("Action", "Следующее упражнение", p).props.disabled, true)
+    assert.equal(h.find("Action", "Продолжить", p).props.disabled, false)
+    h.controller.state = { ...h.controller.state, as_of: "2026-11-23T13:00:00Z", received_at: Date.now() }
+    h.find("Action", "Продолжить", p).props.onPress(); await flush()
+    const resumed = h.calls.saved[1].entry.workout
+    assert.equal(h.calls.saved[1].resource_id, 12); assert.equal(h.calls.saved[1].expected_version, 2)
+    assert.equal(resumed.paused_at, null); assert.equal(resumed.duration_seconds, 600)
+    assert.equal(data.trainingRest(resumed, Date.parse(resumed.timer_started_at) + 600000), 60)
+    assert.equal(h.find("Field", "Вес в подходе 1", p).props.disabled, false)
+})
+
+test("a paused session stays paused after reopening and can finish with its frozen duration", async t => {
+    const workout = data.pauseTraining(data.beginTraining(plan().days[0], "2026-11-23", "2026-11-23T12:00:00Z"), Date.parse("2026-11-23T12:10:00Z"))
+    workout.exercises[0].sets[0] = { weight_kg: 20, reps: 8, completed: true }
+    const initial = entry(12, workout), h = harness("screens/chat/mentor-training-session.tsx"); t.after(h.cleanup)
+    h.controller.state = { ...h.controller.state, as_of: "2026-11-23T14:00:00Z", received_at: Date.now(), entries: [initial] }
+    const p = { entry: initial }
+    assert.equal(h.find("Action", "Пауза", p), undefined)
+    assert.ok(h.find("Action", "Продолжить", p)); assert.equal(h.calls.saved.length, 0)
+    h.find("Action", "Завершить тренировку", p).props.onPress()
+    h.alerts.at(-1)[2].find(button => button.text === "Завершить").onPress(); await flush()
+    const completed = h.calls.saved[0].entry.workout
+    assert.equal(completed.status, "completed"); assert.equal(completed.paused_at, null); assert.equal(completed.duration_seconds, 600)
+    assert.equal(h.calls.closed, 1)
+})
+
+
+test("failed pause retries the same timestamp and request rather than adding the retry delay", async t => {
+    const initial = entry(12, data.beginTraining(plan().days[0], "2026-11-23", "2026-11-23T12:00:00Z"))
+    const h = harness("screens/chat/mentor-training-session.tsx"); t.after(h.cleanup)
+    h.controller.state = { ...h.controller.state, as_of: "2026-11-23T12:10:00Z", received_at: Date.now(), entries: [initial] }
+    const p = { entry: initial }; h.fail()
+    h.find("Action", "Пауза", p).props.onPress(); await flush()
+    h.controller.state = { ...h.controller.state, as_of: "2026-11-23T13:00:00Z", received_at: Date.now() }; h.fail(false)
+    h.find("Action", "Повторить сохранение", p).props.onPress(); await flush()
+    assert.strictEqual(h.calls.saved[0], h.calls.saved[1]); assert.equal(h.calls.saved[1].entry.workout.duration_seconds, 600)
+    assert.ok(h.find("Action", "Продолжить", p))
+})
+
+test("finishing a running session records time since the last set save", async t => {
+    const workout = data.beginTraining(plan().days[0], "2026-11-23", "2026-11-23T12:00:00Z")
+    workout.exercises[0].sets[0] = { weight_kg: 20, reps: 8, completed: true }; workout.duration_seconds = 120
+    const initial = entry(12, workout), h = harness("screens/chat/mentor-training-session.tsx"); t.after(h.cleanup)
+    h.controller.state = { ...h.controller.state, as_of: "2026-11-23T12:10:00Z", received_at: Date.now(), entries: [initial] }
+    const p = { entry: initial }; h.find("Action", "Завершить тренировку", p).props.onPress()
+    h.alerts.at(-1)[2].find(button => button.text === "Завершить").onPress(); await flush()
+    assert.equal(h.calls.saved[0].entry.workout.duration_seconds, 600)
+})

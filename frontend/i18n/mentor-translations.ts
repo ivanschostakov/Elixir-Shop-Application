@@ -2,6 +2,7 @@ import { getTranslationLanguage, type Language } from "@/i18n/translations"
 
 // Source phrases belong to the interface; user-entered names and notes are never passed here.
 export const mentorTranslations: Record<string, { en: string; kz: string }> = {
+    "Тренировка на паузе": { en: "Workout paused", kz: "Жаттығу кідіртілді" },
     "Не указано": { en: "Not set", kz: "Көрсетілмеген" },
     "Запись не найдена. Можно начать тренировку заново.": { en: "No record found. You can start the workout again.", kz: "Жазба табылмады. Жаттығуды қайта бастауға болады." },
     "Закрыть без сохранения?": { en: "Close without saving?", kz: "Сақтамай жабу керек пе?" },
