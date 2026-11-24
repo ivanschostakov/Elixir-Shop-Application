@@ -1,6 +1,6 @@
 """Meal grouping, drink-water totals and local-time eating habits."""
 from collections import Counter
-from datetime import timedelta
+from datetime import time, timedelta
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -54,6 +54,19 @@ async def history_and_habits(db, user_id, settings, now):
         AICompanionEntry.occurred_at >= now - timedelta(days=28), AICompanionEntry.occurred_at <= now,
     ).order_by(AICompanionEntry.occurred_at.desc(), AICompanionEntry.id.desc()).limit(10000))).scalars())
     return rows, eating_habits(rows, zone, now.astimezone(zone).date())
+
+
+def missing_meal_due_at(entries, habits, zone, today):
+    from .jobs import local_due
+    logged = {meal_type(entry, zone) for entry in entries if entry.occurred_at.astimezone(zone).date() == today}
+    deadlines = []
+    for kind in MEAL_TYPES:
+        slot = habits[kind]["time"]
+        if slot and kind not in logged:
+            start = local_due(today, time.fromisoformat(slot), zone)
+            if start is not None:
+                deadlines.append(start + timedelta(minutes=30))
+    return min(deadlines, default=None)
 
 
 async def library(db, user_id):

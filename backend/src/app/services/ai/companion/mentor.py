@@ -84,6 +84,7 @@ class TodayWorkouts(StrictModel):
 
 class TodayNutrition(StrictModel):
     consumed: NutritionTotals
+    missing_meal_due_at: datetime | None = None
     target: Nutrition | None = None
     remaining: Nutrition | None = None
 
@@ -186,9 +187,10 @@ async def dashboard(db, user_id):
     profile = await service.profile_for(db, user_id)
     if not profile or not profile.enabled or not service.consent_is_current(await service.consent_for(db, user_id)):
         return None
-    from .meals import water_target
+    from .meals import history_and_habits, missing_meal_due_at, water_target
     data = ProfileData.model_validate(profile.data)
-    zone = timezone_info(Settings.model_validate(profile.settings).timezone)
+    settings = Settings.model_validate(profile.settings)
+    zone = timezone_info(settings.timezone)
     now = service.now_utc()
     midnight = now.astimezone(zone).replace(hour=0, minute=0, second=0, microsecond=0)
     today = midnight.date()
@@ -224,11 +226,13 @@ async def dashboard(db, user_id):
                 status="done" if entry.data["workout"]["status"] == "completed" else "in_progress",
                 resource_id=entry.id, version=entry.version, plan_day_key=entry.data["workout"].get("plan_day_key")))
     latest = await service.latest_weight(db, user_id, now)
+    meals, habits = await history_and_habits(db, user_id, settings, now)
     return MentorDashboard(
         workout_plan=plan, latest_weight=service.dump(latest),
         today=MentorToday(date=today, tasks=tasks, water=TodayWater(consumed_ml=today_summary["water_ml"], target_ml=water_target(profile)),
             course=CourseCounts(scheduled=len(events), **today_summary["events"]),
             workouts=TodayWorkouts(scheduled=len(scheduled), completed=today_summary["workouts"]["completed"], in_progress=today_summary["workouts"]["in_progress"]),
-            nutrition=TodayNutrition(consumed=today_summary["nutrition"], target=data.nutrition, remaining=remaining_nutrition(today_summary["nutrition"], data.nutrition))),
+            nutrition=TodayNutrition(consumed=today_summary["nutrition"], target=data.nutrition, remaining=remaining_nutrition(today_summary["nutrition"], data.nutrition),
+                missing_meal_due_at=missing_meal_due_at(meals, habits, zone, today))),
         week=MentorWeek(from_date=week_start.date(), to_date=(week_start + timedelta(days=7)).date(), summary=week_summary),
     ).model_dump(mode="json", by_alias=True)

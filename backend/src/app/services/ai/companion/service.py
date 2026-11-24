@@ -188,7 +188,7 @@ async def get_state(db, user_id):
     today = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     tomorrow = (local.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).astimezone(timezone.utc)
     events = list((await db.execute(select(AICompanionEvent).where(AICompanionEvent.user_id == user_id, AICompanionEvent.scheduled_at >= today, AICompanionEvent.scheduled_at < now + timedelta(days=7), AICompanionEvent.status != "cancelled").order_by(AICompanionEvent.scheduled_at).limit(100))).scalars().all())
-    if profile.enabled and not base["consent_required"] and {"rest", "unfinished"}.intersection(settings.mobile.topics):
+    if profile.enabled and not base["consent_required"] and not settings.notifications_paused and {"rest", "unfinished"}.intersection(settings.mobile.topics):
         active = await db.scalars(select(AICompanionEntry).where(AICompanionEntry.user_id == user_id, AICompanionEntry.kind == "workout",
             AICompanionEntry.data["workout"]["status"].as_string() == "in_progress").order_by(AICompanionEntry.id.desc()).limit(51))
         base["open_workouts"] = [dump(e) for e in active]
@@ -308,7 +308,7 @@ async def sync_course_reminders(db, profile):
     await db.execute(update(AICompanionReminder).where(AICompanionReminder.user_id == profile.user_id, AICompanionReminder.kind == "course", AICompanionReminder.status == "pending").values(status="cancelled"))
     settings = Settings.model_validate(profile.settings)
     plan = await current_plan(db, profile.user_id)
-    if not profile.enabled or not settings.course_reminders or not plan or plan.status != "active":
+    if not profile.enabled or settings.notifications_paused or not settings.course_reminders or not plan or plan.status != "active":
         return
     events = list((await db.execute(select(AICompanionEvent).where(AICompanionEvent.plan_id == plan.id, AICompanionEvent.status == "pending", AICompanionEvent.scheduled_at >= now_utc()))).scalars().all())
     for event in events:
@@ -317,8 +317,9 @@ async def sync_course_reminders(db, profile):
 
 def settings_data(settings, profile):
     values = settings.model_dump(mode="json")
-    if "mobile" not in settings.model_fields_set and "mobile" in profile.settings:
-        values["mobile"] = profile.settings["mobile"]
+    for field in ("mobile", "notifications_paused"):
+        if field not in settings.model_fields_set and field in profile.settings:
+            values[field] = profile.settings[field]
     return values
 
 
@@ -334,8 +335,8 @@ def action_fingerprint(action):
         if action.entry.workout:
             entry["workout"] = {k: True for k in ("finished_at", "effort", "reported_duration_seconds") if getattr(action.entry.workout, k) is None}
         exclude["entry"] = entry
-    if action.settings and "mobile" not in action.settings.model_fields_set:
-        exclude["settings"] = {"mobile": True}
+    if action.settings:
+        exclude["settings"] = {key: True for key in ("mobile", "notifications_paused") if key not in action.settings.model_fields_set}
     if action.workout_plan and not action.workout_plan.moves:
         exclude["workout_plan"] = {"moves": True}
     if action.profile and action.profile.workout_plan and not action.profile.workout_plan.moves:

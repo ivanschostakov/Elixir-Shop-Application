@@ -249,6 +249,7 @@ class MobileReminders(StrictModel):
 
 
 class Settings(StrictModel):
+    notifications_paused: bool = False
     mobile: MobileReminders = Field(default_factory=MobileReminders)
     timezone: str = "Europe/Moscow"
     nutrition_auto_eligible: bool = False

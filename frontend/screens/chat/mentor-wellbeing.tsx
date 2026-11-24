@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Pressable, Text, View, useWindowDimensions } from "react-native"
+import { ActivityIndicator, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native"
 import { LocaleConfig, type CalendarProps } from "react-native-calendars"
 import { AppCalendar } from "@/components/platform/app-calendar"
-import { mentorText as mt } from "@/i18n/mentor-translations"
+import { mentorNumber, mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { MentorHomeHeader } from "@/screens/chat/mentor-home"
@@ -39,10 +39,12 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
     const metricHeight = dense ? 48 : compact ? 60 : 72
     const dateHeight = dense ? 28 : 36
     const cardHeight = dateHeight + gap + metricHeight * 2
-    const footerHeight = dense ? 80 : 96
+    const footerHeight = dense ? 111 : 118
     const calendarRoom = height - 56 - introHeight - cardHeight - footerHeight - gap * 2 - (dense ? 0 : 6)
     const daySize = Math.max(20, Math.min(40, Math.floor((calendarRoom - 80) / 6 - weekMargin * 2)))
     const calendarHeight = 80 + 6 * (daySize + weekMargin * 2)
+    const Body = calendarHeight > calendarRoom ? ScrollView : View
+    const bodySpacing = { paddingTop: dense ? 0 : 6, gap }
     const [month, setMonth] = useState(today.slice(0, 7))
     const [selected, setSelected] = useState(today)
     const [snapshot, setSnapshot] = useState<{ key: string; entries: CompanionEntry[] } | null>(null)
@@ -84,10 +86,11 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
     marks[selected] = { ...marks[selected], selected: true, selectedColor: colors.green, selectedTextColor: "#FFFFFF" }
     const summary = wellbeingSummary(wellbeingDraft(entry?.data))
     const statusLabel = loading ? mt("Загружаем записи") : entry ? mt("Заполнено") : error ? mt("Нет данных") : mt("Пока нет записи")
+    const weight = c.state?.mentor?.latest_weight?.data.weight_kg
     const buttonLabel = error ? mt("Попробовать ещё раз") : entry ? mt("Изменить запись") : mt("Заполнить анкету")
     return <View testID="mentor-wellbeing" onLayout={event => setHeight(event.nativeEvent.layout.height)} style={[styles.screen, { backgroundColor: colors.surface }]}>
         <MentorHomeHeader title={mt("Самочувствие")} onBack={onClose} onSettings={onSettings} />
-        <View style={[styles.mainBody, { paddingTop: dense ? 0 : 6, gap }]}>
+        <Body style={[styles.mainBody, Body === View && bodySpacing]} contentContainerStyle={Body === ScrollView ? bodySpacing : undefined}>
             <AppCalendar key={`${language}|${isDark}|${daySize}|${weekMargin}`} current={`${month}-01`} maxDate={today} firstDay={1} hideExtraDays disableMonthChange disableAllTouchEventsForDisabledDays disableArrowRight={month >= today.slice(0, 7)} disabledByDefault={!ready}
                 markedDates={marks} onMonthChange={date => {
                     const next = date.dateString.slice(0, 7)
@@ -124,9 +127,15 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
                     </View>)}
                 </View>
             </View>
-        </View>
+        </Body>
         <View testID="wellbeing-action-footer" style={[styles.footer, { height: footerHeight, paddingTop: 0, paddingBottom: 10, gap: 0, backgroundColor: colors.surface, justifyContent: "flex-end" }]}>
-            <View style={{ height: dense ? 16 : 32, justifyContent: "center" }}>{error ? <Text accessibilityRole="alert" numberOfLines={dense ? 1 : 2} style={[styles.mainError, { color: colors.text }]}>{error}</Text> : null}</View>
+            {error ? <Text accessibilityRole="alert" numberOfLines={1} style={[styles.mainError, { color: colors.text }]}>{error}</Text> : null}
+            <Pressable accessibilityRole="button" accessibilityLabel={[mt("Записать вес"), weight != null && mt("{0} кг", [mentorNumber(Number(weight))])].filter(Boolean).join(", ")} disabled={c.busy} onPress={() => c.setEditor({ page: "weight" })}
+                style={({ pressed }) => [styles.row, { minHeight: 44, opacity: pressed ? 0.65 : 1 }]}>
+                <Text style={[styles.metricLabel, { color: colors.text, flex: 1 }]}>{mt("Вес тела")}</Text>
+                {weight != null ? <Text style={[styles.metricValue, { color: colors.text }]}>{mt("{0} кг", [mentorNumber(Number(weight))])}</Text> : null}
+                <Text style={[styles.metricLabel, { color: colors.green, fontWeight: "700" }]}>{mt("Записать")}</Text>
+            </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={buttonLabel} accessibilityState={{ disabled: !ready && !error || c.busy }} disabled={!ready && !error || c.busy} onPress={() => error ? setRevision(value => value + 1) : open(selected, entry)} style={({ pressed }) => [styles.primary, { backgroundColor: colors.greenBright, opacity: !ready && !error || c.busy ? 0.45 : pressed ? 0.8 : 1 }]}><Text style={styles.primaryLabel}>{buttonLabel}</Text></Pressable>
         </View>
     </View>

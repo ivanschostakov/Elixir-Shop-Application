@@ -60,14 +60,18 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
     const closeSettings = () => setNavigation(current => ({ ...current, settingsOpen: false, direction: -1, revision: current.revision + 1 }))
     const settled = useCallback((page: MentorPage) => { if (page === (route.current.settingsOpen ? "settings" : route.current.tab)) setChatInteractive(page === "chat") }, [])
     const home = mentorHomeData(c.state, c.clock)
+    const [, updateBadgeClock] = useState(0)
+    const delay = home.mealDueAt - Date.parse(home.instant)
+    useEffect(() => {
+        if (!visible || !(delay > 0)) return
+        const timer = setTimeout(() => updateBadgeClock(value => value + 1), delay)
+        return () => clearTimeout(timer)
+    }, [visible, delay])
     const today = c.state?.mentor?.today
     const settings: { label: string; icon: MentorQuestionIconName; action: () => void }[] = [
-        { label: mt("Мой профиль"), icon: "profile", action: () => c.setEditor({ page: "profile" }) },
+        { label: mt("Уведомления"), icon: "bell", action: () => c.setEditor({ page: "settings" }) },
         { label: mt("Настроить питание"), icon: "food", action: () => c.setEditor({ page: "nutrition" }) },
-        { label: mt("Записать вес"), icon: "weight", action: () => c.setEditor({ page: "weight" }) },
-        { label: mt("Напоминания о еде"), icon: "clock", action: () => c.setEditor({ page: "meal_reminders" }) },
-        { label: mt("Настройки и напоминания"), icon: "settings", action: () => c.setEditor({ page: "settings" }) },
-        ...(home.optionalIncomplete ? [{ label: mt("Продолжить заполнение"), icon: "custom" as const, action: onContinue }] : []),
+        { label: mt("Мой профиль"), icon: "profile", action: () => c.setEditor({ page: "profile" }) },
     ]
     const render = (page: MentorPage) => {
         if (page === "nutrition") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeScreen state={c.state} clock={c.clock} animationKey={entrance} error={c.error} busy={c.busy} onRefresh={() => void c.refresh()} onClose={onClose}
@@ -76,19 +80,31 @@ export function MentorMainScreen({ controller: c, onClose, renderChat, onContinu
         if (page === "chat") return chatVisited ? <View style={styles.fill}>{renderChat({ active: visible && tab === "chat" && chatInteractive && !settingsOpen, onBack: backToMenu, question: c.mentorQuestion, onQuestionHandled: c.questionHandled })}</View> : null
         if (page === "workouts") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorTrainingScreen controller={c} active={visible && tab === "workouts" && !settingsOpen} onClose={onClose} onSettings={openSettings} /></View>
         if (page === "wellbeing") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorWellbeingScreen controller={c} active={visible && tab === "wellbeing" && !settingsOpen} onClose={onClose} onSettings={openSettings} /></View>
-        if (page === "settings") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeHeader title={mt("Настройки")} onBack={closeSettings} /><ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={mentorHomeStyles.body}>{settings.map(item => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} onPress={item.action} style={({ pressed }) => [styles.setting, { borderBottomColor: colors.border, opacity: pressed ? 0.65 : 1 }]}><MentorQuestionIcon name={item.icon} color={colors.green} /><Text style={[styles.settingText, { color: colors.text }]}>{item.label}</Text><MentorQuestionIcon name="chevronRight" size={20} color={colors.muted} /></Pressable>)}</ScrollView></View>
+        if (page === "settings") return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}>
+            <MentorHomeHeader title={mt("Настройки")} onBack={closeSettings} />
+            <ScrollView contentContainerStyle={mentorHomeStyles.body}>
+                <View style={[styles.settingGroup, { borderColor: colors.border }]}>
+                    {settings.map((item, index) => <Pressable key={item.label} accessibilityRole="button" accessibilityLabel={item.label} onPress={item.action}
+                        style={({ pressed }) => [styles.setting, { borderTopWidth: index ? StyleSheet.hairlineWidth : 0, borderColor: colors.border, opacity: pressed ? 0.65 : 1 }]}>
+                        <View style={[styles.settingIcon, { backgroundColor: colors.input }]}><MentorQuestionIcon name={item.icon} size={22} color={colors.green} /></View>
+                        <Text style={[styles.settingText, { color: colors.text }]}>{item.label}</Text>
+                        <MentorQuestionIcon name="chevronRight" size={18} color={colors.muted} />
+                    </Pressable>)}
+                </View>
+            </ScrollView>
+        </View>
         return <View style={[styles.fill, { paddingTop: top, paddingBottom: footerHeight }]}><MentorHomeHeader title={mentorTabLabel(page)} backLabel={mt("На главную магазина")} onBack={onClose} onSettings={openSettings} />
             <View testID={`mentor-placeholder-${page}`} style={styles.placeholder}><View style={[styles.placeholderIcon, { backgroundColor: colors.soft }]}><MentorQuestionIcon name={page === "course" ? "course" : "maintain"} size={38} color={colors.green} /></View>
                 <Text accessibilityRole="header" style={[styles.placeholderTitle, { color: colors.text }]}>{mentorTabLabel(page)}</Text><Text style={[styles.placeholderCopy, { color: colors.muted }]}>{mt("Раздел скоро появится")}</Text></View></View>
     }
     return <View style={[styles.fill, { backgroundColor: colors.surface }]}>
         <MentorTabPages active={settingsOpen ? "settings" : tab} direction={direction} transitionKey={revision} render={render} onSelect={select} onSettled={settled}
-            footerHeight={footerHeight} footerVisible={tab !== "chat" || settingsOpen} footer={<MentorBottomNavigation active={tab} onSelect={select} />} />
-        <CompanionPanel controller={c} onChanged={unchanged} workspaceVisible navigationVisible={false} />
+            footerHeight={footerHeight} footerVisible={tab !== "chat" || settingsOpen} footer={<MentorBottomNavigation badges={home.badges} active={tab} onSelect={select} />} />
+        <CompanionPanel controller={c} onChanged={unchanged} onContinue={home.optionalIncomplete ? onContinue : undefined} workspaceVisible navigationVisible={false} />
         {visible && c.state?.profile?.enabled && today && today.date === home.date &&
             <MentorGoalCelebration key={`${c.state.profile.id}:${today.date}`} today={today} visible={tab === "nutrition" && !settingsOpen && !c.editor} top={top} />}
     </View>
 }
 
-const styles = StyleSheet.create({ fill: { flex: 1, minHeight: 0 }, setting: { minHeight: 64, flexDirection: "row", gap: 14, alignItems: "center", paddingVertical: 15, borderBottomWidth: StyleSheet.hairlineWidth }, settingText: { fontWeight: "600", flex: 1, fontSize: 17, lineHeight: 24 },
+const styles = StyleSheet.create({ fill: { flex: 1, minHeight: 0 }, settingGroup: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 14 }, settingIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" }, setting: { minHeight: 64, flexDirection: "row", gap: 14, alignItems: "center", paddingVertical: 12 }, settingText: { fontWeight: "600", flex: 1, fontSize: 17, lineHeight: 24 },
     placeholder: { flex: 1, padding: 32, alignItems: "center", justifyContent: "center", gap: 14 }, placeholderIcon: { width: 78, height: 78, borderRadius: 26, alignItems: "center", justifyContent: "center" }, placeholderTitle: { fontSize: 25, fontWeight: "800" }, placeholderCopy: { fontWeight: "500", fontSize: 16, textAlign: "center", lineHeight: 23 } })

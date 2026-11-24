@@ -19,14 +19,14 @@ const mentorPages: MentorPage[] = [...mentorTabs, "settings"]
 const transition = { duration: 240, easing: Easing.bezier(0.22, 0.7, 0.22, 1), reduceMotion: ReduceMotion.System }
 export const mentorTabLabel = (tab: MentorTab) => ({ nutrition: mt("Питание"), workouts: mt("Тренировки"), course: mt("Мой курс"), chat: mt("Чат"), wellbeing: mt("Самочувствие") })[tab]
 
-export function MentorBottomNavigation({ active, onSelect }: { active: MentorTab; onSelect: (tab: MentorTab) => void }) {
+export function MentorBottomNavigation({ active, onSelect, badges = {} }: { active: MentorTab; onSelect: (tab: MentorTab) => void; badges?: Partial<Record<MentorTab, boolean>> }) {
     const colors = useMentorPalette()
     const { palette } = useTheme()
     const { bottom } = useAppSafeAreaInsets()
-    const styles = useThemeStyles(createStickyFooterStyles)
-    return <View testID="mentor-bottom-navigation" style={[styles.footerBase, { paddingBottom: Math.max(spacing.md, bottom) }]}>
-        <FooterNavRow tabs items={mentorTabs.map(tab => ({ key: tab, accessibilityLabel: mentorTabLabel(tab), isActive: active === tab,
-            icon: <MentorSolidIcon name={tab} color={active === tab ? colors.green : palette.mutedText} />, onPress: () => onSelect(tab) }))} />
+    const footerStyles = useThemeStyles(createStickyFooterStyles)
+    return <View testID="mentor-bottom-navigation" style={[footerStyles.footerBase, { paddingBottom: Math.max(spacing.md, bottom) }]}>
+        <FooterNavRow tabs items={mentorTabs.map(tab => ({ key: tab, accessibilityLabel: badges[tab] ? mt("{0}, есть напоминание", [mentorTabLabel(tab)]) : mentorTabLabel(tab), isActive: active === tab,
+            icon: <View><MentorSolidIcon name={tab} color={active === tab ? colors.green : palette.mutedText} />{badges[tab] ? <View pointerEvents="none" style={[styles.dot, { borderColor: colors.surface }]} /> : null}</View>, onPress: () => onSelect(tab) }))} />
     </View>
 }
 
@@ -85,4 +85,8 @@ export function MentorTabPages({ active, direction, transitionKey, render, onSel
     </View></PanGestureHandler>
 }
 
-const styles = StyleSheet.create({ viewport: { flex: 1, minHeight: 0, overflow: "hidden" }, footer: { position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10 } })
+const styles = StyleSheet.create({
+    viewport: { flex: 1, minHeight: 0, overflow: "hidden" },
+    footer: { position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 10 },
+    dot: { position: "absolute", top: -2, right: -3, width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, backgroundColor: "#E64C4C" },
+})

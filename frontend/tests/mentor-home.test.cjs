@@ -35,6 +35,21 @@ test("home selects actual local-day records, excludes future records and never r
     assert.equal(home.mentorHomeData(s, clock, now).consumed, null)
 })
 
+test("badges follow today's records and the exact missed meal deadline independently", () => {
+    const s = state()
+    s.mentor.today.nutrition.missing_meal_due_at = "2026-11-19T15:00:00Z"
+    s.mentor.today.tasks = [{ kind: "workout", status: "pending" }]
+    const badges = instant => home.mentorHomeData(s, clock, instant).badges
+    assert.deepEqual(badges(new Date(now.getTime() - 1)), { nutrition: false, workouts: true, wellbeing: true })
+    assert.deepEqual(badges(now), { nutrition: true, workouts: true, wellbeing: true })
+    s.mentor.today.nutrition.missing_meal_due_at = null
+    s.mentor.today.tasks[0].status = "done"
+    s.today = { wellbeing: { entries: 1 } }
+    assert.deepEqual(badges(now), { nutrition: false, workouts: false, wellbeing: false })
+    s.mentor.today.date = "2026-11-18"
+    assert.deepEqual(badges(now), { nutrition: false, workouts: false, wellbeing: false })
+})
+
 test("course preview uses the next actual pending event and hides future intakes for paused or completed plans", () => {
     const s = state(); s.plan = { status: "active" }
     s.events = [
@@ -109,8 +124,9 @@ test("nutrition editors, placeholder tabs, retained mentor chat and settings sha
     assert.deepEqual(edits, [{ page: "meal", mealType: "lunch" }, { page: "meal", entry: { id: 42 } }])
     screen.props.onSettings()
     const settings = page("settings")
-    nodes(settings).find(node => node.props.accessibilityLabel === "Продолжить заполнение").props.onPress(); assert.equal(continued, 1)
-    nodes(settings).find(node => node.props.accessibilityLabel === "Настройки и напоминания").props.onPress(); assert.equal(edits.at(-1).page, "settings")
+    assert.deepEqual(nodes(settings).filter(node => node.props.accessibilityRole === "button").map(node => node.props.accessibilityLabel), ["Уведомления", "Настроить питание", "Мой профиль"])
+    find(render(), "Editors").props.onContinue(); assert.equal(continued, 1)
+    nodes(settings).find(node => node.props.accessibilityLabel === "Уведомления").props.onPress(); assert.equal(edits.at(-1).page, "settings")
     find(settings, "Header").props.onBack()
     find(render(), "Tabs").props.onSelect("workouts")
     assert.equal(find(render(), "Tabs").props.active, "workouts")
@@ -222,4 +238,30 @@ test("the water row opens logging while the main action keeps adding food", () =
     const button = nodes(tree).find(node => node.props.icon === "food" && node.props.primary)
     button.props.onPress(); assert.notEqual(actions[1], "water")
     assert.equal(nodes(tree).some(node => node.props.label === "Добавить воду"), false)
+})
+
+test("mentor switch pauses legacy reminders, restores the schedule and handles denied permission", async () => {
+    let permissions = 0, saves = 0, permission = true
+    const settings = { timezone: "UTC", daily_time: "18:00", water_goal_ml: 1550 }
+    const c = { busy: false, state: { profile: { version: 1, settings } }, attempt: fn => fn().catch(e => { c.error = e.message }),
+        perform: async action => { saves++; c.state.profile.settings = action.settings } }
+    const h = harness("screens/chat/mentor-notification-setting.tsx", {
+        "react-native": { View: "View", Switch: "Switch", Text: "Text", StyleSheet: { create: s => s } },
+        "@/services/notifications/order-status-notifications": { syncPushNotifications: async () => { permissions++; return permission } },
+    })
+    const toggle = () => find(h.render("MentorNotificationSetting", { controller: c }), "Switch").props
+    const flip = async value => { toggle().onValueChange(value); await new Promise(resolve => setImmediate(resolve)) }
+    assert.equal(toggle().value, true)
+    await flip(false)
+    assert.equal(toggle().value, false); assert.equal(permissions, 0)
+    assert.deepEqual(c.state.profile.settings, { ...settings, notifications_paused: true })
+    permission = false
+    await flip(true); assert.equal(toggle().value, false); assert.equal(saves, 1)
+    permission = true
+    await flip(true); assert.equal(toggle().value, true)
+    assert.deepEqual(c.state.profile.settings, { ...settings, notifications_paused: false })
+    c.state.profile.settings = { timezone: "UTC" }
+    await flip(true)
+    assert.ok(c.state.profile.settings.mobile.topics.includes("training"))
+    assert.deepEqual(c.state.profile.settings.meal_reminders, ["breakfast", "lunch", "dinner"])
 })

@@ -39,6 +39,12 @@ export function mentorHomeData(state: CompanionState | null, clock: string, now 
     const wellbeingToday = !!wellbeing || !!dashboard && (state?.today?.wellbeing?.entries ?? 0) > 0
     const dueCourse = tasks.some(task => task.kind === "course" && task.status === "pending" && task.scheduled_at && Date.parse(task.scheduled_at) <= now.getTime())
     const quickStep: MentorQuickStep | null = !dashboard ? null : dueCourse ? "course" : !wellbeingToday ? "wellbeing" : !weightToday ? "weight" : workouts.some(task => task.status === "pending" || task.status === "in_progress") ? "workouts" : null
-    return { date, instant: now.toISOString(), meals, wellbeing, workouts, nextCourse, target, consumed, remaining, quickStep,
+    const mealDueAt = Date.parse(nutrition?.missing_meal_due_at ?? "")
+    const badges = {
+        nutrition: now.getTime() >= mealDueAt,
+        workouts: workouts.some(task => task.status === "pending" || task.status === "in_progress"),
+        wellbeing: !!dashboard && !wellbeingToday,
+    }
+    return { date, instant: now.toISOString(), meals, wellbeing, workouts, nextCourse, target, consumed, remaining, quickStep, badges, mealDueAt,
         optionalIncomplete: (state?.profile?.data.onboarding_optional_step ?? 0) < 6 }
 }

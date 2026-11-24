@@ -19,7 +19,7 @@ from .timezones import timezone_info
 async def candidates(db, profile, now):
     settings = Settings.model_validate(profile.settings)
     topics = set(settings.mobile.topics)
-    if not topics and not settings.meal_reminders:
+    if settings.notifications_paused or (not topics and not settings.meal_reminders):
         return {}
     zone = timezone_info(settings.timezone)
     day = now.astimezone(zone).date()
@@ -103,7 +103,8 @@ async def photo_ready(db, user_id, request_key, original_id=None, original_versi
     profile = await service.profile_for(db, user_id)
     if not profile or not profile.enabled or not service.consent_is_current(await service.consent_for(db, user_id)):
         return
-    if "photo" not in Settings.model_validate(profile.settings).mobile.topics:
+    settings = Settings.model_validate(profile.settings)
+    if settings.notifications_paused or "photo" not in settings.mobile.topics:
         return
     key = "photo:" + sha256(request_key.encode()).hexdigest()
     await db.execute(insert(AICompanionReminder).values(user_id=user_id, kind="mobile", dedupe_key=key, due_at=service.now_utc(),

@@ -17,6 +17,7 @@ export type MobileReminders = {
     effort_delay: number; short_sleep_hours: number; water_portion: number
 }
 export type CompanionSettings = {
+    notifications_paused?: boolean
     mobile?: MobileReminders
     meal_reminders?: Exclude<MealType, "extra">[]; water_goal_ml?: number | null
     timezone: string; nutrition_auto_eligible: boolean; course_reminders: boolean; daily_time: string | null; weight_time: string | null
@@ -65,7 +66,7 @@ export type MentorTask = { id: string; kind: "course" | "workout"; label: string
 export type MentorDashboard = {
     latest_weight: CompanionEntry | null
     workout_plan: WorkoutPlan | null
-    today: { date: string; water?: { consumed_ml: number; target_ml: number }; course: { scheduled: number; done: number; skipped: number; pending: number }; workouts: { scheduled: number; completed: number; in_progress: number }; tasks: MentorTask[]; nutrition: { consumed: Nutrition; target: Nutrition | null; remaining: Nutrition | null } }
+    today: { date: string; water?: { consumed_ml: number; target_ml: number }; course: { scheduled: number; done: number; skipped: number; pending: number }; workouts: { scheduled: number; completed: number; in_progress: number }; tasks: MentorTask[]; nutrition: { consumed: Nutrition; target: Nutrition | null; remaining: Nutrition | null; missing_meal_due_at?: string | null } }
     week: { from_date: string; to_date: string; summary: Summary & ProgressTotals }
 }
 export type CompanionAction = {

@@ -11,7 +11,7 @@ from sqlalchemy import select
 import config
 from src.app.services.ai.companion import service
 from src.app.services.ai.companion.jobs import reminder_text, schedule_recurring
-from src.app.services.ai.companion.meals import eating_habits, meal_type, water_target
+from src.app.services.ai.companion.meals import eating_habits, meal_type, missing_meal_due_at, water_target
 from src.app.services.ai.companion.schemas import Action, EntryData, Nutrition, ProfileData, Settings
 from src.database.models.ai.companion import AICompanionReminder
 from test_ai_companion_db import URL, act, database, enable
@@ -62,6 +62,20 @@ def test_habits_count_local_days_not_dishes_and_exclude_today_and_extra_meals():
     assert habits["breakfast"] == {"time": "08:00", "days": 3}
     assert habits["lunch"] == {"time": None, "days": 0}
     assert meal_type(SimpleNamespace(data={}, occurred_at=NOW.replace(hour=14)), zone) == "lunch"
+
+
+def test_missing_meal_deadline_uses_local_habit_and_only_matching_entries():
+    zone = ZoneInfo("Asia/Almaty")
+    today = NOW.astimezone(zone).date()
+    habits = {"breakfast": {"time": "08:00"}, "lunch": {"time": "14:30"}, "dinner": {"time": None}}
+    breakfast = NOW.astimezone(zone).replace(hour=8, minute=30)
+    lunch = breakfast.replace(hour=15, minute=0)
+    rows = [SimpleNamespace(occurred_at=NOW, data={"meal_type": "extra"})]
+    assert missing_meal_due_at(rows, habits, zone, today) == breakfast
+    rows.append(SimpleNamespace(occurred_at=NOW, data={"meal_type": "breakfast"}))
+    assert missing_meal_due_at(rows, habits, zone, today) == lunch
+    rows.append(SimpleNamespace(occurred_at=NOW, data={"meal_type": "lunch"}))
+    assert missing_meal_due_at(rows, habits, zone, today) is None
 
 
 @db_test

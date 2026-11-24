@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { Alert, Modal, Pressable, ScrollView, Text, View } from "react-native"
 import { AppFormLayout } from "@/components/platform/app-form-layout"
-import { mentorDateLabel, mentorText as mt } from "@/i18n/mentor-translations"
+import { mentorDateLabel, mentorNumber, mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
 import type { useCompanion } from "@/screens/chat/companion"
 import { CompanionActionCancelled } from "@/screens/chat/companion-consent"
@@ -122,7 +122,7 @@ export function MentorTrainingScreen({ controller: c, active, onClose, onSetting
                 {(current?.data.workout?.exercises ?? day?.exercises ?? []).map((exercise, index) => {
                     const weight = lastTrainingWeight(exercise, entries, current?.occurred_at ?? mentorHomeData(c.state, c.clock).instant)
                     const prescription = "target_sets" in exercise ? trainingRepLabel(exercise) : typeof exercise.sets === "number" ? trainingRepLabel({ ...exercise, sets: exercise.sets }) : ""
-                    return <View key={exercise.key} style={[styles.listRow, { borderBottomColor: colors.border }]}><Text style={[styles.caption, { color: colors.muted, width: 20 }]}>{index + 1}</Text><View style={[styles.fill, { gap: 3 }]}><Text style={[styles.listTitle, { color: colors.text }]}>{exercise.name}</Text>{weight != null ? <Text style={[styles.caption, { color: colors.muted }]}>{mt("Последний вес: {0} кг", [weight])}</Text> : null}</View><Text style={[styles.listValue, { color: colors.muted }]}>{prescription}</Text></View>
+                    return <View key={exercise.key} style={[styles.listRow, { borderBottomColor: colors.border }]}><Text style={[styles.caption, { color: colors.muted, width: 20 }]}>{index + 1}</Text><View style={[styles.fill, { gap: 3 }]}><Text style={[styles.listTitle, { color: colors.text }]}>{exercise.name}</Text>{weight != null ? <Text style={[styles.caption, { color: colors.muted }]}>{mt("Последний вес: {0} кг", [weight])}</Text> : null}</View><Text style={[styles.listValue, { color: colors.muted }]}>{prescription}{exercise.target_weight_kg != null ? " · " + mt("{0} кг", [mentorNumber(Number(exercise.target_weight_kg))]) : ""}</Text></View>
                 })}
             </ScrollView>
             <View style={[styles.footer, { paddingBottom: 14 }]}>

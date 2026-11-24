@@ -28,6 +28,8 @@ def local_due(day, value, zone):
 
 async def schedule_recurring(db, profile, now, *, include_meals=True):
     settings = Settings.model_validate(profile.settings)
+    if settings.notifications_paused:
+        return
     zone = timezone_info(settings.timezone)
     today = now.astimezone(zone).date()
     kinds = [("daily", settings.daily_time), ("weight", settings.weight_time)]
@@ -245,7 +247,7 @@ async def process_reminders():
                 if locked is None:
                     continue
                 profile = await service.profile_for(db, user_id)
-                if not profile or not profile.enabled:
+                if not profile or not profile.enabled or profile.settings.get("notifications_paused"):
                     continue
                 try:
                     await service.require_consent(db, user_id)

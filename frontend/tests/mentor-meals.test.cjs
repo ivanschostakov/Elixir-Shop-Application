@@ -33,6 +33,7 @@ test("a late refresh cannot overwrite the complete state returned after a succes
     const after = { ...before, entries: [{ id: 1 }], mentor: { today: { nutrition: { consumed: { kcal: 1270 } } } } }
     const react = { useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial; return [slots[i], value => { slots[i] = typeof value === "function" ? value(slots[i]) : value }] }, useRef(initial) { const i = cursor++; return slots[i] ??= { current: initial } }, useCallback: fn => fn, useEffect() {} }
     const { useCompanion } = loadTs("screens/chat/companion.tsx", {
+        "@/screens/chat/mentor-profile-summary": {}, "@/screens/chat/mentor-notification-setting": {},
         react, "@react-navigation/native": { useIsFocused: () => true },
         "@/screens/chat/mentor-wellbeing-form": { MentorWellbeingEditor: "WellbeingEditor" },
         "@/components/platform/app-form-layout": { AppFormLayout: "KeyboardAvoidingView" },

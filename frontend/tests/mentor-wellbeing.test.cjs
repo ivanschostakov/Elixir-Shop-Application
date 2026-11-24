@@ -147,6 +147,8 @@ test("calendar opens a loaded day's existing entry and ignores stale months or f
     const loadingLayout = layout()
     assert.equal(metrics().length, 4, "all four overview cells exist before any data arrives")
     assert.equal(metrics().flatMap(nodes).filter(node => node.props.children === "—").length, 4)
+    render().find(node => node.props.accessibilityLabel === "Записать вес").props.onPress()
+    assert.deepEqual(edits.pop(), { page: "weight" })
     calendar().props.onDayPress({ dateString: today })
     assert.equal(edits.length, 0)
     const existing = row(42, new Date().toISOString())

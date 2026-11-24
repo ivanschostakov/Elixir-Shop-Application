@@ -58,7 +58,7 @@ export function syncMentorSessionTimers(state: CompanionState | null) {
 
 async function reconcile() {
     const state = latest, profile = state?.profile
-    const topics = !state?.consent_required && profile?.enabled ? profile.settings.mobile?.topics ?? [] : []
+    const topics = !state?.consent_required && profile?.enabled && !profile.settings.notifications_paused ? profile.settings.mobile?.topics ?? [] : []
     const pending = (await Notifications.getAllScheduledNotificationsAsync()).filter(n => n.identifier.startsWith(prefix))
     const wanted = new Map<string, { due: number; title: string; body: string; categoryIdentifier: string; key: string; kind: string }>()
     const now = Date.now()

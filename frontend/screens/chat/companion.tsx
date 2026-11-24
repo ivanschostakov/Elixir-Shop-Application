@@ -7,7 +7,7 @@ import { ActivityIndicator, Alert, Modal, Platform, Pressable, ScrollView, Style
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { getErrorMessage } from "@/utils/errors"
 import { actCompanion, eraseCompanion, getCompanion, getCompanionAvailability, getCompanionEntries, getCompanionEvents, getCompanionSummary, getCompanionSupply, getNutritionSuggestion, requestKey } from "@/services/api/companion"
-import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, MobileReminders, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
+import type { CompanionAction, CompanionCard, CompanionEntry, CompanionSettings, CompanionState, EntryData, Nutrition, PlanData, ProfileData, Proposal, Stage, Summary, Supply, Unit } from "@/services/api/companion"
 import type { AIMessageRead } from "@/services/api/ai-chat.types"
 import { CompanionActionCancelled, withStorageConsent } from "@/screens/chat/companion-consent"
 import { calendarDate, deviceCompanionTimezone, formatCompanionDate as dateLabel, shiftCalendarDay } from "@/screens/chat/companion-timezones"
@@ -21,6 +21,9 @@ import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
 import { MentorNutritionEditor, nutritionEditorPages } from "@/screens/chat/mentor-meal-screens"
 import { MentorWellbeingEditor } from "@/screens/chat/mentor-wellbeing-form"
 
+import { MentorNotificationSetting } from "@/screens/chat/mentor-notification-setting"
+import { MentorProfileSummary } from "@/screens/chat/mentor-profile-summary"
+
 type Page = "meal_group" | "water" | "food_help" | "meal_reminders" | "home" | "consent" | "profile" | "plan" | "meal" | "weight" | "wellbeing" | "nutrition" | "settings" | "journal" | "events" | "summary" | "supply"
 type Editor = { page: Page; estimate?: EntryData; estimateRequest?: string; proposal?: Proposal; entry?: CompanionEntry; date?: string; mealType?: import("@/services/api/companion").MealType; mealKey?: string; parentMeal?: boolean; helpMode?: "suggest" | "product"; entryKind?: EntryData["kind"] }
 type Controller = ReturnType<typeof useCompanion>
@@ -33,7 +36,7 @@ const editorTitles: Record<Page, string> = {
     get meal_group() { return mt("Приём пищи") }, get water() { return mt("Вода") }, get food_help() { return mt("Помощь с питанием") }, get meal_reminders() { return mt("Напоминания о еде") },
     get home() { return mt("Мой наставник") }, get consent() { return mt("Начнём знакомство") }, get profile() { return mt("Мой профиль") }, get plan() { return mt("Мой курс") },
     get meal() { return mt("Добавить еду") }, get weight() { return mt("Добавить вес") }, get wellbeing() { return mt("Самочувствие") }, get nutrition() { return mt("Настроить питание") },
-    get settings() { return mt("Настройки") }, get journal() { return mt("Мой дневник") }, get events() { return mt("События курса") }, get summary() { return mt("Мои результаты") }, get supply() { return mt("Запас курса") },
+    get settings() { return mt("Уведомления") }, get journal() { return mt("Мой дневник") }, get events() { return mt("События курса") }, get summary() { return mt("Мои результаты") }, get supply() { return mt("Запас курса") },
 }
 
 export function useCompanion(enabled = true) {
@@ -198,7 +201,7 @@ export function CompanionCards({ controller: c, message, onChanged }: { controll
     </View>)}</>
 }
 
-export function CompanionPanel({ controller: c, onChanged, openRequested, onPrompt, sending, workspaceVisible = false, navigationVisible = true }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean; onPrompt?: (text: string) => Promise<unknown>; sending?: boolean; workspaceVisible?: boolean; navigationVisible?: boolean }) {
+export function CompanionPanel({ controller: c, onChanged, openRequested, onContinue, onPrompt, sending, workspaceVisible = false, navigationVisible = true }: { controller: Controller; onChanged: () => Promise<void>; openRequested?: boolean; onContinue?: () => void; onPrompt?: (text: string) => Promise<unknown>; sending?: boolean; workspaceVisible?: boolean; navigationVisible?: boolean }) {
     useLanguage()
     const colors = useMentorPalette()
     const hasProfile = !!c.state?.profile
@@ -233,7 +236,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
                 <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modal}>
                     <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
                         {c.error ? <Copy>{c.error}</Copy> : null}
-                        {c.editor ? <CompanionContent key={JSON.stringify(c.editor)} controller={c} onChanged={changed} /> : null}
+                        {c.editor ? <CompanionContent key={JSON.stringify(c.editor)} controller={c} onChanged={changed} onContinue={onContinue ? () => { c.setEditor(null); onContinue() } : undefined} /> : null}
                     </View>
                 </ScrollView>
                 </>}
@@ -242,7 +245,7 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onProm
     </View>
 }
 
-function CompanionContent({ controller: c, onChanged }: { controller: Controller; onChanged: () => Promise<void> }) {
+function CompanionContent({ controller: c, onChanged, onContinue }: { controller: Controller; onChanged: () => Promise<void>; onContinue?: () => void }) {
     useLanguage()
     const page = c.editor!.page
     const state = c.state!
@@ -251,7 +254,8 @@ function CompanionContent({ controller: c, onChanged }: { controller: Controller
     const open = (page: Page) => { c.setError(""); c.setEditor({ page }) }
     const save = async (action: CompanionAction) => { await c.perform(action); c.setEditor(state.dialogue_protocol === 2 ? null : { page: "home" }); await onChanged() }
     if (page === "consent") return <ConsentForm controller={c} onSave={save} />
-    if (["profile", "meal", "weight", "nutrition", "plan", "settings"].includes(page)) return <ManualForm controller={c} onSave={save} onChanged={onChanged} />
+    if (page === "settings") return <MentorNotificationSetting controller={c} />
+    if (["profile", "meal", "weight", "nutrition", "plan"].includes(page)) return <ManualForm controller={c} onSave={save} onChanged={onChanged} onContinue={onContinue} />
     if (page === "summary" || page === "journal" || page === "events" || page === "supply") return <ReviewPanel controller={c} onChanged={onChanged} />
     return <>
         <Copy>{mt("Сопровождение ")}{profile?.enabled ? mt("включено") : mt("выключено")}{mt(". Данные сохраняются после подтверждения; AI не назначает препараты и не меняет дозировки.")}</Copy>
@@ -291,38 +295,7 @@ function ConsentForm({ controller: c, onSave }: { controller: Controller; onSave
     </>
 }
 
-const pushDefaults: MobileReminders = {
-    topics: [], water_time: "15:00", workout_time: "18:00", wellbeing_time: "09:00", bedtime: "22:30", stress_time: "20:00",
-    short_sleep_hours: 7, effort_delay: 30, water_portion: 250,
-}
-const pushGroups = [
-    ["Питание и вода", [["nutrition", "Остаток КБЖУ перед едой"], ["meal_balance", "Треть дневной цели за приём"], ["water", "Стакан воды"], ["photo", "Готова оценка блюда по фото"], ["post_water", "Вода после тренировки"]]],
-    ["Тренировки", [["training", "Запланированное занятие"], ["energy", "Короткая тренировка при низкой энергии"], ["rest", "Конец отдыха между подходами"], ["unfinished", "Незавершённое занятие"], ["reschedule", "Перенос на свободный день"], ["program", "Завершение программы"], ["effort", "Оценка нагрузки после занятия"]]],
-    ["Самочувствие", [["wellbeing", "Дневная отметка"], ["bedtime", "Вечернее напоминание после короткого сна"], ["sleep", "Утренний вопрос после напоминания о сне"], ["stress", "Вечерний вопрос после сильного стресса"]]],
-] as const
-
-function MobilePushSettings({ value, update }: { value: MobileReminders; update: (next: MobileReminders) => void }) {
-    const times = [
-        ["water_time", "Время напоминания о воде", ["water"]],
-        ["workout_time", "Время тренировки", ["training", "energy", "reschedule"]],
-        ["wellbeing_time", "Время дневной отметки", ["wellbeing", "sleep"]],
-        ["bedtime", "Время подготовки ко сну", ["bedtime"]],
-        ["stress_time", "Время вечернего вопроса", ["stress"]],
-    ] as const
-    return <><Copy>{mt("Мобильные уведомления")}</Copy>
-        {pushGroups.map(([heading, group]) => <View key={heading} style={{ gap: 8 }}><Copy>{mt(heading)}</Copy>
-            {group.map(([topic, label]) => <Toggle key={topic} label={mt(label)} value={value.topics.includes(topic)}
-                onChange={on => update({ ...value, topics: on ? [...value.topics, topic] : value.topics.filter(x => x !== topic) })} />)}
-        </View>)}
-        {times.filter(([, , topics]) => topics.some(t => value.topics.includes(t))).map(([key, label]) =>
-            <Field key={key} label={mt(label)} value={value[key].slice(0, 5)} onChange={text => update({ ...value, [key]: text })} />)}
-        {value.topics.includes("water") && <Field label={mt("Обычная порция воды, мл")} value={value.water_portion} numeric onChange={t => update({ ...value, water_portion: Number(t) })} />}
-        {value.topics.includes("bedtime") && <Field label={mt("Короткая ночь — меньше скольких часов?")} value={value.short_sleep_hours} numeric onChange={t => update({ ...value, short_sleep_hours: Number(t) })} />}
-        {value.topics.includes("effort") && <Field label={mt("Спросить о нагрузке через сколько минут?")} value={value.effort_delay} numeric onChange={t => update({ ...value, effort_delay: Number(t) })} />}
-    </>
-}
-
-function ManualForm({ controller: c, onSave, onChanged }: { controller: Controller; onSave: (action: CompanionAction) => Promise<void>; onChanged: () => Promise<void> }) {
+function ManualForm({ controller: c, onSave, onChanged, onContinue }: { controller: Controller; onSave: (action: CompanionAction) => Promise<void>; onChanged: () => Promise<void>; onContinue?: () => void }) {
     useLanguage()
     const editor = c.editor!
     const page = editor.page
@@ -330,8 +303,10 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
     const [person, setPerson] = useState<ProfileData>(editor.proposal?.profile ?? profile.data)
     const [nutrition, setNutrition] = useState<Nutrition>(editor.proposal?.nutrition ?? profile.data.nutrition ?? emptyNutrition())
     const [entry, setEntry] = useState<EntryData>(editor.entry?.data ?? editor.proposal?.entry ?? { kind: page as EntryData["kind"], occurred_at: new Date().toISOString(), ...(page === "meal" ? { nutrition: emptyNutrition() } : {}) })
+    const savedOccurrence = useRef<{ occurred_at: string } | null>(null)
     const [plan, setPlan] = useState<PlanData>(editor.proposal?.plan ?? c.state!.plan?.data ?? { name: "", timezone: deviceCompanionTimezone(), items: [] })
-    const [settings, setSettings] = useState<CompanionSettings>({ ...settingsDefault, ...profile.settings })
+    const [editingProfile, setEditingProfile] = useState(!!editor.proposal?.profile)
+    const profileEditVersion = useRef(profile.version)
     const [suggestionNote, setSuggestionNote] = useState("")
     const [ruleVersion, setRuleVersion] = useState<string | undefined>()
     const [calculating, setCalculating] = useState(false)
@@ -343,20 +318,32 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
     }
     useEffect(() => { convertOpenEditor.current() }, [c.clock]) // Only clock changes, not typing, reset the local-time input.
     const save = (action: CompanionAction) => void c.attempt(() => onSave({ expected_version: version, ...action }))
+    const saveEntry = () => {
+        savedOccurrence.current ??= { occurred_at: editor.entry?.occurred_at ?? new Date().toISOString() }
+        void c.attempt(() => onSave({ kind: "entry", entry: { ...entry, ...savedOccurrence.current }, resource_id: editor.entry?.id, expected_version: editor.entry?.version }))
+    }
+    if (page === "profile" && !editingProfile) return <MentorProfileSummary state={c.state!} onEdit={() => {
+        profileEditVersion.current = profile.version
+        setPerson(profile.data)
+        setEditingProfile(true)
+    }} onContinue={onContinue}>
+            <Button label={mt("Выключить сопровождение")} disabled={c.busy} onPress={() => Alert.alert(mt("Выключить?"), mt("Напоминания прекратятся; дневник сохранится. Обычный чат начнёт новый контекст."), [{ text: mt("Отмена") }, { text: mt("Выключить"), onPress: () => void c.attempt(async () => { await c.perform({ kind: "disable", expected_version: profile.version }); c.setEditor(null); await c.refresh() }) }])} />
+            <Button label={mt("Удалить данные сопровождения")} danger disabled={c.busy} onPress={() => Alert.alert(mt("Удалить без восстановления?"), mt("Будут удалены профиль, курс, дневник и сообщения сопровождения. Удаление копий диалогов и файлов у OpenAI будет поставлено в очередь с повторными попытками."), [{ text: mt("Отмена") }, { text: mt("Удалить"), style: "destructive", onPress: () => void c.attempt(async () => { await eraseCompanion(); c.setEditor(null); await onChanged() }) }])} />
+    </MentorProfileSummary>
     return <>
         {page === "profile" ? <>
-            <Copy>{mt("Профиль: заполняйте только нужные для сопровождения данные.")}</Copy>
+            <Copy>{mt("Моя цель")}</Copy>
             <Choices options={goalLabels} value={person.goal} onChange={goal => setPerson({ ...person, goal })} />
             {person.goal === "custom" ? <Field label={mt("Своя цель")} value={person.custom_goal} onChange={custom_goal => setPerson({ ...person, custom_goal })} /> : null}
             {c.state?.mentor?.latest_weight ? <Copy>{mt("Последний сохранённый вес: ")}{c.state.mentor.latest_weight.data.weight_kg} {mt(" кг · ")}{dateLabel(c.state.mentor.latest_weight.occurred_at, c.clock)}</Copy> : null}
             <Field label={mt("Возраст, лет")} value={person.age} numeric onChange={text => setPerson({ ...person, age: numberOrNull(text) })} />
             <Choices options={{ male: mt("Мужской"), female: mt("Женский") }} value={person.sex} onChange={sex => setPerson({ ...person, sex })} />
-            <Field label={mt("Рост, см")} value={person.height_cm} numeric onChange={text => setPerson({ ...person, height_cm: numberOrNull(text) })} />
-            <Field label={mt("Целевой вес, кг")} value={person.target_weight_kg} numeric onChange={text => setPerson({ ...person, target_weight_kg: numberOrNull(text) })} />
+            <Field label={mt("Рост, см")} value={person.height_cm} numeric onChange={text => setPerson({ ...person, height_cm: text || null })} />
+            <Field label={mt("Целевой вес, кг")} value={person.target_weight_kg} numeric onChange={text => setPerson({ ...person, target_weight_kg: text || null })} />
             <Choices options={{ low: mt("Низкая активность"), light: mt("Лёгкая"), moderate: mt("Умеренная"), high: mt("Высокая") }} value={person.activity} onChange={activity => setPerson({ ...person, activity })} />
             <Field label={mt("Пищевые предпочтения")} multiline value={person.preferences} onChange={preferences => setPerson({ ...person, preferences })} />
             <Field label={mt("Известные вам ограничения")} multiline value={person.restrictions} onChange={restrictions => setPerson({ ...person, restrictions })} />
-            <Button label={mt("Сохранить профиль")} primary disabled={c.busy} onPress={() => save({ kind: "profile", profile: person })} />
+            <Button label={mt("Сохранить профиль")} primary disabled={c.busy} onPress={() => save({ kind: "profile", expected_version: profileEditVersion.current, profile: person })} />
         </> : null}
         {page === "nutrition" ? <>
             <Copy>{mt("КБЖУ на день: готовые значения можно внести вручную. Авторасчёт предлагает стартовый ориентир и не меняет прошлые записи.")}</Copy>
@@ -382,34 +369,11 @@ function ManualForm({ controller: c, onSave, onChanged }: { controller: Controll
         </> : null}
         {["meal", "weight"].includes(page) ? <>
             {page === "meal" ? <><Field label={mt("Что съели")} value={entry.name} onChange={name => setEntry({ ...entry, name })} /><Field label={mt("Порция, г (если известна)")} value={entry.portion_g} numeric onChange={text => setEntry({ ...entry, portion_g: numberOrNull(text) })} /><NutritionFields value={entry.nutrition ?? emptyNutrition()} onChange={nutrition => setEntry({ ...entry, nutrition })} /><Toggle label={mt("Приблизительная оценка")} value={!!entry.estimated} onChange={estimated => setEntry({ ...entry, estimated })} />{entry.estimated ? <Field label={mt("Допущения оценки")} value={entry.assumptions} onChange={assumptions => setEntry({ ...entry, assumptions })} /> : null}<Copy>{mt("Можно отправить фото еды в чат — AI предложит оценку для подтверждения.")}</Copy></> : null}
-            {page === "weight" ? <Field label={mt("Вес, кг")} value={entry.weight_kg} numeric onChange={text => setEntry({ ...entry, weight_kg: numberOrNull(text) })} /> : null}
+            {page === "weight" ? <Field label={mt("Вес, кг")} value={entry.weight_kg} numeric onChange={text => setEntry({ ...entry, weight_kg: text || null })} /> : null}
             <Field label={mt("Комментарий")} multiline value={entry.note} onChange={note => setEntry({ ...entry, note })} />
-            <Button label={editor.entry ? mt("Сохранить исправление") : mt("Подтвердить запись")} primary disabled={c.busy} onPress={() => void c.attempt(() => onSave({ kind: "entry", entry: { ...entry, occurred_at: editor.entry?.occurred_at ?? new Date().toISOString() }, resource_id: editor.entry?.id, expected_version: editor.entry?.version }))} />
+            <Button label={editor.entry ? mt("Сохранить исправление") : mt("Подтвердить запись")} primary disabled={c.busy || (page === "weight" && !(Number(entry.weight_kg) > 0 && Number(entry.weight_kg) <= 500))} onPress={saveEntry} />
         </> : null}
         {page === "plan" ? <><Copy>{mt("Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.")}</Copy><Field label={mt("Название курса")} value={plan.name} onChange={name => setPlan({ ...plan, name })} /><Copy>{plan.timezone === deviceCompanionTimezone() ? mt("Время определяется по телефону автоматически.") : mt("Исходная схема записана в {0}. Её время не сдвигается при поездке; события в дневнике показаны по времени телефона.", [plan.timezone])}</Copy><PlanFields plan={plan} onChange={setPlan} /><Button label={mt("Подтвердить и сохранить курс")} primary disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
-        {page === "settings" ? <>
-            <MobilePushSettings value={{ ...pushDefaults, ...settings.mobile }} update={mobile => setSettings({ ...settings, mobile })} />
-            <Copy>{mt("Push включается в настройках уведомлений приложения. Здесь задаётся, о чём и когда напоминать. Пустое время выключает напоминание.")}</Copy>
-            <Copy>{mt("Дневник и ежедневные напоминания используют время телефона автоматически. При поездке старые записи отображаются в новом местном времени; подтверждённые события курса не переносятся.")}</Copy>
-            <Toggle label={mt("Напоминать о событиях курса")} value={settings.course_reminders} onChange={course_reminders => setSettings({ ...settings, course_reminders })} />
-            <Toggle label={mt("Ежедневный вопрос о самочувствии и дневнике")} value={!!settings.checkin_time} onChange={value => setSettings({ ...settings, checkin_time: value ? "18:00" : null })} />
-            {settings.checkin_time ? <Field label={mt("Время ежедневного вопроса, ЧЧ:ММ")} value={settings.checkin_time} onChange={checkin_time => setSettings({ ...settings, checkin_time })} /> : null}
-            <Toggle label={mt("Напомнить после перерыва")} value={settings.inactivity_days != null} onChange={value => setSettings({ ...settings, inactivity_days: value ? 3 : null })} />
-            {settings.inactivity_days != null ? <><Field label={mt("Дней без записей, 2–30")} value={settings.inactivity_days} numeric onChange={text => setSettings({ ...settings, inactivity_days: numberOrNull(text) })} /><Field label={mt("Время напоминания после перерыва, ЧЧ:ММ")} value={settings.inactivity_time ?? "18:00"} onChange={inactivity_time => setSettings({ ...settings, inactivity_time })} /></> : null}
-            {(["daily_time", "weight_time", "weekly_time"] as const).map((key, i) => <Field key={key} label={[mt("Итоги дня, ЧЧ:ММ"), mt("Напомнить внести вес, ЧЧ:ММ"), mt("Итоги недели, ЧЧ:ММ")][i]} value={settings[key]} onChange={text => setSettings({ ...settings, [key]: text || null })} />)}
-            <Field label={mt("День недельной сводки: 0 пн … 6 вс")} value={settings.weekly_day} numeric onChange={text => setSettings({ ...settings, weekly_day: Number(text) })} />
-            <Toggle label={mt("Напоминать о нехватке запаса")} value={settings.supply_reminders} onChange={supply_reminders => setSettings({ ...settings, supply_reminders })} />
-            <Field label={mt("Проверять запас на ближайшие N дней")} value={settings.supply_days} numeric onChange={text => setSettings({ ...settings, supply_days: Number(text) })} />
-            <Button label={mt("Сохранить настройки")} primary disabled={c.busy} onPress={() => void c.attempt(async () => {
-                if (settings.mobile?.topics.length) {
-                    const { syncPushNotifications } = await import("@/services/notifications/order-status-notifications")
-                    if (!await syncPushNotifications({ requestPermissions: true })) throw new Error(mt("Разрешите уведомления на телефоне или продолжите без напоминаний."))
-                }
-                await onSave({ kind: "settings", expected_version: version, settings })
-            })} />
-            <Button label={mt("Выключить сопровождение")} disabled={c.busy} onPress={() => Alert.alert(mt("Выключить?"), mt("Напоминания прекратятся; дневник сохранится. Обычный чат начнёт новый контекст."), [{ text: mt("Отмена") }, { text: mt("Выключить"), onPress: () => void c.attempt(async () => { await c.perform({ kind: "disable", expected_version: version }); c.setEditor(null); await c.refresh() }) }])} />
-            <Button label={mt("Удалить данные сопровождения")} danger disabled={c.busy} onPress={() => Alert.alert(mt("Удалить без восстановления?"), mt("Будут удалены профиль, курс, дневник и сообщения сопровождения. Удаление копий диалогов и файлов у OpenAI будет поставлено в очередь с повторными попытками."), [{ text: mt("Отмена") }, { text: mt("Удалить"), style: "destructive", onPress: () => void c.attempt(async () => { await eraseCompanion(); c.setEditor(null); await onChanged() }) }])} />
-        </> : null}
     </>
 }
 

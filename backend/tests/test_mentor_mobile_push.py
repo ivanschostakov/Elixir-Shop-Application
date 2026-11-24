@@ -82,6 +82,35 @@ db_only = pytest.mark.skipif(not URL, reason="Needs isolated companion_test Post
 
 
 @db_only
+def test_master_switch_cancels_pending_and_preserves_schedule_for_older_clients(monkeypatch):
+    from src.app.services.ai.companion.jobs import schedule_recurring
+    monkeypatch.setattr(service, "now_utc", lambda: now)
+    async def run():
+        async with database() as (db, user):
+            p = await enable(db, user)
+            schedule = Settings(timezone="UTC", daily_time="18:00", mobile={"topics": ["water", "photo"], "water_time": "18:30"})
+            p.created_at = now - timedelta(days=3)
+            await act(db, user, "settings", expected_version=p.version, settings=schedule)
+            await schedule_recurring(db, p, now)
+            await mobile_push.schedule(db, p, now)
+            await db.flush()
+            pending = select(AICompanionReminder.id).where(AICompanionReminder.user_id == user.id, AICompanionReminder.status == "pending")
+            assert await db.scalar(pending)
+            await act(db, user, "settings", expected_version=p.version, settings=schedule.model_copy(update={"notifications_paused": True}))
+            await act(db, user, "settings", expected_version=p.version, settings=schedule)
+            assert p.settings["notifications_paused"]
+            await schedule_recurring(db, p, now)
+            assert not await mobile_push.schedule(db, p, now)
+            await mobile_push.photo_ready(db, user.id, "paused-photo")
+            await db.flush()
+            assert not await db.scalar(pending)
+            await act(db, user, "settings", expected_version=p.version, settings=schedule.model_copy(update={"notifications_paused": False}))
+            assert f"water:{day}" in await mobile_push.schedule(db, p, now)
+            assert p.settings["daily_time"] == "18:00:00"
+    asyncio.run(run())
+
+
+@db_only
 def test_delivery_actions_and_retries_use_the_live_slot(monkeypatch):
     from src.app.services import push_notifications as push
     monkeypatch.setattr(service, "now_utc", lambda: now)

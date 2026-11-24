@@ -2,6 +2,15 @@ import { getTranslationLanguage, type Language } from "@/i18n/translations"
 
 // Source phrases belong to the interface; user-entered names and notes are never passed here.
 export const mentorTranslations: Record<string, { en: string; kz: string }> = {
+    "Уведомления": {"en": "Notifications", "kz": "Хабарландырулар"},
+    "Получать уведомления от наставника": {"en": "Receive mentor notifications", "kz": "Тәлімгерден хабарландыру алу"},
+    "Моя цель": {"en": "My goal", "kz": "Мақсатым"},
+    "Личные данные": {"en": "Personal details", "kz": "Жеке деректер"},
+    "Изменить профиль": {"en": "Edit profile", "kz": "Профильді өңдеу"},
+    "Целевой вес": {"en": "Goal weight", "kz": "Мақсатты салмақ"},
+    "Вес тела": {"en": "Body weight", "kz": "Дене салмағы"},
+    "Управление данными": {"en": "Manage data", "kz": "Деректерді басқару"},
+    "{0}, есть напоминание": {"en": "{0}, reminder", "kz": "{0}, еске салу бар"},
     "Укажите длительность от 1 до 1440 минут": {"en": "Enter a duration of 1 to 1440 minutes", "kz": "1–1440 минут аралығындағы ұзақтықты енгізіңіз"},
     "Записать подходы": {"en": "Log sets", "kz": "Тәсілдерді жазу"},
     "Подобрать рецепт": {"en": "Find a recipe", "kz": "Рецепт таңдау"},

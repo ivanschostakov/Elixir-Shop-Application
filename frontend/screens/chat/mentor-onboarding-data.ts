@@ -56,7 +56,9 @@ export function mentorStepError(form: MentorForm, step: number): string {
 export function mentorProfileComplete(state: CompanionState | null): boolean {
     if (!state?.profile || state.consent_required) return false
     const form = mentorFormFromState(state)
-    return [0, 1, 2, 3, 4].every(step => !mentorStepError(form, step))
+    // Later weigh-ins can meet or pass the original goal without invalidating the profile.
+    const target = numeric(form.targetWeight)
+    return [0, 1, 2, 3].every(step => !mentorStepError(form, step)) && target > 0 && target <= 500
 }
 
 export function mentorOnboardingAction(form: MentorForm, state: CompanionState, requestKey: string): CompanionAction {

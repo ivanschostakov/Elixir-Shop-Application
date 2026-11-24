@@ -23,6 +23,7 @@ function harness(file, overrides = {}) {
     const module = loadTs(file, {
         react, "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
         "react-native": { View: "View", Text: "Text", Pressable: "Pressable", TextInput: "TextInput", Modal: "Modal", ScrollView: "ScrollView", Switch: "Switch", ActivityIndicator: "Spinner", KeyboardAvoidingView: "KeyboardAvoidingView", Keyboard: { dismiss() {} }, Platform: { OS: "ios" }, Easing: { bezier() {} }, StyleSheet: { create: value => value, absoluteFill: {}, absoluteFillObject: {} }, Animated: { Value, View: "AnimatedView", timing: (value, config) => ({ start() { animations.push(config); value.setValue(config.toValue) }, stop() {} }) } },
+        "@/components/platform/app-picker": { AppPickerPanel: "PickerPanel" },
         "@react-native-picker/picker": { Picker: Object.assign("Picker", { Item: "PickerItem" }) },
         "@/components/platform/app-form-layout": { AppFormLayout: "KeyboardAvoidingView" },
         "react-native-svg": { default: "Svg", Path: "Path" },
@@ -70,6 +71,9 @@ test("complete saved data bypasses the questionnaire; partial data prefills the 
     saved.mentor.latest_weight = { data: { weight_kg: "78.5" } }
     assert.equal(data.mentorProfileComplete(saved), true)
     assert.equal(data.mentorFormFromState(saved).weight, "78.5")
+    saved.profile.data.goal = "weight_loss"
+    saved.mentor.latest_weight.data.weight_kg = "74"
+    assert.equal(data.mentorProfileComplete(saved), true, "reaching the weight goal keeps the saved profile usable")
     saved.consent_required = true
     assert.equal(data.mentorProfileComplete(saved), false)
 })
@@ -297,12 +301,20 @@ test("time selection uses UIDatePicker on iOS and the system time dialog on Andr
     const picker = { default: "SystemTimePicker", DateTimePickerAndroid: { open: options => { opened = options } } }
     const props = { locale: "ru", dark: false, colors: {}, label: "Отметить вес", value: "08:00", onChange: value => { saved = value }, disabled: false }
     const ios = harness("components/platform/app-date-time-picker.tsx", { "@react-native-community/datetimepicker": picker })
+    ios.render("AppTimePicker", props).props.onPress()
     const view = ios.render("AppTimePicker", props)
     const native = nodes(view).find(node => node.type === "SystemTimePicker")
-    assert.equal(native.props.mode, "time"); assert.equal(native.props.display, "compact"); assert.equal(native.props.value.getHours(), 8)
+    assert.equal(native.props.mode, "time"); assert.equal(native.props.display, "spinner"); assert.equal(native.props.value.getHours(), 8)
     const picked = new Date(); picked.setHours(17, 35, 0, 0)
     native.props.onChange({ type: "dismissed" }, picked); assert.equal(saved, undefined)
-    native.props.onChange({ type: "set" }, picked); assert.equal(saved, "17:35")
+    native.props.onChange({ type: "set" }, picked); assert.equal(saved, undefined)
+    nodes(ios.render("AppTimePicker", props)).find(node => node.type === "PickerPanel").props.onCancel()
+    ios.render("AppTimePicker", props).props.onPress()
+    const reopened = ios.render("AppTimePicker", props)
+    assert.equal(nodes(reopened).find(node => node.type === "SystemTimePicker").props.value.getHours(), 8)
+    nodes(reopened).find(node => node.type === "SystemTimePicker").props.onChange({ type: "set" }, picked)
+    nodes(ios.render("AppTimePicker", props)).find(node => node.type === "PickerPanel").props.onConfirm()
+    assert.equal(saved, "17:35")
     const android = harness("components/platform/app-date-time-picker.tsx", { "@react-native-community/datetimepicker": picker,
         "react-native": { View: "View", Text: "Text", Pressable: "Pressable", Keyboard: { dismiss() {} }, Platform: { OS: "android" }, StyleSheet: { create: v => v } } })
     android.render("AppTimePicker", props).props.onPress()
