@@ -1,10 +1,12 @@
 import codecs
 import re
+from datetime import datetime, timedelta, timezone
 from ipaddress import ip_address, ip_network
 from typing import Any
 from urllib.parse import parse_qsl
 
 from fastapi import Request
+from src.integrations.amocrm.constants import PAID_STATUS_IDS, STATUS_IDS, STATUS_WORDS
 
 from config import AMOCRM_ACCOUNT_ID, AMOCRM_WEBHOOK_ALLOWED_ACCOUNT_IDS, AMOCRM_WEBHOOK_ALLOWED_IPS, AMOCRM_WEBHOOK_ALLOWED_SUBDOMAINS
 
@@ -34,6 +36,56 @@ def _coerce_amocrm_int(value: Any, field: str) -> int:
 def _amocrm_payload_int(payload: dict[str, list[str]], key: str) -> int:
     raw = (payload.get(key) or ["0"])[0] or "0"
     return _coerce_amocrm_int(raw, key)
+
+
+# A checkout can emit its callback before the local transaction commits. This is
+# a short reconciliation window, not a policy for importing historical CRM state.
+AMO_LINK_WINDOW = timedelta(hours=1)
+_APP_ORDER_TITLE = re.compile(r"Заказ №(EP-[A-Z0-9]{8}|[0-9]{1,19}) с Приложения", re.I | re.ASCII)
+
+
+def amocrm_title_code(name):
+    match = _APP_ORDER_TITLE.fullmatch((name or "").strip())
+    return match[1].upper() if match else None
+
+
+def amocrm_event_time(payload, received_at):
+    timestamps = []
+    for key in ("updated_at", "last_modified"):
+        raw = _first_payload_value(payload, f"leads[status][0][{key}]")
+        if raw:
+            if not re.fullmatch("[0-9]{1,10}", raw):
+                return None
+            timestamps.append(datetime.fromtimestamp(int(raw), timezone.utc))
+    return min(timestamps, default=received_at)
+
+
+def amocrm_transition_concern(order, *, previous, target, received_at, event_at):
+    if order.created_at > received_at or order.created_at.replace(microsecond=0) > event_at:
+        return "event_predates_order"
+    label = STATUS_WORDS.get(target)
+    if label is None:
+        return "unknown_status"
+    canceled = {STATUS_IDS["canceled"], STATUS_IDS["refund_declined"]}
+    if ((order.is_canceled or order.payment_status == "refunded") and target not in canceled
+            or not order.is_active and order.status != label):
+        return "terminal_order"
+    if previous and order.status not in {STATUS_WORDS.get(previous), label}:
+        return "previous_status_mismatch"
+    if not previous and order.updated_at > received_at and order.status != label:
+        return "order_changed_since_receipt"
+    ranks = [STATUS_IDS[k] for k in ("check_paid", "packaged", "package_sent", "package_delivered", "won")]
+    if order.status == STATUS_WORDS[STATUS_IDS["pending_payment"]] and target == STATUS_IDS["main"]:
+        return "backward_transition"
+    if target not in canceled:
+        rank = ranks.index(target) if target in ranks else -1
+        if (order.is_shipped and rank < ranks.index(STATUS_IDS["package_sent"])) or (order.is_paid and target not in PAID_STATUS_IDS):
+            return "backward_transition"
+        if any(order.status == STATUS_WORDS[stage] and rank < i for i, stage in enumerate(ranks)):
+            return "backward_transition"
+    elif (order.is_paid or order.is_shipped) and not previous and order.status != label:
+        return "unconfirmed_cancellation"
+    return None
 
 
 def _intellectmoney_form_charset(content_type: str | None) -> str:

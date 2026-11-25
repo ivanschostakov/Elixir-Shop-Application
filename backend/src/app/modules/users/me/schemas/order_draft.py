@@ -14,7 +14,7 @@ from src.database.limits import (
 from src.integrations.delivery.schemas import CountryCode, DeliveryMode, DeliveryProvider
 from src.normalize import normalize_person_name
 
-RECIPIENT_PHONE_RE = re.compile(r"^\+?\d{10,15}$")
+RECIPIENT_PHONE_RE = re.compile(r"^\+?[0-9]{10,15}$")
 
 
 class DeliveryCalculationPayload(BaseModel):

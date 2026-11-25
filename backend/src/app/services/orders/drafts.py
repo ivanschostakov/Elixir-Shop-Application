@@ -297,6 +297,7 @@ async def update_order_draft_for_user(session: AsyncSession, *, user: User, draf
         effective_delivery_address is not None
         and str(effective_delivery_address.provider).upper() == "CDEK"
         and (delivery_address_changed or payload.sync_basket_items)
+        and update_data.get("items_count", draft.items_count) != 0
     ):
         await session.flush()
         draft_items = list((

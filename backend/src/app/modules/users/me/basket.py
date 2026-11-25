@@ -47,7 +47,7 @@ async def create_my_basket(request: Request, db: AsyncSession = Depends(get_db),
 async def create_my_basket_item(payload: BasketItemCreate, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BasketRead:
     basket = await _ensure_basket(db, current_user.id)
     variant = await _get_variant_for_update(db, payload.variant_id)
-    if variant is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    if variant is None or variant.archived: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
     product = await _get_product_for_pricing(db, variant.product_id)
     if product is None or getattr(product, "is_visible_in_app", True) is False:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
@@ -89,7 +89,7 @@ async def update_my_basket_item(item_id: int, payload: BasketItemUpdate, request
     if basket_item is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Basket item not found")
 
     variant = await _get_variant_for_update(db, basket_item.variant_id)
-    if variant is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
+    if variant is None or variant.archived: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Variant not found")
     product = await _get_product_for_pricing(db, variant.product_id)
     await require_catalog_products(db, [variant.product_id], user_id=current_user.id,
                                    client_platform="ios" if is_ios_request(request.headers) else None)

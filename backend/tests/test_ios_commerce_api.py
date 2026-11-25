@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.database.models import Variant
+from src.database.models import Product, Variant
 from test_catalog_access_scope import scoped_catalog
 from test_guest_checkout_api import _build_guest_order_payload, _delete_user
 from test_orders_api import _build_pickup_payload, _create_ready_draft, stub_amocrm
@@ -142,11 +142,16 @@ def test_ios_guest_checkout_to_sbp(client, ios_catalog, stub_amocrm, payment_pro
 
 def test_ios_rejects_hidden_items_already_in_basket(client, ios_catalog, stub_amocrm):
     s = ios_catalog
+    product_id = s["en_product_id"]
     added = client.post("/api/v1/users/me/basket/items", headers=s["regular"],
-                        json={"variant_id": 999999999, "quantity": 1})
+                        json={"variant_id": _variant(product_id), "quantity": 1})
     assert added.status_code == 200, added.text
+    with Session(sync_engine) as db:
+        db.get(Product, product_id).is_visible_in_app = False
+        db.commit()
     order = client.post("/api/v1/users/me/orders", headers=_headers(s, "regular"), json={"payment_method": "sbp"})
     assert order.status_code == 404, order.text
+    assert order.json()["detail"] == "Product not found"
 
 
 def test_commerce_does_not_enable_medical_ai(client, ios_catalog):

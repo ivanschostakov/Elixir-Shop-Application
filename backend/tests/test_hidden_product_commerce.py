@@ -92,9 +92,8 @@ def test_hidden_products_are_absent_from_ai_search_detail_stock_and_cards(catalo
     asyncio.run(run())
 
 
-def test_hidden_products_cannot_be_quoted_for_guest_checkout(catalog, monkeypatch):
+def test_hidden_products_cannot_be_quoted_for_guest_checkout(catalog):
     db, _, hidden = catalog
-    monkeypatch.setattr("src.app.services.guest_checkout.customer_category_scope", lambda _: None)
 
     async def run():
         variants = await _load_guest_variants(db, {11: 1, 12: 1})
@@ -153,7 +152,7 @@ def test_existing_basket_shows_hidden_product_as_unavailable(catalog):
         "query_string": b"",
     })
     with db.session.no_autoflush:
-        result = basket_service.serialize_basket(request, basket)
+        result = basket_service.serialize_basket(request, basket, user=SimpleNamespace(id=basket.user_id))
     assert result.has_unavailable_items is True
     assert result.items[0].is_available is False
     assert result.items[0].available_quantity == 0

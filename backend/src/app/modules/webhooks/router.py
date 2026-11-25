@@ -18,6 +18,7 @@ from src.app.services.telegram_updates import process_telegram_update
 from src.database import get_db
 from src.database.crud import get_order_by_amocrm_lead_id, get_order_by_code, get_order_by_id, get_order_by_invoice_id, update_order
 from src.database.crud.webhooks import payload_digest, register_webhook_delivery, claim_webhook_delivery, finish_webhook_delivery
+from src.database.crud.webhooks.webhook_delivery import awaiting_amocrm_order_clause, defer_amocrm_delivery
 from src.database.models import Order, WebhookDelivery
 from fastapi import HTTPException
 from src.database.schemas import OrderUpdate
@@ -25,6 +26,7 @@ from src.integrations.amocrm import get_amocrm_client
 from src.integrations.intellectmoney import get_intellectmoney_client
 
 from .service import _amocrm_payload_int, _amocrm_webhook_verified, _coerce_amocrm_int, _first_payload_value, _header_value, _parse_intellectmoney_payload, _request_client_ip
+from .service import AMO_LINK_WINDOW, amocrm_event_time, amocrm_title_code, amocrm_transition_concern
 from config import TELEGRAM_WEBHOOK_SECRET_TOKEN, WEBHOOK_RATE_LIMIT_MAX_REQUESTS, WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
 
 webhooks_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -59,32 +61,96 @@ async def amocrm_webhook(request: Request, db: AsyncSession = Depends(get_db)):
     return JSONResponse(result or {"ok": True, "ignored": "duplicate"})
 
 
-async def _apply_amocrm_event(db, payload):
+async def _apply_amocrm_event(db, payload, received_at):
+    now = datetime.now(timezone.utc)
+    if now - received_at > AMO_LINK_WINDOW:
+        raise _AmoReview("receipt_outside_reconciliation_window")
+    # A callback may carry multiple status records. Give each its own durable outcome.
+    groups = {}
+    context = {}
+    for key, values in payload.items():
+        match = re.fullmatch(r"leads\[status\]\[([0-9]+)\](\[.*\])", key)
+        if match:
+            groups.setdefault(match[1], {})[f"leads[status][0]{match[2]}"] = values
+        else:
+            context[key] = values
+    if groups and groups.keys() != {"0"}:
+        first_error = None
+        for fields in groups.values():
+            try:
+                await _process_event(db, provider="amocrm", payload={**context, **fields}, received_at=received_at)
+            except Exception as exc:
+                await db.rollback()
+                if first_error is None: first_error = exc
+        if first_error is not None: raise first_error
+        return {"ok": True, "events": len(groups)}
+
     lead_id = _amocrm_payload_int(payload, "leads[status][0][id]")
     status_id = _amocrm_payload_int(payload, "leads[status][0][status_id]")
     pipeline_id = _amocrm_payload_int(payload, "leads[status][0][pipeline_id]")
 
-    if not lead_id: return {"ok": True, "ignored": "no lead_id"}
+    if not lead_id:
+        if groups: raise _AmoReview("invalid_status_lead")
+        return {"ok": True, "ignored": "no lead_id"}
+    if lead_id < 0 or lead_id > 2**63 - 1 or any(len(values) != 1 for fields in groups.values() for values in fields.values()):
+        raise _AmoReview("invalid_status_record")
     if pipeline_id and pipeline_id != amocrm_client.PIPELINE_ID: return {"ok": True, "ignored": "wrong pipeline"}
-
-    lead = await amocrm_client.get_lead(lead_id)
-    name = lead.get("name") or ""
-    status_id = _coerce_amocrm_int(lead.get("status_id") or status_id, "lead.status_id")
-    pipeline_id = _coerce_amocrm_int(lead.get("pipeline_id") or pipeline_id, "lead.pipeline_id")
-    if pipeline_id and pipeline_id != amocrm_client.PIPELINE_ID: return {"ok": True, "ignored": "pipeline mismatch"}
+    event_at = amocrm_event_time(payload, received_at)
+    if event_at is None or now - event_at > AMO_LINK_WINDOW or event_at > now:
+        raise _AmoReview("invalid_or_stale_event_time")
 
     order = await get_order_by_amocrm_lead_id(db, lead_id)
     if order is None:
-        match = re.search(r"№\s*([A-Za-z0-9-]+)", name)
-        if match:
-            public_code = match.group(1).strip().upper()
+        lead = await _current_amo_lead(lead_id)
+        if lead["pipeline_id"] != amocrm_client.PIPELINE_ID:
+            return {"ok": True, "ignored": "pipeline mismatch"}
+        public_code = amocrm_title_code(lead.get("name"))
+        if public_code:
             order = await get_order_by_code(db, public_code)
-            if order is None and public_code.isdigit(): order = await get_order_by_id(db, int(public_code))
+            if order is not None and order.amocrm_lead_id not in (None, lead_id):
+                raise _AmoReview("conflicting_lead_link")
+        if order is None:
+            raise _AwaitingAmoOrder(lead_id, public_code)
 
-    if order is None: raise HTTPException(503, "Order not available yet; retry later")
+    # Read current CRM state *after* taking the same order lock used by the
+    # status writer. Two overlapping callbacks cannot apply snapshots in reverse.
+    await db.refresh(order, with_for_update=True)
+    lead = await _current_amo_lead(lead_id)
+    if lead["pipeline_id"] != amocrm_client.PIPELINE_ID:
+        return {"ok": True, "ignored": "pipeline mismatch"}
+    if order.amocrm_lead_id != lead_id and (
+        order.amocrm_lead_id is not None or amocrm_title_code(lead.get("name")) != order.order_code
+    ):
+        raise _AmoReview("order_identity_changed")
+    if status_id != lead["status_id"]:
+        raise _AmoReview("callback_not_current")
+    concern = amocrm_transition_concern(
+        order, previous=_amocrm_payload_int(payload, "leads[status][0][old_status_id]"),
+        target=status_id, received_at=received_at, event_at=event_at,
+    )
+    if concern:
+        raise _AmoReview(concern)
 
     updated_order = await apply_amocrm_status_update(db, order=order, status_id=status_id)
     return {"ok": True, "order_id": updated_order.id, "lead_id": lead_id, "status_id": status_id}
+
+
+class _AwaitingAmoOrder(Exception):
+    def __init__(self, lead_id, code):
+        self.lookup = {"lead_id": lead_id, "code": code}
+
+
+class _AmoReview(Exception):
+    pass
+
+
+async def _current_amo_lead(lead_id):
+    lead = await amocrm_client.get_lead(lead_id)
+    if not isinstance(lead, dict) or lead.get("id") != lead_id or not all(
+        isinstance(lead.get(key), int) and lead[key] > 0 for key in ("pipeline_id", "status_id")
+    ):
+        raise HTTPException(503, "Cannot verify current CRM lead state")
+    return lead
 
 
 @webhooks_router.post("/intellectmoney")
@@ -140,19 +206,35 @@ async def _apply_intellectmoney_event(db, payload):
     return {"ok": True}
 
 
-async def _process_event(db, *, provider, payload):
-    canonical = json.dumps({k: v for k, v in payload.items() if k not in {"Hash", "SecretKey"}}, sort_keys=True, separators=(",", ":")).encode()
+async def _process_event(db, *, provider, payload, received_at=None):
+    payload = {k: v for k, v in payload.items() if k not in {"Hash", "SecretKey"}}
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     event_key = payload_digest(canonical)
-    delivery_id = await claim_webhook_delivery(db, provider=provider, event_key=event_key,
-        payload={key: value for key, value in payload.items() if key not in {"Hash", "SecretKey"}})
+    delivery_id = await claim_webhook_delivery(db, provider=provider, event_key=event_key, payload=payload,
+                                              received_at=received_at)
     if delivery_id is None:
         return None
+    return await _apply_claimed_event(db, delivery_id, provider, payload, received_at=received_at)
+
+
+async def _apply_claimed_event(db, delivery_id, provider, payload, *, received_at=None):
     try:
-        result = await (_apply_intellectmoney_event(db, payload) if provider == "intellectmoney" else _apply_amocrm_event(db, payload))
+        if provider == "amocrm":
+            row = await db.get(WebhookDelivery, delivery_id)
+            received_at = min(received_at or row.created_at, row.created_at)
+            result = await _apply_amocrm_event(db, payload, received_at)
+        else:
+            result = await _apply_intellectmoney_event(db, payload)
+    except _AmoReview as exc:
+        await defer_amocrm_delivery(db, delivery_id, payload=payload, review_reason=str(exc))
+        return {"ok": True, "retained": "needs_review"}
+    except _AwaitingAmoOrder as exc:
+        await defer_amocrm_delivery(db, delivery_id, payload=payload, lookup=exc.lookup)
+        return {"ok": True, "deferred": "awaiting_order"}
     except Exception as exc:
         await db.rollback()
         # Invalid signed events are retained but cannot change payment state.
-        permanent = isinstance(exc, HTTPException) and exc.status_code == 400
+        permanent = provider == "intellectmoney" and isinstance(exc, HTTPException) and exc.status_code == 400
         await finish_webhook_delivery(db, delivery_id, error=None if permanent else exc)
         raise
     await finish_webhook_delivery(db, delivery_id)
@@ -165,23 +247,23 @@ async def retry_due_webhook_deliveries(limit=20):
     async with SessionLocal() as db:
         rows = list((await db.execute(select(WebhookDelivery).where(
             WebhookDelivery.provider.in_(["amocrm", "intellectmoney"]),
-            WebhookDelivery.payload_json.is_not(None), WebhookDelivery.attempts < 12,
-            or_((WebhookDelivery.status == "failed") & (WebhookDelivery.next_attempt_at <= now),
+            WebhookDelivery.payload_json.is_not(None),
+            WebhookDelivery.attempts < 12,
+            or_(awaiting_amocrm_order_clause(),
+                (WebhookDelivery.status == "awaiting_order") & (WebhookDelivery.created_at <= now - AMO_LINK_WINDOW),
+                (WebhookDelivery.status == "failed") & (WebhookDelivery.next_attempt_at <= now),
                 (WebhookDelivery.status == "processing") & (WebhookDelivery.lease_until <= now)),
-        ).limit(limit))).scalars().all())
-        items = [(r.provider, r.delivery_id, r.payload_json) for r in rows]
-    for provider, event_key, payload in items:
+        ).order_by(WebhookDelivery.next_attempt_at.asc().nullsfirst(), WebhookDelivery.id).limit(limit))).scalars().all())
+        items = [(r.provider, r.delivery_id, r.payload_json, r.status) for r in rows]
+    for provider, event_key, payload, row_status in items:
+        if provider == "amocrm" and isinstance(payload.get("event"), dict):
+            payload = payload["event"]
         async with SessionLocal() as db:
             try:
-                delivery_id = await claim_webhook_delivery(db, provider=provider, event_key=event_key, payload=payload)
+                delivery_id = await claim_webhook_delivery(db, provider=provider, event_key=event_key, payload=payload,
+                                                          resume_waiting=row_status == "awaiting_order")
                 if delivery_id is None: continue
-                try:
-                    await (_apply_intellectmoney_event(db, payload) if provider == "intellectmoney" else _apply_amocrm_event(db, payload))
-                except Exception as exc:
-                    await db.rollback()
-                    await finish_webhook_delivery(db, delivery_id, error=exc)
-                    continue
-                await finish_webhook_delivery(db, delivery_id)
+                await _apply_claimed_event(db, delivery_id, provider, payload)
             except Exception:
                 log.exception("Webhook recovery failed provider=%s", provider)
     return len(items)

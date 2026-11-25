@@ -101,11 +101,13 @@ def test_checkout_rejects_missing_or_invalid_recipient_fields(field, value):
 
 @pytest.mark.parametrize("source", ["basket", "draft"])
 def test_phone_is_checked_before_stock_quotes_and_order_creation(monkeypatch, source):
-    value = SimpleNamespace(id=1, items=[object()], recipient=SimpleNamespace(phone="", is_profile_snapshot=False), delivery_address=object())
+    value = SimpleNamespace(id=1, items=[SimpleNamespace(product_id=7)], recipient=SimpleNamespace(phone="", is_profile_snapshot=False), delivery_address=object())
     user = SimpleNamespace(id=44)
     async def get(*args, **kwargs): return value
     async def no_existing(*args, **kwargs): return None
-    session = SimpleNamespace()
+    monkeypatch.setattr("src.app.services.referrals.program.ensure_default_reward_program",
+                        AsyncMock(return_value=SimpleNamespace(reward_program_selection_source="app")))
+    session = SimpleNamespace(scalars=AsyncMock(return_value=SimpleNamespace(all=lambda: [7])))
     if source == "basket":
         monkeypatch.setattr('src.app.services.orders.creation.basket.get_basket_by_user_id', get)
         call = creation.create_order_from_basket_for_user(session, user=user, payment_method="sbp")

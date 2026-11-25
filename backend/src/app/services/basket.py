@@ -73,7 +73,7 @@ def serialize_basket(
         discount_percent = product_catalog_discount_percent(item.product)
         unit_price = catalog_unit_price(original_unit_price, item.product)
         line_total = unit_price * item.quantity
-        available_quantity = policy.visible_stock(item.variant.stock, item.product)
+        available_quantity = 0 if item.variant.archived else policy.visible_stock(item.variant.stock, item.product)
         is_available = available_quantity > 0 and item.quantity <= available_quantity
         has_unavailable_items = has_unavailable_items or not is_available
         total_quantity += item.quantity
@@ -132,7 +132,7 @@ async def _ensure_basket(db: AsyncSession, user_id: int):
 
 
 async def _get_variant_for_update(db: AsyncSession, variant_id: int) -> Variant | None:
-    stmt = select(Variant).where(Variant.id == variant_id).with_for_update()
+    stmt = select(Variant).where(Variant.id == variant_id).with_for_update().execution_options(populate_existing=True)
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
