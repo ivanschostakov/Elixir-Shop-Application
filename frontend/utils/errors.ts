@@ -90,6 +90,8 @@ export function getErrorMessage(error: unknown, fallback?: string) {
         return translate("auth.error.deviceVerificationUnavailable")
     }
 
+    if (error instanceof ApiError && error.status === 0) return translate("network.connectionFailed")
+
     if (error instanceof ApiError && error.status >= 500) {
         return getBackendUnavailableMessage()
     }

@@ -41,3 +41,45 @@ test("external cancellation cancels stalled body", async (t) => {
     controller.abort()
     await assert.rejects(request, RequestDeadlineError)
 })
+
+function renderPickupFooter(props = {}) {
+    const jsx = (type, props) => ({ type, props })
+    const styles = new Proxy({}, { get: (_target, name) => name })
+    const { PickupPointFooterExtension } = loadTs("components/delivery/pickup-point-footer-extension.tsx", {
+        react: { useEffect() {}, useState: initial => [initial, () => {}] },
+        "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+        "react-native": Object.fromEntries(["ActivityIndicator", "Image", "Pressable", "Text", "View"].map(name => [name, name])),
+        "react-native-svg": { default: "Svg", Path: "Path" },
+        "@/components/footer/sticky-footer.styles": { createStickyFooterStyles: () => styles },
+        "@/screens/delivery/delivery-screen.styles": { createDeliveryScreenStyles: () => styles },
+        "@/hooks/use-theme-styles": { useThemeStyles: factory => factory() },
+        "@/i18n/translations": { translate: key => ({ "common.retry": "Повторить", "delivery.pickupPointChoose": "Deliver here" })[key] ?? key },
+    })
+    const tree = PickupPointFooterExtension({ title: "SYA6", rows: [{ key: "address", label: "Address", value: "Сёяха" }], onChoose() {}, onClose() {}, onCopyInfo() {}, ...props })
+    const nodes = value => !value || typeof value !== "object" ? [] : Array.isArray(value) ? value.flatMap(nodes) : [value, ...nodes(value.props?.children)]
+    return nodes(tree)
+}
+
+test("failed delivery quotes offer retry instead of claiming the pickup point can be confirmed", () => {
+    let calls = 0
+    const nodes = renderPickupFooter({ error: "destination_not_found", onChoose: () => calls++ })
+    const action = nodes.find(node => node.type === "Pressable" && node.props.accessibilityLabel === "Повторить")
+    assert.ok(action)
+    assert.equal(nodes.some(node => node.type === "Text" && node.props.children === "Deliver here"), false)
+    action.props.onPress()
+    assert.equal(calls, 1)
+})
+
+test("delivery calculation preserves pickup details and disables duplicate taps while showing progress", () => {
+    let calls = 0
+    const nodes = renderPickupFooter({ isResolving: true, onChoose: () => calls++ })
+    assert.ok(nodes.some(node => node.type === "Text" && node.props.children === "Сёяха"))
+    assert.ok(nodes.some(node => node.type === "ActivityIndicator"))
+    const action = nodes.find(node => node.type === "Pressable" && node.props.accessibilityLabel === "Deliver here")
+    assert.equal(action.props.disabled, true)
+    assert.deepEqual(action.props.accessibilityState, { busy: true, disabled: true })
+    action.props.onPress()
+    assert.equal(calls, 0)
+    const ready = renderPickupFooter().find(node => node.type === "Pressable" && node.props.accessibilityLabel === "Deliver here")
+    assert.equal(ready.props.disabled, false)
+})

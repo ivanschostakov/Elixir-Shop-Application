@@ -19,9 +19,6 @@ export const createHomeScreenStyles = (colors: ThemePalette) => StyleSheet.creat
     topGradientSectionWrapSticky: {
         zIndex: 18,
     },
-    topGradientSectionWrapMenuOpen: {
-        zIndex: 80,
-    },
     topGradientSection: {
         borderBottomLeftRadius: 28,
         borderBottomRightRadius: 28,
@@ -31,9 +28,6 @@ export const createHomeScreenStyles = (colors: ThemePalette) => StyleSheet.creat
     topGradientContent: {
         paddingBottom: spacing.md,
         paddingHorizontal: spacing.md,
-    },
-    homeMenuPopup: {
-        right: spacing.md * 2,
     },
     searchInputWrap: {
         alignItems: "center",

@@ -6,7 +6,7 @@ const constants = loadTs("screens/checkout/checkout-screen.constants.ts")
 const {
     buildAvailableRecipients, getProfileRecipientUpdate, getRecipientFormErrors,
     getRecipientPickerValue, getSelfRecipient, hasRecipientErrors,
-    resolveRecipientPickerAction, updateSavedRecipientOptions,
+    recipientPickerLabel, resolveRecipientPickerAction, updateSavedRecipientOptions,
 } = loadTs("screens/checkout/checkout-screen.utils.ts", {
     "@/screens/checkout/checkout-screen.constants": constants,
     "@/services/api/delivery": {},
@@ -14,6 +14,15 @@ const {
     "@/utils/formatting": {},
     "@/utils/route-params": {},
     "@/utils/errors": {},
+})
+
+test("saved recipients with the same name have distinct labels, even with identical contacts", () => {
+    const a = { id: 1, name: "Anna", surname: "Tester", phone: "+70000000001", email: "a@example.com" }
+    const b = { ...a, id: 2, phone: "+70000000002", email: "b@example.com" }
+    assert.equal(recipientPickerLabel(a, [a]), "Anna Tester")
+    assert.match(recipientPickerLabel(a, [a, b]), /000000001$/)
+    assert.match(recipientPickerLabel(a, [a, { ...b, phone: a.phone }]), /a@example\.com$/)
+    assert.match(recipientPickerLabel(a, [a, { ...a, id: 2 }]), /#1$/)
 })
 
 test("checks all required fields of the selected recipient", () => {

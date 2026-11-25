@@ -3,6 +3,9 @@ const path = require("path")
 const { getDefaultConfig } = require("expo/metro-config")
 
 const projectRoot = __dirname
+if (process.env.ELIXIR_PLAY_OTA === "1" && !process.env.EXPO_PUBLIC_API_BASE_URL?.trim()) {
+    throw new Error("Set EXPO_PUBLIC_API_BASE_URL in the EAS production environment before exporting the Play update.")
+}
 const config = getDefaultConfig(projectRoot)
 
 function escapeRegExp(value) {

@@ -1,12 +1,14 @@
 import { useState } from "react"
 import { Keyboard, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native"
-import DateTimePicker, { DateTimePickerAndroid, type DateTimePickerEvent } from "@react-native-community/datetimepicker"
+import DateTimePicker from "@react-native-community/datetimepicker"
 import { AppPickerPanel } from "@/components/platform/app-picker"
 
-export function AppTimePicker({ label, value, onChange, disabled, locale, dark, colors }: {
+export type AppTimePickerProps = {
     label: string; value: string; onChange: (value: string) => void; disabled: boolean; locale: string; dark: boolean
     colors: { surface: string; border: string; text: string; greenBright: string; muted: string }
-}) {
+}
+
+export function AppTimePicker({ label, value, onChange, disabled, locale, dark, colors }: AppTimePickerProps) {
     const [draft, setDraft] = useState<Date | null>(null)
     const commit = (date: Date) => onChange([date.getHours(), date.getMinutes()].map(part => String(part).padStart(2, "0")).join(":"))
     const open = () => {
@@ -14,11 +16,7 @@ export function AppTimePicker({ label, value, onChange, disabled, locale, dark, 
         // Keep the wall-clock selection independent of today's DST transition.
         const [hour, minute] = value.split(":").map(Number)
         const selected = new Date(2000, 0, 15, hour, minute)
-        if (Platform.OS === "ios") setDraft(selected)
-        else if (Platform.OS === "android") DateTimePickerAndroid.open({
-            value: selected, mode: "time", is24Hour: true,
-            onChange: (event: DateTimePickerEvent, date?: Date) => { if (event.type === "set" && date) commit(date) },
-        })
+        setDraft(selected)
     }
     const trigger = <Pressable accessibilityRole="button" accessibilityLabel={label + ", " + value} accessibilityState={{ disabled }} disabled={disabled || Platform.OS === "web"} onPress={open}
         style={({ pressed }) => [styles.button, { backgroundColor: dark ? "#263A31" : "#EAF3ED", opacity: disabled ? 0.5 : pressed ? 0.7 : 1 }]}>

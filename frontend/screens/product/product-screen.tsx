@@ -16,6 +16,7 @@ import { useProduct } from "@/hooks/products/use-product"
 import { useProductQuestions } from "@/hooks/products/use-product-questions"
 import { useProductReviewEligibility } from "@/hooks/products/use-product-review-eligibility"
 import { useProductReviews } from "@/hooks/products/use-product-reviews"
+import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import {
     useProductInfoTabs,
@@ -35,6 +36,7 @@ import { trackRecommendationView } from "@/services/api/recommendations"
 import type { UploadableReviewAttachment } from "@/types/product"
 
 export default function ProductScreen({ productId, preferredVariantId }: ProductScreenProps) {
+    const userId = useAuth().user?.id
     const productScreenStyle = useThemeStyles(createProductScreenStyle)
     const { palette } = useTheme()
     const { product, loading } = useProduct(productId)
@@ -69,10 +71,11 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
         favouriteError,
         isFavourite,
         productId,
+        productName: product?.name,
         t,
         toggleFavourite,
     })
-    const trackedProductIdRef = useRef<number | null>(null)
+    const trackedProductRef = useRef<string | null>(null)
     const screenshotPromptProgress = useRef(new Animated.Value(0)).current
     const screenshotPromptHideTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [isScreenshotPromptVisible, setIsScreenshotPromptVisible] = useState(false)
@@ -92,13 +95,15 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
     })
 
     useEffect(() => {
-        if (!product?.id || trackedProductIdRef.current === product.id) {
+        if (!userId || !product?.id) {
+            trackedProductRef.current = null
             return
         }
-
-        trackedProductIdRef.current = product.id
+        const key = `${userId}:${product.id}`
+        if (trackedProductRef.current === key) return
+        trackedProductRef.current = key
         void trackRecommendationView({ product_id: product.id }).catch(() => undefined)
-    }, [product?.id])
+    }, [product?.id, userId])
 
     const clearScreenshotPromptTimeout = useCallback(() => {
         if (!screenshotPromptHideTimeoutRef.current) {
@@ -246,7 +251,8 @@ export default function ProductScreen({ productId, preferredVariantId }: Product
                               </Pressable>
 
                               <Pressable
-                                  accessibilityLabel={isFavourite ? t("product.favoriteRemoved") : t("product.favoriteAdded")}
+                                  accessibilityState={{ selected: isFavourite }}
+                                  accessibilityLabel={isFavourite ? t("product.favoriteRemoveAction") : t("product.favoriteAddAction")}
                                   accessibilityRole="button"
                                   disabled={favouriteLoading || updating}
                                   onPress={() => {

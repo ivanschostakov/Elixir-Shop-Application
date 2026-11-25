@@ -157,6 +157,17 @@ export function titleCaseWords(value: string | null | undefined) {
         .replace(/\S+/g, (part) => part.charAt(0).toLocaleUpperCase("ru-RU") + part.slice(1))
 }
 
+export function recipientPickerLabel(recipient: DeliveryRecipientRead, options: DeliveryRecipientRead[]) {
+    const name = formatRecipientName(recipient)
+    const matches = options.filter(option => formatRecipientName(option).toLowerCase() === name.toLowerCase())
+    if (matches.length < 2) return name
+    const phone = recipient.phone?.trim()
+    if (phone && matches.filter(option => option.phone?.trim() === phone).length === 1) return name + " · " + phone
+    const email = recipient.email?.trim()
+    if (email && matches.filter(option => option.email?.trim() === email).length === 1) return name + " · " + email
+    return name + " · #" + recipient.id
+}
+
 export function formatRecipientName(recipient: DeliveryRecipientRead | null | undefined) {
     if (!recipient) {
         return "Покупатель"

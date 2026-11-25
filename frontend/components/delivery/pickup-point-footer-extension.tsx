@@ -36,6 +36,7 @@ export function PickupPointFooterExtension({
         providerOptions.length > 1 && selectedProviderKey !== null && onSelectProvider !== null
     const selectProvider = onSelectProvider ?? (() => {})
     const [failedProviderImages, setFailedProviderImages] = useState<Record<string, boolean>>({})
+    const currentActionLabel = error ? translate("common.retry") : actionLabel
 
     useEffect(() => {
         setFailedProviderImages({})
@@ -149,17 +150,6 @@ export function PickupPointFooterExtension({
                 </View>
             ) : null}
 
-            {isResolving ? (
-                <View
-                    style={[
-                        deliveryScreenStyles.pickupFooterStatusRow,
-                        inset && deliveryScreenStyles.pickupFooterPrimaryRowInsetReset,
-                    ]}
-                >
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                </View>
-            ) : (
-                <>
                     {rows.length > 0 ? (
                         <View style={deliveryScreenStyles.pickupFooterInfoList}>
                             {rows.map((row) => (
@@ -191,7 +181,7 @@ export function PickupPointFooterExtension({
                         </View>
                     ) : null}
 
-                    {rows.length > 0 ? (
+                    {rows.length > 0 || isResolving ? (
                         <View
                             style={[
                                 deliveryScreenStyles.pickupFooterActionsRow,
@@ -199,22 +189,29 @@ export function PickupPointFooterExtension({
                             ]}
                         >
                             <Pressable
-                                accessibilityLabel={actionLabel}
+                                accessibilityLabel={currentActionLabel}
                                 accessibilityRole="button"
-                                onPress={onChoose}
+                                accessibilityState={{ busy: isResolving, disabled: isResolving }}
+                                disabled={isResolving}
+                                onPress={() => {
+                                    if (!isResolving) onChoose()
+                                }}
                                 style={({ pressed }) => [
                                     stickyFooterStyles.actionButton,
-                                    pressed && stickyFooterStyles.actionButtonPressed,
+                                    isResolving && stickyFooterStyles.actionButtonDisabled,
+                                    pressed && !isResolving && stickyFooterStyles.actionButtonPressed,
                                 ]}
                             >
-                                <Text style={stickyFooterStyles.actionButtonText}>
-                                    {actionLabel}
-                                </Text>
+                                {isResolving ? (
+                                    <ActivityIndicator color="#FFFFFF" size="small" />
+                                ) : (
+                                    <Text style={stickyFooterStyles.actionButtonText}>
+                                        {currentActionLabel}
+                                    </Text>
+                                )}
                             </Pressable>
                         </View>
                     ) : null}
-                </>
-            )}
         </View>
     )
 }

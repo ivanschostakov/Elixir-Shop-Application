@@ -1,6 +1,6 @@
 import { useAppActionSheet } from "@/components/platform/app-action-sheet"
 import { useEffect, useRef, useState } from "react"
-import { ActivityIndicator, Alert, AppState, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Alert, AppState, Image, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native"
 import * as ImagePicker from "expo-image-picker"
 import { RecordingPresets, setAudioModeAsync, useAudioRecorder, useAudioRecorderState } from "expo-audio"
 import { useLanguage } from "@/providers/language-provider"
@@ -124,6 +124,15 @@ export function MentorFoodEditor({ controller: c, shown, onClose, onSaved, helpM
     const photoOptions = () => {
         if (busy) return
         Keyboard.dismiss()
+        if (Platform.OS === "android") {
+            // Present from the active Android window, above the nested mentor editor.
+            Alert.alert(mt("Фото еды"), undefined, [
+                { text: t("common.cancel"), style: "cancel" },
+                { text: mt("Сделать фото"), onPress: () => void pickPhoto(true) },
+                { text: mt("Выбрать из галереи"), onPress: () => void pickPhoto(false) },
+            ], { cancelable: true })
+            return
+        }
         showActionSheet({ title: mt("Фото еды"), actions: [
             { id: "camera", label: mt("Сделать фото"), onPress: () => void pickPhoto(true) },
             { id: "gallery", label: mt("Выбрать из галереи"), onPress: () => void pickPhoto(false) },

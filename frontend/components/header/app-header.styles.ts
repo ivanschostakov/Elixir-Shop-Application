@@ -2,7 +2,7 @@ import { StyleSheet } from "react-native"
 
 import type { ThemePalette } from "@/theme/colors"
 
-export const getHeaderStyles = (topInset: number, windowHeight: number, colors: ThemePalette) =>
+export const getHeaderStyles = (topInset: number, colors: ThemePalette) =>
     StyleSheet.create({
         wrapper: {
             backgroundColor: colors.background,
@@ -47,18 +47,6 @@ export const getHeaderStyles = (topInset: number, windowHeight: number, colors: 
         centerSlotContent: {
             width: "100%",
         },
-        searchBackdrop: {
-            height: windowHeight + topInset + 8,
-            left: -16,
-            position: "absolute",
-            right: -16,
-            top: -(topInset + 8),
-            zIndex: 1,
-        },
-        searchBackdropBlur: {
-            backgroundColor: colors.veilSoft,
-            flex: 1,
-        },
         title: {
             color: colors.text,
             fontSize: 18,
@@ -74,7 +62,7 @@ export const getHeaderStyles = (topInset: number, windowHeight: number, colors: 
             borderRadius: 999,
             borderWidth: 1,
             flexDirection: "row",
-            height: 34,
+            minHeight: 48,
             paddingHorizontal: 12,
             width: "100%",
         },
@@ -91,17 +79,15 @@ export const getHeaderStyles = (topInset: number, windowHeight: number, colors: 
             fontSize: 16,
             paddingVertical: 0,
         },
+        searchClose: { width: 48, height: 48, alignItems: "center", justifyContent: "center" },
         searchResultsCard: {
             backgroundColor: colors.background,
             borderColor: colors.borderSoft,
             borderRadius: 20,
             borderWidth: 1,
-            left: 0,
             overflow: "hidden",
-            position: "absolute",
-            right: 0,
+            flexShrink: 1,
             boxShadow: "0px 10px 20px rgba(12, 54, 81, 0.14)",
-            top: 34,
             elevation: 10,
             zIndex: 25,
         },
@@ -237,9 +223,11 @@ export const getHeaderStyles = (topInset: number, windowHeight: number, colors: 
             width: "100%",
         },
         menuPopup: {
-            position: "absolute",
-            right: 0,
-            top: 38,
+            alignSelf: "flex-end",
+            flexGrow: 0,
+            flexShrink: 1,
+            marginTop: 34,
+            maxWidth: "100%",
             minWidth: 190,
             backgroundColor: colors.background,
             borderRadius: 16,

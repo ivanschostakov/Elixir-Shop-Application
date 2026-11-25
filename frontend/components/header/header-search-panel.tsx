@@ -9,6 +9,9 @@ import {
     View,
 } from "react-native"
 import { useRouter } from "expo-router"
+import { Path, Svg } from "react-native-svg"
+import { HeaderOverlay } from "@/components/header/header-overlay"
+import { CLOSE_ICON_PATH } from "@/components/header/app-header.constants"
 
 import { getProductContentSubtitle } from "@/components/content/product-content"
 import type { HeaderSearchPanelProps } from "@/components/header/header-search-panel.types"
@@ -53,9 +56,10 @@ export function HeaderSearchPanel({
     }
 
     return (
-        <>
+        <HeaderOverlay closeLabel={t("nav.closeSearch")} onClose={onClose}>
             <View style={[styles.searchInputContainer, styles.searchInputContainerConnected]}>
                 <TextInput
+                    accessibilityLabel={t("nav.search")}
                     autoCapitalize="none"
                     autoCorrect={false}
                     autoFocus
@@ -71,6 +75,9 @@ export function HeaderSearchPanel({
                     value={query}
                 />
                 {loading ? <ActivityIndicator color={palette.primary} size="small" /> : null}
+                <Pressable accessibilityLabel={t("nav.closeSearch")} accessibilityRole="button" onPress={onClose} style={styles.searchClose}>
+                    <Svg width={24} height={24} viewBox="0 0 24 24"><Path d={CLOSE_ICON_PATH} fill={palette.primary} /></Svg>
+                </Pressable>
             </View>
 
             <View style={[styles.searchResultsCard, styles.searchResultsCardConnected]}>
@@ -88,6 +95,7 @@ export function HeaderSearchPanel({
                     </View>
                 ) : products.length ? (
                     <ScrollView
+                        keyboardShouldPersistTaps="handled"
                         nestedScrollEnabled
                         showsVerticalScrollIndicator={false}
                         style={styles.searchResultsScroll}
@@ -144,6 +152,6 @@ export function HeaderSearchPanel({
                     </View>
                 )}
             </View>
-        </>
+        </HeaderOverlay>
     )
 }

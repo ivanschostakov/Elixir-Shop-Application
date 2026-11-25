@@ -62,23 +62,21 @@ test("form adapters preserve keyboard behavior, offsets and the chat's disabled 
     }
 })
 
-test("native menu selection retains details on Android and ignores unavailable actions", () => {
-    for (const platform of ["ios", "android"]) {
-        const selected = []
-        const { AppMenu } = load("components/platform/app-menu.tsx", { ...base,
-            "react-native": { Platform: { OS: platform }, View: "View", Text: "Text", StyleSheet: { create: x => x, absoluteFill: {} } },
-            "react-native-svg": { default: "Svg", Path: "Path" },
-            "@react-native-menu/menu": { MenuView: "Menu" },
-            "@/components/platform/app-surface": { AppSurface: "Surface" },
-            "@/components/platform/app-action-sheet": { useAppActionSheet: () => () => {} },
-        })
-        const menu = AppMenu({ label: "History", dark: false, options: [{ id: "12", label: "Order", detail: "Closed" }, { id: "13", label: "Unavailable", disabled: true }], value: "12", onChange: id => selected.push(id) })
-        assert.equal(menu.props.actions[0].title, platform === "ios" ? "Order" : "✓ Order · Closed")
-        menu.props.onPressAction({ nativeEvent: { event: "unknown" } })
-        menu.props.onPressAction({ nativeEvent: { event: "13" } })
-        menu.props.onPressAction({ nativeEvent: { event: "12" } })
-        assert.deepEqual(selected, ["12"])
-    }
+test("iOS uses a native history menu and ignores unavailable actions", () => {
+    const selected = []
+    const { AppMenu } = load("components/platform/app-menu.tsx", { ...base,
+        "react-native": { Platform: { OS: "ios" }, View: "View", Text: "Text", StyleSheet: { create: x => x, absoluteFill: {} } },
+        "react-native-svg": { default: "Svg", Path: "Path" },
+        "@react-native-menu/menu": { MenuView: "Menu" },
+        "@/components/platform/app-surface": { AppSurface: "Surface" },
+        "@/components/platform/app-action-sheet": { useAppActionSheet: () => () => {} },
+    })
+    const menu = AppMenu({ label: "History", dark: false, options: [{ id: "12", label: "Order", detail: "Closed" }, { id: "13", label: "Unavailable", disabled: true }], value: "12", onChange: id => selected.push(id) })
+    assert.equal(menu.props.actions[0].title, "Order")
+    menu.props.onPressAction({ nativeEvent: { event: "unknown" } })
+    menu.props.onPressAction({ nativeEvent: { event: "13" } })
+    menu.props.onPressAction({ nativeEvent: { event: "12" } })
+    assert.deepEqual(selected, ["12"])
 })
 
 test("shared action sheets map selections, cancellation and disabled actions consistently", () => {
@@ -99,12 +97,11 @@ test("shared action sheets map selections, cancellation and disabled actions con
     assert.equal(closed, 4)
 })
 
-test("web menus open a working selection sheet rather than the library's empty web placeholder", () => {
+for (const platform of ["web", "android"]) test(`${platform} history opens a selection sheet without loading the native menu`, () => {
     let sheet, selection
     const { AppMenu } = load("components/platform/app-menu.tsx", { ...base,
-        "react-native": { Platform: { OS: "web" }, Pressable: "Button", View: "View", Text: "Text", StyleSheet: { create: x => x, absoluteFill: {} } },
+        "react-native": { Platform: { OS: platform }, Pressable: "Button", View: "View", Text: "Text", StyleSheet: { create: x => x, absoluteFill: {} } },
         "react-native-svg": { default: "Svg", Path: "Path" },
-        "@react-native-menu/menu": { MenuView: "InertWebPlaceholder" },
         "@/components/platform/app-surface": { AppSurface: "Surface" },
         "@/components/platform/app-action-sheet": { useAppActionSheet: () => options => { sheet = options } },
     })
@@ -197,6 +194,28 @@ test("native level sliders save only deliberate touches and report each bounded 
         disabled.props.onSlidingStart(2)
         assert.deepEqual(changes, [3, 4, 5])
     }
+})
+
+test("Play slider leaves an unanswered score empty and supports drag and accessibility adjustments", () => {
+    const changes = []
+    const { AppLevelSlider } = load("components/platform/app-level-slider.android.tsx", {
+        ...base, react: { useRef: value => ({ current: value }), useState: () => [120, () => {}] },
+        "react-native": { View: "View", StyleSheet: { create: value => value } },
+    })
+    const props = { label: "Energy", value: null, maximum: 5, valueText: "Select", onChange: value => changes.push(value) }
+    const slider = AppLevelSlider(props).props
+    assert.equal(slider.accessibilityValue.now, undefined)
+    assert.deepEqual(changes, [])
+    slider.onResponderGrant({ nativeEvent: { locationX: 60 } })
+    slider.onResponderMove({ nativeEvent: { locationX: 61 } })
+    slider.onResponderMove({ nativeEvent: { locationX: 140 } })
+    slider.onResponderMove({ nativeEvent: { locationX: -1 } })
+    slider.onAccessibilityAction({ nativeEvent: { actionName: "increment" } })
+    assert.deepEqual(changes, [3, 5, 1, 4])
+    const disabled = AppLevelSlider({ ...props, disabled: true }).props
+    assert.equal(disabled.onStartShouldSetResponder(), false)
+    disabled.onAccessibilityAction({ nativeEvent: { actionName: "decrement" } })
+    assert.equal(changes.length, 4)
 })
 
 test("step transitions reverse from the presented positions on rapid Back taps without fading native controls", () => {

@@ -11,6 +11,7 @@ import { STICKERS } from "@/constants/stickers"
 import type { ProductBrowseSort } from "@/hooks/products/product-browse"
 import { useInfiniteProductCatalog } from "@/hooks/products/use-infinite-product-catalog"
 import { useProductCategories } from "@/hooks/products/use-product-categories"
+import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { trackRecommendationCategoryView } from "@/services/api/recommendations"
 import { createDiscoverScreenStyles } from "@/screens/discover/discover-screen.styles"
@@ -85,6 +86,7 @@ function parseQuery(input: string | string[] | undefined): string {
 }
 
 export default function DiscoverScreen() {
+    const userId = useAuth().user?.id
     const discoverScreenStyles = useThemeStyles(createDiscoverScreenStyles)
     const { palette } = useTheme()
     const router = useRouter()
@@ -107,7 +109,7 @@ export default function DiscoverScreen() {
     const [categoryId, setCategoryId] = useState<number | null>(() => discoverBrowseMemory.categoryId)
     const [newOnly, setNewOnly] = useState(() => discoverBrowseMemory.newOnly)
     const [sort, setSort] = useState<ProductBrowseSort>(() => discoverBrowseMemory.sort)
-    const trackedCategoryIdRef = useRef<number | null>(null)
+    const trackedCategoryRef = useRef<string | null>(null)
     const { categories, reload: reloadCategories } = useProductCategories()
     const {
         products: catalogProducts,
@@ -175,20 +177,18 @@ export default function DiscoverScreen() {
 
     useEffect(() => {
         if (
-            categoryId === null ||
+            !userId || categoryId === null ||
             !categories.some((category) => category.id === categoryId)
         ) {
-            trackedCategoryIdRef.current = null
+            trackedCategoryRef.current = null
             return
         }
 
-        if (trackedCategoryIdRef.current === categoryId) {
-            return
-        }
-
-        trackedCategoryIdRef.current = categoryId
+        const key = `${userId}:${categoryId}`
+        if (trackedCategoryRef.current === key) return
+        trackedCategoryRef.current = key
         void trackRecommendationCategoryView({ category_id: categoryId }).catch(() => undefined)
-    }, [categories, categoryId])
+    }, [categories, categoryId, userId])
 
     const handleRefresh = useCallback(async () => {
         if (refreshing) {
@@ -273,6 +273,8 @@ export default function DiscoverScreen() {
                             eyebrow={t("discover.errorEyebrow")}
                             title={t("discover.errorTitle")}
                             description={screenError}
+                            actionLabel={t("common.retry")}
+                            onPressAction={() => void handleRefresh()}
                         />
                     ) : (
                         <View style={discoverScreenStyles.emptyContent}>

@@ -100,18 +100,24 @@ function compactObject(value) {
 }
 
 module.exports = () => {
-    loadLocalEnv()
+    // EAS Update supplies the selected server environment to the export process.
+    if (process.env.EXPO_NO_DOTENV !== "1") loadLocalEnv()
     validateRequiredEnv()
 
     const apiBaseUrl = getEnvValue("EXPO_PUBLIC_API_BASE_URL")
     const androidCloudProjectNumber = getEnvValue("EXPO_PUBLIC_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER")
     const baseConfig = appJson.expo
+    const playOta = process.env.ELIXIR_PLAY_OTA === "1"
     const baseExtra = baseConfig.extra ?? {}
     const baseAppIntegrity = baseExtra.appIntegrity ?? {}
 
     return {
         expo: {
             ...baseConfig,
+            ...(playOta && {
+                android: { ...baseConfig.android, runtimeVersion: "0.1.1" },
+                updates: { enabled: true, url: `https://u.expo.dev/${baseConfig.extra.eas.projectId}` },
+            }),
             extra: compactObject({
                 ...baseExtra,
                 apiBaseUrl,

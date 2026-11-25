@@ -296,9 +296,9 @@ test("each reminder has an independently editable time while disabled and weekly
     assert.deepEqual([settings.weight_time, settings.daily_time, settings.weekly_time, settings.weekly_day], ["18:45", "06:30", "13:15", 0])
 })
 
-test("time selection uses UIDatePicker on iOS and the system time dialog on Android", () => {
-    let saved, opened
-    const picker = { default: "SystemTimePicker", DateTimePickerAndroid: { open: options => { opened = options } } }
+test("reminder time commits only on confirmation using each platform's installed pickers", () => {
+    let saved
+    const picker = { default: "SystemTimePicker" }
     const props = { locale: "ru", dark: false, colors: {}, label: "Отметить вес", value: "08:00", onChange: value => { saved = value }, disabled: false }
     const ios = harness("components/platform/app-date-time-picker.tsx", { "@react-native-community/datetimepicker": picker })
     ios.render("AppTimePicker", props).props.onPress()
@@ -315,11 +315,22 @@ test("time selection uses UIDatePicker on iOS and the system time dialog on Andr
     nodes(reopened).find(node => node.type === "SystemTimePicker").props.onChange({ type: "set" }, picked)
     nodes(ios.render("AppTimePicker", props)).find(node => node.type === "PickerPanel").props.onConfirm()
     assert.equal(saved, "17:35")
-    const android = harness("components/platform/app-date-time-picker.tsx", { "@react-native-community/datetimepicker": picker,
-        "react-native": { View: "View", Text: "Text", Pressable: "Pressable", Keyboard: { dismiss() {} }, Platform: { OS: "android" }, StyleSheet: { create: v => v } } })
-    android.render("AppTimePicker", props).props.onPress()
-    assert.equal(opened.mode, "time"); assert.equal(opened.is24Hour, true)
-    opened.onChange({ type: "set" }, picked); assert.equal(saved, "17:35")
+    const android = harness("components/platform/app-date-time-picker.android.tsx", {
+        "@/providers/language-provider": { useLanguage: () => ({ t: key => key }) },
+    })
+    const render = () => nodes(android.render("AppTimePicker", props))
+    const find = type => render().find(node => node.type === type)
+    const field = key => render().find(node => node.props.accessibilityLabel === key)
+    find("Pressable").props.onPress()
+    field("time.hours").props.onValueChange("23")
+    find("PickerPanel").props.onCancel()
+    assert.equal(saved, "17:35")
+    find("Pressable").props.onPress()
+    assert.equal(field("time.hours").props.selectedValue, "08")
+    field("time.hours").props.onValueChange("00")
+    field("time.minutes").props.onValueChange("59")
+    find("PickerPanel").props.onConfirm()
+    assert.equal(saved, "00:59")
 })
 
 test("the mentor home resumes optional setup and notification denial can be skipped without enabling reminders", async () => {

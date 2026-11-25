@@ -225,7 +225,8 @@ export function CartBasketItem({
 
                 <View style={cartScreenStyles.itemControlRow}>
                     <Pressable
-                        accessibilityLabel={isFavourite ? t("product.favoriteRemoved") : t("product.favoriteAdded")}
+                        accessibilityState={{ selected: isFavourite }}
+                        accessibilityLabel={isFavourite ? t("product.favoriteRemoveAction") : t("product.favoriteAddAction")}
                         accessibilityRole="button"
                         disabled={isBusy}
                         onPress={handleFavouritePress}

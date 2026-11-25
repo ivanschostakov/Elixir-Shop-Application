@@ -36,7 +36,7 @@ function harness(options = {}) {
     const controller = { clock: "UTC|0|2026-11-20", editor: { page: "meal" }, busy: false, perform: async action => { calls.saves.push(action); if (calls.failSave) throw new Error("network") } }
     const module = loadTs("screens/chat/mentor-food.tsx", {
         react, "react/jsx-runtime": { jsx, jsxs: jsx },
-        "react-native": { ActivityIndicator: "Spinner", ActionSheetIOS: { showActionSheetWithOptions: (_, fn) => fn(2) }, Alert: { alert: (title, message, buttons) => { calls.alerts.push({ title, message, buttons }); if (!calls.keepAlert) buttons.find(button => button.text === "Рассчитать так")?.onPress() } }, Image: "Image", Keyboard: { dismiss() {} }, Platform: { OS: "ios" }, Pressable: "Button", ScrollView: "ScrollView", Text: "Text", TextInput: "Input", View: "View", StyleSheet: { create: x => x } },
+        "react-native": { ActivityIndicator: "Spinner", ActionSheetIOS: { showActionSheetWithOptions: (_, fn) => fn(2) }, Alert: { alert: (title, message, buttons) => { calls.alerts.push({ title, message, buttons }); if (!calls.keepAlert) buttons.find(button => button.text === "Рассчитать так")?.onPress() } }, Image: "Image", Keyboard: { dismiss() {} }, Platform: { OS: options.platform ?? "ios" }, Pressable: "Button", ScrollView: "ScrollView", Text: "Text", TextInput: "Input", View: "View", StyleSheet: { create: x => x } },
         "@/components/platform/app-action-sheet": { useAppActionSheet: () => options => options.actions.find(action => action.id === "gallery")?.onPress() },
         "expo-image-picker": { launchImageLibraryAsync: async () => ({ canceled: false, assets: [{ uri: "file:///food.jpg" }] }) },
         "expo-audio": { RecordingPresets: { HIGH_QUALITY: {} }, setAudioModeAsync: async () => {}, useAudioRecorder: () => recorder, useAudioRecorderState: () => ({ durationMillis: 0 }) },
@@ -105,6 +105,17 @@ test("dictation appends into the same input and photo-only input can be calculat
     calculate.props.onPress(); await h.flush(); assert.equal(h.calls.estimates[0][1].uri, "file:///food.jpg")
     h.unmount()
     const denied = harness(); denied.denyMicrophone(); denied.button(denied.render(), "Надиктовать описание").props.onPress(); await denied.flush(); assert.equal(denied.calls.record, 0)
+})
+
+test("Android opens the photo chooser above the food editor without saving a meal", async () => {
+    const h = harness({ platform: "android" })
+    h.button(h.render(), "Фото еды").props.onPress()
+    const buttons = h.calls.alerts.at(-1).buttons
+    assert.equal(buttons.length, 3)
+    buttons.find(button => button.text === "Выбрать из галереи").onPress()
+    await h.flush()
+    assert.equal(h.button(h.render(), "Рассчитать КБЖУ").props.disabled, false)
+    assert.deepEqual(h.calls.saves, [])
 })
 
 test("food estimate API requires consent and sends photos through the protected multipart endpoint", async () => {

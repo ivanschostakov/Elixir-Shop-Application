@@ -43,6 +43,7 @@ import { AppEdgeMaterial as ChatEdgeBlur } from "@/components/platform/app-edge-
 import { ROUTES } from "@/constants/routes"
 import { useCommunityChat } from "@/hooks/chat/use-community-chat"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { getTranslationLocale } from "@/i18n/translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import {
@@ -101,7 +102,7 @@ function initials(name: string) {
 
 function formatTime(value: string) {
     const date = new Date(value)
-    return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString(getTranslationLocale(), { hour: "2-digit", minute: "2-digit" })
 }
 
 function formatTopicTime(value: string | undefined) {
@@ -109,7 +110,7 @@ function formatTopicTime(value: string | undefined) {
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return ""
     const now = new Date()
-    return date.toDateString() === now.toDateString() ? date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : date.toLocaleDateString([], { day: "numeric", month: "short" })
+    return date.toDateString() === now.toDateString() ? date.toLocaleTimeString(getTranslationLocale(), { hour: "2-digit", minute: "2-digit" }) : date.toLocaleDateString(getTranslationLocale(), { day: "numeric", month: "short" })
 }
 
 function topicColor(topic: CommunityTopic) {

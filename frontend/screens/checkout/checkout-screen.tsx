@@ -68,7 +68,7 @@ import {
     buildDraftPayloadFromOrderDraft,
     createEmptyRecipientForm,
     formatMoney,
-    formatRecipientName,
+    recipientPickerLabel,
     formatSavedCartDraftName,
     getDraftRecipient,
     getSelfRecipient,
@@ -614,17 +614,17 @@ export default function CheckoutScreen() {
         waitingForCheckout,
     ])
     useApplyScreenTemplate("feed", checkoutChromeTemplate)
+    const availableRecipients = !isAuthenticated && savedRecipient
+        ? [savedRecipient]
+        : buildAvailableRecipients(savedRecipient, checkoutOptions)
     const recipientPrimaryText = isSelfSelected
         ? t("checkout.recipientForMyself")
-        : currentRecipient ? formatRecipientName(currentRecipient) : t("checkout.selectRecipient")
+        : currentRecipient ? recipientPickerLabel(currentRecipient, availableRecipients) : t("checkout.selectRecipient")
     const recipientEditorTitle = profileFieldsToComplete
         ? t("checkout.completeProfile")
         : isCorrectingRecipient
             ? t("checkout.correctRecipient")
             : t("checkout.recipientAddNew")
-    const availableRecipients = !isAuthenticated && savedRecipient
-        ? [savedRecipient]
-        : buildAvailableRecipients(savedRecipient, checkoutOptions)
     const recipientPickerValue = getRecipientPickerValue(savedRecipient, Boolean(selfRecipient))
     const availableAddresses = useMemo(() => {
         return orderDraft ? buildAvailableAddresses(orderDraft, checkoutOptions) : []
@@ -1414,7 +1414,7 @@ export default function CheckoutScreen() {
                                         <Picker.Item label={t("checkout.recipientForMyself")} value={SELF_RECIPIENT_VALUE} />
                                     ) : null}
                                     {availableRecipients.map((option) => (
-                                        <Picker.Item key={option.id} label={formatRecipientName(option)} value={option.id} />
+                                        <Picker.Item key={option.id} label={recipientPickerLabel(option, availableRecipients)} value={option.id} />
                                     ))}
                                     <Picker.Item label={t("checkout.recipientAddNew")} value={ADD_NEW_RECIPIENT_VALUE} />
                                 </Picker>

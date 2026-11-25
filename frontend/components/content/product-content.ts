@@ -1,4 +1,5 @@
 import type { ProductRead, ProductVariantRead, ProductWithVariantsRead } from "@/types/product"
+import { getTranslationLocale, translate } from "@/i18n/translations"
 import { stripEmbeddedProductCode } from "@/components/content/html-content.utils"
 
 const decodeHtmlEntities = (value: string) =>
@@ -46,7 +47,7 @@ export const formatProductPrice = (value?: number | string | null) => {
 
     const hasFraction = Math.round(numericPrice * 100) % 100 !== 0
 
-    return `${new Intl.NumberFormat("RU", {
+    return `${new Intl.NumberFormat(getTranslationLocale(), {
         maximumFractionDigits: hasFraction ? 2 : 0,
         minimumFractionDigits: 0,
     }).format(numericPrice)} ₽`
@@ -128,7 +129,7 @@ export const getProductPriceDisplay = (
 ): ProductPriceDisplay | null => {
     const availableVariants = product.variants.filter(variant => variant.stock > 0)
     const candidates = (availableVariants.length ? availableVariants : product.variants)
-        .map((variant) => getVariantPriceDisplayCandidate(variant, "от ", product))
+        .map((variant) => getVariantPriceDisplayCandidate(variant, translate("product.priceFromPrefix"), product))
         .filter((candidate): candidate is ProductPriceDisplayCandidate => candidate !== null)
         .sort((left, right) => left.currentPrice - right.currentPrice)
 

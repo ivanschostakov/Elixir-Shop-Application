@@ -159,10 +159,10 @@ async function request<T>(
         }
     } catch (error) {
         if (error instanceof AppIntegrityUnavailableError || error instanceof ApiError) throw error
-        throw new ApiError(
-            503,
-            error instanceof RequestDeadlineError ? REQUEST_TIMEOUT_MESSAGE : SERVICE_UNAVAILABLE_MESSAGE,
-        )
+        if (error instanceof TypeError && /network request failed|failed to fetch|load failed|fetch failed/i.test(error.message)) {
+            throw new ApiError(0, "Network connection failed")
+        }
+        throw new ApiError(503, error instanceof RequestDeadlineError ? REQUEST_TIMEOUT_MESSAGE : SERVICE_UNAVAILABLE_MESSAGE)
     }
 
     if (

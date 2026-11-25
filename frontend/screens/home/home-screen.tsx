@@ -19,7 +19,7 @@ import { LinearGradient } from "expo-linear-gradient"
 import { Path, Svg } from "react-native-svg"
 
 import { ContentRail } from "@/components/content/content-rail"
-import { HeaderMenu, HeaderMenuPopup } from "@/components/header/header-menu"
+import { HeaderMenu } from "@/components/header/header-menu"
 import { getHeaderStyles } from "@/components/header/app-header.styles"
 import { CatalogTemplate } from "@/components/templates/catalog-template"
 import { ROUTES, getProductRoute } from "@/constants/routes"
@@ -63,7 +63,6 @@ function getMediaBaseUrl(): string {
 const MEDIA_BASE_URL = getMediaBaseUrl()
 const FALLBACK_BANNER_IMAGE_VERSION = "square-20260512"
 const BANNER_AUTOPLAY_INTERVAL_MS = 5000
-const HOME_MENU_POPUP_VERTICAL_OFFSET = 61
 const APPLE_DEVELOPER_BANNER_SEGMENT = "apple-testing-team-banner"
 
 function getHomeGradientColors(accentName: ThemeAccentName, isDarkMode: boolean) {
@@ -232,10 +231,10 @@ export default function HomeScreen() {
     const homeScreenStyles = useThemeStyles(createHomeScreenStyles)
     const router = useRouter()
     const topInset = useAppSafeAreaInsets().top
-    const { height: windowHeight, width: windowWidth } = useWindowDimensions()
+    const { width: windowWidth } = useWindowDimensions()
     const { language, setLanguage, t } = useLanguage()
     const { accentName, accentPalette, palette, themeName, toggleTheme } = useTheme()
-    const homeHeaderMenuStyles = getHeaderStyles(topInset, windowHeight, palette)
+    const homeHeaderMenuStyles = getHeaderStyles(topInset, palette)
     const { isAuthenticated, signOut } = useAuth()
     const { banners, reload: reloadBanners } = useBanners(true)
     const { categories, reload: reloadCategories } = useProductCategories(true)
@@ -574,7 +573,6 @@ export default function HomeScreen() {
                     style={[
                         homeScreenStyles.topGradientSectionWrap,
                         homeScreenStyles.topGradientSectionWrapSticky,
-                        isHomeMenuOpen && homeScreenStyles.topGradientSectionWrapMenuOpen,
                     ]}
                 >
                     <LinearGradient
@@ -594,6 +592,7 @@ export default function HomeScreen() {
                                     </Svg>
                                 </View>
                                 <TextInput
+                                    accessibilityLabel={t("discover.searchPlaceholder")}
                                     autoCapitalize="none"
                                     autoCorrect={false}
                                     onChangeText={setQuery}
@@ -614,7 +613,7 @@ export default function HomeScreen() {
                                             router.push(ROUTES.contacts)
                                         }}
                                         onOpenPrivacy={() => { setIsHomeMenuOpen(false); router.push(ROUTES.privacy) }}
-                            onOpenPublicOffer={() => {
+                                        onOpenPublicOffer={() => {
                                             setIsHomeMenuOpen(false)
                                             router.push(ROUTES.publicOffer)
                                         }}
@@ -630,7 +629,6 @@ export default function HomeScreen() {
                                         onSetLanguage={setLanguage}
                                         onToggleTheme={toggleTheme}
                                         onToggle={() => setIsHomeMenuOpen((currentValue) => !currentValue)}
-                                        renderPopup={false}
                                         styles={homeHeaderMenuStyles}
                                         t={t}
                                         accentColor={accentPalette.primary}
@@ -677,41 +675,6 @@ export default function HomeScreen() {
                             ) : null}
                         </View>
                     </LinearGradient>
-                    {isHomeMenuOpen ? (
-                        <HeaderMenuPopup
-                            isAuthenticated={isAuthenticated}
-                            onClose={() => setIsHomeMenuOpen(false)}
-                            onOpenContacts={() => {
-                                setIsHomeMenuOpen(false)
-                                router.push(ROUTES.contacts)
-                            }}
-                            onOpenPrivacy={() => { setIsHomeMenuOpen(false); router.push(ROUTES.privacy) }}
-                            onOpenPublicOffer={() => {
-                                setIsHomeMenuOpen(false)
-                                router.push(ROUTES.publicOffer)
-                            }}
-                            onOpenRequisites={() => {
-                                setIsHomeMenuOpen(false)
-                                router.push(ROUTES.requisites)
-                            }}
-                            onSignIn={() => {
-                                setIsHomeMenuOpen(false)
-                                router.push(ROUTES.login)
-                            }}
-                            onSignOut={signOut}
-                            onSetLanguage={setLanguage}
-                            onToggleTheme={toggleTheme}
-                            popupStyle={[
-                                homeScreenStyles.homeMenuPopup,
-                                { top: topInset + HOME_MENU_POPUP_VERTICAL_OFFSET },
-                            ]}
-                            styles={homeHeaderMenuStyles}
-                            t={t}
-                            accentColor={accentPalette.primary}
-                            language={language}
-                            themeName={themeName}
-                        />
-                    ) : null}
                 </View>
                 <View style={homeScreenStyles.promoBannerSection}>
                     <View style={homeScreenStyles.promoBanner}>

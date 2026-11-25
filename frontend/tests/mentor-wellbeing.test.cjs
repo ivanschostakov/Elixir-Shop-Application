@@ -124,7 +124,7 @@ test("calendar opens a loaded day's existing entry and ignores stale months or f
     const { MentorWellbeingScreen } = load("screens/chat/mentor-wellbeing.tsx", {
         react, "react/jsx-runtime": runtime,
         "react-native": { ActivityIndicator: "Spinner", Pressable: "Button", ScrollView: "Scroll", Text: "Text", View: "View", useWindowDimensions: () => ({ width: 440, height: 956 }) },
-        "react-native-calendars": { LocaleConfig: { locales: {} } },
+        "@/screens/chat/mentor-calendar-header": { MentorCalendarHeader: "LocalizedHeader" },
         "@/components/platform/app-calendar": { AppCalendar: "Calendar" },
         "@/providers/language-provider": { useLanguage: () => ({ language: "ru" }) },
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
@@ -201,4 +201,79 @@ test("neutral and happy faces, appetite and energy levels use distinct source SV
     }
     assert.equal(WellbeingIcon({ name: "face", level: 3, color: "green" }).type, "meh.svg")
     assert.equal(WellbeingIcon({ name: "face", level: 5, color: "green" }).type, "laugh.svg")
+})
+
+test("weigh-in validates the first measurement, adjusts in tenths and retries edits without duplicating them", async () => {
+    const slots = [], actions = []
+    let cursor = 0, saved = 0, fail = false, sequence = 0
+    const instant = "2026-11-24T10:00:00Z"
+    const controller = { state: {}, editor: { page: "weight" }, clock: "UTC|0|2026-11-24", busy: false,
+        async perform(action) { actions.push(action); if (fail) throw Error("Offline") } }
+    const { MentorWeightEditor } = load("screens/chat/mentor-weight-editor.tsx", {
+        react: {
+            useState(initial) {
+                const i = cursor++
+                if (!(i in slots)) slots[i] = typeof initial === "function" ? initial() : initial
+                return [slots[i], value => { slots[i] = value }]
+            },
+            useRef(initial) { return slots[cursor++] ??= { current: initial } },
+        },
+        "react/jsx-runtime": runtime,
+        "react-native": { View: "View", Text: "Text", TextInput: "Input", Pressable: "Button", ScrollView: "Scroll", StyleSheet: { create: styles => styles }, Keyboard: { dismiss() {} } },
+        "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
+        "@/providers/theme-provider": { useTheme: () => ({ isDark: false }) },
+        "@/screens/chat/mentor-home": { MentorHomeHeader: "Header" },
+        "@/screens/chat/mentor-home-data": { mentorHomeData: () => ({ instant }) },
+        "@/screens/chat/mentor-ui": { useMentorPalette: () => ({}) },
+        "@/screens/chat/mentor-question-icon": { MentorQuestionIcon: "Icon" },
+        "@/screens/chat/companion-consent": { CompanionActionCancelled: class extends Error {} },
+        "@/screens/chat/companion-timezones": dates,
+        "@/screens/chat/mentor-wellbeing-data": data,
+        "@/screens/chat/mentor-data": load("screens/chat/mentor-data.ts"),
+        "@/services/api/companion": { requestKey: () => String(++sequence) },
+        "@/utils/errors": { getErrorMessage: error => error.message },
+    })
+    const render = () => { cursor = 0; return nodes(MentorWeightEditor({ controller, onSaved: () => saved++, onClose() {} })) }
+    const weight = () => render().find(node => node.type === "Input")
+    const save = () => render().find(node => node.type === "Button" && node.props.accessibilityState?.busy !== undefined)
+    assert.equal(weight().props.value, "")
+    assert.equal(save().props.disabled, true)
+    for (const value of ["0", "-1", "501", "72,4.2"]) {
+        weight().props.onChangeText(value)
+        assert.equal(save().props.disabled, true)
+        save().props.onPress()
+    }
+    assert.equal(actions.length, 0)
+    weight().props.onChangeText("72,4")
+    const { mentorText } = load("i18n/mentor-translations.ts")
+    render().find(node => node.props.accessibilityLabel === mentorText("Увеличить вес на 0,1 кг")).props.onPress()
+    assert.equal(weight().props.value, "72.5")
+    weight().props.onChangeText("72,45")
+    const firstSave = save().props.onPress
+    firstSave(); firstSave()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(actions.length, 1)
+    assert.equal(saved, 1)
+    assert.equal(actions[0].entry.weight_kg, "72.45")
+    assert.equal(actions[0].entry.occurred_at, instant)
+
+    const original = { id: 12, version: 3, kind: "weight", occurred_at: instant, data: { ...actions[0].entry, note: "Morning" } }
+    controller.state = { mentor: { latest_weight: original }, entries: [original] }
+    slots.length = 0
+    assert.equal(weight().props.value, "72.45", "new measurements start from the last saved weight")
+    controller.editor.entry = original
+    slots.length = 0
+    assert.equal(render().filter(node => node.type === "Input").at(-1).props.value, "Morning")
+    weight().props.onChangeText("74")
+    fail = true
+    save().props.onPress()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(saved, 1)
+    assert.ok(render().some(node => node.props.children === "Offline"))
+    fail = false
+    save().props.onPress()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(saved, 2)
+    assert.strictEqual(actions[1], actions[2])
+    assert.deepEqual(actions[2], { kind: "entry", request_key: "2", resource_id: 12, expected_version: 3, entry: { ...original.data, weight_kg: "74" } })
 })

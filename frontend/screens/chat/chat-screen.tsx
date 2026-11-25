@@ -34,6 +34,7 @@ import { useBasket } from "@/hooks/basket/use-basket"
 import { useBasketMutations } from "@/hooks/basket/use-basket-mutations"
 import { useAiChatEntryConsent } from "@/hooks/chat/use-ai-chat-entry-consent"
 import { useAiChat, type ChatDisplayMessage } from "@/hooks/chat/use-ai-chat"
+import { getTranslationLocale } from "@/i18n/translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useAuth } from "@/providers/auth-provider"
 import { useTheme } from "@/providers/theme-provider"
@@ -525,7 +526,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
         if (Number.isNaN(parsedDate.getTime())) {
             return ""
         }
-        return parsedDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        return parsedDate.toLocaleTimeString(getTranslationLocale(), { hour: "2-digit", minute: "2-digit" })
     }
 
     const getDayToken = (isoTimestamp: string) => {
@@ -541,7 +542,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
         if (Number.isNaN(parsedDate.getTime())) {
             return ""
         }
-        return parsedDate.toLocaleDateString([], { month: "long", day: "numeric" })
+        return parsedDate.toLocaleDateString(getTranslationLocale(), { month: "long", day: "numeric" })
     }
 
     const getMessageMeta = (message: ChatDisplayMessage) => {

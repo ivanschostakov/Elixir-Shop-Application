@@ -1,5 +1,3 @@
-import type { StyleProp, ViewStyle } from "react-native"
-
 import type { AppHeaderStyles } from "@/components/header/app-header.styles"
 import type { Language } from "@/i18n/translations"
 import type { LanguageContextValue } from "@/providers/language-provider.types"
@@ -20,12 +18,10 @@ export type HeaderMenuContentProps = {
     t: LanguageContextValue["t"]
     language?: Language
     accentColor?: string
-    popupStyle?: StyleProp<ViewStyle>
     themeName?: ThemeName
 }
 
 export type HeaderMenuProps = HeaderMenuContentProps & {
     isOpen: boolean
     onToggle: () => void
-    renderPopup?: boolean
 }

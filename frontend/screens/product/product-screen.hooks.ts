@@ -1,4 +1,3 @@
-import { createURL } from "expo-linking"
 import * as Clipboard from "expo-clipboard"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Alert, Share } from "react-native"
@@ -24,6 +23,7 @@ type UseProductScreenActionsParams = {
     favouriteError: string | null
     isFavourite: boolean
     productId: number
+    productName?: string
     t: TranslationFn
     toggleFavourite: () => Promise<boolean>
 }
@@ -135,10 +135,14 @@ export function useProductScreenActions({
     favouriteError,
     isFavourite,
     productId,
+    productName,
     t,
     toggleFavourite,
 }: UseProductScreenActionsParams) {
-    const productShareUrl = useMemo(() => createURL(String(getProductRoute(productId))), [productId])
+    const productShareUrl = useMemo(() => productName
+        ? "https://elixirpeptide.ru/catalog/search.php?q=" + encodeURIComponent(productName)
+        : "https://elixirpeptide.ru/catalog/", [productName])
+    const appLink = "elixirpeptide://" + String(getProductRoute(productId))
 
     const handleBookmarkToggle = useCallback(async () => {
         try {
@@ -173,7 +177,7 @@ export function useProductScreenActions({
     const handleSharePress = useCallback(async () => {
         try {
             await Share.share({
-                message: `${t("product.shareMessage")}\n${productShareUrl}`,
+                message: `${t("product.shareMessage")}\n${productShareUrl}\n${appLink}`,
                 title: t("route.product"),
                 url: productShareUrl,
             })
@@ -183,7 +187,7 @@ export function useProductScreenActions({
                 shareError instanceof Error ? shareError.message : t("product.shareFailedMessage"),
             )
         }
-    }, [productShareUrl, t])
+    }, [appLink, productShareUrl, t])
 
     const handleCopyShareLink = useCallback(async () => {
         await Clipboard.setStringAsync(productShareUrl)

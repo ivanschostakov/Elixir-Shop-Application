@@ -1,6 +1,7 @@
 import { apiDelete, apiGet, apiPost } from "@/services/api/client"
+import { ENDPOINTS } from "@/services/api/constants"
 
-const productStockSubscriptionsEndpoint = "/users/me/stock-subscriptions/products"
+const productStockSubscriptionsEndpoint = `${ENDPOINTS.USERS}/me/stock-subscriptions/products`
 
 export type ProductStockSubscriptionStatus = {
     product_id: number

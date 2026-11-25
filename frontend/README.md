@@ -54,6 +54,29 @@ will not fix the missing Simulator app error.
 
 ## Store Builds
 
+### Android OTA for Google Play 0.1.1
+
+From this directory, publish the working tree to Android devices on the
+`production` channel with runtime `0.1.1`, including Play build 6:
+
+```bash
+npm run ota:android -- --message "Обновление наставника"
+```
+
+The command exports using the EAS production environment and publishes to all
+eligible Android installs by default. For a staged release, append
+`--rollout-percentage 10`. EAS matches the platform, channel and runtime across
+builds that share them. Run this command only with JS and assets compatible
+with those binaries.
+
+Build 6 checks for updates on cold start. Its first download runs under the
+previously installed JS. Once the new bundle starts, its update screen can show
+subsequent downloads and apply them before opening the shop. A slow check or
+an offline launch opens the cached app. Opening the shop during a download
+defers activation until the next cold start.
+
+### Native builds
+
 Android testing build:
 
 ```bash

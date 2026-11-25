@@ -2,7 +2,7 @@ import { useRef } from "react"
 import { Platform, StyleSheet, View } from "react-native"
 import Slider from "@react-native-community/slider"
 
-type Props = {
+export type AppLevelSliderProps = {
     label: string
     value: number | null
     minimum?: number
@@ -15,8 +15,8 @@ type Props = {
     testID?: string
 }
 
-/** Native dragging on both phones, with no answer saved until the user touches the control. */
-export function AppLevelSlider({ label, value, minimum = 1, maximum, onChange, valueText, disabled = false, color, trackColor, testID }: Props) {
+/** Keep the displayed midpoint uncommitted until the user touches the slider. */
+export function AppLevelSlider({ label, value, minimum = 1, maximum, onChange, valueText, disabled = false, color, trackColor, testID }: AppLevelSliderProps) {
     const last = useRef(value)
     const dragging = useRef(false)
     const nativeValue = useRef(value ?? Math.round((minimum + maximum) / 2))

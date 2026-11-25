@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react"
-import { Alert, Animated, Pressable, Text, View, useWindowDimensions } from "react-native"
-import { AppBlurSurface as BlurView } from "@/components/platform/app-blur-surface"
+import { Alert, Animated, Pressable, Text, View } from "react-native"
 import { useLocalSearchParams, useRouter } from "expo-router"
 import { Path, Svg } from "react-native-svg"
 
@@ -12,7 +11,6 @@ import {
     BACK_ARROW_PATH,
     CLEAR_ICON_PATH,
     CLOSE_ICON_PATH,
-    SEARCH_BACKDROP_BLUR_INTENSITY,
     SEARCH_ICON_PATH,
 } from "@/components/header/app-header.constants"
 import { getHeaderStyles } from "@/components/header/app-header.styles"
@@ -30,9 +28,8 @@ export default function AppHeader({ template, pathname }: AppHeaderProps) {
     const params = useLocalSearchParams<{ q?: string | string[] }>()
     const router = useRouter()
     const topInset = useAppSafeAreaInsets().top
-    const { height: windowHeight } = useWindowDimensions()
-    const { accentPalette, isDark, palette, themeName, toggleTheme } = useTheme()
-    const styles = getHeaderStyles(topInset, windowHeight, palette)
+    const { accentPalette, palette, themeName, toggleTheme } = useTheme()
+    const styles = getHeaderStyles(topInset, palette)
     const { isAuthenticated, signOut } = useAuth()
     const { basket } = useBasket()
     const { clear, error: basketError, updating: basketUpdating } = useBasketMutations()
@@ -217,19 +214,6 @@ export default function AppHeader({ template, pathname }: AppHeaderProps) {
     }
 
     const renderCenterSlot = () => {
-        if (isSearchMode) {
-            return (
-                <HeaderSearchPanel
-                    initialQuery={incomingQuery}
-                    onClose={() => setIsSearchMode(false)}
-                    pathname={pathname}
-                    styles={styles}
-                    t={t}
-                    visible={isSearchMode}
-                />
-            )
-        }
-
         if (template.slots?.headerCenter) {
             return template.slots.headerCenter
         }
@@ -257,20 +241,8 @@ export default function AppHeader({ template, pathname }: AppHeaderProps) {
                 entranceStyle,
             ]}
         >
-            {isSearchMode ? (
-                <Pressable
-                    accessibilityLabel={t("nav.closeSearch")}
-                    accessibilityRole="button"
-                    onPress={handleSearchToggle}
-                    style={styles.searchBackdrop}
-                >
-                    <BlurView
-                        intensity={SEARCH_BACKDROP_BLUR_INTENSITY}
-                        style={styles.searchBackdropBlur}
-                        tint={isDark ? "dark" : "light"}
-                    />
-                </Pressable>
-            ) : null}
+            {isSearchMode && <HeaderSearchPanel initialQuery={incomingQuery} onClose={() => setIsSearchMode(false)}
+                pathname={pathname} styles={styles} t={t} visible />}
 
             <View style={styles.content}>
                 <View style={styles.leftSlot}>{renderLeftSlot()}</View>

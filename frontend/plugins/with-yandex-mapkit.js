@@ -115,6 +115,8 @@ function withPinnedGoogleLocationDependency(config) {
 }
 
 function withYandexMapKit(config) {
+    // The published Play binary already has the key in its manifest. A JS export needs no native mods.
+    if (process.env.ELIXIR_PLAY_OTA === "1") return config
     ensureLocalEnvLoaded()
 
     const apiKey = getMapKitApiKey()

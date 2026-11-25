@@ -30,6 +30,7 @@ import { ROUTES } from "@/constants/routes"
 import { useChatScroll } from "@/hooks/chat/use-chat-scroll"
 import { useSupportChat } from "@/hooks/chat/use-support-chat"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
+import { getTranslationLocale } from "@/i18n/translations"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
@@ -74,12 +75,12 @@ type SupportChatScreenProps = {
 }
 
 function messageTime(value: string) {
-    return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
+    return new Intl.DateTimeFormat(getTranslationLocale(), { hour: "2-digit", minute: "2-digit" }).format(new Date(value))
 }
 
 function historyDate(value: string | null) {
     if (!value) return ""
-    return new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "short" }).format(new Date(value))
+    return new Intl.DateTimeFormat(getTranslationLocale(), { day: "2-digit", month: "short" }).format(new Date(value))
 }
 
 function attachmentSource(path: string) {

@@ -2,6 +2,22 @@ import { getTranslationLanguage, type Language } from "@/i18n/translations"
 
 // Source phrases belong to the interface; user-entered names and notes are never passed here.
 export const mentorTranslations: Record<string, { en: string; kz: string }> = {
+    "Новое взвешивание": {"en": "New weigh-in", "kz": "Салмақты өлшеу"},
+    "Записать вес, последнее измерение {0} кг": {"en": "Log weight, last measurement {0} kg", "kz": "Салмақты жазу, соңғы өлшем {0} кг"},
+    "Сегодня, {0}": {"en": "Today, {0}", "kz": "Бүгін, {0}"},
+    "Начало периода": { en: "Start date", kz: "Басталу күні" },
+    "Применить": { en: "Apply", kz: "Қолдану" },
+    "Конец периода": { en: "End date", kz: "Аяқталу күні" },
+    "Выберите от 1 до 90 дней включительно.": { en: "Select 1 to 90 days, including both dates.", kz: "Екі күнді де қоса алғанда, 1–90 күн таңдаңыз." },
+    "Предыдущий месяц": { en: "Previous month", kz: "Алдыңғы ай" },
+    "Следующий месяц": { en: "Next month", kz: "Келесі ай" },
+    "Ввести вес вручную": {"en": "Enter weight manually", "kz": "Салмақты қолмен енгізу"},
+    "Шаг 0,1 кг": {"en": "0.1 kg increments", "kz": "Қадам 0,1 кг"},
+    "Последние измерения": {"en": "Recent measurements", "kz": "Соңғы өлшемдер"},
+    "Добавить заметку": {"en": "Add a note", "kz": "Жазба қосу"},
+    "Сохранить вес": {"en": "Save weight", "kz": "Салмақты сақтау"},
+    "Уменьшить вес на 0,1 кг": {"en": "Decrease weight by 0.1 kg", "kz": "Салмақты 0,1 кг азайту"},
+    "Увеличить вес на 0,1 кг": {"en": "Increase weight by 0.1 kg", "kz": "Салмақты 0,1 кг арттыру"},
     "Уведомления": {"en": "Notifications", "kz": "Хабарландырулар"},
     "Получать уведомления от наставника": {"en": "Receive mentor notifications", "kz": "Тәлімгерден хабарландыру алу"},
     "Моя цель": {"en": "My goal", "kz": "Мақсатым"},

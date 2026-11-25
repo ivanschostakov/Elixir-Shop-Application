@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
-import { Animated, Pressable, Text, View } from "react-native"
+import { Animated, Pressable, ScrollView, Text, View } from "react-native"
+import { HeaderOverlay } from "@/components/header/header-overlay"
 import { Path, Svg } from "react-native-svg"
 
 import type { HeaderMenuContentProps, HeaderMenuProps } from "@/components/header/header-menu.types"
@@ -13,7 +14,6 @@ const THEME_TOGGLE_THUMB_TRANSLATE_X = 40
 export function HeaderMenu({
     isOpen,
     onToggle,
-    renderPopup = true,
     styles,
     t,
     accentColor,
@@ -27,6 +27,7 @@ export function HeaderMenu({
             <Pressable
                 accessibilityLabel={t("nav.menu")}
                 accessibilityRole="button"
+                accessibilityState={{ expanded: isOpen }}
                 onPress={onToggle}
                 style={({ pressed }) => [styles.menuButton, pressed && styles.menuButtonPressed]}
                 hitSlop={12}
@@ -38,19 +39,23 @@ export function HeaderMenu({
                 </View>
             </Pressable>
 
-            {isOpen && renderPopup ? (
-                <HeaderMenuPopup
-                    {...menuContentProps}
-                    accentColor={accentColor}
-                    styles={styles}
-                    t={t}
-                />
+            {isOpen ? (
+                <HeaderOverlay onClose={menuContentProps.onClose} closeLabel={t("common.cancel")}>
+                    <ScrollView style={styles.menuPopup} keyboardShouldPersistTaps="handled">
+                        <HeaderMenuPopup
+                            {...menuContentProps}
+                            accentColor={accentColor}
+                            styles={styles}
+                            t={t}
+                        />
+                    </ScrollView>
+                </HeaderOverlay>
             ) : null}
         </>
     )
 }
 
-export function HeaderMenuPopup({
+function HeaderMenuPopup({
     isAuthenticated,
     language,
     onClose,
@@ -62,7 +67,6 @@ export function HeaderMenuPopup({
     onSignOut,
     onSetLanguage,
     onToggleTheme,
-    popupStyle,
     styles,
     t,
     accentColor,
@@ -89,7 +93,7 @@ export function HeaderMenuPopup({
     }, [isDarkTheme, themeToggleProgress])
 
     return (
-        <View style={[styles.menuPopup, popupStyle]}>
+        <View>
             {canToggleTheme ? (
                 <>
                     <Pressable

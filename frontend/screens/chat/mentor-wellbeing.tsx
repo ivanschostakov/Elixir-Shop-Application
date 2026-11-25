@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Pressable, ScrollView, Text, View, useWindowDimensions } from "react-native"
-import { LocaleConfig, type CalendarProps } from "react-native-calendars"
+import type { CalendarProps } from "react-native-calendars"
+import { MentorCalendarHeader } from "@/screens/chat/mentor-calendar-header"
 import { AppCalendar } from "@/components/platform/app-calendar"
 import { mentorNumber, mentorText as mt } from "@/i18n/mentor-translations"
 import { useLanguage } from "@/providers/language-provider"
@@ -8,7 +9,7 @@ import { useTheme } from "@/providers/theme-provider"
 import { MentorHomeHeader } from "@/screens/chat/mentor-home"
 import { calendarDate } from "@/screens/chat/companion-timezones"
 import type { useCompanion } from "@/screens/chat/companion"
-import { useMentorPalette } from "@/screens/chat/mentor-ui"
+import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
 import { getCompanionEntries, type CompanionEntry } from "@/services/api/companion"
 import { getErrorMessage } from "@/utils/errors"
 import { loadWellbeingMonth, wellbeingDateLabel, wellbeingDays, wellbeingDraft, wellbeingSummary } from "@/screens/chat/mentor-wellbeing-data"
@@ -16,9 +17,6 @@ import { WellbeingIcon, type WellbeingIconName } from "@/screens/chat/mentor-wel
 import { wellbeingStyles as styles } from "@/screens/chat/mentor-wellbeing.styles"
 
 type Controller = ReturnType<typeof useCompanion>
-const months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
-const weekdays = ["Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]
-const shortWeekdays = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"]
 const overview: { index: number; icon: WellbeingIconName; level: number }[] = [
     { index: 0, icon: "face", level: 4 }, { index: 1, icon: "energy", level: 2 },
     { index: 4, icon: "moon", level: 2 }, { index: 6, icon: "apple", level: 1 },
@@ -39,8 +37,9 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
     const metricHeight = dense ? 48 : compact ? 60 : 72
     const dateHeight = dense ? 28 : 36
     const cardHeight = dateHeight + gap + metricHeight * 2
-    const footerHeight = dense ? 111 : 118
-    const calendarRoom = height - 56 - introHeight - cardHeight - footerHeight - gap * 2 - (dense ? 0 : 6)
+    const footerHeight = 76
+    const weightCardHeight = compact ? 62 : 74
+    const calendarRoom = height - 56 - introHeight - cardHeight - footerHeight - weightCardHeight - gap * 3 - (dense ? 0 : 6)
     const daySize = Math.max(20, Math.min(40, Math.floor((calendarRoom - 80) / 6 - weekMargin * 2)))
     const calendarHeight = 80 + 6 * (daySize + weekMargin * 2)
     const Body = calendarHeight > calendarRoom ? ScrollView : View
@@ -56,10 +55,6 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
     const sequence = useRef(0)
     const key = `${month}|${c.clock}`
     const recordsVersion = (c.state?.entries ?? []).filter(entry => entry.kind === "wellbeing").map(entry => `${entry.id}:${entry.version}:${entry.occurred_at}`).sort().join("|")
-    if (active) {
-        LocaleConfig.locales[`wellbeing-${language}`] = { monthNames: months.map(name => mt(name)), monthNamesShort: months.map(name => mt(name)), dayNames: weekdays.map(name => mt(name)), dayNamesShort: shortWeekdays.map(name => mt(name)), today: mt("Сегодня") }
-        LocaleConfig.defaultLocale = `wellbeing-${language}`
-    }
     useEffect(() => {
         if (!active) return
         const token = ++sequence.current
@@ -91,8 +86,20 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
     return <View testID="mentor-wellbeing" onLayout={event => setHeight(event.nativeEvent.layout.height)} style={[styles.screen, { backgroundColor: colors.surface }]}>
         <MentorHomeHeader title={mt("Самочувствие")} onBack={onClose} onSettings={onSettings} />
         <Body style={[styles.mainBody, Body === View && bodySpacing]} contentContainerStyle={Body === ScrollView ? bodySpacing : undefined}>
+            <Pressable accessibilityRole="button" accessibilityLabel={weight == null ? mt("Записать вес") : mt("Записать вес, последнее измерение {0} кг", [mentorNumber(Number(weight))])}
+                accessibilityState={{ disabled: c.busy }} disabled={c.busy} onPress={() => c.setEditor({ page: "weight" })}
+                style={({ pressed }) => [styles.weightCard, { minHeight: weightCardHeight, backgroundColor: isDark ? "#21392E" : "#EBF4ED", opacity: c.busy ? 0.55 : pressed ? 0.78 : 1 }]}>
+                <View style={[styles.weightIcon, { backgroundColor: colors.surface }]}><MentorIcon name="scale" color={colors.green} size={24} /></View>
+                <View style={styles.metricCopy}>
+                    <Text style={[styles.weightLabel, { color: colors.text }]}>{mt("Вес тела")}</Text>
+                    <Text style={[styles.weightValue, { color: colors.green }]}>{weight == null ? mt("Нет измерений") : mt("{0} кг", [mentorNumber(Number(weight))])}</Text>
+                </View>
+                <View style={[styles.weightAction, { backgroundColor: isDark ? "#2B7552" : "#206647" }]}>
+                    <MentorIcon name="plus" size={16} color="#FFF" /><Text style={styles.weightActionText}>{mt("Записать")}</Text>
+                </View>
+            </Pressable>
             <AppCalendar key={`${language}|${isDark}|${daySize}|${weekMargin}`} current={`${month}-01`} maxDate={today} firstDay={1} hideExtraDays disableMonthChange disableAllTouchEventsForDisabledDays disableArrowRight={month >= today.slice(0, 7)} disabledByDefault={!ready}
-                markedDates={marks} onMonthChange={date => {
+                customHeader={MentorCalendarHeader} markedDates={marks} onMonthChange={date => {
                     const next = date.dateString.slice(0, 7)
                     setMonth(next)
                     setSelected(previous => previous.startsWith(next) ? previous : next === today.slice(0, 7) ? today : `${next}-01`)
@@ -130,12 +137,6 @@ export function MentorWellbeingScreen({ controller: c, active, onClose, onSettin
         </Body>
         <View testID="wellbeing-action-footer" style={[styles.footer, { height: footerHeight, paddingTop: 0, paddingBottom: 10, gap: 0, backgroundColor: colors.surface, justifyContent: "flex-end" }]}>
             {error ? <Text accessibilityRole="alert" numberOfLines={1} style={[styles.mainError, { color: colors.text }]}>{error}</Text> : null}
-            <Pressable accessibilityRole="button" accessibilityLabel={[mt("Записать вес"), weight != null && mt("{0} кг", [mentorNumber(Number(weight))])].filter(Boolean).join(", ")} disabled={c.busy} onPress={() => c.setEditor({ page: "weight" })}
-                style={({ pressed }) => [styles.row, { minHeight: 44, opacity: pressed ? 0.65 : 1 }]}>
-                <Text style={[styles.metricLabel, { color: colors.text, flex: 1 }]}>{mt("Вес тела")}</Text>
-                {weight != null ? <Text style={[styles.metricValue, { color: colors.text }]}>{mt("{0} кг", [mentorNumber(Number(weight))])}</Text> : null}
-                <Text style={[styles.metricLabel, { color: colors.green, fontWeight: "700" }]}>{mt("Записать")}</Text>
-            </Pressable>
             <Pressable accessibilityRole="button" accessibilityLabel={buttonLabel} accessibilityState={{ disabled: !ready && !error || c.busy }} disabled={!ready && !error || c.busy} onPress={() => error ? setRevision(value => value + 1) : open(selected, entry)} style={({ pressed }) => [styles.primary, { backgroundColor: colors.greenBright, opacity: !ready && !error || c.busy ? 0.45 : pressed ? 0.8 : 1 }]}><Text style={styles.primaryLabel}>{buttonLabel}</Text></Pressable>
         </View>
     </View>

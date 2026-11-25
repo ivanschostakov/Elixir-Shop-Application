@@ -4,7 +4,8 @@ import { Asset } from "expo-asset"
 import { AppState, Platform, type AppStateStatus } from "react-native"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { SafeAreaProvider } from "react-native-safe-area-context"
-import { KeyboardProvider } from "react-native-keyboard-controller"
+import { AppKeyboardProvider } from "@/components/platform/app-keyboard-provider"
+import { PlayUpdateGate } from "@/components/navigation/play-update-gate"
 
 import AppShell from "@/components/navigation/app-shell"
 import { VersionGate } from "@/components/navigation/version-gate"
@@ -87,17 +88,21 @@ function RootLayoutContent() {
     return (
         <GestureHandlerRootView style={[rootLayoutStyles.root, rootThemeStyle]}>
             <SafeAreaProvider>
-                <KeyboardProvider enabled={Platform.OS === "ios"} preload={false}>
-                    <LanguageProvider><ActionSheetProvider>
-                        <VersionGate>
-                            <AuthProvider>
-                                <TelegramWebAppGate>
-                                    <AiConsentProvider><AppShell /></AiConsentProvider>
-                                </TelegramWebAppGate>
-                            </AuthProvider>
-                        </VersionGate>
-                    </ActionSheetProvider></LanguageProvider>
-                </KeyboardProvider>
+                <AppKeyboardProvider>
+                    <LanguageProvider>
+                        <PlayUpdateGate>
+                            <ActionSheetProvider>
+                                <VersionGate>
+                                    <AuthProvider>
+                                        <TelegramWebAppGate>
+                                            <AiConsentProvider><AppShell /></AiConsentProvider>
+                                        </TelegramWebAppGate>
+                                    </AuthProvider>
+                                </VersionGate>
+                            </ActionSheetProvider>
+                        </PlayUpdateGate>
+                    </LanguageProvider>
+                </AppKeyboardProvider>
             </SafeAreaProvider>
         </GestureHandlerRootView>
     )

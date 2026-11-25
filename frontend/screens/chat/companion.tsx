@@ -1,5 +1,9 @@
 import { AppFormLayout } from "@/components/platform/app-form-layout"
-import { mentorText as mt } from "@/i18n/mentor-translations"
+import { mentorDateLabel, mentorText as mt } from "@/i18n/mentor-translations"
+import { AppCalendar } from "@/components/platform/app-calendar"
+import { MentorCalendarHeader } from "@/screens/chat/mentor-calendar-header"
+import { exclusiveReviewEnd, lastReviewDay, recentReviewRange, selectReviewDay, type ReviewRange } from "@/screens/chat/companion-review-range"
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import { useLanguage } from "@/providers/language-provider"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useIsFocused } from "@react-navigation/native"
@@ -19,6 +23,7 @@ import { goalLabels } from "@/screens/chat/mentor-data"
 import { MentorQuestionIcon } from "@/screens/chat/mentor-question-icon"
 import { MentorIcon, useMentorPalette } from "@/screens/chat/mentor-ui"
 import { MentorNutritionEditor, nutritionEditorPages } from "@/screens/chat/mentor-meal-screens"
+import { MentorWeightEditor } from "@/screens/chat/mentor-weight-editor"
 import { MentorWellbeingEditor } from "@/screens/chat/mentor-wellbeing-form"
 
 import { MentorNotificationSetting } from "@/screens/chat/mentor-notification-setting"
@@ -212,7 +217,8 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onCont
     const displayEditor = c.editor ?? lastEditor.current
     const nutritionEditor = nutritionEditorPages.has(displayEditor?.page ?? "")
     const wellbeingEditor = displayEditor?.page === "wellbeing"
-    const fullScreenEditor = nutritionEditor || wellbeingEditor
+    const weightEditor = displayEditor?.page === "weight"
+    const fullScreenEditor = nutritionEditor || wellbeingEditor || weightEditor
     useEffect(() => { if (!c.editor) setEditorShown(false) }, [c.editor])
     useEffect(() => { if (openRequested && hasProfile && c.state?.dialogue_protocol !== 2) setEditor({ page: "home" }) }, [openRequested, hasProfile, setEditor, c.state?.dialogue_protocol])
     if (Platform.OS === "web" || !c.state?.available) return null
@@ -221,24 +227,31 @@ export function CompanionPanel({ controller: c, onChanged, openRequested, onCont
     return <View testID="companion-panel" style={navigationVisible && !dialogue ? [styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }] : undefined}>
         {navigationVisible ? dialogue ? <DialoguePanel controller={c} onChanged={onChanged} onPrompt={onPrompt!} sending={sending} /> : <Button label={mt("Мой курс · дневник · прогресс")} disabled={!c.state.profile && !c.error} onPress={() => c.setEditor({ page: c.state?.profile ? "home" : "consent" })} /> : null}
         {c.error && !workspaceVisible ? <><Copy>{c.error}</Copy><Button label={mt("Обновить")} onPress={() => void changed()} /></> : null}
-        <Modal visible={!!c.editor} animationType="slide" presentationStyle={fullScreenEditor ? "fullScreen" : "pageSheet"} onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>
+        <Modal visible={!!c.editor} animationType="slide" statusBarTranslucent={!fullScreenEditor} presentationStyle={fullScreenEditor ? "fullScreen" : "pageSheet"} onShow={() => setEditorShown(true)} onDismiss={() => setEditorShown(false)} onRequestClose={() => { if (!c.busy) c.setEditor(null) }}>
             <AppFormLayout style={{ flex: 1, backgroundColor: fullScreenEditor ? colors.surface : colors.mint }} androidBehavior={null}>
-                {wellbeingEditor ? <MentorWellbeingEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} onClose={() => c.setEditor(null)} /> : nutritionEditor ? <MentorNutritionEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} shown={editorShown} onClose={() => c.setEditor(null)} /> : <>
+                {weightEditor ? <MentorWeightEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} onClose={() => c.setEditor(null)} onSaved={() => {
+                    c.setEditor(c.state?.dialogue_protocol === 2 ? null : { page: "home" })
+                    void c.attempt(changed)
+                }} /> : wellbeingEditor ? <MentorWellbeingEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} onClose={() => c.setEditor(null)} /> : nutritionEditor ? <MentorNutritionEditor key={JSON.stringify(displayEditor)} controller={{ ...c, editor: displayEditor }} shown={editorShown} onClose={() => c.setEditor(null)} /> : <>
+                <SafeAreaProvider style={{ flex: 1 }}>
+                <SafeAreaView edges={["top", "left", "right", "bottom"]} style={{ flex: 1, backgroundColor: colors.surface }}>
                 <View style={[styles.modalHeader, { backgroundColor: colors.surface }]}>
                     <View style={styles.modalBrandRow}>
                         <View style={[styles.modalAvatar, { backgroundColor: colors.mint }]}><MentorIcon name="leaf" size={27} /></View>
                         <Text style={[styles.modalBrand, { color: colors.green }]}>{mt("Наставник ElixirPeptide")}</Text>
                         {c.busy ? <ActivityIndicator color={colors.greenBright} /> : null}
-                        <Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} onPress={() => c.setEditor(null)} style={({ pressed }) => [styles.modalClose, { backgroundColor: colors.soft, opacity: pressed ? 0.65 : 1 }]}><MentorQuestionIcon name="close" size={24} color={colors.green} /></Pressable>
+                        <Pressable accessibilityRole="button" accessibilityLabel={mt("Закрыть")} disabled={c.busy} accessibilityState={{ disabled: c.busy }} onPress={() => c.setEditor(null)} style={({ pressed }) => [styles.modalClose, { backgroundColor: colors.soft, opacity: c.busy || pressed ? 0.65 : 1 }]}><MentorQuestionIcon name="close" size={24} color={colors.green} /></Pressable>
                     </View>
                     <Text accessibilityRole="header" style={[styles.modalTitle, { color: colors.text }]}>{c.editor?.entry ? mt("Изменить запись") : editorTitles[c.editor?.page ?? "home"]}</Text>
                 </View>
-                <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.modal}>
+                <ScrollView keyboardShouldPersistTaps="handled" style={{ backgroundColor: colors.mint }} contentContainerStyle={styles.modal}>
                     <View style={[styles.modalCard, { backgroundColor: colors.surface }]}>
                         {c.error ? <Copy>{c.error}</Copy> : null}
                         {c.editor ? <CompanionContent key={JSON.stringify(c.editor)} controller={c} onChanged={changed} onContinue={onContinue ? () => { c.setEditor(null); onContinue() } : undefined} /> : null}
                     </View>
                 </ScrollView>
+                </SafeAreaView>
+                </SafeAreaProvider>
                 </>}
             </AppFormLayout>
         </Modal>
@@ -255,7 +268,7 @@ function CompanionContent({ controller: c, onChanged, onContinue }: { controller
     const save = async (action: CompanionAction) => { await c.perform(action); c.setEditor(state.dialogue_protocol === 2 ? null : { page: "home" }); await onChanged() }
     if (page === "consent") return <ConsentForm controller={c} onSave={save} />
     if (page === "settings") return <MentorNotificationSetting controller={c} />
-    if (["profile", "meal", "weight", "nutrition", "plan"].includes(page)) return <ManualForm controller={c} onSave={save} onChanged={onChanged} onContinue={onContinue} />
+    if (["profile", "meal", "nutrition", "plan"].includes(page)) return <ManualForm controller={c} onSave={save} onChanged={onChanged} onContinue={onContinue} />
     if (page === "summary" || page === "journal" || page === "events" || page === "supply") return <ReviewPanel controller={c} onChanged={onChanged} />
     return <>
         <Copy>{mt("Сопровождение ")}{profile?.enabled ? mt("включено") : mt("выключено")}{mt(". Данные сохраняются после подтверждения; AI не назначает препараты и не меняет дозировки.")}</Copy>
@@ -367,11 +380,10 @@ function ManualForm({ controller: c, onSave, onChanged, onContinue }: { controll
             <NutritionFields value={nutrition} disabled={calculating || c.busy} onChange={value => { setNutrition(value); setRuleVersion(undefined); setSuggestionNote(mt("Ручные значения — проверьте перед сохранением.")) }} />
             <Button label={mt("Подтвердить КБЖУ")} primary disabled={c.busy || calculating} onPress={() => save({ kind: "nutrition", nutrition, nutrition_rule_version: ruleVersion })} />
         </> : null}
-        {["meal", "weight"].includes(page) ? <>
-            {page === "meal" ? <><Field label={mt("Что съели")} value={entry.name} onChange={name => setEntry({ ...entry, name })} /><Field label={mt("Порция, г (если известна)")} value={entry.portion_g} numeric onChange={text => setEntry({ ...entry, portion_g: numberOrNull(text) })} /><NutritionFields value={entry.nutrition ?? emptyNutrition()} onChange={nutrition => setEntry({ ...entry, nutrition })} /><Toggle label={mt("Приблизительная оценка")} value={!!entry.estimated} onChange={estimated => setEntry({ ...entry, estimated })} />{entry.estimated ? <Field label={mt("Допущения оценки")} value={entry.assumptions} onChange={assumptions => setEntry({ ...entry, assumptions })} /> : null}<Copy>{mt("Можно отправить фото еды в чат — AI предложит оценку для подтверждения.")}</Copy></> : null}
-            {page === "weight" ? <Field label={mt("Вес, кг")} value={entry.weight_kg} numeric onChange={text => setEntry({ ...entry, weight_kg: text || null })} /> : null}
+        {page === "meal" ? <>
+            <Field label={mt("Что съели")} value={entry.name} onChange={name => setEntry({ ...entry, name })} /><Field label={mt("Порция, г (если известна)")} value={entry.portion_g} numeric onChange={text => setEntry({ ...entry, portion_g: numberOrNull(text) })} /><NutritionFields value={entry.nutrition ?? emptyNutrition()} onChange={nutrition => setEntry({ ...entry, nutrition })} /><Toggle label={mt("Приблизительная оценка")} value={!!entry.estimated} onChange={estimated => setEntry({ ...entry, estimated })} />{entry.estimated ? <Field label={mt("Допущения оценки")} value={entry.assumptions} onChange={assumptions => setEntry({ ...entry, assumptions })} /> : null}<Copy>{mt("Можно отправить фото еды в чат — AI предложит оценку для подтверждения.")}</Copy>
             <Field label={mt("Комментарий")} multiline value={entry.note} onChange={note => setEntry({ ...entry, note })} />
-            <Button label={editor.entry ? mt("Сохранить исправление") : mt("Подтвердить запись")} primary disabled={c.busy || (page === "weight" && !(Number(entry.weight_kg) > 0 && Number(entry.weight_kg) <= 500))} onPress={saveEntry} />
+            <Button label={editor.entry ? mt("Сохранить исправление") : mt("Подтвердить запись")} primary disabled={c.busy} onPress={saveEntry} />
         </> : null}
         {page === "plan" ? <><Copy>{mt("Перенесите готовую схему. Каждый этап задаётся отдельно. При обновлении старые отметки сохранятся, будущие события заменятся. Укажите фактический остаток на момент обновления.")}</Copy><Field label={mt("Название курса")} value={plan.name} onChange={name => setPlan({ ...plan, name })} /><Copy>{plan.timezone === deviceCompanionTimezone() ? mt("Время определяется по телефону автоматически.") : mt("Исходная схема записана в {0}. Её время не сдвигается при поездке; события в дневнике показаны по времени телефона.", [plan.timezone])}</Copy><PlanFields plan={plan} onChange={setPlan} /><Button label={mt("Подтвердить и сохранить курс")} primary disabled={c.busy || !plan.items.length} onPress={() => save({ kind: "plan", plan })} /></> : null}
     </>
@@ -406,17 +418,52 @@ function PlanFields({ plan, onChange }: { plan: PlanData; onChange: (plan: PlanD
     </View>)}<Button label={mt("+ Позиция курса")} disabled={plan.items.length >= 12} onPress={() => onChange({ ...plan, items: [...plan.items, { name: "", stages: [blankStage()], home_amount: null }] })} /></>
 }
 
+function ReviewRangePicker({ range, onChange }: { range: ReviewRange; onChange: (range: ReviewRange) => void }) {
+    const { language } = useLanguage()
+    const colors = useMentorPalette()
+    const [field, setField] = useState<keyof ReviewRange | null>(null)
+    const [draft, setDraft] = useState(range)
+    const label = (day: string) => mentorDateLabel(new Date(day + "T12:00:00"), { day: "numeric", month: "short", year: "numeric" }, language)
+    const open = (part: keyof ReviewRange) => { if (!field) setDraft(range); setField(part) }
+    const displayed = field ? draft : range
+    const today = calendarDate()
+    return <>
+        <View style={styles.row}>{([1, 7, 30] as const).map(days => {
+            const preset = recentReviewRange(today, days)
+            return <Button key={days} label={days === 1 ? mt("Сегодня") : days === 7 ? mt("7 дней") : mt("30 дней")}
+                selected={range.start === preset.start && range.end === preset.end}
+                onPress={() => { setField(null); onChange(preset) }} />
+        })}</View>
+        <View style={styles.row}>
+            <Button label={mt("Начало периода") + ": " + label(displayed.start)} selected={field === "start"} onPress={() => open("start")} />
+            <Button label={mt("Конец периода") + ": " + label(displayed.end)} selected={field === "end"} onPress={() => open("end")} />
+        </View>
+        {field && <>
+            <Copy>{mt("Выберите от 1 до 90 дней включительно.")}</Copy>
+            <AppCalendar key={field} current={draft[field]} firstDay={1} customHeader={MentorCalendarHeader}
+                minDate={field === "end" ? draft.start : undefined} maxDate={field === "end" ? lastReviewDay(draft.start) : undefined}
+                hideExtraDays disableAllTouchEventsForDisabledDays markedDates={{ [draft.start]: { selected: true }, [draft.end]: { selected: true } }}
+                theme={{ calendarBackground: colors.surface, arrowColor: colors.green, monthTextColor: colors.text, textSectionTitleColor: colors.muted, dayTextColor: colors.text, selectedDayBackgroundColor: colors.green }}
+                onDayPress={({ dateString }) => { setDraft(selectReviewDay(draft, field, dateString)); if (field === "start") setField("end") }} />
+            <View style={styles.row}><Button label={mt("Отмена")} onPress={() => setField(null)} />
+                <Button primary label={mt("Применить")} onPress={() => { setField(null); onChange(draft) }} /></View>
+        </>}
+    </>
+}
+
 function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onChanged: () => Promise<void> }) {
     useLanguage()
     const page = c.editor!.page
-    const [from, setFrom] = useState(calendarDate(-6))
-    const [to, setTo] = useState(calendarDate(1))
-    const [entries, setEntries] = useState((c.state!.entries ?? []).filter(entry => !c.editor?.entryKind || entry.kind === c.editor.entryKind))
-    const [events, setEvents] = useState(c.state!.events ?? [])
+    const [range, setRange] = useState(() => recentReviewRange(calendarDate(), 7))
+    const from = range.start, to = exclusiveReviewEnd(range)
+    const [entries, setEntries] = useState<CompanionEntry[]>([])
+    const [events, setEvents] = useState<NonNullable<CompanionState["events"]>>([])
     const [summary, setSummary] = useState<Summary | null>(null)
     const [supply, setSupply] = useState<Supply | null>(null)
     const [days, setDays] = useState("30")
-    const [loading, setLoading] = useState(false)
+    const [loading, setLoading] = useState(true)
+    const [loadedKey, setLoadedKey] = useState("")
+    const resultKey = [page, from, to, c.clock, c.editor?.entryKind].join("|")
     const [added, setAdded] = useState<number[]>([])
     const basket = useBasketMutations()
     const loadSequence = useRef(0)
@@ -428,7 +475,9 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
             else if (page === "events") { const result = await getCompanionEvents(from, to); if (sequence === loadSequence.current) setEvents(result.events) }
             else if (page === "summary") { const result = await getCompanionSummary(from, to); if (sequence === loadSequence.current) setSummary(result) }
             else { const result = await getCompanionEntries(from, to, c.editor?.entryKind); if (sequence === loadSequence.current) setEntries(result.entries) }
-        } finally { if (sequence === loadSequence.current) setLoading(false) }
+            if (sequence === loadSequence.current) setLoadedKey(resultKey)
+        } catch (error) { if (sequence === loadSequence.current) throw error }
+        finally { if (sequence === loadSequence.current) setLoading(false) }
     }
     const reloadForClock = useRef(() => {})
     reloadForClock.current = () => { void c.attempt(load) }
@@ -436,12 +485,13 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
     useEffect(() => {
         reloadForClock.current()
         return invalidateLoads
-    }, [c.clock, invalidateLoads]) // Requery on travel/DST; ignore responses from the previous zone.
+    }, [resultKey, invalidateLoads])
     return <>
         <Button label={mt("Назад к плану")} onPress={() => c.setEditor({ page: "home" })} />
-        {page === "supply" ? <><Field label={mt("Период прогноза, 1–90 дней")} value={days} numeric onChange={setDays} /><Copy>{mt("Расчёт не меняет схему. Покупка только по отдельному нажатию; добавление в корзину не увеличивает домашний запас.")}</Copy></> : <><Field label={mt("С даты включительно, ГГГГ-ММ-ДД")} value={from} onChange={setFrom} /><Field label={mt("До даты не включительно, ГГГГ-ММ-ДД (до 90 дней)")} value={to} onChange={setTo} /></>}
+        {page === "supply" ? <><Field label={mt("Период прогноза, 1–90 дней")} value={days} numeric onChange={setDays} /><Copy>{mt("Расчёт не меняет схему. Покупка только по отдельному нажатию; добавление в корзину не увеличивает домашний запас.")}</Copy></> : <ReviewRangePicker range={range} onChange={setRange} />}
         <Button label={mt("Обновить")} disabled={loading} onPress={() => void c.attempt(load)} />
         {loading ? <ActivityIndicator /> : null}
+        {loadedKey === resultKey && <>
         {page === "summary" && summary ? <><NutritionCopy value={summary.nutrition} /><Copy>{mt("Приёмов пищи: ")}{summary.meals_logged}{mt(", дней с записями: ")}{summary.days_with_meals}{mt(". Измерений веса: ")}{summary.weight_measurements}{mt("; изменение: ")}{summary.weight_change_kg == null ? mt("недостаточно данных") : summary.weight_change_kg + mt(" кг")}.</Copy><Copy>{mt("События: выполнено ")}{summary.events.done}{mt(", пропущено ")}{summary.events.skipped}{mt(", без отметки ")}{summary.events.pending}.</Copy><Copy>{mt(summary.coverage_note)}</Copy></> : null}
         {page === "events" ? <>{!events.length ? <Copy>{mt("Нет событий в выбранном периоде.")}</Copy> : null}{events.map(event => <View key={event.id} style={styles.card}>
             <Copy>{dateLabel(event.scheduled_at, c.clock)} · {event.data.name} · {event.data.amount} {unitLabels[event.data.unit]} · {event.status === "pending" ? mt("без отметки") : event.status === "done" ? mt("выполнено") : mt("пропущено")}</Copy>
@@ -453,6 +503,7 @@ function ReviewPanel({ controller: c, onChanged }: { controller: Controller; onC
             {item.available ? <>{item.projected_shortage_at ? <Copy>{mt("По прогнозу не хватит к: ")}{dateLabel(item.projected_shortage_at, c.clock)}</Copy> : null}<Copy>{mt("Нужно: ")}{item.required} {item.unit ? unitLabels[item.unit] : ""}{mt("; остаток по журналу: ")}{item.home_remaining}{mt(". Докупить: ")}{item.packages} {mt(" уп. Цена: ")}{item.price ?? mt("неизвестна")} {mt(" ₽, сумма: ")}{item.estimated_cost ?? mt("неизвестна")} {mt(" ₽. На складе: ")}{item.stock ?? mt("неизвестно")}.</Copy>
                 {item.variant_id && !!item.packages && item.stock != null && item.stock >= item.packages ? <Button label={added.includes(i) ? mt("✓ Добавлено в корзину") : mt("Добавить ") + item.packages + mt(" уп. в корзину")} disabled={basket.updating || added.includes(i)} onPress={() => Alert.alert(mt("Добавить в корзину?"), item.name + ": " + item.packages + mt(" уп. Фактическая стоимость проверяется в корзине."), [{ text: mt("Отмена") }, { text: mt("Добавить"), onPress: () => void c.attempt(async () => { await basket.addItem(item.variant_id!, item.packages!); setAdded(values => [...values, i]) }) }])} /> : null}</> : <Copy>{item.reason ? mt(item.reason) : null}</Copy>}
         </View>)}<Copy>{supply.note ? mt(supply.note) : null}</Copy></> : null}
+        </>}
     </>
 }
 
@@ -474,7 +525,7 @@ const styles = StyleSheet.create({
     modalAvatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
     modalBrand: { flex: 1, fontSize: 15, lineHeight: 22, fontWeight: "700" },
     modalTitle: { fontSize: 26, lineHeight: 33, fontWeight: "700" },
-    modalClose: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+    modalClose: { width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center" },
     modalCloseText: { fontSize: 28, lineHeight: 32, fontWeight: "500" },
     modal: { padding: 14, paddingBottom: 50, width: "100%", maxWidth: 700, alignSelf: "center" },
     modalCard: { padding: 18, borderRadius: 22, gap: 15 },

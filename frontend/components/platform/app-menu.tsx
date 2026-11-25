@@ -1,8 +1,11 @@
 import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native"
-import { MenuView } from "@react-native-menu/menu"
 import Svg, { Path } from "react-native-svg"
 import { AppSurface } from "@/components/platform/app-surface"
 import { useAppActionSheet } from "@/components/platform/app-action-sheet"
+// The Play binary has no native menu view. Metro drops this import on Android.
+const MenuView: typeof import("@react-native-menu/menu").MenuView | null = Platform.OS === "ios"
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ? require("@react-native-menu/menu").MenuView : null
 type Option = { id: string; label: string; detail?: string; disabled?: boolean }
 type Props = { label: string; options: readonly Option[]; value?: string; onChange: (id: string) => void; dark: boolean; color: string; fallbackColor: string; style?: StyleProp<ViewStyle> }
 export function AppMenu({ label, options, value, onChange, dark, color, fallbackColor, style }: Props) {
@@ -15,9 +18,7 @@ export function AppMenu({ label, options, value, onChange, dark, color, fallback
             <Text numberOfLines={1} style={{ color, fontSize: 16, fontWeight: "600" }}>{label}</Text>
         </View>
     )
-    // The menu library has native implementations only. Keep web selections usable
-    // through the same action-sheet adapter rather than rendering an inert trigger.
-    if (Platform.OS === "web") {
+    if (!MenuView) {
         return <Pressable accessibilityRole="button" accessibilityLabel={label} style={style}
             onPress={() => showActionSheet({ title: label, actions: options.map(option => ({
                 id: option.id, label: expandedLabel(option), disabled: option.disabled,
@@ -29,7 +30,7 @@ export function AppMenu({ label, options, value, onChange, dark, color, fallback
     return <MenuView themeVariant={dark ? "dark" : "light"} shouldOpenOnLongPress={false}
         actions={options.map(option => ({
             id: option.id,
-            title: Platform.OS === "android" ? expandedLabel(option) : option.label,
+            title: option.label,
             subtitle: option.detail,
             state: option.id === value ? "on" : "off",
             attributes: { disabled: option.disabled },
