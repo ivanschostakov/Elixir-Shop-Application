@@ -3,6 +3,7 @@ from copy import deepcopy
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import config
-from src.database.models import User
+from src.database.models import Order, OrderDraft, User
 from src.app.services.benefits import service as benefits, moysklad_bonus
 from src.app.services.orders import creation, settlement_payment, crm
 from src.integrations.moysklad.settlement_checkout import display_spent_rubles
@@ -22,7 +23,8 @@ from test_orders_api import (
 
 
 @pytest.mark.parametrize("scenario", ["exact", "rounded", "full", "full_exact_balance", "partial_delivery", "wrong_invoice",
-    "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order", "zero_balance", "opt_out", "partial_request"])
+    "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order", "zero_balance", "opt_out", "partial_request",
+    "legacy_cash_order"])
 def test_balance_checkout_api_uses_only_mocked_external_services(
     client, registered_user, variant_factory, stub_amocrm, monkeypatch, scenario,
 ):
@@ -96,6 +98,20 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     catalog = variant_factory(price=price)
     headers = registered_user["headers"]
     draft = _create_ready_draft(client, headers, catalog["variant_id"])
+    if scenario == "legacy_cash_order":
+        old_id, old_iid = uuid4(), uuid4()
+        old, old_invoice = documents("6069.30", "6069.30", 0)
+        old.update(id=str(old_id), attributes=[], invoicesOut=[ref(old_iid)])
+        old_invoice.update(id=str(old_iid), customerOrder=ref(old_id), attributes=[])
+        ms.get_page.return_value = {"rows": [old]}
+        ms.get_invoiceout.side_effect = {old_iid: old_invoice, IID: invoice}.__getitem__
+        with Session(sync_engine) as db:
+            original = db.get(OrderDraft, draft["id"])
+            db.add(Order(user_id=original.user_id, recipient_id=original.recipient_id,
+                delivery_address_id=original.delivery_address_id, order_code="OLD-" + old_id.hex[:12],
+                is_canceled=True, moysklad_customerorder_id=old_id,
+                checkout_snapshot={"benefits": {"use_bonus_rubles": False, "bonus_applied_rubles": 0}}))
+            db.commit()
     for use_balance in (False, True):
         preview = client.post("/api/v1/users/me/benefits/check", headers=headers, json={
             "draft_id": draft["id"], "use_bonus_rubles": use_balance})

@@ -59,9 +59,9 @@ def serialized_settlement_checkout(function):
                 existing = await get_order_by_draft_id(session, kwargs["draft_id"], user_id=user.id)
                 if existing is not None:
                     return await function(session, **kwargs)
-            await ensure_no_pending_balance_order(session, counterparty_id=user.moysklad_counterparty_id)
+            known_zero = await ensure_no_pending_balance_order(session, counterparty_id=user.moysklad_counterparty_id)
             try:
-                await check_open_settlement_orders(get_moysklad_client(), user.moysklad_counterparty_id)
+                await check_open_settlement_orders(get_moysklad_client(), user.moysklad_counterparty_id, known_zero_ids=known_zero)
             except SettlementNotReady as exc:
                 raise HTTPException(409, str(exc)) from exc
             except Exception as exc:
@@ -87,17 +87,34 @@ async def settlement_lock(counterparty_id, *, payment=False):
             await connection.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": key})
 
 
+def _is_recorded_zero(value):
+    try:
+        return value is not None and money(value) == 0
+    except ValueError:
+        return False
+
+
 async def ensure_no_pending_balance_order(session, *, counterparty_id, exclude_order_id=None):
-    query = (select(Order.id, Order.order_code, Order.checkout_snapshot)
+    query = (select(Order.moysklad_customerorder_id, Order.order_code, Order.is_canceled,
+                    Order.checkout_snapshot["settlement_payment"], Order.checkout_snapshot["benefits"])
         .join(User, User.id == Order.user_id)
-        .where(User.moysklad_counterparty_id == counterparty_id,
-               Order.is_canceled.is_(False), Order.is_shipped.is_(False)))
+        .where(User.moysklad_counterparty_id == counterparty_id, Order.is_shipped.is_(False)))
     if exclude_order_id is not None:
         query = query.where(Order.id != exclude_order_id)
-    for oid, code, snapshot in (await session.execute(query)).all():
-        settlement = (snapshot or {}).get("settlement_payment")
-        if settlement and settlement.get("status") != "canceled":
+    known_zero = set()
+    for remote_id, code, canceled, settlement, benefits in (await session.execute(query)).all():
+        if settlement:
+            zero = (settlement.get("status") == "confirmed"
+                    and _is_recorded_zero(settlement.get("balance_rubles"))
+                    and _is_recorded_zero(settlement.get("displayed_spent_rubles")))
+        else:
+            zero = (isinstance(benefits, dict) and benefits.get("use_bonus_rubles") is False
+                    and _is_recorded_zero(benefits.get("bonus_applied_rubles")))
+        if zero and remote_id:
+            known_zero.add(remote_id)
+        if settlement and not zero and not canceled and settlement.get("status") != "canceled":
             raise HTTPException(409, f"Баланс уже используется в заказе {code}. Завершите или отмените этот заказ перед новым списанием.")
+    return known_zero
 
 
 async def confirm_settlement_invoice(session, *, order, attempts=1, client=None):
@@ -118,10 +135,10 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
     user = await session.get(User, order.user_id)
     if user is None or user.moysklad_counterparty_id != counterparty_id:
         raise ValueError("Settlement customer identity changed")
-    await ensure_no_pending_balance_order(session, counterparty_id=counterparty_id, exclude_order_id=order.id)
+    known_zero = await ensure_no_pending_balance_order(session, counterparty_id=counterparty_id, exclude_order_id=order.id)
     client = client or get_moysklad_client()
     try:
-        await check_open_settlement_orders(client, counterparty_id, exclude_order_id=order.moysklad_customerorder_id)
+        await check_open_settlement_orders(client, counterparty_id, exclude_order_id=order.moysklad_customerorder_id, known_zero_ids=known_zero)
     except SettlementNotReady as exc:
         raise HTTPException(409, str(exc)) from exc
     currency_id = None

@@ -150,7 +150,51 @@ def validate_settlement_invoice(
     return SettlementInvoice(iid, money(gross_rubles), money(cash), spent, shown)
 
 
-async def check_open_settlement_orders(client, counterparty_id, *, exclude_order_id=None):
+async def _verify_open_order_without_balance(client, row, counterparty_id, known_zero_ids):
+    from .client.common import CUSTOMER_ORDER_ATTR_IDS
+
+    oid = entity_id(row)
+    number = row.get("name") or str(oid)
+    used = f"Баланс уже задействован в заказе МойСклад № {number}. Перед новым списанием завершите его или обратитесь к менеджеру."
+    unclear = f"Не удалось подтвердить, что заказ МойСклад № {number} не использует баланс. Списание приостановлено до сверки."
+    attrs = attributes(row)
+    if money(attrs.get(ORDER_SPENT_ATTRIBUTE, 0)) > 0 or money(attrs.get(CUSTOMER_ORDER_ATTR_IDS.get("balance_amount_kopecks"), 0)) > 0:
+        raise SettlementNotReady(used)
+    if entity_id(row.get("agent")) != counterparty_id:
+        raise SettlementNotReady(unclear)
+
+    active = []
+    for ref in row.get("invoicesOut") or []:
+        iid = entity_id(ref)
+        if iid is None:
+            raise SettlementNotReady(unclear)
+        invoice = await client.get_invoiceout(iid)
+        if entity_id(invoice) != iid:
+            raise SettlementNotReady(unclear)
+        if invoice.get("deleted") or invoice.get("applicable") is False or (invoice.get("state") or {}).get("stateType") == "Unsuccessful":
+            continue
+        if (invoice.get("applicable") is not True or entity_id(invoice.get("customerOrder")) != oid
+                or entity_id(invoice.get("agent")) != counterparty_id):
+            raise SettlementNotReady(unclear)
+        if money(attributes(invoice).get(INVOICE_SPENT_ATTRIBUTE, 0)) > 0:
+            raise SettlementNotReady(used)
+        active.append(invoice)
+    if len(active) != 1:
+        raise SettlementNotReady(unclear)
+    invoice = active[0]
+    for a, b in [(row.get("organization"), invoice.get("organization")),
+                 ((row.get("rate") or {}).get("currency"), (invoice.get("rate") or {}).get("currency"))]:
+        if entity_id(a) is None or entity_id(a) != entity_id(b):
+            raise SettlementNotReady(unclear)
+    if money(invoice.get("sum")) != money(row.get("sum")):
+        raise SettlementNotReady(unclear)
+    # A full-price invoice may still be waiting for the external balance robot.
+    processed = attributes(invoice).get(INVOICE_PROCESSED_ATTRIBUTE)
+    if processed is not True and not (processed is None and oid in known_zero_ids):
+        raise SettlementNotReady(unclear)
+
+
+async def check_open_settlement_orders(client, counterparty_id, *, exclude_order_id=None, known_zero_ids=frozenset()):
     """Read other channels too: prepayments remain on the balance until shipment."""
     for offset in range(0, 1000, 100):
         page = await client.get_page("/entity/customerorder", offset=offset,
@@ -168,7 +212,7 @@ async def check_open_settlement_orders(client, counterparty_id, *, exclude_order
                 continue
             if money(row.get("shippedSum", 0)) >= money(row.get("sum")):
                 continue
-            raise SettlementNotReady("В МойСклад есть незавершённый заказ этого клиента. Чтобы не использовать баланс дважды, сначала завершите или отмените его через менеджера.")
+            await _verify_open_order_without_balance(client, row, counterparty_id, known_zero_ids)
         if not page.get("meta", {}).get("nextHref") and len(rows) < 100:
             return
     raise SettlementNotReady("Слишком много заказов для автоматической сверки баланса. Обратитесь к менеджеру.")
