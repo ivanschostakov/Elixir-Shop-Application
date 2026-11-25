@@ -29,6 +29,7 @@ from .constants import (
     APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS,
     APP_INTEGRITY_ANDROID_PACKAGE_NAME,
     APP_INTEGRITY_CHALLENGE_TTL_SECONDS,
+    APP_INTEGRITY_EXEMPT_USER_IDS,
     APP_INTEGRITY_IOS_BUNDLE_ID,
     APP_INTEGRITY_IOS_TEAM_ID,
     APP_INTEGRITY_KEY_ID_HEADER,
@@ -47,6 +48,14 @@ log = logging.getLogger(__name__)
 
 _google_credentials: Any | None = None
 IOS_ASSERTION_GRANT_PREFIX = "ios-grant:"
+
+
+def app_integrity_exempt_for_user(user: User | None) -> bool:
+    return (
+        user is not None
+        and getattr(user, "is_active", False) is True
+        and str(user.id) in APP_INTEGRITY_EXEMPT_USER_IDS
+    )
 
 
 def _ios_grant_purpose(key_id: str) -> str:
@@ -233,6 +242,9 @@ async def _verify_with_remote_service(request: Request, *, action: str, token: s
 
 
 async def verify_app_integrity_request(request: Request, *, action: str, db: AsyncSession | None = None, current_user: User | None = None) -> None:
+    if app_integrity_exempt_for_user(current_user):
+        log.info("App integrity exception user_id=%s action=%s", current_user.id, action)
+        return
     token = (request.headers.get(APP_INTEGRITY_TOKEN_HEADER) or "").strip()
     platform = (request.headers.get(APP_INTEGRITY_PLATFORM_HEADER) or "").strip().lower()
     header_action = (request.headers.get(APP_INTEGRITY_ACTION_HEADER) or "").strip()
