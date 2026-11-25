@@ -1,4 +1,5 @@
 import { AppFormLayout } from "@/components/platform/app-form-layout"
+import { useAndroidDeliveryDock } from "@/screens/delivery/use-android-delivery-dock"
 import { AppBlurSurface as BlurView } from "@/components/platform/app-blur-surface"
 import { selectVisibleMarkers } from "@/utils/delivery/visible-markers"
 import * as Clipboard from "expo-clipboard"
@@ -8,6 +9,7 @@ import {
     Alert,
     Animated,
     AppState,
+    BackHandler,
     Easing,
     Keyboard,
     Linking,
@@ -21,7 +23,7 @@ import {
     type LayoutChangeEvent,
     type NativeSyntheticEvent,
 } from "react-native"
-import { useLocalSearchParams, useRouter } from "expo-router"
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import {
     ClusteredYamap,
@@ -139,6 +141,7 @@ export default function DeliveryScreen() {
     const shouldSyncBasketItems = parseBooleanSearchParam(params.syncBasket)
     const { isAuthenticated } = useAuth()
     const insets = useSafeAreaInsets()
+    const androidDock = useAndroidDeliveryDock(insets.bottom)
     const mapRef = useRef<ClusteredYamap | null>(null)
     const pendingDeliveryPointCodeRef = useRef<string | null>(null)
     const pendingDoorResolutionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -686,12 +689,22 @@ export default function DeliveryScreen() {
         router.push(ROUTES.discover)
     }
 
-    const handleDismissSearchFocus = () => {
+    const handleDismissSearchFocus = useCallback(() => {
         Keyboard.dismiss()
         setIsSearchFocused(false)
         setSearchEnabled(false)
         clearResults()
-    }
+    }, [clearResults, setIsSearchFocused, setSearchEnabled])
+
+    useFocusEffect(useCallback(() => {
+        if (Platform.OS !== "android" || !isSearchActive) return
+        const ime = Keyboard.addListener("keyboardDidHide", handleDismissSearchFocus)
+        const back = BackHandler.addEventListener("hardwareBackPress", () => {
+            handleDismissSearchFocus()
+            return true
+        })
+        return () => { ime.remove(); back.remove() }
+    }, [handleDismissSearchFocus, isSearchActive]))
 
     const handleClosePickupFooterExtension = useCallback(() => {
         setIsPickupFooterExpanded(false)
@@ -706,11 +719,18 @@ export default function DeliveryScreen() {
         setSelectionError(null)
     }, [isResolvingDoorAddress, setIsDoorFooterExpanded, setSelectionError])
 
+    const clearSearchQuoteErrors = useCallback(() => {
+        // Android restores the selected card when the IME closes, including its quote error.
+        if (Platform.OS !== "android") {
+            setSelectionError(null)
+            setPickupPointError(null)
+        }
+    }, [setPickupPointError, setSelectionError])
+
     const handleChangeSearch = (value: string) => {
         setSearch(value)
         setSearchEnabled(true)
-        setSelectionError(null)
-        setPickupPointError(null)
+        clearSearchQuoteErrors()
     }
 
     const handleSearchFocusChange = useCallback(
@@ -722,25 +742,22 @@ export default function DeliveryScreen() {
             }
 
             setSearchEnabled(true)
-            setSelectionError(null)
-            setPickupPointError(null)
+            clearSearchQuoteErrors()
             void runSearch()
         },
         [
             runSearch,
+            clearSearchQuoteErrors,
             setIsSearchFocused,
-            setPickupPointError,
             setSearchEnabled,
-            setSelectionError,
         ],
     )
 
     const handleSubmitSearch = useCallback(() => {
         setSearchEnabled(true)
-        setSelectionError(null)
-        setPickupPointError(null)
+        clearSearchQuoteErrors()
         void runSearch()
-    }, [runSearch, setPickupPointError, setSearchEnabled, setSelectionError])
+    }, [clearSearchQuoteErrors, runSearch, setSearchEnabled])
 
     const applyDoorDeliveryGeocodeResult = useCallback(
         (
@@ -1335,6 +1352,7 @@ export default function DeliveryScreen() {
         <MapFlowTemplate
             chromeOverlay={
                 <View
+                    onLayout={androidDock.onLayout}
                     pointerEvents="box-none"
                     style={deliveryScreenStyles.floatingControlsSafeArea}
                 >
@@ -1402,10 +1420,13 @@ export default function DeliveryScreen() {
                     </Animated.View>
 
                     <AppFormLayout
+                        androidBehavior={null}
                         pointerEvents="box-none"
-                        style={deliveryScreenStyles.floatingControlsFrame}
+                        style={[deliveryScreenStyles.floatingControlsFrame, Platform.OS === "android" && [
+                            deliveryScreenStyles.androidDockFrame, { paddingBottom: androidDock.bottom },
+                        ]]}
                     >
-                        <View style={deliveryScreenStyles.floatingControlsStack} />
+                        {Platform.OS !== "android" && <View style={deliveryScreenStyles.floatingControlsStack} />}
 
                         <Animated.View
                             pointerEvents={shouldHideDoorDeliveryChrome ? "none" : "box-none"}
@@ -1417,7 +1438,7 @@ export default function DeliveryScreen() {
                             <StickyFooterSurface
                                 contentStyle={deliveryScreenStyles.bottomSearchPanelContent}
                                 style={[
-                                    deliveryScreenStyles.bottomSearchPanelDock,
+                                    Platform.OS !== "android" && deliveryScreenStyles.bottomSearchPanelDock,
                                     deliveryScreenStyles.bottomSearchPanelSurface,
                                 ]}
                                 variant="search"

@@ -99,6 +99,9 @@ export const createDeliveryScreenStyles = (colors: ThemePalette) => StyleSheet.c
         paddingHorizontal: spacing.md,
         paddingBottom: spacing.md,
     },
+    androidDockFrame: {
+        paddingHorizontal: spacing.md - spacing.xs,
+    },
     floatingControlsStack: {
         gap: spacing.sm,
         paddingBottom: 88,

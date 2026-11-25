@@ -4,6 +4,51 @@ const loadTs = require("./load-ts.cjs")
 const { selectVisibleMarkers } = loadTs("utils/delivery/visible-markers.ts")
 const { fetchTextWithDeadline, RequestDeadlineError } = loadTs("services/api/request-deadline.ts")
 
+test("Android delivery dock uses actual IME overlap, not a second full keyboard offset", () => {
+    const { androidDockOverlap } = loadTs("screens/delivery/use-android-delivery-dock.ts", {
+        "react-native": {},
+    })
+    const keyboard = { height: 320, screenY: 570 }
+    assert.equal(androidDockOverlap(914, 914, 24, keyboard), 344)
+    assert.equal(androidDockOverlap(570, 914, 24, keyboard), 0)
+    assert.equal(androidDockOverlap(914, 914, 24, { height: 0, screenY: 700 }), 0)
+    assert.equal(androidDockOverlap(914, 914, 24, undefined), 0)
+})
+
+test("Android delivery dock clears stale IME coordinates on hide and removes listeners", () => {
+    let cursor = 0, effect
+    const state = [], listeners = new Map()
+    const { useAndroidDeliveryDock: renderDock } = loadTs("screens/delivery/use-android-delivery-dock.ts", {
+        react: {
+            useCallback: fn => fn,
+            useEffect: fn => { effect = fn },
+            useState: value => {
+                const i = cursor++
+                if (!(i in state)) state[i] = value
+                return [state[i], next => { state[i] = next }]
+            },
+        },
+        "react-native": {
+            Dimensions: { get: () => ({ height: 914 }) }, Platform: { OS: "android" },
+            Keyboard: {
+                metrics: () => undefined,
+                addListener(name, fn) { listeners.set(name, fn); return { remove: () => listeners.delete(name) } },
+            },
+        },
+    })
+    const render = () => { cursor = 0; return renderDock(24) }
+    const dock = render(), cleanup = effect()
+    dock.onLayout({ nativeEvent: { layout: { height: 914 } } })
+    for (let i = 0; i < 2; i++) {
+        listeners.get("keyboardDidShow")({ endCoordinates: { height: 320, screenY: 570 } })
+        assert.equal(render().bottom, 344)
+        listeners.get("keyboardDidHide")({ endCoordinates: { height: 0, screenY: 570 } })
+        assert.equal(render().bottom, 0)
+    }
+    cleanup()
+    assert.equal(listeners.size, 0)
+})
+
 test("native markers are bounded and follow the viewport", () => {
     const markers = Array.from({ length: 80000 }, (_, id) => ({ id, point: { lat: 55.75 + id / 1e7, lon: 37.61 } }))
     const local = { id: "ufa", point: { lat: 54.74, lon: 55.96 } }
