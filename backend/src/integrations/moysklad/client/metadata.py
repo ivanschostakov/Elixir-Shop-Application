@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 from src.normalize import coerce_uuid, optional_str
-from .utils import _customer_order_attr_id
+from .utils import _customer_order_attr_id, custom_entity_dictionary_id
 
 
 class MetadataMixin:
@@ -171,10 +171,8 @@ class MetadataMixin:
         attr_id = _customer_order_attr_id(attr_key)
         attr_row = next((row for row in await self.get_customerorder_attribute_metadata(limit=limit) if optional_str(row.get("id")) == attr_id), None)
         if not isinstance(attr_row, dict): return []
-        custom_entity_meta = attr_row.get("customEntityMeta")
-        custom_entity_href = optional_str(custom_entity_meta.get("href")) if isinstance(custom_entity_meta, dict) else None
-        if not custom_entity_href: return []
-        custom_entity_id = custom_entity_href.rstrip("/").rsplit("/", 1)[-1]
+        custom_entity_id = custom_entity_dictionary_id(attr_row)
+        if custom_entity_id is None: return []
         return await self.get_all(f"/entity/customentity/{custom_entity_id}")
 
 

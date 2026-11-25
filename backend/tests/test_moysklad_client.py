@@ -1,6 +1,34 @@
 import pytest
+from unittest.mock import AsyncMock
 
 from src.integrations.moysklad.client import MoySkladClient
+from src.integrations.moysklad.client.common import CUSTOMER_ORDER_ATTR_IDS
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("key", ["payment_method", "delivery_method"])
+@pytest.mark.parametrize("suffix", ["/metadata", "/metadata/?v=1", ""])
+async def test_order_dictionary_uses_id_not_metadata_suffix(monkeypatch, key, suffix):
+    client = MoySkladClient(token="token", base_url="https://example.test/api/remap/1.2")
+    path = "/entity/customentity/7f179ecc-13e4-11f1-0a80-06bb0012b045"
+    row = {"id": CUSTOMER_ORDER_ATTR_IDS[key], "customEntityMeta": {"href": "https://example.test" + path + suffix}}
+    monkeypatch.setattr(client, "get_customerorder_attribute_metadata", AsyncMock(return_value=[row]))
+    values = AsyncMock(return_value=[{"name": "expected"}])
+    monkeypatch.setattr(client, "get_all", values)
+    assert await client.find_customerorder_customentity_value(key, "expected") == {"name": "expected"}
+    values.assert_awaited_once_with(path)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("href", [None, "/entity/customentity/metadata", "/entity/customentity/not-a-uuid/metadata",
+                                  "/entity/store/7f179ecc-13e4-11f1-0a80-06bb0012b045"])
+async def test_invalid_dictionary_reference_does_not_fetch(monkeypatch, href):
+    client = MoySkladClient(token="token", base_url="https://example.test")
+    row = {"id": CUSTOMER_ORDER_ATTR_IDS["payment_method"], "customEntityMeta": {"href": href}}
+    monkeypatch.setattr(client, "get_customerorder_attribute_metadata", AsyncMock(return_value=[row]))
+    monkeypatch.setattr(client, "get_all", AsyncMock())
+    assert await client.get_customerorder_customentity_values("payment_method") == []
+    client.get_all.assert_not_awaited()
 
 
 @pytest.mark.anyio

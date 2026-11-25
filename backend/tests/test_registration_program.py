@@ -67,12 +67,13 @@ def test_new_customer_attributes_use_accounting_metadata(program, promo, percent
     dictionary, bonus, partner = uuid4(), uuid4(), uuid4()
     def meta(kind, key): return {"href": f"https://example.test/entity/{kind}/{key}", "type": kind}
     rows = [{"id": PROGRAM_ATTRIBUTE_ID, "type": "customentity", "meta": meta("attributemetadata", PROGRAM_ATTRIBUTE_ID),
-        "customEntityMeta": meta("customentity", dictionary)},
+        "customEntityMeta": meta("customentity", f"{dictionary}/metadata")},
         {"id": DISCOUNT_ATTRIBUTE_ID, "type": "long", "meta": meta("attributemetadata", DISCOUNT_ATTRIBUTE_ID)},
         {"id": REFERRER_ATTRIBUTE_ID, "type": "string", "meta": meta("attributemetadata", REFERRER_ATTRIBUTE_ID)}]
     choices = [{"name": "Бонусная", "meta": meta("customentity", bonus)}, {"name": "Партнерская", "meta": meta("customentity", partner)}]
     client = SimpleNamespace(get_all=AsyncMock(side_effect=[rows, choices]))
     attrs = asyncio.run(registration._initial_attributes(client, program=program, promo=promo))
+    assert client.get_all.await_args.args == (f"/entity/customentity/{dictionary}",)
     assert attrs[0]["value"]["meta"]["href"].endswith(str(bonus if program == "bonus" else partner))
     assert attrs[1]["value"] == percent
     assert [attr["value"] for attr in attrs[2:]] == ([promo] if promo else [])

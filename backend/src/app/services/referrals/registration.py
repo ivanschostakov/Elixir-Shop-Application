@@ -10,8 +10,9 @@ from sqlalchemy import select
 from src.database.models import User
 from src.integrations.bitrix_promo import BitrixPromoClient, BitrixPromoError, bitrix_promo_configured
 from src.integrations.moysklad.client import get_moysklad_client
+from src.integrations.moysklad.client.utils import custom_entity_dictionary_id
 from src.integrations.moysklad.idempotency import build_counterparty_external_code, build_sync_id
-from src.normalize import coerce_uuid, optional_str
+from src.normalize import optional_str
 
 from .profile import get_or_create_referral_profile, get_referral_profile_by_user_id
 
@@ -79,7 +80,7 @@ async def _initial_attributes(client, *, program, promo):
         if not row.get("meta"):
             raise RuntimeError("Missing MoySklad loyalty attribute metadata")
         if row.get("type") == "customentity":
-            dictionary_id = coerce_uuid((row.get("customEntityMeta") or {}).get("href", "").rstrip("/").rsplit("/", 1)[-1])
+            dictionary_id = custom_entity_dictionary_id(row)
             if dictionary_id is None:
                 raise RuntimeError("Missing MoySklad loyalty dictionary")
             choices = await client.get_all(f"/entity/customentity/{dictionary_id}")

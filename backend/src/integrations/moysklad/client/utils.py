@@ -3,11 +3,24 @@ from decimal import Decimal, ROUND_HALF_UP
 from email.utils import parsedate_to_datetime
 from math import isfinite
 from typing import Any
+from urllib.parse import urlsplit
+from uuid import UUID
 
 import httpx
 
-from src.normalize import optional_str
+from src.normalize import coerce_uuid, optional_str
 from .common import CUSTOMER_ORDER_ATTR_IDS, MOY_SKLAD_API_BASE_URL
+
+
+def custom_entity_dictionary_id(attribute: dict[str, Any]) -> UUID | None:
+    meta = attribute.get("customEntityMeta")
+    href = meta.get("href") if isinstance(meta, dict) else None
+    if not isinstance(href, str) or not href.strip():
+        return None
+    path = urlsplit(href).path.rstrip("/").removesuffix("/metadata").split("/")
+    if len(path) < 3 or path[-3:-1] != ["entity", "customentity"]:
+        return None
+    return coerce_uuid(path[-1])
 
 
 def _customer_order_attr_id(attr_key: str) -> str:
