@@ -4,6 +4,56 @@ const loadTs = require("./load-ts.cjs")
 const { selectVisibleMarkers } = loadTs("utils/delivery/visible-markers.ts")
 const { fetchTextWithDeadline, RequestDeadlineError } = loadTs("services/api/request-deadline.ts")
 
+test("typing does not reapply the selected pickup address or recenter either map", () => {
+    const fs = require("node:fs")
+    const path = require("node:path")
+    for (const file of ["delivery-screen.tsx", "delivery-screen.web.tsx"]) {
+        const source = fs.readFileSync(path.join(__dirname, "../screens/delivery", file), "utf8")
+        const effect = source.split("if (!pickupPoint || doorDeliveryPoint)")[1]?.split("])")[0]
+        assert.ok(effect?.includes("setSearch(getPickupPointAddress"), file)
+        const deps = effect.split("}, [")[1].split(",").map(name => name.trim())
+        assert.ok(deps.includes("pickupPointDraft"), file)
+        assert.ok(deps.every(name => !["search", "clearResults", "runSearch", "results", "isLoading"].includes(name)), file)
+    }
+})
+
+test("selected pickup stays hidden while editing, including empty results, and returns on dismissal", () => {
+    let cursor = 0, response = {}
+    const state = []
+    const { useDeliveryFlowController } = loadTs("screens/delivery/use-delivery-flow-controller.ts", {
+        react: {
+            useMemo: fn => fn(),
+            useState(initial) {
+                const i = cursor++
+                if (!(i in state)) state[i] = initial
+                return [state[i], value => { state[i] = value }]
+            },
+        },
+        "@/services/api/delivery": { DEFAULT_DELIVERY_COUNTRY_CODE: "RU" },
+        "@/screens/delivery/delivery-screen.constants": { supportsDoorDeliveryForCountry: () => true },
+        "@/screens/delivery/delivery-screen.utils": {
+            buildPickupPointDraft: p => p, getPickupPoint: p => p, getDoorDeliveryPoint: () => null,
+        },
+        "@/hooks/delivery/use-delivery-geo-search": { useDeliveryGeoSearch: () => response },
+    })
+    const point = { code: "NAG1", lat: 54, lon: 56 }
+    function render(feedback = {}) {
+        cursor = 0
+        response = { isLoading: false, results: [], error: null, ...feedback }
+        return useDeliveryFlowController({ selectedDeliveryPoint: point, userPoint: point })
+    }
+    const initial = render()
+    assert.equal(initial.shouldShowPickupFooterExtension, true)
+    initial.setIsSearchFocused(true)
+    for (const feedback of [{}, { isLoading: true }, { results: ["another address"] }, {}, { error: "offline" }]) {
+        const next = render(feedback)
+        assert.equal(next.shouldShowPickupFooterExtension, false)
+        assert.equal(next.pickupPointDraft, point)
+    }
+    render().setIsSearchFocused(false)
+    assert.equal(render().shouldShowPickupFooterExtension, true)
+})
+
 test("Android delivery dock uses actual IME overlap, not a second full keyboard offset", () => {
     const { androidDockOverlap } = loadTs("screens/delivery/use-android-delivery-dock.ts", {
         "react-native": {},

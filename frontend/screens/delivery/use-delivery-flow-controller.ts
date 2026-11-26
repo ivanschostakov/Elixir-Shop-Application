@@ -77,11 +77,13 @@ export function useDeliveryFlowController({
     const hasVisibleSearchFeedback = isLoading || Boolean(error) || results.length > 0
     const shouldShowPickupFooterExtension =
         isPickupFooterExpanded &&
+        !isSearchActive &&
         !hasVisibleSearchFeedback &&
         Boolean(isResolvingPickupPoint || pickupPointDraft || pickupPointError)
     const shouldShowDoorFooterExtension =
         supportsDoorDelivery &&
         isDoorFooterExpanded &&
+        !isSearchActive &&
         !hasVisibleSearchFeedback &&
         Boolean(isResolvingDoorAddress || doorDeliveryDraft || selectionError)
 

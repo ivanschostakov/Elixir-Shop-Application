@@ -246,7 +246,7 @@ export default function DeliveryScreen() {
         && !shouldShowPickupFooterExtension
         && isDoorFooterExpanded
         && Boolean(isResolvingDoorAddress || doorDeliveryDraft)
-    const shouldHideDoorDeliveryChrome = isDoorDeliveryMapInteracting
+    const shouldHideDoorDeliveryChrome = isDoorDeliveryMapInteracting && !isSearchActive
     const topMapEdgeBlurHeight = Math.max(insets.top, 0)
     const bottomMapEdgeBlurHeight = Math.max(insets.bottom + 28, 20)
     const doorChromeOpacity = useRef(new Animated.Value(1)).current
@@ -743,10 +743,8 @@ export default function DeliveryScreen() {
 
             setSearchEnabled(true)
             clearSearchQuoteErrors()
-            void runSearch()
         },
         [
-            runSearch,
             clearSearchQuoteErrors,
             setIsSearchFocused,
             setSearchEnabled,
@@ -958,12 +956,10 @@ export default function DeliveryScreen() {
         lastFollowedUserPointRef.current = null
         setSearchFocusPoint(pickupPoint)
         setIsSearchFocused(false)
-        setSearch(getPickupPointAddress(pickupPointDraft))
+        setSearch(getPickupPointAddress(pickupPointDraft) || pickupPointDraft?.name || "")
         setSearchEnabled(false)
-        clearResults()
         moveToRegion(getDeliveryRegion(pickupPoint, PICKUP_POINT_FOCUS_ZOOM), DELIVERY_CAMERA_DURATIONS.search)
     }, [
-        clearResults,
         doorDeliveryPoint,
         moveToRegion,
         pickupPoint,
@@ -1215,11 +1211,6 @@ export default function DeliveryScreen() {
                 ...deliveryPoint,
                 provider,
             })
-            const nextPoint = {
-                lat: nextDraft.latitude,
-                lon: nextDraft.longitude,
-            }
-
             if (provider === "cdek") {
                 try {
                     nextDraft.deliveryCalculation = await calculateCdekDelivery({
@@ -1243,14 +1234,7 @@ export default function DeliveryScreen() {
             }
 
             pendingDeliveryPointCodeRef.current = null
-            lastFollowedUserPointRef.current = null
             setPickupPointDraft(nextDraft)
-            setSearchFocusPoint(nextPoint)
-            setIsSearchFocused(false)
-            setSearch(getPickupPointAddress(nextDraft) || nextDraft.name)
-            setSearchEnabled(false)
-            clearResults()
-            moveToRegion(getDeliveryRegion(nextPoint, PICKUP_POINT_FOCUS_ZOOM), DELIVERY_CAMERA_DURATIONS.search)
         } catch (deliveryPointError) {
             showBackendErrorAlert(deliveryPointError)
             pendingDeliveryPointCodeRef.current = null
@@ -1275,21 +1259,15 @@ export default function DeliveryScreen() {
     }, [
         activeCountryCode,
         checkoutDraftId,
-        clearResults,
-        moveToRegion,
         pickupPointDraft,
         shouldShowPickupFooterExtension,
         setDoorDeliveryDraft,
         setIsDoorFooterExpanded,
         setIsPickupFooterExpanded,
         setIsResolvingPickupPoint,
-        setIsSearchFocused,
         setPickupPointDraft,
         setPickupPointError,
         setRemovedDeliveryPointKeys,
-        setSearch,
-        setSearchEnabled,
-        setSearchFocusPoint,
         setSelectionError,
     ])
 

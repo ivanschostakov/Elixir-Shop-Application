@@ -428,11 +428,9 @@ export default function DeliveryScreen() {
         setIsSearchFocused(false)
         setSearch(getPickupPointAddress(pickupPointDraft))
         setSearchEnabled(false)
-        clearResults()
         setPoint(pickupPoint)
         setMapZoom(16)
     }, [
-        clearResults,
         doorDeliveryPoint,
         pickupPoint,
         pickupPointDraft,
@@ -460,10 +458,8 @@ export default function DeliveryScreen() {
             setSearchEnabled(true)
             setSelectionError(null)
             setPickupPointError(null)
-            void runSearch()
         },
         [
-            runSearch,
             setIsSearchFocused,
             setPickupPointError,
             setSearchEnabled,
