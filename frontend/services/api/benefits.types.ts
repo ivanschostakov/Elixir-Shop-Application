@@ -36,6 +36,8 @@ export type BenefitOptionResponse = {
 }
 
 export type BenefitCheckResponse = {
+    welcome_balance_rubles?: string
+    welcome_expires_at?: string | null
     priced_items?: { variant_id: number; quantity: number; unit_price: string; line_total: string }[]
     referral_profile_id: number | null
     reward_program: "bonus" | "partner"

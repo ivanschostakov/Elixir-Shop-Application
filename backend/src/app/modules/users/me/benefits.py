@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from src.app.services.platform_availability import mobile_shop_request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -16,7 +17,7 @@ my_benefits_router = APIRouter(prefix="/benefits", tags=["my_benefits"])
 
 
 @my_benefits_router.post("/check", response_model=BenefitCheckRead, status_code=status.HTTP_200_OK)
-async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BenefitCheckRead:
+async def check_my_benefits(payload: BenefitCheckPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> BenefitCheckRead:
     subtotal = payload.subtotal
     discountable_subtotal = payload.discountable_subtotal
     currency = payload.currency
@@ -74,6 +75,7 @@ async def check_my_benefits(payload: BenefitCheckPayload, db: AsyncSession = Dep
         quote_items=quote_items,
         bonus_rubles_to_use=payload.bonus_rubles_to_use, use_bonus_rubles=payload.use_bonus_rubles,
         reward_mode=payload.reward_mode,
+        mobile_welcome=mobile_shop_request(request.headers),
     )
     await db.commit()
     return BenefitCheckRead.model_validate(resolved)

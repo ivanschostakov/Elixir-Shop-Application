@@ -136,10 +136,10 @@ class AsyncAmoCRM:
             page += 1
         return None
 
-    async def create_lead(self, *, name: str, status_id: int, price: int | None = None, custom_fields: dict[int, object] | None = None, source_tag: str | None = None, contact_id: int | None = None) -> dict[str, Any]:
+    async def create_lead(self, *, name: str, status_id: int, price: int | None = None, custom_fields: dict[int, object] | None = None, source_tag: str | None = None, extra_tags: tuple[str, ...] = (), contact_id: int | None = None) -> dict[str, Any]:
         payload = build_lead_create_payload(name=name, pipeline_id=self.PIPELINE_ID, status_id=status_id, price=price, custom_fields=custom_fields)
-        if source_tag:
-            payload.tags_to_add = [LeadTagPayload(name=source_tag)]
+        if source_tag or extra_tags:
+            payload.tags_to_add = [LeadTagPayload(name=tag) for tag in (source_tag, *extra_tags) if tag]
         if contact_id is not None:
             payload.embedded = LeadEmbedded(contacts=[LeadContact(id=contact_id)])
         data = await self._post("/api/v4/leads", json=[self.transport.dump_payload(payload)])
@@ -167,10 +167,10 @@ class AsyncAmoCRM:
         payload = build_lead_link_payload(contact_id=contact_id)
         return await self._post(f"/api/v4/leads/{lead_id}/link", json=[self.transport.dump_payload(payload)])
 
-    async def create_lead_with_contact_and_note(self, *, lead_name: str, price: int, address_str: str, phone: str | None, email: str | None, order_number: str, delivery_service: str, note_text: str, payment_method: str, tg_nick: str | None = None, status_id: int | None = None, delivery_sum: Decimal | float | int | None = None, contact_id: int | None = None, source_tag: str | None = None, order_fields: dict[int, object] | None = None) -> dict[str, Any]:
+    async def create_lead_with_contact_and_note(self, *, lead_name: str, price: int, address_str: str, phone: str | None, email: str | None, order_number: str, delivery_service: str, note_text: str, payment_method: str, tg_nick: str | None = None, status_id: int | None = None, delivery_sum: Decimal | float | int | None = None, contact_id: int | None = None, source_tag: str | None = None, extra_tags: tuple[str, ...] = (), order_fields: dict[int, object] | None = None) -> dict[str, Any]:
         lead_custom_fields = build_order_lead_custom_fields(cf=self.CF, address_str=address_str, order_number=order_number, delivery_service=delivery_service, payment_method=payment_method, tg_nick=tg_nick, delivery_sum=delivery_sum)
         lead_custom_fields.update(order_fields or {})
-        lead = await self.create_lead(name=f"Заказ №{order_number} с Приложения", price=price, custom_fields=lead_custom_fields, status_id=status_id or self.STATUS_IDS["main"], source_tag=source_tag, contact_id=contact_id)
+        lead = await self.create_lead(name=f"Заказ №{order_number} с Приложения", price=price, custom_fields=lead_custom_fields, status_id=status_id or self.STATUS_IDS["main"], source_tag=source_tag, **({"extra_tags": extra_tags} if extra_tags else {}), contact_id=contact_id)
         lead_id = int(lead["id"])
         try:
             await self.add_lead_note(lead_id, note_text)

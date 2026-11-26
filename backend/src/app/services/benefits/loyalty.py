@@ -13,7 +13,6 @@ from config import (
     LOYALTY_ORDER_CASHBACK_PERCENT,
     LOYALTY_PHOTO_REVIEW_BONUS_POINTS,
     LOYALTY_TEXT_REVIEW_BONUS_POINTS,
-    LOYALTY_WELCOME_BONUS_POINTS,
     LOYALTY_USE_SETTLEMENT_BALANCE,
     MOY_SKLAD_BONUS_PROGRAM_ID,
     ufa_now,
@@ -136,6 +135,8 @@ async def sync_loyalty_bonus_credit(
 ) -> bool:
     if LOYALTY_USE_SETTLEMENT_BALANCE:
         return await _sync_balance_credit(db, credit=credit, client=client)
+    if credit.source_kind == "app_welcome":
+        return False  # Local discounts must not enter the historical wallet either.
     credit_id = credit.id
     if credit.status == "applied" and credit.moysklad_bonus_transaction_id is not None:
         return True
@@ -313,22 +314,6 @@ async def create_loyalty_bonus_credit(
     await db.refresh(credit)
     if sync_immediately:
         await sync_loyalty_bonus_credit(db, credit=credit)
-    return credit
-
-
-async def grant_welcome_bonus_safe(db: AsyncSession, *, user: User) -> LoyaltyBonusCredit | None:
-    if user.welcome_bonus_granted_at is not None:
-        return await _credit_by_key(db, f"welcome:user:{user.id}")
-    credit = await create_loyalty_bonus_credit(
-        db,
-        user=user,
-        source_kind="welcome",
-        idempotency_key=f"welcome:user:{user.id}",
-        points=LOYALTY_WELCOME_BONUS_POINTS,
-        sync_immediately=False,
-    )
-    user.welcome_bonus_granted_at = ufa_now()
-    await db.commit()
     return credit
 
 

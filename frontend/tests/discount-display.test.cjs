@@ -8,4 +8,5 @@ test("the discount label distinguishes a partner discount from an entered promo 
     assert.equal(formatAppliedDiscount({ source_kind: "app_referral", code: null, discount_percent: "4" }, t), "Партнёрская скидка −4%")
     assert.equal(formatAppliedDiscount({ source_kind: "bitrix_promo", code: "CODE", discount_percent: "3" }, t), "Промокод CODE −3%")
     assert.equal(formatAppliedDiscount({ source_kind: "moysklad_settlement", code: null }, t), "Баланс")
+    assert.equal(formatAppliedDiscount({ source_kind: "app_welcome" }, key => key), "checkout.welcomeBonusTitle")
 })

@@ -14,6 +14,9 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
     for option in resolved_benefits.get("stacked_discount_options", []):
         source_kind = option.get("source_kind")
         source_record_id = option.get("source_record_id")
+        if source_kind == "app_welcome":
+            from src.app.services.benefits.app_welcome import verify_reservation
+            await verify_reservation(session, user.id, option["applied_discount_amount"])
         kwargs: dict[str, Any] = {}
         if source_kind == "app_referral": kwargs["referral_profile_id"] = source_record_id
 
@@ -38,7 +41,7 @@ async def _persist_order_benefit_applications(session: AsyncSession, *, order: O
         await session.flush()
 
 
-async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal, delivery_total: Decimal, currency: str, entered_code: str | None, quote_items: list[dict[str, Any]], use_bonus_rubles: bool, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None,) -> dict[str, Any]:
-    resolved = await resolve_benefits_for_user(session, user=user, entered_code=entered_code, subtotal=subtotal, discountable_subtotal=discountable_subtotal, delivery_total=delivery_total, currency=currency, quote_items=quote_items, use_bonus_rubles=use_bonus_rubles, bonus_rubles_to_use=bonus_rubles_to_use, reward_mode=reward_mode,)
+async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal, delivery_total: Decimal, currency: str, entered_code: str | None, quote_items: list[dict[str, Any]], use_bonus_rubles: bool, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None, mobile_welcome: bool = False) -> dict[str, Any]:
+    resolved = await resolve_benefits_for_user(session, user=user, entered_code=entered_code, subtotal=subtotal, discountable_subtotal=discountable_subtotal, delivery_total=delivery_total, currency=currency, quote_items=quote_items, use_bonus_rubles=use_bonus_rubles, bonus_rubles_to_use=bonus_rubles_to_use, reward_mode=reward_mode, mobile_welcome=mobile_welcome)
     if use_bonus_rubles and resolved.get("balance_redemption_mode") != "automatic" and not (resolved.get("bonus_option") or {}).get("is_applicable"): raise HTTPException(409, "Баланс недоступен или изменился. Обновите оформление заказа.")
     return resolved

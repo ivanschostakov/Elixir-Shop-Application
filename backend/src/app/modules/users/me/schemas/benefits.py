@@ -1,4 +1,5 @@
 from decimal import Decimal
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -52,6 +53,8 @@ class BenefitOptionRead(BaseModel):
 
 
 class BenefitCheckRead(BaseModel):
+    welcome_balance_rubles: Decimal = Field(default=Decimal("0"), ge=0)
+    welcome_expires_at: datetime | None = None
     model_config = ConfigDict(from_attributes=True)
 
     referral_profile_id: int | None = Field(default=None, ge=1)

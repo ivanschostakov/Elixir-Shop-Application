@@ -12,7 +12,7 @@ from src.app.services.referrals import registration
 from src.app.services.benefits import service as benefits
 from src.app.services.benefits.moysklad_bonus import MoySkladBonusWallet
 from src.app.services.benefits.settlement import PROGRAM_ATTRIBUTE_ID, DISCOUNT_ATTRIBUTE_ID, REFERRER_ATTRIBUTE_ID
-from src.database.models import User, ReferralProfile
+from src.database.models import User, ReferralProfile, LoyaltyBonusCredit
 from src.integrations.moysklad.client import MoySkladClient
 from test_orders_api import sync_engine, registered_user
 
@@ -122,9 +122,6 @@ def test_registration_alert_state_survives_relogin_and_existing_customer_cannot_
 def test_new_registration_waits_for_alert_and_persists_choice_once(client, monkeypatch, program, promo):
     from test_orders_api import _delete_user
     from src.app.services.auth.service import sessions, counterparty
-    welcome = AsyncMock()
-    monkeypatch.setattr(sessions, "grant_welcome_bonus_safe", welcome)
-    monkeypatch.setattr("src.app.services.benefits.loyalty.grant_welcome_bonus_safe", welcome)
     monkeypatch.setattr(counterparty, "_link_moysklad_counterparty_by_email", AsyncMock())
     monkeypatch.setattr(sessions, "_link_moysklad_counterparty_by_email", AsyncMock())
     lookup = AsyncMock(return_value={"promo": promo or "Elixir", "is_firm_promo": promo is None, "referral_owner_id": 123 if promo else None})
@@ -143,11 +140,16 @@ def test_new_registration_waits_for_alert_and_persists_choice_once(client, monke
     uid = response.json()["user_id"]
     try:
         create.assert_not_awaited()
-        response = client.post("/api/v1/auth/register/verify", json={"email": payload["email"], "code": "123456"})
+        with Session(sync_engine) as db:
+            assert not db.query(LoyaltyBonusCredit).filter_by(user_id=uid).count()
+        response = client.post("/api/v1/auth/register/verify", headers={"X-App-Platform": "android"}, json={"email": payload["email"], "code": "123456"})
         assert response.status_code == 200, response.text
         assert response.json()["user"]["program_selection_required"] is True
         create.assert_not_awaited()
-        welcome.assert_not_awaited()
+        with Session(sync_engine) as db:
+            credit = db.query(LoyaltyBonusCredit).filter_by(user_id=uid).one()
+            assert credit.source_kind == "app_welcome" and credit.points == 1000
+            assert (credit.expires_at - credit.earned_at).total_seconds() == 5 * 86400
         headers = {"Authorization": f"Bearer {response.json()['access_token']}"}
         response = client.post("/api/v1/auth/registration-program", headers=headers,
             json={"program": program, **({"promo_code": promo} if promo else {})})
@@ -163,6 +165,7 @@ def test_new_registration_waits_for_alert_and_persists_choice_once(client, monke
         retry = client.post("/api/v1/auth/registration-program", headers=headers, json={"program": "bonus"})
         assert retry.status_code == 200
         create.assert_awaited_once()
-        welcome.assert_awaited_once()
+        with Session(sync_engine) as db:
+            assert db.query(LoyaltyBonusCredit).filter_by(user_id=uid).count() == 1
     finally:
         _delete_user(uid)

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from "react-native"
+import { ActivityIndicator, Alert, Platform, Pressable, Text, TextInput, View } from "react-native"
 import { router } from "expo-router"
 
 import { ROUTES } from "@/constants/routes"
@@ -147,7 +147,7 @@ export default function RegisterScreen() {
                     }}
                     onResend={handleResend}
                     onVerify={handleVerify}
-                    statusMessage={statusMessage}
+                    statusMessage={statusMessage || (Platform.OS === "ios" || Platform.OS === "android" ? t("auth.verify.welcomeOffer") : "")}
                 />
             </AuthFormLayout>
         )

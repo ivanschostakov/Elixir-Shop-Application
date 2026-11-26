@@ -107,7 +107,7 @@ export default function CheckoutScreen() {
     const checkoutScreenStyles = useThemeStyles(createCheckoutScreenStyles)
     const { palette } = useTheme()
     const { isAuthenticated, isReady, updatePersonalData, user } = useAuth()
-    const { t } = useLanguage()
+    const { t, language } = useLanguage()
     const { bottom: bottomInset, top: topInset } = useSafeAreaInsets()
     const params = useLocalSearchParams<{ code?: string | string[], draftId?: string | string[] }>()
     const draftId = parseDraftId(params.draftId)
@@ -1225,6 +1225,12 @@ export default function CheckoutScreen() {
                                                 </View>
                                         </View>
                                     </>
+                                ) : null}
+                                {benefitCheck?.welcome_expires_at && Number(benefitCheck.welcome_balance_rubles) > 0 ? (
+                                    <View style={checkoutScreenStyles.detailsSheetTextBlock}>
+                                        <Text style={checkoutScreenStyles.detailsSheetLabel}>{t("checkout.welcomeBonusTitle")}: {formatMoney(Number(benefitCheck.welcome_balance_rubles), "RUB")}</Text>
+                                        <Text style={checkoutScreenStyles.totalLabel}>{t("checkout.welcomeBonusTerms")} {new Date(benefitCheck.welcome_expires_at).toLocaleString(language === "kz" ? "kk-KZ" : language)}</Text>
+                                    </View>
                                 ) : null}
                                 {Number(benefitCheck?.bonus_balance_rubles ?? 0) > 0 ? (
                                     <>

@@ -8,7 +8,6 @@ from src.app.modules.auth.schemas.refresh import UserRefreshPayload
 from src.app.modules.auth.schemas.responses import AuthLogoutResponse, AuthRefreshResponse, AuthTokensWithUserResponse, AuthUserRead
 from src.app.services.security import create_access_token
 from src.app.services.security.refresh import create_refresh_token, hash_refresh_token, verify_refresh_token
-from src.app.services.benefits.loyalty import grant_welcome_bonus_safe
 from src.database.crud.auth.user import get_user_by_id
 from src.database.crud.auth.user_session import create_user_session, get_user_session_by_id, update_user_session
 from src.database.models.auth.user import User
@@ -22,23 +21,14 @@ async def _build_auth_tokens_response(user: User, db: AsyncSession) -> AuthToken
     user_id = user.id
     await _link_moysklad_counterparty_by_email(user, db)
     from src.app.services.referrals.registration import sync_registration_choice
-    registration_sync_failed = False
     try:
         await sync_registration_choice(db, user=user)
     except Exception:
-        registration_sync_failed = True
         await db.rollback()
         await db.refresh(user)
         logger.exception("Could not synchronize registration program user_id=%s", user_id)
     from src.app.services.referrals.registration import registration_choice_required
     selection_required = await registration_choice_required(db, user=user)
-    try:
-        if not registration_sync_failed and not selection_required:
-            await grant_welcome_bonus_safe(db, user=user)
-    except Exception:
-        await db.rollback()
-        await db.refresh(user)
-        logger.exception("Failed to enqueue welcome bonus during authentication user_id=%s", user_id)
     refresh_token = create_refresh_token()
     refresh_token_hash = hash_refresh_token(refresh_token)
     session = await create_user_session(db, UserSessionCreate(user_id=user.id, refresh_token_hash=refresh_token_hash))

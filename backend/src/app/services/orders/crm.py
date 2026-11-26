@@ -148,6 +148,9 @@ def _format_order_for_amocrm(order_number: str, payload: dict[str, Any], deliver
         kind = application.get("source_kind")
         if kind == "moysklad_settlement":
             continue
+        if kind == "app_welcome":
+            discount_lines.append(f"Приветственные бонусы приложения: -{amount:.2f} ₽ (скидка на товары, не списание с баланса МС)")
+            continue
         label = "Бонусы" if kind == "moysklad_bonus" else f"Скидка / промокод {application.get('code') or ''}".strip()
         discount_lines.append(f"{label}: -{amount:.2f}")
     if discount_total > 0:
@@ -287,6 +290,10 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
         delivery_sum=order.delivery_total,
         contact_id=int(contact_id) if contact_id else None,
         source_tag="заказ с приложения" if (order.checkout_snapshot or {}).get("client_platform") in {"ios", "android"} else None,
+        **({"extra_tags": ("Приветственные бонусы приложения",)} if any(
+            row.get("source_kind") == "app_welcome" and Decimal(str(row.get("discount_amount") or 0)) > 0
+            for row in ((order.checkout_snapshot or {}).get("benefits") or {}).get("applications", [])
+        ) else {}),
         order_fields=_checkout_lead_fields(order, address_str),
     )
     order.amocrm_lead_id = int(lead["id"])
@@ -347,6 +354,11 @@ async def apply_amocrm_status_update(session: AsyncSession, *, order: Order, sta
         return order
     previous_status = order.status
     patch = _order_state_patch_for_amocrm_status(status_id)
+    if (order.is_canceled and not patch["is_canceled"] and not order.payment_invoice_id
+            and not order.is_paid and order.payment_paid_at is None
+            and any(row.get("source_kind") == "app_welcome"
+                    for row in ((order.checkout_snapshot or {}).get("benefits") or {}).get("applications", []))):
+        raise HTTPException(409, "Приветственные бонусы по отменённому заказу освобождены. Создайте новый заказ.")
     if order.payment_provider in {"intellectmoney", "moysklad_balance"}:
         patch.pop("is_paid", None)
     order = await update_order(session, order, OrderUpdate(**patch), commit=False)

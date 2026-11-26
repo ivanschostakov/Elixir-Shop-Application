@@ -27,7 +27,7 @@ from .payloads import _build_order_create_data, _build_order_item_from_draft_ite
 
 
 @serialized_settlement_checkout
-async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None, client_platform: str | None = None) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None, client_platform: str | None = None, mobile_welcome: bool = False) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id, lock=True)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
@@ -106,6 +106,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
         ],
         use_bonus_rubles=use_bonus_rubles, bonus_rubles_to_use=bonus_rubles_to_use,
         reward_mode=reward_mode,
+        mobile_welcome=mobile_welcome,
     )
     grand_total = (quantize_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None else (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total)
     from src.app.services.discounts import get_non_discountable_product_ids

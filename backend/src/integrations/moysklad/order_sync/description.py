@@ -26,6 +26,9 @@ def _build_order_description(order: Order) -> str:
         amount = _decimal_or_zero(application.get("discount_amount"))
         if amount <= 0: continue
         if application.get("source_kind") == "moysklad_settlement": continue
+        if application.get("source_kind") == "app_welcome":
+            lines.append(f"Приветственные бонусы приложения: -{amount:.2f} ₽ (скидка на товары, не списание с баланса МС)")
+            continue
         label = "Бонусы" if application.get("source_kind") == "moysklad_bonus" else f"Промокод {application.get('code') or ''}".strip()
         lines.append(f"{label}: -{amount:.2f}")
     if comment: lines.append(comment)

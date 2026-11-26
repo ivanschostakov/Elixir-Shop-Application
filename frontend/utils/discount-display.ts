@@ -2,6 +2,7 @@ import type { TranslationKey } from "@/i18n/translations"
 import type { BenefitOptionResponse } from "@/services/api/benefits.types"
 
 export function formatAppliedDiscount(option: BenefitOptionResponse, t: (key: TranslationKey) => string) {
+    if (option.source_kind === "app_welcome") return t("checkout.welcomeBonusTitle")
     const isBalance = option.source_kind === "moysklad_bonus" || option.source_kind === "moysklad_settlement"
     const isPartner = option.source_kind === "app_referral"
     const isPromo = !isBalance && !isPartner && Boolean(option.code || option.source_kind === "bitrix_promo")

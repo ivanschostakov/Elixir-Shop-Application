@@ -268,6 +268,7 @@ async def resolve_benefits_for_user(
     quote_items: list[dict] | None = None,
     use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None,
     reward_mode: str | None = None,
+    mobile_welcome: bool = False,
 ) -> dict:
     normalized_code = lower_optional_str(entered_code)
     trimmed_code = optional_str(entered_code)
@@ -400,6 +401,22 @@ async def resolve_benefits_for_user(
             stacked_discount_options[0].update(applied_discount_amount=rounded_discount,
                 estimated_discount_amount=rounded_discount, estimated_total_after=total_after_discounts,
                 subtotal_after=total_after_discounts)
+    welcome_available, welcome_expires = Decimal("0"), None
+    if mobile_welcome and (currency or "RUB").upper() == "RUB":
+        from .app_welcome import KIND, discount, wallet
+        credit, welcome_available = await wallet(db, user.id)
+        welcome_expires = credit.expires_at if credit else None
+        amount = discount(welcome_available, total_after_discounts)
+        if amount > 0:
+            option = ResolvedDiscountOption(source_kind=KIND, source_record_id=credit.id, code=None,
+                title="Приветственные бонусы", status="available", is_applicable=True, is_personal=True,
+                is_stackable=True, calculation_mode="fixed_amount", discount_percent=None, discount_amount=amount,
+                currency="RUB", estimated_discount_amount=amount, estimated_total_after=total_after_discounts-amount,
+                reason=None)
+            application, total_after_discounts = _apply_discount_option(option, subtotal=total_after_discounts,
+                discountable_subtotal=total_after_discounts, sequence=len(stacked_discount_options)+1)
+            stacked_discount_options.append(application)
+            stacked_discount_amount += amount
     delivery = max(Decimal("0.00"), quantize_money(delivery_total) or Decimal("0.00"))
     payable_before_balance = total_after_discounts + delivery
     bonus_subtotal = payable_before_balance if bonus_wallet.is_settlement else total_after_discounts
@@ -484,6 +501,8 @@ async def resolve_benefits_for_user(
         "best_discount": asdict(best_discount) if best_discount is not None else None,
         "stacked_discount_options": stacked_discount_options,
         "priced_items": priced_items,
+        "welcome_balance_rubles": welcome_available,
+        "welcome_expires_at": welcome_expires,
         "stacked_discount_amount": stacked_discount_amount,
         "total_after_discounts": total_after_discounts,
         "cash_total": payable_before_balance - (bonus_rubles if use_bonus_rubles else Decimal("0.00")) if delivery_total is not None else None,

@@ -71,8 +71,6 @@ async def registration_program(request: Request, payload: RegistrationProgramCho
     await record_registration_choice(db, user=current_user, program=payload.program, promo_code=payload.promo_code)
     await db.commit()
     await sync_registration_choice(db, user=current_user)
-    from src.app.services.benefits.loyalty import grant_welcome_bonus_safe
-    await grant_welcome_bonus_safe(db, user=current_user)
     return AuthUserRead.model_validate(current_user)
 
 

@@ -4,6 +4,10 @@ from collections.abc import Mapping
 CATALOG_VARY = "Authorization, X-App-Platform, X-App-Integrity-Platform, User-Agent"
 
 
+def mobile_shop_request(headers: Mapping[str, str]) -> bool:
+    return headers.get("x-app-platform", headers.get("x-app-integrity-platform", "")).lower() in {"ios", "android"}
+
+
 def is_ios_request(headers: Mapping[str, str]) -> bool:
     platform = headers.get("x-app-platform", headers.get("x-app-integrity-platform", "")).lower()
     # Older native clients may not yet send X-App-Platform. Do not classify

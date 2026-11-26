@@ -57,6 +57,8 @@ class Db:
 
 @pytest.fixture
 def wallet(monkeypatch):
+    # This fixture models the legacy native bonus wallet, not settlement payments.
+    monkeypatch.setattr(loyalty, 'LOYALTY_USE_SETTLEMENT_BALANCE', False)
     wallet = SimpleNamespace(counterparty_id=uuid4(),program_id=uuid4())
     monkeypatch.setattr(loyalty,'_ensure_moysklad_wallet',AsyncMock(return_value=wallet))
     return wallet

@@ -38,6 +38,11 @@ def _build_customerorder_positions(*, moysklad_client: MoySkladClient, assortmen
     target = moysklad_money(gross - Decimal(order.delivery_total))
     if subtotal != moysklad_money(Decimal(order.basket_subtotal)) or not 0 <= target <= subtotal: raise ValueError("Order totals are inconsistent; MoySklad sync requires manual review")
     benefits = (order.checkout_snapshot or {}).get("benefits") or {}
+    welcome = sum(moysklad_money(Decimal(row["discount_amount"])) for row in benefits.get("applications", [])
+                  if row.get("source_kind") == "app_welcome")
+    target += welcome  # First reconstruct the goods after ordinary discounts.
+    if target > subtotal:
+        raise ValueError("Welcome discount does not match the goods total")
     priced_items = benefits.get("priced_items") or []
     if priced_items:
         priced_by_id = {row["variant_id"]: row for row in priced_items}
@@ -62,6 +67,16 @@ def _build_customerorder_positions(*, moysklad_client: MoySkladClient, assortmen
         remainder_order = sorted(range(len(weights)), key=lambda i: (weights[i] * eligible_target % eligible_subtotal, -i), reverse=True) if eligible_subtotal else []
         for index in remainder_order[:eligible_target - sum(allocated)]: allocated[index] += 1
         allocated = [amount + fixed_amount for amount, fixed_amount in zip(allocated, fixed)]
+
+    if welcome:
+        if welcome * 2 > target or sum(allocated) != target:
+            raise ValueError("Welcome discount exceeds the goods limit")
+        payable = target - welcome
+        rounded = [line * payable // target for line in allocated]
+        by_remainder = sorted(range(len(allocated)), key=lambda i: -(allocated[i] * payable % target))
+        for i in by_remainder[:payable - sum(rounded)]:
+            rounded[i] += 1
+        allocated = rounded
 
     for item, line_total in zip(order.items, allocated):
         quantity = int(item.quantity)

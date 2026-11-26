@@ -15,6 +15,8 @@ from .rate_limits import _apply_auth_rate_limit
 from .sessions import _build_auth_tokens_response
 from .verification import _create_and_send_verification_code, _verify_latest_email_code
 from .login import _get_login_user, _is_app_review_identity
+from src.app.services.platform_availability import mobile_shop_request
+from src.app.services.benefits.app_welcome import grant_on_email_confirmation
 
 
 async def register_user(request: Request, payload: UserRegisterPayload, db: AsyncSession) -> UserRegistrationStartedResponse:
@@ -61,6 +63,8 @@ async def verify_registration_user(request: Request, payload: UserRegisterVerify
 
     await _verify_latest_email_code(user, payload.code, db)
     user.is_verified = True
+    if mobile_shop_request(request.headers):
+        await grant_on_email_confirmation(db, user)
     await db.commit()
     await db.refresh(user)
     return await _build_auth_tokens_response(user, db)
@@ -108,7 +112,10 @@ async def verify_login_user(request: Request, payload: UserLoginVerifyPayload, d
     if user is None or not user.is_active: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code")
 
     await _verify_latest_email_code(user, payload.code, db)
-    if not user.is_verified: user.is_verified = True
+    if not user.is_verified:
+        user.is_verified = True
+        if mobile_shop_request(request.headers):
+            await grant_on_email_confirmation(db, user)
     await db.commit()
     await db.refresh(user)
     return await _build_auth_tokens_response(user, db)

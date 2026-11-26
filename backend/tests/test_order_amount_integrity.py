@@ -57,6 +57,20 @@ def test_moysklad_positions_preserve_exact_net_total_and_quantities(prices, quan
         assert sum(p["quantity"] for p in positions if p["assortment"]["meta"]["href"].endswith(str(UUID(int=item.variant_id)))) == item.quantity
 
 
+@pytest.mark.parametrize("amount", ["0", "399.99"])
+def test_app_welcome_is_marked_separately_in_both_exports(amount):
+    applications = [{"source_kind": "app_welcome", "discount_amount": amount}]
+    total = Decimal("1000") - Decimal(amount)
+    order = make_order(["800"], [1], total, "200", applications)
+    snapshot = {**order.checkout_snapshot, "checkout_data": {"total": "800"}}
+    note = _format_order_for_amocrm("EP-TEST", snapshot, "CDEK", None, "", Decimal("200"), grand_total=total)
+    for body in [note, order_sync._build_order_description(order)]:
+        assert body.count("Приветственные бонусы приложения") == int(Decimal(amount) > 0)
+        if Decimal(amount):
+            assert "-399.99 ₽ (скидка на товары, не списание с баланса МС)" in body
+        assert f"{total:.2f}" in body
+
+
 def test_inconsistent_totals_do_not_produce_moysklad_positions():
     order = make_order(["10"], [1], "11", "0")
     with pytest.raises(ValueError, match="inconsistent"):
