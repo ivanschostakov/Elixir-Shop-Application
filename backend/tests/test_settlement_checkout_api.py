@@ -58,6 +58,8 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     applied = Decimal("999.38") if scenario == "rounded" else min(gross, balance)
     cash = gross - applied
     remote, invoice = documents(str(gross), str(cash), display_spent_rubles(applied))
+    if scenario == "zero_balance":
+        remote["attributes"] = []
     remote["invoicesOut"] = [ref(IID)]
     stock_href = "https://example.test/product"
     delivery_href = "https://example.test/delivery"

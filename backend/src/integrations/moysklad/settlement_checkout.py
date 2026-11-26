@@ -126,7 +126,8 @@ def validate_settlement_invoice(
     if cash > gross_rubles:
         raise ValueError("Settlement invoice exceeds the order amount")
     spent = money(gross_rubles - cash)
-    if spent > money(maximum_balance_rubles):
+    maximum_balance_rubles = money(maximum_balance_rubles)
+    if spent > maximum_balance_rubles:
         raise ValueError("Settlement exceeds the available balance")
     if requested_balance_rubles is not None and spent != money(requested_balance_rubles):
         raise ValueError("Settlement does not match the amount selected by the customer")
@@ -144,7 +145,14 @@ def validate_settlement_invoice(
         shown = label
     elif label != shown:
         raise ValueError("Settlement invoice spending label is inconsistent")
-    order_label = attributes(order).get(ORDER_SPENT_ATTRIBUTE)
+    order_attrs = attributes(order)
+    order_label = order_attrs.get(ORDER_SPENT_ATTRIBUTE)
+    # The automatic robot may omit the order's zero; its processed invoice must
+    # still explicitly report zero and charge the exact full order amount.
+    if (ORDER_SPENT_ATTRIBUTE not in order_attrs and automatic_balance
+            and requested_balance_rubles is None and maximum_balance_rubles == 0
+            and spent == 0 and shown == 0):
+        order_label = 0
     if isinstance(order_label, bool) or not isinstance(order_label, int) or order_label != shown:
         raise SettlementNotReady("MoySklad order and invoice are not synchronized yet")
     return SettlementInvoice(iid, money(gross_rubles), money(cash), spent, shown)

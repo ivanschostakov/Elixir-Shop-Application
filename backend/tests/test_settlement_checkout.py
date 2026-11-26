@@ -28,10 +28,10 @@ def documents(gross="8257.62", cash="8008.24", displayed=250):
     return order, invoice
 
 
-def validate(order, invoice, **kwargs):
+def validate(order, invoice, *, maximum_balance_rubles=Decimal("1000"), **kwargs):
     return validate_settlement_invoice(order, invoice, order_id=OID, counterparty_id=CID,
         organization_id=ORG, currency_id=CURRENCY, gross_rubles=Decimal(str(order["sum"])) / 100,
-        maximum_balance_rubles=Decimal("1000"), **kwargs)
+        maximum_balance_rubles=maximum_balance_rubles, **kwargs)
 
 
 @pytest.mark.parametrize("value,expected", [("0", 0), ("0.01", 1), ("249.38", 250),
@@ -95,6 +95,44 @@ def test_zero_cash_and_full_balance_are_valid():
     result = validate(*documents("1000", "0", 1000))
     assert result.cash_rubles == 0
     assert result.balance_rubles == 1000
+
+
+def test_automatic_zero_balance_accepts_omitted_order_label_after_robot_finishes():
+    order, invoice = documents("5842.10", "5842.10", 0)
+    order["attributes"] = []
+    result = validate(order, invoice, maximum_balance_rubles=0, automatic_balance=True)
+    assert result.cash_rubles == Decimal("5842.10")
+    assert result.balance_rubles == result.displayed_spent_rubles == 0
+
+
+@pytest.mark.parametrize("auto,maximum,requested,cash,label", [
+    (True, 1, None, "5842.10", 0), (True, 1, None, "5841.10", 1),
+    (False, 0, None, "5842.10", 0), (True, 0, 0, "5842.10", 0),
+])
+def test_other_checkouts_still_require_order_label(auto, maximum, requested, cash, label):
+    order, invoice = documents("5842.10", cash, label)
+    order["attributes"] = []
+    with pytest.raises(SettlementNotReady):
+        validate(order, invoice, maximum_balance_rubles=maximum, automatic_balance=auto,
+                 requested_balance_rubles=requested)
+
+
+@pytest.mark.parametrize("value", [None, False, "0", 1])
+def test_present_invalid_order_label_is_not_omitted_zero(value):
+    order, invoice = documents("5842.10", "5842.10", 0)
+    order["attributes"][0]["value"] = value
+    with pytest.raises(SettlementNotReady):
+        validate(order, invoice, maximum_balance_rubles=0, automatic_balance=True)
+
+
+@pytest.mark.parametrize("missing,exc", [(INVOICE_PROCESSED_ATTRIBUTE, SettlementNotReady),
+                                        (INVOICE_SPENT_ATTRIBUTE, ValueError)])
+def test_automatic_zero_balance_requires_processed_invoice_with_zero_label(missing, exc):
+    order, invoice = documents("5842.10", "5842.10", 0)
+    order["attributes"] = []
+    invoice["attributes"] = [a for a in invoice["attributes"] if a["id"] != missing]
+    with pytest.raises(exc):
+        validate(order, invoice, maximum_balance_rubles=0, automatic_balance=True)
 
 
 def test_current_robots_rounding_uses_exact_cash_and_preserves_legacy_label():
