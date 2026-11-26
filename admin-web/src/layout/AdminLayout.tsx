@@ -33,6 +33,7 @@ const { Header, Sider, Content } = Layout
 
 export function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false)
   const { principal, logout, hasPermission } = useAuth()
@@ -160,7 +161,9 @@ export function AdminLayout() {
       </Sider>
       <Layout>
         <Header className="admin-header">
-          <Button type="text" className="collapse-button" icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setCollapsed((value) => !value)} />
+          <Button type="text" className="mobile-menu-trigger" icon={<MenuUnfoldOutlined />}
+            aria-label={locale === "ru" ? "Открыть меню" : "Open navigation"} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)} />
+          <Button type="text" className="collapse-button" aria-label={locale === "ru" ? "Переключить боковое меню" : "Toggle sidebar"} aria-expanded={!collapsed} icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setCollapsed((value) => !value)} />
           <AutoComplete
             className="global-search"
             value={search}
@@ -186,7 +189,7 @@ export function AdminLayout() {
               trigger={["click"]}
               menu={{ items: [{ key: "logout", icon: <LogoutOutlined />, label: t("logout"), onClick: () => void logout() }] }}
             >
-              <button className="profile-button">
+              <button className="profile-button" aria-label={locale === "ru" ? "Меню профиля" : "Profile menu"}>
                 <Avatar>{initials}</Avatar>
                 <span><Typography.Text strong>{principal?.user.name} {principal?.user.surname}</Typography.Text><Typography.Text type="secondary">{domainLabel(principal?.roles[0] || "admin", locale)}</Typography.Text></span>
               </button>
@@ -195,6 +198,11 @@ export function AdminLayout() {
         </Header>
         <Content className="admin-content"><Outlet /></Content>
       </Layout>
+      <Drawer placement="left" width="min(300px, 88vw)" title="Elixir Shop" open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)} styles={{ body: { padding: 0 } }}>
+        <Menu mode="inline" items={items} selectedKeys={[selectedKey]} defaultOpenKeys={["sales", "crm", "catalog", "content", "settings"]}
+          onClick={({key}) => { if (key.startsWith("/")) { navigate(key); setMobileMenuOpen(false) } }} />
+      </Drawer>
       <Drawer
         title={locale === "ru" ? "Центр внимания" : "Attention center"}
         open={notificationCenterOpen}

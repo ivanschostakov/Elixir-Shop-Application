@@ -607,7 +607,7 @@ function SupportInboxTab() {
               >
                 <List.Item.Meta
                   avatar={<Badge count={item.admin_unread_count} size="small"><Avatar>{item.customer_name.slice(0, 1)}</Avatar></Badge>}
-                  title={<Space><Typography.Text strong ellipsis>{item.customer_name}</Typography.Text><Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag></Space>}
+                  title={<Space wrap><Typography.Text strong>{item.customer_name}</Typography.Text><Tag color={statusColors[item.status]}>{statusLabels[item.status]}</Tag></Space>}
                   description={<div className="table-primary"><span>{item.subject || `#${item.id}`}</span><small>{item.last_message_preview || item.customer_email || "—"}</small><small>{dateTime(item.last_message_at, locale)}</small></div>}
                 />
               </List.Item>

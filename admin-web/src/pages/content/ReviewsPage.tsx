@@ -7,6 +7,7 @@ import { apiRequest, queryString } from "../../api/client"
 import type { Page, Review, ReviewModerationEvent } from "../../api/types"
 import { useAuth } from "../../auth/AuthProvider"
 import { PageHeader } from "../../components/PageHeader"
+import { MediaThumbnail } from "../../components/MediaThumbnail"
 import { parseVisibleColumns, TableToolbar, type TableColumnOption } from "../../components/TableToolbar"
 import { useLanguage } from "../../i18n/LanguageProvider"
 import { domainLabel } from "../../i18n/domain"
@@ -82,7 +83,7 @@ export function ReviewsPage() {
     enabled: Boolean(selected),
   })
   const tableColumns = [
-    { title: copy.author, key: "author", render: (_: unknown, row: Review) => <Space><Avatar>{row.author_name[0] || "G"}</Avatar><div className="table-primary">{row.user_id && hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.author_name}</strong></Link> : <strong>{row.author_name}</strong>}<small>{row.author_email || copy.guest}</small>{row.hide_sender_name ? <Tag color="purple">{copy.anonymous}</Tag> : null}</div></Space> },
+    { title: copy.author, key: "author", width: 230, render: (_: unknown, row: Review) => <div className="table-identity"><Avatar>{row.author_name[0] || "G"}</Avatar><div className="table-primary">{row.user_id && hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.author_name}</strong></Link> : <strong>{row.author_name}</strong>}<small>{row.author_email || copy.guest}</small>{row.hide_sender_name ? <Tag color="purple">{copy.anonymous}</Tag> : null}</div></div> },
     { title: copy.product, dataIndex: "product_name", key: "product", render: (value: string, row: Review) => hasPermission("catalog.read") ? <Link to={`/catalog/products?product_id=${row.product_id}`}>{value}</Link> : value },
     { title: copy.rating, dataIndex: "value", key: "rating", render: (value: number) => <span className="rating-cell"><StarFilled /> {value}</span> },
     { title: copy.flags, key: "flags", render: (_: unknown, row: Review) => <Space size={4} wrap>
@@ -134,6 +135,7 @@ export function ReviewsPage() {
       exportFilters={{ status, rating, flagged, q }}
     />
     <Table<Review>
+      scroll={{ x: 1050 }}
       rowKey="id"
       loading={query.isLoading}
       dataSource={query.data?.items}
@@ -149,7 +151,7 @@ export function ReviewsPage() {
     >
       {selected ? <Space direction="vertical" size={18} style={{ width: "100%" }}>
         <div className="review-author"><Avatar size={48}>{selected.author_name[0] || "G"}</Avatar><div><Typography.Title level={4}>{selected.user_id && hasPermission("customers.read") ? <Link to={`/customers/${selected.user_id}`}>{selected.author_name}</Link> : selected.author_name}</Typography.Title><Typography.Text type="secondary">{selected.author_email || copy.guest} · {dateTime(selected.created_at, locale)}</Typography.Text></div></div>
-        <Descriptions size="small" column={2} bordered>
+        <Descriptions size="small" column={{ xs: 1, sm: 2 }} bordered>
           <Descriptions.Item label={copy.product}>{hasPermission("catalog.read") ? <Link to={`/catalog/products?product_id=${selected.product_id}`}>{selected.product_name}</Link> : selected.product_name}</Descriptions.Item>
           <Descriptions.Item label={copy.rating}><span className="rating-cell"><StarFilled /> {selected.value}</span></Descriptions.Item>
           <Descriptions.Item label={copy.score}><Tag color={flagColor(selected.spam_score)}>{selected.spam_score}</Tag></Descriptions.Item>
@@ -166,7 +168,7 @@ export function ReviewsPage() {
         {selected.attachment_items.length ? <div>
           <Typography.Text strong>{copy.attachments}</Typography.Text>
           <Image.PreviewGroup><div className="review-images">{selected.attachment_items.map((item) => <div className="moderated-image" key={item.id}>
-            <Image src={item.url} width={124} height={124} />
+            <MediaThumbnail src={item.url} size={124} alt={`${copy.attachments} · ${item.id}`} />
             <Tag color={item.moderation_status === "approved" ? "green" : item.moderation_status === "rejected" ? "red" : "blue"}>
               {item.moderation_status === "approved" ? copy.approved : item.moderation_status === "rejected" ? copy.attachmentRejected : copy.attachmentPending}
             </Tag>

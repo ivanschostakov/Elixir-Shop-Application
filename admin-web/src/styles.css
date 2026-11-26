@@ -40,7 +40,21 @@ button, input, textarea, select { font: inherit; }
 .page-header { min-height: 64px; display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; }
 .page-header h2 { margin: 0 0 3px !important; font-size: clamp(24px, 2vw, 30px) !important; letter-spacing: -.03em; }
 .page-header p { margin: 0 !important; }
-.page-actions { flex: 0 0 auto; }
+.page-actions { min-width: 0; max-width: 100%; }
+.page-header, .page-actions > .ant-space, .table-toolbar, .table-toolbar-actions { flex-wrap: wrap; }
+.page-stack, .page-stack > *, .admin-shell > .ant-layout, .ant-col, .global-search { min-width: 0; }
+.mobile-menu-trigger.ant-btn { display: none; }
+.table-identity { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.table-identity .ant-tag { align-self: flex-start; }
+.table-primary, .review-author > div, .ant-descriptions-item-content, .review-full-text, .conversation-list-item,
+.conversation-context, .admin-message-bubble, .ant-table-cell:not(.ant-table-cell-ellipsis) { overflow-wrap: anywhere; }
+.review-author > div, .ant-card-extra, .ant-list-item-meta-content { min-width: 0; }
+.page-stack .ant-card-head-wrapper { flex-wrap: wrap; gap: 6px 12px; padding-block: 8px; }
+.page-stack .ant-card-head-title { flex: 1 1 auto; white-space: normal; overflow-wrap: anywhere; }
+.page-stack .ant-card-extra { max-width: 100%; margin-inline-start: auto; }
+.page-stack .ant-card-extra > .ant-space, .page-stack .ant-card-head-title > .ant-space { flex-wrap: wrap; max-width: 100%; }
+.page-stack .ant-table-content { overflow-x: auto; }
+.media-unavailable { display: inline-flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; padding: 4px; color: #536171; background: #f3f5f7; border: 1px solid #dce0e4; border-radius: 6px; font-size: 12px; text-align: center; }
 .filter-card .ant-card-body { padding: 14px 16px; }
 .filter-card .ant-input-affix-wrapper { width: min(360px, 72vw); }
 .table-toolbar { min-height: 48px; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 1px solid #e7ebef; border-radius: 12px; background: #fff; }
@@ -174,6 +188,11 @@ button, input, textarea, select { font: inherit; }
 .communications-grid { min-height: 640px; }
 .communications-list-card, .communications-detail-card { min-height: 640px; height: 100%; }
 .communications-list-card .ant-card-body { display: flex; flex-direction: column; gap: 14px; max-height: 720px; overflow: auto; }
+.communications-list-card { container-type: inline-size; }
+@container (max-width: 380px) {
+  .communications-list-card .ant-card-head-wrapper { align-items: flex-start; flex-direction: column; }
+  .communications-list-card .ant-card-extra { margin-inline-start: 0; }
+}
 .conversation-list-item { cursor: pointer; margin: 0 -12px; padding: 12px !important; border-radius: 10px; transition: background .15s ease; }
 .conversation-list-item:hover { background: #f4f8f7; }
 .conversation-list-item-active { background: #e8f5f2 !important; }
@@ -220,10 +239,9 @@ button, input, textarea, select { font: inherit; }
   .login-page { grid-template-columns: 1fr; gap: 30px; }
   .login-brand { display: none; }
   .login-card { max-width: 520px; margin: 0 auto; }
-  .profile-button > span { display: none; }
+  .profile-button > span:not(.ant-avatar) { display: none; }
   .admin-header { padding: 0 14px !important; gap: 8px; }
   .global-search { width: auto; flex: 1; }
-  .header-actions .ant-segmented { display: none; }
   .audit-diff { grid-template-columns: 1fr; }
   .queue-health-grid { grid-template-columns: repeat(2, minmax(110px, 1fr)); }
   .banner-form-grid { grid-template-columns: 1fr; }
@@ -236,7 +254,15 @@ button, input, textarea, select { font: inherit; }
 
 @media (max-width: 640px) {
   .admin-sider { display: none; }
-  .collapse-button { display: none; }
+  .collapse-button.ant-btn { display: none; }
+  .mobile-menu-trigger.ant-btn { display: inline-flex; }
+  .queue-health-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .filter-card .ant-input-affix-wrapper { max-width: 100%; }
+  .table-toolbar .ant-space { max-width: 100%; }
+  .admin-content .ant-descriptions-view { overflow-x: auto; }
+  .communications-list-card, .communications-detail-card { min-height: 0; }
+  .communications-list-card .ant-card-body { max-height: 52vh; }
+  .communications-grid { row-gap: 16px; }
   .admin-content { padding: 20px 12px 40px; }
   .page-header { flex-direction: column; }
   .login-page { padding: 20px; }

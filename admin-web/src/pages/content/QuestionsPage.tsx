@@ -177,6 +177,7 @@ export function QuestionsPage() {
         </Space>
       </Card>
       <Table<ProductQuestion>
+        scroll={{ x: 960 }}
         rowKey="id"
         loading={query.isLoading}
         dataSource={query.data?.items}
@@ -192,8 +193,9 @@ export function QuestionsPage() {
           {
             title: copy.author,
             key: "author",
+            width: 230,
             render: (_value, row) => (
-              <Space>
+              <div className="table-identity">
                 <Avatar icon={<QuestionCircleOutlined />}>{row.author_name[0] || "G"}</Avatar>
                 <div className="table-primary">
                   {row.user_id && hasPermission("customers.read")
@@ -201,7 +203,7 @@ export function QuestionsPage() {
                     : <strong>{row.author_name}</strong>}
                   <small>{row.author_email || copy.guest}</small>
                 </div>
-              </Space>
+              </div>
             ),
           },
           {

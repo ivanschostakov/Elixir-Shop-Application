@@ -1,6 +1,7 @@
 import type { Locale } from "../api/types"
 
 const labels: Record<string, { ru: string; en: string }> = {
+  none: { ru: "Нет", en: "None" },
   active: { ru: "Активен", en: "Active" },
   blocked: { ru: "Заблокирован", en: "Blocked" },
   verified: { ru: "Подтверждён", en: "Verified" },

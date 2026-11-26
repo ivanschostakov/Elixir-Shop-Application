@@ -10,6 +10,8 @@ import { PageHeader } from "../../components/PageHeader"
 import { useLanguage } from "../../i18n/LanguageProvider"
 import { internalAppLinkValidator } from "../../utils/internalLinks"
 import { dateTime } from "../../utils/format"
+import { resolveAdminMediaUrl } from "../../utils/media"
+import { MediaThumbnail } from "../../components/MediaThumbnail"
 
 type BannerForm = {
   image_path: string | null
@@ -168,7 +170,7 @@ export function BannersPage() {
 
   const statusLabels = { draft: copy.draft, scheduled: copy.scheduled, published: copy.published, archived: copy.archived }
   const statusColors = { draft: "default", scheduled: "blue", published: "green", archived: "default" }
-  const previewSource = values?.desktop_image_path || values?.image_path || values?.mobile_image_path || null
+  const previewSource = resolveAdminMediaUrl(values?.desktop_image_path || values?.image_path || values?.mobile_image_path)
   const bannerItems = query.data?.items || []
   const now = Date.now()
   const activeBannerCount = bannerItems.filter((banner) => (
@@ -188,7 +190,7 @@ export function BannersPage() {
       <Select allowClear value={statusFilter} placeholder={copy.all} style={{ width: 210 }} options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} onChange={setStatusFilter} />
     </Card>
     <Table<Banner> rowKey="id" loading={query.isLoading} dataSource={filteredBannerItems} pagination={false} columns={[
-      { title: copy.preview, dataIndex: "image_path", render: (_: string, row) => <Image src={row.desktop_image_path || row.image_path || row.mobile_image_path || undefined} width={96} height={54} className="banner-thumb" /> },
+      { title: copy.preview, dataIndex: "image_path", render: (_: string, row) => <MediaThumbnail src={row.desktop_image_path || row.image_path || row.mobile_image_path} size={96} height={54} alt={row.title || copy.preview} /> },
       { title: copy.bannerTitle, dataIndex: "title", render: (value: string | null, row) => <div className="table-primary"><strong>{value || row.image_path}</strong><small>{row.inner_link || row.outer_link || "—"}</small></div> },
       { title: copy.priority, dataIndex: "priority", align: "center" },
       { title: copy.state, dataIndex: "status", render: (value: Banner["status"]) => <Tag color={statusColors[value]}>{statusLabels[value]}</Tag> },
