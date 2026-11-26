@@ -478,9 +478,20 @@ async def test_admin_payment_recheck_uses_provider_result(monkeypatch: pytest.Mo
         payment_status="pending",
         payment_method="sbp",
         payment_invoice_id="invoice-17",
+        order_number="EP-TEST17",
+        grand_total="150.00",
     )
 
     class FakeIntellectMoney:
+        shop_id = "test-shop"
+
+        async def get_purchase_info(self, *, invoice_id: str):
+            assert invoice_id == "invoice-17"
+            return {"Result": {"Eshop": {"EshopId": "test-shop"}, "Invoice": {
+                "InvoiceId": "invoice-17", "OrderId": "EP-TEST17",
+                "InvoicePayerAmount": {"Amount": "150.00", "Currency": "RUB"},
+            }}}
+
         async def get_bank_card_payment_state(self, *, invoice_id: str):
             assert invoice_id == "invoice-17"
             return {"Result": {"PaymentStatus": 5}}

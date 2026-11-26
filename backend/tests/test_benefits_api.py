@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -353,6 +353,7 @@ def test_benefit_check_uses_owned_order_draft_context(monkeypatch):
             ),
             db=db,
             current_user=SimpleNamespace(id=7),
+            request=Request({"type": "http", "headers": []}),
         )
     )
 
@@ -393,7 +394,7 @@ def test_basket_quote_uses_real_lines_and_keeps_delivery_outside_promo(monkeypat
     db = SimpleNamespace(commit=AsyncMock())
     result = asyncio.run(benefits_module.check_my_benefits(
         BenefitCheckPayload(use_basket=True, code="ROMANI", subtotal=Decimal("1"), currency="USD"),
-        db, SimpleNamespace(id=7),
+        request=Request({"type": "http", "headers": []}), db=db, current_user=SimpleNamespace(id=7),
     ))
     get_basket.assert_awaited_once_with(db, 7)
     discountable.assert_awaited_once_with(db, [(11, Decimal("10890.00")), (12, Decimal("100.00"))])
