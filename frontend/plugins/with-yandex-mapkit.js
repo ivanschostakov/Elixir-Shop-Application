@@ -5,8 +5,15 @@ const { AndroidConfig, createRunOncePlugin, withAndroidManifest, withAppDelegate
 const PLUGIN_NAME = "with-yandex-mapkit"
 const GOOGLE_PLAY_SERVICES_LOCATION_VERSION = "21.0.1"
 
-function getMapKitApiKey() {
+function readMapKitApiKey() {
     return process.env.YANDEX_MAPKIT_API_KEY || process.env.EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY
+}
+
+function getMapKitApiKey() {
+    if (process.env.EXPO_NO_DOTENV !== "1") ensureLocalEnvLoaded()
+    const key = readMapKitApiKey()
+    if (!key) throw new Error("Set YANDEX_MAPKIT_API_KEY or EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY before generating the native project.")
+    return key
 }
 
 function stripWrappingQuotes(value) {
@@ -55,14 +62,14 @@ function loadEnvFile(filePath) {
 }
 
 function ensureLocalEnvLoaded() {
-    if (getMapKitApiKey()) {
+    if (readMapKitApiKey()) {
         return
     }
 
     for (const fileName of [".env.local", ".env"]) {
         loadEnvFile(path.join(process.cwd(), fileName))
 
-        if (getMapKitApiKey()) {
+        if (readMapKitApiKey()) {
             return
         }
     }
@@ -117,17 +124,8 @@ function withPinnedGoogleLocationDependency(config) {
 function withYandexMapKit(config) {
     // The published Play binary already has the key in its manifest. A JS export needs no native mods.
     if (process.env.ELIXIR_PLAY_OTA === "1") return config
-    ensureLocalEnvLoaded()
-
-    const apiKey = getMapKitApiKey()
-
-    if (!apiKey) {
-        throw new Error(
-            "Missing YANDEX_MAPKIT_API_KEY (or EXPO_PUBLIC_YANDEX_MAPKIT_API_KEY) for Yandex MapKit. Set it in your shell, local .env file, or EAS environment.",
-        )
-    }
-
     const withIos = withAppDelegate(config, (config) => {
+        const apiKey = getMapKitApiKey()
         const appDelegate = config.modResults
 
         if (appDelegate.language !== "swift") {
@@ -203,7 +201,7 @@ function withYandexMapKit(config) {
         AndroidConfig.Manifest.addMetaDataItemToMainApplication(
             mainApplication,
             "YANDEX_MAPKIT_API_KEY",
-            apiKey,
+            getMapKitApiKey(),
         )
         config.modResults = androidManifest
         return config

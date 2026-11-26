@@ -1,6 +1,7 @@
 import { DownloadOutlined, LineChartOutlined } from "@ant-design/icons"
 import { useQuery } from "@tanstack/react-query"
-import { Button, Card, Col, Progress, Row, Segmented, Space, Statistic, Table, Tabs, Tag, Typography, message } from "antd"
+import { Button, Card, Col, DatePicker, Progress, Row, Segmented, Space, Statistic, Table, Tabs, Tag, Typography, message } from "antd"
+import dayjs from "dayjs"
 import { useState } from "react"
 import { Link, useSearchParams } from "react-router-dom"
 import { apiDownload, apiRequest } from "../api/client"
@@ -25,8 +26,12 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url)
 }
 
-export function analyticsCsvPath(section: AnalyticsSection, days: number) {
-  return `/analytics/${section}.csv?days=${days}`
+type DateRange = [string, string]
+function analyticsQuery(days: number, range?: DateRange) {
+  return new URLSearchParams(range ? { date_from: range[0], date_to: range[1] } : { days: String(days) }).toString()
+}
+export function analyticsCsvPath(section: AnalyticsSection, days: number, range?: DateRange) {
+  return `/analytics/${section}.csv?${analyticsQuery(days, range)}`
 }
 
 export function AnalyticsPage() {
@@ -35,18 +40,31 @@ export function AnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedDays = Number(searchParams.get("days") || 30)
   const days = [7, 30, 90, 365].includes(requestedDays) ? requestedDays : 30
+  const from = searchParams.get("date_from"), to = searchParams.get("date_to")
+  const range: DateRange | undefined = from && to ? [from, to] : undefined
+  const periodQuery = analyticsQuery(days, range)
+  const selectPeriod = (preset: number, dates?: DateRange) => setSearchParams(current => {
+    const next = new URLSearchParams(current)
+    next.delete("days"); next.delete("date_from"); next.delete("date_to")
+    new URLSearchParams(analyticsQuery(preset, dates)).forEach((v, k) => next.set(k, v))
+    return next
+  })
   const requestedTab = searchParams.get("tab") as AnalyticsSection | null
   const tab: AnalyticsSection = requestedTab && ["sales", "customers", "products", "discounts", "marketing"].includes(requestedTab) ? requestedTab : "sales"
   const [openGranularity, setOpenGranularity] = useState<"daily" | "monthly">("daily")
-  const query = useQuery({ queryKey: ["analytics", days], queryFn: () => apiRequest<AnalyticsSnapshot>(`/analytics?days=${days}`), refetchInterval: 60_000 })
+  const query = useQuery({ queryKey: ["analytics", periodQuery], queryFn: () => apiRequest<AnalyticsSnapshot>(`/analytics?${periodQuery}`), refetchInterval: 60_000 })
   const data = query.data
   const copy = locale === "ru"
     ? { title: "Аналитика", description: "Продажи, клиенты, товары, скидки и маркетинг", period: "Период", export: "CSV", sales: "Продажи", customers: "Клиенты", products: "Товары", discounts: "Скидки", marketing: "Маркетинг", revenue: "Выручка", paidOrders: "Оплаченные заказы", averageOrder: "Средний чек", units: "Единиц", repeat: "Повторные", trend: "Динамика", salesTrendExplanation: "Выручка — сумма оплаченных заказов за период. Оплаченные заказы — их количество; наведите на дату для точных значений.", status: "Статус", count: "Кол-во", newCustomers: "Новые", active: "Активные", inactive: "Неактивные", abandoned: "Брошенные корзины", ltv: "LTV", orders: "Заказы", stock: "Остаток", lowStock: "Низкие остатки", source: "Источник", applications: "Применений", totalDiscount: "Сумма скидок", campaigns: "Кампании", delivery: "Доставка", clicks: "Клики", failures: "Ошибки", generated: "Обновлено", appOpens: "Открытия приложения", uniqueCustomers: "Уникальные клиенты", averageOpens: "Открытий на клиента", opensExplanation: "Открытия — все зафиксированные запуски приложения. Уникальные клиенты — число разных авторизованных пользователей, открывавших приложение в периоде.", noOpens: "За выбранный период открытий нет", daily: "По дням", monthly: "По месяцам", views: "Просмотры", viewers: "Смотрели", conversion: "Конверсия в покупку", buyers: "Покупатели", referralProfiles: "Реферальные профили" }
     : { title: "Analytics", description: "Sales, customers, products, discounts and marketing", period: "Period", export: "CSV", sales: "Sales", customers: "Customers", products: "Products", discounts: "Discounts", marketing: "Marketing", revenue: "Revenue", paidOrders: "Paid orders", averageOrder: "Average order", units: "Units", repeat: "Repeat", trend: "Trend", salesTrendExplanation: "Revenue is the value of paid orders in the period. Paid orders is their count; hover a date for exact values.", status: "Status", count: "Count", newCustomers: "New", active: "Active", inactive: "Inactive", abandoned: "Abandoned carts", ltv: "LTV", orders: "Orders", stock: "Stock", lowStock: "Low stock", source: "Source", applications: "Applications", totalDiscount: "Discount total", campaigns: "Campaigns", delivery: "Delivery", clicks: "Clicks", failures: "Failures", generated: "Updated", appOpens: "App opens", uniqueCustomers: "Unique customers", averageOpens: "Opens per customer", opensExplanation: "Opens is every recorded app launch. Unique customers is the number of distinct signed-in users who opened the app in the period.", noOpens: "No app opens in this period", daily: "Daily", monthly: "Monthly", views: "Views", viewers: "Viewers", conversion: "Purchase conversion", buyers: "Buyers", referralProfiles: "Referral profiles" }
+  const authTitle = locale === "ru" ? "Регистрации и входы по дням" : "Daily registrations and sign-ins"
+  const registrationLabel = locale === "ru" ? "Регистрации" : "Registrations"
+  const signInLabel = locale === "ru" ? "Входы" : "Sign-ins"
+  const dailyAuth = data?.customers.auth_daily ?? []
   const openTrend = data?.customers.app_opens[openGranularity] || []
   const exportCsv = async (section: AnalyticsSection) => {
     try {
-      const result = await apiDownload(analyticsCsvPath(section, days))
+      const result = await apiDownload(analyticsCsvPath(section, days, range))
       downloadBlob(result.blob, result.fileName || `analytics-${section}-${days}d.csv`)
     } catch (error) {
       void message.error((error as Error).message)
@@ -65,7 +83,15 @@ export function AnalyticsPage() {
     <PageHeader
       title={copy.title}
       description={copy.description}
-      actions={<Space><Segmented value={days} onChange={(value) => setSearchParams((current) => { const next = new URLSearchParams(current); next.set("days", String(value)); return next })} options={[7, 30, 90, 365].map((value) => ({ label: `${value}${locale === "ru" ? "д" : "d"}`, value }))} />{exportAction}</Space>}
+      actions={<Space wrap>
+        <Segmented value={range ? "range" : days} onChange={value => selectPeriod(Number(value))}
+          options={[7, 30, 90, 365].map(value => ({ label: `${value}${locale === "ru" ? "д" : "d"}`, value }))} />
+        <DatePicker.RangePicker format="DD.MM.YYYY" placeholder={locale === "ru" ? ["С даты", "По дату"] : ["From date", "To date"]}
+          value={range ? [dayjs(range[0]), dayjs(range[1])] : null}
+          maxDate={dayjs(new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Yekaterinburg" }).format(new Date()))}
+          disabledDate={(date, info) => Boolean(info.from && Math.abs(date.diff(info.from, "day")) >= 365)}
+          onChange={dates => dates?.[0] && dates[1] ? selectPeriod(days, [dates[0].format("YYYY-MM-DD"), dates[1].format("YYYY-MM-DD")]) : selectPeriod(30)} />
+        {exportAction}</Space>}
     />
     <QueryState loading={query.isLoading} error={query.isError} empty={!data} onRetry={() => void query.refetch()} />
     {data ? <>
@@ -90,7 +116,7 @@ export function AnalyticsPage() {
               ariaLabel={`${copy.sales}: ${copy.trend}`}
               emptyText={locale === "ru" ? "За выбранный период продаж нет" : "No sales in this period"}
               description={copy.salesTrendExplanation}
-              data={data.sales.trend.map((point) => ({ key: point.date, label: point.date.slice(5), tooltipLabel: point.date, values: { revenue: Number(point.revenue), orders: point.orders } }))}
+              data={data.sales.trend.map((point) => ({ key: point.date, label: dayjs(point.date).format("DD.MM"), tooltipLabel: dayjs(point.date).format("DD.MM.YYYY"), values: { revenue: Number(point.revenue), orders: point.orders } }))}
               series={[
                 { key: "revenue", label: copy.revenue, color: "#0f766e", formatValue: (value) => money(value, "RUB", locale) },
                 { key: "orders", label: copy.paidOrders, color: "#6366f1", axis: "right", formatValue: (value) => new Intl.NumberFormat(locale === "ru" ? "ru-RU" : "en-US").format(value) },
@@ -121,12 +147,30 @@ export function AnalyticsPage() {
               ariaLabel={copy.appOpens}
               emptyText={copy.noOpens}
               description={copy.opensExplanation}
-              data={openTrend.map((point) => ({ key: point.period, label: openGranularity === "daily" ? point.period.slice(5, 10) : point.period.slice(0, 7), tooltipLabel: point.period.slice(0, 10), values: { opens: point.opens, customers: point.customers } }))}
+              data={openTrend.map((point) => ({ key: point.period, label: dayjs(point.period).format(openGranularity === "daily" ? "DD.MM" : "MM.YYYY"), tooltipLabel: dayjs(point.period).format(openGranularity === "daily" ? "DD.MM.YYYY" : "MM.YYYY"), values: { opens: point.opens, customers: point.customers } }))}
               series={[
                 { key: "opens", label: copy.appOpens, color: "#6366f1" },
                 { key: "customers", label: copy.uniqueCustomers, color: "#0f766e" },
               ]}
             />
+          </Card>
+          <Card title={<Space><LineChartOutlined />{authTitle}</Space>}>
+            <MetricLineChart ariaLabel={authTitle}
+              emptyText={locale === "ru" ? "За эти даты учёт ещё не вёлся" : "No tracking data for these dates"}
+              description={locale === "ru"
+                ? "Регистрация считается один раз, входы считаются отдельно. Даты по Уфе. Прочерк: учёт ещё не вёлся. Первый день учёта может быть неполным."
+                : "Registration counts once; sign-ins count separately. Dates use Ufa time. A dash means no tracking data; the first tracked day may be partial."}
+              data={dailyAuth.flatMap(p => p.registrations === null || p.logins === null ? [] : [{
+                key: p.date, label: dayjs(p.date).format("DD.MM"), tooltipLabel: dayjs(p.date).format("DD.MM.YYYY"),
+                values: { registrations: p.registrations, logins: p.logins },
+              }])}
+              series={[{ key: "registrations", label: registrationLabel, color: "#6366f1" }, { key: "logins", label: signInLabel, color: "#0f766e" }]} />
+            <Table rowKey="date" size="small" dataSource={[...dailyAuth].reverse()} pagination={{ pageSize: 7, showSizeChanger: false }}
+              columns={[
+                { title: locale === "ru" ? "Дата" : "Date", dataIndex: "date", render: value => dayjs(value).format("DD.MM.YYYY") },
+                { title: registrationLabel, dataIndex: "registrations", align: "right", render: n => n ?? "—" },
+                { title: signInLabel, dataIndex: "logins", align: "right", render: n => n ?? "—" },
+              ]} />
           </Card>
           <Table rowKey="user_id" dataSource={data.customers.top_customers} pagination={{ pageSize: 10 }} columns={[{ title: copy.customers, render: (_: unknown, row) => <div className="table-primary">{hasPermission("customers.read") ? <Link to={`/customers/${row.user_id}`}><strong>{row.name}</strong></Link> : <strong>{row.name}</strong>}<small>{row.email || `#${row.user_id}`}</small></div> }, { title: copy.orders, dataIndex: "orders", align: "right" }, { title: copy.ltv, dataIndex: "ltv", render: (value: string) => money(value, "RUB", locale) }]} />
           <Row gutter={[16, 16]} className="analytics-device-grid">

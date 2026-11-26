@@ -13,6 +13,13 @@ from src.database.limits import (
 )
 
 
+class AppRewardsRead(BaseModel):
+    welcome_balance_rubles: Decimal
+    welcome_expires_at: datetime | None
+    text_review_points: int
+    photo_review_points: int
+
+
 class BenefitCheckPayload(BaseModel):
     draft_id: int | None = Field(default=None, ge=1)
     use_basket: bool = False

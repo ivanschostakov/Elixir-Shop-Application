@@ -16,6 +16,7 @@ from .utils import _fit_person_name, _fit_telegram_username, _normalize_telegram
 from .telegram_identity import _apply_telegram_profile, _is_telegram_user_phone_confirmed, _validate_telegram_init_data
 from .rate_limits import _apply_auth_rate_limit
 from .counterparty import _get_counterparty_for_phone, _sync_phone_identity_from_counterparty
+from src.app.services.auth.events import record_auth_event
 from .sessions import _build_auth_tokens_response
 
 
@@ -63,6 +64,7 @@ async def link_telegram_contact_to_user(db: AsyncSession, *, telegram_user_id: i
     if user_by_telegram is not None and user_by_phone is not None and user_by_telegram.id != user_by_phone.id: return None, "telegram_user_and_phone_belong_to_different_users"
 
     target_user = user_by_telegram or user_by_phone
+    registering = target_user is None or not target_user.is_verified
 
     try:
         if target_user is None: target_user = await create_user(db, UserCreate(email=None, password_hash=hash_password(secrets.token_urlsafe(32)), name=_fit_person_name(first_name, "Telegram"), surname=_fit_person_name(last_name, "User"), phone_number=normalized_phone, is_verified=True, moysklad_counterparty_id=counterparty_id, telegram_user_id=telegram_user_id, telegram_username=_fit_telegram_username(username), telegram_phone_confirmed_at=now,), commit=False,)
@@ -74,6 +76,8 @@ async def link_telegram_contact_to_user(db: AsyncSession, *, telegram_user_id: i
             target_user.is_verified = True
             _apply_telegram_profile(target_user, telegram_user)
 
+        if registering:
+            await record_auth_event(db, target_user.id, registration=True)
         await db.commit()
         await db.refresh(target_user)
         return target_user, None

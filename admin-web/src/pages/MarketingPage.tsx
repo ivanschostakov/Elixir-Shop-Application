@@ -1,3 +1,4 @@
+import { LocalDateTimeInput } from "../components/LocalDateTimeInput"
 import { CameraOutlined, DeleteOutlined, DownloadOutlined, EditOutlined, EyeOutlined, HistoryOutlined, PlusOutlined, RocketOutlined } from "@ant-design/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Alert, Button, Card, Col, DatePicker, Drawer, Form, Input, InputNumber, List, Modal, Progress, Row, Select, Space, Statistic, Switch, Table, Tabs, Tag, Typography, message } from "antd"
@@ -357,7 +358,7 @@ export function MarketingPage() {
     const type = segmentFieldTypes[selectedField] || "text"
     if (type === "boolean") return <Select options={[{ value: true, label: locale === "ru" ? "Да" : "Yes" }, { value: false, label: locale === "ru" ? "Нет" : "No" }]} />
     if (type === "number") return <InputNumber style={{ width: "100%" }} />
-    if (type === "date") return <Input type="datetime-local" />
+    if (type === "date") return <LocalDateTimeInput />
     if (type === "ids") return <Select mode="tags" tokenSeparators={[","]} />
   if (type === "campaign") return <InputNumber min={1} style={{ width: "100%" }} />
     if (selectedField === "customer_type") return <Select options={["first_time", "repeat", "no_orders"].map((value) => ({ value, label: domainLabel(value, locale) }))} />
@@ -573,7 +574,7 @@ export function MarketingPage() {
     </Drawer>
 
     <Modal open={Boolean(launchTarget)} title={copy.launchTitle} okText={launchAt ? copy.schedule : copy.launchNow} confirmLoading={launch.isPending} okButtonProps={{ danger: true, disabled: launchCount < 1 }} onCancel={() => { setLaunchTarget(null); setLaunchAt(null) }} onOk={() => launchTarget && launch.mutate({ campaign: launchTarget, count: launchCount })}>
-      <Space direction="vertical" size={16} style={{ width: "100%" }}><Alert type="warning" showIcon message={copy.launchWarning} /><Row gutter={12}><Col span={12}><Statistic title={copy.segment} value={launchTarget?.segment_name || "—"} /></Col><Col span={12}><Statistic title={copy.reachable} value={launchCount} /></Col></Row><div><Typography.Text strong>{copy.scheduleTime}</Typography.Text><DatePicker showTime value={launchAt} minDate={dayjs()} style={{ width: "100%", marginTop: 8 }} onChange={setLaunchAt} /></div></Space>
+      <Space direction="vertical" size={16} style={{ width: "100%" }}><Alert type="warning" showIcon message={copy.launchWarning} /><Row gutter={12}><Col span={12}><Statistic title={copy.segment} value={launchTarget?.segment_name || "—"} /></Col><Col span={12}><Statistic title={copy.reachable} value={launchCount} /></Col></Row><div><Typography.Text strong>{copy.scheduleTime}</Typography.Text><DatePicker format="DD.MM.YYYY HH:mm" showTime value={launchAt} minDate={dayjs()} style={{ width: "100%", marginTop: 8 }} onChange={setLaunchAt} /></div></Space>
     </Modal>
     <Drawer width={520} open={automationDrawer} title={editingAutomation ? (locale === "ru" ? editingAutomation.name_ru : editingAutomation.name_en) : copy.automations} onClose={() => setAutomationDrawer(false)} extra={<Button type="primary" loading={saveAutomation.isPending} onClick={() => void automationForm.validateFields().then((values) => saveAutomation.mutate(values))}>{copy.save}</Button>}>
       <Alert type="info" showIcon message={copy.triggerHint} className="drawer-alert" />

@@ -62,17 +62,17 @@ test("form adapters preserve keyboard behavior, offsets and the chat's disabled 
     }
 })
 
-test("iOS uses a native history menu and ignores unavailable actions", () => {
+for (const platform of ["ios", "android"]) test(`${platform} builds use a native history menu and ignore unavailable actions`, () => {
     const selected = []
     const { AppMenu } = load("components/platform/app-menu.tsx", { ...base,
-        "react-native": { Platform: { OS: "ios" }, View: "View", Text: "Text", StyleSheet: { create: x => x, absoluteFill: {} } },
+        "react-native": { Platform: { OS: platform }, View: "View", Text: "Text", StyleSheet: { create: x => x, absoluteFill: {} } },
         "react-native-svg": { default: "Svg", Path: "Path" },
-        "@react-native-menu/menu": { MenuView: "Menu" },
+        "./native-menu-view": { MenuView: "Menu" },
         "@/components/platform/app-surface": { AppSurface: "Surface" },
         "@/components/platform/app-action-sheet": { useAppActionSheet: () => () => {} },
     })
     const menu = AppMenu({ label: "History", dark: false, options: [{ id: "12", label: "Order", detail: "Closed" }, { id: "13", label: "Unavailable", disabled: true }], value: "12", onChange: id => selected.push(id) })
-    assert.equal(menu.props.actions[0].title, "Order")
+    assert.equal(menu.props.actions[0].title, platform === "android" ? "✓ Order · Closed" : "Order")
     menu.props.onPressAction({ nativeEvent: { event: "unknown" } })
     menu.props.onPressAction({ nativeEvent: { event: "13" } })
     menu.props.onPressAction({ nativeEvent: { event: "12" } })
@@ -97,9 +97,10 @@ test("shared action sheets map selections, cancellation and disabled actions con
     assert.equal(closed, 4)
 })
 
-for (const platform of ["web", "android"]) test(`${platform} history opens a selection sheet without loading the native menu`, () => {
+for (const platform of ["web", "android"]) test(`${platform} history opens a selection sheet when the native menu is unavailable`, () => {
     let sheet, selection
     const { AppMenu } = load("components/platform/app-menu.tsx", { ...base,
+        "./native-menu-view": { MenuView: null },
         "react-native": { Platform: { OS: platform }, Pressable: "Button", View: "View", Text: "Text", StyleSheet: { create: x => x, absoluteFill: {} } },
         "react-native-svg": { default: "Svg", Path: "Path" },
         "@/components/platform/app-surface": { AppSurface: "Surface" },
@@ -198,7 +199,7 @@ test("native level sliders save only deliberate touches and report each bounded 
 
 test("Play slider leaves an unanswered score empty and supports drag and accessibility adjustments", () => {
     const changes = []
-    const { AppLevelSlider } = load("components/platform/app-level-slider.android.tsx", {
+    const { AppLevelSlider } = load("components/platform/app-level-slider.android.play.tsx", {
         ...base, react: { useRef: value => ({ current: value }), useState: () => [120, () => {}] },
         "react-native": { View: "View", StyleSheet: { create: value => value } },
     })

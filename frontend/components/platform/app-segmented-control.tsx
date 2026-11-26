@@ -4,7 +4,7 @@ import { NativeChatModeControl } from "@/components/platform/native-controls"
 import { useReducedMotion } from "@/hooks/use-reduced-motion"
 
 export type SegmentOption<T extends string> = { value: T; label: string; accessibilityLabel?: string; badge?: number }
-type SegmentStyles = {
+export type SegmentStyles = {
     modeSwitcher?: StyleProp<ViewStyle>; modeIndicator?: StyleProp<ViewStyle>; modeButton?: StyleProp<ViewStyle>
     modeText?: StyleProp<TextStyle>; modeTextActive?: StyleProp<TextStyle>; modeBadge?: StyleProp<ViewStyle>; modeBadgeText?: StyleProp<TextStyle>
     solidModeSwitcher?: StyleProp<ViewStyle>; solidModeSelection?: StyleProp<ViewStyle>; solidModeText?: StyleProp<TextStyle>; nativeControl?: StyleProp<ViewStyle>

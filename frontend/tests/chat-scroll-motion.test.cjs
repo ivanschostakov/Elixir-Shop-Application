@@ -79,6 +79,22 @@ test("Android retains its resize-based bottom follow", t => {
     assert.deepEqual(h.calls, [{ animated: false }])
 })
 
+test("Android blurs only the chat material and fades the edge facing the messages", () => {
+    const { AppEdgeMaterial } = loadTs("components/platform/app-edge-material.android.tsx", {
+        "react-native": { ScrollView: "Fade", StyleSheet: { create: styles => styles } },
+        "@/components/platform/app-blur-surface": { AppBlurSurface: "Blur" },
+    })
+    for (const topEdge of [true, false]) {
+        const layer = AppEdgeMaterial({ dark: topEdge, topEdge, style: { height: 80 } })
+        assert.deepEqual(layer.props.fadingEdgeLength, topEdge ? { start: 0, end: 32 } : { start: 32, end: 0 })
+        assert.equal(layer.props.pointerEvents, "none")
+        assert.equal(layer.props.scrollEnabled, false)
+        assert.equal(layer.props.importantForAccessibility, "no-hide-descendants")
+        assert.equal(layer.props.children.props.androidBlur, true)
+        assert.equal(layer.props.children.props.tint, topEdge ? "systemUltraThinMaterialDark" : "systemUltraThinMaterialLight")
+    }
+})
+
 test("every composer gets the same spacing, safe area and keyboard gap", () => {
     const { ChatComposerDock } = loadTs("components/platform/chat-layout.tsx", {
         react: { createContext: () => ({}), forwardRef: fn => fn, useContext: () => null, useEffect: () => {}, useState: () => [false, () => {}] },

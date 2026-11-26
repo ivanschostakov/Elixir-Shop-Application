@@ -1,3 +1,10 @@
+export type AppRewardsResponse = {
+    welcome_balance_rubles: string
+    welcome_expires_at: string | null
+    text_review_points: number
+    photo_review_points: number
+}
+
 export type BenefitCheckPayload = {
     draft_id?: number | null
     use_basket?: boolean

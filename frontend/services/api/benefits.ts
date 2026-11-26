@@ -1,10 +1,14 @@
 import { ENDPOINTS } from "@/services/api/constants"
-import { ApiError, apiPost } from "@/services/api/client"
+import { ApiError, apiGet, apiPost } from "@/services/api/client"
 import { commerceAccountRevision } from "@/services/commerce-account"
-import type { BenefitCheckPayload, BenefitCheckResponse } from "@/services/api/benefits.types"
+import type { AppRewardsResponse, BenefitCheckPayload, BenefitCheckResponse } from "@/services/api/benefits.types"
 
 function benefitsPath(path: string) {
     return `${ENDPOINTS.USERS}/me/benefits${path}`
+}
+
+export function getMyAppRewards() {
+    return apiGet<AppRewardsResponse>(benefitsPath("/rewards"))
 }
 
 export function checkMyBenefits(payload: BenefitCheckPayload) {

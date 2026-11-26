@@ -202,7 +202,7 @@ def test_app_open_trend_query_has_stable_postgresql_grouping_expressions():
     start = datetime(2026, 6, 28, tzinfo=timezone.utc)
 
     for granularity in ("daily", "monthly"):
-        query = admin_analytics._app_open_trend_query(start=start, granularity=granularity)
+        query = admin_analytics._app_open_trend_query(start=start, end=start, granularity=granularity)
         compiled = query.compile(dialect=postgresql.dialect())
         sql = str(compiled)
 
@@ -382,6 +382,7 @@ def test_admin_analytics_helpers_escape_csv_and_calculate_percent():
 
     customer_snapshot = {
         "customers": {
+            "auth_daily": [{"date": "2026-07-27", "registrations": 1, "logins": 2}],
             "app_opens": {
                 "daily": [{"period": "2026-07-27", "opens": 12, "customers": 5}],
             },
@@ -389,7 +390,7 @@ def test_admin_analytics_helpers_escape_csv_and_calculate_percent():
     }
     customer_csv = analytics_csv("customers", customer_snapshot).decode("utf-8-sig")
     assert "period,opens,unique_customers" in customer_csv
-    assert "2026-07-27,12,5" in customer_csv
+    assert "2026-07-27,12,5,1,2" in customer_csv
 
     product_snapshot = {
         "products": {

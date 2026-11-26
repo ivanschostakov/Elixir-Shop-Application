@@ -1,3 +1,4 @@
+import { LocalDateTimeInput } from "../../components/LocalDateTimeInput"
 import { BarChartOutlined, EditOutlined, PlusOutlined, UploadOutlined } from "@ant-design/icons"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Alert, Button, Card, Col, Descriptions, Form, Image, Input, InputNumber, Modal, Row, Select, Space, Statistic, Table, Tag, Upload, message } from "antd"
@@ -244,8 +245,8 @@ export function BannersPage() {
               <Form.Item name="status" label={copy.state} style={{ flex: 1 }}><Select options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
             </div>
             <div className="banner-form-pair">
-              <Form.Item name="starts_at" label={copy.starts} style={{ flex: 1 }}><Input type="datetime-local" /></Form.Item>
-              <Form.Item name="ends_at" label={copy.ends} style={{ flex: 1 }}><Input type="datetime-local" /></Form.Item>
+              <Form.Item name="starts_at" label={copy.starts} style={{ flex: 1 }}><LocalDateTimeInput /></Form.Item>
+              <Form.Item name="ends_at" label={copy.ends} style={{ flex: 1 }}><LocalDateTimeInput /></Form.Item>
             </div>
             <Form.Item name="audience_json_text" label={copy.audience} rules={[{ validator: async (_, value) => { parseJsonObject(value || "{}", copy.invalidAudience) } }]}><Input.TextArea rows={7} /></Form.Item>
           </div>

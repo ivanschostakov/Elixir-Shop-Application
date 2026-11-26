@@ -133,6 +133,7 @@ export function SupportChatScreen({
     const headerTop = top + 8
     const contentTop = embedded ? headerInset : headerTop + 52
     const iosChat = Platform.OS === "ios"
+    const overlaysChatChrome = iosChat || Platform.OS === "android"
     const isHistorical = Boolean(conversation && conversation.id !== inbox?.active?.id)
     const contentBottom = isHistorical ? 0 : composerHeight
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
@@ -363,7 +364,7 @@ export function SupportChatScreen({
                 </View> : null}
 
                 <AppFormLayout
-                    enabled={!embedded && !iosChat}
+                    enabled={!embedded && !overlaysChatChrome}
 
                     contentContainerStyle={chatStyles.keyboardContent}
 
@@ -442,8 +443,8 @@ export function SupportChatScreen({
                         {!isHistorical ? (
                             <ChatComposerDock
                                 onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
-                                pointerEvents={iosChat ? "box-none" : "auto"}
-                                style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay]}
+                                pointerEvents={overlaysChatChrome ? "box-none" : "auto"}
+                                style={[chatStyles.composerDock, overlaysChatChrome && chatStyles.composerDockOverlay]}
                             >
                                 {voiceStatusVisible ? (
                                     <View style={chatStyles.voiceStatusPill}>
@@ -480,7 +481,7 @@ export function SupportChatScreen({
                         ) : null}
                     </View>
                 </AppFormLayout>
-                {!embedded && iosChat ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
+                {!embedded && overlaysChatChrome ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
                 <AttachmentSheet
                     allowFiles={false}
                     onClose={closeAttachmentSheet}

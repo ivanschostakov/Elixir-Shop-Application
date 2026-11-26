@@ -1,12 +1,12 @@
 import { getTranslationLocale } from "@/i18n/translations"
 import type { SettlementResponse } from "@/services/api/settlement"
 
-export function formatSettlementMoney(value: string | number | null | undefined): string {
+export function formatSettlementMoney(value: string | number | null | undefined, minimumFractionDigits: 0 | 2 = 2): string {
     if (value === null || value === undefined || value === "") return "—"
     const amount = Number(value)
     if (!Number.isFinite(amount)) return "—"
     return new Intl.NumberFormat(getTranslationLocale(), {
-        style: "currency", currency: "RUB", minimumFractionDigits: 2, maximumFractionDigits: 2,
+        style: "currency", currency: "RUB", minimumFractionDigits, maximumFractionDigits: 2,
     }).format(amount)
 }
 

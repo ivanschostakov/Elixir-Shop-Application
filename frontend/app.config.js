@@ -108,14 +108,18 @@ module.exports = () => {
     const androidCloudProjectNumber = getEnvValue("EXPO_PUBLIC_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER")
     const baseConfig = appJson.expo
     const playOta = process.env.ELIXIR_PLAY_OTA === "1"
+    const androidStore = process.env.ELIXIR_ANDROID_STORE === "1"
+    if (playOta && androidStore) throw new Error("Choose one Android update runtime per build or export.")
+    const androidVersion = androidStore ? "0.1.2" : "0.1.1"
     const baseExtra = baseConfig.extra ?? {}
     const baseAppIntegrity = baseExtra.appIntegrity ?? {}
 
     return {
         expo: {
             ...baseConfig,
-            ...(playOta && {
-                android: { ...baseConfig.android, runtimeVersion: "0.1.1" },
+            ...((playOta || androidStore) && {
+                version: androidVersion,
+                android: { ...baseConfig.android, runtimeVersion: androidVersion },
                 updates: { enabled: true, url: `https://u.expo.dev/${baseConfig.extra.eas.projectId}` },
             }),
             extra: compactObject({

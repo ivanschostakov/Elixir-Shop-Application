@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Keyboard, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native"
-import DateTimePicker from "@react-native-community/datetimepicker"
+import DateTimePicker, { DateTimePickerAndroid } from "@react-native-community/datetimepicker"
 import { AppPickerPanel } from "@/components/platform/app-picker"
 
 export type AppTimePickerProps = {
@@ -16,7 +16,14 @@ export function AppTimePicker({ label, value, onChange, disabled, locale, dark, 
         // Keep the wall-clock selection independent of today's DST transition.
         const [hour, minute] = value.split(":").map(Number)
         const selected = new Date(2000, 0, 15, hour, minute)
-        setDraft(selected)
+        if (Platform.OS === "android") {
+            DateTimePickerAndroid.open({
+                value: selected, mode: "time", is24Hour: true,
+                onChange: (event, date) => { if (event.type === "set" && date) commit(date) },
+            })
+        } else {
+            setDraft(selected)
+        }
     }
     const trigger = <Pressable accessibilityRole="button" accessibilityLabel={label + ", " + value} accessibilityState={{ disabled }} disabled={disabled || Platform.OS === "web"} onPress={open}
         style={({ pressed }) => [styles.button, { backgroundColor: dark ? "#263A31" : "#EAF3ED", opacity: disabled ? 0.5 : pressed ? 0.7 : 1 }]}>

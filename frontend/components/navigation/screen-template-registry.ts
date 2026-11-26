@@ -46,7 +46,7 @@ export function getDefaultScreenChromeTemplate(
         }
     }
 
-    if (pathname === ROUTES.home) {
+    if (pathname === ROUTES.home || pathname === ROUTES.profileDiscounts) {
         return {
             footer: "nav",
             header: "none",

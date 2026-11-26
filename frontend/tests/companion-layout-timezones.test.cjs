@@ -45,7 +45,7 @@ test("stationary chat chrome and retained conversations share keyboard motion wi
     assert.ok(!nodes.some(node => tag(node) === "KeyboardAvoidingView"), "Do not add a second keyboard avoidance layer")
     const composerStyle = composer.openingElement.attributes.properties.find(attr => attr.name?.text === "style").getText(source)
     assert.match(composerStyle, /composerDockInFlow/)
-    assert.equal(nodes.find(node => ts.isVariableDeclaration(node) && node.name.getText(source) === "overlaysChatChrome").initializer.getText(source), 'Platform.OS === "ios"')
+    assert.equal(nodes.find(node => ts.isVariableDeclaration(node) && node.name.getText(source) === "overlaysChatChrome").initializer.getText(source), 'iosChat || Platform.OS === "android"')
     const blurLayers = nodes.filter(node => tag(node) === "ChatEdgeBlur")
     assert.equal(blurLayers.length, 1, "Only the top material belongs to the screen; every composer owns the same bottom material")
     const panes = nodes.find(node => tag(node) === "ChatModeTransition")

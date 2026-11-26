@@ -156,7 +156,7 @@ export function TasksPage() {
         {editing ? <Form.Item name="status" label={copy.status}><Select options={Object.entries(statusLabels).map(([value, label]) => ({ value, label }))} /></Form.Item> : null}
         <Form.Item name="priority" label={copy.priority} rules={[{ required: true }]}><Select options={(["low", "normal", "high", "urgent"] as const).map((value) => ({ value, label: domainLabel(value, locale) }))} /></Form.Item>
         <Form.Item name="assignee_user_id" label={copy.assignee}><Select options={(assignees.data || []).map((item) => ({ value: item.user_id, label: item.name }))} /></Form.Item>
-        <Form.Item name="due_at" label={copy.due}><DatePicker showTime style={{ width: "100%" }} /></Form.Item>
+        <Form.Item name="due_at" label={copy.due}><DatePicker format="DD.MM.YYYY HH:mm" showTime style={{ width: "100%" }} /></Form.Item>
         <Space size={12} style={{ width: "100%" }} align="start">
           <Form.Item name="customer_user_id" label={copy.customerId}><InputNumber min={1} /></Form.Item>
           <Form.Item name="order_id" label={copy.orderId}><InputNumber min={1} /></Form.Item>

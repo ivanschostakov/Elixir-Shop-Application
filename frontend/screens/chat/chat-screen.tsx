@@ -201,7 +201,7 @@ function ChatScreenContent({ mentor }: { mentor?: EmbeddedMentor } = {}) {
     if (chat && !initialMessageIds.current) initialMessageIds.current = new Set((chat.chat?.messages ?? []).map(message => message.id))
     const scrollRef = useRef<ScrollView | null>(null)
     const mentorInputRef = useRef<TextInput | null>(null)
-    const overlaysChatChrome = Platform.OS === "ios"
+    const overlaysChatChrome = iosChat || Platform.OS === "android"
     const topBarOffset = topInset + 8
     const headerHeight = topBarOffset + 52
     const scrollTopInset = overlaysChatChrome ? headerHeight : 0

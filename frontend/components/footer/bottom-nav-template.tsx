@@ -72,7 +72,7 @@ export function BottomNavTemplate({ pathname }: BottomNavTemplateProps) {
         {
             key: ROUTES.profile,
             accessibilityLabel: t("nav.profile"),
-            icon: <ProfileIcon color={pathname === ROUTES.profile ? accentPalette.primary : palette.mutedText} />,
+            icon: <ProfileIcon color={pathname === ROUTES.profile || pathname === ROUTES.profileDiscounts ? accentPalette.primary : palette.mutedText} />,
             isActive: pathname === ROUTES.profile,
             route: ROUTES.profile,
         },

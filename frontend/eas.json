@@ -46,6 +46,13 @@
         "SHARP_IGNORE_GLOBAL_LIBVIPS": "1"
       },
       "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle",
+        "channel": "production",
+        "env": {
+          "ELIXIR_ANDROID_STORE": "1"
+        }
+      },
       "ios": {
         "image": "macos-tahoe-26.6-xcode-27.2"
       }

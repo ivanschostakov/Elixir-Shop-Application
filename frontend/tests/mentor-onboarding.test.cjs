@@ -315,7 +315,7 @@ test("reminder time commits only on confirmation using each platform's installed
     nodes(reopened).find(node => node.type === "SystemTimePicker").props.onChange({ type: "set" }, picked)
     nodes(ios.render("AppTimePicker", props)).find(node => node.type === "PickerPanel").props.onConfirm()
     assert.equal(saved, "17:35")
-    const android = harness("components/platform/app-date-time-picker.android.tsx", {
+    const android = harness("components/platform/app-date-time-picker.android.play.tsx", {
         "@/providers/language-provider": { useLanguage: () => ({ t: key => key }) },
     })
     const render = () => nodes(android.render("AppTimePicker", props))
@@ -331,6 +331,24 @@ test("reminder time commits only on confirmation using each platform's installed
     field("time.minutes").props.onValueChange("59")
     find("PickerPanel").props.onConfirm()
     assert.equal(saved, "00:59")
+})
+
+test("native Android reminders use the system clock dialog and only save a confirmed time", () => {
+    let dialog
+    const changes = []
+    const android = harness("components/platform/app-date-time-picker.tsx", {
+        "react-native": { Platform: { OS: "android" }, Keyboard: { dismiss() {} }, Pressable: "Pressable", Text: "Text", StyleSheet: { create: styles => styles } },
+        "@react-native-community/datetimepicker": { DateTimePickerAndroid: { open: options => { dialog = options } } },
+    })
+    android.render("AppTimePicker", { label: "Reminder", value: "08:30", onChange: value => changes.push(value) }).props.onPress()
+    assert.equal(dialog.mode, "time")
+    assert.equal(dialog.is24Hour, true)
+    assert.equal(dialog.value.getHours(), 8)
+    assert.equal(dialog.value.getMinutes(), 30)
+    const chosen = new Date(2000, 0, 15, 0, 5)
+    dialog.onChange({ type: "dismissed" }, chosen)
+    dialog.onChange({ type: "set" }, chosen)
+    assert.deepEqual(changes, ["00:05"])
 })
 
 test("the mentor home resumes optional setup and notification denial can be skipped without enabling reminders", async () => {

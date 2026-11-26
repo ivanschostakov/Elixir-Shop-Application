@@ -2,10 +2,7 @@ import { Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewS
 import Svg, { Path } from "react-native-svg"
 import { AppSurface } from "@/components/platform/app-surface"
 import { useAppActionSheet } from "@/components/platform/app-action-sheet"
-// The Play binary has no native menu view. Metro drops this import on Android.
-const MenuView: typeof import("@react-native-menu/menu").MenuView | null = Platform.OS === "ios"
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ? require("@react-native-menu/menu").MenuView : null
+import { MenuView } from "./native-menu-view"
 type Option = { id: string; label: string; detail?: string; disabled?: boolean }
 type Props = { label: string; options: readonly Option[]; value?: string; onChange: (id: string) => void; dark: boolean; color: string; fallbackColor: string; style?: StyleProp<ViewStyle> }
 export function AppMenu({ label, options, value, onChange, dark, color, fallbackColor, style }: Props) {
@@ -30,7 +27,7 @@ export function AppMenu({ label, options, value, onChange, dark, color, fallback
     return <MenuView themeVariant={dark ? "dark" : "light"} shouldOpenOnLongPress={false}
         actions={options.map(option => ({
             id: option.id,
-            title: option.label,
+            title: Platform.OS === "android" ? expandedLabel(option) : option.label,
             subtitle: option.detail,
             state: option.id === value ? "on" : "off",
             attributes: { disabled: option.disabled },

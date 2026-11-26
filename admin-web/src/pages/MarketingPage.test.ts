@@ -48,6 +48,7 @@ describe("campaignPayload", () => {
 
 describe("analyticsCsvPath", () => {
   it("builds scoped analytics export paths", () => {
+    expect(analyticsCsvPath("customers", 30, ["2026-10-31", "2026-11-01"])).toBe("/analytics/customers.csv?date_from=2026-10-31&date_to=2026-11-01")
     expect(analyticsCsvPath("marketing", 90)).toBe("/analytics/marketing.csv?days=90")
   })
 })

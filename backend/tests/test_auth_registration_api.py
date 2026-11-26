@@ -375,7 +375,8 @@ async def test_register_user_by_phone_without_email_creates_verified_user_and_re
         captured["commit"] = commit
         return created_user
 
-    async def fake_build_auth_tokens_response(user_arg, db_arg):
+    async def fake_build_auth_tokens_response(user_arg, db_arg, *, registration):
+        assert registration
         assert user_arg is created_user
         assert db_arg is db
         return "tokens"

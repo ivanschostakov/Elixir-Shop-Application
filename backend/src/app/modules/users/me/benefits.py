@@ -3,8 +3,10 @@ from src.app.services.platform_availability import mobile_shop_request
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
-from .schemas.benefits import BenefitCheckPayload, BenefitCheckRead
+from config import LOYALTY_PHOTO_REVIEW_BONUS_POINTS, LOYALTY_TEXT_REVIEW_BONUS_POINTS
+from .schemas.benefits import AppRewardsRead, BenefitCheckPayload, BenefitCheckRead
 from src.app.modules.auth.dependencies import get_current_user
+from src.app.services.benefits import app_welcome
 from src.app.services.benefits.service import resolve_benefits_for_user
 from src.app.services.catalog_merchandising import catalog_unit_price
 from src.app.services.delivery_quotes import build_bitrix_delivery_items
@@ -14,6 +16,17 @@ from src.database.crud import get_basket_by_user_id, get_order_draft_by_id
 from src.database.models.auth.user import User
 
 my_benefits_router = APIRouter(prefix="/benefits", tags=["my_benefits"])
+
+
+@my_benefits_router.get("/rewards", response_model=AppRewardsRead)
+async def get_my_app_rewards(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> AppRewardsRead:
+    credit, available = await app_welcome.wallet(db, current_user.id)
+    return AppRewardsRead(
+        welcome_balance_rubles=available,
+        welcome_expires_at=credit.expires_at if credit else None,
+        text_review_points=LOYALTY_TEXT_REVIEW_BONUS_POINTS,
+        photo_review_points=LOYALTY_PHOTO_REVIEW_BONUS_POINTS,
+    )
 
 
 @my_benefits_router.post("/check", response_model=BenefitCheckRead, status_code=status.HTTP_200_OK)

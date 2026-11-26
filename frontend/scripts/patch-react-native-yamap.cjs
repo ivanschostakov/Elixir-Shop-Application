@@ -74,6 +74,10 @@ const managerPath = "android/src/main/java/ru/vvdev/yamap";
 
 applyReplacements("android/build.gradle", [
   [
+    "com.yandex.android:maps.mobile:4.8.0-full",
+    "com.yandex.android:maps.mobile:4.19.0-full",
+  ],
+  [
     `    implementation 'com.google.android.gms:play-services-location:+'\n`,
     `    implementation 'com.google.android.gms:play-services-location:21.0.1'\n`,
   ],
@@ -186,6 +190,17 @@ applyReplacements(`${managerPath}/YamapPolylineManager.kt`, [
 ]);
 
 applyReplacements("android/src/main/java/ru/vvdev/yamap/view/YamapView.kt", [
+  ["FitnessOptions(false)", "FitnessOptions(false, false)"],
+  [
+    "val _p = RequestPoint(point!!, RequestPointType.WAYPOINT, null, null)",
+    "val _p = RequestPoint(point!!, RequestPointType.WAYPOINT, null, null, null)",
+  ],
+  [
+    "_points.add(RequestPoint(point!!, RequestPointType.WAYPOINT, null, null))",
+    "_points.add(RequestPoint(point!!, RequestPointType.WAYPOINT, null, null, null))",
+  ],
+  ["userLocationLayer!!.isHeadingEnabled = true", "userLocationLayer!!.isHeadingModeActive = true"],
+  ["userLocationLayer!!.isHeadingEnabled = false", "userLocationLayer!!.isHeadingModeActive = false"],
   [
     `            val p = worldPoints.getMap(i)\n`,
     `            val p = worldPoints.getMap(i) ?: continue\n`,

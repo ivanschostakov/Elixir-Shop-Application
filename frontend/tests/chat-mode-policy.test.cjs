@@ -21,7 +21,7 @@ test("Android and web retain all existing chat modes", () => {
     }
 })
 
-function renderSwitcher(platform, mode, onChange, solidStyle = false, nativeDark, inlineBadges = true) {
+function renderSwitcher(platform, mode, onChange, solidStyle = false, nativeDark, inlineBadges = true, palette) {
     class Value {
         interpolate(config) { return config }
     }
@@ -29,7 +29,7 @@ function renderSwitcher(platform, mode, onChange, solidStyle = false, nativeDark
         react: { useEffect: () => {}, useRef: value => ({ current: value }), useState: () => [320, () => {}] },
         "react-native": { Animated: { Value, View: "AnimatedView" }, Platform: { OS: platform }, Pressable: "Pressable", StyleSheet: { create: value => value }, Text: "Text", View: "View" },
         "@/providers/language-provider": { useLanguage: () => ({ t: key => key }) },
-        "@/hooks/use-theme-styles": { useThemeStyles: () => ({ solidModeSwitcher: "solidTrack", solidModeSelection: "solidSelection" }) },
+        "@/hooks/use-theme-styles": { useThemeStyles: factory => palette ? factory(palette) : { solidModeSwitcher: "solidTrack", solidModeSelection: "solidSelection" } },
         "@/screens/chat/community-chat-screen.styles": { createCommunityChatStyles: () => ({}) },
         "@/hooks/use-reduced-motion": { useReducedMotion: () => true },
         "@/components/platform/native-controls": { NativeChatModeControl: inlineBadges ? "NativeChatModeControl" : null },
@@ -63,6 +63,25 @@ test("iOS switcher exposes working AI, community and support tabs", () => {
     assert.deepEqual(indicator.props.style.at(-1).width.inputRange, [0, 1, 2])
     assert.deepEqual(indicator.props.style.at(-1).width.outputRange, [312 * 0.3, 312 * 0.4, 312 * 0.3])
     assert.deepEqual(indicator.props.style.at(-1).transform[0].translateX.outputRange, [0, 312 * 0.3, 312 * (0.3 + 0.4)])
+})
+
+test("Android shows all three chat modes on a visible track in either theme", () => {
+    const { darkColors, lightColors } = loadTs("theme/colors.ts", { "react-native": { Platform: { OS: "android" } } })
+    for (const palette of [lightColors, darkColors]) {
+        const tree = renderSwitcher("android", "support", () => {}, false, undefined, false, palette)
+        const nodes = elements(tree)
+        const track = tree.props.style[0]
+        const indicator = nodes.find(node => node.type === "AnimatedView").props.style[0]
+        assert.ok(track.backgroundColor)
+        assert.notEqual(track.backgroundColor, indicator.backgroundColor)
+        for (const tab of nodes.filter(node => node.props?.accessibilityRole === "tab")) {
+            const text = elements(tab).find(node => node.type === "Text")
+            assert.equal(text.props.children, tab.props.accessibilityLabel)
+            assert.equal(text.props.style[0].color, palette.text)
+        }
+        assert.deepEqual(nodes.filter(node => node.props?.accessibilityRole === "tab").map(tab => tab.props.accessibilityLabel),
+            ["chat.modeAi", "chat.modeGroup", "chat.modeSupport"])
+    }
 })
 
 test("the solid selector highlights the admin tab without a separate overlay", () => {

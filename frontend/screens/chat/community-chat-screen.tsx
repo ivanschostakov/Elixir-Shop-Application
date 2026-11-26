@@ -172,6 +172,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
     const headerTop = top + 8
     const contentTop = embedded ? headerInset : headerTop + 58
     const iosChat = Platform.OS === "ios"
+    const overlaysChatChrome = iosChat || Platform.OS === "android"
     const voiceStatusVisible = voiceRecording || voiceTranscribing
     const hasComposerContent = Boolean(draft.trim()) || attachments.length > 0
     const newestMessageId = chat.messages.at(-1)?.id ?? null
@@ -496,21 +497,21 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                 </View> : null}
 
                 {chat.status?.access !== "granted" || !chat.selectedTopic ? (
-                    <View style={[styles.content, (!iosChat || chat.status?.access !== "granted") && { paddingTop: contentTop }]}>
+                    <View style={[styles.content, (!overlaysChatChrome || chat.status?.access !== "granted") && { paddingTop: contentTop }]}>
                         <QuietLoading loading={!chat.status && !chat.error} />
                         {!chat.status && chat.error ? <View style={styles.stateCenter}><Text style={styles.stateTitle}>{t("chat.loadFailedTitle")}</Text><Text style={styles.stateBody}>{chat.error}</Text><Pressable accessibilityRole="button" onPress={() => { void chat.refresh() }} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>{t("chat.retry")}</Text></Pressable></View> : null}
                         {chat.status && chat.status.access !== "granted" ? (
                             <CommunityAccessState actionUrl={chat.status.action_url} enabled={chat.status.enabled} onRefresh={() => { void chat.refresh() }} state={chat.status.access} />
                         ) : null}
                         {chat.status?.access === "granted" && !chat.selectedTopic ? (
-                            <TopicList headerInset={iosChat ? contentTop : 0} onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} onOpenBlocks={() => { void loadBlocks() }} notifications={chat.notificationSettings} notificationsBusy={chat.notificationsBusy} onNotificationChange={changeNotifications} />
+                            <TopicList headerInset={overlaysChatChrome ? contentTop : 0} onOpen={chat.selectTopic} onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} status={chat.status} topics={chat.topics} onOpenBlocks={() => { void loadBlocks() }} notifications={chat.notificationSettings} notificationsBusy={chat.notificationsBusy} onNotificationChange={changeNotifications} />
                         ) : null}
                     </View>
                 ) : null}
 
                 {chat.status?.access === "granted" && chat.selectedTopic ? (
                     <>
-                        <AppFormLayout enabled={!embedded && !iosChat}   style={styles.topicKeyboardLayer}>
+                        <AppFormLayout enabled={!embedded && !overlaysChatChrome}   style={styles.topicKeyboardLayer}>
                             <View style={chatStyles.keyboardContent}>
                                 <ChatMessageScrollView contentContainerStyle={[styles.messageContent, { paddingTop: contentTop + spacing.sm, paddingBottom: iosChat ? spacing.sm : composerHeight + spacing.sm }]} keyboardDismissMode={iosChat ? "interactive" : "on-drag"} keyboardShouldPersistTaps="handled" maintainVisibleContentPosition={{ minIndexForVisible: 0 }} onScroll={handleMessagesScroll} onScrollBeginDrag={chatScroll.onScrollBeginDrag} onContentSizeChange={chatScroll.onContentSizeChange} onLayout={chatScroll.onLayout} ref={scrollRef} refreshControl={<RefreshControl onRefresh={() => { void chat.refresh() }} refreshing={chat.refreshing} tintColor={palette.primary} />} scrollEventThrottle={16} automaticallyAdjustsScrollIndicatorInsets={iosChat ? false : undefined} scrollIndicatorInsets={iosChat ? { top: contentTop, bottom: composerHeight } : undefined} style={styles.messageScroll}>
                                     {chat.hasMore ? <Pressable disabled={chat.loadingOlder} onPress={() => { void chat.loadOlder() }} style={styles.loadOlder}>{chat.loadingOlder ? <ActivityIndicator color={palette.primary} size="small" /> : <Text style={styles.loadOlderText}>{t("chat.communityLoadOlder")}</Text>}</Pressable> : null}
@@ -528,7 +529,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                                     ))}
                                 </ChatMessageScrollView>
                                 {chat.error ? <Pressable onPress={() => { void chat.refresh() }} style={styles.inlineError}><Text style={styles.inlineErrorText}>{chat.error} · {t("chat.retry")}</Text></Pressable> : null}
-                                <ChatComposerDock onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} pointerEvents={iosChat ? "box-none" : "auto"} style={[chatStyles.composerDock, iosChat && chatStyles.composerDockOverlay]}>
+                                <ChatComposerDock onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)} pointerEvents={overlaysChatChrome ? "box-none" : "auto"} style={[chatStyles.composerDock, overlaysChatChrome && chatStyles.composerDockOverlay]}>
                                     {editingMessage ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityEditingMessage")}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{editingMessage.text}</Text></View><Pressable onPress={() => { setEditingMessage(null); setDraft("") }}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {replyTo ? <View style={styles.replyComposer}><View style={styles.replyComposerCopy}><Text style={styles.replyComposerTitle}>{t("chat.communityReplyingTo")} {replyTo.author.full_name}</Text><Text numberOfLines={1} style={styles.replyComposerText}>{replyTo.text || t("chat.attachmentFallbackMessage")}</Text></View><Pressable onPress={() => setReplyTo(null)}><Text style={styles.closeReply}>×</Text></Pressable></View> : null}
                                     {voiceStatusVisible ? <View style={chatStyles.voiceStatusPill}>{voiceTranscribing ? <ActivityIndicator color={palette.primary} size="small" /> : <View style={chatStyles.voiceStatusDot} />}<Text style={chatStyles.voiceStatusText}>{voiceTranscribing ? t("chat.voiceTranscribing") : `${t("chat.voiceRecording")} ${formatVoiceDuration(audioRecorderState.durationMillis)}`}</Text></View> : null}
@@ -539,7 +540,7 @@ export function CommunityChatScreen({ embedded = false, headerInset = 0, onTopic
                         </AppFormLayout>
                     </>
                 ) : null}
-                {!embedded && iosChat ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
+                {!embedded && overlaysChatChrome ? <ChatEdgeBlur dark={isDark} topEdge style={[chatStyles.dialogTopBlur, { height: contentTop + 10 }]} /> : null}
                 <AttachmentSheet visible={attachmentSheetVisible} onClose={closeAttachmentSheet} onOpenCamera={() => { void openCamera() }} onOpenNativeGallery={() => { void openGallery() }} onPickFiles={() => { void pickFiles() }} />
                 <Modal visible={blocksVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setBlocksVisible(false)}>
                     <View style={{ flex: 1, paddingTop: Math.max(top, spacing.md), backgroundColor: palette.background }}>

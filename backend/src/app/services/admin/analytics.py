@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import io
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Literal
 
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
 from config import ufa_now
+from src.app.services.auth.events import LOGIN, REGISTRATION
 from src.app.services.admin.abandoned_baskets import count_abandoned_baskets
 from src.database.models import (
     AdminPushCampaign,
@@ -34,10 +35,15 @@ ANALYTICS_SECTIONS: tuple[AnalyticsSection, ...] = ("sales", "customers", "produ
 ANALYTICS_TIMEZONE = "Asia/Yekaterinburg"
 
 
-def analytics_period(days: int) -> tuple[datetime, datetime]:
+def analytics_period(days: int, date_from: date | None = None, date_to: date | None = None) -> tuple[datetime, datetime]:
+    now = ufa_now()
+    if date_from is not None or date_to is not None:
+        if not date_from or not date_to or not 0 <= (date_to - date_from).days < 365 or date_to > now.date():
+            raise HTTPException(422, "Choose both dates, up to 365 days, ending no later than today")
+        return datetime.combine(date_from, time.min, now.tzinfo), min(datetime.combine(date_to, time.max, now.tzinfo), now)
     if days < 7 or days > 365:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Analytics period must be between 7 and 365 days")
-    end = ufa_now()
+    end = now
     start = (end - timedelta(days=days - 1)).replace(
         hour=0,
         minute=0,
@@ -71,7 +77,7 @@ def _csv_cell(value: Any) -> str:
     return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
 
 
-def _app_open_trend_query(*, start: datetime, granularity: Literal["daily", "monthly"]):
+def _app_open_trend_query(*, start: datetime, end: datetime, granularity: Literal["daily", "monthly"]):
     # Keep timezone and date-trunc arguments as SQL literals. If SQLAlchemy emits
     # separate bind parameters for identical SELECT/GROUP BY expressions,
     # PostgreSQL no longer considers them the same expression and raises
@@ -89,19 +95,18 @@ def _app_open_trend_query(*, start: datetime, granularity: Literal["daily", "mon
             func.count(UserEvent.id).label("opens"),
             func.count(func.distinct(UserEvent.user_id)).label("customers"),
         )
-        .where(UserEvent.event_name == "app_opened", UserEvent.occurred_at >= start)
+        .where(UserEvent.event_name == "app_opened", UserEvent.occurred_at.between(start, end))
         .group_by(period_expression)
         .order_by(period_expression)
     )
 
 
-async def sales_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
-    start, _ = analytics_period(days)
+async def sales_summary(db: AsyncSession, *, start: datetime, end: datetime) -> dict[str, Any]:
     paid_filter = (
         Order.is_paid.is_(True),
         Order.is_canceled.is_(False),
         Order.payment_paid_at.is_not(None),
-        Order.payment_paid_at >= start,
+        Order.payment_paid_at.between(start, end),
     )
     revenue, orders, units = (await db.execute(select(
         func.coalesce(func.sum(Order.grand_total), 0),
@@ -127,9 +132,9 @@ async def sales_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
         Order.is_paid.is_(True),
         Order.is_canceled.is_(False),
         Order.payment_paid_at.is_not(None),
-        Order.payment_paid_at >= start,
+        Order.payment_paid_at.between(start, end),
     ).group_by(func.date(local_payment_time)).order_by(func.date(local_payment_time)))).all()
-    status_rows = (await db.execute(select(Order.payment_status, func.count(Order.id)).where(Order.created_at >= start).group_by(Order.payment_status))).all()
+    status_rows = (await db.execute(select(Order.payment_status, func.count(Order.id)).where(Order.created_at.between(start, end)).group_by(Order.payment_status))).all()
     return {
         "summary": {
             "revenue": revenue_decimal,
@@ -145,12 +150,28 @@ async def sales_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     }
 
 
-async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
-    start, end = analytics_period(days)
-    total_customers = int((await db.execute(select(func.count(User.id)))).scalar_one())
-    new_customers = int((await db.execute(select(func.count(User.id)).where(User.created_at >= start))).scalar_one())
-    active_customers = int((await db.execute(select(func.count(User.id)).where(User.last_active_at >= start))).scalar_one())
-    inactive_customers = int((await db.execute(select(func.count(User.id)).where((User.last_active_at.is_(None)) | (User.last_active_at < end - timedelta(days=30))))).scalar_one())
+async def daily_auth_counts(db: AsyncSession, start: datetime, end: datetime) -> list[dict[str, Any]]:
+    tracked = (UserEvent.source == "api", UserEvent.event_name.in_((REGISTRATION, LOGIN)))
+    first = (await db.execute(select(func.min(UserEvent.occurred_at)).where(*tracked))).scalar_one()
+    day = func.date(func.timezone(literal_column(f"'{ANALYTICS_TIMEZONE}'"), UserEvent.occurred_at))
+    rows = (await db.execute(select(day, UserEvent.event_name, func.count(UserEvent.id))
+        .where(*tracked, UserEvent.occurred_at.between(start, end)).group_by(day, UserEvent.event_name))).all()
+    counts = {(d, event): n for d, event, n in rows}
+    first_day = first.astimezone(start.tzinfo).date() if first else None
+    series = []
+    for offset in range((end.date() - start.date()).days + 1):
+        d = start.date() + timedelta(days=offset)
+        default = 0 if first_day and d >= first_day else None
+        series.append({"date": d, "registrations": counts.get((d, REGISTRATION), default),
+                       "logins": counts.get((d, LOGIN), default)})
+    return series
+
+
+async def customers_summary(db: AsyncSession, *, start: datetime, end: datetime) -> dict[str, Any]:
+    total_customers = int((await db.execute(select(func.count(User.id)).where(User.created_at <= end))).scalar_one())
+    new_customers = int((await db.execute(select(func.count(User.id)).where(User.created_at.between(start, end)))).scalar_one())
+    active_customers = int((await db.execute(select(func.count(User.id)).where(User.last_active_at.between(start, end)))).scalar_one())
+    inactive_customers = int((await db.execute(select(func.count(User.id)).where(User.created_at <= end, (User.last_active_at.is_(None)) | (User.last_active_at < end - timedelta(days=30))))).scalar_one())
     abandoned_carts = await count_abandoned_baskets(db, start=start, end=end)
     ltv_rows = (await db.execute(select(
         User.id,
@@ -165,18 +186,18 @@ async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     ).group_by(User.id).order_by(func.coalesce(func.sum(Order.grand_total), 0).desc()).limit(10))).all()
     band_rows = (await db.execute(select(
         case(
-            (User.created_at >= start, "new"),
-            (User.last_active_at >= start, "active"),
+            (User.created_at.between(start, end), "new"),
+            (User.last_active_at.between(start, end), "active"),
             else_="inactive",
         ).label("band"),
         func.count(User.id),
-    ).group_by("band"))).all()
+    ).where(User.created_at <= end).group_by("band"))).all()
     platform_rows = (await db.execute(select(
         UserDevice.platform,
         func.count(func.distinct(UserDevice.user_id)),
     ).where(
         UserDevice.is_active.is_(True),
-        UserDevice.last_seen_at >= start,
+        UserDevice.last_seen_at.between(start, end),
     ).group_by(UserDevice.platform).order_by(func.count(func.distinct(UserDevice.user_id)).desc()))).all()
     app_version_rows = (await db.execute(select(
         UserDevice.platform,
@@ -184,29 +205,29 @@ async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
         func.count(func.distinct(UserDevice.user_id)),
     ).where(
         UserDevice.is_active.is_(True),
-        UserDevice.last_seen_at >= start,
+        UserDevice.last_seen_at.between(start, end),
         UserDevice.app_version.is_not(None),
     ).group_by(UserDevice.platform, UserDevice.app_version).order_by(func.count(func.distinct(UserDevice.user_id)).desc()).limit(20))).all()
     push_permission_rows = (await db.execute(select(
         CustomerMarketingProfile.push_permission,
         func.count(CustomerMarketingProfile.user_id),
     ).where(
-        CustomerMarketingProfile.last_seen_at >= start,
+        CustomerMarketingProfile.last_seen_at.between(start, end),
     ).group_by(CustomerMarketingProfile.push_permission).order_by(func.count(CustomerMarketingProfile.user_id).desc()))).all()
     event_rows = (await db.execute(select(
         UserEvent.event_name,
         func.count(UserEvent.id),
         func.count(func.distinct(UserEvent.user_id)),
     ).where(
-        UserEvent.occurred_at >= start,
+        UserEvent.occurred_at.between(start, end),
     ).group_by(UserEvent.event_name).order_by(func.count(UserEvent.id).desc()))).all()
-    app_open_filter = (UserEvent.event_name == "app_opened", UserEvent.occurred_at >= start)
+    app_open_filter = (UserEvent.event_name == "app_opened", UserEvent.occurred_at.between(start, end))
     app_opens_total, app_open_users = (await db.execute(select(
         func.count(UserEvent.id),
         func.count(func.distinct(UserEvent.user_id)),
     ).where(*app_open_filter))).one()
-    app_open_daily_rows = (await db.execute(_app_open_trend_query(start=start, granularity="daily"))).all()
-    app_open_monthly_rows = (await db.execute(_app_open_trend_query(start=start, granularity="monthly"))).all()
+    app_open_daily_rows = (await db.execute(_app_open_trend_query(start=start, end=end, granularity="daily"))).all()
+    app_open_monthly_rows = (await db.execute(_app_open_trend_query(start=start, end=end, granularity="monthly"))).all()
     return {
         "summary": {
             "total_customers": total_customers,
@@ -242,6 +263,7 @@ async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
             {"event_name": str(event_name), "events": int(events), "customers": int(customers)}
             for event_name, events, customers in event_rows
         ],
+        "auth_daily": await daily_auth_counts(db, start, end),
         "app_opens": {
             "total": int(app_opens_total or 0),
             "unique_customers": int(app_open_users or 0),
@@ -262,8 +284,7 @@ async def customers_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     }
 
 
-async def products_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
-    start, _ = analytics_period(days)
+async def products_summary(db: AsyncSession, *, start: datetime, end: datetime) -> dict[str, Any]:
     top_rows = (await db.execute(select(
         OrderItem.product_id,
         OrderItem.product_name,
@@ -276,7 +297,7 @@ async def products_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
         Order.is_paid.is_(True),
         Order.is_canceled.is_(False),
         Order.payment_paid_at.is_not(None),
-        Order.payment_paid_at >= start,
+        Order.payment_paid_at.between(start, end),
     ).group_by(OrderItem.product_id, OrderItem.product_name, OrderItem.product_sku).order_by(func.coalesce(func.sum(OrderItem.line_total), 0).desc()).limit(15))).all()
     top_product_ids = [int(row.product_id) for row in top_rows]
     view_rows = (await db.execute(select(
@@ -287,7 +308,7 @@ async def products_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
         UserEvent.event_name == "product_viewed",
         UserEvent.entity_type == "product",
         UserEvent.entity_id.in_(top_product_ids),
-        UserEvent.occurred_at >= start,
+        UserEvent.occurred_at.between(start, end),
     ).group_by(UserEvent.entity_id))).all() if top_product_ids else []
     stock_rows = (await db.execute(select(
         Variant.product_id,
@@ -339,18 +360,17 @@ async def products_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     }
 
 
-async def discounts_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
-    start, _ = analytics_period(days)
+async def discounts_summary(db: AsyncSession, *, start: datetime, end: datetime) -> dict[str, Any]:
     total_discount, applications = (await db.execute(select(
         func.coalesce(func.sum(OrderBenefitApplication.discount_amount), 0),
         func.count(OrderBenefitApplication.id),
-    ).where(OrderBenefitApplication.created_at >= start, OrderBenefitApplication.status == "applied"))).one()
+    ).where(OrderBenefitApplication.created_at.between(start, end), OrderBenefitApplication.status == "applied"))).one()
     source_rows = (await db.execute(select(
         OrderBenefitApplication.source_kind,
         func.count(OrderBenefitApplication.id),
         func.coalesce(func.sum(OrderBenefitApplication.discount_amount), 0),
     ).where(
-        OrderBenefitApplication.created_at >= start,
+        OrderBenefitApplication.created_at.between(start, end),
         OrderBenefitApplication.status == "applied",
     ).group_by(OrderBenefitApplication.source_kind).order_by(func.coalesce(func.sum(OrderBenefitApplication.discount_amount), 0).desc()))).all()
     referral_profiles = int((await db.execute(select(func.count(ReferralProfile.id)))).scalar_one())
@@ -370,9 +390,8 @@ async def discounts_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     }
 
 
-async def marketing_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
-    start, _ = analytics_period(days)
-    campaigns = list((await db.execute(select(AdminPushCampaign).where(AdminPushCampaign.created_at >= start).order_by(AdminPushCampaign.created_at.desc()).limit(20))).scalars().all())
+async def marketing_summary(db: AsyncSession, *, start: datetime, end: datetime) -> dict[str, Any]:
+    campaigns = list((await db.execute(select(AdminPushCampaign).where(AdminPushCampaign.created_at.between(start, end)).order_by(AdminPushCampaign.created_at.desc()).limit(20))).scalars().all())
     sent = sum(row.sent_count for row in campaigns)
     audience = sum(row.audience_count for row in campaigns)
     failed = sum(row.failed_count for row in campaigns)
@@ -380,8 +399,8 @@ async def marketing_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
         AdminPushCampaignRecipient.campaign_id,
         func.count(AdminPushCampaignRecipient.id),
     ).where(
-        AdminPushCampaignRecipient.clicked_at.is_not(None),
-        AdminPushCampaignRecipient.created_at >= start,
+        AdminPushCampaignRecipient.clicked_at <= end,
+        AdminPushCampaignRecipient.created_at.between(start, end),
     ).group_by(AdminPushCampaignRecipient.campaign_id))).all()
     clicked_by_campaign = {int(campaign_id): int(count) for campaign_id, count in clicked_rows}
     clicked = sum(clicked_by_campaign.values())
@@ -415,15 +434,16 @@ async def marketing_summary(db: AsyncSession, *, days: int) -> dict[str, Any]:
     }
 
 
-async def analytics_snapshot(db: AsyncSession, *, days: int) -> dict[str, Any]:
+async def analytics_snapshot(db: AsyncSession, *, days: int, date_from: date | None = None, date_to: date | None = None) -> dict[str, Any]:
+    start, end = analytics_period(days, date_from, date_to)
     return {
-        "days": days,
+        "days": (end.date() - start.date()).days + 1,
         "generated_at": ufa_now(),
-        "sales": await sales_summary(db, days=days),
-        "customers": await customers_summary(db, days=days),
-        "products": await products_summary(db, days=days),
-        "discounts": await discounts_summary(db, days=days),
-        "marketing": await marketing_summary(db, days=days),
+        "sales": await sales_summary(db, start=start, end=end),
+        "customers": await customers_summary(db, start=start, end=end),
+        "products": await products_summary(db, start=start, end=end),
+        "discounts": await discounts_summary(db, start=start, end=end),
+        "marketing": await marketing_summary(db, start=start, end=end),
     }
 
 
@@ -434,9 +454,11 @@ def analytics_csv(section: AnalyticsSection, snapshot: dict[str, Any]) -> bytes:
     if section == "sales":
         return csv_bytes(["date", "revenue", "orders"], ((row["date"], row["revenue"], row["orders"]) for row in data["trend"]))
     if section == "customers":
+        opens = {row["period"]: row for row in data["app_opens"]["daily"]}
         return csv_bytes(
-            ["period", "opens", "unique_customers"],
-            ((row["period"], row["opens"], row["customers"]) for row in data["app_opens"]["daily"]),
+            ["period", "opens", "unique_customers", "registrations", "logins"],
+            ((r["date"], opens.get(r["date"], {}).get("opens", 0), opens.get(r["date"], {}).get("customers", 0),
+              r["registrations"], r["logins"]) for r in data["auth_daily"]),
         )
     if section == "products":
         return csv_bytes(

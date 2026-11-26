@@ -307,7 +307,7 @@ export function LeadsPage() {
           <Space align="start" wrap>
             <Form.Item name="product_id" label={copy.product}><InputNumber min={1} /></Form.Item>
             <Form.Item name="category_id" label={copy.category}><InputNumber min={1} /></Form.Item>
-            <Form.Item name="next_action_at" label={copy.nextAction}><DatePicker showTime /></Form.Item>
+            <Form.Item name="next_action_at" label={copy.nextAction}><DatePicker format="DD.MM.YYYY HH:mm" showTime /></Form.Item>
           </Space>
           {!editing ? <Space align="start" wrap>
             <Form.Item name="contact_name" label={copy.contact}><Input /></Form.Item>

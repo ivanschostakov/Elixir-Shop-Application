@@ -2,11 +2,13 @@ import asyncio
 import sys
 import types
 import uuid
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -35,6 +37,32 @@ sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
 
 def _decimal(value) -> Decimal:
     return Decimal(str(value))
+
+
+@pytest.mark.parametrize("amount,has_credit", [("375.25", True), ("0", False)])
+def test_app_rewards_show_only_the_authenticated_wallet(monkeypatch, amount, has_credit):
+    app = FastAPI()
+    app.include_router(benefits_module.my_benefits_router)
+    app.dependency_overrides[benefits_module.get_current_user] = lambda: SimpleNamespace(id=27)
+    db = object()
+    app.dependency_overrides[benefits_module.get_db] = lambda: db
+    expiry = datetime(2026, 12, 1, 12, tzinfo=timezone.utc)
+
+    async def wallet(session, user_id):
+        assert session is db and user_id == 27
+        return SimpleNamespace(expires_at=expiry) if has_credit else None, Decimal(amount)
+
+    monkeypatch.setattr(benefits_module.app_welcome, "wallet", wallet)
+    monkeypatch.setattr(benefits_module, "LOYALTY_TEXT_REVIEW_BONUS_POINTS", 75)
+    monkeypatch.setattr(benefits_module, "LOYALTY_PHOTO_REVIEW_BONUS_POINTS", 150)
+    response = TestClient(app).get("/benefits/rewards")
+    assert response.status_code == 200
+    assert response.json() == {
+        "welcome_balance_rubles": amount,
+        "welcome_expires_at": "2026-12-01T12:00:00Z" if has_credit else None,
+        "text_review_points": 75,
+        "photo_review_points": 150,
+    }
 
 
 def _delete_user(user_id: int) -> None:

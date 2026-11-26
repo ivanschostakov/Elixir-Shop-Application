@@ -85,6 +85,7 @@ export type AnalyticsSnapshot = {
       push_permissions: Array<{ permission: string; customers: number }>
     }
     events: Array<{ event_name: string; events: number; customers: number }>
+    auth_daily: Array<{ date: string; registrations: number | null; logins: number | null }>
     app_opens: {
       total: number
       unique_customers: number

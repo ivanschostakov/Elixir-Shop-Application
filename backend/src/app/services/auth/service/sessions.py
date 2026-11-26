@@ -6,6 +6,7 @@ from config import USER_REFRESH_TOKEN_LIFETIME_DAYS, ufa_now
 from src.app.modules.auth.schemas.logout import UserLogoutPayload
 from src.app.modules.auth.schemas.refresh import UserRefreshPayload
 from src.app.modules.auth.schemas.responses import AuthLogoutResponse, AuthRefreshResponse, AuthTokensWithUserResponse, AuthUserRead
+from src.app.services.auth.events import record_auth_event
 from src.app.services.security import create_access_token
 from src.app.services.security.refresh import create_refresh_token, hash_refresh_token, verify_refresh_token
 from src.database.crud.auth.user import get_user_by_id
@@ -17,7 +18,7 @@ from .rate_limits import _apply_auth_rate_limit
 from .counterparty import _link_moysklad_counterparty_by_email
 
 
-async def _build_auth_tokens_response(user: User, db: AsyncSession) -> AuthTokensWithUserResponse:
+async def _build_auth_tokens_response(user: User, db: AsyncSession, *, registration: bool = False) -> AuthTokensWithUserResponse:
     user_id = user.id
     await _link_moysklad_counterparty_by_email(user, db)
     from src.app.services.referrals.registration import sync_registration_choice
@@ -31,6 +32,8 @@ async def _build_auth_tokens_response(user: User, db: AsyncSession) -> AuthToken
     selection_required = await registration_choice_required(db, user=user)
     refresh_token = create_refresh_token()
     refresh_token_hash = hash_refresh_token(refresh_token)
+    if not registration:
+        await record_auth_event(db, user.id, registration=False)
     session = await create_user_session(db, UserSessionCreate(user_id=user.id, refresh_token_hash=refresh_token_hash))
     access_token = create_access_token(user_id=user.id, session_id=session.id)
     auth_user = AuthUserRead.model_validate(user).model_copy(update={"program_selection_required": selection_required})

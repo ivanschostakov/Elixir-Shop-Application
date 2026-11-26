@@ -1,5 +1,5 @@
 import type { Ref } from "react"
-import { StyleSheet, View, type TextInput } from "react-native"
+import { Platform, StyleSheet, View, type TextInput } from "react-native"
 
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
@@ -29,7 +29,9 @@ export function ChatComposer({ value, onChangeText, placeholder, inputRef, onFoc
     const joined = hasContent && !recording
     const action = busy ? "busy" : recording ? "stop" : joined ? "send" : "microphone"
     const label = t(busy ? transcribing ? "chat.voiceTranscribing" : "chat.sending" : recording ? "chat.voiceStopAction" : joined ? "chat.sendAction" : "chat.voiceRecordAction")
-    const fill = isDark ? "#263040" : "#F2FAF5"
+    const fill = Platform.OS === "android"
+        ? (isDark ? "rgba(38,48,64,0.55)" : "rgba(242,250,245,0.55)")
+        : (isDark ? "#263040" : "#F2FAF5")
 
     return <View testID="chat-composer" style={styles.row}>
         <AppIconButton action="attachment" dark={isDark} disabled={attachmentDisabled} label={t("chat.communityAddAttachment")} onPress={onAttachment} backgroundColor={fill} color={palette.text} style={styles.action} />

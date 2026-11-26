@@ -54,6 +54,24 @@ will not fix the missing Simulator app error.
 
 ## Store Builds
 
+### Google Play 0.1.2
+
+Run these commands from `frontend`. The production Android build signs an AAB
+with the store upload key and embeds the current app. It checks the
+`production` channel on startup for Android runtime `0.1.2`.
+
+```bash
+npx eas-cli@18.5.0 build --platform android --profile production
+```
+
+To publish a JavaScript or asset update for this runtime:
+
+```bash
+npm run ota:android:store -- --message "Android chat update"
+```
+
+Assign a new runtime when changing the native interface.
+
 ### Android OTA for Google Play 0.1.1
 
 From this directory, publish the working tree to Android devices on the
@@ -76,6 +94,9 @@ an offline launch opens the cached app. Opening the shop during a download
 defers activation until the next cold start.
 
 ### Native builds
+
+New Android builds include the native time picker, slider, menu and keyboard
+controller. The Play OTA command selects the controls supported by build 6.
 
 Android testing build:
 

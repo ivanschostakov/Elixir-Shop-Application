@@ -6,6 +6,7 @@
     "start": "node scripts/expo-cli.cjs start",
     "android": "node scripts/expo-cli.cjs run:android",
     "ota:android": "ELIXIR_PLAY_OTA=1 EXPO_NO_DOTENV=1 npx --yes eas-cli@18.5.0 update --platform android --channel production --environment production --input-dir dist/play-ota",
+    "ota:android:store": "ELIXIR_ANDROID_STORE=1 EXPO_NO_DOTENV=1 npx --yes eas-cli@18.5.0 update --platform android --channel production --environment production --input-dir dist/android-store-ota",
     "ios": "node scripts/expo-cli.cjs run:ios",
     "web": "node scripts/expo-cli.cjs start --web",
     "web:export": "node scripts/expo-cli.cjs export --platform web",

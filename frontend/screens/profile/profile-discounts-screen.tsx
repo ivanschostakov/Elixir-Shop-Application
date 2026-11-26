@@ -1,19 +1,18 @@
-import { useCallback, useRef } from "react"
-import { ActivityIndicator, Image, Pressable, Text, View } from "react-native"
-import { LinearGradient } from "expo-linear-gradient"
+import { Fragment, useCallback, useRef, useState } from "react"
+import { ActivityIndicator, Image, Pressable, Text, useWindowDimensions, View } from "react-native"
 import { router, useFocusEffect } from "expo-router"
 
 import { FeedTemplate } from "@/components/templates/feed-template"
-import { getProductRoute, ROUTES } from "@/constants/routes"
+import { ROUTES } from "@/constants/routes"
 import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
+import { discountsHero, discountsIcons } from "@/screens/profile/discounts-menu-assets"
+import { DiscountsDetails, type DiscountSection } from "@/screens/profile/discounts-details"
 import { createProfileDiscountsScreenStyles } from "@/screens/profile/profile-discounts-screen.styles"
 import { getMySettlement, type SettlementResponse } from "@/services/api/settlement"
-import { getMyPromotions } from "@/services/api/users"
-import type { ProfilePromotionResponse } from "@/services/api/users.types"
 import { formatSettlementMoney, settlementProgramKey } from "@/utils/settlement"
 
 export default function ProfileDiscountsScreen() {
@@ -24,7 +23,9 @@ export default function ProfileDiscountsScreen() {
 function DiscountsView({ userId }: { userId: number }) {
     const styles = useThemeStyles(createProfileDiscountsScreenStyles)
     const { t } = useLanguage()
-    const { accentPalette, palette } = useTheme()
+    const { palette, accentPalette, isDark } = useTheme()
+    const { width, fontScale } = useWindowDimensions()
+    const [section, setSection] = useState<DiscountSection | null>(null)
     const lastGood = useRef<SettlementResponse | null>(null)
     const fetchAccount = useCallback(async () => {
         const next = await getMySettlement()
@@ -36,109 +37,92 @@ function DiscountsView({ userId }: { userId: number }) {
         return next
     }, [])
     const { data, loading, error, reload } = useAsyncData<SettlementResponse | null>({
-        deps: [userId], fetcher: fetchAccount, initialData: null, preserveDataOnError: true,
-    })
-    const { data: promotions, reload: reloadPromotions } = useAsyncData<ProfilePromotionResponse[]>({
-        deps: [userId], fetcher: getMyPromotions, initialData: [], preserveDataOnError: true,
+        deps: [userId], fetcher: fetchAccount, initialData: null, preserveDataOnError: true, showErrorAlert: false,
     })
     const focusedOnce = useRef(false)
     useFocusEffect(useCallback(() => {
         if (!focusedOnce.current) { focusedOnce.current = true; return }
         void reload({ showLoading: false })
-        void reloadPromotions({ showLoading: false })
-    }, [reload, reloadPromotions]))
+    }, [reload]))
 
     const program = data?.loyalty_program ?? null
-    const bonusSelected = program === 1
-    const partnerSelected = program === 2
-    const available = Boolean(data?.fetched_at)
-    const issue = error || data?.status === "stale" || data?.status === "unavailable" || data?.status === "unlinked"
-    const summaryValue = bonusSelected ? "5%" : partnerSelected ? "3–20%" : "—"
     const programName = t(settlementProgramKey(program))
-    const statusLabel = loading && !available
-        ? t("common.loading")
-        : issue ? t(available ? "profile.settlement.stale" : "profile.settlement.unavailable") : null
+    const available = Boolean(data?.fetched_at)
+    let status: string | null = null
+    if (loading && !available) status = t("common.loading")
+    else if (data?.status === "unlinked") status = t("profile.settlement.unlinked")
+    else if (error || data?.status === "stale" || data?.status === "unavailable") {
+        status = t(available ? "profile.settlement.stale" : "profile.settlement.unavailable")
+    }
+    const benefit = program === 1 ? t("checkout.rewardCashbackTitle").replace("{percent}", "5") : programName
+    const benefitHint = program === 1 ? t("profile.discounts.afterShipment")
+        : program === 2 ? t("profile.discounts.partnerHint")
+        : t(program === 0 ? "profile.discounts.programNoneDescription" : "profile.discounts.programUnknownDescription")
 
-    return <FeedTemplate contentContainerStyle={styles.content} scrollViewStyle={styles.container} style={styles.screen}>
-        <LinearGradient colors={[accentPalette.primary, accentPalette.primaryPressed]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.summaryCard}>
-            <View style={styles.summaryGlow} />
-            <View>
-                <Text style={styles.summaryEyebrow}>{t("profile.discounts.selectedProgram")}</Text>
-                <View style={styles.summaryValueRow}>
-                    <Text style={styles.summaryValue}>{summaryValue}</Text>
-                    <Text style={styles.summaryValueLabel}>{programName}</Text>
+    return <FeedTemplate contentContainerStyle={styles.content} style={styles.screen}>
+        <Pressable accessibilityRole="button" onPress={() => router.dismissTo(ROUTES.profile)}
+            style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
+            <Image accessible={false} source={discountsIcons.back} style={{ width: 15, height: 20, tintColor: accentPalette.primary }} resizeMode="contain" />
+            <Text style={[styles.backLabel, { color: accentPalette.primary }]}>{t("route.profile")}</Text>
+        </Pressable>
+        <Text accessibilityRole="header" style={styles.title}>{t("profile.discounts.title")}</Text>
+        <View testID="loyalty-balance" style={styles.hero}>
+            <Image accessible={false} source={discountsHero} resizeMode="cover" style={styles.heroArt} />
+            <View style={[styles.heroContent, { minHeight: Math.max(182, Math.min(240, (width - 32) / 2)) }]}>
+                <View style={styles.heroAmount}>
+                    <Text style={styles.heroLabel}>{t("profile.discounts.balance")}</Text>
+                    <Text style={styles.balance} adjustsFontSizeToFit numberOfLines={1}>
+                        {formatSettlementMoney(data?.balance_rubles, 0)}
+                    </Text>
                 </View>
-                <Text style={styles.summaryDescription}>{t(bonusSelected ? "profile.discounts.guideCashbackText" : partnerSelected ? "profile.discounts.programRangeHint" : program === 0 ? "profile.discounts.programNoneDescription" : "profile.discounts.programUnknownDescription")}</Text>
+                <View style={styles.heroFooter}>
+                    <Pressable accessibilityRole="button" accessibilityLabel={t("profile.settlement.refresh")}
+                        disabled={loading} onPress={() => void reload()} style={styles.iconButton}>
+                        {loading ? <ActivityIndicator color="#FFFFFF" /> :
+                            <Image accessible={false} source={discountsIcons.refresh} style={{ width: 25, height: 25, tintColor: "#FFFFFF" }} />}
+                    </Pressable>
+                    <View style={styles.heroCopy}>
+                        <Text style={styles.heroBenefit}>{benefit}</Text>
+                        <Text accessibilityLiveRegion="polite" style={styles.heroHint}>{status ?? benefitHint}</Text>
+                    </View>
+                </View>
             </View>
-            <View style={styles.summaryMeta}>
-                <Text style={styles.summaryMetaLabel}>{statusLabel ?? t(program === 0 ? "profile.settlement.programNone" : "profile.discounts.activeNow")}</Text>
-                <Pressable accessibilityRole="button" accessibilityLabel={t("profile.settlement.refresh")} disabled={loading} onPress={() => { void reload(); void reloadPromotions() }} style={styles.refreshButton}>
-                    {loading ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.summaryMetaValue}>↻</Text>}
+        </View>
+
+        <View style={styles.shortcuts}>
+            {(["offers", "reviews"] as const).map(key => {
+                const offers = key === "offers"
+                const backgroundColor = offers ? (isDark ? "#153351" : "#D9EDFF") : (isDark ? "#312748" : "#ECE6FF")
+                const tintColor = offers ? (isDark ? "#87BEFF" : "#0969DB") : (isDark ? "#C9AAFF" : "#7335D1")
+                return <Pressable key={key} accessibilityRole="button" onPress={() => setSection(key)}
+                    style={({ pressed }) => [styles.shortcut, (width < 350 || fontScale > 1.25) && styles.shortcutNarrow, { backgroundColor }, pressed && styles.pressed]}>
+                    <Image accessible={false} source={discountsIcons[key]} style={{ width: 28, height: 28, tintColor }} />
+                    <Text style={styles.shortcutTitle}>{t(`profile.discounts.${key}`)}</Text>
                 </Pressable>
-            </View>
-        </LinearGradient>
-
-        <View style={styles.card} testID="loyalty-balance">
-            <View style={styles.statRow}>
-                <Text style={styles.statLabel}>{t("profile.settlement.balance")}</Text>
-                <Text style={styles.statValue}>{formatSettlementMoney(data?.balance_rubles)}</Text>
-            </View>
-            <Text style={styles.cardDescription}>{statusLabel ?? t(bonusSelected || partnerSelected ? "profile.discounts.balanceHint" : program === 0 ? "profile.discounts.programNoneDescription" : "profile.discounts.programUnknownDescription")}</Text>
+            })}
         </View>
 
-        <View style={styles.sectionHeading}>
-            <Text style={styles.cardTitle}>{t("profile.discounts.allProgramsTitle")}</Text>
-            <Text style={styles.cardDescription}>{t("profile.referral.programLockedHint")}</Text>
+        <Text accessibilityRole="header" style={styles.sectionTitle}>{t("profile.discounts.myProgram")}</Text>
+        <View style={styles.list}>
+            {(["terms", "purchases", "codes", "welcome"] as const).map((key, index) => (
+                <Fragment key={key}>
+                    {index > 0 && <View style={styles.divider} />}
+                    <Pressable accessibilityRole="button"
+                        onPress={() => key === "purchases" ? router.push(ROUTES.profileHistory) : setSection(key)}
+                        style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+                        <Image accessible={false} source={discountsIcons[key]} style={{ width: 23, height: 23, tintColor: palette.text }} />
+                        <View style={styles.rowCopy}>
+                            <Text style={styles.rowTitle}>{t(`profile.discounts.${key}`)}</Text>
+                            {key === "terms" && <Text style={styles.rowSubtitle}>{programName}</Text>}
+                            {key === "purchases" && data?.total_purchases_rubles != null &&
+                                <Text style={styles.rowSubtitle}>{t("profile.settlement.purchases")} · {formatSettlementMoney(data.total_purchases_rubles, 0)}</Text>}
+                        </View>
+                        <Image accessible={false} source={discountsIcons.next} style={{ width: 13, height: 13, tintColor: palette.mutedText }} />
+                    </Pressable>
+                </Fragment>
+            ))}
         </View>
-        {([
-            { id: 1, selected: bonusSelected, title: "profile.referral.bonusProgramTitle", value: "5%", description: "profile.discounts.guideCashbackText", rules: "profile.discounts.guideCashbackRules" },
-            { id: 2, selected: partnerSelected, title: "profile.referral.partnerProgramTitle", value: "3–20%", description: "profile.discounts.guidePromoText", rules: "profile.discounts.guidePartnerRules" },
-        ] as const).map(item => <View key={item.id} testID={`loyalty-program-${item.id}`} accessibilityState={{ selected: item.selected }} style={[styles.card, item.selected && { borderColor: accentPalette.primary, borderWidth: 1.5 }]}>
-            <View style={styles.cardHeader}>
-                <View style={styles.cardHeaderCopy}>
-                    <Text style={styles.cardTitle}>{t(item.title)}</Text>
-                    <Text style={[styles.programValue, { color: accentPalette.primary }]}>{item.value}</Text>
-                </View>
-                {item.selected ? <View style={[styles.activeBadge, { backgroundColor: accentPalette.primaryMuted }]}><Text style={[styles.activeBadgeText, { color: accentPalette.primary }]}>{t("profile.discounts.programSelected")}</Text></View> : null}
-            </View>
-            <Text style={styles.ruleText}>{t(item.description)}</Text>
-            <View style={styles.ruleDivider} />
-            <Text style={styles.ruleText}>{t(item.rules)}</Text>
-            {item.id === 2 ? <Text style={styles.cardDescription}>{t("profile.discounts.progressOwnPromoHint")}</Text> : null}
-        </View>)}
-
-        <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t("profile.discounts.purchaseDetailsTitle")}</Text>
-            <View style={styles.statRow}>
-                <Text style={styles.statLabel}>{t("profile.referral.totalPurchases")}</Text>
-                <Text style={styles.statValue}>{formatSettlementMoney(data?.total_purchases_rubles)}</Text>
-            </View>
-            <Text style={styles.cardDescription}>{t("profile.discounts.guidePartnerText")}</Text>
-        </View>
-
-        <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t("profile.discounts.promoTitle")}</Text>
-            {data?.referrer_promo_code ? <View style={styles.promoSurface}>
-                <View style={styles.promoCopy}><Text style={styles.smallLabel}>{t("profile.referral.attachedPromo")}</Text><Text selectable style={styles.promoCode}>{data.referrer_promo_code}</Text></View>
-            </View> : <Text style={styles.cardDescription}>{t("profile.discounts.noAttachedPromo")}</Text>}
-            {data?.own_promo_code ? <View style={styles.promoSurface}>
-                <View style={styles.promoCopy}><Text style={styles.smallLabel}>{t("profile.referral.ownPromo")}</Text><Text selectable style={styles.promoCode}>{data.own_promo_code}</Text></View>
-            </View> : null}
-        </View>
-
-        <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t("profile.discounts.offersTitle")}</Text>
-            <Text style={styles.cardDescription}>{t("profile.discounts.subtitle")}</Text>
-            {!promotions.length ? <Text style={styles.cardDescription}>{t("profile.discounts.empty")}</Text> : null}
-            {promotions.map(promotion => <Pressable key={`${promotion.kind}-${promotion.category_id ?? promotion.product_id}`} accessibilityRole="button"
-                onPress={() => promotion.kind === "category" && promotion.category_id
-                    ? router.push({ pathname: ROUTES.discover, params: { categoryId: String(promotion.category_id) } })
-                    : router.push(getProductRoute(promotion.product_id))}
-                style={({ pressed }) => [styles.promotionRow, pressed && { opacity: 0.7 }]}>
-                <Image resizeMode="contain" source={{ uri: promotion.image_url }} style={styles.promotionImage} />
-                <View style={styles.promotionCopy}><Text style={styles.promotionTitle}>{promotion.title}</Text><Text style={styles.promotionSubtitle}>{t(promotion.kind === "category" ? "profile.discounts.category" : "profile.discounts.product")}</Text></View>
-                <Text style={[styles.promotionDiscount, { color: palette.primary }]}>−{promotion.discount_percent}%</Text>
-            </Pressable>)}
-        </View>
+        {section && <DiscountsDetails section={section} account={data} accountStatus={status} userId={userId}
+            onClose={() => setSection(null)} />}
     </FeedTemplate>
 }

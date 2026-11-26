@@ -12,6 +12,7 @@ from src.database.schemas.auth.user import UserCreate
 from src.normalize import optional_str
 from .common import logger
 from .rate_limits import _apply_auth_rate_limit
+from src.app.services.auth.events import record_auth_event
 from .sessions import _build_auth_tokens_response
 from .verification import _create_and_send_verification_code, _verify_latest_email_code
 from .login import _get_login_user, _is_app_review_identity
@@ -65,9 +66,10 @@ async def verify_registration_user(request: Request, payload: UserRegisterVerify
     user.is_verified = True
     if mobile_shop_request(request.headers):
         await grant_on_email_confirmation(db, user)
+    await record_auth_event(db, user.id, registration=True)
     await db.commit()
     await db.refresh(user)
-    return await _build_auth_tokens_response(user, db)
+    return await _build_auth_tokens_response(user, db, registration=True)
 
 
 async def resend_registration_verification_code(request: Request, payload: UserVerificationCodeResendPayload, db: AsyncSession) -> UserVerificationCodeSentResponse:
@@ -112,13 +114,15 @@ async def verify_login_user(request: Request, payload: UserLoginVerifyPayload, d
     if user is None or not user.is_active: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code")
 
     await _verify_latest_email_code(user, payload.code, db)
-    if not user.is_verified:
+    newly_verified = not user.is_verified
+    if newly_verified:
         user.is_verified = True
         if mobile_shop_request(request.headers):
             await grant_on_email_confirmation(db, user)
+        await record_auth_event(db, user.id, registration=True)
     await db.commit()
     await db.refresh(user)
-    return await _build_auth_tokens_response(user, db)
+    return await _build_auth_tokens_response(user, db, registration=newly_verified)
 
 
 async def resend_login_verification_code(request: Request, payload: UserLoginPayload, db: AsyncSession) -> AuthVerificationRequiredResponse:

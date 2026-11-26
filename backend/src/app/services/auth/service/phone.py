@@ -15,6 +15,7 @@ from .common import logger
 from .utils import _counterparty_email, _counterparty_name_parts, _mask_email
 from .rate_limits import _apply_auth_rate_limit
 from .counterparty import _get_counterparty_for_phone, _resolve_user_for_phone, _sync_phone_identity_from_counterparty
+from src.app.services.auth.events import record_auth_event
 from .sessions import _build_auth_tokens_response
 from .verification import _create_and_send_verification_code, _verify_latest_email_code
 
@@ -34,9 +35,10 @@ async def _finalize_phone_auth_setup(user: User, db: AsyncSession) -> AuthTokens
         return PhoneAuthVerificationRequiredResponse(phone_number=user.phone_number, email=user.email, message="Verification code sent",)
 
     user.is_verified = True
+    await record_auth_event(db, user.id, registration=True)
     await db.commit()
     await db.refresh(user)
-    return await _build_auth_tokens_response(user, db)
+    return await _build_auth_tokens_response(user, db, registration=True)
 
 
 async def start_phone_auth(request: Request, payload: PhoneAuthStartPayload, db: AsyncSession, moysklad_client: MoySkladClient) -> PhoneAuthStartResponse:
@@ -145,6 +147,7 @@ async def verify_phone_auth(request: Request, payload: PhoneAuthVerifyPayload, d
 
     await _verify_latest_email_code(user, payload.code, db)
     user.is_verified = True
+    await record_auth_event(db, user.id, registration=True)
     await db.commit()
     await db.refresh(user)
 
@@ -152,7 +155,7 @@ async def verify_phone_auth(request: Request, payload: PhoneAuthVerifyPayload, d
         try: await moysklad_client.update_counterparty_email(user.moysklad_counterparty_id, user.email)
         except Exception: logger.exception("Failed to sync verified email back to MoySklad counterparty user_id=%s", user.id)
 
-    return await _build_auth_tokens_response(user, db)
+    return await _build_auth_tokens_response(user, db, registration=True)
 
 
 async def resend_phone_auth_verification_code(request: Request, payload: PhoneAuthCodeResendPayload, db: AsyncSession) -> PhoneAuthCodeSentResponse:

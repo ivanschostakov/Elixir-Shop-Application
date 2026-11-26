@@ -5,49 +5,118 @@ const { translate } = loadTs("i18n/translations.ts")
 const money = loadTs("utils/settlement.ts")
 const jsx = (type, props, key) => ({ type, props, key })
 
-function setup(program) {
-    let user = { id: 1 }
-    const snapshot = { loyalty_program: program, fetched_at: "2026-11-21T12:00:00Z", status: "fresh", balance_rubles: "1000.00", total_purchases_rubles: "125000", own_promo_code: "MYCODE", referrer_promo_code: "COMPANY" }
-    const { default: Screen } = loadTs("screens/profile/profile-discounts-screen.tsx", {
-        react: { useCallback: f => f, useRef: current => ({ current }) },
-        "react/jsx-runtime": { jsx, jsxs: jsx },
-        "react-native": Object.fromEntries(["ActivityIndicator", "Image", "Pressable", "Text", "View"].map(x => [x, x])),
-        "expo-linear-gradient": { LinearGradient: "Gradient" },
-        "expo-router": { useFocusEffect: () => {}, router: { push: () => {} } },
-        "@/components/templates/feed-template": { FeedTemplate: "Feed" },
-        "@/constants/routes": { ROUTES: {}, getProductRoute: () => "/product" },
-        "@/hooks/shared/use-async-data": { useAsyncData: ({ initialData }) => ({ data: Array.isArray(initialData) ? [] : snapshot, loading: false, error: null, reload: () => {} }) },
-        "@/hooks/use-theme-styles": { useThemeStyles: () => ({}) },
-        "@/providers/auth-provider": { useAuth: () => ({ user }) },
-        "@/providers/language-provider": { useLanguage: () => ({ t: translate }) },
-        "@/providers/theme-provider": { useTheme: () => ({ accentPalette: {}, palette: {} }) },
-        "@/screens/profile/profile-discounts-screen.styles": { createProfileDiscountsScreenStyles: () => ({}) },
-        "@/services/api/settlement": { getMySettlement: async () => snapshot },
-        "@/services/api/users": { getMyPromotions: async () => [] },
-        "@/utils/settlement": money,
-    })
-    return { screen: () => Screen(), setUser: value => { user = value } }
-}
 function all(tree, predicate) {
     if (!tree || typeof tree !== "object") return []
     if (Array.isArray(tree)) return tree.flatMap(x => all(x, predicate))
     return [...(predicate(tree) ? [tree] : []), ...all(tree.props?.children, predicate)]
 }
+
+function textOf(tree) {
+    return all(tree, n => n.type === "Text").flatMap(n => n.props.children).join(" ")
+}
+
+function press(tree, label) {
+    const button = all(tree, n => n.type === "Pressable" &&
+        (n.props.accessibilityLabel === label || textOf(n).includes(label)))[0]
+    assert.ok(button, label)
+    button.props.onPress()
+}
+
+function setup(program, options = {}) {
+    let user = { id: 1 }, section = null, destination = null
+    const snapshot = { loyalty_program: program, fetched_at: "2026-11-21T12:00:00Z", status: "fresh",
+        balance_rubles: "1250.75", total_purchases_rubles: "125000", own_promo_code: "MYCODE", referrer_promo_code: "COMPANY", ...options.account }
+    const getMySettlement = async () => snapshot
+    const getMyPromotions = async () => []
+    const getMyAppRewards = async () => null
+    const resources = new Map([
+        [getMyPromotions, { data: options.promotions ?? [], error: options.offerError ?? null }],
+        [getMyAppRewards, { data: { welcome_balance_rubles: "345.50", welcome_expires_at: "2026-12-01T16:00:00Z", text_review_points: 75, photo_review_points: 150 } }],
+    ])
+    const mocks = {
+        react: { Fragment: "Fragment", useCallback: f => f, useRef: current => ({ current }), useState: () => [section, s => { section = s }] },
+        "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+        "react-native": { ...Object.fromEntries(["ActivityIndicator", "Image", "Modal", "Pressable", "ScrollView", "Text", "View"].map(x => [x, x])),
+            useWindowDimensions: () => ({ width: 390, fontScale: 1 }) },
+        "expo-router": { useFocusEffect: () => {}, router: { push: href => { destination = href }, dismissTo: href => { destination = href } } },
+        "@/components/templates/feed-template": { FeedTemplate: "Feed" },
+        "@/constants/routes": { ROUTES: { profile: "/profile", profileHistory: "/profile-history", discover: "/discover" }, getProductRoute: id => "/products/" + id },
+        "@/hooks/shared/use-async-data": { useAsyncData: ({ fetcher }) => ({ data: snapshot, error: null, loading: false, reload: () => {}, ...resources.get(fetcher) }) },
+        "@/hooks/use-app-safe-area-insets": { useAppSafeAreaInsets: () => ({ bottom: 20 }) },
+        "@/hooks/use-theme-styles": { useThemeStyles: () => ({}) },
+        "@/providers/auth-provider": { useAuth: () => ({ user }) },
+        "@/providers/language-provider": { useLanguage: () => ({ t: translate }) },
+        "@/providers/theme-provider": { useTheme: () => ({ accentPalette: {}, palette: {} }) },
+        "@/screens/profile/profile-discounts-screen.styles": {},
+        "@/screens/profile/discounts-menu-assets": { discountsIcons: {}, discountsHero: 1 },
+        "@/services/api/settlement": { getMySettlement },
+        "@/services/api/users": { getMyPromotions },
+        "@/services/api/benefits": { getMyAppRewards },
+        "@/utils/settlement": money,
+    }
+    const { DiscountsDetails } = loadTs("screens/profile/discounts-details.tsx", mocks)
+    const { default: Screen } = loadTs("screens/profile/profile-discounts-screen.tsx", { ...mocks, "@/screens/profile/discounts-details": { DiscountsDetails } })
+    const menu = () => { const root = Screen(); return root.type(root.props) }
+    function details(label) {
+        press(menu(), label)
+        const child = all(menu(), node => node.type === DiscountsDetails)[0]
+        return child.type(child.props)
+    }
+    return { screen: Screen, menu, details, setUser: value => { user = value }, destination: () => destination }
+}
+
 for (const program of [0, null, 1, 2]) {
-    test(`discounts show both program guides and select only authoritative program ${program}`, () => {
+    test(`discounts menu and program terms use the account snapshot for program ${program}`, () => {
         const h = setup(program)
-        const root = h.screen()
-        const tree = root.type(root.props)
-        const cards = all(tree, n => n.props?.testID?.startsWith("loyalty-program-"))
+        assert.ok(textOf(h.menu()).includes(money.formatSettlementMoney("1250.75", 0)))
+        assert.equal(textOf(h.menu()).includes("5% бонусами"), program === 1)
+        const terms = h.details("Условия программы")
+        const cards = all(terms, n => n.props?.testID?.startsWith("loyalty-program-"))
         assert.equal(cards.length, 2)
         assert.deepEqual(cards.filter(n => n.props.accessibilityState.selected).map(n => n.props.testID), program === 1 || program === 2 ? [`loyalty-program-${program}`] : [])
-        const text = all(tree, n => n.type === "Text").map(n => n.props.children).flat().join(" ")
-        assert.ok(text.includes("Программы и преимущества"))
-        assert.ok(text.includes("COMPANY") && text.includes("MYCODE"))
-        assert.ok(text.includes(money.formatSettlementMoney("1000.00")), "Available balance is visible in the program screen")
+        terms.props.onRequestClose()
+        const codes = textOf(h.details("Промокоды"))
+        assert.ok(codes.includes("COMPANY") && codes.includes("MYCODE"))
         h.setUser({ id: 2 })
         assert.equal(h.screen().key, 2)
         h.setUser(null)
         assert.equal(h.screen(), null)
     })
 }
+
+test("purchase navigation, rewards and welcome balance are available from the menu", () => {
+    const h = setup(1)
+    press(h.menu(), "Мои покупки")
+    assert.equal(h.destination(), "/profile-history")
+    const reviews = h.details("Бонусы за отзывы")
+    assert.ok(textOf(reviews).includes("75") && textOf(reviews).includes("150"))
+    press(reviews, "Найти товар в каталоге")
+    assert.equal(h.destination(), "/discover")
+    const welcome = h.details("Приветственный бонус")
+    assert.ok(textOf(welcome).includes(money.formatSettlementMoney("345.50", 0)))
+    assert.ok(textOf(welcome).includes("Действует до"))
+    press(welcome, "Закрыть")
+    assert.equal(all(h.menu(), n => typeof n.type === "function").length, 0)
+})
+
+test("catalog offers open their category and product routes", () => {
+    const h = setup(2, { promotions: [
+        { kind: "category", title: "Category A", category_id: 7, product_id: 4, discount_percent: "5" },
+        { kind: "product", title: "Product B", product_id: 9, discount_percent: "12" },
+    ] })
+    press(h.details("Акции каталога"), "Category A")
+    assert.deepEqual(h.destination(), { pathname: "/discover", params: { categoryId: "7" } })
+    press(h.details("Акции каталога"), "Product B")
+    assert.equal(h.destination(), "/products/9")
+    const failed = setup(0, { offerError: "offline" }).details("Акции каталога")
+    assert.ok(textOf(failed).includes("Повторить"))
+    assert.ok(!textOf(failed).includes(translate("profile.discounts.empty")))
+})
+
+test("missing settlement does not imply a zero balance or absent promo code", () => {
+    const h = setup(null, { account: { fetched_at: null, status: "unavailable", balance_rubles: null, referrer_promo_code: null, own_promo_code: null } })
+    assert.ok(textOf(h.menu()).includes("—"))
+    const codes = textOf(h.details("Промокоды"))
+    assert.ok(codes.includes(translate("profile.settlement.unavailable")))
+    assert.ok(!codes.includes(translate("profile.discounts.noAttachedPromo")))
+})
