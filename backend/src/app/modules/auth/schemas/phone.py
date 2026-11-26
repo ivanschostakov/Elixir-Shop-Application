@@ -4,6 +4,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, model_validato
 
 from src.database.limits import EMAIL_MAX_LENGTH, PERSON_NAME_MAX_LENGTH, PHONE_NUMBER_MAX_LENGTH, PROMO_CODE_MAX_LENGTH
 from src.normalize import normalize_phone
+from .login import SignInPassword
 
 
 class _PhonePayload(BaseModel):
@@ -23,7 +24,7 @@ class PhoneAuthStartPayload(_PhonePayload):
 
 
 class PhoneAuthLoginPayload(_PhonePayload):
-    password: str = Field(min_length=8, max_length=128)
+    password: SignInPassword
 
 
 class PhoneAuthClaimPayload(_PhonePayload):

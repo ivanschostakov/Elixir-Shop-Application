@@ -7,9 +7,12 @@ import time
 from urllib.parse import urlencode
 
 import pytest
+from pydantic import ValidationError
 
-from src.app.modules.auth.schemas.phone import PhoneAuthRegisterPayload, PhoneAuthStartPayload
+from src.app.modules.auth.schemas.phone import PhoneAuthLoginPayload, PhoneAuthRegisterPayload, PhoneAuthStartPayload
 from src.app.modules.auth.schemas.login import UserLoginPayload
+from src.app.modules.auth.schemas.password_reset import UserPasswordResetNewPassword
+from src.app.modules.auth.schemas.register import UserRegisterPayload
 from src.app.modules.auth.schemas.telegram import TelegramAuthPayload
 from src.app.services.auth.service import (
     _get_login_user,
@@ -53,9 +56,24 @@ def test_login_payload_accepts_username_and_normalizes_email():
     assert email_payload.login == "user@example.com"
 
 
+def test_short_password_compatibility_is_for_sign_in_only():
+    for password in ("я", " x ", "a" * 200):
+        assert PhoneAuthLoginPayload(phone_number="+79990000000", password=password).password == password
+        assert UserLoginPayload(login="Клиент", password=password).password == password
+    with pytest.raises(ValidationError):
+        UserLoginPayload(login="Клиент@дом@", password="old-42")
+    with pytest.raises(ValidationError):
+        UserLoginPayload(login="customer", password="")
+    with pytest.raises(ValidationError):
+        UserRegisterPayload(email="test@example.com", name="Test", surname="User", password="old-42")
+    with pytest.raises(ValidationError):
+        UserPasswordResetNewPassword(email="test@example.com", password="old-42")
+
+
 @pytest.mark.anyio
-async def test_website_username_login_creates_app_user_with_bitrix_login(monkeypatch: pytest.MonkeyPatch):
-    payload = UserLoginPayload(login="urusy001", password="supersecret")
+@pytest.mark.parametrize(("username", "password"), [("urusy001", "supersecret"), ("Алёна", "old-42")])
+async def test_website_username_login_creates_app_user_with_bitrix_login(monkeypatch: pytest.MonkeyPatch, username, password):
+    payload = UserLoginPayload(login=username, password=password)
     captured: dict[str, object] = {}
 
     async def fake_get_user_by_username(_db, username):
@@ -72,7 +90,7 @@ async def test_website_username_login_creates_app_user_with_bitrix_login(monkeyp
             return {
                 "user": {
                     "id": 98,
-                    "login": "urusy001",
+                    "login": username,
                     "email": "urusy001@umn.edu",
                     "name": "Website",
                     "last_name": "Customer",
@@ -102,10 +120,10 @@ async def test_website_username_login_creates_app_user_with_bitrix_login(monkeyp
 
     user = await _get_login_user(payload, object())
 
-    assert captured["website_credentials"] == ("urusy001", "supersecret")
+    assert captured["website_credentials"] == (username, password)
     assert captured["email_lookups"] == ["urusy001@umn.edu"]
     assert captured["commit"] is False
-    assert user.username == "urusy001"
+    assert user.username == username
     assert user.email == "urusy001@umn.edu"
 
 

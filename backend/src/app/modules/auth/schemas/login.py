@@ -1,12 +1,18 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import Annotated
+
+from pydantic import BaseModel, EmailStr, Field, ValidationError, field_validator
 
 from src.database.limits import EMAIL_MAX_LENGTH, USERNAME_MAX_LENGTH
-from src.normalize import normalize_email
+from src.normalize import EMAIL_ADAPTER, normalize_email
+
+
+# Verify existing credentials as supplied; new-password policy belongs to signup/reset.
+SignInPassword = Annotated[str, Field(min_length=1, max_length=255)]
 
 
 class UserLoginPayload(BaseModel):
     login: str = Field(min_length=1, max_length=USERNAME_MAX_LENGTH)
-    password: str = Field(min_length=8, max_length=128)
+    password: SignInPassword
 
     @field_validator("login", mode="before")
     @classmethod
@@ -15,9 +21,12 @@ class UserLoginPayload(BaseModel):
         if not normalized:
             raise ValueError("Login is required")
         if "@" in normalized:
-            email = normalize_email(normalized)
-            if not email or len(email) > EMAIL_MAX_LENGTH:
-                raise ValueError("Enter a valid email or username")
+            try:
+                email = str(EMAIL_ADAPTER.validate_python(normalized)).lower()
+            except ValidationError as exc:
+                raise ValueError("Enter a valid email address") from exc
+            if len(email) > EMAIL_MAX_LENGTH:
+                raise ValueError("Email is too long")
             return email
         return normalized
 
