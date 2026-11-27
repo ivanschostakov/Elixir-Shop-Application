@@ -340,6 +340,24 @@ def test_support_to_crm_reply_lead_and_ai_visibility_flow(
         assert reply_body["messages"][-1]["author_name"] == "Анна Оператор"
         assert reply_body["messages"][-1]["author_role"] == "Поддержка"
 
+        upload_url = f"/api/v1/admin/support/conversations/{conversation_id}/messages/with-files"
+        pdf = b"%PDF-1.4\norder receipt\n%%EOF"
+        invalid = client.post(upload_url, files={"attachments": ("bad.pdf", b"not a PDF", "application/pdf")})
+        assert invalid.status_code == 415, invalid.text
+        receipt = client.post(upload_url, files={"attachments": ("receipt.pdf", pdf, "application/pdf")})
+        assert receipt.status_code == 200, receipt.text
+        attachment = receipt.json()["messages"][-1]["attachments"][0]
+        assert client.get(attachment["download_url"]).content == pdf
+        customer_url = f"/api/v1/users/me/support/attachments/{attachment['id']}"
+        assert client.get(customer_url, headers=customer_headers).content == pdf
+        other_headers = {"Authorization": f"Bearer {operator_auth['access_token']}"}
+        assert client.get(customer_url, headers=other_headers).status_code == 404
+        note = client.post(upload_url, data={"is_internal": "true"},
+                           files={"attachments": ("note.pdf", pdf, "application/pdf")})
+        assert note.status_code == 200, note.text
+        private_id = note.json()["messages"][-1]["attachments"][0]["id"]
+        assert client.get(f"/api/v1/users/me/support/attachments/{private_id}", headers=customer_headers).status_code == 404
+
         internal_note = client.post(
             f"/api/v1/admin/support/conversations/{conversation_id}/messages",
             json={"body": "Высокий интерес — создать лид.", "is_internal": True},

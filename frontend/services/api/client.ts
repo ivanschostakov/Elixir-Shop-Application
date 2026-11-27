@@ -151,12 +151,13 @@ async function request<T>(
         const result = await fetchTextWithDeadline(buildUrl(baseUrl, path, query), {
             ...init,
             headers,
-        }, remaining)
+        }, remaining, options?.responseType === "blob")
         response = result.response
         rawResponse = result.text
         if (auth && sessionId !== getAuthTokens()?.sessionId) {
             throw new ApiError(409, "Session changed; please try again")
         }
+        if (result.blob) return result.blob as T
     } catch (error) {
         if (error instanceof AppIntegrityUnavailableError || error instanceof ApiError) throw error
         if (error instanceof TypeError && /network request failed|failed to fetch|load failed|fetch failed/i.test(error.message)) {

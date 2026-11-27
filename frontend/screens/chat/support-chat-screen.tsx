@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import {
     ActivityIndicator,
     Alert,
-    Image,
     ImageBackground,
     Keyboard,
     Platform,
@@ -36,8 +35,7 @@ import { useTheme } from "@/providers/theme-provider"
 import { transcribeMyAiChatVoice } from "@/services/api/ai-chat"
 import type { UploadableChatAttachment } from "@/services/api/ai-chat.types"
 import type { SupportConversationStatus } from "@/services/api/support.types"
-import { API_BASE_URL } from "@/services/api/constants"
-import { getAuthTokens } from "@/services/auth/session"
+import { SupportMessageAttachment } from "./support-message-attachment"
 import {
     createAttachmentFromImagePickerAsset,
     formatVoiceDuration,
@@ -81,14 +79,6 @@ function messageTime(value: string) {
 function historyDate(value: string | null) {
     if (!value) return ""
     return new Intl.DateTimeFormat(getTranslationLocale(), { day: "2-digit", month: "short" }).format(new Date(value))
-}
-
-function attachmentSource(path: string) {
-    const token = getAuthTokens()?.accessToken
-    return {
-        uri: new URL(path, API_BASE_URL).toString(),
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    }
 }
 
 
@@ -417,10 +407,8 @@ export function SupportChatScreen({
                                         <View key={message.id} style={[styles.messageBlock, mine ? styles.messageBlockMine : null]}>
                                             <View style={[styles.messageBubble, mine ? styles.messageBubbleMine : null]}>
                                                 {!mine ? <Text style={styles.author}>{message.author_name}{message.author_role ? ` · ${message.author_role}` : ""}</Text> : null}
-                                                {message.attachments.map((attachment) => attachment.mime_type.startsWith("image/") ? (
-                                                    <Image key={attachment.id} resizeMode="cover" source={attachmentSource(attachment.download_url)} style={styles.attachmentImage} />
-                                                ) : (
-                                                    <Text key={attachment.id} style={styles.attachmentName}>{attachment.original_filename}</Text>
+                                                {message.attachments.map((attachment) => (
+                                                    <SupportMessageAttachment key={attachment.id} attachment={attachment} />
                                                 ))}
                                                 {message.body ? <Text style={styles.messageText}>{message.body}</Text> : null}
                                                 <Text style={styles.messageMeta}>

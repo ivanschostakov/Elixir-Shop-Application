@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
@@ -28,6 +28,9 @@ from src.app.services.support import (
     create_admin_support_conversation,
     get_support_conversation,
     mark_support_read,
+    cleanup_support_files,
+    persist_support_attachments,
+    prepare_support_attachments,
     send_support_reply_notification,
     serialize_support_conversation,
 )
@@ -283,6 +286,26 @@ async def reply_to_support_conversation(
     db: AsyncSession = Depends(get_db),
     context: AdminContext = Depends(require_permission("support.reply", write=True)),
 ) -> AdminSupportConversationDetail:
+    return await _send_reply(conversation_id, payload.body, payload.is_internal, None, request, db, context)
+
+
+@admin_support_router.post("/conversations/{conversation_id}/messages/with-files", response_model=AdminSupportConversationDetail)
+async def reply_with_attachments(
+    conversation_id: int, request: Request,
+    attachments: list[UploadFile] = File(...), body: str = Form(default="", max_length=8000),
+    is_internal: bool = Form(default=False), db: AsyncSession = Depends(get_db),
+    context: AdminContext = Depends(require_permission("support.reply", write=True)),
+) -> AdminSupportConversationDetail:
+    return await _send_reply(conversation_id, body, is_internal, attachments, request, db, context)
+
+
+async def _send_reply(
+    conversation_id: int, body: str, is_internal: bool, uploads: list[UploadFile] | None,
+    request: Request, db: AsyncSession, context: AdminContext,
+) -> AdminSupportConversationDetail:
+    prepared = await prepare_support_attachments(uploads, allow_pdf=True)
+    if not body.strip() and not prepared:
+        raise HTTPException(status_code=422, detail="Message or attachment is required")
     conversation = await get_support_conversation(db, conversation_id, lock=True)
     if conversation is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support conversation not found")
@@ -290,20 +313,22 @@ async def reply_to_support_conversation(
         db,
         conversation=conversation,
         admin_user_id=context.user.id,
-        body=payload.body,
-        is_internal=payload.is_internal,
+        body=body,
+        is_internal=is_internal,
     )
-    await add_admin_audit(
-        db,
-        request,
-        context,
-        action="support.note" if payload.is_internal else "support.reply",
-        entity_type="support_conversation",
-        entity_id=conversation.id,
-        after={"message_id": message.id, "is_internal": payload.is_internal},
-    )
-    await db.commit()
-    if not payload.is_internal:
+    written: list[Path] = []
+    try:
+        await persist_support_attachments(db, conversation_id=conversation.id, message=message,
+                                          prepared=prepared, written_paths=written)
+        await add_admin_audit(db, request, context, action="support.note" if is_internal else "support.reply",
+                              entity_type="support_conversation", entity_id=conversation.id,
+                              after={"message_id": message.id, "is_internal": is_internal, "files": len(prepared)})
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        cleanup_support_files(written)
+        raise
+    if not is_internal:
         await send_support_reply_notification(
             db,
             conversation=conversation,

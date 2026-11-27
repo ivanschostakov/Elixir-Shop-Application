@@ -14,6 +14,12 @@ export function getMySupportInbox() {
     return apiGet<SupportInbox>(supportPath, undefined, { appIntegrityAction: "support:read" })
 }
 
+export function downloadSupportAttachment(id: number) {
+    return apiGet<Blob>(`${supportPath}/attachments/${id}`, undefined, {
+        appIntegrityAction: "support:read", responseType: "blob", timeoutMs: 60000,
+    })
+}
+
 export function getMySupportConversation(conversationId: number) {
     return apiGet<SupportConversation>(
         `${supportPath}/conversations/${conversationId}`,

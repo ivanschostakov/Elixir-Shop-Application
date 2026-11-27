@@ -1,7 +1,7 @@
 export class RequestDeadlineError extends Error {}
 
 /** Bounds headers AND body reading, even if a native fetch ignores abort(). */
-export async function fetchTextWithDeadline(url: string, init: RequestInit, timeoutMs = 20000) {
+export async function fetchTextWithDeadline(url: string, init: RequestInit, timeoutMs = 20000, binary = false) {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     let rejectAbort: (reason: Error) => void = () => undefined
@@ -15,6 +15,7 @@ export async function fetchTextWithDeadline(url: string, init: RequestInit, time
     const operation = async () => {
         if (init.signal?.aborted) throw new RequestDeadlineError("Request interrupted")
         const response = await fetch(url, { ...init, signal: controller.signal })
+        if (binary && response.ok) return { response, text: "", blob: await response.blob() }
         const text = response.status === 204 ? "" : await response.text()
         return { response, text }
     }

@@ -79,6 +79,7 @@ export function BannersPage() {
   const client = useQueryClient()
   const [editing, setEditing] = useState<Banner | "new" | null>(null)
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
+  const [uploading, setUploading] = useState(0)
   const [statsBanner, setStatsBanner] = useState<Banner | null>(null)
   const [form] = Form.useForm<BannerForm>()
   const values = Form.useWatch([], form)
@@ -129,6 +130,7 @@ export function BannersPage() {
   const uploadImage = (field: "image_path" | "desktop_image_path" | "mobile_image_path") => async (options: UploadOptions) => {
     const body = new FormData()
     body.append("file", options.file as File)
+    setUploading(count => count + 1)
     try {
       const result = await apiRequest<BannerUpload>("/banners/upload", { method: "POST", body })
       form.setFieldValue(field, result.image_path)
@@ -136,6 +138,8 @@ export function BannersPage() {
     } catch (error) {
       options.onError?.(error as Error)
       void message.error((error as Error).message)
+    } finally {
+      setUploading(count => count - 1)
     }
   }
 
@@ -201,8 +205,8 @@ export function BannersPage() {
       { title: copy.updated, dataIndex: "updated_at", render: (value: string) => dateTime(value, locale) },
       { title: "", align: "right", render: (_: unknown, row) => <Button icon={<EditOutlined />} onClick={() => setEditing(row)}>{copy.edit}</Button> },
     ]} scroll={{ x: 1120 }} />
-    <Modal width={980} styles={{ body: { maxHeight: "calc(100vh - 190px)", overflowY: "auto", overflowX: "hidden" } }} open={Boolean(editing)} title={editing === "new" ? copy.add : copy.edit} okText={copy.save} confirmLoading={mutation.isPending} onCancel={() => setEditing(null)} onOk={() => void form.validateFields().then((nextValues) => mutation.mutate(nextValues))}>
-      <Form form={form} layout="vertical">
+    <Modal width={980} styles={{ body: { maxHeight: "calc(100vh - 190px)", overflowY: "auto", overflowX: "hidden" } }} open={Boolean(editing)} title={editing === "new" ? copy.add : copy.edit} okText={copy.save} confirmLoading={mutation.isPending || uploading > 0} cancelButtonProps={{ disabled: uploading > 0 }} onCancel={() => { if (!uploading) setEditing(null) }} onOk={() => { if (!uploading) void form.validateFields().then((nextValues) => mutation.mutate(nextValues)) }}>
+      <Form form={form} layout="vertical" disabled={uploading > 0 || mutation.isPending}>
         <Alert
           type="info"
           showIcon

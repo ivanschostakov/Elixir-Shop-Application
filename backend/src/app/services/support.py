@@ -242,7 +242,7 @@ def serialize_support_conversation(
     return data
 
 
-async def _prepare_support_attachments(uploads: list[UploadFile] | None) -> list[tuple[str, str, str, bytes]]:
+async def prepare_support_attachments(uploads: list[UploadFile] | None, *, allow_pdf: bool = False) -> list[tuple[str, str, str, bytes]]:
     files = uploads or []
     if len(files) > SUPPORT_MAX_ATTACHMENTS:
         raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=f"Maximum {SUPPORT_MAX_ATTACHMENTS} attachments")
@@ -260,7 +260,10 @@ async def _prepare_support_attachments(uploads: list[UploadFile] | None) -> list
         if total_bytes > SUPPORT_MAX_TOTAL_ATTACHMENT_BYTES:
             raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Support attachments exceed total limit")
         mime_type = (upload.content_type or "").split(";", 1)[0].strip().lower()
-        if mime_type not in SUPPORTED_IMAGE_MIME_TYPES:
+        if allow_pdf and mime_type == "application/pdf":
+            if not content.startswith(b"%PDF-"):
+                raise HTTPException(status_code=415, detail="Invalid PDF attachment")
+        elif mime_type not in SUPPORTED_IMAGE_MIME_TYPES:
             raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Only image attachments are supported")
         original_filename = Path((upload.filename or f"image-{index}").strip()).name[:255] or f"image-{index}"
         extension = Path(original_filename).suffix.lower()
@@ -270,14 +273,14 @@ async def _prepare_support_attachments(uploads: list[UploadFile] | None) -> list
     return prepared
 
 
-async def _persist_support_attachments(
+async def persist_support_attachments(
     db: AsyncSession,
     *,
     conversation_id: int,
     message: CrmMessage,
     prepared: list[tuple[str, str, str, bytes]],
-) -> list[Path]:
-    written_paths: list[Path] = []
+    written_paths: list[Path],
+) -> None:
     for original_filename, filename, mime_type, content in prepared:
         attachment = CrmMessageAttachment(
             message_id=message.id,
@@ -290,10 +293,9 @@ async def _persist_support_attachments(
         await db.flush()
         path = SUPPORT_MEDIA_DIR / str(conversation_id) / str(message.id) / filename
         path.parent.mkdir(parents=True, exist_ok=True)
+        written_paths.append(path)
         async with aiofiles.open(path, "wb") as target:
             await target.write(content)
-        written_paths.append(path)
-    return written_paths
 
 
 def cleanup_support_files(paths: list[Path]) -> None:
@@ -447,7 +449,7 @@ async def add_user_support_message(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Support conversation not found")
         return result
 
-    prepared = await _prepare_support_attachments(uploads)
+    prepared = await prepare_support_attachments(uploads)
     normalized_body = body.strip()
     if not normalized_body and not prepared:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Message or attachment is required")
@@ -470,11 +472,12 @@ async def add_user_support_message(
     await db.flush()
     written_paths: list[Path] = []
     try:
-        written_paths = await _persist_support_attachments(
+        await persist_support_attachments(
             db,
             conversation_id=conversation.id,
             message=message,
             prepared=prepared,
+            written_paths=written_paths,
         )
         conversation.last_message_at = now
         conversation.admin_unread_count += 1

@@ -48,8 +48,7 @@ function setup() {
         "@/hooks/use-theme-styles": { useThemeStyles: () => ({}) },
         "@/providers/language-provider": { useLanguage: () => ({ t: key => key }) },
         "@/providers/theme-provider": { useTheme: () => ({ isDark: false, themeName: "light", palette: {} }) },
-        "@/services/api/constants": { API_BASE_URL: "https://example.test/api" },
-        "@/services/auth/session": { getAuthTokens: () => null },
+        "./support-message-attachment": { SupportMessageAttachment: "SupportAttachment" },
         "@/screens/chat/chat-attachments": {
             createAttachmentFromImagePickerAsset: asset => ({ uri: asset.uri, fileName: asset.fileName, mimeType: "image/jpeg" }),
             formatVoiceDuration: () => "0:01", getVoiceRecordingFilename: () => "voice.m4a", getVoiceRecordingMimeType: () => "audio/mp4",
@@ -78,6 +77,15 @@ function setup() {
     return { requests, inbox, find, render, failSend: () => { rejectSend = true } }
 }
 const flush = () => new Promise(resolve => setImmediate(resolve))
+
+test("support displays an attachment-only manager reply in the conversation", () => {
+    const h = setup()
+    const file = { id: 24, original_filename: "receipt.pdf", mime_type: "application/pdf" }
+    h.inbox.active = { id: 12, status: "open", messages: [
+        { id: 3, sender_type: "admin", author_name: "Support", body: "", created_at: new Date().toISOString(), attachments: [file] },
+    ] }
+    assert.equal(h.find(h.render(), "SupportAttachment").props.attachment, file)
+})
 
 test("support opens with text composer and creates a conversation without another service", async () => {
     const h = setup()

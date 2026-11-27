@@ -20,7 +20,10 @@ test("support requests retain integrity and attachments and never call AI endpoi
         await api.createMySupportConversation({ client_message_id: "first", message: "Order question" })
         await api.sendMySupportMessage(12, { clientMessageId: "next", message: "Photo", attachments: [{ uri: "file:///photo.jpg", mimeType: "image/jpeg", fileName: "photo.jpg" }] })
         await api.markMySupportConversationRead(12)
-        assert.equal(calls.length, 5)
+        await api.downloadSupportAttachment(42)
+        assert.equal(calls.length, 6)
+        assert.equal(calls[5].args[0], "/v1/users/me/support/attachments/42")
+        assert.equal(calls[5].args[2].responseType, "blob")
         for (const { args } of calls) {
             assert.ok(args[0].startsWith("/v1/users/me/support"))
             assert.match(args[2].appIntegrityAction, /^support:(read|write)$/)

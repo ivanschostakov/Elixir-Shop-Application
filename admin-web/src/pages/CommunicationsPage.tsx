@@ -4,6 +4,7 @@ import {
   CustomerServiceOutlined,
   DownloadOutlined,
   MessageOutlined,
+  PaperClipOutlined,
   PlusOutlined,
   RobotOutlined,
   SearchOutlined,
@@ -36,6 +37,8 @@ import {
   Table,
   Timeline,
   Typography,
+  Upload,
+  type UploadFile,
   message,
 } from "antd"
 import { useEffect, useMemo, useState } from "react"
@@ -314,8 +317,6 @@ function SupportInboxTab() {
   const { hasPermission, principal } = useAuth()
   const queryClient = useQueryClient()
   const [params, setParams] = useSearchParams()
-  const [reply, setReply] = useState("")
-  const [internal, setInternal] = useState(false)
   const [composeOpen, setComposeOpen] = useState(false)
   const [customerSearch, setCustomerSearch] = useState("")
   const [startForm] = Form.useForm<StartConversationForm>()
@@ -517,19 +518,6 @@ function SupportInboxTab() {
     onError: (error: Error) => void message.error(error.message),
   })
 
-  const replyMutation = useMutation({
-    mutationFn: () => apiRequest<SupportConversationDetail>(`/support/conversations/${selectedId}/messages`, {
-      method: "POST",
-      body: JSON.stringify({ body: reply.trim(), is_internal: internal }),
-    }),
-    onSuccess: (result) => {
-      setReply("")
-      setInternal(false)
-      queryClient.setQueryData(["support-conversation", selectedId], result)
-      void queryClient.invalidateQueries({ queryKey: ["support-conversations"] })
-    },
-    onError: (error: Error) => void message.error(error.message),
-  })
   const updateMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => apiRequest<SupportConversationDetail>(`/support/conversations/${selectedId}`, {
       method: "PATCH",
@@ -745,19 +733,56 @@ function SupportInboxTab() {
               ))}
             </div>
             {hasPermission("support.reply") && !["resolved", "spam"].includes(selected.status) ? (
-              <div className="conversation-composer">
-                <Input.TextArea rows={3} value={reply} onChange={(event) => setReply(event.target.value)} placeholder={internal ? copy.note : copy.reply} maxLength={8000} />
-                <Space>
-                  <Switch checked={internal} onChange={setInternal} /> <Typography.Text>{copy.note}</Typography.Text>
-                  <Button type="primary" icon={<SendOutlined />} disabled={!reply.trim()} loading={replyMutation.isPending} onClick={() => replyMutation.mutate()}>{copy.send}</Button>
-                </Space>
-              </div>
+              <SupportReplyComposer key={selected.id} conversationId={selected.id} copy={copy} />
             ) : null}
           </Card>
         )}
       </Col>
     </Row>
   )
+}
+
+export function SupportReplyComposer({ conversationId, copy }: {
+  conversationId: number; copy: { note: string; reply: string; send: string }
+}) {
+  const { locale } = useLanguage()
+  const client = useQueryClient()
+  const [body, setBody] = useState("")
+  const [internal, setInternal] = useState(false)
+  const [files, setFiles] = useState<UploadFile[]>([])
+  const reply = useMutation({
+    mutationFn: () => {
+      const path = `/support/conversations/${conversationId}/messages`
+      if (!files.length) return apiRequest<SupportConversationDetail>(path, {
+        method: "POST", body: JSON.stringify({ body: body.trim(), is_internal: internal }),
+      })
+      const form = new FormData()
+      form.append("body", body.trim())
+      form.append("is_internal", String(internal))
+      for (const file of files) {
+        if (!file.originFileObj) throw new Error(file.name)
+        form.append("attachments", file.originFileObj, file.name)
+      }
+      return apiRequest<SupportConversationDetail>(path + "/with-files", { method: "POST", body: form })
+    },
+    onSuccess: (result) => {
+      setBody(""); setInternal(false); setFiles([])
+      client.setQueryData(["support-conversation", result.id], result)
+      void client.invalidateQueries({ queryKey: ["support-conversations"] })
+    },
+    onError: (error: Error) => void message.error(error.message),
+  })
+  return <div className="conversation-composer">
+    <Input.TextArea rows={3} value={body} disabled={reply.isPending} onChange={(e) => setBody(e.target.value)} placeholder={internal ? copy.note : copy.reply} maxLength={8000} />
+    <Upload multiple accept="image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,application/pdf" fileList={files}
+      disabled={reply.isPending} beforeUpload={() => false} onChange={({ fileList }) => setFiles(fileList)}>
+      <Button icon={<PaperClipOutlined />} disabled={reply.isPending}>{locale === "ru" ? "Прикрепить фото или PDF" : "Attach image or PDF"}</Button>
+    </Upload>
+    <Space wrap>
+      <Switch checked={internal} disabled={reply.isPending} onChange={setInternal} /> <Typography.Text>{copy.note}</Typography.Text>
+      <Button type="primary" icon={<SendOutlined />} disabled={!body.trim() && !files.length} loading={reply.isPending} onClick={() => reply.mutate()}>{copy.send}</Button>
+    </Space>
+  </div>
 }
 
 function extractInteractive(context: Record<string, unknown>) {
