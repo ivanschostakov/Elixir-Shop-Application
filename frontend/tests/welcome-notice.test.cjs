@@ -5,7 +5,7 @@ const settle = () => new Promise(resolve => setImmediate(resolve))
 
 test("shows the awarded credit once and retries acknowledgement without another alert", async () => {
     let requests = 0, alerts = 0, acknowledgements = 0, foreground, remind, permissionPrompts = 0
-    const native = { Platform: { OS: "android" }, Alert: { alert: (_, __, buttons) => { alerts++; remind = buttons[1].onPress } },
+    const native = { Platform: { OS: "android" }, Alert: { alert: (_, __, buttons) => { alerts++; assert.equal(buttons.length, 1); remind = buttons[0].onPress } },
         AppState: { currentState: "active", addEventListener: (_, f) => { foreground = f; return { remove() {} } } } }
     const { useWelcomeNotice } = loadTs("providers/use-welcome-notice.ts", {
         react: { useRef: current => ({current}), useEffect: f => f() },
@@ -23,10 +23,29 @@ test("shows the awarded credit once and retries acknowledgement without another 
     assert.equal(requests, 0)
     useWelcomeNotice(1, true)
     await settle()
+    assert.equal(permissionPrompts, 0)
+    remind()
     foreground("active")
     await settle()
     assert.deepEqual([alerts, acknowledgements], [1, 2])
-    assert.equal(permissionPrompts, 0)
-    remind()
     assert.equal(permissionPrompts, 1)
+})
+
+test("already acknowledged credit enrolls without a button; no token falls back to the daily notice", async () => {
+    for (const token of [null, "registered"]) {
+        let prompts = 0, claims = 0, alerts = 0
+        const {useWelcomeNotice} = loadTs("providers/use-welcome-notice.ts", {
+            react: {useRef: current => ({current}), useEffect: cb => cb()},
+            "react-native": { Platform:{OS:"android"}, AppState:{currentState:"active", addEventListener:()=>({remove(){}})},
+                Alert:{alert:(title,body)=>{alerts++;assert.equal(title,"Title");assert.equal(body,"Body")}} },
+            "@/i18n/translations": {translate:k=>k},
+            "@/services/api/benefits": {getWelcomeNotice:async()=>null,claimWelcomeReminder:async()=>{claims++;return {title:"Title",body:"Body"}}},
+            "@/services/notifications/order-status-notifications": {syncOrderStatusNotifications:async opts=>{
+                prompts++;assert.deepEqual(opts,{requestPermissions:true,automatic:true});return token
+            }},
+        })
+        useWelcomeNotice(1,true)
+        await settle()
+        assert.deepEqual([prompts,claims,alerts],token ? [1,0,0] : [1,1,1])
+    }
 })

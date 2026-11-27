@@ -1227,9 +1227,9 @@ export default function CheckoutScreen() {
                                     </>
                                 ) : null}
                                 {benefitCheck?.welcome_expires_at && Number(benefitCheck.welcome_balance_rubles) > 0 ? (
-                                    <View style={checkoutScreenStyles.detailsSheetTextBlock}>
-                                        <Text style={checkoutScreenStyles.detailsSheetLabel}>{t("checkout.welcomeBonusTitle")}: {formatMoney(Number(benefitCheck.welcome_balance_rubles), "RUB")}</Text>
-                                        <Text style={checkoutScreenStyles.totalLabel}>{t("checkout.welcomeBonusTerms")} {new Date(benefitCheck.welcome_expires_at).toLocaleString(language === "kz" ? "kk-KZ" : language)}</Text>
+                                    <View style={checkoutScreenStyles.rewardModeSection}>
+                                        <Text style={checkoutScreenStyles.rewardModeTitle}>{t("checkout.welcomeBonusTitle")}: {formatMoney(Number(benefitCheck.welcome_balance_rubles), "RUB")}</Text>
+                                        <Text style={checkoutScreenStyles.rewardModeOptionHint}>{t("checkout.welcomeBonusTerms")} {new Date(benefitCheck.welcome_expires_at).toLocaleString(language === "kz" ? "kk-KZ" : language, {dateStyle:"medium", timeStyle:"short"})}</Text>
                                     </View>
                                 ) : null}
                                 {Number(benefitCheck?.bonus_balance_rubles ?? 0) > 0 ? (

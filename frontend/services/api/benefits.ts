@@ -19,6 +19,10 @@ export function acknowledgeWelcomeNotice(id: number) {
     return apiPost<void, null>(benefitsPath(`/welcome-notice/${id}/seen`), null)
 }
 
+export function claimWelcomeReminder() {
+    return apiPost<{ title: string; body: string } | null, null>(benefitsPath("/welcome-reminder"), null)
+}
+
 export function checkMyBenefits(payload: BenefitCheckPayload) {
     return apiPost<BenefitCheckResponse, BenefitCheckPayload>(benefitsPath("/check"), payload)
 }

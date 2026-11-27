@@ -30,6 +30,12 @@ async def mark_welcome_notice_seen(credit_id: int, db: AsyncSession = Depends(ge
     await acknowledge_notice(db, current_user.id, credit_id)
 
 
+@my_benefits_router.post("/welcome-reminder")
+async def get_daily_welcome_reminder(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.app.services.notifications.welcome import claim_in_app_reminder
+    return await claim_in_app_reminder(db, current_user.id)
+
+
 @my_benefits_router.get("/rewards", response_model=AppRewardsRead)
 async def get_my_app_rewards(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> AppRewardsRead:
     credit, available = await app_welcome.wallet(db, current_user.id)

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "47069994757",
+    "project_id": "elixir-shop",
+    "storage_bucket": "elixir-shop.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:47069994757:android:e9a7a4e78dcbb9a61be16c",
+        "android_client_info": {
+          "package_name": "com.elixirpeptide.elixirpeptide"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCKWUohuLXb0EmzBlGyJqwMvm_56Dusihw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

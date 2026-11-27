@@ -141,6 +141,31 @@ async def test_five_push_windows_retry_partial_balance_and_expiry(db, monkeypatc
 
 
 @pytest.mark.anyio
+async def test_foreground_fallback_and_push_share_one_daily_slot(db, monkeypatch):
+    user = await customer(db)
+    now = promo.START
+    monkeypatch.setattr(promo, "ufa_now", lambda: now)
+    monkeypatch.setattr(welcome, "ufa_now", lambda: now)
+    credit_id = await promo.grant_on_email_confirmation(db, user)
+    assert await welcome.claim_in_app_reminder(db, user.id) is None
+    await welcome.acknowledge_notice(db, user.id, credit_id)
+    now += timedelta(days=1)
+    notice = await welcome.claim_in_app_reminder(db, user.id)
+    assert notice["title"] == welcome.TITLES[1] and "1 000,00 ₽" in notice["body"]
+    assert await welcome.claim_in_app_reminder(db, user.id) is None
+    db.add(UserPushToken(user_id=user.id, expo_push_token="local-fixture", platform="android"))
+    await db.flush()
+    send = AsyncMock(return_value=True)
+    monkeypatch.setattr(welcome, "send_push_to_users", send)
+    assert await welcome.process_welcome_reminders(db, now=now) == 0
+    now += timedelta(days=1)
+    assert await welcome.claim_in_app_reminder(db, user.id) is None
+    assert await welcome.process_welcome_reminders(db, now=now) == 1
+    now += timedelta(days=3)
+    assert await welcome.claim_in_app_reminder(db, user.id) is None
+
+
+@pytest.mark.anyio
 async def test_push_uses_remaining_balance_and_never_catches_up(db, monkeypatch):
     user = await customer(db)
     t = promo.START

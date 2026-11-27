@@ -21,6 +21,7 @@ type PushNotificationData = Record<string, unknown>
 type PushNotificationNavigate = (target: Href, data: PushNotificationData) => void
 type OrderStatusNotificationSyncOptions = {
     requestPermissions?: boolean
+    automatic?: boolean
 }
 
 const ORDER_STATUS_PAYMENT_CODES = new Set(["created", "invoice_sent"])
@@ -103,10 +104,16 @@ async function hasPushPermissions(options: OrderStatusNotificationSyncOptions) {
         return true
     }
 
-    if (!options.requestPermissions) {
+    if (!options.requestPermissions || !existingPermissions.canAskAgain || AppState.currentState !== "active") {
         return false
     }
 
+    const store = await import("expo-secure-store")
+    const promptKey = "notifications.permissionPrompt.v1"
+    // Android can report denied before the first prompt. Never auto-prompt repeatedly.
+    if (options.automatic && (await store.getItemAsync(promptKey) ||
+        (Platform.OS !== "android" && existingPermissions.status === "denied"))) return false
+    await store.setItemAsync(promptKey, "1")
     const requestedPermissions = await Notifications.requestPermissionsAsync()
     return requestedPermissions.granted
 }

@@ -107,6 +107,11 @@ module.exports = () => {
     const apiBaseUrl = getEnvValue("EXPO_PUBLIC_API_BASE_URL")
     const androidCloudProjectNumber = getEnvValue("EXPO_PUBLIC_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER")
     const baseConfig = appJson.expo
+    const firebaseFile = getEnvValue("GOOGLE_SERVICES_JSON") ||
+        (fs.existsSync(path.join(projectRoot, "google-services.json")) ? "./google-services.json" : undefined)
+    if (process.env.EAS_BUILD_PLATFORM === "android" && process.env.EAS_BUILD_PROFILE === "production" && !firebaseFile) {
+        throw new Error("Set GOOGLE_SERVICES_JSON (Firebase Android client file) before building for production.")
+    }
     const playOta = process.env.ELIXIR_PLAY_OTA === "1"
     const androidStore = process.env.ELIXIR_ANDROID_STORE === "1"
     if (playOta && androidStore) throw new Error("Choose one Android update runtime per build or export.")
@@ -119,9 +124,10 @@ module.exports = () => {
             ...baseConfig,
             ...((playOta || androidStore) && {
                 version: androidVersion,
-                android: { ...baseConfig.android, runtimeVersion: androidVersion },
                 updates: { enabled: true, url: `https://u.expo.dev/${baseConfig.extra.eas.projectId}` },
             }),
+            android: { ...baseConfig.android, ...((playOta || androidStore) && {runtimeVersion: androidVersion}),
+                ...(firebaseFile && {googleServicesFile: firebaseFile}) },
             extra: compactObject({
                 ...baseExtra,
                 apiBaseUrl,
