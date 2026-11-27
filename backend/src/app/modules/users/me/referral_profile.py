@@ -5,6 +5,7 @@ from starlette import status
 from src.app.modules.auth.dependencies import get_current_user
 from src.app.modules.users.me.schemas.referrals import (
     ReferrerCodeAttachPayload,
+    ReferrerCodeUnlinkPayload,
     ReferrerCodeCheckPayload,
     ReferrerCodeCheckRead,
     ReferralProfileRead,
@@ -74,3 +75,11 @@ async def detach_my_referrer_code(db: AsyncSession = Depends(get_db), current_us
     summary = await get_referral_profile_summary(db, user=current_user)
     await db.commit()
     return ReferralProfileRead.model_validate(summary)
+
+
+@my_referral_profile_router.post("/referrer-code/unlink", status_code=204, response_class=Response)
+async def unlink_my_accounting_code(payload: ReferrerCodeUnlinkPayload, db: AsyncSession = Depends(get_db),
+                                    current_user: User = Depends(get_current_user)) -> Response:
+    from src.app.services.referrals.unlink import unlink_accounting_code
+    await unlink_accounting_code(db, user=current_user, expected_code=payload.code, operation_id=payload.operation_id)
+    return Response(status_code=204)

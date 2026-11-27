@@ -1,3 +1,4 @@
+import { useRef, useState } from "react"
 import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, View } from "react-native"
 import { router, type Href } from "expo-router"
 
@@ -13,7 +14,9 @@ import { createProfileDiscountsScreenStyles } from "@/screens/profile/profile-di
 import { getMyAppRewards } from "@/services/api/benefits"
 import type { AppRewardsResponse } from "@/services/api/benefits.types"
 import type { SettlementResponse } from "@/services/api/settlement"
-import { getMyPromotions } from "@/services/api/users"
+import { detachMyReferrerCode, getMyPromotions } from "@/services/api/users"
+import { getErrorMessage } from "@/utils/errors"
+import { createUuid } from "@/utils/uuid"
 import type { ProfilePromotionResponse } from "@/services/api/users.types"
 import { formatSettlementMoney } from "@/utils/settlement"
 
@@ -25,13 +28,18 @@ type DetailsProps = {
     accountStatus: string | null
     userId: number
     onClose: () => void
+    onUnlinked: () => void
 }
 
-export function DiscountsDetails({ section, account, accountStatus, userId, onClose }: DetailsProps) {
+export function DiscountsDetails({ section, account, accountStatus, userId, onClose, onUnlinked }: DetailsProps) {
     const styles = useThemeStyles(createProfileDiscountsScreenStyles)
     const { t } = useLanguage()
     const { palette, accentPalette } = useTheme()
     const { bottom } = useAppSafeAreaInsets()
+    const [confirm, setConfirm] = useState<{ step: 1 | 2; code: string; id: string } | null>(null)
+    const [busy, setBusy] = useState(false)
+    const [notice, setNotice] = useState("")
+    const submitting = useRef(false)
     const offers = useAsyncData<ProfilePromotionResponse[]>({
         deps: [userId], enabled: section === "offers", fetcher: getMyPromotions, initialData: [], showErrorAlert: false,
     })
@@ -43,6 +51,47 @@ export function DiscountsDetails({ section, account, accountStatus, userId, onCl
         onClose()
         router.push(href)
     }
+
+    function cancel() {
+        if (!submitting.current) setConfirm(null)
+    }
+    async function unlink() {
+        if (confirm?.step !== 2 || submitting.current) return
+        submitting.current = true
+        setBusy(true)
+        try {
+            await detachMyReferrerCode(confirm.code, confirm.id)
+            onUnlinked()
+            setNotice(t("profile.referral.detachSuccessTitle"))
+        } catch (error) {
+            setNotice(getErrorMessage(error, t("profile.referral.detachFailed")))
+        } finally {
+            setConfirm(null)
+            setBusy(false)
+            submitting.current = false
+        }
+    }
+
+    // Keep one native modal mounted: presenting a second iOS modal while the first
+    // is dismissing can drop the irreversible-loss confirmation.
+    if (confirm?.step) return <Modal visible transparent animationType="fade" onRequestClose={cancel}>
+        <View style={[styles.modalBackdrop, styles.confirmBackdrop]}>
+            <Pressable accessible={false} style={styles.dismissArea} onPress={cancel} />
+            <ScrollView accessibilityViewIsModal onAccessibilityEscape={cancel} style={styles.confirmBox} contentContainerStyle={styles.confirmBody}>
+                <Text key={confirm.step} accessibilityRole="header" accessibilityLiveRegion="assertive" style={styles.detailTitle}>
+                    {t(confirm.step === 1 ? "profile.referral.detachConfirmTitle" : "profile.referral.detachLossTitle")}</Text>
+                <Text style={styles.body}>{t(confirm.step === 1 ? "profile.referral.detachConfirmMessage" : "profile.referral.detachLossMessage").replace("{code}", confirm.code)}</Text>
+                <Pressable accessibilityRole="button" disabled={busy} style={styles.action} onPress={cancel}>
+                    <Text style={styles.actionLabel}>{t("common.cancel")}</Text>
+                </Pressable>
+                <Pressable key={confirm.step} accessibilityRole="button" disabled={busy} style={styles.action}
+                    onPress={confirm.step === 1 ? () => setConfirm({ ...confirm, step: 2 }) : unlink}>
+                    <Text style={[styles.actionLabel, confirm.step === 2 && { color: palette.danger }]}>{t(busy ? "profile.referral.detachLoading"
+                        : confirm.step === 1 ? "payment.continue" : "profile.referral.detachAction")}</Text>
+                </Pressable>
+            </ScrollView>
+        </View>
+    </Modal>
 
     return <Modal visible transparent animationType="fade" onRequestClose={onClose}>
         <View style={styles.modalBackdrop}>
@@ -73,9 +122,14 @@ export function DiscountsDetails({ section, account, accountStatus, userId, onCl
                     </>}
                     {(section === "terms" || section === "codes") && accountStatus && <Text style={styles.body}>{accountStatus}</Text>}
                     {section === "codes" && <>
+                        {!!notice && <Text accessibilityLiveRegion="polite" style={styles.body}>{notice}</Text>}
                         {account?.referrer_promo_code ? <View style={styles.detailCard}>
                             <Text style={styles.rowSubtitle}>{t("profile.referral.attachedPromo")}</Text>
                             <Text selectable style={styles.value}>{account.referrer_promo_code}</Text>
+                            {account.status === "fresh" && !accountStatus && <Pressable accessibilityRole="button" style={styles.action}
+                                onPress={() => { setNotice(""); setConfirm({ step: 1, code: account.referrer_promo_code!, id: createUuid() }) }}>
+                                <Text style={[styles.actionLabel, { color: palette.danger }]}>{t("profile.referral.detachAction")}</Text>
+                            </Pressable>}
                         </View> : !accountStatus && <Text style={styles.body}>{t("profile.discounts.noAttachedPromo")}</Text>}
                         {account?.own_promo_code && <View style={styles.detailCard}>
                             <Text style={styles.rowSubtitle}>{t("profile.referral.ownPromo")}</Text>

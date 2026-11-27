@@ -100,6 +100,7 @@ export function attachMyReferrerCode(payload: ReferrerCodeAttachPayload) {
     )
 }
 
-export function detachMyReferrerCode() {
-    return apiDelete<ReferralProfileResponse>(usersPath("/me/referral-profile/referrer-code"))
+export function detachMyReferrerCode(code: string, operationId: string) {
+    const body = { code, operation_id: operationId, confirm_loss: true }
+    return apiPost<void, typeof body>(usersPath("/me/referral-profile/referrer-code/unlink"), body, { timeoutMs: 60000 })
 }

@@ -190,6 +190,8 @@ async def attach_referrer_code(
 
 
 async def detach_referrer_code(db: AsyncSession, *, user: User) -> ReferralProfile:
+    if LOYALTY_USE_SETTLEMENT_BALANCE and getattr(user, "moysklad_counterparty_id", None):
+        raise HTTPException(409, "Подтвердите отвязку промокода в личном кабинете.")
     profile = await _get_program_profile(db, user=user)
     if getattr(profile, "reward_program_selection_source", None) == "registration":
         raise HTTPException(409, "Сначала выберите программу после регистрации.")

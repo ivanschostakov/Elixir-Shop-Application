@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import ufa_now
 from src.app.services.benefits.service import resolve_benefits_for_user
-from src.database.models import Order, OrderBenefitApplication, User
+from src.database.models import Order, OrderBenefitApplication, RewardProgramSelectionEvent as Event, User
 from src.integrations.moysklad.client import get_moysklad_client
 
 
@@ -39,8 +39,14 @@ async def _verify_order_referral(session, user, resolved):
                    for o in resolved["stacked_discount_options"]):
             raise HTTPException(422, "В заказе нет товаров, на которые действует промокод.")
         recorded = Order.checkout_snapshot["benefits"]["ms_order_promo"].as_string()
+        # Orders from a previously closed referral relationship must remain in history,
+        # but must not prevent this buyer starting a new relationship.
+        cutoff = select(func.max(Event.created_at)).where(Event.user_id == User.id,
+            Event.source == "promo_unlink", Event.snapshot["buyer"].as_string() == str(buyer),
+            Event.snapshot["done"].as_boolean().is_(True)).correlate(User).scalar_subquery()
         conflict = await session.scalar(select(Order.id).join(User, User.id == Order.user_id).where(
             User.moysklad_counterparty_id == buyer, Order.is_canceled.is_(False),
+            cutoff.is_(None) | (Order.created_at >= cutoff),
             func.lower(recorded) != code.lower()).limit(1))
         if conflict:
             raise HTTPException(409, "Другой заказ уже передан с другим промокодом. Дождитесь обновления МойСклада.")

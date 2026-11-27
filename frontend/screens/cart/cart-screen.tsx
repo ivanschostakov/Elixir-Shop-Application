@@ -132,6 +132,12 @@ export default function CartScreen() {
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
     const attachedPromoCode = referralProfile?.promo_code ?? null
+    useEffect(() => {
+        if (attachedPromoCode) {
+            setPromoCode("")
+            setAppliedPromoCode(null)
+        }
+    }, [attachedPromoCode])
     const programLocked = !referralProfile || Boolean(user?.programSelectionRequired)
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode

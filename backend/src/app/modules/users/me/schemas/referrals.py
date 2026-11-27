@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -105,3 +106,8 @@ class ReferrerCodeCheckRead(BaseModel):
 
 class ReferrerCodeAttachPayload(ReferrerCodeCheckPayload):
     confirmed: bool = False
+
+
+class ReferrerCodeUnlinkPayload(ReferrerCodeCheckPayload):
+    confirm_loss: Literal[True]
+    operation_id: UUID

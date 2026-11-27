@@ -36,7 +36,7 @@ function DiscountsView({ userId }: { userId: number }) {
         if (next.status === "unlinked") lastGood.current = null
         return next
     }, [])
-    const { data, loading, error, reload } = useAsyncData<SettlementResponse | null>({
+    const { data, loading, error, reload, setData } = useAsyncData<SettlementResponse | null>({
         deps: [userId], fetcher: fetchAccount, initialData: null, preserveDataOnError: true, showErrorAlert: false,
     })
     const focusedOnce = useRef(false)
@@ -123,6 +123,11 @@ function DiscountsView({ userId }: { userId: number }) {
             ))}
         </View>
         {section && <DiscountsDetails section={section} account={data} accountStatus={status} userId={userId}
+            onUnlinked={() => {
+                if (lastGood.current) lastGood.current = { ...lastGood.current, referrer_promo_code: null }
+                setData(current => current ? { ...current, referrer_promo_code: null } : null)
+                void reload({ showLoading: false })
+            }}
             onClose={() => setSection(null)} />}
     </FeedTemplate>
 }

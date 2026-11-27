@@ -50,20 +50,53 @@ function setup(program, options = {}) {
         "@/screens/profile/profile-discounts-screen.styles": {},
         "@/screens/profile/discounts-menu-assets": { discountsIcons: {}, discountsHero: 1 },
         "@/services/api/settlement": { getMySettlement },
-        "@/services/api/users": { getMyPromotions },
+        "@/services/api/users": { getMyPromotions, detachMyReferrerCode: options.unlink },
         "@/services/api/benefits": { getMyAppRewards },
         "@/utils/settlement": money,
+        "@/utils/uuid": { createUuid: () => "test-op" },
+        "@/utils/errors": { getErrorMessage: e => e.message },
     }
-    const { DiscountsDetails } = loadTs("screens/profile/discounts-details.tsx", mocks)
+    let slot = 0
+    const state = []
+    const { DiscountsDetails } = loadTs("screens/profile/discounts-details.tsx", { ...mocks, react: {
+        useState(initial) {
+            const i = slot++
+            if (!(i in state)) state[i] = initial
+            return [state[i], v => { state[i] = v }]
+        },
+        useRef(initial) { const i = slot++; return state[i] ??= { current: initial } },
+    } })
     const { default: Screen } = loadTs("screens/profile/profile-discounts-screen.tsx", { ...mocks, "@/screens/profile/discounts-details": { DiscountsDetails } })
     const menu = () => { const root = Screen(); return root.type(root.props) }
     function details(label) {
         press(menu(), label)
         const child = all(menu(), node => node.type === DiscountsDetails)[0]
-        return child.type(child.props)
+        slot = 0
+        return child.type({ ...child.props, onUnlinked: () => { snapshot.referrer_promo_code = null } })
     }
     return { screen: Screen, menu, details, setUser: value => { user = value }, destination: () => destination }
 }
+
+test("unlink needs two confirmations; back or cancel submits nothing, repeated taps submit once", async () => {
+    const calls = []
+    const h = setup(2, { unlink: async (...args) => { calls.push(args) } })
+    const codes = () => h.details("Промокоды")
+    const start = () => press(codes(), "Отвязать промокод")
+    const next = () => press(codes(), "Продолжить")
+    start()
+    assert.match(textOf(codes()), /COMPANY/)
+    press(codes(), "Отмена")
+    start(); next()
+    assert.match(textOf(codes()), /Вернуть её не получится/)
+    codes().props.onRequestClose()
+    assert.deepEqual(calls, [])
+    start(); next()
+    const confirm = all(codes(), n => n.type === "Pressable" && textOf(n).includes("Отвязать промокод"))[0]
+    await Promise.all([confirm.props.onPress(), confirm.props.onPress()])
+    assert.deepEqual(calls, [["COMPANY", "test-op"]])
+    assert.ok(!textOf(codes()).includes("COMPANY"))
+    assert.match(textOf(codes()), /MYCODE/)
+})
 
 for (const program of [0, null, 1, 2]) {
     test(`discounts menu and program terms use the account snapshot for program ${program}`, () => {

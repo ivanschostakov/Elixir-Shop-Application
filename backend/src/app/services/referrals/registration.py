@@ -73,8 +73,8 @@ async def record_registration_choice(db, *, user, program, promo_code=None):
     await db.flush()
 
 
-async def _initial_attributes(client, *, program, promo):
-    from src.app.services.benefits.settlement import PROGRAM_ATTRIBUTE_ID, DISCOUNT_ATTRIBUTE_ID, REFERRER_ATTRIBUTE_ID, PROGRAM_NAMES
+async def _attribute_builder(client):
+    from src.app.services.benefits.settlement import PROGRAM_NAMES
     rows = await client.get_all("/entity/counterparty/metadata/attributes")
     metadata = {row.get("id"): row for row in rows}
 
@@ -107,6 +107,18 @@ async def _initial_attributes(client, *, program, promo):
             raise RuntimeError("Unsupported MoySklad loyalty attribute type")
         return {"meta": row["meta"], "value": value}
 
+    return attribute
+
+
+async def zero_discount_attribute(client):
+    from src.app.services.benefits.settlement import DISCOUNT_ATTRIBUTE_ID
+    attribute = await _attribute_builder(client)
+    return await attribute(DISCOUNT_ATTRIBUTE_ID, number=Decimal(0))
+
+
+async def _initial_attributes(client, *, program, promo):
+    from src.app.services.benefits.settlement import PROGRAM_ATTRIBUTE_ID, DISCOUNT_ATTRIBUTE_ID, REFERRER_ATTRIBUTE_ID
+    attribute = await _attribute_builder(client)
     attrs = [await attribute(PROGRAM_ATTRIBUTE_ID, code=2 if program == "partner" else 1),
              await attribute(DISCOUNT_ATTRIBUTE_ID, number=Decimal(3 if program == "partner" else 0))]
     if promo:
