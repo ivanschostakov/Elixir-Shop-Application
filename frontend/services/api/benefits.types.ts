@@ -14,7 +14,7 @@ export type BenefitCheckPayload = {
     currency?: string | null
     use_bonus_rubles?: boolean
     bonus_rubles_to_use?: string
-    reward_mode?: "cashback" | "promo" | null
+    reward_mode?: "cashback" | "promo" | "order_referral" | null
 }
 
 export type BenefitOptionResponse = {

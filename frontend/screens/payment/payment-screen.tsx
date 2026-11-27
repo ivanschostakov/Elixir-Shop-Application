@@ -461,7 +461,7 @@ export default function PaymentScreen() {
                     nextOrder = await createOrder({
                         ...(isBasketCheckout ? {} : { draft_id: orderDraft.id }),
                         ...(routePromoCode ? { code: routePromoCode } : {}),
-                        reward_mode: rewardMode,
+                        reward_mode: routePromoCode ? "order_referral" : rewardMode,
                         payment_method: effectiveMethod,
                     })
                     if (isBasketCheckout) {

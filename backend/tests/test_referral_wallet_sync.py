@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -70,7 +71,20 @@ def test_bonus_points_for_rubles_uses_moysklad_program_rate() -> None:
     assert bonus_points_for_rubles(Decimal("123.45"), 2) == 247
 
 
-def test_approved_partner_accrual_is_credited_to_moysklad_once() -> None:
+@pytest.mark.parametrize("status", ["approved", "rejected"])
+def test_settlement_mode_leaves_both_earning_and_reversal_to_ms(monkeypatch, status):
+    monkeypatch.setattr("src.app.services.referrals.wallet_sync.LOYALTY_USE_SETTLEMENT_BALANCE", True)
+    accrual = _approved_accrual()
+    accrual.status = status
+    client = _client()
+    for _ in range(2):
+        assert asyncio.run(sync_referral_accrual_to_bonus_wallet(SimpleNamespace(), accrual=accrual,
+            moysklad_client=client)) == "not_applicable"
+    client.resolve_or_create_bonus_transaction.assert_not_awaited()
+
+
+def test_approved_partner_accrual_is_credited_to_moysklad_once(monkeypatch) -> None:
+    monkeypatch.setattr("src.app.services.referrals.wallet_sync.LOYALTY_USE_SETTLEMENT_BALANCE", False)
     accrual = _approved_accrual()
     user = SimpleNamespace(
         id=19,
@@ -118,7 +132,8 @@ def test_approved_partner_accrual_is_credited_to_moysklad_once() -> None:
     )
 
 
-def test_rejected_credited_accrual_is_reversed_idempotently() -> None:
+def test_rejected_credited_accrual_is_reversed_idempotently(monkeypatch) -> None:
+    monkeypatch.setattr("src.app.services.referrals.wallet_sync.LOYALTY_USE_SETTLEMENT_BALANCE", False)
     accrual = _approved_accrual()
     accrual.status = "rejected"
     accrual.wallet_sync_status = "credited"

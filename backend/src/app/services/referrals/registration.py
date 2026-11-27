@@ -34,6 +34,9 @@ async def mark_registration_choice_required(db, *, user):
 
 
 async def validate_registration_promo(promo):
+    if LOYALTY_USE_SETTLEMENT_BALANCE:
+        from .ms_codes import resolve_ms_referrer
+        return (await resolve_ms_referrer(promo)).code
     if not bitrix_promo_configured():
         raise HTTPException(503, "Проверка промокода временно недоступна.")
     try:

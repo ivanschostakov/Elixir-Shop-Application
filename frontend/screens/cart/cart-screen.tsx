@@ -62,7 +62,8 @@ import { ApiError } from "@/services/api/client"
 import { checkMyBenefits } from "@/services/api/benefits"
 import { createOrderDraft, updateOrderDraft } from "@/services/api/order-drafts"
 import type { CreateOrderDraftPayload } from "@/services/api/order-drafts.types"
-import { attachMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
+import { getMyReferralProfile } from "@/services/api/users"
+import { hasAppliedOrderPromo } from "@/screens/cart/order-promo"
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import type { BasketItemRead } from "@/types/basket"
 import { formatAppliedDiscount } from "@/utils/discount-display"
@@ -93,7 +94,6 @@ export default function CartScreen() {
         data: referralProfile,
         error: referralError,
         reload: reloadReferralProfile,
-        setData: setReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
         deps: [user?.id ?? null, user?.programSelectionRequired],
         enabled: Boolean(isAuthenticated && !user?.programSelectionRequired && basket?.items.length),
@@ -132,7 +132,7 @@ export default function CartScreen() {
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
     const attachedPromoCode = referralProfile?.promo_code ?? null
-    const programLocked = referralProfile?.reward_program_selection_source === "moysklad" || Boolean(user?.programSelectionRequired)
+    const programLocked = !referralProfile || Boolean(user?.programSelectionRequired)
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
     const hasUnappliedPromoCode = Boolean(isAuthenticated && !programLocked && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
@@ -142,7 +142,7 @@ export default function CartScreen() {
         [user?.id, attachedPromoCode, basket?.id, basket?.delivery_total, basket?.currency,
             basket?.items.map(item => [item.variant_id, item.quantity, item.line_total])],
         needsQuote && referralProfile !== null,
-        { use_basket: true, code: activeEnteredPromoCode },
+        { use_basket: true, code: activeEnteredPromoCode, reward_mode: activeEnteredPromoCode ? "order_referral" : undefined },
     )
     const pricingError = needsQuote && (referralError || quoteError)
     const waitingForPricing = needsQuote && !pricingError && !benefitCheck
@@ -312,14 +312,14 @@ export default function CartScreen() {
         }
     }, [isSavingDraft, resolveCreateDraftPayload, t])
 
-    const isEnteredPromoCodeApplicable = Boolean(
-        appliedPromoCode &&
-        !benefitCheck?.unresolved_code_reason &&
-        benefitCheck?.entered_code_matches.some((option) => option.is_applicable),
-    )
+    const isEnteredPromoCodeApplicable = hasAppliedOrderPromo(benefitCheck, appliedPromoCode)
 
     const handleOpenCheckout = useCallback(async () => {
         if (!basket?.items.length || isOpeningCheckout || pricingBlocked || updating) {
+            return
+        }
+        if (appliedPromoCode && !isEnteredPromoCodeApplicable) {
+            Alert.alert(t("cart.promoCodeUnavailable"), t("cart.promoCodeUnavailableMessage"))
             return
         }
         setIsOpeningCheckout(true)
@@ -380,26 +380,16 @@ export default function CartScreen() {
         setIsCheckingPromoCode(true)
 
         try {
-            const nextBenefitCheck = await checkMyBenefits({ use_basket: true, code: normalizedPromoCode })
+            const nextBenefitCheck = await checkMyBenefits({ use_basket: true, code: normalizedPromoCode, reward_mode: "order_referral" })
             const hasCodeMatch = Boolean(
                 !nextBenefitCheck.unresolved_code_reason && nextBenefitCheck.entered_code_matches.length,
             )
             const isApplicable = nextBenefitCheck.entered_code_matches.some((option) => option.is_applicable)
-            const hasDiscount = Number(nextBenefitCheck.stacked_discount_amount) > 0
+            const hasDiscount = hasAppliedOrderPromo(nextBenefitCheck, normalizedPromoCode)
 
             if (!hasCodeMatch) {
-                try {
-                    const nextReferralProfile = await attachMyReferrerCode({
-                        code: normalizedPromoCode,
-                        confirmed: true,
-                    })
-                    setReferralProfile(nextReferralProfile)
-                    setPromoCode("")
-                    setAppliedPromoCode(null)
-                } catch {
-                    setAppliedPromoCode(null)
-                    Alert.alert(t("cart.promoCodeNotFound"), t("cart.promoCodeNotFoundMessage"))
-                }
+                setAppliedPromoCode(null)
+                Alert.alert(t("cart.promoCodeNotFound"), nextBenefitCheck.unresolved_code_reason || t("cart.promoCodeNotFoundMessage"))
                 return
             }
 
@@ -409,10 +399,17 @@ export default function CartScreen() {
                 return
             }
 
-            setAppliedPromoCode(normalizedPromoCode)
-        } catch {
+            if (referralProfile?.reward_program !== "partner") {
+                Alert.alert(t("cart.applyPromoCode"), t("cart.confirmPartnerOrder"), [
+                    { text: t("common.cancel"), style: "cancel" },
+                    { text: t("cart.applyPromoCode"), onPress: () => setAppliedPromoCode(normalizedPromoCode) },
+                ])
+            } else {
+                setAppliedPromoCode(normalizedPromoCode)
+            }
+        } catch (error) {
             setAppliedPromoCode(null)
-            Alert.alert(t("cart.promoCodeUnavailable"), t("cart.promoCodeUnavailableMessage"))
+            Alert.alert(t("cart.promoCodeUnavailable"), getBasketErrorMessage(error, null, t))
         } finally {
             setIsCheckingPromoCode(false)
         }
@@ -422,7 +419,7 @@ export default function CartScreen() {
         isAuthenticated,
         isCheckingPromoCode,
         normalizedPromoCode,
-        setReferralProfile,
+        referralProfile?.reward_program,
         t,
     ])
     const handlePromoCodeChange = useCallback((value: string) => {

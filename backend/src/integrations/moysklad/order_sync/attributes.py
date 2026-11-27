@@ -94,6 +94,8 @@ def _moysklad_attr_values(order: Order) -> dict[str, Any]:
         values["balance_amount_kopecks"] = int(Decimal(str(settlement.get("requested_balance_rubles", "0"))) * 100) if order_bonus_consent(order) else 0
 
     promo_code = optional_str(raw_values.get("promo_code")) or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code"))
+    if benefits.get("ms_order_promo"):
+        promo_code = benefits["ms_order_promo"]
     if promo_code: values["promo_code"] = promo_code
     deal_link = _amocrm_lead_link(order) or optional_str(raw_values.get("deal_link")) or optional_str(data.get("deal_link"))
     if deal_link: values["deal_link"] = deal_link

@@ -40,6 +40,7 @@ def test_program_alone_selects_discount_or_cashback(monkeypatch, program, discou
 
 
 def test_only_company_or_referrer_codes_can_select_partner_program(monkeypatch):
+    monkeypatch.setattr(registration, "LOYALTY_USE_SETTLEMENT_BALANCE", False)
     monkeypatch.setattr(registration, "bitrix_promo_configured", lambda: True)
     lookup = AsyncMock(return_value={"promo": "Elixir", "is_firm_promo": True, "referral_owner_id": None})
     monkeypatch.setattr(registration, "BitrixPromoClient", lambda: SimpleNamespace(lookup=lookup))
@@ -122,6 +123,8 @@ def test_registration_alert_state_survives_relogin_and_existing_customer_cannot_
 def test_new_registration_waits_for_alert_and_persists_choice_once(client, monkeypatch, program, promo):
     from test_orders_api import _delete_user
     from src.app.services.auth.service import sessions, counterparty
+    from src.app.services.referrals import ms_codes
+    monkeypatch.setattr(ms_codes, "resolve_ms_referrer", AsyncMock(return_value=ms_codes.ReferralOwner(promo or "Elixir", uuid4() if promo else None)))
     monkeypatch.setattr(counterparty, "_link_moysklad_counterparty_by_email", AsyncMock())
     monkeypatch.setattr(sessions, "_link_moysklad_counterparty_by_email", AsyncMock())
     lookup = AsyncMock(return_value={"promo": promo or "Elixir", "is_firm_promo": promo is None, "referral_owner_id": 123 if promo else None})

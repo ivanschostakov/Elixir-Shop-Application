@@ -34,6 +34,9 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     if organization_id is None: return MoySkladOrderSyncResult(enabled=True, skipped_reason="organization_not_found")
 
     user_id = int(user.__dict__.get("id") or user.id)
+    benefits = (order.checkout_snapshot or {}).get("benefits") or {}
+    if benefits.get("ms_order_promo") and str(user.moysklad_counterparty_id) != benefits.get("ms_promo_buyer_id"):
+        raise ValueError("MoySklad referral buyer changed; refusing to relink order")
     counterparty_external_code = build_counterparty_external_code(user_id=user_id)
     counterparty_sync_id = build_sync_id(scope="counterparty", key=counterparty_external_code)
     settlement = order_settlement(order)
@@ -96,6 +99,9 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     if standard_export and ("payment_method" not in custom_refs or "delivery_method" not in custom_refs):
         raise ValueError("MoySklad payment or delivery method is missing from the order directory")
     attributes = moysklad_client.build_customerorder_attributes(values=_moysklad_attr_values(order), custom_refs=custom_refs)
+    if benefits.get("ms_order_promo") and not order.moysklad_customerorder_id:
+        from src.app.services.referrals.ms_codes import verify_referral_export
+        await verify_referral_export(benefits, buyer_id=counterparty_result.counterparty_id, client=moysklad_client)
     hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
     if hold.get("status") == "held" and not hold.get("remote_export_attempted"):
         order.checkout_snapshot = dict(order.checkout_snapshot,

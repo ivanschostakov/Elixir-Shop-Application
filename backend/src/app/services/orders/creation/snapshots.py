@@ -17,6 +17,9 @@ def _json_safe_benefits(resolved_benefits: dict[str, Any] | None) -> dict[str, A
 
     return {
         "entered_code": resolved_benefits.get("entered_code"),
+        "ms_referrer_id": resolved_benefits.get("ms_referrer_id"),
+        "ms_order_promo": resolved_benefits.get("ms_order_promo"),
+        "ms_promo_buyer_id": resolved_benefits.get("ms_promo_buyer_id"),
         "reward_program": resolved_benefits.get("reward_program"),
         "reward_mode": resolved_benefits.get("reward_mode"),
         "basket_subtotal": _json_money(resolved_benefits.get("basket_subtotal")),

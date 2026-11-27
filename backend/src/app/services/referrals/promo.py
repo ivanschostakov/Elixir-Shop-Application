@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import HTTPException
+from config import LOYALTY_USE_SETTLEMENT_BALANCE
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -21,9 +22,22 @@ async def _get_program_profile(db: AsyncSession, *, user: User) -> ReferralProfi
 
 
 async def check_referrer_code(db: AsyncSession, *, user: User, code: str) -> dict[str, Any]:
-    await _get_program_profile(db, user=user)
+    profile = await _get_program_profile(db, user=user)
     normalized_code = normalize_referral_code(code)
     current_code = normalize_referral_code(user.promo_code)
+    accounting_buyer = LOYALTY_USE_SETTLEMENT_BALANCE and getattr(user, "moysklad_counterparty_id", None)
+    if normalized_code and (accounting_buyer or moysklad_program_is_authoritative(profile)) and (not current_code or normalized_code == current_code):
+        from .ms_codes import resolve_ms_referrer
+        try:
+            owner = await resolve_ms_referrer(normalized_code, buyer_id=user.moysklad_counterparty_id)
+        except HTTPException as exc:
+            if exc.status_code != 422:
+                raise
+            return {"code": normalized_code, "is_valid": False, "status": "not_found",
+                    "reason": exc.detail, "warning": None, "requires_confirmation": False,
+                    "referrer_user_id": None, "depth": None}
+        return {"code": owner.code, "is_valid": True, "status": "already_attached" if current_code else "active",
+                "reason": None, "warning": None, "requires_confirmation": False, "referrer_user_id": None, "depth": None}
     if current_code and normalized_code == current_code:
         return {
             "code": current_code,
@@ -103,9 +117,11 @@ async def attach_referrer_code(
     profile = await _get_program_profile(db, user=user)
     if getattr(profile, "reward_program_selection_source", None) == "registration":
         raise HTTPException(409, "Сначала выберите программу после регистрации.")
-    if moysklad_program_is_authoritative(profile):
+    if moysklad_program_is_authoritative(profile) or (LOYALTY_USE_SETTLEMENT_BALANCE and getattr(user, "moysklad_counterparty_id", None)):
         if normalize_referral_code(user.promo_code) == normalize_referral_code(code):
             return profile
+        if not user.promo_code:
+            raise HTTPException(409, "Введите промокод в корзине. Он будет закреплён при оформлении заказа.")
         raise HTTPException(409, "Программа уже определена в МойСкладе. Для изменения обратитесь в поддержку.")
     normalized_requested_code = normalize_referral_code(code)
     current_code = normalize_referral_code(user.promo_code)
