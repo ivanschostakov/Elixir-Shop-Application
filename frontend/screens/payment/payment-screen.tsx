@@ -36,7 +36,7 @@ import {
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
 import { createPaymentScreenStyles } from "@/screens/payment/payment-screen.styles"
-import { mergePaymentState, resolvePaymentPhase } from "@/screens/payment/payment-state"
+import { confirmedPaidOrderId, mergePaymentState, resolvePaymentPhase } from "@/screens/payment/payment-state"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createGuestOrder, isGuestPhoneExistsError } from "@/services/api/guest"
 import { ApiError } from "@/services/api/client"
@@ -47,6 +47,8 @@ import { createPaymentWhenReady, getPaymentStatus, PaymentPreparationPendingErro
 import type { PaymentStatusRead } from "@/services/api/payments.types"
 import { clearGuestCart } from "@/services/guest-cart"
 import { syncOrderStatusNotifications } from "@/services/notifications/order-status-notifications"
+import { queueStartupNotice } from "@/services/notifications/startup-notices"
+import { getAuthTokens } from "@/services/auth/session"
 import type { OrderDraftItemRead, OrderDraftRead } from "@/services/api/order-drafts.types"
 import { ORDER_STATUS_LABEL_KEYS } from "@/screens/profile/profile-history-screen.utils"
 import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
@@ -161,7 +163,7 @@ function buildGuestOrderPayload(orderDraft: OrderDraftRead, paymentMethod: Payme
 export default function PaymentScreen() {
     const stickyFooterStyles = useThemeStyles(createStickyFooterStyles)
     const paymentScreenStyles = useThemeStyles(createPaymentScreenStyles)
-    const { acceptSession, isAuthenticated, user } = useAuth()
+    const { acceptSession, isAuthenticated, user, milestones } = useAuth()
     const { t } = useLanguage()
     const params = useLocalSearchParams<{
         code?: string | string[]
@@ -192,6 +194,11 @@ export default function PaymentScreen() {
     const [awaitingSettlement, setAwaitingSettlement] = useState(false)
     const [isRepeating, setIsRepeating] = useState(false)
     const [phase, setPhase] = useState<PaymentPhase>("select")
+    const paidOrderId = confirmedPaidOrderId(user?.id, order, payment)
+    const checkMilestones = milestones?.check
+    useEffect(() => {
+        if (paidOrderId) void checkMilestones?.("paid")
+    }, [paidOrderId, checkMilestones])
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
     const hasAutoStartedRef = useRef(false)
     const hasLoadedOrderRef = useRef(false)
@@ -472,7 +479,12 @@ export default function PaymentScreen() {
                 if (!isActive()) return
                 setOrder(nextOrder)
                 router.setParams({ orderId: String(nextOrder.id), paymentMethod: effectiveMethod })
-                void syncOrderStatusNotifications({ requestPermissions: true })
+                const orderSession = getAuthTokens()?.sessionId
+                void queueStartupNotice(async () => {
+                    if (orderSession != null && orderSession === getAuthTokens()?.sessionId) {
+                        await syncOrderStatusNotifications({ requestPermissions: true })
+                    }
+                })
             }
 
             const nextPayment = await createPaymentWhenReady({

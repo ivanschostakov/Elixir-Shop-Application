@@ -181,6 +181,13 @@ export type ReferrerCodeCheckPayload = {
     code: string
 }
 
+export type LoyaltyMilestones = {
+    offer_partner: boolean
+    own_code_eligible: boolean
+    own_promo_code: string | null
+    company_promo_code: string | null
+}
+
 export type RewardProgramSelectPayload = {
     program: "bonus" | "partner"
 }

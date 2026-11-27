@@ -24,7 +24,7 @@ export function useInfiniteProductCatalog({
     newOnly = false,
     sort = "newest",
 }: UseInfiniteProductCatalogOptions = {}) {
-    const { user, isReady } = useAuth()
+    const { user, isReady, milestones } = useAuth()
     const normalizedQuery = query.trim()
     const {
         error,
@@ -35,8 +35,8 @@ export function useInfiniteProductCatalog({
         loadingMore,
         reload,
     } = usePaginatedData({
-        deps: [user?.id, user?.programSelectionRequired, categoryId, newOnly, normalizedQuery, sort],
-        enabled: enabled && isReady && !user?.programSelectionRequired,
+        deps: [user?.id, milestones?.programRevision, categoryId, newOnly, normalizedQuery, sort],
+        enabled: enabled && isReady,
         fetchPage: ({ limit, offset }) =>
             getProducts({
                 ...buildProductBrowseQueryOptions({

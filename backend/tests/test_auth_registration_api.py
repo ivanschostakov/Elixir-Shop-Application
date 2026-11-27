@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 import hashlib
 import hmac
@@ -320,6 +321,20 @@ def test_phone_auth_register_payload_allows_missing_email():
     assert payload.email is None
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("verified", [True, False])
+async def test_phone_lookup_outage_only_allows_existing_verified_identity(monkeypatch, verified):
+    from src.app.services.auth.service import counterparty
+    user = SimpleNamespace(id=1, is_active=True, is_verified=verified)
+    monkeypatch.setattr(counterparty, "get_user_by_phone_number", AsyncMock(return_value=user))
+    ms = SimpleNamespace(is_configured=lambda: True, get_counterparty_by_phone=AsyncMock(side_effect=TimeoutError))
+    if verified:
+        assert await counterparty._resolve_user_for_phone(object(), "+79990001122", ms) == (user, None)
+    else:
+        with pytest.raises(TimeoutError):
+            await counterparty._resolve_user_for_phone(object(), "+79990001122", ms)
+
+
 def _signed_telegram_init_data(bot_token: str, user: dict) -> str:
     values = {
         "auth_date": str(int(time.time())),
@@ -342,7 +357,7 @@ async def test_register_user_by_phone_without_email_creates_verified_user_and_re
         password="supersecret",
     )
     db = _DummyDbSession()
-    request = object()
+    request = SimpleNamespace(headers={"x-app-platform": "android"})
     created_user = SimpleNamespace(
         id=17,
         email=None,
@@ -400,7 +415,10 @@ async def test_register_user_by_phone_without_email_creates_verified_user_and_re
     for target in ('src.app.services.auth.service.email._build_auth_tokens_response', 'src.app.services.auth.service.phone._build_auth_tokens_response', 'src.app.services.auth.service.sessions._build_auth_tokens_response', 'src.app.services.auth.service.telegram._build_auth_tokens_response',):
         monkeypatch.setattr(target, _patched_value_350)
 
+    queue = AsyncMock()
+    monkeypatch.setattr("src.app.services.auth.service.phone.queue_registration_bonus", queue)
     response = await register_user_by_phone(request, payload, db, SimpleNamespace())
+    queue.assert_awaited_once_with(db, user=created_user)
 
     user_create = captured["user_create"]
     assert captured["rate_limit"] == {

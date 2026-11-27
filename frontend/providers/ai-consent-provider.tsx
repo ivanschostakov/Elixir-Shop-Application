@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { Alert, Keyboard, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native"
+import { Keyboard, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { LegalContent } from "@/components/legal/legal-content"
 import { PRIVACY_POLICY } from "@/constants/privacy-policy"
@@ -7,6 +7,7 @@ import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { registerAiConsentPrompt } from "@/services/api/ai-data-consent"
+import { presentStartupNotice, queueStartupNotice } from "@/services/notifications/startup-notices"
 
 export function AiConsentProvider({ children }: { children: ReactNode }) {
     const { user } = useAuth()
@@ -33,10 +34,12 @@ export function AiConsentProvider({ children }: { children: ReactNode }) {
                     resolveRef.current = null
                     resolve(accepted)
                 }
-                Alert.alert("OpenAI", t("privacy.aiQuestion"), [
-                    { text: t("privacy.notNow"), style: "cancel", onPress: () => respond(false) },
-                    { text: t("privacy.agree"), onPress: () => respond(true) },
-                ], { cancelable: true, onDismiss: () => respond(false) })
+                void queueStartupNotice(async () => {
+                    if (resolveRef.current !== resolve) return
+                    const choice = await presentStartupNotice("OpenAI", t("privacy.aiQuestion"),
+                        [t("privacy.notNow"), t("privacy.agree")], true).catch(() => -1)
+                    respond(choice === 1)
+                })
                 return
             }
             setPolicy(false)

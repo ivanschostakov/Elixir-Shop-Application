@@ -22,8 +22,27 @@ from src.database import get_db
 from src.database.models import User
 from src.app.modules.users.me.schemas.settlement import SettlementRead
 from src.app.services.benefits.settlement import get_account_settlement
+from pydantic import BaseModel
+from src.app.services.referrals.milestones import check_milestones
 
 my_referral_profile_router = APIRouter(prefix="/referral-profile", tags=["my_referral_profile"])
+
+
+class LoyaltyMilestones(BaseModel):
+    offer_partner: bool
+    own_code_eligible: bool
+    own_promo_code: str | None
+    company_promo_code: str | None
+
+
+@my_referral_profile_router.post("/milestones/check", response_model=LoyaltyMilestones)
+async def my_loyalty_milestones(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await check_milestones(db, user=current_user)
+
+
+@my_referral_profile_router.post("/milestones/accept", response_model=LoyaltyMilestones)
+async def accept_company_program(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    return await check_milestones(db, user=current_user, accept=True)
 
 
 @my_referral_profile_router.get("/settlement", response_model=SettlementRead)

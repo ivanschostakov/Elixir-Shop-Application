@@ -17,7 +17,7 @@ from src.app.services.referrals import (
 )
 from src.app.services.referrals.program import moysklad_program_is_authoritative
 from src.app.services.referrals.calculations import MIN_PARTICIPANT_DISCOUNT_PERCENT
-from src.app.services.referrals.ms_codes import resolve_ms_referrer
+from src.app.services.referrals.ms_codes import check_company_threshold, resolve_ms_referrer
 from src.app.services.referrals.profile import personal_discount_applies
 from src.app.services.referrals.bitrix_sync import refresh_program_profile_from_bitrix
 from src.database.crud import get_basket_by_user_id
@@ -338,6 +338,8 @@ async def resolve_benefits_for_user(
             if accounting.get("moysklad_program_code") == 0 and getattr(account, "balance_rubles", None) != Decimal("0"):
                 raise HTTPException(409, "Перед сменой программы нужно сверить баланс с менеджером.")
             order_referrer = await resolve_ms_referrer(candidate, buyer_id=user.moysklad_counterparty_id)
+            check_company_threshold(code=order_referrer.code, program=accounting.get("moysklad_program_code"),
+                                    incoming=attached, spend=getattr(account, "total_purchases_rubles", None))
             promo_percent = MIN_PARTICIPANT_DISCOUNT_PERCENT
             if attached and active_reward_program == "partner":
                 promo_percent = max(promo_percent, referral_profile.current_discount_percent)

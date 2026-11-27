@@ -75,7 +75,7 @@ export default function CartScreen() {
     const { palette } = useTheme()
     const params = useLocalSearchParams<{ draftId?: string | string[] }>()
     const { t } = useLanguage()
-    const { isAuthenticated, isReady, user } = useAuth()
+    const { isAuthenticated, isReady, user, milestones } = useAuth()
     const { basket, error: basketLoadError, loading, reload } = useBasket()
     const { clear, error: basketActionError, removeItem, updateItemQuantity, updating } = useBasketMutations()
     const basketDraftEditingId = useBasketDraftEditingId()
@@ -95,8 +95,8 @@ export default function CartScreen() {
         error: referralError,
         reload: reloadReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
-        deps: [user?.id ?? null, user?.programSelectionRequired],
-        enabled: Boolean(isAuthenticated && !user?.programSelectionRequired && basket?.items.length),
+        deps: [user?.id ?? null, milestones?.programRevision],
+        enabled: Boolean(isAuthenticated && basket?.items.length),
         fetcher: getMyReferralProfile,
         initialData: null,
         resetOnLoad: true,
@@ -138,14 +138,14 @@ export default function CartScreen() {
             setAppliedPromoCode(null)
         }
     }, [attachedPromoCode])
-    const programLocked = !referralProfile || Boolean(user?.programSelectionRequired)
+    const programLocked = !referralProfile
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
     const hasUnappliedPromoCode = Boolean(isAuthenticated && !programLocked && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
     const activeEnteredPromoCode = !programLocked && !hasAttachedPromoCode ? appliedPromoCode : null
-    const needsQuote = Boolean(isAuthenticated && !user?.programSelectionRequired && basket?.items.length)
+    const needsQuote = Boolean(isAuthenticated && basket?.items.length)
     const { data: benefitCheck, error: quoteError, reload: reloadQuote } = useOrderBenefits(
-        [user?.id, attachedPromoCode, basket?.id, basket?.delivery_total, basket?.currency,
+        [user?.id, milestones?.programRevision, attachedPromoCode, basket?.id, basket?.delivery_total, basket?.currency,
             basket?.items.map(item => [item.variant_id, item.quantity, item.line_total])],
         needsQuote && referralProfile !== null,
         { use_basket: true, code: activeEnteredPromoCode, reward_mode: activeEnteredPromoCode ? "order_referral" : undefined },

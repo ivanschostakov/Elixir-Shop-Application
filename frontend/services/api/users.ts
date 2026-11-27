@@ -2,6 +2,7 @@ import { ENDPOINTS } from "@/services/api/constants"
 import { apiDelete, apiFetch, apiGet, apiPost, apiPostMultipart } from "@/services/api/client"
 import type {
     AvatarResponse,
+    LoyaltyMilestones,
     CustomerIntelligenceSyncPayload,
     CustomerIntelligenceSyncResponse,
     DeleteMyPushTokenPayload,
@@ -73,6 +74,14 @@ export function syncMyCustomerIntelligence(payload: CustomerIntelligenceSyncPayl
 
 export function getMyReferralProfile() {
     return apiGet<ReferralProfileResponse>(usersPath("/me/referral-profile"))
+}
+
+export function checkMyMilestones() {
+    return apiPost<LoyaltyMilestones, null>(usersPath("/me/referral-profile/milestones/check"), null)
+}
+
+export function acceptMyPartnerOffer() {
+    return apiPost<LoyaltyMilestones, null>(usersPath("/me/referral-profile/milestones/accept"), null)
 }
 
 export function selectMyRewardProgram(payload: RewardProgramSelectPayload) {

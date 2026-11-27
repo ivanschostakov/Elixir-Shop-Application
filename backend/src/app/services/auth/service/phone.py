@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import HTTPException, Request
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,9 +15,10 @@ from src.normalize import coerce_uuid, normalize_email, optional_str
 from .common import logger
 from .utils import _counterparty_email, _counterparty_name_parts, _mask_email
 from .rate_limits import _apply_auth_rate_limit
-from .counterparty import _get_counterparty_for_phone, _resolve_user_for_phone, _sync_phone_identity_from_counterparty
+from .counterparty import AUTH_CONTACT_TIMEOUT_SECONDS, _get_counterparty_for_phone, _resolve_user_for_phone, _sync_phone_identity_from_counterparty
 from src.app.services.auth.events import record_auth_event
 from src.app.services.platform_availability import mobile_shop_request
+from src.app.services.referrals.registration import queue_registration_bonus
 from src.app.services.benefits.app_welcome import grant_on_email_confirmation
 from .sessions import _build_auth_tokens_response
 from .verification import _create_and_send_verification_code, _verify_latest_email_code
@@ -113,7 +115,8 @@ async def register_user_by_phone(request: Request, payload: PhoneAuthRegisterPay
     if existing_phone_user is not None and existing_phone_user.is_active and existing_phone_user.is_verified: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Account already exists for this phone number")
 
     counterparty = await _get_counterparty_for_phone(payload.phone_number, moysklad_client)
-    if counterparty is not None: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Counterparty already exists for this phone number")
+    if counterparty is not None or (existing_phone_user is not None and existing_phone_user.moysklad_counterparty_id is not None):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Counterparty already exists for this phone number")
 
     email = payload.email or (normalize_email(existing_phone_user.email) if existing_phone_user is not None else None)
     existing_email_user = await get_user_by_email(db, email)
@@ -128,12 +131,11 @@ async def register_user_by_phone(request: Request, payload: PhoneAuthRegisterPay
             existing_phone_user.name = payload.name
             existing_phone_user.surname = payload.surname
             existing_phone_user.phone_number = payload.phone_number
-            existing_phone_user.moysklad_counterparty_id = None
             existing_phone_user.is_verified = not bool(email)
             target_user = existing_phone_user
         else: target_user = await create_user(db, UserCreate(email=email, password_hash=password_hash, name=payload.name, surname=payload.surname, phone_number=payload.phone_number, is_verified=not bool(email),), commit=False,)
-        from src.app.services.referrals.registration import record_registration_choice
-        await record_registration_choice(db, user=target_user, program=payload.reward_program, promo_code=payload.promo_code)
+        if mobile_shop_request(request.headers) or payload.reward_program:
+            await queue_registration_bonus(db, user=target_user)
         return await _finalize_phone_auth_setup(target_user, db)
     except IntegrityError as error:
         await db.rollback()
@@ -150,13 +152,16 @@ async def verify_phone_auth(request: Request, payload: PhoneAuthVerifyPayload, d
     await _verify_latest_email_code(user, payload.code, db)
     user.is_verified = True
     if mobile_shop_request(request.headers):
+        await queue_registration_bonus(db, user=user)
         await grant_on_email_confirmation(db, user)
     await record_auth_event(db, user.id, registration=True)
     await db.commit()
     await db.refresh(user)
 
     if user.moysklad_counterparty_id is not None:
-        try: await moysklad_client.update_counterparty_email(user.moysklad_counterparty_id, user.email)
+        try:
+            async with asyncio.timeout(AUTH_CONTACT_TIMEOUT_SECONDS):
+                await moysklad_client.update_counterparty_email(user.moysklad_counterparty_id, user.email)
         except Exception: logger.exception("Failed to sync verified email back to MoySklad counterparty user_id=%s", user.id)
 
     return await _build_auth_tokens_response(user, db, registration=True)

@@ -1,3 +1,4 @@
+import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.crud.auth.user import get_user_by_phone_number
 from src.database.models.auth.user import User
@@ -5,6 +6,7 @@ from src.integrations.moysklad import MoySkladClient, get_moysklad_client
 from src.normalize import coerce_uuid, normalize_email, normalize_phone, optional_str
 from .common import logger
 
+AUTH_CONTACT_TIMEOUT_SECONDS = 3
 
 async def _get_counterparty_for_phone(phone_number: str, moysklad_client: MoySkladClient) -> dict[str, object] | None:
     if not moysklad_client.is_configured(): return None
@@ -14,7 +16,14 @@ async def _get_counterparty_for_phone(phone_number: str, moysklad_client: MoySkl
 
 async def _resolve_user_for_phone(db: AsyncSession, phone_number: str, moysklad_client: MoySkladClient,) -> tuple[User | None, dict[str, object] | None]:
     user = await get_user_by_phone_number(db, phone_number)
-    counterparty = await _get_counterparty_for_phone(phone_number, moysklad_client)
+    try:
+        async with asyncio.timeout(AUTH_CONTACT_TIMEOUT_SECONDS if user and user.is_verified else None):
+            counterparty = await _get_counterparty_for_phone(phone_number, moysklad_client)
+    except Exception:
+        if not (user and user.is_active and user.is_verified):
+            raise
+        logger.exception("Accounting phone lookup deferred for verified user_id=%s", user.id)
+        return user, None
     if user is not None and user.is_active: return user, counterparty
     return None, counterparty
 
@@ -30,7 +39,9 @@ async def _link_moysklad_counterparty_by_email(user: User, db: AsyncSession) -> 
     moysklad_client = get_moysklad_client()
     if not moysklad_client.is_configured(): return
 
-    try: counterparty = (await moysklad_client.get_counterparty(linked_id) if linked_id is not None else await moysklad_client.get_counterparty_by_email(email))
+    try:
+        async with asyncio.timeout(AUTH_CONTACT_TIMEOUT_SECONDS):
+            counterparty = (await moysklad_client.get_counterparty(linked_id) if linked_id is not None else await moysklad_client.get_counterparty_by_email(email))
     except Exception:
         logger.exception(
             "Failed to load MoySklad contact during authentication user_id=%s",

@@ -17,6 +17,7 @@ from .sessions import _build_auth_tokens_response
 from .verification import _create_and_send_verification_code, _verify_latest_email_code
 from .login import _get_login_user, _is_app_review_identity
 from src.app.services.platform_availability import mobile_shop_request
+from src.app.services.referrals.registration import queue_registration_bonus
 from src.app.services.benefits.app_welcome import grant_on_email_confirmation
 
 
@@ -37,11 +38,9 @@ async def register_user(request: Request, payload: UserRegisterPayload, db: Asyn
             existing_user.is_verified = False
             user = existing_user
         else: user = await create_user(db, UserCreate(username=str(payload.email), email=payload.email, password_hash=password_hash, name=payload.name, surname=payload.surname, phone_number=None, is_verified=False,), commit=False,)
-        from src.app.services.referrals.registration import record_registration_choice
-        await record_registration_choice(db, user=user, program=payload.reward_program, promo_code=payload.promo_code)
-        if payload.select_program_after_registration and payload.reward_program is None:
-            from src.app.services.referrals.registration import mark_registration_choice_required
-            await mark_registration_choice_required(db, user=user)
+        # Legacy native clients may send the old choice fields without a platform header.
+        if mobile_shop_request(request.headers) or payload.reward_program or payload.select_program_after_registration:
+            await queue_registration_bonus(db, user=user)
         await _create_and_send_verification_code(user, db)
         await db.commit()
         await db.refresh(user)
@@ -65,6 +64,7 @@ async def verify_registration_user(request: Request, payload: UserRegisterVerify
     await _verify_latest_email_code(user, payload.code, db)
     user.is_verified = True
     if mobile_shop_request(request.headers):
+        await queue_registration_bonus(db, user=user)
         await grant_on_email_confirmation(db, user)
     await record_auth_event(db, user.id, registration=True)
     await db.commit()
@@ -119,6 +119,8 @@ async def verify_login_user(request: Request, payload: UserLoginVerifyPayload, d
         user.is_verified = True
         await record_auth_event(db, user.id, registration=True)
     if mobile_shop_request(request.headers):
+        if newly_verified:
+            await queue_registration_bonus(db, user=user)
         await grant_on_email_confirmation(db, user)
     await db.commit()
     await db.refresh(user)

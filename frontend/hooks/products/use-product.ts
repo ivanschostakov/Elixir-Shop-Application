@@ -10,10 +10,10 @@ function assertValidProductId(productId: number) {
 }
 
 export function useProduct(productId: number): UseProductResult {
-    const { user, isReady } = useAuth()
+    const { user, isReady, milestones } = useAuth()
     const { data: product, error, loading } = useAsyncData({
-        deps: [user?.id, user?.programSelectionRequired, productId],
-        enabled: isReady && !user?.programSelectionRequired,
+        deps: [user?.id, milestones?.programRevision, productId],
+        enabled: isReady,
         fetcher: async () => {
             assertValidProductId(productId)
             return getProduct(productId)

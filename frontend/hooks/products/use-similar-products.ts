@@ -4,15 +4,15 @@ import { useAuth } from "@/providers/auth-provider"
 import type { ProductWithVariantsRead } from "@/types/product"
 
 export function useSimilarProducts(productId: number | null, limit: number = 6) {
-    const { user, isReady } = useAuth()
+    const { user, isReady, milestones } = useAuth()
     const {
         data: products,
         error,
         loading,
         reload,
     } = useAsyncData<ProductWithVariantsRead[]>({
-        deps: [user?.id, user?.programSelectionRequired, productId, limit],
-        enabled: Boolean(productId) && isReady && !user?.programSelectionRequired,
+        deps: [user?.id, milestones?.programRevision, productId, limit],
+        enabled: Boolean(productId) && isReady,
         fetcher: async () => getSimilarProducts(productId as number, { limit }),
         initialData: [],
         resetOnLoad: true,

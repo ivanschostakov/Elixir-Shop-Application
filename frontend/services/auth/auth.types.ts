@@ -115,7 +115,6 @@ export type AuthUser = {
     isActive: boolean
     isVerified: boolean
     promoCode: string | null
-    programSelectionRequired?: boolean
     displayName: string
 }
 

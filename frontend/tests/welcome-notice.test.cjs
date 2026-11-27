@@ -10,6 +10,8 @@ test("shows the awarded credit once and retries acknowledgement without another 
     const { useWelcomeNotice } = loadTs("providers/use-welcome-notice.ts", {
         react: { useRef: current => ({current}), useEffect: f => f() },
         "react-native": native, "@/i18n/translations": { translate: k => k },
+        "@/services/notifications/startup-notices": loadTs("services/notifications/startup-notices.ts", { "react-native": native }),
+        "@/services/auth/session": { getAuthTokens: () => null },
         "@/services/notifications/order-status-notifications": { syncOrderStatusNotifications: ({requestPermissions}) => {
             assert.equal(requestPermissions, true); permissionPrompts++
         } },
@@ -25,6 +27,7 @@ test("shows the awarded credit once and retries acknowledgement without another 
     await settle()
     assert.equal(permissionPrompts, 0)
     remind()
+    await settle()
     foreground("active")
     await settle()
     assert.deepEqual([alerts, acknowledgements], [1, 2])
@@ -34,17 +37,20 @@ test("shows the awarded credit once and retries acknowledgement without another 
 test("already acknowledged credit enrolls without a button; no token falls back to the daily notice", async () => {
     for (const token of [null, "registered"]) {
         let prompts = 0, claims = 0, alerts = 0
-        const {useWelcomeNotice} = loadTs("providers/use-welcome-notice.ts", {
+        const native = { Platform:{OS:"android"}, AppState:{currentState:"active", addEventListener:()=>({remove(){}})},
+            Alert:{alert:(title,body)=>{alerts++;assert.equal(title,"Title");assert.equal(body,"Body")}} }
+        const {useWelcomeNotice: runHook} = loadTs("providers/use-welcome-notice.ts", {
             react: {useRef: current => ({current}), useEffect: cb => cb()},
-            "react-native": { Platform:{OS:"android"}, AppState:{currentState:"active", addEventListener:()=>({remove(){}})},
-                Alert:{alert:(title,body)=>{alerts++;assert.equal(title,"Title");assert.equal(body,"Body")}} },
+            "react-native": native,
+            "@/services/notifications/startup-notices": loadTs("services/notifications/startup-notices.ts", { "react-native": native }),
+            "@/services/auth/session": { getAuthTokens: () => null },
             "@/i18n/translations": {translate:k=>k},
             "@/services/api/benefits": {getWelcomeNotice:async()=>null,claimWelcomeReminder:async()=>{claims++;return {title:"Title",body:"Body"}}},
             "@/services/notifications/order-status-notifications": {syncOrderStatusNotifications:async opts=>{
                 prompts++;assert.deepEqual(opts,{requestPermissions:true,automatic:true});return token
             }},
         })
-        useWelcomeNotice(1,true)
+        runHook(1,true)
         await settle()
         assert.deepEqual([prompts,claims,alerts],token ? [1,0,0] : [1,1,1])
     }

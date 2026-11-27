@@ -2,11 +2,12 @@ from decimal import Decimal
 from typing import Any
 import httpx
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from src.app.services.referrals.order_attribution import lock_order_referrer, require_no_competing_referral
+from src.app.services.referrals.ms_codes import check_company_threshold
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import ufa_now
 from src.app.services.benefits.service import resolve_benefits_for_user
-from src.database.models import Order, OrderBenefitApplication, RewardProgramSelectionEvent as Event, User
+from src.database.models import Order, OrderBenefitApplication, User
 from src.integrations.moysklad.client import get_moysklad_client
 
 
@@ -16,7 +17,7 @@ async def _verify_order_referral(session, user, resolved):
     code = resolved["ms_order_promo"]
     buyer = user.moysklad_counterparty_id
     # Two app checkouts must not choose different first referrers while robot 10 is pending.
-    await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"order-promo:{buyer}", 0))))
+    await lock_order_referrer(session, buyer)
     try:
         card = await get_moysklad_client().get_counterparty(buyer)
         if not card or str(card["id"]) != str(buyer) or card.get("archived"):
@@ -35,21 +36,13 @@ async def _verify_order_referral(session, user, resolved):
             or rate != Decimal(str(expected["discount"] or 0))):
         raise HTTPException(409, "Условия покупателя в МойСкладе изменились. Обновите расчёт.")
     if not incoming:
+        spend = card.get("salesAmount")
+        check_company_threshold(code=code, program=program, incoming=incoming,
+                                spend=Decimal(spend) / 100 if type(spend) is int else None)
         if not any(o["source_kind"] == "app_referral" and o["applied_discount_amount"] > 0
                    for o in resolved["stacked_discount_options"]):
             raise HTTPException(422, "В заказе нет товаров, на которые действует промокод.")
-        recorded = Order.checkout_snapshot["benefits"]["ms_order_promo"].as_string()
-        # Orders from a previously closed referral relationship must remain in history,
-        # but must not prevent this buyer starting a new relationship.
-        cutoff = select(func.max(Event.created_at)).where(Event.user_id == User.id,
-            Event.source == "promo_unlink", Event.snapshot["buyer"].as_string() == str(buyer),
-            Event.snapshot["done"].as_boolean().is_(True)).correlate(User).scalar_subquery()
-        conflict = await session.scalar(select(Order.id).join(User, User.id == Order.user_id).where(
-            User.moysklad_counterparty_id == buyer, Order.is_canceled.is_(False),
-            cutoff.is_(None) | (Order.created_at >= cutoff),
-            func.lower(recorded) != code.lower()).limit(1))
-        if conflict:
-            raise HTTPException(409, "Другой заказ уже передан с другим промокодом. Дождитесь обновления МойСклада.")
+        await require_no_competing_referral(session, buyer, code)
 
 
 async def _persist_order_benefit_applications(session: AsyncSession, *, order: Order, user: User, resolved_benefits: dict[str, Any]) -> None:

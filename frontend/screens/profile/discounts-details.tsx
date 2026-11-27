@@ -7,6 +7,8 @@ import { useAsyncData } from "@/hooks/shared/use-async-data"
 import { useAppSafeAreaInsets } from "@/hooks/use-app-safe-area-insets"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { getTranslationLocale } from "@/i18n/translations"
+import { partnerOfferBody } from "@/i18n/loyalty"
+import { useAuth } from "@/providers/auth-provider"
 import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { discountsIcons } from "@/screens/profile/discounts-menu-assets"
@@ -33,6 +35,8 @@ type DetailsProps = {
 
 export function DiscountsDetails({ section, account, accountStatus, userId, onClose, onUnlinked }: DetailsProps) {
     const styles = useThemeStyles(createProfileDiscountsScreenStyles)
+    const { milestones } = useAuth()
+    const ownCode = milestones?.data?.own_promo_code ?? account?.own_promo_code
     const { t } = useLanguage()
     const { palette, accentPalette } = useTheme()
     const { bottom } = useAppSafeAreaInsets()
@@ -117,10 +121,27 @@ export function DiscountsDetails({ section, account, accountStatus, userId, onCl
                                 {id === 2 && <Text style={styles.body}>{t("profile.discounts.programRangeHint")}</Text>}
                             </View>
                         })}
-                        {(account?.loyalty_program === 1 || account?.loyalty_program === 2) &&
+                        {account?.loyalty_program === 2 && !milestones?.data?.offer_partner &&
                             <Text style={styles.body}>{t("profile.referral.programLockedHint")}</Text>}
                     </>}
                     {(section === "terms" || section === "codes") && accountStatus && <Text style={styles.body}>{accountStatus}</Text>}
+                    {(section === "terms" || section === "codes") && milestones && <>
+                        {milestones.data?.offer_partner && <View style={styles.detailCard}>
+                            <Text style={styles.detailTitle}>{t("milestone.offerTitle")}</Text>
+                            <Text style={styles.body}>{partnerOfferBody(milestones.data.company_promo_code)}</Text>
+                            <Pressable accessibilityRole="button" disabled={!!milestones.pending} style={styles.action}
+                                onPress={() => void milestones.accept()}>
+                                <Text style={styles.actionLabel}>{t("milestone.accept")}</Text>
+                            </Pressable>
+                        </View>}
+                        {!!milestones.pending && <ActivityIndicator accessibilityLabel={t("common.loading")} />}
+                        {milestones.error && <>
+                            <Text accessibilityLiveRegion="polite" style={styles.body}>{t(milestones.error === "accept" ? "milestone.acceptFailed" : "milestone.checkFailed")}</Text>
+                            <Pressable accessibilityRole="button" onPress={() => void milestones.check()} style={styles.action}>
+                                <Text style={styles.actionLabel}>{t("common.retry")}</Text>
+                            </Pressable>
+                        </>}
+                    </>}
                     {section === "codes" && <>
                         {!!notice && <Text accessibilityLiveRegion="polite" style={styles.body}>{notice}</Text>}
                         {account?.referrer_promo_code ? <View style={styles.detailCard}>
@@ -131,9 +152,9 @@ export function DiscountsDetails({ section, account, accountStatus, userId, onCl
                                 <Text style={[styles.actionLabel, { color: palette.danger }]}>{t("profile.referral.detachAction")}</Text>
                             </Pressable>}
                         </View> : !accountStatus && <Text style={styles.body}>{t("profile.discounts.noAttachedPromo")}</Text>}
-                        {account?.own_promo_code && <View style={styles.detailCard}>
+                        {!!ownCode && <View style={styles.detailCard}>
                             <Text style={styles.rowSubtitle}>{t("profile.referral.ownPromo")}</Text>
-                            <Text selectable style={styles.value}>{account.own_promo_code}</Text>
+                            <Text selectable style={styles.value}>{ownCode}</Text>
                         </View>}
                     </>}
 

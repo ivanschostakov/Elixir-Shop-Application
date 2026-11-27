@@ -22,7 +22,6 @@ import { translate } from "@/i18n/translations"
 import { clearBasketSnapshot } from "@/hooks/basket/basket-store"
 import { clearOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { setCommerceAccount } from "@/services/commerce-account"
-import RegistrationProgramAlert from "@/screens/auth/registration-program-alert"
 import { AuthContext } from "@/providers/auth-provider.context"
 import type { AuthProviderProps } from "@/providers/auth-provider.types"
 import {
@@ -55,6 +54,7 @@ import { heartbeatMyPresence } from "@/services/api/users"
 import { ApiError } from "@/services/api/client"
 import { startCompanionTimezoneSync } from "@/services/companion-timezone-sync"
 import { useWelcomeNotice } from "./use-welcome-notice"
+import { useLoyaltyMilestones } from "./use-loyalty-milestones"
 
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 60_000
 
@@ -109,7 +109,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const pathname = usePathname()
     const timezoneUserId = user?.id
     const mentorAvailable = isMentorAvailable(Platform.OS)
-    useWelcomeNotice(user?.id, isReady && !user?.programSelectionRequired)
+    const sessionId = getAuthTokens()?.sessionId
+    useWelcomeNotice(user?.id, isReady, sessionId)
+    const milestones = useLoyaltyMilestones(isReady ? user?.id : undefined, sessionId, pathname)
 
     useEffect(() => {
         if (timezoneUserId != null && mentorAvailable) return startCompanionTimezoneSync()
@@ -365,6 +367,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
             value={{
                 isReady,
                 isAuthenticated,
+                milestones,
                 user,
                 signIn,
                 verifyLogin,
@@ -379,7 +382,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
             }}
         >
             {children}
-            {user?.programSelectionRequired ? <RegistrationProgramAlert key={user.id} onComplete={setUser} /> : null}
         </AuthContext.Provider>
     )
 }

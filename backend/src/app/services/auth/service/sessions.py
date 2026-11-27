@@ -23,20 +23,18 @@ async def _build_auth_tokens_response(user: User, db: AsyncSession, *, registrat
     await _link_moysklad_counterparty_by_email(user, db)
     from src.app.services.referrals.registration import sync_registration_choice
     try:
-        await sync_registration_choice(db, user=user)
+        await sync_registration_choice(db, user=user, best_effort=True)
     except Exception:
         await db.rollback()
         await db.refresh(user)
         logger.exception("Could not synchronize registration program user_id=%s", user_id)
-    from src.app.services.referrals.registration import registration_choice_required
-    selection_required = await registration_choice_required(db, user=user)
     refresh_token = create_refresh_token()
     refresh_token_hash = hash_refresh_token(refresh_token)
     if not registration:
         await record_auth_event(db, user.id, registration=False)
     session = await create_user_session(db, UserSessionCreate(user_id=user.id, refresh_token_hash=refresh_token_hash))
     access_token = create_access_token(user_id=user.id, session_id=session.id)
-    auth_user = AuthUserRead.model_validate(user).model_copy(update={"program_selection_required": selection_required})
+    auth_user = AuthUserRead.model_validate(user)
     return AuthTokensWithUserResponse(access_token=access_token, refresh_token=refresh_token, session_id=session.id, user=auth_user)
 
 

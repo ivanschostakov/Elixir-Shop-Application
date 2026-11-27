@@ -1,8 +1,16 @@
 import type { PaymentStatusRead } from "@/services/api/payments.types"
+import type { OrderRead } from "@/services/api/orders.types"
 
 type PaymentMethod = "later" | "sbp"
 
 const FINAL_STOP_STATUSES = new Set(["error", "canceled", "refunded", "hold", "partial"])
+
+export function confirmedPaidOrderId(userId: number | undefined, order: OrderRead | null, payment: PaymentStatusRead | null) {
+    if (!order || userId !== order.user_id || (payment && payment.order_id !== order.id)) return null
+    const status = payment ?? order
+    if (FINAL_STOP_STATUSES.has(status.payment_status ?? "")) return null
+    return status.is_paid || status.payment_status === "paid" ? order.id : null
+}
 
 export function resolvePaymentPhase(payment: PaymentStatusRead, requestedMethod: PaymentMethod) {
     if (payment.payment_status && FINAL_STOP_STATUSES.has(payment.payment_status)) return "failure"

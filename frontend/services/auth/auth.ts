@@ -73,7 +73,6 @@ function mapUser(user: BackendAuthUser): AuthUser {
         isActive: user.is_active,
         isVerified: user.is_verified,
         promoCode: user.promo_code,
-        programSelectionRequired: user.program_selection_required ?? false,
         displayName: displayName || user.username || user.email || user.phone_number || `User #${user.id}`,
     }
 }
@@ -254,11 +253,5 @@ export async function updateCurrentUserPersonalData(payload: PersonalDataUpdateP
     )
     const user = mapUser(response)
     cacheAuthUser(user)
-    return user
-}
-
-export async function chooseRegistrationProgram(program: "bonus" | "partner", promoCode?: string): Promise<AuthUser> {
-    const response = await apiPost<BackendAuthUser, { program: "bonus" | "partner"; promo_code?: string }>(authPath("/registration-program"), { program, ...(promoCode ? { promo_code: promoCode } : {}) })
-    const user = mapUser(response)
     return user
 }

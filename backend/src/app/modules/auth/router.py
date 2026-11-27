@@ -55,22 +55,11 @@ class RegistrationProgramChoice(BaseModel):
 
 @auth_router.post("/registration-program", response_model=AuthUserRead)
 async def registration_program(request: Request, payload: RegistrationProgramChoice, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    from fastapi import HTTPException
-    from src.app.services.auth.service.counterparty import _link_moysklad_counterparty_by_email
-    from src.app.services.referrals.registration import registration_choice_required, record_registration_choice, sync_registration_choice
+    from src.app.services.referrals.registration import sync_registration_choice
     from src.app.services.auth.service.rate_limits import _apply_auth_rate_limit
     await _apply_auth_rate_limit(request, scope="auth:registration_program", principal=str(current_user.id))
-    await _link_moysklad_counterparty_by_email(current_user, db)
-    if not await registration_choice_required(db, user=current_user):
-        # The endpoint cannot be used to switch an existing customer's program.
-        if current_user.moysklad_counterparty_id is None:
-            raise HTTPException(409, "Программа уже выбрана.")
-        return AuthUserRead.model_validate(current_user)
-    if payload.program == "bonus" and payload.promo_code:
-        raise HTTPException(422, "Для бонусной программы промокод не используется.")
-    await record_registration_choice(db, user=current_user, program=payload.program, promo_code=payload.promo_code)
-    await db.commit()
-    await sync_registration_choice(db, user=current_user)
+    # Dismiss cached prompts on older clients; their payload is never a program change.
+    await sync_registration_choice(db, user=current_user, best_effort=True)
     return AuthUserRead.model_validate(current_user)
 
 
@@ -151,9 +140,9 @@ async def logout(request: Request, payload: UserLogoutPayload, db: AsyncSession 
 
 @auth_router.get("/me", response_model=AuthUserRead, status_code=status.HTTP_200_OK)
 async def me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> AuthUserRead:
-    from src.app.services.referrals.registration import registration_choice_required
-    return AuthUserRead.model_validate(current_user).model_copy(update={
-        "program_selection_required": await registration_choice_required(db, user=current_user)})
+    from src.app.services.referrals.registration import sync_registration_choice
+    await sync_registration_choice(db, user=current_user, best_effort=True)
+    return AuthUserRead.model_validate(current_user)
 
 
 @auth_router.delete("/me", response_model=AuthLogoutResponse, status_code=status.HTTP_200_OK)

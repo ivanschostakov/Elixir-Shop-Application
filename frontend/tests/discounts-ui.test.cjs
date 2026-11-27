@@ -34,7 +34,7 @@ function setup(program, options = {}) {
         [getMyAppRewards, { data: { welcome_balance_rubles: "345.50", welcome_expires_at: "2026-12-01T16:00:00Z", text_review_points: 75, photo_review_points: 150 } }],
     ])
     const mocks = {
-        react: { Fragment: "Fragment", useCallback: f => f, useRef: current => ({ current }), useState: () => [section, s => { section = s }] },
+        react: { Fragment: "Fragment", useEffect: () => {}, useCallback: f => f, useRef: current => ({ current }), useState: () => [section, s => { section = s }] },
         "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
         "react-native": { ...Object.fromEntries(["ActivityIndicator", "Image", "Modal", "Pressable", "ScrollView", "Text", "View"].map(x => [x, x])),
             useWindowDimensions: () => ({ width: 390, fontScale: 1 }) },
@@ -44,7 +44,7 @@ function setup(program, options = {}) {
         "@/hooks/shared/use-async-data": { useAsyncData: ({ fetcher }) => ({ data: snapshot, error: null, loading: false, reload: () => {}, ...resources.get(fetcher) }) },
         "@/hooks/use-app-safe-area-insets": { useAppSafeAreaInsets: () => ({ bottom: 20 }) },
         "@/hooks/use-theme-styles": { useThemeStyles: () => ({}) },
-        "@/providers/auth-provider": { useAuth: () => ({ user }) },
+        "@/providers/auth-provider": { useAuth: () => ({ user, milestones: options.milestones }) },
         "@/providers/language-provider": { useLanguage: () => ({ t: translate }) },
         "@/providers/theme-provider": { useTheme: () => ({ accentPalette: {}, palette: {} }) },
         "@/screens/profile/profile-discounts-screen.styles": {},
@@ -144,6 +144,27 @@ test("catalog offers open their category and product routes", () => {
     const failed = setup(0, { offerError: "offline" }).details("Акции каталога")
     assert.ok(textOf(failed).includes("Повторить"))
     assert.ok(!textOf(failed).includes(translate("profile.discounts.empty")))
+})
+
+test("a deferred offer can be accepted from terms; codes do not depend on program or eligibility", () => {
+    let accepted = 0, retried = 0
+    const milestones = { data: { offer_partner: true, company_promo_code: "FIRM", own_promo_code: "LEGACY", own_code_eligible: false },
+        accept: () => accepted++, check: () => retried++, error: null, pending: null }
+    const h = setup(1, { milestones, account: { own_promo_code: null } })
+    assert.match(textOf(h.menu()), new RegExp(translate("milestone.offerTitle")))
+    assert.match(textOf(h.details("Условия программы")), /FIRM/)
+    press(h.details("Условия программы"), translate("milestone.accept"))
+    assert.equal(accepted, 1)
+    milestones.pending = "accept"
+    const disabled = all(h.details("Промокоды"), n => n.type === "Pressable" && textOf(n).includes(translate("milestone.accept")))
+    assert.equal(disabled[0].props.disabled, true)
+    milestones.pending = null
+    milestones.error = "accept"
+    assert.match(textOf(h.details("Промокоды")), /LEGACY/)
+    press(h.details("Промокоды"), translate("common.retry"))
+    assert.equal(retried, 1)
+    milestones.data.offer_partner = false
+    assert.ok(!textOf(h.details("Промокоды")).includes(translate("milestone.accept")))
 })
 
 test("missing settlement does not imply a zero balance or absent promo code", () => {

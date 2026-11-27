@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import type { useLoyaltyMilestones } from "./use-loyalty-milestones"
 
 import type {
     AuthUser,
@@ -16,6 +17,7 @@ import type {
 } from "@/services/auth/auth.types"
 
 export type AuthContextValue = {
+    milestones: ReturnType<typeof useLoyaltyMilestones>
     isReady: boolean
     isAuthenticated: boolean
     user: AuthUser | null

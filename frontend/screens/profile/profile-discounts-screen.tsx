@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useRef, useState } from "react"
 import { ActivityIndicator, Image, Pressable, Text, useWindowDimensions, View } from "react-native"
 import { router, useFocusEffect } from "expo-router"
 
@@ -21,6 +21,7 @@ export default function ProfileDiscountsScreen() {
 }
 
 function DiscountsView({ userId }: { userId: number }) {
+    const { milestones } = useAuth()
     const styles = useThemeStyles(createProfileDiscountsScreenStyles)
     const { t } = useLanguage()
     const { palette, accentPalette, isDark } = useTheme()
@@ -40,6 +41,12 @@ function DiscountsView({ userId }: { userId: number }) {
         deps: [userId], fetcher: fetchAccount, initialData: null, preserveDataOnError: true, showErrorAlert: false,
     })
     const focusedOnce = useRef(false)
+    const revision = milestones?.programRevision
+    const lastRevision = useRef(revision)
+    useEffect(() => {
+        if (revision !== lastRevision.current) void reload({ showLoading: false })
+        lastRevision.current = revision
+    }, [revision, reload])
     useFocusEffect(useCallback(() => {
         if (!focusedOnce.current) { focusedOnce.current = true; return }
         void reload({ showLoading: false })
@@ -77,7 +84,7 @@ function DiscountsView({ userId }: { userId: number }) {
                 </View>
                 <View style={styles.heroFooter}>
                     <Pressable accessibilityRole="button" accessibilityLabel={t("profile.settlement.refresh")}
-                        disabled={loading} onPress={() => void reload()} style={styles.iconButton}>
+                        disabled={loading} onPress={() => { void reload(); void milestones?.check() }} style={styles.iconButton}>
                         {loading ? <ActivityIndicator color="#FFFFFF" /> :
                             <Image accessible={false} source={discountsIcons.refresh} style={{ width: 25, height: 25, tintColor: "#FFFFFF" }} />}
                     </Pressable>
@@ -113,7 +120,7 @@ function DiscountsView({ userId }: { userId: number }) {
                         <Image accessible={false} source={discountsIcons[key]} style={{ width: 23, height: 23, tintColor: palette.text }} />
                         <View style={styles.rowCopy}>
                             <Text style={styles.rowTitle}>{t(`profile.discounts.${key}`)}</Text>
-                            {key === "terms" && <Text style={styles.rowSubtitle}>{programName}</Text>}
+                            {key === "terms" && <Text style={styles.rowSubtitle}>{milestones?.data?.offer_partner ? t("milestone.offerTitle") : programName}</Text>}
                             {key === "purchases" && data?.total_purchases_rubles != null &&
                                 <Text style={styles.rowSubtitle}>{t("profile.settlement.purchases")} · {formatSettlementMoney(data.total_purchases_rubles, 0)}</Text>}
                         </View>

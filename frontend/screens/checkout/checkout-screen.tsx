@@ -107,7 +107,7 @@ export default function CheckoutScreen() {
     const contentStyles = useThemeStyles(createContentStyles)
     const checkoutScreenStyles = useThemeStyles(createCheckoutScreenStyles)
     const { palette } = useTheme()
-    const { isAuthenticated, isReady, updatePersonalData, user } = useAuth()
+    const { isAuthenticated, isReady, updatePersonalData, user, milestones } = useAuth()
     const { t, language } = useLanguage()
     const { bottom: bottomInset, top: topInset } = useSafeAreaInsets()
     const params = useLocalSearchParams<{ code?: string | string[], draftId?: string | string[] }>()
@@ -184,8 +184,8 @@ export default function CheckoutScreen() {
         error: referralError,
         reload: reloadReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
-        deps: [user?.id ?? null, user?.programSelectionRequired, orderDraft?.id ?? null, isBasketCheckout],
-        enabled: Boolean(orderDraft?.items.length && isAuthenticated && !user?.programSelectionRequired),
+        deps: [user?.id ?? null, milestones?.programRevision, orderDraft?.id ?? null, isBasketCheckout],
+        enabled: Boolean(orderDraft?.items.length && isAuthenticated),
         fetcher: getMyReferralProfile,
         initialData: null,
         resetOnLoad: true,
@@ -266,16 +266,16 @@ export default function CheckoutScreen() {
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
     const attachedPromoCode = referralProfile?.promo_code ?? null
-    const programLocked = !referralProfile || Boolean(user?.programSelectionRequired)
+    const programLocked = !referralProfile
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
     const hasUnappliedPromoCode = Boolean(isAuthenticated && !programLocked && !hasAttachedPromoCode && normalizedPromoCode && normalizedPromoCode !== appliedPromoCode)
     const isPromoRewardReady = programLocked || !normalizedPromoCode || hasAttachedPromoCode || Boolean(appliedPromoCode)
     const activeEnteredPromoCode = !programLocked && !hasAttachedPromoCode ? appliedPromoCode : null
     const quoteSource = { use_basket: isBasketCheckout, draft_id: isBasketCheckout ? null : orderDraft?.id }
-    const needsQuote = Boolean(orderDraft?.items.length && isAuthenticated && !user?.programSelectionRequired)
+    const needsQuote = Boolean(orderDraft?.items.length && isAuthenticated)
     const { data: benefitCheck, error: quoteError, reload: reloadQuote } = useOrderBenefits(
-        [user?.id, attachedPromoCode, orderDraft?.id, orderDraft?.delivery_total, orderDraft?.currency,
+        [user?.id, milestones?.programRevision, attachedPromoCode, orderDraft?.id, orderDraft?.delivery_total, orderDraft?.currency,
             orderDraft?.items.map(item => [item.variant_id, item.quantity, item.line_total])],
         needsQuote && referralProfile !== null,
         { ...quoteSource, code: activeEnteredPromoCode, reward_mode: activeEnteredPromoCode ? "order_referral" : undefined },
