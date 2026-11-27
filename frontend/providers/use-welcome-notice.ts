@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react"
 import { Alert, AppState, Platform } from "react-native"
 import { translate } from "@/i18n/translations"
 import { acknowledgeWelcomeNotice, getWelcomeNotice } from "@/services/api/benefits"
+import { syncOrderStatusNotifications } from "@/services/notifications/order-status-notifications"
 
 export function useWelcomeNotice(userId: number | undefined, ready: boolean) {
     const shown = useRef<number | null>(null)
@@ -18,7 +19,12 @@ export function useWelcomeNotice(userId: number | undefined, ready: boolean) {
                 if (shown.current !== notice.credit_id) {
                     const deadline = new Intl.DateTimeFormat(undefined, { day: "2-digit", month: "2-digit", year: "numeric",
                         hour: "2-digit", minute: "2-digit", timeZoneName: "short" }).format(new Date(notice.expires_at))
-                    Alert.alert(translate("welcomeCredit.title"), translate("welcomeCredit.body").replace("{date}", deadline))
+                    Alert.alert(translate("welcomeCredit.title"), translate("welcomeCredit.body").replace("{date}", deadline), [
+                        { text: translate("welcomeCredit.dismiss"), style: "cancel" },
+                        { text: translate("welcomeCredit.remind"), onPress: () => {
+                            if (active) void syncOrderStatusNotifications({ requestPermissions: true })
+                        } },
+                    ])
                     shown.current = notice.credit_id
                 }
                 await acknowledgeWelcomeNotice(notice.credit_id)
