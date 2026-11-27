@@ -499,6 +499,7 @@ export const createPaymentScreenStyles = (colors: ThemePalette) => StyleSheet.cr
         marginTop: 2,
     },
     footerPriceLabel: {
+        flexShrink: 1,
         color: colors.mutedText,
         fontSize: 15,
         lineHeight: 20,

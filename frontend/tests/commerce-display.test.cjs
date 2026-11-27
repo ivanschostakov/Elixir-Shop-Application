@@ -22,9 +22,11 @@ test("the promo name and actual percent are shown without calling a balance paym
     const t = key => ({
         "checkout.promoCodeTitle": "Промокод",
         "checkout.bonusRublesTitle": "Бонусные рубли",
+        "checkout.estimatedBalance": "С баланса автоматически (предварительно)",
         "checkout.discountTitle": "Скидка",
     })[key]
     assert.equal(formatAppliedDiscount({ source_kind: "bitrix_promo", code: "ROMANI", discount_percent: "3.00" }, t), "Промокод ROMANI −3%")
     assert.equal(formatAppliedDiscount({ source_kind: "bitrix_promo", code: "SALE", discount_percent: null }, t), "Промокод SALE")
-    assert.equal(formatAppliedDiscount({ source_kind: "moysklad_settlement", discount_percent: null }, t), "Бонусные рубли")
+    assert.equal(formatAppliedDiscount({ source_kind: "moysklad_settlement", discount_percent: null }, t, "automatic"), "С баланса автоматически (предварительно)")
+    assert.equal(formatAppliedDiscount({ source_kind: "moysklad_bonus" }, t), "Бонусные рубли")
 })

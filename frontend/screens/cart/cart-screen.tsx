@@ -478,7 +478,7 @@ export default function CartScreen() {
                             ) : null}
                             {benefitCheck?.stacked_discount_options.filter(option => Number(option.applied_discount_amount) > 0).map((option, idx) => (
                                 <View key={idx} style={cartScreenStyles.totalRow}>
-                                    <Text style={[cartScreenStyles.totalLabel, { flex: 1 }]}>{formatAppliedDiscount(option, t)}</Text>
+                                    <Text style={[cartScreenStyles.totalLabel, { flex: 1 }]}>{formatAppliedDiscount(option, t, benefitCheck.balance_redemption_mode)}</Text>
                                     <Text style={cartScreenStyles.totalValue}>−{formatProductPrice(option.applied_discount_amount)}</Text>
                                 </View>
                             ))}

@@ -50,6 +50,7 @@ import { syncOrderStatusNotifications } from "@/services/notifications/order-sta
 import type { OrderDraftItemRead, OrderDraftRead } from "@/services/api/order-drafts.types"
 import { ORDER_STATUS_LABEL_KEYS } from "@/screens/profile/profile-history-screen.utils"
 import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
+import { confirmedBalanceAmount, formatAppliedDiscount, orderDiscountRows } from "@/utils/discount-display"
 import { parsePositiveRouteId } from "@/utils/route-params"
 
 type PaymentMethod = "later" | "sbp"
@@ -1230,6 +1231,8 @@ export default function PaymentScreen() {
             </Pressable>
         )
 
+        const balance = confirmedBalanceAmount(order, payment)
+        const discounts = orderDiscountRows(order?.checkout_snapshot)
         const renderPriceSummary = (withDivider = true) => {
             if (!basketSubtotalLabel && !deliveryTotalLabel && !totalLabel) {
                 return null
@@ -1251,6 +1254,14 @@ export default function PaymentScreen() {
                                 <Text style={paymentScreenStyles.footerPriceValue}>{deliveryTotalLabel}</Text>
                             </View>
                         ) : null}
+                        {discounts.map((discount, i) => <View key={i} style={paymentScreenStyles.footerPriceRow}>
+                            <Text style={paymentScreenStyles.footerPriceLabel}>{formatAppliedDiscount(discount, t)}</Text>
+                            <Text style={paymentScreenStyles.footerPriceValue}>−{formatMoney(discount.amount, order?.currency)}</Text>
+                        </View>)}
+                        {balance !== null ? <View style={paymentScreenStyles.footerPriceRow}>
+                            <Text style={paymentScreenStyles.footerPriceLabel}>{t("checkout.invoiceBalance")}</Text>
+                            <Text style={paymentScreenStyles.footerPriceValue}>−{formatMoney(balance, order?.currency)}</Text>
+                        </View> : null}
                         {totalLabel ? (
                             <View style={[paymentScreenStyles.footerPriceRow, paymentScreenStyles.footerPriceRowTotal]}>
                                 <Text style={paymentScreenStyles.footerPriceLabelStrong}>{t("checkout.grandTotalLabel")}</Text>

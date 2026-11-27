@@ -555,7 +555,7 @@ export default function CheckoutScreen() {
                                     key={`${option.source_kind}-${option.source_record_id ?? option.code ?? option.sequence}`}
                                     style={checkoutScreenStyles.totalRow}
                                 >
-                                    <Text style={[checkoutScreenStyles.totalLabel, { flex: 1 }]}>{formatAppliedDiscount(option, t)}</Text>
+                                    <Text style={[checkoutScreenStyles.totalLabel, { flex: 1 }]}>{formatAppliedDiscount(option, t, benefitCheck.balance_redemption_mode)}</Text>
                                     <Text style={[checkoutScreenStyles.totalValue, checkoutScreenStyles.totalValueDiscount]}>
                                         {option.applied_discount_amount
                                             ? `−${formatMoney(Number(option.applied_discount_amount), option.currency ?? benefitCheck.currency)}`
@@ -1228,28 +1228,6 @@ export default function CheckoutScreen() {
                                         <Text style={checkoutScreenStyles.rewardModeTitle}>{t("checkout.welcomeBonusTitle")}: {formatMoney(Number(benefitCheck.welcome_balance_rubles), "RUB")}</Text>
                                         <Text style={checkoutScreenStyles.rewardModeOptionHint}>{t("checkout.welcomeBonusTerms")} {new Date(benefitCheck.welcome_expires_at).toLocaleString(language === "kz" ? "kk-KZ" : language, {dateStyle:"medium", timeStyle:"short"})}</Text>
                                     </View>
-                                ) : null}
-                                {Number(benefitCheck?.bonus_balance_rubles ?? 0) > 0 ? (
-                                    <>
-                                        <View style={checkoutScreenStyles.detailsSheetDivider} />
-                                        <View style={checkoutScreenStyles.detailsSheetRow}>
-                                            <Text numberOfLines={2} style={checkoutScreenStyles.detailsSheetLabel}>
-                                                {benefitCheck?.bonus_option?.source_kind === "moysklad_settlement"
-                                                    ? t("checkout.settlementBalanceTitle") : t("checkout.bonusRublesTitle")}
-                                            </Text>
-                                            <View style={checkoutScreenStyles.bonusToggleCopy}>
-                                                <Text style={checkoutScreenStyles.bonusToggleValue}>
-                                                    {formatMoney(
-                                                        Number(benefitCheck?.bonus_balance_rubles ?? 0),
-                                                        benefitCheck?.currency ?? orderDraft.currency,
-                                                    )}
-                                                </Text>
-                                                <Text style={checkoutScreenStyles.bonusToggleHint}>
-                                                    {t("checkout.automaticBalanceHint")}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                    </>
                                 ) : null}
                             </>
                         ) : null}

@@ -30,6 +30,7 @@ import { useLanguage } from "@/providers/language-provider"
 import { useTheme } from "@/providers/theme-provider"
 import { formatMoney } from "@/screens/checkout/checkout-screen.utils"
 import { getOrders } from "@/services/api/orders"
+import { confirmedBalanceAmount } from "@/utils/discount-display"
 import type { OrderHistoryBucket, OrderRead, OrderStatusCode } from "@/services/api/orders.types"
 import { spacing } from "@/theme/spacing"
 import { createProfileHistoryScreenStyles } from "./profile-history-screen.styles"
@@ -325,6 +326,7 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
     const { t } = useLanguage()
     const subtitle = order.delivery_string || order.delivery_address?.full_address || null
     const totalLabel = formatMoney(Number(order.grand_total), order.currency) ?? order.grand_total
+    const balance = confirmedBalanceAmount(order)
     const isCompleted = order.history_bucket === "completed"
     const visibleItems = order.items.slice(0, 4)
     const statusLabel = t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created")
@@ -418,6 +420,10 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
 
             <View style={profileHistoryScreenStyles.historyCardDivider} />
 
+            {balance !== null ? <View style={profileHistoryScreenStyles.historyCardFooter}>
+                <Text style={profileHistoryScreenStyles.historyCardFooterLabel}>{t("checkout.invoiceBalance")}</Text>
+                <Text style={profileHistoryScreenStyles.historyCardFooterValue}>−{formatMoney(balance, order.currency)}</Text>
+            </View> : null}
             <View style={profileHistoryScreenStyles.historyCardFooter}>
                 <Text style={profileHistoryScreenStyles.historyCardFooterLabel}>{t("checkout.grandTotalLabel")}</Text>
                 <Text numberOfLines={1} style={profileHistoryScreenStyles.historyCardFooterValue}>{totalLabel}</Text>
