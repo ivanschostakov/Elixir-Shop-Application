@@ -277,6 +277,49 @@ def test_document_export_preserves_reservation_boundary(client, registered_user,
             assert order.moysklad_invoiceout_id == invoice_id
 
 
+def test_concurrent_positive_exports_only_one_takes_balance(client, registered_user, second_registered_user, variant_factory, stub_amocrm):
+    import asyncio
+    from unittest.mock import AsyncMock
+    from fastapi import HTTPException
+    from sqlalchemy import select
+    from src.database import SessionLocal
+    from src.database.models import Order
+    from src.integrations.moysklad.order_sync.service import _mark_remote_export
+
+    cid = uuid4()
+    ids = []
+    for customer in (registered_user, second_registered_user):
+        catalog = variant_factory(stock=5, price=Decimal("21"))
+        draft = _create_ready_draft(client, customer["headers"], catalog["variant_id"])
+        response = client.post("/api/v1/users/me/orders", headers=customer["headers"],
+                               json={"draft_id": draft["id"], "payment_method": "sbp"})
+        assert response.status_code == 200, response.text
+        ids.append(response.json()["id"])
+    with Session(sync_engine) as db:
+        for oid in ids:
+            order = db.get(Order, oid)
+            order.checkout_snapshot = dict(order.checkout_snapshot, settlement_payment={
+                "version": 1, "counterparty_id": str(cid), "maximum_balance_rubles": "10",
+                "status": "awaiting_invoice"})
+        db.commit()
+    ms = SimpleNamespace(entity_href=lambda *_: "counterparty", get_page=AsyncMock(return_value={"rows": []}))
+    async def race():
+        async def claim(oid):
+            async with SessionLocal() as db:
+                order = await db.scalar(select(Order).where(Order.id == oid).with_for_update())
+                try:
+                    return await _mark_remote_export(db, order, cid, ms)
+                except HTTPException as exc:
+                    assert exc.status_code == 409 and "EP-" in exc.detail
+                    return False
+        result = await asyncio.gather(*(claim(oid) for oid in ids))
+        assert sorted(result) == [False, True]
+        # A retry after a lost remote response sees the durable claim; never claims twice.
+        assert not await claim(ids[result.index(True)])
+        assert not await claim(ids[result.index(False)])
+    client.portal.call(race)
+
+
 def test_stale_draft_requires_confirmation_of_new_price(client, registered_user, variant_factory, stub_amocrm):
     from src.database.models import Variant
     catalog = variant_factory(stock=5, price=Decimal("100"))

@@ -83,5 +83,8 @@ async def _resolve_checkout_benefits(session: AsyncSession, *, user: User, subto
     resolved = await resolve_benefits_for_user(session, user=user, entered_code=entered_code, subtotal=subtotal, discountable_subtotal=discountable_subtotal, delivery_total=delivery_total, currency=currency, quote_items=quote_items, use_bonus_rubles=use_bonus_rubles, bonus_rubles_to_use=bonus_rubles_to_use, reward_mode=reward_mode, mobile_welcome=mobile_welcome)
     if resolved.get("ms_order_promo"):
         await _verify_order_referral(session, user, resolved)
+    if resolved.get("settlement_counterparty_id") and resolved.get("use_bonus_rubles"):
+        from src.app.services.orders.settlement_payment import check_balance_use
+        await check_balance_use(session, counterparty_id=user.moysklad_counterparty_id, amount=resolved["bonus_applied_rubles"])
     if use_bonus_rubles and resolved.get("balance_redemption_mode") != "automatic" and not (resolved.get("bonus_option") or {}).get("is_applicable"): raise HTTPException(409, "Баланс недоступен или изменился. Обновите оформление заказа.")
     return resolved

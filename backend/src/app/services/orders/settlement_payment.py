@@ -59,14 +59,6 @@ def serialized_settlement_checkout(function):
                 existing = await get_order_by_draft_id(session, kwargs["draft_id"], user_id=user.id)
                 if existing is not None:
                     return await function(session, **kwargs)
-            known_zero = await ensure_no_pending_balance_order(session, counterparty_id=user.moysklad_counterparty_id)
-            try:
-                await check_open_settlement_orders(get_moysklad_client(), user.moysklad_counterparty_id, known_zero_ids=known_zero)
-            except SettlementNotReady as exc:
-                raise HTTPException(409, str(exc)) from exc
-            except Exception as exc:
-                logger.exception("Settlement preflight failed user_id=%s", user.id)
-                raise HTTPException(503, "Не удалось проверить баланс в МойСклад. Заказ не создан; повторите позже.") from exc
             return await function(session, **kwargs)
     return wrapped
 
@@ -95,26 +87,45 @@ def _is_recorded_zero(value):
 
 
 async def ensure_no_pending_balance_order(session, *, counterparty_id, exclude_order_id=None):
+    snapshot = Order.checkout_snapshot["settlement_payment"]
     query = (select(Order.moysklad_customerorder_id, Order.order_code, Order.is_canceled,
-                    Order.checkout_snapshot["settlement_payment"], Order.checkout_snapshot["benefits"])
+                    snapshot, Order.checkout_snapshot["stock_reservation"])
         .join(User, User.id == Order.user_id)
-        .where(User.moysklad_counterparty_id == counterparty_id, Order.is_shipped.is_(False)))
+        .where((snapshot["counterparty_id"].as_string() == str(counterparty_id))
+               | (snapshot["counterparty_id"].as_string().is_(None) & (User.moysklad_counterparty_id == counterparty_id)),
+               Order.is_shipped.is_(False), Order.is_canceled.is_(False)))
     if exclude_order_id is not None:
         query = query.where(Order.id != exclude_order_id)
-    known_zero = set()
-    for remote_id, code, canceled, settlement, benefits in (await session.execute(query)).all():
-        if settlement:
-            zero = (settlement.get("status") == "confirmed"
-                    and _is_recorded_zero(settlement.get("balance_rubles"))
-                    and _is_recorded_zero(settlement.get("displayed_spent_rubles")))
-        else:
-            zero = (isinstance(benefits, dict) and benefits.get("use_bonus_rubles") is False
-                    and _is_recorded_zero(benefits.get("bonus_applied_rubles")))
-        if zero and remote_id:
-            known_zero.add(remote_id)
-        if settlement and not zero and not canceled and settlement.get("status") != "canceled":
-            raise HTTPException(409, f"Баланс уже используется в заказе {code}. Завершите или отмените этот заказ перед новым списанием.")
-    return known_zero
+    processing = set()
+    for remote_id, code, canceled, settlement, hold in (await session.execute(query)).all():
+        if not settlement or canceled or settlement.get("status") == "canceled":
+            continue
+        if settlement.get("status") == "confirmed":
+            if _is_recorded_zero(settlement.get("balance_rubles")) and _is_recorded_zero(settlement.get("displayed_spent_rubles")):
+                continue
+        elif (not (remote_id or settlement.get("export_started") or (hold or {}).get("remote_export_attempted"))
+              or _is_recorded_zero(settlement.get("maximum_balance_rubles"))):
+            continue
+        elif remote_id:
+            processing.add(remote_id)
+            continue
+        raise HTTPException(409, f"Баланс уже используется в заказе {code}. Завершите или отмените этот заказ перед новым списанием.")
+    return processing
+
+
+async def check_balance_use(session, *, counterparty_id, amount, exclude_order_id=None, remote_id=None, client=None):
+    if money(amount) == 0:
+        return
+    processing = await ensure_no_pending_balance_order(session, counterparty_id=counterparty_id, exclude_order_id=exclude_order_id)
+    try:
+        await check_open_settlement_orders(client or get_moysklad_client(), counterparty_id, exclude_order_id=remote_id,
+                                          processing_ids=processing)
+    except SettlementNotReady as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (httpx.HTTPError, ValueError, RuntimeError) as exc:
+        if exclude_order_id and isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            raise settlement_pending(rate_limit=exc.response) from exc
+        raise HTTPException(503, "Не удалось проверить списание в МойСкладе. Повторите через несколько секунд.") from exc
 
 
 async def confirm_settlement_invoice(session, *, order, attempts=1, client=None):
@@ -135,12 +146,7 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
     user = await session.get(User, order.user_id)
     if user is None or user.moysklad_counterparty_id != counterparty_id:
         raise ValueError("Settlement customer identity changed")
-    known_zero = await ensure_no_pending_balance_order(session, counterparty_id=counterparty_id, exclude_order_id=order.id)
     client = client or get_moysklad_client()
-    try:
-        await check_open_settlement_orders(client, counterparty_id, exclude_order_id=order.moysklad_customerorder_id, known_zero_ids=known_zero)
-    except SettlementNotReady as exc:
-        raise HTTPException(409, str(exc)) from exc
     currency_id = None
     automatic = settlement.get("mode") == "automatic"
     for attempt in range(attempts):
@@ -183,10 +189,13 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
     else:
         raise SettlementNotReady("МойСклад ещё рассчитывает оплату с баланса. Повторите через несколько секунд.")
 
-    from src.app.services.benefits.moysklad_bonus import get_moysklad_settlement_wallet
-    wallet = await get_moysklad_settlement_wallet(counterparty_id, moysklad_client=client)
-    if result.balance_rubles > wallet.balance_rubles:
-        raise HTTPException(409, "Баланс изменился. Не оплачивайте старый счёт; обратитесь к менеджеру для перерасчёта.")
+    if result.balance_rubles > 0:
+        await check_balance_use(session, counterparty_id=counterparty_id, amount=result.balance_rubles,
+            exclude_order_id=order.id, remote_id=order.moysklad_customerorder_id, client=client)
+        from src.app.services.benefits.moysklad_bonus import get_moysklad_settlement_wallet
+        wallet = await get_moysklad_settlement_wallet(counterparty_id, moysklad_client=client)
+        if result.balance_rubles > wallet.balance_rubles:
+            raise HTTPException(409, "Баланс изменился. Не оплачивайте старый счёт; обратитесь к менеджеру для перерасчёта.")
     if result.balance_rubles == 0 and not automatic:
         raise HTTPException(409, "МойСклад не применил баланс к счёту. Оплата не создана; обратитесь к менеджеру.")
     snapshot = deepcopy(order.checkout_snapshot)

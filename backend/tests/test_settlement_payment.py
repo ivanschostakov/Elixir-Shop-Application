@@ -22,15 +22,16 @@ def run(coroutine):
 
 
 @pytest.mark.parametrize("other,blocked", [
-    ({"sum": 10000, "shippedSum": 0}, True),
-    ({"sum": 10000, "shippedSum": 9999, "payedSum": 10000}, True),
+    ({"sum": 10000, "shippedSum": 0}, False),
+    ({"sum": 10000, "shippedSum": 9999, "payedSum": 10000}, False),
+    ({"sum": 10000, "shippedSum": 100, "attributes": [{"id": ORDER_SPENT_ATTRIBUTE, "value": 5}]}, True),
     ({"sum": 10000, "shippedSum": 10000}, False),
     ({"sum": 10000, "state": {"stateType": "Unsuccessful"}}, False),
     ({"sum": 10000, "applicable": False}, False),
 ])
 def test_external_pending_orders_block_repeated_balance_use(other, blocked):
     client = SimpleNamespace(entity_href=lambda *args: "https://example.test/agent",
-        get_page=AsyncMock(return_value={"rows": [{"id": str(OID), **other}]}))
+        get_page=AsyncMock(return_value={"rows": [{"id": str(OID), "agent": ref(CID), **other}]}))
     if blocked:
         with pytest.raises(SettlementNotReady):
             run(check_open_settlement_orders(client, CID))
@@ -46,26 +47,27 @@ def test_existing_order_is_excluded_from_its_own_payment():
 
 
 @pytest.mark.parametrize("case,blocked", [
-    ("legacy_cash", False), ("external_confirmed_zero", False), ("external_unknown", True),
-    ("robot_running", True), ("order_spent", True), ("invoice_spent", True),
-    ("requested", True), ("lower_invoice", True), ("higher_invoice", True),
-    ("missing_invoice", True), ("unavailable_invoice", True), ("multiple_invoices", True),
-    ("unposted_invoice", True), ("wrong_order", True), ("wrong_agent", True), ("wrong_currency", True),
+    ("legacy_cash", False), ("external_confirmed_zero", False), ("external_unknown", False),
+    ("robot_running", False), ("order_spent", True), ("invoice_spent", True),
+    ("requested", True), ("no_consent", False), ("lower_invoice", False), ("higher_invoice", False),
+    ("missing_invoice", False), ("unavailable_invoice", False), ("multiple_invoices", False),
+    ("unposted_invoice", False), ("wrong_order", False), ("wrong_agent", False), ("wrong_currency", False),
+    ("app_export", True), ("app_export_zero", False),
 ])
-def test_open_order_requires_evidence_of_no_balance(case, blocked, monkeypatch):
+def test_only_positive_debit_or_real_processing_reserves_balance(case, blocked, monkeypatch):
     from src.integrations.moysklad.client.common import CUSTOMER_ORDER_ATTR_IDS
     remote, invoice = documents("6069.30", "6069.30", 0)
     remote.update(name="14-Q01E8", invoicesOut=[ref(IID)])
-    known = set() if case.startswith("external") else {OID}
-    if case != "external_confirmed_zero":
+    if case not in {"external_confirmed_zero", "app_export_zero"}:
         invoice["attributes"] = []
         remote["attributes"] = []
     if case == "robot_running": invoice["attributes"] = [{"id": INVOICE_PROCESSED_ATTRIBUTE, "value": False}]
     if case == "order_spent": remote["attributes"] = [{"id": ORDER_SPENT_ATTRIBUTE, "value": 5}]
     if case == "invoice_spent": invoice["attributes"] = [{"id": INVOICE_SPENT_ATTRIBUTE, "value": 5}]
-    if case == "requested":
+    if case in {"requested", "no_consent"}:
         monkeypatch.setitem(CUSTOMER_ORDER_ATTR_IDS, "balance_amount_kopecks", "requested")
-        remote["attributes"] = [{"id": "requested", "value": 1}]
+        monkeypatch.setitem(CUSTOMER_ORDER_ATTR_IDS, "balance_consent", "consent")
+        remote["attributes"] = [{"id": "requested", "value": 1}, {"id":"consent","value":case == "requested"}]
     if case == "lower_invoice": invoice["sum"] -= 1
     if case == "higher_invoice": invoice["sum"] += 1
     if case == "missing_invoice": remote["invoicesOut"] = []
@@ -77,7 +79,7 @@ def test_open_order_requires_evidence_of_no_balance(case, blocked, monkeypatch):
     if case == "wrong_currency": invoice["rate"]["currency"] = ref(ORG)
     client = SimpleNamespace(entity_href=lambda *args: "agent", get_page=AsyncMock(return_value={"rows": [remote]}),
                              get_invoiceout=AsyncMock(return_value=invoice))
-    check = check_open_settlement_orders(client, CID, known_zero_ids=known)
+    check = check_open_settlement_orders(client, CID, processing_ids={OID} if case.startswith("app_export") else set())
     if blocked:
         with pytest.raises(SettlementNotReady, match="14-Q01E8"):
             run(check)
@@ -86,11 +88,12 @@ def test_open_order_requires_evidence_of_no_balance(case, blocked, monkeypatch):
 
 
 @pytest.mark.parametrize("snapshot,canceled,blocked,known", [
-    ({"benefits": {"use_bonus_rubles": False, "bonus_applied_rubles": "0.00"}}, True, False, True),
+    ({"benefits": {"use_bonus_rubles": False, "bonus_applied_rubles": "0.00"}}, True, False, False),
     ({"benefits": {"use_bonus_rubles": False}}, True, False, False),
     ({"benefits": {"use_bonus_rubles": False, "bonus_applied_rubles": False}}, True, False, False),
-    ({"settlement_payment": {"status": "awaiting_invoice", "maximum_balance_rubles": 0}}, False, True, False),
-    ({"settlement_payment": {"status": "confirmed", "balance_rubles": "0.00", "displayed_spent_rubles": 0}}, False, False, True),
+    ({"settlement_payment": {"status": "awaiting_invoice", "maximum_balance_rubles": 0}}, False, False, False),
+    ({"settlement_payment": {"status": "awaiting_invoice", "maximum_balance_rubles": 100}}, False, False, True),
+    ({"settlement_payment": {"status": "confirmed", "balance_rubles": "0.00", "displayed_spent_rubles": 0}}, False, False, False),
     ({"settlement_payment": {"status": "confirmed", "balance_rubles": "0.01", "displayed_spent_rubles": 1}}, False, True, False),
     ({"settlement_payment": {"status": "confirmed", "balance_rubles": "0.00", "displayed_spent_rubles": 1}}, False, True, False),
     ({"settlement_payment": {"status": "awaiting_invoice"}}, True, False, False),
@@ -104,6 +107,24 @@ def test_local_evidence_for_remote_order(snapshot, canceled, blocked, known):
             run(check)
     else:
         assert run(check) == ({OID} if known else set())
+
+
+@pytest.mark.parametrize("attempted,amount,blocked", [(False, 100, False), (True, 0, False), (True, 100, True)])
+def test_unexported_order_only_holds_funds_after_positive_handoff(attempted, amount, blocked):
+    row = (None, "EP-test", False, {"status":"awaiting_invoice","maximum_balance_rubles":amount, "export_started":attempted}, {})
+    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(all=lambda: [row])))
+    if blocked:
+        with pytest.raises(HTTPException, match="EP-test"):
+            run(service.ensure_no_pending_balance_order(session, counterparty_id=CID))
+    else:
+        assert run(service.ensure_no_pending_balance_order(session, counterparty_id=CID)) == set()
+
+
+def test_zero_checkout_never_reads_other_orders():
+    session, client = SimpleNamespace(execute=AsyncMock()), SimpleNamespace(get_page=AsyncMock())
+    run(service.check_balance_use(session, counterparty_id=CID, amount="0.00", client=client))
+    session.execute.assert_not_awaited()
+    client.get_page.assert_not_awaited()
 
 
 @pytest.mark.parametrize("iso,code,ok", [("RUB", "643", True), ("USD", "840", False),
@@ -159,6 +180,17 @@ def test_confirmation_persists_exact_invoice_and_rounded_label(monkeypatch):
     assert application.external_reference == str(IID)
     assert order.checkout_snapshot["settlement_payment"]["balance_rubles"] == "999.38"
     session.commit.assert_awaited_once()
+
+
+def test_zero_spend_validates_current_invoice_without_checking_old_orders(monkeypatch):
+    session, order, _, client = setup_confirmation(monkeypatch, cash="9532.10", shown=0)
+    order.checkout_snapshot["settlement_payment"].update(mode="automatic", maximum_balance_rubles="0")
+    run(service.confirm_settlement_invoice(session, order=order, client=client))
+    client.get_invoiceout.assert_awaited_once_with(IID)
+    service.ensure_no_pending_balance_order.assert_not_awaited()
+    service.check_open_settlement_orders.assert_not_awaited()
+    moysklad_bonus.get_moysklad_settlement_wallet.assert_not_awaited()
+    assert order.grand_total == Decimal("9532.10")
 
 
 @pytest.mark.parametrize("case", ["no_invoice", "multiple", "no_balance", "zero_spent", "wrong_customer", "shipped"])

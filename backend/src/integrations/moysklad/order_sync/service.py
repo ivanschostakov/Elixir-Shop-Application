@@ -3,7 +3,7 @@ from copy import deepcopy
 from decimal import Decimal
 from typing import Any
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import MOY_SKLAD_ORDER_SYNC_ENABLED
 from src.database.models import IntegrationRun, Order, User
@@ -11,7 +11,7 @@ from src.normalize import coerce_uuid
 from src.integrations.moysklad.client import get_moysklad_client
 from src.integrations.moysklad.idempotency import build_counterparty_external_code, build_customerorder_external_code, build_sync_id
 from src.integrations.moysklad.schemas import MoySkladOrderSyncResult, MoySkladCounterpartySyncResult
-from src.integrations.moysklad.settlement_checkout import order_settlement, entity_id
+from src.integrations.moysklad.settlement_checkout import order_settlement, entity_id, money
 from .common import log
 from .contacts import _counterparty_email, _counterparty_phone, _full_name
 from .organization import _resolve_organization_id
@@ -19,6 +19,31 @@ from .positions import _build_customerorder_positions, _load_assortment_refs
 from .description import _build_order_description
 from .address import _shipment_address, _shipment_address_full
 from .attributes import _invoiceout_external_code, _invoiceout_name, _is_intellectmoney_payment, _moysklad_attr_values, _moysklad_custom_attr_refs, _resolve_customerorder_refs
+
+
+async def _mark_remote_export(session, order, cid, client):
+    """Called under the order row lock; commit the handoff before sending the document."""
+    hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
+    settlement = order_settlement(order)
+    mark_stock = hold.get("status") == "held" and not hold.get("remote_export_attempted")
+    claim_balance = (settlement and not order.moysklad_customerorder_id and not settlement.get("export_started")
+                     and money(settlement["maximum_balance_rubles"]) > 0)
+    if mark_stock or claim_balance:
+        snapshot = dict(order.checkout_snapshot)
+        if claim_balance:
+            from src.app.services.orders.settlement_payment import check_balance_use
+            # Workers retry without the checkout request lock. Serialize the check and
+            # durable intent before the first remote POST (including a lost response).
+            await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"balance-export:{cid}", 0))))
+            await check_balance_use(session, counterparty_id=cid, amount=settlement["maximum_balance_rubles"],
+                                    exclude_order_id=order.id, client=client)
+            snapshot["settlement_payment"] = {**settlement, "export_started": True}
+        if mark_stock:
+            snapshot["stock_reservation"] = {**hold, "remote_export_attempted": True}
+        order.checkout_snapshot = snapshot
+        await session.commit()
+        return True
+    return False
 
 
 async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: User) -> MoySkladOrderSyncResult:
@@ -46,6 +71,8 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         counterparty = await moysklad_client.get_counterparty(expected_id)
         if not counterparty or counterparty.get("archived") or entity_id(counterparty) != expected_id: raise ValueError("Settlement counterparty is unavailable")
         counterparty_result = MoySkladCounterpartySyncResult(expected_id, counterparty_external_code)
+        await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+        await session.refresh(order, attribute_names=["checkout_snapshot"])
         snapshot = deepcopy(order.checkout_snapshot)
         snapshot["settlement_payment"]["organization_id"] = str(organization_id)
         order.checkout_snapshot = snapshot
@@ -102,16 +129,13 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     if benefits.get("ms_order_promo") and not order.moysklad_customerorder_id:
         from src.app.services.referrals.ms_codes import verify_referral_export
         await verify_referral_export(benefits, buyer_id=counterparty_result.counterparty_id, client=moysklad_client)
-    hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
-    if hold.get("status") == "held" and not hold.get("remote_export_attempted"):
-        order.checkout_snapshot = dict(order.checkout_snapshot,
-            stock_reservation={**hold, "remote_export_attempted": True})
-        # A timed-out POST may have created a remote reservation. Persist this
-        # boundary before the call so expiry cannot incorrectly restore stock.
-        await session.commit()
+    full_address = await _shipment_address_full(order, moysklad_client=moysklad_client)
+    if await _mark_remote_export(session, order, counterparty_result.counterparty_id, moysklad_client):
         await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
-        await session.refresh(order, attribute_names=["checkout_snapshot", "moysklad_customerorder_id"])
-    customerorder_result = await moysklad_client.resolve_or_sync_customerorder(existing_customerorder_id=order.moysklad_customerorder_id, external_code=customerorder_external_code, sync_id=customerorder_sync_id, organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, moment=order.created_at, description=_build_order_description(order), shipment_address=_shipment_address(order), shipment_address_full=await _shipment_address_full(order, moysklad_client=moysklad_client), attributes=attributes, store=refs["store"], state=refs["state"], sales_channel=refs["sales_channel"],)
+        await session.refresh(order, attribute_names=["checkout_snapshot", "moysklad_customerorder_id", "is_canceled"])
+        if order.is_canceled or (order.checkout_snapshot.get("stock_reservation") or {}).get("status") == "released":
+            raise ValueError("Reservation canceled before export")
+    customerorder_result = await moysklad_client.resolve_or_sync_customerorder(existing_customerorder_id=order.moysklad_customerorder_id, external_code=customerorder_external_code, sync_id=customerorder_sync_id, organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, moment=order.created_at, description=_build_order_description(order), shipment_address=_shipment_address(order), shipment_address_full=full_address, attributes=attributes, store=refs["store"], state=refs["state"], sales_channel=refs["sales_channel"],)
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:
         order.moysklad_customerorder_id = customerorder_result.customerorder_id
         await session.flush()
