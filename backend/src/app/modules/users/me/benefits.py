@@ -18,6 +18,18 @@ from src.database.models.auth.user import User
 my_benefits_router = APIRouter(prefix="/benefits", tags=["my_benefits"])
 
 
+@my_benefits_router.get("/welcome-notice")
+async def get_welcome_notice(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.app.services.notifications.welcome import pending_notice
+    return await pending_notice(db, current_user.id)
+
+
+@my_benefits_router.post("/welcome-notice/{credit_id}/seen", status_code=204)
+async def mark_welcome_notice_seen(credit_id: int, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    from src.app.services.notifications.welcome import acknowledge_notice
+    await acknowledge_notice(db, current_user.id, credit_id)
+
+
 @my_benefits_router.get("/rewards", response_model=AppRewardsRead)
 async def get_my_app_rewards(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> AppRewardsRead:
     credit, available = await app_welcome.wallet(db, current_user.id)

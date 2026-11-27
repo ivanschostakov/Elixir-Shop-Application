@@ -54,6 +54,7 @@ import { syncCustomerIntelligenceSession } from "@/services/customer-intelligenc
 import { heartbeatMyPresence } from "@/services/api/users"
 import { ApiError } from "@/services/api/client"
 import { startCompanionTimezoneSync } from "@/services/companion-timezone-sync"
+import { useWelcomeNotice } from "./use-welcome-notice"
 
 const PRESENCE_HEARTBEAT_INTERVAL_MS = 60_000
 
@@ -108,6 +109,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const pathname = usePathname()
     const timezoneUserId = user?.id
     const mentorAvailable = isMentorAvailable(Platform.OS)
+    useWelcomeNotice(user?.id, isReady && !user?.programSelectionRequired)
 
     useEffect(() => {
         if (timezoneUserId != null && mentorAvailable) return startCompanionTimezoneSync()

@@ -11,6 +11,14 @@ export function getMyAppRewards() {
     return apiGet<AppRewardsResponse>(benefitsPath("/rewards"))
 }
 
+export function getWelcomeNotice() {
+    return apiGet<{ credit_id: number; amount: number; expires_at: string } | null>(benefitsPath("/welcome-notice"))
+}
+
+export function acknowledgeWelcomeNotice(id: number) {
+    return apiPost<void, null>(benefitsPath(`/welcome-notice/${id}/seen`), null)
+}
+
 export function checkMyBenefits(payload: BenefitCheckPayload) {
     return apiPost<BenefitCheckResponse, BenefitCheckPayload>(benefitsPath("/check"), payload)
 }

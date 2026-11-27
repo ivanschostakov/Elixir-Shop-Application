@@ -16,6 +16,8 @@ from .utils import _counterparty_email, _counterparty_name_parts, _mask_email
 from .rate_limits import _apply_auth_rate_limit
 from .counterparty import _get_counterparty_for_phone, _resolve_user_for_phone, _sync_phone_identity_from_counterparty
 from src.app.services.auth.events import record_auth_event
+from src.app.services.platform_availability import mobile_shop_request
+from src.app.services.benefits.app_welcome import grant_on_email_confirmation
 from .sessions import _build_auth_tokens_response
 from .verification import _create_and_send_verification_code, _verify_latest_email_code
 
@@ -147,6 +149,8 @@ async def verify_phone_auth(request: Request, payload: PhoneAuthVerifyPayload, d
 
     await _verify_latest_email_code(user, payload.code, db)
     user.is_verified = True
+    if mobile_shop_request(request.headers):
+        await grant_on_email_confirmation(db, user)
     await record_auth_event(db, user.id, registration=True)
     await db.commit()
     await db.refresh(user)

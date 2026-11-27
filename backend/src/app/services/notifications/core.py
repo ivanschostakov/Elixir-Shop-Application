@@ -406,6 +406,7 @@ async def process_community_message_notifications(session: AsyncSession, *, now:
 
 
 async def run_notification_processors_once(session: AsyncSession, *, now: datetime | None = None) -> dict[str, int]:
+    from .welcome import process_welcome_reminders
     current_time = now or ufa_now()
     processors = {
         "restock": process_restock_notifications,
@@ -419,7 +420,7 @@ async def run_notification_processors_once(session: AsyncSession, *, now: dateti
             select(AdminMarketingAutomation).where(AdminMarketingAutomation.code.in_(processors))
         )).scalars().all()
     }
-    results: dict[str, int] = {}
+    results: dict[str, int] = {"welcome_expiry": await process_welcome_reminders(session, now=now)}
     for code, processor in processors.items():
         automation = automation_rows.get(code)
         if automation is not None and not automation.is_enabled:

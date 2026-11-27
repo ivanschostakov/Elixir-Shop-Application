@@ -117,9 +117,9 @@ async def verify_login_user(request: Request, payload: UserLoginVerifyPayload, d
     newly_verified = not user.is_verified
     if newly_verified:
         user.is_verified = True
-        if mobile_shop_request(request.headers):
-            await grant_on_email_confirmation(db, user)
         await record_auth_event(db, user.id, registration=True)
+    if mobile_shop_request(request.headers):
+        await grant_on_email_confirmation(db, user)
     await db.commit()
     await db.refresh(user)
     return await _build_auth_tokens_response(user, db, registration=newly_verified)
