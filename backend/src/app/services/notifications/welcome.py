@@ -12,18 +12,18 @@ from src.database.models import LoyaltyBonusCredit as Credit, NotificationDispat
 log = logging.getLogger(__name__)
 
 TITLES = (
-    "Вам начислены 1 000 приветственных бонусов",
-    "Ваши приветственные бонусы ещё доступны",
-    "Напоминаем о приветственных бонусах",
-    "Срок приветственных бонусов подходит к концу",
-    "Последние 24 часа для приветственных бонусов",
+    "Вам подарок: 1 000 приветственных бонусов 🎁",
+    "Что-нибудь приглянулось? Бонусы пригодятся 🎁",
+    "С бонусами ваша покупка обойдётся дешевле 🎁",
+    "Ещё есть время воспользоваться бонусами ⏳",
+    "Последние 24 часа для ваших бонусов ⏳",
 )
 
 
 def reminder_copy(credit, balance, slot):
     deadline = credit.expires_at.astimezone(promo.MOSCOW).strftime("%d.%m в %H:%M МСК")
     amount = f"{balance:,.2f}".replace(",", " ").replace(".", ",")
-    return {"title": TITLES[slot], "body": f"Остаток: {amount} ₽. До {deadline} ими можно оплатить до 50% стоимости товаров. Доставка оплачивается отдельно."}
+    return {"title": TITLES[slot], "body": f"У вас {amount} ₽ на покупки до {deadline}. Бонусы покроют до 50% стоимости товаров, а доставку вы оплачиваете отдельно."}
 
 
 async def reminder_lock(db, uid):
