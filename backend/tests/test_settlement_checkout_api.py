@@ -227,7 +227,7 @@ def test_payment_click_during_worker_lock_makes_no_reads_or_backoff(monkeypatch)
         redis = SimpleNamespace(pttl=AsyncMock(), set=AsyncMock())
         monkeypatch.setattr(payment_attempt, "get_cache_service", lambda: SimpleNamespace(client=redis))
         session = SimpleNamespace(refresh=AsyncMock())
-        order = SimpleNamespace(id=1, checkout_snapshot={"settlement_payment": {"version": 1, "counterparty_id": str(CID)}})
+        order = SimpleNamespace(id=1, payment_method="sbp", checkout_snapshot={"settlement_payment": {"version": 1, "counterparty_id": str(CID)}})
         try:
             async with settlement_payment.settlement_lock(CID, payment=True):
                 with pytest.raises(HTTPException) as error:

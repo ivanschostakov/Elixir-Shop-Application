@@ -191,6 +191,7 @@ def add_settlement(case):
 async def test_later_unconfirmed_balance_yields_no_amount_and_retries_without_ms(case):
     case.order.payment_method, case.order.payment_status = "later", "pending"
     add_settlement(case)
+    case.order.checkout_snapshot["settlement_payment"]["maximum_balance_rubles"] = "10.00"
     case.rows[ORDER]["invoicesOut"] = []
     for call in (case.create, case.create, case.status):
         with pytest.raises(HTTPException) as err:
@@ -200,6 +201,38 @@ async def test_later_unconfirmed_balance_yields_no_amount_and_retries_without_ms
     assert [p for p, _ in case.calls] == [ORDER, CURRENCY_PATH]
     assert case.order.payment_provider is None
     case.gateway.assert_not_awaited()
+
+
+@pytest.mark.parametrize("opt_in", [False, True])
+async def test_reserved_manager_order_with_zero_allowance_needs_no_invoice_or_payment_lock(case, monkeypatch, opt_in):
+    order = case.order
+    order.payment_method, order.payment_status, order.moysklad_invoiceout_id = "later", "pending", None
+    add_settlement(case)
+    case.rows[ORDER]["invoicesOut"] = []
+    monkeypatch.setattr(payments, "settlement_lock", lambda *a, **kw: pytest.fail("unexpected payment lock"))
+    for call in (payments.create_payment_for_order, payments.get_payment_status_for_order, payments.create_payment_for_order):
+        result = await call(case.session, request=None, order=order, accept_pending_amount=opt_in)
+        assert result["ms_reservation_confirmed"] and result["payment_status"] == "pending"
+        assert result["amount_rubles"] == 123.45 and not result["awaiting_settlement"]
+        assert not result["is_paid"] and result["invoice_id"] is None
+    assert order.checkout_snapshot["settlement_payment"]["status"] == "awaiting_invoice"
+    assert not case.calls
+    case.gateway.assert_not_awaited()
+    case.session.commit.assert_not_awaited()
+
+
+@pytest.mark.parametrize("changes", [
+    {"mode": "explicit"}, {"maximum_balance_rubles": None}, {"maximum_balance_rubles": -1},
+    {"maximum_balance_rubles": "0.001"}, {"maximum_balance_rubles": 50}, {"requested_balance_rubles": 1},
+    {"gross_rubles": "999"}, {"gross_rubles": None},
+])
+async def test_unverified_manager_amount_is_never_published(case, changes):
+    order = case.order
+    order.payment_method = "later"
+    add_settlement(case)
+    order.checkout_snapshot["settlement_payment"].update(changes)
+    assert payments._accepted_manager_order(order, False) is None
+    assert payments._accepted_manager_order(order, True)["amount_rubles"] is None
 
 
 async def test_sbp_opt_in_never_substitutes_for_document_verification(case, monkeypatch):

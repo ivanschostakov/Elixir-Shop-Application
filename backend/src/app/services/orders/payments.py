@@ -28,7 +28,7 @@ from .payment_qr_storage import build_order_payment_qr_url, find_order_payment_q
 from .payment_attempt import PaymentDocuments, payment_backoff, settlement_pending
 from .settlement_payment import prepare_settlement_payment, settlement_lock, verify_no_unapproved_balance, verify_standard_sbp_invoice
 from .stock_reservations import has_exported_reservation, require_exported_reservation, verify_remote_reservation
-from src.integrations.moysklad.settlement_checkout import order_settlement
+from src.integrations.moysklad.settlement_checkout import money, order_settlement
 
 log = logging.getLogger(__name__)
 intellectmoney = get_intellectmoney_client()
@@ -141,14 +141,26 @@ def _payment_status_payload(order: Order, *, payment_step: str | None = None, qr
     return payload
 
 
-def _accepted_without_amount(order, opt_in):
-    if (opt_in and order.payment_method == "later" and order.payment_status in {"draft", "pending"}
+def _accepted_manager_order(order, accepts_pending_amount):
+    settlement = order_settlement(order) or {}
+    if (order.payment_method == "later" and order.payment_status in {"draft", "pending"}
             and order.payment_provider in {None, "manager"} and not order.payment_invoice_id
             and not order.is_paid and not order.is_canceled
             and (order.checkout_snapshot or {}).get("ms_checkout_version") == 2
-            and (order_settlement(order) or {}).get("status") == "awaiting_invoice"
+            and settlement.get("status") == "awaiting_invoice"
             and has_exported_reservation(order)):
-        return {**_payment_status_payload(order), "amount_rubles": None, "awaiting_settlement": True}
+        # The verified export already includes the order total. A zero automatic
+        # allowance cannot reduce it; accepting the order does not settle an invoice.
+        try:
+            fixed_total = (settlement.get("mode") == "automatic" and settlement.get("requested_balance_rubles") is None
+                           and money(settlement.get("maximum_balance_rubles")) == 0
+                           and money(settlement.get("gross_rubles")) == money(order.grand_total))
+        except ValueError:
+            fixed_total = False
+        if fixed_total or accepts_pending_amount:
+            return {**_payment_status_payload(order), "payment_status": "pending",
+                    "amount_rubles": float(order.grand_total) if fixed_total else None,
+                    "awaiting_settlement": not fixed_total}
 
 
 def _qr_debug(value: str | None) -> dict[str, Any]:
@@ -341,6 +353,10 @@ async def create_payment_for_order(
     payment_method: str | None = None,
     accept_pending_amount: bool = False,
 ) -> dict[str, Any]:
+    if (payment_method or order.payment_method) == "later":
+        # Read-only acknowledgement must not wait behind the invoice worker's lock.
+        if accepted := _accepted_manager_order(order, accept_pending_amount):
+            return accepted
     settlement = order_settlement(order)
     lock_key = settlement["counterparty_id"] if settlement else f"order:{order.id}"
     async with settlement_lock(lock_key, payment=True):
@@ -435,7 +451,7 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
     if requested_payment_method == "later":
         if v2:
             require_exported_reservation(order)
-            if accepted := _accepted_without_amount(order, accept_pending_amount):
+            if accepted := _accepted_manager_order(order, accept_pending_amount):
                 return accepted
         if settlement and (v2 or _uses_standard_document_export(order)):
             async with payment_backoff(order.id, "later"):
@@ -544,7 +560,7 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
             and order.payment_method == "later" and order.payment_status in {"draft", "pending"}
             and not order.is_canceled and not order.is_paid and not order.payment_invoice_id):
         require_exported_reservation(order)
-        if accepted := _accepted_without_amount(order, accept_pending_amount):
+        if accepted := _accepted_manager_order(order, accept_pending_amount):
             return accepted
         settlement = order_settlement(order)
         if settlement and settlement.get("status") != "confirmed":
