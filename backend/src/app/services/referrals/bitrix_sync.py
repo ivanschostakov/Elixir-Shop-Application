@@ -12,7 +12,7 @@ from src.integrations.bitrix_promo import (
     BitrixPromoError,
     bitrix_promo_configured,
 )
-from src.normalize import optional_str
+from src.normalize import ms_referrer_code, optional_str
 
 from .calculations import PARTNER_UNLOCK_SPEND, quantize_money, quantize_percent
 from .profile import refresh_profile_discount
@@ -52,7 +52,7 @@ def apply_bitrix_program_profile(
         max(Decimal("0"), stored_percent, group_percent)
     )
     own_promo = optional_str(program_profile.get("own_promo"))
-    referrer_promo = optional_str(program_profile.get("referrer_promo"))
+    referrer_promo = ms_referrer_code(program_profile.get("referrer_promo"))
     firm_promo_codes = program_profile.get("firm_promo_codes")
     normalized_firm_promo_codes = {
         code.casefold()
@@ -64,7 +64,7 @@ def apply_bitrix_program_profile(
         )
         if code
     }
-    current_local_promo = optional_str(user.promo_code)
+    current_local_promo = ms_referrer_code(user.promo_code)
     effective_promo = referrer_promo
     if (
         effective_promo is None
@@ -75,7 +75,7 @@ def apply_bitrix_program_profile(
     now = datetime.now(timezone.utc)
     authoritative = moysklad_program_is_authoritative(profile)
     if authoritative:
-        effective_promo = optional_str(profile.reward_program_snapshot.get("moysklad_referrer_promo"))
+        effective_promo = ms_referrer_code(profile.reward_program_snapshot.get("moysklad_referrer_promo"))
         own_promo = optional_str(profile.reward_program_snapshot.get("moysklad_own_promo"))
     reward_program = profile.reward_program if authoritative else "partner" if effective_promo else "bonus"
     previous_reward_program = str(getattr(profile, "reward_program", "") or "")

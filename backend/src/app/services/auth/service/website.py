@@ -7,7 +7,7 @@ from src.database.crud.auth.user import create_user, get_user_by_email, get_user
 from src.database.limits import PERSON_NAME_MAX_LENGTH, USERNAME_MAX_LENGTH
 from src.database.models.auth.user import User
 from src.database.schemas.auth.user import UserCreate
-from src.normalize import normalize_email, optional_str
+from src.normalize import ms_referrer_code, normalize_email, optional_str
 from .common import logger
 
 
@@ -38,7 +38,7 @@ async def _sync_user_from_website_identity(*, identity: dict, requested_login: s
     discounts = identity.get("discounts")
     referral_program = discounts.get("referral_program") if isinstance(discounts, dict) else None
     has_referrer_promo_snapshot = (isinstance(referral_program, dict) and "referrer_promo_code" in referral_program)
-    website_referrer_promo = (optional_str(referral_program.get("referrer_promo_code")) if isinstance(referral_program, dict) else None)
+    website_referrer_promo = (ms_referrer_code(referral_program.get("referrer_promo_code")) if isinstance(referral_program, dict) else None)
     password_hash = hash_password(password)
 
     if user is None: user = await create_user(db, UserCreate(email=website_email, username=website_login[:USERNAME_MAX_LENGTH], password_hash=password_hash, name=website_name[:PERSON_NAME_MAX_LENGTH], surname=website_surname[:PERSON_NAME_MAX_LENGTH], phone_number=None, is_verified=True, promo_code=website_referrer_promo,), commit=False,)

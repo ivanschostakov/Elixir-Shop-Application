@@ -38,8 +38,8 @@ def milestone_code(cid: UUID) -> str:
 async def find_ms_code_owners(code, client):
     from src.app.services.benefits.settlement import OWN_PROMO_ATTRIBUTE_ID, PROGRAM_ATTRIBUTE_ID, PROGRAM_NAMES
 
-    code = (code or "").strip()
-    if not re.fullmatch(r"[\w .-]{1,100}", code):
+    code = ms_referrer_code(code)
+    if not code or not re.fullmatch(r"[\w .-]{1,100}", code):
         raise HTTPException(422, "Недопустимый формат промокода.")
     if not client.is_configured():
         raise HTTPException(503, "Не удалось проверить промокод в МойСкладе. Попробуйте позже.")
@@ -58,8 +58,8 @@ async def find_ms_code_owners(code, client):
                 if row.get("archived"):
                     continue
                 values = {a["id"]: a.get("value") for a in row.get("attributes", [])}
-                own = (values.get(OWN_PROMO_ATTRIBUTE_ID) or "").strip()
-                if own.casefold() != code.casefold():
+                own = ms_referrer_code(values.get(OWN_PROMO_ATTRIBUTE_ID))
+                if not own or own.casefold() != code.casefold():
                     continue
                 program = values.get(PROGRAM_ATTRIBUTE_ID) or {}
                 owners[UUID(row["id"])] = (own, PROGRAM_NAMES.get(str(program.get("name", "")).strip().casefold()),
@@ -73,7 +73,7 @@ async def find_ms_code_owners(code, client):
 
 
 async def resolve_ms_referrer(code, *, buyer_id=None, client=None):
-    code = (code or "").strip()
+    code = ms_referrer_code(code)
     owners = await find_ms_code_owners(code, client or get_moysklad_client())
     company = (LOYALTY_COMPANY_PROMO_CODE or "").strip()
     if owners and company and code.casefold() == company.casefold():

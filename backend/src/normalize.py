@@ -26,6 +26,15 @@ def lower_optional_str(value: Any) -> str | None:
     return normalized.lower() if normalized else None
 
 
+def ms_referrer_code(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    code = value.strip()
+    if not code or " ".join(code.split()).casefold() in {"не указан", "не указано"}:
+        return None
+    return code
+
+
 def casefold_optional_str(value: Any) -> str | None:
     normalized = optional_str(value)
     return normalized.casefold() if normalized else None

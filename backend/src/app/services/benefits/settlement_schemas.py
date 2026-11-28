@@ -3,12 +3,7 @@ from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel
-
-
-def ms_referrer_code(value: str | None) -> str | None:
-    """MS also uses the literal 'Не указан' for a missing incoming promo."""
-    code = (value or "").strip()
-    return None if not code or code.casefold() == "не указан" else code
+from src.normalize import ms_referrer_code
 
 
 class SettlementRead(BaseModel):

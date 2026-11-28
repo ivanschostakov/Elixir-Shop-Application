@@ -12,6 +12,7 @@ from src.integrations.bitrix_promo import (
     bitrix_promo_configured,
 )
 from src.integrations.moysklad.client import MoySkladClient
+from src.normalize import ms_referrer_code
 from .bitrix_sync import refresh_program_profile_from_bitrix
 from .profile import normalize_referral_code, refresh_profile_discount
 from .program import ensure_default_reward_program, moysklad_program_is_authoritative
@@ -38,18 +39,7 @@ async def check_referrer_code(db: AsyncSession, *, user: User, code: str) -> dic
                     "referrer_user_id": None, "depth": None}
         return {"code": owner.code, "is_valid": True, "status": "already_attached" if current_code else "active",
                 "reason": None, "warning": None, "requires_confirmation": False, "referrer_user_id": None, "depth": None}
-    if current_code and normalized_code == current_code:
-        return {
-            "code": current_code,
-            "is_valid": True,
-            "status": "already_attached",
-            "reason": None,
-            "warning": None,
-            "requires_confirmation": False,
-            "referrer_user_id": None,
-            "depth": None,
-        }
-    if current_code and normalized_code:
+    if current_code and normalized_code and normalized_code != current_code:
         return {
             "code": normalized_code,
             "is_valid": False,
@@ -83,10 +73,13 @@ async def check_referrer_code(db: AsyncSession, *, user: User, code: str) -> dic
                 detail="Проверка промокода временно недоступна / Promo validation is temporarily unavailable",
             ) from error
 
+        canonical = ms_referrer_code(promo.get("promo"))
+        if normalize_referral_code(canonical) != normalized_code:
+            raise HTTPException(503, "Сервис не подтвердил введённый промокод. Попробуйте позже.")
         return {
-            "code": str(promo.get("promo") or normalized_code),
+            "code": canonical,
             "is_valid": True,
-            "status": "active",
+            "status": "already_attached" if current_code else "active",
             "reason": None,
             "warning": None,
             "requires_confirmation": False,
@@ -117,17 +110,20 @@ async def attach_referrer_code(
     profile = await _get_program_profile(db, user=user)
     if getattr(profile, "reward_program_selection_source", None) == "registration":
         raise HTTPException(409, "Сначала выберите программу после регистрации.")
-    if moysklad_program_is_authoritative(profile) or (LOYALTY_USE_SETTLEMENT_BALANCE and getattr(user, "moysklad_counterparty_id", None)):
-        if normalize_referral_code(user.promo_code) == normalize_referral_code(code):
-            return profile
-        if not user.promo_code:
-            raise HTTPException(409, "Введите промокод в корзине. Он будет закреплён при оформлении заказа.")
-        raise HTTPException(409, "Программа уже определена в МойСкладе. Для изменения обратитесь в поддержку.")
     normalized_requested_code = normalize_referral_code(code)
     current_code = normalize_referral_code(user.promo_code)
+    if not normalized_requested_code:
+        raise HTTPException(422, "Введите действующий промокод.")
+    if current_code == normalized_requested_code:
+        check = await check_referrer_code(db, user=user, code=code)
+        if not check["is_valid"]:
+            raise HTTPException(422, check["reason"] or "Промокод не найден.")
+        return profile
+    if moysklad_program_is_authoritative(profile) or (LOYALTY_USE_SETTLEMENT_BALANCE and getattr(user, "moysklad_counterparty_id", None)):
+        if not current_code:
+            raise HTTPException(409, "Введите промокод в корзине. Он будет закреплён при оформлении заказа.")
+        raise HTTPException(409, "Программа уже определена в МойСкладе. Для изменения обратитесь в поддержку.")
     if current_code:
-        if normalized_requested_code == current_code:
-            return profile
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
