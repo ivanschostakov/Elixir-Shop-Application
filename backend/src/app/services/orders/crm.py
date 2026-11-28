@@ -24,6 +24,7 @@ from .common import _normalize_phone
 from .fulfillment import create_delivery_for_order
 from .fulfillment_payloads import normalize_address_for_cf
 from src.integrations.moysklad.settlement_checkout import order_settlement
+from src.integrations.moysklad.order_sync.attributes import customerorder_promo_code
 
 log = logging.getLogger(__name__)
 amocrm_client = get_amocrm_client()
@@ -60,6 +61,8 @@ def _checkout_lead_fields(order: Order, address: str) -> dict[int, object]:
         CF["cash_due"]: float(order.grand_total) if not settlement or settlement.get("status") == "confirmed" else None,
         CF["payment_status"]: AmoValue(enum_id=1233115),
     }
+    if promo := customerorder_promo_code(snapshot):
+        result[CF["promo_code"]] = promo
     for key, enum_id in (
         ("sales_channel", CHECKOUT_CHANNEL_ENUMS.get(snapshot.get("client_platform"))),
         ("checkout_payment_method", CHECKOUT_PAYMENT_ENUMS.get(order.payment_method)),
@@ -235,10 +238,23 @@ async def sync_settlement_amount_to_crm(session: AsyncSession, order: Order) -> 
     await session.commit()
 
 async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, user: User) -> int:
-    if order.amocrm_lead_id: return int(order.amocrm_lead_id)
-
-    existing_lead = await amocrm_client.find_lead_by_order_number(order.order_number)
+    promo = customerorder_promo_code(order.checkout_snapshot or {})
+    exported = bool(getattr(order, "moysklad_customerorder_id", None))
+    if order.amocrm_lead_id:
+        if not promo or exported:
+            return int(order.amocrm_lead_id)
+        existing_lead = await amocrm_client.get_lead(int(order.amocrm_lead_id))
+    else:
+        existing_lead = await amocrm_client.find_lead_by_order_number(order.order_number)
     if existing_lead is not None:
+        fields = {f["field_id"]: [v.get("value") for v in f.get("values") or [] if v.get("value")]
+                  for f in existing_lead.get("custom_fields_values") or []}
+        if promo and not exported and not fields.get(CF["ms_order_id"]):
+            current = fields.get(CF["promo_code"], [])
+            if not current:
+                await amocrm_client.update_lead_order_fields(int(existing_lead["id"]), {CF["promo_code"]: promo})
+            elif current != [promo]:
+                raise HTTPException(409, "Промокод в сделке отличается от промокода заказа. Нужна сверка.")
         order.amocrm_lead_id = int(existing_lead["id"])
         await session.flush()
         return int(order.amocrm_lead_id)

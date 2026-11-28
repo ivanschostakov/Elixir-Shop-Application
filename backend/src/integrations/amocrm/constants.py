@@ -30,6 +30,7 @@ STATUS_WORDS: dict[int, str] = {
 CF = {
     "cdek_tracking_url": 752437,
     "delivery_cdek": 752921,
+    "promo_code": 752923,
     "delivery_yandex": 753603,
     "tg_nick": 753183,
     "payment": 753401,
