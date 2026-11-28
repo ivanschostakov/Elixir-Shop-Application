@@ -14,16 +14,12 @@ export function readSubmittedOrder(orderId: number): Promise<PaymentStatusRead> 
 export async function submitCheckout(payload: CreatePaymentPayload, active: () => boolean, resume = false): Promise<PaymentStatusRead | null> {
     if (!active()) return null
     if (resume) {
-        try {
-            const state = await readSubmittedOrder(payload.order_id)
-            if (!active()) return null
-            if (state.checkout_progress || state.invoice_id || state.is_paid ||
-                !["draft", "pending"].includes(state.payment_status ?? "") ||
-                (state.payment_method === "later" && state.ms_reservation_confirmed)) return state
-        } catch (error) {
-            if (!(error instanceof ApiError && error.status === 409 &&
-                (error.body as { detail?: { code?: string } } | null)?.detail?.code === "settlement_pending")) throw error
-        }
+        const state = await readSubmittedOrder(payload.order_id)
+        if (!active()) return null
+        if (state.status_code || state.checkout_issue ||
+            state.checkout_progress || state.invoice_id || state.is_paid ||
+            !["draft", "pending"].includes(state.payment_status ?? "") ||
+            (state.payment_method === "later" && state.ms_reservation_confirmed)) return state
     }
     if (!active()) return null
     const result = await createPayment({ ...payload, automatic_checkout: true })

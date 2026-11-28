@@ -6,6 +6,11 @@ const load = require("./load-ts.cjs")
 const noop = () => {}
 const identity = value => value
 const tick = () => new Promise(resolve => setImmediate(resolve))
+function deferred() {
+    let resolve
+    const promise = new Promise(done => { resolve = done })
+    return { promise, resolve }
+}
 const routes = { checkout: "/checkout", payment: "/payment", profileHistory: "/history", discover: "/shop" }
 const routeParams = load("utils/route-params.ts")
 const constants = load("screens/checkout/checkout-screen.constants.ts")
@@ -22,6 +27,7 @@ const basket = {
 }
 const draft = utils.buildCheckoutDraftFromBasket(basket)
 const paymentState = load("screens/payment/payment-state.ts")
+const historyUtils = load("screens/profile/profile-history-screen.utils.ts")
 class ApiError extends Error {}
 
 // Run screen effects with persistent hook slots, without an Expo bridge or a live payments endpoint.
@@ -65,16 +71,18 @@ function nodes(root) {
     return [root, ...(root.props ? nodes(root.props.children) : [])]
 }
 
-function mount(t, page, { guest = false, platform = "ios", params = {}, status, createError, onPost } = {}) {
+function mount(t, page, { guest = false, platform = "ios", params = {}, status, createError, onPost,
+    orderFields, beforeCreate, readOrder, translate = identity } = {}) {
     const calls = [], pushes = [], links = [], alerts = []
     const { hooks, render, unmount } = screenHooks()
     t.after(unmount)
     const appState = { currentState: "active" }
     const email = load("screens/checkout/guest-checkout-email.ts")
-    const order = { ...draft, id: 42, order_number: "A42", checkout_snapshot: {}, payment_method: params.paymentMethod ?? "sbp" }
-    const create = (kind, body) => {
+    const order = { ...draft, id: 42, order_number: "A42", checkout_snapshot: {}, payment_method: params.paymentMethod ?? "sbp", ...orderFields }
+    const create = async (kind, body) => {
         calls.push([kind, body])
         if (createError) throw createError
+        await beforeCreate
         return kind === "guest" ? { order } : order
     }
     const api = load("services/api/payments.ts", {
@@ -90,7 +98,8 @@ function mount(t, page, { guest = false, platform = "ios", params = {}, status, 
     let footer, tree
     const mocks = {
         react: hooks,
-        "react-native": { ...native, AppState: appState, Platform: { OS: platform }, Keyboard: {}, StyleSheet: { create: identity },
+        "react-native": { ...native, FlatList: "FlatList", useWindowDimensions: () => ({ width: 390 }),
+            AppState: appState, Platform: { OS: platform }, Keyboard: {}, StyleSheet: { create: identity },
             Alert: { alert: (...args) => alerts.push(args) },
             Linking: { openURL: async url => { links.push(url); throw new Error("No bank app") } },
             Animated: { Value: class { stopAnimation() {} setValue() {} interpolate() {} }, View: "AnimatedView", timing: () => ({ start: noop }) },
@@ -101,12 +110,12 @@ function mount(t, page, { guest = false, platform = "ios", params = {}, status, 
         "expo-clipboard": {}, "lottie-react-native": "Lottie",
         "@react-native-picker/picker": { Picker: { Item: "Item" } },
         "react-native-safe-area-context": { useSafeAreaInsets: () => ({ top: 0, bottom: 0 }) },
-        "@/constants/routes": { ROUTES: routes }, "@/constants/stickers": { STICKERS: { cherryCongrats: {} } },
+        "@/constants/routes": { ROUTES: routes }, "@/constants/stickers": { STICKERS: { cherryCongrats: {}, orderHistoryEmpty: {} } },
         "@/hooks/basket/use-basket": { useBasket: () => ({ basket }) },
         "@/hooks/basket/basket-store": { clearBasketSnapshot: noop },
         "@/hooks/order-draft/use-order-draft": { useOrderDraft: () => ({ orderDraft: draft }) },
         "@/providers/auth-provider": { useAuth: () => ({ isReady: true, isAuthenticated: !guest, acceptSession: noop }) },
-        "@/providers/language-provider": { useLanguage: () => ({ t: identity, language: "ru" }) },
+        "@/providers/language-provider": { useLanguage: () => ({ t: translate, language: "ru" }) },
         "@/providers/theme-provider": { useTheme: () => ({ palette: {} }) },
         "@/hooks/use-theme-styles": { useThemeStyles: () => ({}) },
         "@/components/templates/screen-template.hooks": { useApplyScreenTemplate: (_, chrome) => { footer = chrome?.slots?.footer } },
@@ -120,11 +129,15 @@ function mount(t, page, { guest = false, platform = "ios", params = {}, status, 
         "@/screens/checkout/use-checkout-recipient-selection": { useCheckoutRecipientSelection: (_, recipient) => ({ recipient }) },
         "@/services/api/client": { ApiError }, "@/services/api/payments": api,
         "@/services/api/guest": { createGuestOrder: async body => create("guest", body), isGuestPhoneExistsError: () => false },
-        "@/services/api/orders": { createOrder: async body => create("member", body), getOrder: async () => order },
+        "@/services/api/orders": { createOrder: async body => create("member", body), getOrder: async () => readOrder?.() ?? order },
         "@/services/auth/session": { getAuthTokens: () => null },
         "@/services/guest-cart": { clearGuestCart: async () => {} },
         "@/services/notifications/startup-notices": { queueStartupNotice: noop },
         "@/screens/payment/payment-state": paymentState,
+        "@/screens/profile/profile-history-screen.utils": historyUtils, "./profile-history-screen.utils": historyUtils,
+        "./profile-history-screen.styles": {}, "react-native-calendars": { LocaleConfig: { locales: {} } },
+        "@/hooks/shared/use-paginated-data": { usePaginatedData: () => ({ items: [order], reload: noop }) },
+        "@/components/content/recent-order-drafts-rail.utils": { getModeBadgeStyle: noop },
         "@/utils/quoted-item-price": load("utils/quoted-item-price.ts"),
         "@/utils/discount-display": { confirmedBalanceAmount: () => null, orderDiscountRows: () => [] },
         "@/utils/errors": { getErrorMessage: e => e.message, showBackendErrorAlert: noop },
@@ -136,13 +149,20 @@ function mount(t, page, { guest = false, platform = "ios", params = {}, status, 
         "hooks/delivery/delivery-address-selection-store", "hooks/delivery/delivery-country-selection-store",
         "hooks/delivery/delivery-point-selection-store", "hooks/order-draft/order-draft-store",
         "screens/cart/cart-screen.utils", "screens/cart/order-promo", "screens/checkout/checkout-address-picker",
-        "screens/checkout/checkout-screen.styles", "screens/payment/payment-screen.styles", "screens/profile/profile-history-screen.utils",
+        "screens/checkout/checkout-screen.styles", "screens/payment/payment-screen.styles", "components/platform/app-calendar",
+        "components/content/content-tab-bar", "components/content/empty-state", "components/templates/catalog-template",
         "services/api/basket", "services/api/benefits", "services/api/order-drafts", "services/api/users", "services/notifications/order-status-notifications",
     ]) mocks["@/" + path] = {}
-    const screen = load("screens/" + page + "/" + page + "-screen.tsx", mocks).default
+    const screen = load(page === "history" ? "screens/profile/profile-history-screen.tsx"
+        : "screens/" + page + "/" + page + "-screen.tsx", mocks).default
     return {
         render() { tree = render(screen) },
         elements: () => nodes(tree),
+        historyCard() {
+            const list = nodes(tree).find(n => n.type === "FlatList")
+            const card = list.props.renderItem({ item: list.props.data[0] }).props.children
+            return nodes(render(() => card.type(card.props)))
+        },
         cta() {
             const buttons = nodes(footer).filter(n => n.props?.accessibilityRole === "button")
             assert.equal(buttons.length, 1, "one checkout footer action")
@@ -341,4 +361,174 @@ test("all three checkout dictionaries have distinct recovery guidance and no man
         assert.match(translate("payment.pending", lang), /менеджер|manager/i)
         assert.match(translate("payment.checkHistoryOnDisconnect", lang), /истори|history|тарих/i)
     }
+})
+
+const { translate } = load("i18n/translations.ts")
+const issue = {
+    code: "MS_429", message: "МойСклад временно ограничил число запросов (429). Не удалось получить страну для заказа.",
+    retrying: true, retry_until: "2026-11-28T14:37:00Z",
+}
+const reason = issue.code + ": " + issue.message
+
+test("only a received order number unlocks history and the processing notification, even before the first status read", async t => {
+    const receipt = deferred(), status = deferred()
+    const app = mount(t, "payment", {
+        params: { paymentMethod: "later" }, beforeCreate: receipt.promise, orderFields: { status_code: "processing" },
+        status: () => status.promise, translate: key => translate(key, "ru"),
+    })
+    const notice = "Заказ обрабатывается. Вы можете покинуть эту страницу. Мы отправим уведомление, когда обработка завершится."
+    app.render()
+    app.render()
+    assert.equal(app.cta().disabled, true)
+    assert.ok(!app.elements().includes(notice))
+    assert.ok(!app.elements().includes("#A42"))
+    receipt.resolve()
+    await tick()
+    app.render()
+    assert.ok(app.elements().includes("#A42"))
+    assert.ok(app.elements().includes(notice))
+    assert.equal(app.cta().disabled, false)
+    app.cta().onPress()
+    assert.deepEqual(app.pushes, [routes.profileHistory])
+    status.resolve({ order_id: 42, status_code: "processing", payment_status: "pending" })
+    await tick()
+    app.render()
+    assert.deepEqual(app.calls.map(c => c[0]), ["member", "/payments/status"])
+})
+
+test("history cards keep the number, untruncated reason and code together in every locale", t => {
+    assert.ok(historyUtils.getStatusCodesForBucket("active").includes("processing"))
+    assert.ok(historyUtils.getStatusCodesForBucket("active").includes("checkout_failed"))
+    for (const lang of ["ru", "en", "kz"]) for (const code of ["processing", "checkout_failed"]) {
+        const tr = key => translate(key, lang)
+        const problem = { ...issue, retrying: code === "processing" }
+        const app = mount(t, "history", { orderFields: { status_code: code, checkout_issue: problem }, translate: tr })
+        app.render()
+        const card = app.historyCard()
+        assert.ok(card.includes("A42")) // The leading # is a separate Text child in the list.
+        const reasonText = card.find(n => n.type === "Text" && n.props.children === reason)
+        assert.ok(reasonText)
+        assert.equal(reasonText.props.numberOfLines, undefined)
+        const button = card.find(n => n.props?.accessibilityRole === "button")
+        assert.ok(button.props.accessibilityLabel.includes("#A42"))
+        assert.ok(button.props.accessibilityLabel.includes(reason))
+        for (const key of [historyUtils.ORDER_STATUS_LABEL_KEYS[code], historyUtils.ORDER_STATUS_MESSAGE_KEYS[code]]) {
+            assert.ok(card.includes(tr(key)))
+            if (lang !== "ru") assert.notEqual(tr(key), translate(key, "ru"))
+        }
+        assert.ok(!card.includes(tr("profile.history.status.created")))
+        assert.equal(card.includes(historyUtils.checkoutRetryMessage(issue, tr)), problem.retrying)
+        button.props.onPress()
+        assert.deepEqual(app.pushes, [{ pathname: routes.payment, params: { orderId: "42" } }])
+    }
+})
+
+test("reopened processing orders only read status: transient failures and retries never post and terminal reasons persist", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    let read = 0
+    const app = mount(t, "payment", {
+        params: { orderId: "42" }, orderFields: { status_code: "processing", checkout_issue: issue },
+        status: () => {
+            if (++read === 1) throw new TypeError("lost connection")
+            if (read === 2) return { order_id: 42, payment_status: "draft" }
+            return { order_id: 42, payment_status: "error", can_retry: true, status_code: "checkout_failed",
+                checkout_issue: { ...issue, retrying: false } }
+        },
+    })
+    app.render()
+    await tick()
+    app.render()
+    await tick()
+    app.render()
+    for (let i = 0; i < 2; i++) {
+        assert.ok(app.elements().includes("#A42"))
+        assert.ok(app.elements().includes(reason))
+        assert.ok(app.elements().includes("profile.history.statusMessage.processing"))
+        assert.equal(app.cta().accessibilityLabel, "route.profileHistory")
+        t.mock.timers.tick(30_000)
+        await tick()
+        app.render()
+    }
+    assert.ok(app.elements().includes(reason))
+    assert.ok(app.elements().includes("profile.history.statusMessage.checkout_failed"))
+    assert.ok(!app.elements().includes("profile.history.retryUntil"))
+    assert.equal(app.cta().accessibilityLabel, "route.profileHistory")
+    t.mock.timers.tick(3_600_000)
+    await tick()
+    assert.deepEqual(app.calls.map(c => c[0]), Array(3).fill("/payments/status"))
+})
+
+test("a completed status replaces stale processing and clears the reason without resubmitting", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    for (const paymentHasStatusCode of [false, true]) {
+        let state = "processing"
+        const app = mount(t, "payment", {
+            params: { orderId: "42" }, readOrder: () => ({ ...draft, id: 42, order_number: "A42", payment_method: "later",
+                status_code: state, checkout_issue: state === "processing" ? issue : null }),
+            status: () => ({ order_id: 42, payment_method: "later", payment_status: "pending", can_retry: false,
+                ...(paymentHasStatusCode ? { status_code: state } : {}),
+                checkout_progress: state === "processing" ? "processing" : null, checkout_issue: state === "processing" ? issue : null }),
+        })
+        app.render()
+        await tick()
+        app.render()
+        await tick()
+        app.render()
+        assert.ok(app.elements().includes(reason))
+        state = "created"
+        t.mock.timers.tick(30_000)
+        await tick()
+        app.render()
+        assert.ok(app.elements().includes("profile.history.status.created"))
+        assert.ok(app.elements().includes("payment.pendingLaterTitle"))
+        assert.ok(!app.elements().includes(reason))
+        assert.deepEqual(app.calls.map(c => c[0]), ["/payments/status", "/payments/status"])
+    }
+})
+
+test("payment-only lifecycle markers prevent legacy adoption and bank retry, even with stale draft flags", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    for (const code of ["processing", "checkout_failed"]) {
+        const app = mount(t, "payment", { params: { orderId: "42" }, orderFields: { status_code: "created" },
+            status: () => ({ order_id: 42, status_code: code, payment_status: "draft", can_retry: true,
+                checkout_issue: { ...issue, retrying: code === "processing" } }) })
+        app.render()
+        await tick()
+        app.render()
+        await tick()
+        app.render()
+        assert.ok(app.elements().includes("#A42"))
+        assert.ok(app.elements().includes(reason))
+        assert.ok(!app.elements().includes("profile.history.status.created"))
+        assert.equal(app.cta().accessibilityLabel, "route.profileHistory")
+        assert.deepEqual(app.calls.map(c => c[0]), ["/payments/status"])
+    }
+})
+
+test("retry guidance uses the supplied cutoff, falls back to one hour, and disappears when retries stop", () => {
+    for (const lang of ["ru", "en", "kz"]) {
+        const tr = key => translate(key, lang)
+        const cutoff = historyUtils.checkoutRetryMessage(issue, tr)
+        assert.match(cutoff, /\d{1,2}:\d{2}/)
+        assert.ok(!cutoff.includes("{time}"))
+        for (const retry_until of [null, "not a timestamp"]) {
+            assert.equal(historyUtils.checkoutRetryMessage({ ...issue, retry_until }, tr), tr("profile.history.retryWindow"))
+        }
+        assert.equal(historyUtils.checkoutRetryMessage({ ...issue, retrying: false }, tr), null)
+        assert.equal(historyUtils.checkoutRetryMessage(null, tr), null)
+    }
+})
+
+test("a confirmed created order without an invoice is not adopted as an unscheduled draft", async t => {
+    const app = mount(t, "payment", {
+        params: { orderId: "42" }, orderFields: { status_code: "created", payment_method: "later" },
+        status: () => ({ order_id: 42, status_code: "created", payment_method: "later", payment_status: "pending" }),
+    })
+    app.render()
+    await tick()
+    app.render()
+    await tick()
+    app.render()
+    assert.ok(app.elements().includes("payment.pendingLaterTitle"))
+    assert.deepEqual(app.calls.map(c => c[0]), ["/payments/status"])
 })

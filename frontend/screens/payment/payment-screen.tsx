@@ -36,7 +36,7 @@ import {
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
 import { createPaymentScreenStyles } from "@/screens/payment/payment-screen.styles"
-import { confirmedPaidOrderId, mergePaymentState, resolvePaymentPhase, visibleOrderTotal } from "@/screens/payment/payment-state"
+import { checkoutStatus, confirmedPaidOrderId, mergePaymentState, resolvePaymentPhase, visibleOrderTotal } from "@/screens/payment/payment-state"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createGuestOrder, isGuestPhoneExistsError } from "@/services/api/guest"
 import { ApiError } from "@/services/api/client"
@@ -51,7 +51,7 @@ import { syncOrderStatusNotifications } from "@/services/notifications/order-sta
 import { queueStartupNotice } from "@/services/notifications/startup-notices"
 import { getAuthTokens } from "@/services/auth/session"
 import type { OrderDraftItemRead, OrderDraftRead } from "@/services/api/order-drafts.types"
-import { ORDER_STATUS_LABEL_KEYS } from "@/screens/profile/profile-history-screen.utils"
+import { checkoutIssueReason, checkoutRetryMessage, ORDER_STATUS_LABEL_KEYS } from "@/screens/profile/profile-history-screen.utils"
 import { getErrorMessage, showBackendErrorAlert } from "@/utils/errors"
 import { confirmedBalanceAmount, formatAppliedDiscount, orderDiscountRows } from "@/utils/discount-display"
 import { parsePositiveRouteId } from "@/utils/route-params"
@@ -219,7 +219,6 @@ export default function PaymentScreen() {
     const confettiProgress = useRef(new Animated.Value(0)).current
     const paymentStatusRequestIdRef = useRef(0)
     const startingPaymentRef = useRef(false)
-    const recoverLegacyCheckout = useRef(false)
     const sectionPositionsRef = useRef<Record<SummarySection, number>>({
         contact: 0,
         items: 0,
@@ -353,11 +352,17 @@ export default function PaymentScreen() {
         && resolvedRecipient
         && resolvedItemsCount > 0,
     )
-    const resolvedOrderStatusLabel = order?.status_code
-        ? t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created")
+    const { statusCode, issue } = checkoutStatus(order, payment)
+    const checkoutFailed = statusCode === "checkout_failed"
+    const acceptedProcessing = Boolean(order && !checkoutFailed && (
+        statusCode === "processing" || phase === "waiting" || (submitting && !payment && phase === "processing")
+    ))
+    const resolvedOrderStatusLabel = statusCode
+        ? t(ORDER_STATUS_LABEL_KEYS[statusCode] ?? "profile.history.status.unknown")
         : null
     const canContinue = hasResolvedOrderInfo && !submitting
-    const canRetry = Boolean(order && payment?.can_retry && !order.is_canceled && !order.is_paid && !payment.checkout_progress)
+    const canRetry = Boolean(order && payment?.can_retry && !order.is_canceled && !order.is_paid
+        && !payment.checkout_progress && !issue && !checkoutFailed && statusCode !== "processing")
     const missingStateMessage = orderLoadError ?? t("payment.orderMissingMessage")
     const shouldShowFooter = hasResolvedOrderInfo || loading || loadingOrder || phase !== "select" || submitting
     const isRepeatableOrder = order?.history_bucket === "completed"
@@ -441,7 +446,30 @@ export default function PaymentScreen() {
         }
     }, [isContactExpanded, isItemsExpanded, scrollToSection])
 
-    const handleStartPayment = useCallback(async (methodOverride?: PaymentMethod, explicitRetry = false) => {
+    const applyPaymentStatus = useCallback(async (
+        next: PaymentStatusRead, orderAtRead: OrderRead, method: PaymentMethod, active: () => boolean,
+    ) => {
+        if (!active()) return
+        let snapshot = orderAtRead
+        // Older status endpoints can clear checkout_progress without returning the final order status.
+        if (!next.status_code && !next.checkout_progress && !next.checkout_issue &&
+            (snapshot.status_code === "processing" || snapshot.status_code === "checkout_failed")) {
+            snapshot = await getOrder(snapshot.id)
+            if (!active()) return
+        }
+        if (typeof next.amount_rubles === "number" && Number.isFinite(next.amount_rubles)
+            && snapshot.grand_total !== String(next.amount_rubles)) {
+            snapshot = { ...snapshot, grand_total: String(next.amount_rubles) }
+        }
+        if (snapshot !== orderAtRead) setOrder(snapshot)
+        setPayment(current => mergePaymentState(current, next))
+        const nextPhase = resolvePaymentPhase(next, method, snapshot)
+        setPhase(nextPhase)
+        if (nextPhase === "failure") setErrorMessage(getPaymentStateError(next, t("payment.failureMessage")))
+        return nextPhase
+    }, [t])
+
+    const handleStartPayment = useCallback(async (methodOverride?: PaymentMethod) => {
         const effectiveMethod = methodOverride ?? selectedMethod
         if (startingPaymentRef.current || (!orderDraft && !order)) {
             return
@@ -494,18 +522,9 @@ export default function PaymentScreen() {
             }
 
             const nextPayment = order
-                ? await submitCheckout({ order_id: nextOrder.id, payment_method: effectiveMethod }, isActive, !explicitRetry)
+                ? await submitCheckout({ order_id: nextOrder.id, payment_method: effectiveMethod }, isActive)
                 : await readSubmittedOrder(nextOrder.id)
-            if (!nextPayment || !isActive()) return
-            setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
-            if (typeof nextPayment.amount_rubles === "number" && Number.isFinite(nextPayment.amount_rubles)) {
-                setOrder({ ...nextOrder, grand_total: String(nextPayment.amount_rubles) })
-            }
-            const nextPhase = resolvePaymentPhase(nextPayment, effectiveMethod, nextOrder)
-            setPhase(nextPhase)
-            if (nextPhase === "failure") {
-                setErrorMessage(getPaymentStateError(nextPayment, t("payment.failureMessage")))
-            }
+            if (nextPayment) await applyPaymentStatus(nextPayment, nextOrder, effectiveMethod, isActive)
         } catch (paymentError) {
             if (!isActive()) return
             if (paymentError instanceof ApiError && (paymentError.body as { detail?: { code?: string } })?.detail?.code === "draft_repriced") {
@@ -562,13 +581,19 @@ export default function PaymentScreen() {
                 setSubmitting(false)
             }
         }
-    }, [openCheckout, reloadDraft, acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t])
+    }, [applyPaymentStatus, openCheckout, reloadDraft, acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t])
 
     const handleRetryPayment = useCallback(() => {
-        if (order) void handleStartPayment(resolvedPaymentMethod, true)
-    }, [handleStartPayment, order, resolvedPaymentMethod])
+        if (canRetry) void handleStartPayment(resolvedPaymentMethod)
+    }, [canRetry, handleStartPayment, resolvedPaymentMethod])
 
     const footerCtaState = useMemo(() => {
+        if (acceptedProcessing || checkoutFailed || (phase === "failure" && !order) || phase === "pending") {
+            return {
+                busy: false, disabled: false, label: t("route.profileHistory"),
+                onPress: () => router.replace(ROUTES.profileHistory),
+            }
+        }
         if (loading || loadingOrder) {
             return {
                 busy: true,
@@ -604,15 +629,6 @@ export default function PaymentScreen() {
                     ? t("payment.processingSbp")
                     : !isQrVisualReady ? t("payment.processingVisual") : t("payment.awaitingPayment"),
                 onPress: null as (() => void) | null,
-            }
-        }
-
-        if (phase === "pending" || phase === "waiting") {
-            return {
-                busy: false,
-                disabled: false,
-                label: t("route.profileHistory"),
-                onPress: () => router.replace(ROUTES.profileHistory),
             }
         }
 
@@ -670,7 +686,9 @@ export default function PaymentScreen() {
             onPress: null as (() => void) | null,
         }
     }, [
+        acceptedProcessing,
         canRetry,
+        checkoutFailed,
         handleRepeatOrder,
         handleRetryPayment,
         isRepeatableOrder,
@@ -783,7 +801,8 @@ export default function PaymentScreen() {
         }
 
         const method = resolvePaymentMethod(order.payment_method)
-        if (order.is_canceled || !method) {
+        const readOnly = order.status_code === "processing" || order.status_code === "checkout_failed" || Boolean(order.checkout_issue)
+        if (!readOnly && (order.is_canceled || !method)) {
             setPhase("failure")
             setErrorMessage(t("payment.failureMessage"))
             return
@@ -793,16 +812,12 @@ export default function PaymentScreen() {
         setPhase("processing")
         void (async () => {
             try {
-                const next = await submitCheckout({ order_id: order.id, payment_method: method }, active, true)
-                if (!next || !active()) return
-                setPayment(current => mergePaymentState(current, next))
-                const nextPhase = resolvePaymentPhase(next, method, order)
-                setPhase(nextPhase)
-                if (nextPhase === "failure") setErrorMessage(getPaymentStateError(next, t("payment.failureMessage")))
+                const next = readOnly ? await readSubmittedOrder(order.id)
+                    : await submitCheckout({ order_id: order.id, payment_method: method ?? selectedMethod }, active, true)
+                if (next) await applyPaymentStatus(next, order, method ?? selectedMethod, active)
             } catch (error) {
                 if (!active()) return
                 if (isTemporaryStatusError(error)) {
-                    recoverLegacyCheckout.current = true
                     setPhase("waiting")
                     return
                 }
@@ -810,11 +825,11 @@ export default function PaymentScreen() {
                 setPhase("failure")
             }
         })()
-    }, [order, payment, phase, submitting, t])
+    }, [applyPaymentStatus, order, payment, phase, selectedMethod, submitting, t])
 
     useEffect(() => {
         const orderId = payment?.order_id ?? order?.id
-        if (!orderId || (phase !== "waiting" && phase !== "sbp")) return
+        if (!order || !orderId || (phase !== "waiting" && phase !== "sbp")) return
         let active = true
         let delay = 3000
         let timer: ReturnType<typeof setTimeout>
@@ -824,26 +839,16 @@ export default function PaymentScreen() {
                 return
             }
             try {
-                const next = recoverLegacyCheckout.current
-                    ? await submitCheckout({ order_id: orderId, payment_method: resolvedPaymentMethod }, () => active, true)
-                    : await readSubmittedOrder(orderId)
-                if (!active || !next) return
-                recoverLegacyCheckout.current = false
-                setPayment(current => mergePaymentState(current, next))
-                const nextPhase = resolvePaymentPhase(next, resolvedPaymentMethod, order)
-                setPhase(nextPhase)
-                if (nextPhase === "failure") setErrorMessage(getPaymentStateError(next, t("payment.failureMessage")))
+                const next = await readSubmittedOrder(orderId)
+                const nextPhase = await applyPaymentStatus(next, order, resolvedPaymentMethod, () => active)
                 if (nextPhase !== phase) return
                 delay = Math.min(15000, delay + 1000)
             } catch (error) {
                 if (!active) return
-                if (error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 429) {
-                    const code = (error.body as { detail?: { code?: string } } | null)?.detail?.code
-                    if (code !== "settlement_pending") {
-                        setErrorMessage(getErrorMessage(error, t("payment.statusCheckFailed")))
-                        setPhase("failure")
-                        return
-                    }
+                if (error instanceof ApiError && error.status >= 400 && error.status < 500 && !isTemporaryStatusError(error)) {
+                    setErrorMessage(getErrorMessage(error, t("payment.statusCheckFailed")))
+                    setPhase("failure")
+                    return
                 }
                 delay = Math.min(30000, delay * 2)
             }
@@ -851,7 +856,7 @@ export default function PaymentScreen() {
         }
         timer = setTimeout(poll, delay)
         return () => { active = false; clearTimeout(timer) }
-    }, [order, payment?.order_id, phase, resolvedPaymentMethod, t])
+    }, [applyPaymentStatus, order, payment?.order_id, phase, resolvedPaymentMethod, t])
 
     useEffect(() => {
         if (phase !== "sbp") {
@@ -955,6 +960,24 @@ export default function PaymentScreen() {
     )
 
     const renderVisualCard = () => {
+        if (acceptedProcessing || checkoutFailed) {
+            const reason = checkoutIssueReason(issue)
+            const retryMessage = checkoutRetryMessage(issue, t)
+            const messageKey = checkoutFailed
+                ? (payment?.checkout_progress === "needs_review" && !issue && !payment.status_code
+                    && order?.status_code !== "checkout_failed" ? "payment.checkoutReview" : "profile.history.statusMessage.checkout_failed")
+                : "profile.history.statusMessage.processing"
+            return (
+                <View style={paymentScreenStyles.visualCard}>
+                    <View style={paymentScreenStyles.failureVisualBody}>
+                        <Text style={paymentScreenStyles.sectionTitle}>{headerTitle}</Text>
+                        {reason ? <Text style={paymentScreenStyles.stateText}>{reason}</Text> : null}
+                        <Text style={paymentScreenStyles.stateText}>{t(messageKey)}</Text>
+                        {retryMessage ? <Text style={paymentScreenStyles.stateText}>{retryMessage}</Text> : null}
+                    </View>
+                </View>
+            )
+        }
         if (phase === "sbp") {
             return (
                 <View style={[paymentScreenStyles.visualCard, paymentScreenStyles.visualCardQROnly]}>
@@ -1057,14 +1080,14 @@ export default function PaymentScreen() {
             )
         }
 
-        if (phase === "failure" || phase === "waiting") {
+        if (phase === "failure") {
             return (
                 <View style={paymentScreenStyles.visualCard}>
                     <View style={paymentScreenStyles.failureVisualBody}>
                         <Text style={paymentScreenStyles.sectionTitle}>
-                            {t(phase === "waiting" ? "payment.processingOrder" : payment?.checkout_progress === "needs_review" ? "payment.title" : "payment.failureTitle")}
+                            {t("payment.failureTitle")}
                         </Text>
-                        <Text style={paymentScreenStyles.stateText}>{phase === "waiting" ? resolvedOrderNumber : (payment?.checkout_progress === "needs_review" ? t("payment.checkoutReview") : errorMessage ?? t("payment.failureMessage"))}</Text>
+                        <Text style={paymentScreenStyles.stateText}>{errorMessage ?? t("payment.failureMessage")}</Text>
                     </View>
                 </View>
             )

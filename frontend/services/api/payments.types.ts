@@ -1,3 +1,5 @@
+import type { CheckoutIssue, OrderStatusCode } from "@/services/api/orders.types"
+
 export type CreatePaymentPayload = {
     automatic_checkout?: boolean
     order_id: number
@@ -6,6 +8,8 @@ export type CreatePaymentPayload = {
 }
 
 export type PaymentStatusRead = {
+    status_code?: OrderStatusCode
+    checkout_issue?: CheckoutIssue | null
     checkout_progress?: "processing" | "needs_review" | null
     status: string
     order_id: number

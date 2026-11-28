@@ -1,6 +1,6 @@
 import { getTranslationLocale } from "@/i18n/translations"
 import type { TranslationKey } from "@/i18n/translations"
-import type { GetOrdersQuery, OrderHistoryBucket, OrderStatusCode } from "@/services/api/orders.types"
+import type { CheckoutIssue, GetOrdersQuery, OrderHistoryBucket, OrderStatusCode } from "@/services/api/orders.types"
 
 export type ProfileHistoryFilters = {
     statusCode: OrderStatusCode | null
@@ -9,6 +9,8 @@ export type ProfileHistoryFilters = {
 }
 
 export const ACTIVE_ORDER_STATUS_CODES: readonly OrderStatusCode[] = [
+    "processing",
+    "checkout_failed",
     "created",
     "invoice_sent",
     "paid",
@@ -25,6 +27,8 @@ export const COMPLETED_ORDER_STATUS_CODES: readonly OrderStatusCode[] = [
 ]
 
 export const ORDER_STATUS_LABEL_KEYS: Record<OrderStatusCode, TranslationKey> = {
+    processing: "profile.history.status.processing",
+    checkout_failed: "profile.history.status.checkout_failed",
     created: "profile.history.status.created",
     invoice_sent: "profile.history.status.invoice_sent",
     paid: "profile.history.status.paid",
@@ -38,6 +42,8 @@ export const ORDER_STATUS_LABEL_KEYS: Record<OrderStatusCode, TranslationKey> = 
 }
 
 export const ORDER_STATUS_MESSAGE_KEYS: Record<OrderStatusCode, TranslationKey> = {
+    processing: "profile.history.statusMessage.processing",
+    checkout_failed: "profile.history.statusMessage.checkout_failed",
     created: "profile.history.statusMessage.created",
     invoice_sent: "profile.history.statusMessage.invoice_sent",
     paid: "profile.history.statusMessage.paid",
@@ -54,6 +60,18 @@ type CalendarDayParts = {
     day: number
     month: number
     year: number
+}
+
+export function checkoutIssueReason(issue: CheckoutIssue | null | undefined) {
+    return issue ? `${issue.code}: ${issue.message}` : null
+}
+
+export function checkoutRetryMessage(issue: CheckoutIssue | null | undefined, t: (key: TranslationKey) => string) {
+    if (!issue?.retrying) return null
+    const deadline = issue.retry_until && new Date(issue.retry_until)
+    if (!deadline || !Number.isFinite(deadline.getTime())) return t("profile.history.retryWindow")
+    const time = new Intl.DateTimeFormat(getTranslationLocale(), { hour: "2-digit", minute: "2-digit" }).format(deadline)
+    return t("profile.history.retryUntil").replace("{time}", time)
 }
 
 function parseCalendarDate(value: string | null): CalendarDayParts | null {

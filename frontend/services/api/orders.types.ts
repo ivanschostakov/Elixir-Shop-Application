@@ -2,6 +2,8 @@ import type { DeliveryAddressRead, DeliveryRecipientRead } from "@/services/api/
 
 export type OrderHistoryBucket = "active" | "completed"
 export type OrderStatusCode =
+    | "processing"
+    | "checkout_failed"
     | "created"
     | "invoice_sent"
     | "paid"
@@ -12,6 +14,13 @@ export type OrderStatusCode =
     | "canceled"
     | "completed"
     | "refund_declined"
+
+export type CheckoutIssue = {
+    code: string
+    message: string
+    retrying: boolean
+    retry_until: string | null
+}
 
 export type OrderItemRead = {
     id: number
@@ -41,6 +50,7 @@ export type OrderRead = {
     recipient_id: number
     status: string
     status_code: OrderStatusCode
+    checkout_issue?: CheckoutIssue | null
     history_bucket: OrderHistoryBucket
     items_count: number
     total_quantity: number

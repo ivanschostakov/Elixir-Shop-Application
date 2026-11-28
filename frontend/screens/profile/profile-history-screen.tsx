@@ -12,7 +12,7 @@ import {
     useWindowDimensions,
 } from "react-native"
 import type { StyleProp, TextStyle, ViewStyle } from "react-native"
-import { router } from "expo-router"
+import { router, useFocusEffect } from "expo-router"
 import { AppPickerSheetField, type AppPickerOption as PickerOption } from "@/components/platform/app-picker"
 import LottieView from "lottie-react-native"
 import { LocaleConfig } from "react-native-calendars"
@@ -43,6 +43,8 @@ import {
     buildDateRangeSelection,
     buildMarkedDateRange,
     buildOrderHistoryQuery,
+    checkoutIssueReason,
+    checkoutRetryMessage,
     formatDateRangeTriggerValue,
     formatHistoryDate,
     getAppliedDateRange,
@@ -332,10 +334,15 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
     const balance = confirmedBalanceAmount(order)
     const isCompleted = order.history_bucket === "completed"
     const visibleItems = order.items.slice(0, 4)
-    const statusLabel = t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created")
-    const statusMessage = t(laterState === "reserving" ? "payment.reservationWaiting"
+    const statusLabel = t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.unknown")
+    const awaitingCheckout = order.status_code === "processing" || order.status_code === "checkout_failed"
+    const statusMessage = t(awaitingCheckout
+        ? ORDER_STATUS_MESSAGE_KEYS[order.status_code]
+        : laterState === "reserving" ? "payment.reservationWaiting"
         : laterState === "calculating" ? "payment.acceptedCalculating"
-        : ORDER_STATUS_MESSAGE_KEYS[order.status_code] ?? "profile.history.statusMessage.created")
+        : ORDER_STATUS_MESSAGE_KEYS[order.status_code] ?? "profile.history.status.unknown")
+    const reason = checkoutIssueReason(order.checkout_issue)
+    const retryMessage = checkoutRetryMessage(order.checkout_issue, t)
 
     const handleOpenOrder = useCallback(() => {
         router.push({ pathname: ROUTES.payment, params: { orderId: String(order.id) } })
@@ -344,7 +351,7 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
     return (
         <View style={profileHistoryScreenStyles.historyCard}>
             <Pressable
-                accessibilityLabel={`#${order.order_number}`}
+                accessibilityLabel={[`#${order.order_number}`, statusLabel, reason, statusMessage, retryMessage].filter(Boolean).join(". ")}
                 accessibilityRole="button"
                 onPress={handleOpenOrder}
                 style={({ pressed }) => pressed && profileHistoryScreenStyles.historyCardPressed}
@@ -403,13 +410,17 @@ function OrderHistoryCard({ order }: { order: OrderRead }) {
                         </View>
                     </View>
 
+                    {reason ? <Text style={profileHistoryScreenStyles.historyCardStatusMessage}>{reason}</Text> : null}
                     <Text style={profileHistoryScreenStyles.historyCardStatusMessage}>
                         {statusMessage}
                     </Text>
+                    {retryMessage ? <Text style={profileHistoryScreenStyles.historyCardStatusMessage}>{retryMessage}</Text> : null}
 
                     <View style={profileHistoryScreenStyles.historyCardMetaGrid}>
                         <View style={profileHistoryScreenStyles.historyCardMetaRow}>
-                            <Text style={profileHistoryScreenStyles.historyCardMetaLabel}>{t("profile.history.createdAt")}</Text>
+                            <Text style={profileHistoryScreenStyles.historyCardMetaLabel}>
+                                {t(awaitingCheckout ? "profile.history.receivedAt" : "profile.history.createdAt")}
+                            </Text>
                             <Text style={profileHistoryScreenStyles.historyCardMetaValue}>
                                 {formatHistoryDate(order.created_at)}
                             </Text>
@@ -511,6 +522,12 @@ export default function ProfileHistoryScreen() {
         getKey: (item) => String(item.id),
         pageSize: PAGE_SIZE,
     })
+
+    const hasFocused = useRef(false)
+    useFocusEffect(useCallback(() => {
+        if (hasFocused.current) void reload({ resetItems: false, showLoading: false })
+        hasFocused.current = true
+    }, [reload]))
 
     useEffect(() => {
         const allowedStatusCodes = [...getStatusCodesForBucket(bucket)]
@@ -668,6 +685,8 @@ export default function ProfileHistoryScreen() {
                 }}
                 onEndReachedThreshold={0.6}
                 renderItem={renderItem}
+                refreshing={loading && items.length > 0}
+                onRefresh={() => { void reload({ resetItems: false }) }}
                 showsVerticalScrollIndicator={false}
                 style={[
                     profileHistoryScreenStyles.list,

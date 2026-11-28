@@ -38,6 +38,7 @@ import { recordBannerClick, recordBannerImpression } from "@/services/api/banner
 import type { OrderDraftRead } from "@/services/api/order-drafts.types"
 import { getOrders } from "@/services/api/orders"
 import type { OrderRead, OrderStatusCode } from "@/services/api/orders.types"
+import { ORDER_STATUS_LABEL_KEYS } from "@/screens/profile/profile-history-screen.utils"
 import { clearOrderDraftSnapshot, getOrderDraftSnapshot } from "@/hooks/order-draft/order-draft-store"
 import { getDraftUpdateErrorMessage } from "@/components/content/recent-order-drafts-rail.utils"
 import { getDiscoverCategoryIcon } from "@/screens/discover/discover-category-icons"
@@ -84,57 +85,49 @@ function getHomeGradientColors(accentName: ThemeAccentName, isDarkMode: boolean)
     return gradientCombos[accentName]
 }
 const orderStatusColors = {
+    processing: { bg: "#DBEAFE", text: "#1E40AF" },
+    checkout_failed: { bg: "#FEE2E2", text: "#991B1B" },
     created: {
-        label: "Заказ создан",
         bg: "#F3F4F6",
         text: "#374151",
     },
     invoice_sent: {
-        label: "Ожидаем оплату",
         bg: "#FEF3C7",
         text: "#92400E",
     },
     paid: {
-        label: "Оплачен",
         bg: "#DCFCE7",
         text: "#166534",
     },
     waiting_response: {
-        label: "Ждём ваш ответ",
         bg: "#EDE9FE",
         text: "#5B21B6",
     },
     packaged: {
-        label: "Собираем заказ",
         bg: "#DBEAFE",
         text: "#1E40AF",
     },
     sent: {
-        label: "В пути",
         bg: "#E0F2FE",
         text: "#075985",
     },
     delivered: {
-        label: "Готов к выдаче",
         bg: "#CCFBF1",
         text: "#0F766E",
     },
     completed: {
-        label: "Получен",
         bg: "#ECFDF5",
         text: "#047857",
     },
     canceled: {
-        label: "Отменён",
         bg: "#FEE2E2",
         text: "#991B1B",
     },
     refund_declined: {
-        label: "Возврат отклонён",
         bg: "#FFE4E6",
         text: "#9F1239",
     },
-} satisfies Record<OrderStatusCode, { label: string; bg: string; text: string }>
+} satisfies Record<OrderStatusCode, { bg: string; text: string }>
 
 function appendImageVersion(uri: string, version: string | null | undefined): string {
     const trimmedVersion = version?.trim()
@@ -880,7 +873,7 @@ export default function HomeScreen() {
                                                                         { color: statusDisplay.text },
                                                                     ]}
                                                                 >
-                                                                    {statusDisplay.label}
+                                                                    {t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.unknown")}
                                                                 </Text>
                                                             </View>
                                                             <Text
