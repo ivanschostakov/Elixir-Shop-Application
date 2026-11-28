@@ -1,4 +1,5 @@
 import asyncio
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import UUID
@@ -66,6 +67,20 @@ def test_program_is_explicit_and_unknown_never_becomes_bonus(program, expected):
     assert value.loyalty_program == expected
     assert value.balance_rubles == Decimal("16955.00")
     assert value.total_purchases_rubles == Decimal("259000.00")
+
+
+@pytest.mark.parametrize("raw,expected", [("Не указан", None), (" НЕ УКАЗАН ", None),
+                                          ("Не указан-2", "Не указан-2"), (" хрюн_слим ", "хрюн_слим")])
+def test_incoming_promo_in_live_card_and_existing_cache(raw, expected):
+    buyer = card("Партнерская")
+    buyer["attributes"].extend([{"id": service.REFERRER_ATTRIBUTE_ID, "value": raw},
+                                {"id": service.DISCOUNT_ATTRIBUTE_ID, "value": {"name": "8%"}}])
+    live = service.parse_settlement(buyer, report(), expected_id=CID, now=NOW)
+    cached = service._cached(json.dumps(dict(live.model_dump(mode="json"), referrer_promo_code=raw)))
+    for result in (live, cached):
+        assert result.referrer_promo_code == expected
+        assert result.loyalty_program == 2
+        assert result.personal_discount_percent == 8
 
 
 @pytest.mark.parametrize("amount", [-10000025, 0, 12345.67])

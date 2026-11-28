@@ -9,6 +9,7 @@ from src.app.services.benefits.settlement import (
     DISCOUNT_ATTRIBUTE_ID, OWN_PROMO_ATTRIBUTE_ID, PROGRAM_ATTRIBUTE_ID, PROGRAM_NAMES, REFERRER_ATTRIBUTE_ID,
 )
 from src.app.services.benefits.settlement_cache import invalidate_account_settlement
+from src.app.services.benefits.settlement_schemas import ms_referrer_code
 from src.app.services.orders.settlement_payment import settlement_lock
 from src.database.models import Order, RewardProgramSelectionEvent as Event, User
 from src.integrations.moysklad.client import get_moysklad_client
@@ -30,7 +31,7 @@ def _card_fields(card, cid):
     program = PROGRAM_NAMES.get(str((value(PROGRAM_ATTRIBUTE_ID) or {}).get("name", "")).strip().casefold())
     if program not in (0, 1, 2):
         raise ValueError("Unknown program")
-    return attrs, normalize_referral_code(value(REFERRER_ATTRIBUTE_ID)), rate, program
+    return attrs, normalize_referral_code(ms_referrer_code(value(REFERRER_ATTRIBUTE_ID))), rate, program
 
 
 async def _guard_open_orders(db, client, cid):
