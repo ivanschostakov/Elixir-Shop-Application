@@ -574,6 +574,9 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         log.info("IntellectMoney createInvoice parsed order_number=%s invoice_id=%s result_keys=%s", order.order_number, invoice_id, sorted(result_payload.keys()) if isinstance(result_payload, dict) else [])
         if not invoice_id: raise IntellectMoneyError("IntellectMoney createInvoice succeeded without InvoiceId")
 
+        if automatic:
+            from .automatic_checkout import bind_checkout_invoice
+            await bind_checkout_invoice(session, order, invoice_id)
         order = await update_order(session, order, OrderUpdate(payment_invoice_id=invoice_id), commit=True)
         if automatic:
             await _lock_provider_claim(session, order, invoice_id, terms)
@@ -606,6 +609,8 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
 
     except IntellectMoneyError as exc:
         if automatic:
+            if invoice_id and order.payment_invoice_id == invoice_id:
+                raise HTTPException(503, "Waiting for payment provider QR") from exc
             raise HTTPException(409, "Provider submission requires reconciliation") from exc
         await update_order(session, order, OrderUpdate(payment_status="error", payment_error="Платежный провайдер временно недоступен"), commit=True)
         raise external_service_http_exception(service="intellectmoney", operation="create_payment_for_order", public_detail="Payment provider is temporarily unavailable", raw_detail=str(exc), exc=exc) from exc
@@ -615,6 +620,8 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         if automatic:
             if isinstance(exc, HTTPException):
                 raise
+            if invoice_id and order.payment_invoice_id == invoice_id:
+                raise HTTPException(503, "Waiting for payment provider QR") from exc
             raise HTTPException(409, "Provider submission requires reconciliation") from exc
         await update_order(session, order, OrderUpdate(payment_status="error", payment_error="Не удалось инициализировать СБП"), commit=True)
         raise external_service_http_exception(service="intellectmoney", operation="create_payment_for_order", public_detail="Failed to initialize SBP payment", raw_detail=str(exc), exc=exc) from exc

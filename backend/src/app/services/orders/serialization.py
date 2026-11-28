@@ -1,8 +1,10 @@
 from fastapi import Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.models import Order, OrderItem, Product, Variant
-from src.database.models.orders.history import get_order_history_bucket, get_order_status_code
+from src.database.models import IntegrationRun, Order, OrderItem, Product, Variant
+from src.database.models.orders.history import STATUS_LABELS_BY_CODE, get_order_history_bucket, get_order_status_code
+from .checkout_lifecycle import public_issue
 from src.database.schemas import OrderItemRead, OrderRead
 from .serialization_utils import build_order_item_image_url, get_products_by_id, get_variants_by_id
 from .stock_reservations import has_exported_reservation
@@ -32,8 +34,19 @@ def _serialize_order_item(request: Request, item: OrderItem, *, products_by_id: 
     )
 
 
-def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int, Product], variants_by_id: dict[int, Variant]) -> OrderRead:
+def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int, Product], variants_by_id: dict[int, Variant], run=None) -> OrderRead:
     items = [_serialize_order_item(request, item, products_by_id=products_by_id, variants_by_id=variants_by_id) for item in order.items]
+    code = get_order_status_code(order)
+    issue = None
+    if run and not (order.is_paid or order.is_shipped or order.is_canceled) and get_order_history_bucket(order) == "active":
+        issue = public_issue(run, order)
+        if run.status in {"queued", "running", "retrying"}:
+            code = "processing"
+        elif run.status in {"error", "canceled"}:
+            code = "checkout_failed"
+    elif run and order.is_canceled and not order.is_paid:
+        issue = public_issue(run, order)
+        if issue: issue = {**issue, "retrying": False}
     return OrderRead(
         id=order.id,
         order_code=order.order_code,
@@ -42,7 +55,8 @@ def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int
         user_id=order.user_id,
         delivery_address_id=order.delivery_address_id,
         recipient_id=order.recipient_id,
-        status=order.status,
+        status=STATUS_LABELS_BY_CODE[code][0] if code in {"processing", "checkout_failed"} else order.status,
+        checkout_issue=issue,
         items_count=order.items_count,
         total_quantity=order.total_quantity,
         basket_subtotal=order.basket_subtotal,
@@ -71,7 +85,7 @@ def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int
         is_paid=bool(order.is_paid and order.payment_status != "refunded"),
         is_canceled=order.is_canceled,
         is_shipped=order.is_shipped,
-        status_code=get_order_status_code(order),
+        status_code=code,
         history_bucket=get_order_history_bucket(order),
         delivery_address=order.delivery_address,
         recipient=order.recipient,
@@ -88,7 +102,12 @@ async def serialize_orders(request: Request, session: AsyncSession, orders: list
     variant_ids = {item.variant_id for order in orders for item in order.items}
     products_by_id = await get_products_by_id(session, product_ids)
     variants_by_id = await get_variants_by_id(session, variant_ids)
-    return [_serialize_order(request, order, products_by_id=products_by_id, variants_by_id=variants_by_id) for order in orders]
+    keys = {prefix + str(o.id) for o in orders for prefix in ("app:complete-checkout:", "order:auto:moysklad:")}
+    runs = {run.idempotency_key: run for run in (await session.scalars(
+        select(IntegrationRun).where(IntegrationRun.idempotency_key.in_(keys)))).all()}
+    return [_serialize_order(request, order, products_by_id=products_by_id, variants_by_id=variants_by_id,
+                             run=runs.get(f"app:complete-checkout:{order.id}") or runs.get(f"order:auto:moysklad:{order.id}"))
+            for order in orders]
 
 
 async def serialize_order(request: Request, session: AsyncSession, order: Order) -> OrderRead:

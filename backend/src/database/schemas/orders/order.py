@@ -24,6 +24,8 @@ from src.database.schemas.delivery.recipient import DeliveryRecipientRead
 
 OrderHistoryBucket = Literal["active", "completed"]
 OrderStatusCode = Literal[
+    "processing",
+    "checkout_failed",
     "created",
     "invoice_sent",
     "paid",
@@ -135,10 +137,18 @@ class OrderUpdate(BaseModel):
     is_shipped: bool | None = None
 
 
+class CheckoutIssue(BaseModel):
+    code: str
+    message: str
+    retrying: bool
+    retry_until: datetime | None = None
+
+
 class OrderRead(OrderBase):
     model_config = ConfigDict(from_attributes=True)
 
     ms_reservation_confirmed: bool = False
+    checkout_issue: CheckoutIssue | None = None
     id: int
     order_number: str
     status_code: OrderStatusCode

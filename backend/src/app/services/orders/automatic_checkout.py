@@ -16,9 +16,10 @@ from src.integrations.moysklad.settlement_checkout import order_settlement
 from . import payments
 from .crm import ensure_order_has_amocrm_lead
 from .invoice_preparation import InvoicePreparationPending
+from .checkout_lifecycle import OPERATION, WINDOW, public_issue
+from src.database.models.orders.history import STATUS_LABELS_BY_CODE
 
 log = logging.getLogger(__name__)
-OPERATION = "complete_mobile_checkout"
 
 
 def _key(order_id):
@@ -39,12 +40,21 @@ async def stage_checkout(db, order, request, *, prepare_order=False):
     ip = next((ip for key in ("cf-connecting-ip", "x-real-ip", "x-forwarded-for", "forwarded")
                if (ip := payments._ipv4_from_value(request.headers.get(key)))), None)
     ip = ip or payments._ipv4_from_value(request.client.host if request.client else None)
-    return await db.scalar(insert(IntegrationRun).values(
+    now = datetime.now(timezone.utc)
+    run_id = await db.scalar(insert(IntegrationRun).values(
         provider="app", operation=OPERATION, target_type="order", target_id=str(order.id),
         idempotency_key=_key(order.id), input_json={"method": order.payment_method, "ip": ip,
                                                    "prepare_order": prepare_order, "terms": _approved_terms(order)},
-        status="queued", attempts=0, max_attempts=14, counters_json={}, next_attempt_at=datetime.now(timezone.utc),
+        status="queued", attempts=0, max_attempts=720, counters_json={}, started_at=now, next_attempt_at=now,
     ).on_conflict_do_nothing(index_elements=[IntegrationRun.idempotency_key]).returning(IntegrationRun.id))
+    if run_id is not None and order.status in STATUS_LABELS_BY_CODE["created"]:
+        order.status = STATUS_LABELS_BY_CODE["processing"][0]
+    if run_id is not None and prepare_order:
+        hold = (order.checkout_snapshot or {}).get("stock_reservation", {})
+        if hold.get("status") == "held":
+            order.checkout_snapshot = {**order.checkout_snapshot, "stock_reservation": {
+                **hold, "expires_at": (now + WINDOW).isoformat()}}
+    return run_id
 
 
 async def notify_worker(run_id):
@@ -75,6 +85,14 @@ async def claim_payment(db, order):
     run.input_json = {**run.input_json, "payment_submitted": True}
 
 
+async def bind_checkout_invoice(db, order, invoice_id):
+    run = await db.scalar(select(IntegrationRun).where(IntegrationRun.idempotency_key == _key(order.id))
+                          .with_for_update().execution_options(populate_existing=True))
+    if not run or run.status != "running" or not run.input_json.get("payment_submitted"):
+        raise HTTPException(409, "Payment submission requires reconciliation")
+    run.input_json = {**run.input_json, "submitted_invoice_id": invoice_id}
+
+
 def _progress(order, state):
     return {**payments._payment_status_payload(order), "checkout_progress": state,
             "amount_rubles": None, "can_retry": False}
@@ -103,7 +121,7 @@ async def checkout_response(db, order, request, *, submit=False, automatic=False
         raise HTTPException(409, "Order payment method has changed")
     def progress(state):
         if automatic:
-            return _progress(order, state)
+            return {**_progress(order, state), "checkout_issue": public_issue(run, order)}
         if state == "processing":
             raise payments.settlement_pending()
         raise HTTPException(409, {"code": "checkout_needs_review", "message": "Checkout requires reconciliation"})
@@ -125,6 +143,11 @@ async def checkout_response(db, order, request, *, submit=False, automatic=False
     if run and (run.input_json.get("method") != order.payment_method or
                 ("terms" in run.input_json and run.input_json["terms"] != _approved_terms(order))):
         return progress("needs_review")
+    if automatic and run and run.status in {"error", "canceled"} and not order.payment_invoice_id:
+        return progress("needs_review")
+    if (automatic and run and run.status in {"queued", "retrying", "running"}
+            and order.payment_method == "later"):
+        return progress("processing")
     if accepted := _manager_ack(order, automatic or accept_pending_amount):
         return accepted
     if run and run.status == "running" and order.payment_status in {"created", "draft", "pending"}:
@@ -213,10 +236,23 @@ async def complete_checkout(db, order_id, intent):
         async with payments.settlement_lock(key, payment=True):
             order = await get_order_by_id(db, order_id)
             if not payments.checkout_ready(order, method):
+                if (not order.is_canceled and order.payment_status != "refunded"
+                        and (order.is_paid or order.is_shipped or order.payment_status == "paid")
+                        and order.amocrm_lead_id and payments.has_exported_reservation(order)):
+                    return {"order_id": order_id}
+                if order.is_canceled or order.is_paid or order.is_shipped or order.payment_status in {"paid", "refunded", "canceled"}:
+                    return {"skipped": "superseded"}
+                if (method == order.payment_method == "sbp" and order.payment_invoice_id
+                        and order.amocrm_lead_id and payments.has_exported_reservation(order)
+                        and intent.get("payment_submitted") and intent.get("submitted_invoice_id") == order.payment_invoice_id):
+                    # A lost QR response can be recovered by reading the known invoice, never by issuing another.
+                    receipt = await payments.get_payment_status_for_order(db, request=_worker_request(intent.get("ip")), order=order)
+                    _require_sbp_ready(receipt)
+                    return {"order_id": order_id}
                 if (order.payment_provider == "intellectmoney" and not order.payment_invoice_id
                         and not (order.is_paid or order.is_canceled)):
                     raise HTTPException(409, "Invoice submission requires reconciliation")
-                return {"skipped": "superseded"}
+                raise HTTPException(409, "Checkout terms or reservation changed; reconciliation required")
             if intent.get("payment_submitted"):
                 raise HTTPException(409, "Payment submission requires reconciliation")
             if "terms" in intent and _approved_terms(order) != intent["terms"]:
@@ -226,10 +262,25 @@ async def complete_checkout(db, order_id, intent):
             if "terms" in intent and _approved_terms(order) != intent["terms"]:
                 raise HTTPException(409, "Checkout terms have changed")
             request = _worker_request(intent.get("ip")) if method == "sbp" else None
-            await payments._create_payment_for_order(db, request=request, order=order, payment_method=method,
+            if not order.amocrm_lead_id or not payments.has_exported_reservation(order):
+                raise HTTPException(503, "MoySklad order or CRM handoff not confirmed")
+            receipt = await payments._create_payment_for_order(db, request=request, order=order, payment_method=method,
                                                     accept_pending_amount=True, automatic=True)
+            if method == "sbp":
+                _require_sbp_ready(receipt)
     except HTTPException as exc:
         if exc.status_code == 409 and isinstance(exc.detail, dict) and exc.detail.get("code") == "settlement_pending":
             raise InvoicePreparationPending(int(exc.detail.get("retry_after_seconds") or 5)) from exc
         raise
     return {"order_id": order_id}
+
+
+def _require_sbp_ready(receipt):
+    if receipt.get("is_paid"):
+        return
+    if receipt.get("payment_status") in {"error", "canceled", "refunded", "hold", "partial"}:
+        raise HTTPException(409, "Payment provider requires reconciliation")
+    if not receipt.get("invoice_id"):
+        raise HTTPException(409, "Invoice submission requires reconciliation")
+    if not (receipt.get("qr_url") or receipt.get("qr_image")):
+        raise HTTPException(503, "Waiting for payment provider QR")

@@ -208,11 +208,11 @@ async def _delete_invalid_push_tokens(session: AsyncSession, *, push_tokens, inv
     if removed_any and commit: await session.commit()
 
 
-async def send_push_to_user(session: AsyncSession, *, user_id: int, title: str, body: str, data: dict[str, Any], channel_id: str = "default") -> bool:
+async def send_push_to_user(session: AsyncSession, *, user_id: int, title: str, body: str, data: dict[str, Any], channel_id: str = "default", checkout_result: bool = False) -> bool:
     push_tokens = await get_user_push_tokens(session, user_id=user_id)
     if not push_tokens: return False
 
-    target_push_tokens = [push_token for push_token in push_tokens if not _should_skip_push_for_current_path(current_path=push_token.current_path, data=data)]
+    target_push_tokens = [push_token for push_token in push_tokens if checkout_result or not _should_skip_push_for_current_path(current_path=push_token.current_path, data=data)]
     if not target_push_tokens: return False
 
     messages = _build_push_messages(target_push_tokens, title=title, body=body, data=data, channel_id=channel_id)
@@ -222,6 +222,8 @@ async def send_push_to_user(session: AsyncSession, *, user_id: int, title: str, 
         push_tokens=target_push_tokens,
         invalid_tokens=set(result.invalid_tokens),
     )
+    if checkout_result and not result.accepted_tokens and result.failed_tokens:
+        raise RuntimeError("Checkout notification push was not accepted")
     return bool(result.accepted_tokens)
 
 

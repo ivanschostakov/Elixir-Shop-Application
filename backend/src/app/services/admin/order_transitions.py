@@ -16,6 +16,8 @@ STATUS_ID_BY_CODE: dict[OrderStatusCode, int] = {
 }
 
 ALLOWED_TRANSITIONS: dict[OrderStatusCode, frozenset[OrderStatusCode]] = {
+    "processing": frozenset(("canceled",)),
+    "checkout_failed": frozenset(("canceled",)),
     "created": frozenset(("invoice_sent", "waiting_response", "canceled")),
     "invoice_sent": frozenset(("paid", "waiting_response", "canceled")),
     "paid": frozenset(("waiting_response", "packaged", "refund_declined")),

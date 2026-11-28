@@ -12,7 +12,7 @@ import { useLanguage } from "../../i18n/LanguageProvider"
 import { domainLabel } from "../../i18n/domain"
 import { dateTime, money, statusColors, statusLabel } from "../../utils/format"
 
-const kanbanStatuses: OrderStatusCode[] = ["created", "invoice_sent", "paid", "waiting_response", "packaged", "sent", "delivered", "completed", "canceled"]
+const kanbanStatuses: OrderStatusCode[] = ["processing", "checkout_failed", "created", "invoice_sent", "paid", "waiting_response", "packaged", "sent", "delivered", "completed", "canceled"]
 
 export function OrdersPage() {
   const { locale } = useLanguage()

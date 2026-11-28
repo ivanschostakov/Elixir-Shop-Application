@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -18,6 +19,7 @@ from config import (
 )
 from src.app.services.cache import get_cache_service
 from src.app.services.orders.invoice_preparation import InvoicePreparationPending
+from src.app.services.orders import checkout_lifecycle as lifecycle
 from src.app.services.admin.exports import generate_admin_export
 from src.app.services.admin.campaigns import execute_push_campaign, mark_push_campaign_failed
 from src.app.services.admin.alerts import raise_admin_alert, resolve_admin_alert
@@ -189,10 +191,11 @@ async def recover_processing_queue() -> int:
                 if last_seen and last_seen > now - timedelta(seconds=ADMIN_JOB_STALE_SECONDS):
                     # Another worker may still own this shared processing-list entry.
                     continue
-                if row.attempts >= row.max_attempts:
+                if not lifecycle.can_attempt(row, now):
                     row.status = "error"
                     row.finished_at = now
                     row.error = ((row.error or "") + "\nWorker stopped before acknowledgement").strip()[:8000]
+                    await lifecycle.record_state(db, row, "checkout_failed")
                     continue
                 row.status = "retrying"
                 row.next_attempt_at = now
@@ -222,10 +225,11 @@ async def recover_due_database_runs() -> int:
             ).with_for_update(skip_locked=True).limit(200)
         )).scalars().all())
         for row in stale_rows:
-            if row.attempts >= row.max_attempts:
+            if not lifecycle.can_attempt(row, now):
                 row.status = "error"
                 row.finished_at = now
                 row.error = ((row.error or "") + "\nWorker stopped before completion").strip()[:8000]
+                await lifecycle.record_state(db, row, "checkout_failed")
             else:
                 row.status = "retrying"
                 row.next_attempt_at = now
@@ -405,7 +409,11 @@ async def _execute_operation(run_id: int) -> dict[str, Any]:
             if order is None: return {"skipped": "order_missing"}
             return await apply_payment_effects(db, order, input_json)
 
-    if provider == "app" and operation == "complete_mobile_checkout" and target_type == "order":
+    if provider == "app" and operation == lifecycle.NOTICE and target_type == "order":
+        async with SessionLocal() as db:
+            return await lifecycle.notify_result(db, int(target_id), input_json["state"])
+
+    if provider == "app" and operation == lifecycle.OPERATION and target_type == "order":
         from src.app.services.orders.automatic_checkout import complete_checkout
         async with SessionLocal() as db:
             return await complete_checkout(db, int(target_id), input_json)
@@ -456,6 +464,12 @@ async def execute_integration_run(run_id: int) -> None:
         if (run is None or run.status not in PENDING_RUN_STATUSES
                 or (run.next_attempt_at is not None and run.next_attempt_at > now)):
             return
+        if lifecycle.has_hour_window(run) and not lifecycle.can_attempt(run, now):
+            run.status, run.finished_at, run.next_attempt_at = "error", now, None
+            run.error = run.error or "Checkout deadline expired"
+            await lifecycle.record_state(db, run, "checkout_failed")
+            await db.commit()
+            return
         run.status = "running"
         run.attempts += 1
         attempt = run.attempts
@@ -477,14 +491,19 @@ async def execute_integration_run(run_id: int) -> None:
                 return
             run.error = _error_text(error)
             run.heartbeat_at = datetime.now(timezone.utc)
-            if is_retryable_error(error) and run.attempts < run.max_attempts:
+            if is_retryable_error(error) and lifecycle.can_attempt(run, run.heartbeat_at):
                 retry_delay = retry_delay_for_error(error, run.attempts)
                 run.status = "retrying"
-                run.next_attempt_at = datetime.now(timezone.utc) + timedelta(seconds=retry_delay)
+                run.next_attempt_at = run.heartbeat_at + timedelta(seconds=retry_delay)
+                if lifecycle.has_hour_window(run):
+                    run.next_attempt_at = min(run.next_attempt_at, lifecycle.deadline(run))
+                    retry_delay = math.ceil((run.next_attempt_at - run.heartbeat_at).total_seconds())
+                    await lifecycle.record_state(db, run, "processing")
             else:
                 run.status = "error"
                 run.finished_at = datetime.now(timezone.utc)
                 run.next_attempt_at = None
+                await lifecycle.record_state(db, run, "checkout_failed")
                 alert_path = (
                     f"/sales/orders/{run.target_id}" if run.target_type == "order"
                     else "/automation" if run.target_type == "automation_rule"
@@ -535,6 +554,8 @@ async def execute_integration_run(run_id: int) -> None:
         run.error = None
         run.heartbeat_at = datetime.now(timezone.utc)
         run.next_attempt_at = None
+        if lifecycle.is_checkout(run) and not counters.get("skipped"):
+            await lifecycle.record_state(db, run, "created")
         run.finished_at = datetime.now(timezone.utc)
         success_fingerprint = f"integration:{run.provider}:{run.operation}:{run.target_type or '-'}:{run.target_id or '-'}"
         await db.commit()

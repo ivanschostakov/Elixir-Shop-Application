@@ -1,10 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import String, and_, cast, func, literal, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.database.models import Order
+from src.database.models import IntegrationRun, Order
 from src.database.models.orders.history import (
     OrderHistoryBucket,
     OrderStatusCode,
@@ -121,7 +121,19 @@ async def get_orders_for_user(session: AsyncSession, user_id: int, *, history_bu
         stmt = stmt.where(build_history_bucket_clause(Order, history_bucket))
 
     if status_code is not None:
-        stmt = stmt.where(build_status_code_clause(Order, status_code))
+        # Filter the same projected state the list displays, including orders
+        # created before the processing label was persisted on new orders.
+        def job_status(prefix):
+            return select(IntegrationRun.status).where(IntegrationRun.idempotency_key ==
+                literal(prefix) + cast(Order.id, String)).correlate(Order).scalar_subquery()
+        job = func.coalesce(job_status("app:complete-checkout:"), job_status("order:auto:moysklad:"), "")
+        active = and_(build_history_bucket_clause(Order, "active"), Order.is_paid.is_(False),
+                      Order.is_shipped.is_(False), Order.is_canceled.is_(False))
+        processing = and_(active, job.in_(("queued", "running", "retrying")))
+        failed = and_(active, job.in_(("error", "canceled")))
+        underlying = and_(not_(or_(processing, failed)), build_status_code_clause(Order, status_code))
+        stmt = stmt.where(or_(processing, underlying) if status_code == "processing"
+                          else or_(failed, underlying) if status_code == "checkout_failed" else underlying)
 
     if created_from is not None:
         stmt = stmt.where(Order.created_at >= created_from)

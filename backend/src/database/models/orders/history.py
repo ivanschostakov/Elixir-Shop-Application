@@ -10,6 +10,8 @@ if TYPE_CHECKING:
 
 OrderHistoryBucket = Literal["active", "completed"]
 OrderStatusCode = Literal[
+    "processing",
+    "checkout_failed",
     "created",
     "invoice_sent",
     "paid",
@@ -24,6 +26,8 @@ OrderStatusCode = Literal[
 
 ORDER_HISTORY_BUCKET_VALUES: tuple[OrderHistoryBucket, ...] = ("active", "completed")
 ORDER_STATUS_CODE_VALUES: tuple[OrderStatusCode, ...] = (
+    "processing",
+    "checkout_failed",
     "created",
     "invoice_sent",
     "paid",
@@ -37,6 +41,8 @@ ORDER_STATUS_CODE_VALUES: tuple[OrderStatusCode, ...] = (
 )
 
 STATUS_LABELS_BY_CODE: dict[OrderStatusCode, tuple[str, ...]] = {
+    "processing": ("Оформляется",),
+    "checkout_failed": ("Требует проверки",),
     "created": (STATUS_WORDS[STATUS_IDS["main"]],),
     "invoice_sent": (STATUS_WORDS[STATUS_IDS["pending_payment"]],),
     "paid": (STATUS_WORDS[STATUS_IDS["check_paid"]],),
@@ -54,7 +60,7 @@ KNOWN_STATUS_LABELS = frozenset(label for labels in STATUS_LABELS_BY_CODE.values
 KNOWN_NON_CREATED_ACTIVE_LABELS = frozenset(
     label
     for code, labels in STATUS_LABELS_BY_CODE.items()
-    if code in {"invoice_sent", "paid", "waiting_response", "packaged", "sent"}
+    if code in {"processing", "checkout_failed", "invoice_sent", "paid", "waiting_response", "packaged", "sent"}
     for label in labels
 )
 
@@ -116,6 +122,9 @@ def build_status_code_clause(order_model: type["Order"], status_code: OrderStatu
 
 def get_order_status_code(order: "Order") -> OrderStatusCode:
     status = normalize_order_status(order.status)
+    if status in (*STATUS_LABELS_BY_CODE["processing"], *STATUS_LABELS_BY_CODE["checkout_failed"]):
+        if order.is_canceled: return "canceled"
+        if order.is_paid: return "paid" if order.is_active else "completed"
 
     for status_code in ORDER_STATUS_CODE_VALUES:
         if status in STATUS_LABELS_BY_CODE[status_code]:

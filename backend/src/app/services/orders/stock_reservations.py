@@ -1,5 +1,5 @@
 """Local holds cover the gap until the same reservation reaches MoySklad."""
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 import logging
 import httpx
@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from src.database.models import Variant, Order
 from src.integrations.moysklad.settlement_checkout import entity_id
 from .payment_attempt import PaymentDocuments, settlement_pending
+from .checkout_lifecycle import WINDOW
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ async def reserve_order_stock(db, order):
             if item.variant_id == variant.id: item.weight_grams = variant.weight_grams
     order.checkout_snapshot = dict(order.checkout_snapshot or {}, stock_reservation={
         "status": "held", "quantities": {str(k): v for k, v in quantities.items()},
-        "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + WINDOW).isoformat(),
     })
     await db.flush()
 

@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from src.database.schemas.orders.order import CheckoutIssue
 
 from src.database.limits import EXTERNAL_ID_MAX_LENGTH, ORDER_CODE_MAX_LENGTH, PAYMENT_METHOD_MAX_LENGTH, PAYMENT_STATUS_MAX_LENGTH, PROMO_CODE_MAX_LENGTH
 
@@ -27,6 +28,7 @@ class CreatePaymentPayload(BaseModel):
 
 
 class PaymentStatusRead(BaseModel):
+    checkout_issue: CheckoutIssue | None = None
     checkout_progress: Literal["processing", "needs_review"] | None = None
     status: str = "success"
     order_id: int = Field(ge=1)

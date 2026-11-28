@@ -22,6 +22,10 @@ async def send_user_password_reset_code_email(*, to_email: str, code: str) -> No
     )
 
 
+async def send_checkout_result_email(*, to_email: str, subject: str, body: str) -> None:
+    await _send_code_email(to_email=to_email, subject=subject, body=body)
+
+
 async def send_user_verification_code_email(*, to_email: str, code: str) -> None:
     await _send_code_email(
         to_email=to_email,

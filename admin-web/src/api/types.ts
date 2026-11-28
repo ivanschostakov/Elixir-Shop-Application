@@ -142,6 +142,8 @@ export type AnalyticsSnapshot = {
 }
 
 export type OrderStatusCode =
+  | "processing"
+  | "checkout_failed"
   | "created"
   | "invoice_sent"
   | "paid"

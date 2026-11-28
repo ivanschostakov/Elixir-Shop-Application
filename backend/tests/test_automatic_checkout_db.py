@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
+import httpx
 from fastapi import HTTPException
 from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
@@ -97,6 +98,10 @@ def test_order_commit_recovers_without_any_second_request(client, checkout, sour
     oid, headers = checkout.submit(source, method)
     run = _run(oid)
     assert run.status == "queued" and run.input_json["prepare_order"]
+    history_url = f"/api/v1/users/me/orders/{oid}"
+    first = client.get(history_url, headers=headers).json()
+    assert first["status_code"] == "processing" and first["status"] == "Оформляется"
+    assert datetime.fromisoformat(first["checkout_snapshot"]["stock_reservation"]["expires_at"]) == run.started_at + timedelta(hours=1)
     checkout.export.assert_not_awaited()
     checkout.invoice.assert_not_awaited()
     checkout.wake.assert_awaited_once_with(run.id)
@@ -111,6 +116,10 @@ def test_order_commit_recovers_without_any_second_request(client, checkout, sour
     client.portal.call(workers)
     assert _run(oid).status == "success", _run(oid).error
     assert _run(oid).attempts == 1
+    assert client.get(history_url, headers=headers).json()["status_code"] not in {"processing", "checkout_failed"}
+    with Session(sync_engine) as db:
+        notices = db.scalars(select(IntegrationRun).where(IntegrationRun.idempotency_key == f"app:checkout-notice:{run.id}:created")).all()
+        assert len(notices) == 1
     checkout.export.assert_awaited_once()
     if method == "sbp":
         assert _get_order(oid).payment_invoice_id == "test-invoice"
@@ -172,7 +181,7 @@ def test_delayed_worker_rechecks_intent(client, checkout, change):
     _update_order(oid, **patches[change])
     _due(rid)
     client.portal.call(jobs.execute_integration_run, rid)
-    assert _run(oid).status == ("error" if change == "ambiguous" else "success")
+    assert _run(oid).status == ("error" if change in {"ambiguous", "method", "invoice"} else "success")
     if change == "none":
         checkout.invoice.assert_awaited_once()
     else:
@@ -233,15 +242,18 @@ def test_ambiguous_sbp_with_known_invoice_can_recover_qr_without_resubmission(cl
     oid, headers = checkout.submit()
     checkout.sbp.side_effect = TimeoutError("SBP accepted but response lost")
     client.portal.call(jobs.execute_integration_run, _run(oid).id)
-    assert _run(oid).status == "error"
+    assert _run(oid).status == "retrying"
     assert _get_order(oid).payment_invoice_id == "test-invoice"
+    _due(_run(oid).id)
+    client.portal.call(jobs.execute_integration_run, _run(oid).id)
+    assert _run(oid).status == "success"
     legacy = client.post("/api/v1/payments/create", json={"order_id": oid}, headers=headers)
     assert legacy.is_success and legacy.json()["qr_url"] == "https://example.test/pay"
     checkout.invoice.assert_awaited_once()
     checkout.sbp.assert_awaited_once()
 
 
-def test_verified_manager_ack_does_not_wait_for_worker(client, checkout):
+def test_automatic_manager_ack_waits_for_handoff_legacy_keeps_its_contract(client, checkout):
     oid, headers = checkout.submit(method="later")
     run = _run(oid)
     with Session(sync_engine) as db:
@@ -257,11 +269,100 @@ def test_verified_manager_ack_does_not_wait_for_worker(client, checkout):
         db.commit()
     for automatic in (True, False):
         res = client.post("/api/v1/payments/create", json={"order_id": oid, "automatic_checkout": automatic}, headers=headers)
+        if automatic:
+            assert res.is_success and res.json()["checkout_progress"] == "processing"
+            continue
         assert res.is_success and res.json()["checkout_progress"] is None
         assert res.json()["ms_reservation_confirmed"] and res.json()["amount_rubles"] > 0
         assert not res.json()["awaiting_settlement"] and not res.json()["is_paid"]
     checkout.export.assert_not_awaited()
     checkout.invoice.assert_not_awaited()
+
+
+def test_one_hour_deadline_preserves_concrete_safe_reason_and_one_notice(client, checkout, monkeypatch):
+    oid, headers = checkout.submit(method="later")
+    rid = _run(oid).id
+    request = httpx.Request("GET", "https://api.moysklad.ru/api/remap/1.2/entity/country?token=private-example")
+    checkout.export.side_effect = httpx.HTTPStatusError(f"429 {request.url}", request=request,
+        response=httpx.Response(429, headers={"Retry-After": "7200"}))
+    with Session(sync_engine) as db:
+        run = db.get(IntegrationRun, rid)
+        run.attempts, run.max_attempts = 14, 14
+        run.started_at = datetime.now(timezone.utc) - timedelta(minutes=52)
+        db.commit()
+    client.portal.call(jobs.execute_integration_run, rid)
+    run = _run(oid)
+    assert run.attempts == 15 and run.status == "retrying"
+    assert run.next_attempt_at == run.started_at + timedelta(hours=1)
+    url = f"/api/v1/users/me/orders/{oid}"
+    data = client.get(url, headers=headers).json()
+    assert data["status_code"] == "processing"
+    issue = data["checkout_issue"]
+    assert issue["retrying"] and issue["code"] == "MS_429" and "страну" in issue["message"]
+    def filtered(code):
+        return {item["id"] for item in client.get("/api/v1/users/me/orders", headers=headers,
+                                                 params={"status_code": code}).json()}
+    assert oid in filtered("processing") and oid not in filtered("created")
+    assert "private-example" not in str(data) and "https://" not in issue["message"]
+    with Session(sync_engine) as db:
+        run = db.get(IntegrationRun, rid)
+        run.started_at -= timedelta(minutes=10)
+        run.next_attempt_at = run.started_at + timedelta(hours=1)
+        db.commit()
+    client.portal.call(jobs.execute_integration_run, rid)
+    client.portal.call(jobs.execute_integration_run, rid)
+    assert checkout.export.await_count == 1
+    data = client.get(url, headers=headers).json()
+    assert data["status_code"] == "checkout_failed" and not data["checkout_issue"]["retrying"]
+    assert data["checkout_issue"]["code"] == "MS_429"
+    assert oid in filtered("checkout_failed") and oid not in filtered("processing")
+    with Session(sync_engine) as db:
+        notice = db.scalars(select(IntegrationRun).where(
+            IntegrationRun.idempotency_key == f"app:checkout-notice:{rid}:checkout_failed")).one()
+        notice_id = notice.id
+    push = AsyncMock(return_value=True)
+    monkeypatch.setattr("src.app.services.push_notifications.send_push_to_user", push)
+    client.portal.call(jobs.execute_integration_run, notice_id)
+    client.portal.call(jobs.execute_integration_run, notice_id)
+    push.assert_awaited_once()
+    assert push.await_args.kwargs["data"]["order_id"] == oid
+
+
+def test_missing_qr_retries_existing_invoice_without_another_sbp_submission(client, checkout, monkeypatch):
+    oid, headers = checkout.submit()
+    rid = _run(oid).id
+    empty = {"Result": {"PaymentStep": "Created"}}
+    checkout.sbp.return_value = empty
+    get_state = AsyncMock(return_value=empty)
+    monkeypatch.setattr(payments.intellectmoney, "get_bank_card_payment_state", get_state)
+    client.portal.call(jobs.execute_integration_run, rid)
+    assert _run(oid).status == "retrying"
+    assert _get_order(oid).payment_invoice_id == "test-invoice"
+    get_state.return_value = {"Result":{"PaymentStep":"Created", "Form3DS":'{"SbpQrCodeUrl":"https://example.test/qr"}'}}
+    _due(rid)
+    client.portal.call(jobs.execute_integration_run, rid)
+    assert _run(oid).status == "success", _run(oid).error
+    checkout.invoice.assert_awaited_once()
+    checkout.sbp.assert_awaited_once()
+
+
+def test_no_push_uses_only_the_verified_buyer_email(client, checkout, monkeypatch):
+    oid, _ = checkout.submit(method="later")
+    from src.app.services.orders.checkout_lifecycle import notify_result
+    monkeypatch.setattr("src.app.services.push_notifications.send_push_to_user", AsyncMock(return_value=False))
+    mail = AsyncMock()
+    monkeypatch.setattr("src.app.services.email_verification.send_checkout_result_email", mail)
+    async def notify():
+        async with SessionLocal() as db:
+            return await notify_result(db, oid, "created")
+    result = client.portal.call(notify)
+    assert result["channel"] == "email"
+    mail.assert_awaited_once()
+    assert _get_order(oid).order_code in mail.await_args.kwargs["subject"]
+    guest, _ = checkout.submit(source="guest")
+    oid = guest
+    assert client.portal.call(notify)["reason"] == "no_verified_channel"
+    mail.assert_awaited_once()
 
 
 def test_legacy_post_stages_missing_export_but_get_does_not(client, checkout):

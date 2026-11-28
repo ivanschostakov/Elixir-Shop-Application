@@ -2,6 +2,8 @@ import dayjs from "dayjs"
 import type { Locale, OrderStatusCode } from "../api/types"
 
 export const statusColors: Record<OrderStatusCode, string> = {
+  processing: "processing",
+  checkout_failed: "error",
   created: "default",
   invoice_sent: "processing",
   paid: "green",
@@ -16,6 +18,8 @@ export const statusColors: Record<OrderStatusCode, string> = {
 
 const statusLabels: Record<Locale, Record<OrderStatusCode, string>> = {
   ru: {
+    processing: "Оформляется",
+    checkout_failed: "Требует проверки",
     created: "Создан",
     invoice_sent: "Счёт отправлен",
     paid: "Оплачен",
@@ -28,6 +32,8 @@ const statusLabels: Record<Locale, Record<OrderStatusCode, string>> = {
     refund_declined: "Возврат / отказ",
   },
   en: {
+    processing: "Processing",
+    checkout_failed: "Needs review",
     created: "Created",
     invoice_sent: "Invoice sent",
     paid: "Paid",
