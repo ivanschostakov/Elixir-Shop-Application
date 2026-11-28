@@ -7,6 +7,7 @@ from uuid import UUID
 import httpx
 from config import LOYALTY_COMPANY_PROMO_CODE
 from fastapi import HTTPException
+from src.app.services.benefits.settlement_schemas import ms_referrer_code
 
 from src.integrations.moysklad.client import get_moysklad_client
 from .calculations import MIN_PERSONAL_DISCOUNT_SPEND, PARTNER_UNLOCK_SPEND
@@ -108,6 +109,6 @@ async def verify_referral_export(benefits, *, buyer_id, client):
     card = await client.get_counterparty(buyer_id)
     if not card or card.get("archived") or str(card.get("id")) != str(buyer_id):
         raise ValueError("MoySklad referral buyer unavailable")
-    incoming = next((a.get("value") for a in card.get("attributes", []) if a.get("id") == REFERRER_ATTRIBUTE_ID), None)
-    if incoming and incoming.strip().casefold() != code.casefold():
+    incoming = ms_referrer_code(next((a.get("value") for a in card.get("attributes", []) if a.get("id") == REFERRER_ATTRIBUTE_ID), None))
+    if incoming and incoming.casefold() != code.casefold():
         raise ValueError("MoySklad buyer has another referrer; refusing export")

@@ -54,6 +54,7 @@ def test_configured_company_code_is_not_a_private_payee(monkeypatch):
 @pytest.mark.parametrize("program,attached,rate,entered,mode,expected,rebate", [
     (2,None,0,"ХРЮН_СЛИМ","order_referral",30,0),
     (2,"хрюн_слим",8,None,None,80,0),
+    (2,None,8,None,None,80,0),
     (1,None,0,"ХРЮН_СЛИМ","order_referral",30,0),
     (1,None,0,"OLD","promo",0,5),
 ])
@@ -79,26 +80,27 @@ def test_ms_quote_and_export(monkeypatch, program, attached, rate, entered, mode
     assert q["stacked_discount_amount"] == expected
     assert q["cash_total"] == 1800 - expected
     assert user.promo_code == attached
-    if expected:
+    if expected and (attached or entered):
         snapshot = _json_safe_benefits(q)
         assert snapshot["ms_order_promo"] == snapshot["entered_code"] == "хрюн_слим"
         assert snapshot["ms_referrer_id"] == str(rid)
     else:
         lookup.assert_not_awaited()
+        assert q["ms_order_promo"] is None and q["ms_referrer_id"] is None
 
 
-@pytest.mark.parametrize("change", ["none", "owner", "buyer", "incoming"])
+@pytest.mark.parametrize("change", ["none", "placeholder", "owner", "buyer", "incoming"])
 def test_worker_rechecks_frozen_attribution(change):
     from src.app.services.benefits.settlement import REFERRER_ATTRIBUTE_ID
     buyer = uuid4()
     partner = row("Friend")
     ms = client([partner])
     ms.get_counterparty = AsyncMock(return_value={"id":str(buyer), "attributes":[
-        {"id":REFERRER_ATTRIBUTE_ID, "value":"other" if change == "incoming" else "friend"}]})
+        {"id":REFERRER_ATTRIBUTE_ID, "value":{"incoming":"other", "placeholder":"Не указан"}.get(change, "friend")}]})
     snapshot = {"ms_order_promo":"Friend", "ms_referrer_id":str(uuid4()) if change == "owner" else partner["id"],
                 "ms_promo_buyer_id": str(uuid4() if change=="buyer" else buyer)}
     op = ms_codes.verify_referral_export(snapshot, buyer_id=buyer, client=ms)
-    if change == "none":
+    if change in {"none", "placeholder"}:
         asyncio.run(op)
     else:
         with pytest.raises(ValueError):
@@ -112,7 +114,7 @@ def test_checkout_rechecks_buyer_before_order(monkeypatch, change, status):
     buyer=uuid4()
     card=row("",id=str(buyer))
     card["attributes"] += [{"id":DISCOUNT_ATTRIBUTE_ID,"value":{"name":"6" if change=="rate" else "0"}},
-                            {"id":REFERRER_ATTRIBUTE_ID, "value":"other" if change=="incoming" else ""}]
+                            {"id":REFERRER_ATTRIBUTE_ID, "value":"other" if change=="incoming" else "Не указан"}]
     monkeypatch.setattr(benefits, "get_moysklad_client", lambda: SimpleNamespace(get_counterparty=AsyncMock(return_value=card)))
     session=SimpleNamespace(execute=AsyncMock(), scalar=AsyncMock(return_value=42 if change=="pending" else None))
     resolved={"ms_order_promo":"Friend","ms_promo_buyer_state":{"program":2,"incoming":None,"discount":"0"},

@@ -11,6 +11,7 @@ from src.app.services.benefits.settlement import (
     DISCOUNT_ATTRIBUTE_ID, get_account_settlement,
 )
 from src.app.services.benefits.settlement_cache import invalidate_account_settlement
+from src.app.services.benefits.settlement_schemas import ms_referrer_code
 from src.app.services.orders.settlement_payment import settlement_lock
 from src.database.models import User
 from src.integrations.moysklad.client import get_moysklad_client
@@ -43,7 +44,7 @@ def _card(card, cid):
     if not rate.is_finite() or not 0 <= rate <= 100:
         raise ValueError("Unverified accounting discount")
     return (program, minor / 100, (attrs.get(OWN_PROMO_ATTRIBUTE_ID) or "").strip(),
-            (attrs.get(REFERRER_ATTRIBUTE_ID) or "").strip(), rate)
+            ms_referrer_code(attrs.get(REFERRER_ATTRIBUTE_ID)) or "", rate)
 
 
 async def _update_locked(client, cid, *, accept):

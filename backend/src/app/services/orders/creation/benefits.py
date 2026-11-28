@@ -7,6 +7,7 @@ from src.app.services.referrals.ms_codes import check_company_threshold
 from sqlalchemy.ext.asyncio import AsyncSession
 from config import ufa_now
 from src.app.services.benefits.service import resolve_benefits_for_user
+from src.app.services.benefits.settlement_schemas import ms_referrer_code
 from src.database.models import Order, OrderBenefitApplication, User
 from src.integrations.moysklad.client import get_moysklad_client
 
@@ -28,11 +29,11 @@ async def _verify_order_referral(session, user, resolved):
         if isinstance(rate, dict):
             rate = rate.get("name")
         rate = Decimal(str(rate or 0).strip().removesuffix("%").replace(",", "."))
-        incoming = str(attrs.get(REFERRER_ATTRIBUTE_ID) or "").strip().casefold()
+        incoming = (ms_referrer_code(attrs.get(REFERRER_ATTRIBUTE_ID)) or "").casefold()
     except (httpx.HTTPError, RuntimeError, ValueError, ArithmeticError, KeyError, AttributeError) as exc:
         raise HTTPException(503, "Не удалось перепроверить условия МойСклада. Заказ не создан.") from exc
     expected = resolved["ms_promo_buyer_state"]
-    if (program != expected["program"] or incoming != str(expected["incoming"] or "").strip().casefold()
+    if (program != expected["program"] or incoming != (ms_referrer_code(expected["incoming"]) or "").casefold()
             or rate != Decimal(str(expected["discount"] or 0))):
         raise HTTPException(409, "Условия покупателя в МойСкладе изменились. Обновите расчёт.")
     if not incoming:
