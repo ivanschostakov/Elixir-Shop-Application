@@ -8,7 +8,14 @@ const paymentsEndpoint = ENDPOINTS.PAYMENTS
 export class PaymentPreparationPendingError extends Error {}
 
 export function createPayment(payload: CreatePaymentPayload, timeoutMs = REQUEST_TIMEOUT_MS): Promise<PaymentStatusRead> {
-    return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, payload, { appIntegrityAction: "payments:create", timeoutMs })
+    const body = payload.payment_method === "later" ? { ...payload, accept_pending_amount: true } : payload
+    return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, body, { appIntegrityAction: "payments:create", timeoutMs })
+}
+
+function pendingDetail(error: unknown) {
+    if (!(error instanceof ApiError) || error.status !== 409) return null
+    const detail = (error.body as { detail?: { code?: string; retry_after_seconds?: number } } | null)?.detail
+    return detail?.code === "settlement_pending" ? detail : null
 }
 
 export async function createPaymentWhenReady(
@@ -30,9 +37,10 @@ export async function createPaymentWhenReady(
     }
     try {
         if (checkFirst) {
-            const state = await getPaymentStatus(payload.order_id, true, remaining())
+            const state = await getPaymentStatus(payload.order_id, true, remaining(), payload.payment_method === "later")
             if (!isActive()) return null
             if (state.is_paid || state.invoice_id || ["paid", "refunded", "canceled", "error", "partial", "hold"].includes(state.payment_status ?? "")) return state
+            if (payload.payment_method === "later" && state.payment_method === "later" && state.ms_reservation_confirmed && state.payment_status === "pending" && state.invoice_ready !== false) return state
             if (state.invoice_ready === false) {
                 if (retryExport && state.export_retry_available) {
                     await createPayment({ ...payload, retry_export: true }, remaining())
@@ -46,14 +54,29 @@ export async function createPaymentWhenReady(
         return isActive() ? payment : null
     } catch (error) {
         if (!isActive()) return null
-        const detail = error instanceof ApiError && error.status === 409
-            ? (error.body as { detail?: { code?: string } } | null)?.detail : null
-        if (detail?.code !== "settlement_pending") throw error
+        let detail = pendingDetail(error)
+        if (!detail) throw error
         onPending()
+        while (payload.payment_method === "later" && isActive()) {
+            const retryMs = Number(detail?.retry_after_seconds) * 1000
+            await new Promise(resolve => setTimeout(resolve, Math.min(remaining(), Math.max(4000, Number.isFinite(retryMs) ? retryMs : 4000))))
+            if (!isActive()) return null
+            try {
+                const state = await getPaymentStatus(payload.order_id, true, remaining(), true)
+                if (!isActive()) return null
+                if ((state.ms_reservation_confirmed && state.payment_method === "later" && state.invoice_ready !== false) || state.is_paid ||
+                    ["paid", "refunded", "canceled", "error", "partial", "hold"].includes(state.payment_status ?? "")) return state
+                if (state.ms_reservation_confirmed === undefined) break
+            } catch (pollError) {
+                if (!isActive()) return null
+                detail = pendingDetail(pollError)
+                if (!detail) throw pollError
+            }
+        }
         throw new PaymentPreparationPendingError(timeoutMessage)
     }
 }
 
-export function getPaymentStatus(orderId: number, checkInvoice = false, timeoutMs = REQUEST_TIMEOUT_MS): Promise<PaymentStatusRead> {
-    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`, { order_id: orderId, ...(checkInvoice ? { check_invoice: true } : {}) }, { appIntegrityAction: "payments:status", timeoutMs })
+export function getPaymentStatus(orderId: number, checkInvoice = false, timeoutMs = REQUEST_TIMEOUT_MS, acceptPendingAmount = false): Promise<PaymentStatusRead> {
+    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`, { order_id: orderId, ...(checkInvoice ? { check_invoice: true } : {}), ...(acceptPendingAmount ? { accept_pending_amount: true } : {}) }, { appIntegrityAction: "payments:status", timeoutMs })
 }

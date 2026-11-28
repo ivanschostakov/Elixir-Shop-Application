@@ -1,4 +1,5 @@
 export type CreatePaymentPayload = {
+    accept_pending_amount?: boolean
     retry_export?: boolean
     order_id: number
     payment_method?: "later" | "sbp"
@@ -20,6 +21,7 @@ export type PaymentStatusRead = {
     is_paid: boolean
     can_retry: boolean
     awaiting_settlement?: boolean
+    ms_reservation_confirmed?: boolean
     invoice_ready?: boolean | null
     export_retry_available?: boolean
 }

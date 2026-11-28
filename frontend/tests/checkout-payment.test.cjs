@@ -155,7 +155,7 @@ test("checking a still missing invoice and returning from history only read stat
         let gets = 0
         const api = loadPayments(() => assert.fail("must not create payment"), async (path, params) => {
             assert.equal(path, "/payments/status")
-            assert.deepEqual(params, { order_id: 42, check_invoice: true })
+            assert.deepEqual(params, { order_id: 42, check_invoice: true, ...(method === "later" ? { accept_pending_amount: true } : {}) })
             gets++
             return { payment_status: method === "sbp" ? "draft" : "pending", invoice_ready: false }
         })
@@ -189,6 +189,31 @@ test("a late readiness response after leaving checkout cannot start payment", as
 })
 
 const { mergePaymentState, resolvePaymentPhase } = loadTs("screens/payment/payment-state.ts")
+
+test("one manager checkout waits for the reserve by reading status, not by posting again", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
+    let posts = 0, reads = 0
+    const state = { payment_method: "later", payment_status: "pending", ms_reservation_confirmed: true,
+        awaiting_settlement: true, amount_rubles: null, is_paid: false }
+    const api = loadPayments(async (_, body) => {
+        posts++
+        assert.equal(body.accept_pending_amount, true)
+        throw pending()
+    }, async (_, params) => {
+        reads++
+        assert.equal(params.accept_pending_amount, true)
+        return state
+    })
+    const attempt = api.createPaymentWhenReady({ ...payload, payment_method: "later" }, options)
+    await Promise.resolve()
+    await Promise.resolve()
+    t.mock.timers.tick(4000)
+    assert.equal(await attempt, state)
+    assert.equal(resolvePaymentPhase(state, "later"), "pending")
+    assert.equal(resolvePaymentPhase({ ...state, ms_reservation_confirmed: false }, "later"), "waiting")
+    assert.equal(resolvePaymentPhase({ ...state, payment_status: "canceled" }, "later"), "failure")
+    assert.deepEqual([posts, reads], [1, 1])
+})
 
 test("only an explicit retry resumes the same exhausted export", async () => {
     const posts = []
