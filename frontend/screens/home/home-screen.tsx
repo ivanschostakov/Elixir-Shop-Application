@@ -84,6 +84,7 @@ function getHomeGradientColors(accentName: ThemeAccentName, isDarkMode: boolean)
     return gradientCombos[accentName]
 }
 const orderStatusColors = {
+    preparing: { label: "Оформляем заказ", bg: "#F3F4F6", text: "#374151" },
     created: {
         label: "Заказ создан",
         bg: "#F3F4F6",
@@ -134,7 +135,7 @@ const orderStatusColors = {
         bg: "#FFE4E6",
         text: "#9F1239",
     },
-} satisfies Record<OrderStatusCode, { label: string; bg: string; text: string }>
+} satisfies Record<OrderStatusCode | "preparing", { label: string; bg: string; text: string }>
 
 function appendImageVersion(uri: string, version: string | null | undefined): string {
     const trimmedVersion = version?.trim()
@@ -880,7 +881,7 @@ export default function HomeScreen() {
                                                                         { color: statusDisplay.text },
                                                                     ]}
                                                                 >
-                                                                    {statusDisplay.label}
+                                                                    {order.status_code === "preparing" ? t("payment.preparingOrder") : statusDisplay.label}
                                                                 </Text>
                                                             </View>
                                                             <Text

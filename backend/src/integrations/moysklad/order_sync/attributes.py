@@ -72,9 +72,18 @@ async def _moysklad_custom_attr_refs(moysklad_client: MoySkladClient, order: Ord
     return refs
 
 
+def customerorder_promo_code(snapshot: dict[str, Any]) -> str | None:
+    benefits = extract_dict(snapshot.get("benefits"))
+    if "ms_order_promo" in benefits:
+        return optional_str(benefits["ms_order_promo"])
+    # Older order snapshots did not distinguish an entered code from the export code.
+    data = extract_dict(snapshot.get("moysklad"))
+    return (optional_str(extract_dict(data.get("attributes")).get("promo_code"))
+            or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code")))
+
+
 def _moysklad_attr_values(order: Order) -> dict[str, Any]:
     snapshot = extract_dict(order.checkout_snapshot)
-    benefits = extract_dict(snapshot.get("benefits"))
     data = _moysklad_order_data(order)
     raw_values = extract_dict(data.get("attributes"))
     # The MoySklad↔amoCRM widget treats false as a new unlinked order and creates
@@ -93,9 +102,7 @@ def _moysklad_attr_values(order: Order) -> dict[str, Any]:
         settlement = (order.checkout_snapshot or {}).get("settlement_payment") or {}
         values["balance_amount_kopecks"] = int(Decimal(str(settlement.get("requested_balance_rubles", "0"))) * 100) if order_bonus_consent(order) else 0
 
-    promo_code = optional_str(raw_values.get("promo_code")) or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code"))
-    if benefits.get("ms_order_promo"):
-        promo_code = benefits["ms_order_promo"]
+    promo_code = customerorder_promo_code(snapshot)
     if promo_code: values["promo_code"] = promo_code
     deal_link = _amocrm_lead_link(order) or optional_str(raw_values.get("deal_link")) or optional_str(data.get("deal_link"))
     if deal_link: values["deal_link"] = deal_link

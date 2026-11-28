@@ -24,6 +24,7 @@ from src.database.schemas.delivery.recipient import DeliveryRecipientRead
 
 OrderHistoryBucket = Literal["active", "completed"]
 OrderStatusCode = Literal[
+    "preparing",
     "created",
     "invoice_sent",
     "paid",

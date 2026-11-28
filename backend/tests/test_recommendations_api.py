@@ -547,7 +547,7 @@ def test_recommendation_signals_record_cart_adds_and_purchases(
         headers=registered_user["headers"],
         json={"draft_id": draft["id"], "payment_method": "later"},
     )
-    assert order_response.status_code == 200, order_response.text
+    assert order_response.status_code == 202, order_response.text
 
     signal_after_purchase = _get_signal(registered_user["user_id"], catalog["product_id"])
     assert signal_after_purchase is not None
@@ -593,7 +593,7 @@ def test_home_recommendations_rank_purchase_above_cart_above_view(
         headers=registered_user["headers"],
         json={"draft_id": purchase_draft["id"], "payment_method": "later"},
     )
-    assert order_response.status_code == 200, order_response.text
+    assert order_response.status_code == 202, order_response.text
 
     response = client.get(
         "/api/v1/users/me/recommendations",
@@ -936,7 +936,7 @@ def test_home_recommendations_exclude_recently_purchased_products(
         headers=registered_user["headers"],
         json={"draft_id": draft["id"], "payment_method": "later"},
     )
-    assert order_response.status_code == 200, order_response.text
+    assert order_response.status_code == 202, order_response.text
 
     clear_response = client.delete(
         "/api/v1/users/me/basket/items",

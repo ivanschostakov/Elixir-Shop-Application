@@ -1,5 +1,6 @@
 import logging
 from .payment_rejection import PaymentRejected
+from .export_retry import check_failed_export
 import socket
 import uuid
 from decimal import Decimal, InvalidOperation
@@ -142,10 +143,13 @@ def _qr_debug(value: str | None) -> dict[str, Any]:
 
 
 async def _resolve_payment_qr_image(request: Request, order: Order, *, qr_image: str | None, qr_url: str | None) -> str | None:
-    try: saved_path = await save_order_payment_qr(order.user_id, order.id, qr_image=qr_image, qr_url=qr_url)
+    invoice_id = str(order.payment_invoice_id or "")
+    if not invoice_id:
+        return None
+    try: saved_path = await save_order_payment_qr(order.user_id, order.id, invoice_id, qr_image=qr_image, qr_url=qr_url)
     except Exception:
         log.exception("Failed to save SBP QR for order %s", order.order_number)
-        saved_path = find_order_payment_qr_path(order.user_id, order.id)
+        saved_path = find_order_payment_qr_path(order.user_id, order.id, invoice_id)
 
     return build_order_payment_qr_url(request, saved_path)
 
@@ -300,7 +304,7 @@ async def _checked_sbp_payment_payload(
     order = await _ensure_persisted_paid_state(session, order)
     saved_qr_image = await _resolve_payment_qr_image(request, order, qr_image=qr_image, qr_url=qr_url)
     if payment_step in PENDING_PAYMENT_STEPS and (saved_qr_image or qr_image or qr_url):
-        order = await _move_lead_to_pending_payment(session, order)
+        order = await _move_lead_to_pending_payment(session, order, qr_invoice_id=checked_invoice_id)
         await sync_moysklad_customerorder_state(order, state_name=MOY_SKLAD_STATE_INVOICE_SENT)
 
     provider_confirmed_dead = provider_checked and (
@@ -369,8 +373,12 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         raise PaymentRejected("method_changed", "Заказ оформлен с другим способом оплаты. Для его изменения обратитесь в поддержку.")
 
     if requested_payment_method == "later":
-        if _uses_standard_document_export(order) and order_settlement(order):
-            await prepare_settlement_payment(session, order=order)
+        if _uses_standard_document_export(order):
+            if order_settlement(order):
+                await prepare_settlement_payment(session, order=order)
+            else:
+                invoice_id = await verify_standard_sbp_invoice(order, discover_linked=True)
+                order.moysklad_invoiceout_id = invoice_id
         order = await update_order(
             session,
             order,
@@ -467,7 +475,7 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         else:
             order = await update_order( session, order, OrderUpdate(payment_status=_payment_status_from_step(payment_step)), commit=True)
             if saved_qr_image or qr_image or qr_url:
-                order = await _move_lead_to_pending_payment(session, order)
+                order = await _move_lead_to_pending_payment(session, order, qr_invoice_id=invoice_id)
                 await sync_moysklad_customerorder_state(order, state_name=MOY_SKLAD_STATE_INVOICE_SENT)
 
         return _payment_status_payload(order, payment_step=payment_step, qr_url=qr_url, qr_image=saved_qr_image or qr_image, expires_at=expires_at)
@@ -488,6 +496,10 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
     if (check_invoice and not order.is_paid and not order.payment_invoice_id
             and order.payment_status in {"draft", "pending"}):
         settlement = order_settlement(order)
+        if _uses_standard_document_export(order) and not order.moysklad_customerorder_id:
+            retryable = await check_failed_export(session, order)
+            return {**_payment_status_payload(order), "invoice_ready": False, "awaiting_settlement": True,
+                    "export_retry_available": retryable}
         if settlement and (settlement.get("status") != "confirmed" or order.payment_method == "sbp"):
             ready = await robot_invoice_ready(order, settlement)
             return {**_payment_status_payload(order), "invoice_ready": ready, "awaiting_settlement": not ready}
@@ -496,6 +508,10 @@ async def get_payment_status_for_order(session: AsyncSession, *, request: Reques
             if ready:
                 await verify_standard_sbp_invoice(order)
             return {**_payment_status_payload(order), "invoice_ready": ready, "awaiting_settlement": not ready}
+        if order.payment_method == "later" and _uses_standard_document_export(order):
+            if not settlement:
+                await verify_standard_sbp_invoice(order, discover_linked=True)
+            return {**_payment_status_payload(order), "invoice_ready": True}
     if (
         (order.payment_method or "").lower() == "sbp"
         and order.payment_invoice_id

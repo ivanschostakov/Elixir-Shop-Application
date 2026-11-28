@@ -167,6 +167,19 @@ test("a late readiness response after leaving checkout cannot start payment", as
 
 const { mergePaymentState, resolvePaymentPhase } = loadTs("screens/payment/payment-state.ts")
 
+test("only an explicit retry resumes the same exhausted export", async () => {
+    const posts = []
+    const api = loadPayments(async (_, body) => { posts.push(body); throw pending() },
+        async () => ({ payment_status: "draft", invoice_ready: false, export_retry_available: true }))
+    for (const retryExport of [false, true]) {
+        await assert.rejects(api.createPaymentWhenReady(payload, { ...options, checkFirst: true, retryExport }),
+            api.PaymentPreparationPendingError)
+    }
+    assert.deepEqual(posts, [{ ...payload, retry_export: true }])
+    assert.equal(resolvePaymentPhase({ payment_status: "draft", payment_method: "later" }, "later"), "waiting")
+    assert.equal(resolvePaymentPhase({ payment_status: "pending", invoice_ready: false }, "later"), "waiting")
+})
+
 test("a pending or late QR keeps SBP open while offline payment still closes checkout", () => {
     const pendingSbp = { order_id: 42, invoice_id: "first", payment_method: "sbp", payment_status: "pending",
         is_paid: false, qr_url: null, qr_image: null, expires_at: null }

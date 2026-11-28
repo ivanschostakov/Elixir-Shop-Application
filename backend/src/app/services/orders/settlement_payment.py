@@ -319,19 +319,28 @@ async def verify_no_unapproved_balance(order, *, client=None):
         raise PaymentRejected("unauthorized_invoice_change", "В МойСклад сумма счёта изменилась без согласия на списание бонусов. Оплата не создана; обратитесь в поддержку.")
 
 
-async def verify_standard_sbp_invoice(order, *, client=None):
+async def verify_standard_sbp_invoice(order, *, client=None, discover_linked=False):
     from config import MOY_SKLAD_ORDER_SYNC_ENABLED
     if (not MOY_SKLAD_ORDER_SYNC_ENABLED or
             (order.checkout_snapshot or {}).get("order_export_version") != 1):
         return
     order_id = order.moysklad_customerorder_id
     invoice_id = order.moysklad_invoiceout_id
-    if not order_id or not invoice_id:
+    if not order_id or (not invoice_id and not discover_linked):
         raise settlement_pending()
     client = client or get_moysklad_client()
     try:
         remote = await client.get_customer_order(order_id)
+        if discover_linked and not invoice_id:
+            # A manager's invoice is created by the external workflow. Never create a second one.
+            linked = (remote or {}).get("invoicesOut") or []
+            if not linked:
+                raise settlement_pending()
+            if len(linked) != 1 or not (invoice_id := entity_id(linked[0])):
+                raise PaymentRejected("invoice_mismatch", "Не удалось однозначно определить счёт заказа в МойСклад.")
         invoice = await client.get_invoiceout(invoice_id)
+    except HTTPException:
+        raise
     except Exception as exc:
         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
             raise settlement_pending(rate_limit=exc.response) from exc
@@ -363,3 +372,4 @@ async def verify_standard_sbp_invoice(order, *, client=None):
         raise HTTPException(503, "Не удалось проверить валюту счёта в МойСклад. Оплата не создана.") from exc
     except (AttributeError, ValueError) as exc:
         raise PaymentRejected("invoice_mismatch", "Сумма или связь счёта в МойСклад не совпадает с заказом. Оплата не создана; обратитесь в поддержку.") from exc
+    return invoice_id

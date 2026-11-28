@@ -15,6 +15,7 @@ export function confirmedPaidOrderId(userId: number | undefined, order: OrderRea
 export function resolvePaymentPhase(payment: PaymentStatusRead, requestedMethod: PaymentMethod) {
     if (payment.payment_status && FINAL_STOP_STATUSES.has(payment.payment_status)) return "failure"
     if (payment.is_paid || payment.payment_status === "paid") return "success"
+    if (!payment.invoice_id && (payment.payment_status === "draft" || payment.awaiting_settlement || payment.invoice_ready === false)) return "waiting"
     const method = payment.payment_method === "later" || payment.payment_method === "sbp"
         ? payment.payment_method
         : requestedMethod

@@ -2,9 +2,10 @@ from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.models import Order, OrderItem, Product, Variant
-from src.database.models.orders.history import get_order_history_bucket, get_order_status_code
+from src.database.models.orders.history import get_order_history_bucket
 from src.database.schemas import OrderItemRead, OrderRead
 from .serialization_utils import build_order_item_image_url, get_products_by_id, get_variants_by_id
+from .checkout_readiness import customer_order_status
 
 
 def _serialize_order_item(request: Request, item: OrderItem, *, products_by_id: dict[int, Product], variants_by_id: dict[int, Variant]) -> OrderItemRead:
@@ -33,6 +34,7 @@ def _serialize_order_item(request: Request, item: OrderItem, *, products_by_id: 
 
 def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int, Product], variants_by_id: dict[int, Variant]) -> OrderRead:
     items = [_serialize_order_item(request, item, products_by_id=products_by_id, variants_by_id=variants_by_id) for item in order.items]
+    status_code = customer_order_status(order)
     return OrderRead(
         id=order.id,
         order_code=order.order_code,
@@ -41,7 +43,7 @@ def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int
         user_id=order.user_id,
         delivery_address_id=order.delivery_address_id,
         recipient_id=order.recipient_id,
-        status=order.status,
+        status="Оформляем заказ" if status_code == "preparing" else order.status,
         items_count=order.items_count,
         total_quantity=order.total_quantity,
         basket_subtotal=order.basket_subtotal,
@@ -69,7 +71,7 @@ def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int
         is_paid=bool(order.is_paid and order.payment_status != "refunded"),
         is_canceled=order.is_canceled,
         is_shipped=order.is_shipped,
-        status_code=get_order_status_code(order),
+        status_code=status_code,
         history_bucket=get_order_history_bucket(order),
         delivery_address=order.delivery_address,
         recipient=order.recipient,

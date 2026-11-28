@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import config
-from src.database.models import Order, OrderDraft, User
+from src.database.models import IntegrationRun, Order, OrderDraft, User
 from src.app.services.benefits import service as benefits, moysklad_bonus
 from src.app.services.orders import creation, settlement_payment, crm
 from src.integrations.moysklad.settlement_checkout import display_spent_rubles
@@ -24,7 +24,7 @@ from test_orders_api import (
 
 @pytest.mark.parametrize("scenario", ["exact", "rounded", "full", "full_exact_balance", "partial_delivery", "wrong_invoice",
     "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order", "zero_balance", "opt_out", "partial_request",
-    "legacy_cash_order", "invalid_open_order", "manager_wait"])
+    "legacy_cash_order", "invalid_open_order", "manager_wait", "export_rate_limit"])
 def test_balance_checkout_api_uses_only_mocked_external_services(
     client, registered_user, variant_factory, stub_amocrm, monkeypatch, scenario,
 ):
@@ -80,6 +80,13 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
 
     async def sync_mock(db, *, order, user):
         # Persistence is real; MoySklad documents and gateway calls are fixtures only.
+        if scenario == "export_rate_limit":
+            db.add(IntegrationRun(provider="moysklad", operation="moysklad_order_sync", status="error",
+                target_type="order", target_id=str(order.id), attempts=3, max_attempts=3,
+                error="Client error '429 Too Many Requests' for /entity/service",
+                idempotency_key=f"order:auto:moysklad:{order.id}"))
+            await db.commit()
+            return
         snapshot = deepcopy(order.checkout_snapshot)
         snapshot["settlement_payment"]["organization_id"] = str(ORG)
         snapshot["stock_reservation"]["status"] = "exported"
@@ -126,9 +133,28 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     response = client.post("/api/v1/users/me/orders", headers=headers, json={
         "draft_id": draft["id"], "payment_method": "later" if scenario == "manager_wait" else "sbp", "use_bonus_rubles": scenario != "opt_out",
         **({"bonus_rubles_to_use": "1.00"} if scenario == "partial_request" else {})})
-    assert response.status_code == 200, response.text
+    assert response.status_code == 202, response.text
     assert Decimal(response.json()["grand_total"]) == max(Decimal("0"), gross - balance)
     order_id = response.json()["id"]
+    assert response.json()["status_code"] == "preparing"
+    if scenario == "export_rate_limit":
+        params = {"order_id": order_id, "check_invoice": True}
+        def check():
+            result = client.get("/api/v1/payments/status", headers=headers, params=params)
+            assert result.status_code == 200, result.text
+            return result.json()
+        for _ in range(2):
+            probe = check()
+            assert probe["export_retry_available"] and not probe["invoice_ready"]
+        for _ in range(2):
+            retry = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id, "retry_export": True})
+            assert retry.status_code == 409 and retry.json()["detail"]["code"] == "settlement_pending"
+        assert not check()["export_retry_available"]
+        with Session(sync_engine) as db:
+            run = db.query(IntegrationRun).filter_by(idempotency_key=f"order:auto:moysklad:{order_id}").one()
+            assert (run.status, run.attempts, run.max_attempts) == ("retrying", 3, 4)
+        gateway.assert_not_awaited()
+        return
     assert response.json()["checkout_snapshot"]["settlement_payment"]["gross_rubles"] == str(gross.quantize(Decimal("0.01")))
     if scenario == "wrong_invoice": invoice["customerOrder"] = ref(CID)
     if scenario == "balance_changed":
@@ -171,6 +197,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
             assert response.status_code == 200, response.text
             assert response.json()["payment_status"] == "pending"
             assert _get_order(order_id).moysklad_invoiceout_id == IID
+            assert client.get(f"/api/v1/users/me/orders/{order_id}", headers=headers).json()["status_code"] != "preparing"
             gateway.assert_not_awaited()
             return
     if scenario == "invalid_open_order":
@@ -184,6 +211,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         return
     assert response.status_code == 200, response.text
     fields, document_links = [call.args[1] for call in crm_fields.await_args_list[:2]]
+    assert client.get(f"/api/v1/users/me/orders/{order_id}", headers=headers).json()["status_code"] != "preparing"
     assert fields[crm.CF["cash_due"]] == float(cash)
     assert fields[crm.CF["balance_spent"]] == display_spent_rubles(applied)
     assert document_links[crm.CF["ms_invoice_id"]] == str(IID)

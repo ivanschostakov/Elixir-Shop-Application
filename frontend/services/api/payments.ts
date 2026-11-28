@@ -12,11 +12,12 @@ export function createPayment(payload: CreatePaymentPayload): Promise<PaymentSta
 
 export async function createPaymentWhenReady(
     payload: CreatePaymentPayload,
-    { isActive, onPending, timeoutMessage, checkFirst = false }: {
+    { isActive, onPending, timeoutMessage, checkFirst = false, retryExport = false }: {
         isActive: () => boolean
         onPending: () => void
         timeoutMessage: string
         checkFirst?: boolean
+        retryExport?: boolean
     },
 ): Promise<PaymentStatusRead | null> {
     if (!isActive()) return null
@@ -26,10 +27,13 @@ export async function createPaymentWhenReady(
             if (!isActive()) return null
             if (state.is_paid || state.invoice_id || ["paid", "refunded", "canceled", "error", "partial", "hold"].includes(state.payment_status ?? "")) return state
             if (state.invoice_ready === false) {
+                if (retryExport && state.export_retry_available) {
+                    await createPayment({ ...payload, retry_export: true })
+                }
                 onPending()
                 throw new PaymentPreparationPendingError(timeoutMessage)
             }
-            if (state.invoice_ready !== true && !state.awaiting_settlement && state.payment_status !== "draft") return state
+            if (payload.payment_method !== "later" && state.invoice_ready !== true && !state.awaiting_settlement && state.payment_status !== "draft") return state
         }
         const payment = await createPayment(payload)
         return isActive() ? payment : null

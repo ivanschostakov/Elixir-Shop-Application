@@ -219,8 +219,9 @@ def test_guest_order_creates_user_order_session_with_recovery_email(
         json=_build_guest_order_payload(variant_id=catalog["variant_id"], email=email, phone=phone),
     )
 
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
     payload = response.json()
+    assert payload["order"]["status_code"] == "preparing"
     assert payload["access_token"]
     assert payload["refresh_token"]
     assert payload["session_id"] > 0
@@ -277,7 +278,7 @@ def test_guest_recovers_same_orders_with_own_email_after_session_loss(client, va
     payload = _build_guest_order_payload(variant_id=catalog["variant_id"], email=recipient_email)
     payload["buyer_email"] = buyer_email
     created = client.post("/api/v1/guest/orders", json=payload)
-    assert created.status_code == 201, created.text
+    assert created.status_code == 202, created.text
     customer = created.json()
     uid = customer["user"]["id"]
     try:

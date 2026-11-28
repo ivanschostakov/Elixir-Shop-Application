@@ -351,7 +351,7 @@ export default function PaymentScreen() {
         && resolvedRecipient
         && resolvedItemsCount > 0,
     )
-    const resolvedOrderStatusLabel = order?.status_code
+    const resolvedOrderStatusLabel = order?.status_code && order.status_code !== "preparing"
         ? t(ORDER_STATUS_LABEL_KEYS[order.status_code] ?? "profile.history.status.created")
         : null
     const canContinue = hasResolvedOrderInfo && !submitting
@@ -495,6 +495,7 @@ export default function PaymentScreen() {
             }, {
                 isActive,
                 checkFirst,
+                retryExport: checkFirst,
                 onPending: () => setAwaitingSettlement(true),
                 timeoutMessage: t("payment.settlementWaitingTimeout"),
             })
@@ -844,7 +845,7 @@ export default function PaymentScreen() {
                 return
             }
 
-            if (order.payment_status === "pending" &&
+            if (order.payment_status === "pending" && order.status_code !== "preparing" && order.payment_provider === "manager" &&
                 (order.checkout_snapshot?.settlement_payment as { status?: string } | undefined)?.status !== "awaiting_invoice") {
                 setPhase("pending")
                 setErrorMessage(null)

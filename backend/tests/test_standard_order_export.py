@@ -17,6 +17,32 @@ from src.integrations.moysklad.order_sync import attributes, contacts
 
 OID, IID, CID, ORG = (UUID(int=i) for i in range(1, 5))
 
+
+def test_provider_invoice_without_current_qr_does_not_complete_checkout(monkeypatch):
+    from src.app.services.orders.checkout_readiness import checkout_preparing
+    monkeypatch.setattr(config, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
+    snapshot = {"order_export_version": 1}
+    order = SimpleNamespace(checkout_snapshot=snapshot, status="", is_paid=False, is_active=True,
+        is_canceled=False, is_shipped=False, amocrm_lead_id=7, moysklad_customerorder_id=OID,
+        moysklad_invoiceout_id=IID, payment_method="sbp", payment_invoice_id="new")
+    assert checkout_preparing(order)
+    snapshot["sbp_ready_invoice_id"] = "old"
+    assert checkout_preparing(order)
+    snapshot["sbp_ready_invoice_id"] = "new"
+    assert not checkout_preparing(order)
+    order.moysklad_customerorder_id = None
+    assert checkout_preparing(order)
+
+
+async def test_missing_qr_for_new_invoice_never_returns_qr_from_previous_attempt(tmp_path, monkeypatch):
+    from src.app.services.orders import payment_qr_storage as storage
+    monkeypatch.setattr(storage, "ORDERS_MEDIA_DIR", tmp_path)
+    old = storage.build_order_payment_qr_path(7, 42, "invoice-1")
+    old.parent.mkdir()
+    old.touch()
+    assert await storage.save_order_payment_qr(7, 42, "invoice-1", qr_image=None, qr_url=None) == old
+    assert await storage.save_order_payment_qr(7, 42, "invoice-2", qr_image=None, qr_url=None) is None
+
 pytestmark = pytest.mark.anyio
 
 
@@ -133,7 +159,8 @@ async def test_linked_moysklad_invoice_is_reused_or_rejected_without_post(monkey
     client.create_invoiceout.assert_not_awaited()
 
 
-@pytest.mark.parametrize("case", ["match", "new_total", "missing_id", "second_invoice", "already_paid", "old_order"])
+@pytest.mark.parametrize("case", ["match", "new_total", "missing_id", "second_invoice", "already_paid", "old_order",
+                                  "manager_linked", "manager_not_ready", "manager_duplicate"])
 async def test_only_matching_unpaid_moysklad_invoice_allows_new_sbp(monkeypatch, case):
     monkeypatch.setattr(config, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
     remote, invoice = document_rows()
@@ -146,12 +173,24 @@ async def test_only_matching_unpaid_moysklad_invoice_allows_new_sbp(monkeypatch,
                                 "moysklad_document_identity": {"counterparty_id": str(CID), "organization_id": str(ORG)}})
     if case == "new_total": invoice["sum"] -= 1
     if case == "missing_id": order.moysklad_invoiceout_id = None
+    if case.startswith("manager_"):
+        order.moysklad_invoiceout_id = None
+    if case == "manager_not_ready": remote["invoicesOut"] = []
+    if case == "manager_duplicate": remote["invoicesOut"].append({"id": str(UUID(int=8))})
     if case == "second_invoice": remote["invoicesOut"].append({"id": str(UUID(int=8))})
     if case == "already_paid": invoice["payedSum"] = 100
     if case == "old_order":
         order.checkout_snapshot = {}
         invoice["sum"] -= 1
     client = SimpleNamespace(get_customer_order=AsyncMock(return_value=remote), get_invoiceout=AsyncMock(return_value=invoice))
+    if case.startswith("manager_"):
+        if case == "manager_linked":
+            assert await settlement_payment.verify_standard_sbp_invoice(order, client=client, discover_linked=True) == IID
+        else:
+            with pytest.raises(HTTPException) as error:
+                await settlement_payment.verify_standard_sbp_invoice(order, client=client, discover_linked=True)
+            assert error.value.status_code == 409
+        return
     if case in ("match", "old_order"):
         await settlement_payment.verify_standard_sbp_invoice(order, client=client)
     else:

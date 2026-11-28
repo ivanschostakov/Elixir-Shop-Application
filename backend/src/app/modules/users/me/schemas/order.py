@@ -20,6 +20,7 @@ class CreateOrderPayload(BaseModel):
 
 class CreatePaymentPayload(BaseModel):
     order_id: int = Field(ge=1)
+    retry_export: bool = False
     payment_method: PaymentMethod | None = None
 
 
@@ -40,3 +41,4 @@ class PaymentStatusRead(BaseModel):
     can_retry: bool
     awaiting_settlement: bool = False
     invoice_ready: bool | None = None
+    export_retry_available: bool = False

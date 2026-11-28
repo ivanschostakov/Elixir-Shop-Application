@@ -13,6 +13,9 @@ from src.app.services.customer_intelligence import record_customer_event_safe
 from src.database import get_db
 from src.database.models import User
 from .diagnostics import PaymentRoute
+from src.app.services.orders.checkout_readiness import record_created_when_ready
+from src.app.services.orders.export_retry import check_failed_export
+from src.app.services.orders.settlement_payment import settlement_pending
 
 payments_router = APIRouter(prefix="/payments", tags=["payments"], route_class=PaymentRoute)
 
@@ -25,12 +28,18 @@ async def create_payment(payload: CreatePaymentPayload, request: Request, db: As
     request.state.payment_order_code = order.order_code
     await require_catalog_products(db, (item.product_id for item in order.items), user_id=current_user.id,
                                    client_platform="ios" if is_ios_request(request.headers) else None)
+    if (payload.retry_export and not order.moysklad_customerorder_id and not order.payment_invoice_id
+            and not order.is_paid and not order.is_canceled and order.payment_status in {"draft", "pending"}
+            and (order.checkout_snapshot or {}).get("order_export_version") == 1):
+        await check_failed_export(db, order, retry=True)
+        raise settlement_pending()
     result = await create_payment_for_order(
         db,
         request=request,
         order=order,
         payment_method=payload.payment_method,
     )
+    await record_created_when_ready(db, order)
     if result.get("is_paid"):
         await record_customer_event_safe(
             db,
@@ -50,6 +59,8 @@ async def get_payment_status(request: Request, order_id: int = Query(..., ge=1),
     order = await get_order_for_user(db, user_id=current_user.id, order_id=order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     result = await get_payment_status_for_order(db, request=request, order=order, check_invoice=check_invoice)
+    if result.get("qr_url") or result.get("qr_image") or result.get("is_paid"):
+        await record_created_when_ready(db, order)
     if result.get("is_paid"):
         await record_customer_event_safe(
             db,

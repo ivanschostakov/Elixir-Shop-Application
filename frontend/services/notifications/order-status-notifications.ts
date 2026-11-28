@@ -24,7 +24,7 @@ type OrderStatusNotificationSyncOptions = {
     automatic?: boolean
 }
 
-const ORDER_STATUS_PAYMENT_CODES = new Set(["created", "invoice_sent"])
+const ORDER_STATUS_PAYMENT_CODES = new Set(["preparing", "created", "invoice_sent"])
 
 function normalizeRoutePath(pathname: string | null | undefined) {
     if (!pathname) {

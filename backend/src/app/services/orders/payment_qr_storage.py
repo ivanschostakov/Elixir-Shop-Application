@@ -1,5 +1,6 @@
 import base64
 import binascii
+from hashlib import sha256
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -14,14 +15,13 @@ from config import MEDIA_DIR, ORDERS_MEDIA_DIR, PUBLIC_API_BASE_URL
 QR_EXTENSION = ".png"
 
 
-def build_order_payment_qr_path(user_id: int, order_id: int) -> Path:
-    directory = ORDERS_MEDIA_DIR / str(user_id)
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory / f"qr-{order_id}{QR_EXTENSION}"
+def build_order_payment_qr_path(user_id: int, order_id: int, invoice_id: str) -> Path:
+    attempt = sha256(invoice_id.encode()).hexdigest()[:24]
+    return ORDERS_MEDIA_DIR / str(user_id) / f"qr-{order_id}-{attempt}{QR_EXTENSION}"
 
 
-def find_order_payment_qr_path(user_id: int, order_id: int) -> Path | None:
-    candidate = ORDERS_MEDIA_DIR / str(user_id) / f"qr-{order_id}{QR_EXTENSION}"
+def find_order_payment_qr_path(user_id: int, order_id: int, invoice_id: str) -> Path | None:
+    candidate = build_order_payment_qr_path(user_id, order_id, invoice_id)
     return candidate if candidate.exists() else None
 
 
@@ -72,7 +72,7 @@ def _convert_qr_to_png(content: bytes) -> bytes:
         return output.getvalue()
 
 
-async def save_order_payment_qr(user_id: int, order_id: int, *, qr_image: str | None, qr_url: str | None) -> Path | None:
+async def save_order_payment_qr(user_id: int, order_id: int, invoice_id: str, *, qr_image: str | None, qr_url: str | None) -> Path | None:
     errors: list[str] = []
     for source_name, source_value in (("qr_image", qr_image), ("qr_url", qr_url)):
         if not source_value: continue
@@ -80,7 +80,8 @@ async def save_order_payment_qr(user_id: int, order_id: int, *, qr_image: str | 
         try:
             raw_content = await _load_candidate_bytes(source_value)
             png_content = _convert_qr_to_png(raw_content)
-            target_path = build_order_payment_qr_path(user_id, order_id)
+            target_path = build_order_payment_qr_path(user_id, order_id, invoice_id)
+            target_path.parent.mkdir(parents=True, exist_ok=True)
             if target_path.exists():
                 async with aiofiles.open(target_path, "rb") as existing_file: existing_content = await existing_file.read()
                 if existing_content == png_content: return target_path
@@ -89,4 +90,4 @@ async def save_order_payment_qr(user_id: int, order_id: int, *, qr_image: str | 
         except (ValueError, binascii.Error, UnidentifiedImageError, httpx.HTTPError) as exc: errors.append(f"{source_name}: {exc}")
 
     if errors: raise RuntimeError("; ".join(errors))
-    return find_order_payment_qr_path(user_id, order_id)
+    return find_order_payment_qr_path(user_id, order_id, invoice_id)
