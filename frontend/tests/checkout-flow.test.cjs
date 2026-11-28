@@ -65,7 +65,7 @@ function nodes(root) {
     return [root, ...(root.props ? nodes(root.props.children) : [])]
 }
 
-function mount(t, page, { guest = false, params = {}, status, createError, onPost } = {}) {
+function mount(t, page, { guest = false, platform = "ios", params = {}, status, createError, onPost } = {}) {
     const calls = [], pushes = [], links = [], alerts = []
     const { hooks, render, unmount } = screenHooks()
     t.after(unmount)
@@ -90,7 +90,7 @@ function mount(t, page, { guest = false, params = {}, status, createError, onPos
     let footer, tree
     const mocks = {
         react: hooks,
-        "react-native": { ...native, AppState: appState, Platform: { OS: "ios" }, Keyboard: {}, StyleSheet: { create: identity },
+        "react-native": { ...native, AppState: appState, Platform: { OS: platform }, Keyboard: {}, StyleSheet: { create: identity },
             Alert: { alert: (...args) => alerts.push(args) },
             Linking: { openURL: async url => { links.push(url); throw new Error("No bank app") } },
             Animated: { Value: class { stopAnimation() {} setValue() {} interpolate() {} }, View: "AnimatedView", timing: () => ({ start: noop }) },
@@ -152,15 +152,11 @@ function mount(t, page, { guest = false, params = {}, status, createError, onPos
     }
 }
 
-test("one footer submits the selected method, with a separate private buyer email only for guests", t => {
-    for (const guest of [true, false]) {
-        const app = mount(t, "checkout", { guest })
+test("native checkout waits for the method alert, can be cancelled, and proceeds only once", t => {
+    for (const platform of ["android", "ios"]) for (const guest of [true, false]) {
+        const app = mount(t, "checkout", { guest, platform })
         app.render()
-        const radios = () => app.elements().filter(n => n.props?.accessibilityRole === "radio")
-        assert.deepEqual(radios().map(n => n.props.accessibilityState.checked), [true, false])
-        radios()[1].props.onPress()
-        app.render()
-        assert.deepEqual(radios().map(n => n.props.accessibilityState.checked), [false, true])
+        assert.equal(app.elements().some(n => n.props?.accessibilityRole === "radio"), false)
         assert.deepEqual(app.pushes, [])
         assert.equal(app.cta().accessibilityLabel, "checkout.payCta")
         const input = app.elements().find(n => n.props?.accessibilityLabel === "payment.recoveryEmail")
@@ -180,11 +176,39 @@ test("one footer submits the selected method, with a separate private buyer emai
             assert.equal(input, undefined)
             app.email.setGuestCheckoutEmail("old@example.test")
         }
+        assert.equal(app.alerts.length, 0)
         app.cta().onPress()
         app.cta().onPress()
-        assert.deepEqual(app.pushes, [{ pathname: routes.payment, params: { paymentMethod: "later" } }])
+        assert.equal(app.alerts.length, 1)
+        assert.equal(app.alerts[0][0], "checkout.paymentMethodTitle")
+        const buttons = app.alerts[0][2]
+        assert.deepEqual(buttons.map(b => b.text), ["checkout.paymentMethodCancel", "payment.methodLaterTitle", "payment.methodSbpTitle"])
+        buttons[0].onPress()
+        app.cta().onPress()
+        app.alerts[1][3].onDismiss()
+        assert.deepEqual(app.pushes, [])
+        assert.deepEqual(app.calls, [])
+        const method = guest ? "later" : "sbp"
+        app.cta().onPress()
+        const button = app.alerts[2][2][guest ? 1 : 2]
+        button.onPress()
+        button.onPress()
+        app.cta().onPress()
+        assert.deepEqual(app.pushes, [{ pathname: routes.payment, params: { paymentMethod: method } }])
         assert.equal(app.email.getGuestCheckoutEmail(), guest ? "buyer@example.test" : "")
     }
+})
+
+test("web checkout keeps an inline method selector", t => {
+    const app = mount(t, "checkout", { platform: "web" })
+    app.render()
+    const radios = app.elements().filter(n => n.props?.accessibilityRole === "radio")
+    assert.equal(radios.length, 2)
+    radios[1].props.onPress()
+    app.render()
+    app.cta().onPress()
+    assert.deepEqual(app.pushes, [{ pathname: routes.payment, params: { paymentMethod: "later" } }])
+    assert.deepEqual(app.alerts, [])
 })
 
 test("new checkout schedules work on order creation; background/foreground recovery only reads that order", async t => {

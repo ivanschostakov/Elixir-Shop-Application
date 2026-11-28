@@ -115,11 +115,12 @@ export default function CheckoutScreen() {
     const contentStyles = useThemeStyles(createContentStyles)
     const checkoutScreenStyles = useThemeStyles(createCheckoutScreenStyles)
     const { palette } = useTheme()
-    const [method, setMethod] = useState<"sbp" | "later">("sbp")
+    const [webMethod, setWebMethod] = useState<"sbp" | "later">("sbp")
     const [buyerEmail, setBuyerEmail] = useState("")
     const [showEmailError, setShowEmailError] = useState(false)
     const buyerEmailInput = useRef<TextInput>(null)
     const navigating = useRef(false)
+    const methodAlertOpen = useRef(false)
     const { isAuthenticated, isReady, updatePersonalData, user, milestones } = useAuth()
     const { t, language } = useLanguage()
     const { bottom: bottomInset, top: topInset } = useSafeAreaInsets()
@@ -313,6 +314,7 @@ export default function CheckoutScreen() {
     useFocusEffect(
         useCallback(() => {
             navigating.current = false
+            methodAlertOpen.current = false
             setGuestCheckoutEmail("")
             return () => {
                 setOpenPickerSection(null)
@@ -442,7 +444,7 @@ export default function CheckoutScreen() {
         }
     }, [appliedPromoCode])
     const handlePressPay = useCallback(() => {
-        if (navigating.current || !orderDraft || !hasDeliveryAddress || !hasRecipient || needsRecipientCorrection || waitingForCheckout || pricingError || optionsError) {
+        if (navigating.current || methodAlertOpen.current || !orderDraft || !hasDeliveryAddress || !hasRecipient || needsRecipientCorrection || waitingForCheckout || pricingError || optionsError) {
             return
         }
         if (needsBuyerEmail && !isValidEmail(buyerEmail)) {
@@ -450,19 +452,34 @@ export default function CheckoutScreen() {
             buyerEmailInput.current?.focus()
             return
         }
-        navigating.current = true
-        setGuestCheckoutEmail(needsBuyerEmail ? buyerEmail : "")
-        router.push({
-            pathname: ROUTES.payment,
-            params: {
-                paymentMethod: method,
-                ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
-                ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
-                ...(rewardMode ? { rewardMode } : {}),
-            },
-        })
-    }, [activeEnteredPromoCode, buyerEmail, hasDeliveryAddress, hasRecipient, isBasketCheckout, method,
-        needsBuyerEmail, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, waitingForCheckout])
+        const proceed = (paymentMethod: "sbp" | "later") => {
+            if (navigating.current) return
+            navigating.current = true
+            methodAlertOpen.current = false
+            setGuestCheckoutEmail(needsBuyerEmail ? buyerEmail : "")
+            router.push({
+                pathname: ROUTES.payment,
+                params: {
+                    paymentMethod,
+                    ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
+                    ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
+                    ...(rewardMode ? { rewardMode } : {}),
+                },
+            })
+        }
+        if (Platform.OS === "web") {
+            proceed(webMethod)
+            return
+        }
+        methodAlertOpen.current = true
+        const dismiss = () => { methodAlertOpen.current = false }
+        Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
+            { text: t("checkout.paymentMethodCancel"), style: "cancel", onPress: dismiss },
+            { text: t("payment.methodLaterTitle"), onPress: () => proceed("later") },
+            { text: t("payment.methodSbpTitle"), onPress: () => proceed("sbp") },
+        ], { cancelable: true, onDismiss: dismiss })
+    }, [activeEnteredPromoCode, buyerEmail, hasDeliveryAddress, hasRecipient, isBasketCheckout, webMethod,
+        needsBuyerEmail, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, t, waitingForCheckout])
     const handleOpenPicker = useCallback((section: Exclude<ExpandedSection, null>) => {
         Keyboard.dismiss()
 
@@ -1233,7 +1250,7 @@ export default function CheckoutScreen() {
                         ) : null}
                     </View>
 
-                    <View style={checkoutScreenStyles.sectionCard}>
+                    {Platform.OS === "web" ? <View style={checkoutScreenStyles.sectionCard}>
                         <Text style={checkoutScreenStyles.sectionHeaderTitle}>{t("checkout.paymentMethodTitle")}</Text>
                         <View accessibilityRole="radiogroup" accessibilityLabel={t("checkout.paymentMethodTitle")}>
                             {(["sbp", "later"] as const).map(option => {
@@ -1243,12 +1260,12 @@ export default function CheckoutScreen() {
                                         key={option}
                                         accessibilityRole="radio"
                                         accessibilityLabel={label}
-                                        accessibilityState={{ checked: method === option }}
+                                        accessibilityState={{ checked: webMethod === option }}
                                         style={checkoutScreenStyles.detailsSheetRow}
-                                        onPress={() => setMethod(option)}
+                                        onPress={() => setWebMethod(option)}
                                     >
                                         <View style={[radioStyles.ring, { borderColor: palette.text }]}>
-                                            {method === option ? <View style={[radioStyles.dot, { backgroundColor: palette.text }]} /> : null}
+                                            {webMethod === option ? <View style={[radioStyles.dot, { backgroundColor: palette.text }]} /> : null}
                                         </View>
                                         <View style={checkoutScreenStyles.bonusToggleCopy}>
                                             <Text style={checkoutScreenStyles.bonusToggleValue}>{label}</Text>
@@ -1257,7 +1274,9 @@ export default function CheckoutScreen() {
                                 )
                             })}
                         </View>
-                        {needsBuyerEmail ? (
+                    </View> : null}
+                    {needsBuyerEmail ? (
+                        <View style={checkoutScreenStyles.sectionCard}>
                             <View style={checkoutScreenStyles.rewardModeSection}>
                                 <Text style={checkoutScreenStyles.rewardModeTitle}>{t("payment.recoveryEmail")}</Text>
                                 <TextInput
@@ -1276,8 +1295,8 @@ export default function CheckoutScreen() {
                                 ) : null}
                                 <Text style={checkoutScreenStyles.bonusToggleHint}>{t("payment.recoveryEmailHint")}</Text>
                             </View>
-                        ) : null}
-                    </View>
+                        </View>
+                    ) : null}
                     <View style={[checkoutScreenStyles.sectionCard, checkoutScreenStyles.positionsSectionCard]}>
                         <View style={checkoutScreenStyles.sectionHeader}>
                             <Text style={checkoutScreenStyles.sectionHeaderTitle}>
