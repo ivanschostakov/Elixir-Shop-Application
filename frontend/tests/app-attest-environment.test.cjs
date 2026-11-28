@@ -13,13 +13,14 @@ test("App Attest follows Xcode Debug/Release without an environment override", t
         debug: { name: "Debug", buildSettings: {} },
         release: { name: "Release", buildSettings: {} },
     }
-    let entitlements
+    const entitlements = {}
+    let introspect = false
     const plugin = loadTs("plugins/with-app-attest-environment.js", {
         "expo/config-plugins": {
             createRunOncePlugin: fn => fn,
             withEntitlementsPlist: (config, action) => {
-                const result = action({ modResults: {} })
-                entitlements = result.modResults
+                const result = action({ modResults: {}, modRequest: { introspect } })
+                entitlements[introspect ? "eas" : "native"] = result.modResults
                 return config
             },
             withXcodeProject: (config, action) => {
@@ -29,7 +30,11 @@ test("App Attest follows Xcode Debug/Release without an environment override", t
         },
     })
     plugin({})
-    assert.equal(entitlements["com.apple.developer.devicecheck.appattest-environment"], "$(APP_ATTEST_ENVIRONMENT)")
+    introspect = true
+    plugin({})
+    const key = "com.apple.developer.devicecheck.appattest-environment"
+    assert.equal(entitlements.native[key], "$(APP_ATTEST_ENVIRONMENT)")
+    assert.equal(entitlements.eas[key], "production")
     assert.equal(configurations.debug.buildSettings.APP_ATTEST_ENVIRONMENT, "development")
     assert.equal(configurations.release.buildSettings.APP_ATTEST_ENVIRONMENT, "production")
 })

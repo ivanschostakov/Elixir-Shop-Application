@@ -2,6 +2,7 @@ from fastapi import HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import TELEGRAM_COMMUNITY_CHAT_ID
 from src.app.services import community
 from src.app.services.rate_limit import enforce_rate_limit
 from src.database.models import CommunityAuthor, CommunityMessage, CommunityReport, CommunityTopic, User
@@ -18,7 +19,7 @@ async def report_community_message(db: AsyncSession, *, user: User, request: Req
     message = (await db.execute(
         select(CommunityMessage).join(CommunityTopic)
         .where(CommunityMessage.id == message_id, CommunityMessage.topic_id == topic_id,
-               CommunityTopic.telegram_chat_id == community.TELEGRAM_COMMUNITY_CHAT_ID,
+               CommunityTopic.telegram_chat_id == TELEGRAM_COMMUNITY_CHAT_ID,
                CommunityTopic.is_hidden.is_(False), CommunityTopic.is_deleted.is_(False))
         .with_for_update(of=CommunityMessage)
     )).scalar_one_or_none()

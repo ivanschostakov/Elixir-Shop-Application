@@ -14,19 +14,30 @@ from src.app.services.orders.automatic_checkout import checkout_response, notify
 from src.app.services.orders.payments import checkout_ready
 from src.database import get_db
 from src.database.models import User
+from .diagnostics import PaymentRoute
+from src.app.services.orders.checkout_readiness import record_created_when_ready
+from src.app.services.orders.export_retry import check_failed_export
+from src.app.services.orders.settlement_payment import settlement_pending
 
-payments_router = APIRouter(prefix="/payments", tags=["payments"])
+payments_router = APIRouter(prefix="/payments", tags=["payments"], route_class=PaymentRoute)
 
 
 @payments_router.post("/create", response_model=PaymentStatusRead)
 async def create_payment(payload: CreatePaymentPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:create"))) -> PaymentStatusRead:
+    request.state.payment_order_id = payload.order_id
     order = await get_order_for_user(db, user_id=current_user.id, order_id=payload.order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    request.state.payment_order_code = order.order_code
     await require_catalog_products(db, (item.product_id for item in order.items), user_id=current_user.id,
                                    client_platform="ios" if is_ios_request(request.headers) else None)
     result = await checkout_response(db, order, request, submit=True, automatic=payload.automatic_checkout,
                                      method=payload.payment_method, accept_pending_amount=payload.accept_pending_amount)
     if result is None:
+        if (payload.retry_export and not order.moysklad_customerorder_id and not order.payment_invoice_id
+                and not order.is_paid and not order.is_canceled and order.payment_status in {"draft", "pending"}
+                and (order.checkout_snapshot or {}).get("order_export_version") == 1):
+            await check_failed_export(db, order, retry=True)
+            raise settlement_pending()
         try:
             result = await create_payment_for_order(
                 db, request=request, order=order, payment_method=payload.payment_method,
@@ -41,6 +52,7 @@ async def create_payment(payload: CreatePaymentPayload, request: Request, db: As
                 if run_id is not None:
                     await notify_worker(run_id)
             raise
+        await record_created_when_ready(db, order)
     if result.get("is_paid"):
         await record_customer_event_safe(
             db,
@@ -56,13 +68,15 @@ async def create_payment(payload: CreatePaymentPayload, request: Request, db: As
 
 
 @payments_router.get("/status", response_model=PaymentStatusRead)
-async def get_payment_status(request: Request, order_id: int = Query(..., ge=1), accept_pending_amount: bool = False, automatic_checkout: bool = False, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:status"))) -> PaymentStatusRead:
+async def get_payment_status(request: Request, order_id: int = Query(..., ge=1), check_invoice: bool = False, accept_pending_amount: bool = False, automatic_checkout: bool = False, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:status"))) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
     result = await checkout_response(db, order, request, automatic=automatic_checkout,
                                      accept_pending_amount=accept_pending_amount)
     if result is None:
-        result = await get_payment_status_for_order(db, request=request, order=order, accept_pending_amount=automatic_checkout or accept_pending_amount)
+        result = await get_payment_status_for_order(db, request=request, order=order, accept_pending_amount=automatic_checkout or accept_pending_amount, check_invoice=check_invoice)
+        if result.get("qr_url") or result.get("qr_image") or result.get("is_paid"):
+            await record_created_when_ready(db, order)
     if result.get("is_paid"):
         await record_customer_event_safe(
             db,

@@ -156,6 +156,20 @@ def test_duplicate_external_codes_require_manual_review(monkeypatch):
     assert exc.value.status_code == 409
 
 
+@pytest.mark.parametrize("page,status", [
+    ({}, 503), ({"rows": [None]}, 503), ({"rows": [], "errors": [{}]}, 503),
+    ({"rows": [], "meta": {"size": 2}}, 409), ({"rows": [], "meta": {"nextHref": "next"}}, 409),
+])
+def test_incomplete_payment_lookup_is_not_an_absent_payment(monkeypatch, page, status):
+    client = MoySkladClient(token="test")
+    read = AsyncMock(return_value=page)
+    monkeypatch.setattr(client, "get_page", read)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(client._find_entity_by_external_code("paymentin", "checkout:22"))
+    assert error.value.status_code == status
+    read.assert_awaited_once()
+
+
 def test_existing_document_with_wrong_total_is_not_rewritten():
     with pytest.raises(HTTPException) as exc:
         MoySkladClient._validate_document_sum({"id": "existing", "sum": 848708}, [{"price": 424330, "quantity": 2, "discount": 0}])
@@ -171,7 +185,8 @@ def test_rate_limit_retry_waits_for_retry_after():
     assert not is_retryable_error(HTTPException(status_code=409, detail="manual review"))
 
 
-def test_first_retry_deadline_is_persisted_so_queue_recovery_does_not_skip_delay(monkeypatch):
+@pytest.mark.parametrize("provider_delay,scheduled", [(120, 120), (7200, 3600)])
+def test_first_retry_deadline_is_persisted_so_queue_recovery_does_not_skip_delay(monkeypatch, provider_delay, scheduled):
     import src.app.services.admin.jobs as jobs
     calls = []
     class Session:
@@ -181,12 +196,11 @@ def test_first_retry_deadline_is_persisted_so_queue_recovery_does_not_skip_delay
         async def commit(self): pass
     async def enqueue(run_id, **kwargs): calls.append((run_id, kwargs))
     monkeypatch.setattr(jobs, "enqueue_integration_run", enqueue)
-    response = httpx.Response(429, headers={"Retry-After": "120"}, request=httpx.Request("GET", "https://example.test"))
+    response = httpx.Response(429, headers={"Retry-After": str(provider_delay)}, request=httpx.Request("GET", "https://example.test"))
     error = httpx.HTTPStatusError("rate limit", request=response.request, response=response)
-    started = datetime.now(timezone.utc)
     run = asyncio.run(order_sync._record_automatic_order_sync(Session(), order_id=22, status="queued", enqueue=True, retry_error=error))
-    assert (run.next_attempt_at - started).total_seconds() >= 120
-    assert calls == [(1, {"delay_seconds": 120})]
+    assert (run.next_attempt_at - run.started_at).total_seconds() == scheduled
+    assert calls == [(1, {"delay_seconds": scheduled})]
 
 
 def test_customerorder_id_is_committed_before_invoice_failure_and_reused(monkeypatch):
@@ -258,11 +272,13 @@ def test_customerorder_id_is_committed_before_invoice_failure_and_reused(monkeyp
     links.assert_awaited_once_with(order, customerorder_name="123", invoice_name="456")
 
 
-def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monkeypatch):
+@pytest.mark.parametrize("export_started", [False, True])
+def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monkeypatch, export_started):
     order = make_order(["4890"], [2], "9195.92", "415.92")
+    order.is_canceled = False
     order.checkout_snapshot["settlement_payment"] = {
         "version": 1, "counterparty_id": str(ENTITY_ID), "gross_rubles": "10195.92",
-        "maximum_balance_rubles": "1000.00", "export_started": True,
+        "maximum_balance_rubles": "1000.00", "export_started": export_started,
     }
     user = SimpleNamespace(id=47, moysklad_counterparty_id=ENTITY_ID)
     session = SimpleNamespace(execute=AsyncMock(), refresh=AsyncMock(), flush=AsyncMock(), commit=AsyncMock())
@@ -295,7 +311,15 @@ def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monke
     _patched_value_226 = AsyncMock(return_value={})
     for target in ('src.integrations.moysklad.order_sync.address._shipment_address_full', 'src.integrations.moysklad.order_sync.service._shipment_address_full',):
         monkeypatch.setattr(target, _patched_value_226)
+    check_balance = AsyncMock()
+    monkeypatch.setattr("src.app.services.orders.settlement_payment.check_balance_use", check_balance)
     asyncio.run(order_sync.sync_order_to_moysklad(session, order=order, user=user))
+    if export_started:
+        check_balance.assert_not_awaited()
+    else:
+        check_balance.assert_awaited_once_with(session, counterparty_id=ENTITY_ID, amount="1000.00",
+                                              exclude_order_id=order.id, client=client)
+        assert order.checkout_snapshot["settlement_payment"]["export_started"] is True
     positions = client.resolve_or_sync_customerorder.call_args.kwargs["positions"]
     assert sum(Decimal(str(p["price"])) * Decimal(str(p["quantity"])) for p in positions) == Decimal("1019592")
     assert positions[-1]["assortment"]["meta"]["type"] == "service"

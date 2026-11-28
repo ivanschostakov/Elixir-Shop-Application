@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -42,8 +42,9 @@ async def check_guest_phone(payload: GuestPhoneCheckPayload, request: Request, d
     return GuestPhoneCheckResponse(phone_number=payload.phone_number, exists=bool(existing_user and existing_user.is_active))
 
 
-@guest_router.post("/orders", response_model=GuestOrderResponse, status_code=status.HTTP_201_CREATED)
-async def create_guest_order_route(payload: GuestOrderPayload, request: Request, db: AsyncSession = Depends(get_db)) -> GuestOrderResponse:
+@guest_router.post("/orders", response_model=GuestOrderResponse, status_code=status.HTTP_201_CREATED,
+                   responses={202: {"model": GuestOrderResponse, "description": "Checkout is still being prepared"}})
+async def create_guest_order_route(payload: GuestOrderPayload, request: Request, response: Response, db: AsyncSession = Depends(get_db)) -> GuestOrderResponse:
     await _guest_rate_limit(request, scope="guest:orders", principal=payload.recipient.phone)
     user, order = await create_guest_order(db, request, payload)
 
@@ -51,10 +52,13 @@ async def create_guest_order_route(payload: GuestOrderPayload, request: Request,
     session = await create_user_session(db, UserSessionCreate(user_id=user.id, refresh_token_hash=hash_refresh_token(refresh_token)))
     access_token = create_access_token(user_id=user.id, session_id=session.id)
 
+    serialized = await serialize_order(request, db, order)
+    if serialized.status_code in {"preparing", "processing"}:
+        response.status_code = status.HTTP_202_ACCEPTED
     return GuestOrderResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         session_id=session.id,
         user=AuthUserRead.model_validate(user),
-        order=await serialize_order(request, db, order),
+        order=serialized,
     )

@@ -93,36 +93,50 @@ class ApiError extends Error {
     }
 }
 
-function loadPayments(apiPost) {
+function loadPayments(apiPost, apiGet) {
     return loadTs("services/api/payments.ts", {
         "@/services/api/request-deadline": loadTs("services/api/request-deadline.ts"),
-        "@/services/api/client": { apiPost, ApiError },
+        "@/services/api/client": { apiPost, apiGet, ApiError },
         "@/services/api/constants": { ENDPOINTS: { PAYMENTS: "/payments" } },
     })
 }
 
 const pending = () => new ApiError(409, { detail: { code: "settlement_pending" } })
 
-test("retries pending settlement for the same order", async (t) => {
-    t.mock.timers.enable({ apis: ["setTimeout"] })
-    const payload = { order_id: 42, payment_method: "sbp" }
-    const calls = []
-    const { createPaymentWhenReady } = loadPayments(async (_path, body) => {
-        calls.push(body)
-        if (calls.length === 1) throw pending()
-        return { order_id: 42, invoice_id: "invoice" }
-    })
-    let waiting = 0
-    const result = createPaymentWhenReady(payload, {
-        isActive: () => true,
-        onPending: () => { waiting++ },
-        timeoutMessage: "not ready",
-    })
-    await Promise.resolve()
-    t.mock.timers.tick(4_000)
-    assert.deepEqual(await result, { order_id: 42, invoice_id: "invoice" })
-    assert.deepEqual(calls, [payload, payload])
+const options = { isActive: () => true, onPending: () => {}, timeoutMessage: "Still preparing" }
+const payload = { order_id: 42, payment_method: "sbp" }
+
+test("invoice check and payment creation share two minutes, including manual export retry", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"] })
+    for (const retryExport of [false, true]) {
+        for (const elapsed of [90_000, 120_000]) {
+            const posts = []
+            const api = loadPayments(async (_, body, opts) => {
+                posts.push([body, opts.timeoutMs])
+                return { invoice_id: "invoice" }
+            }, async (_, __, opts) => {
+                assert.equal(opts.timeoutMs, 120_000)
+                t.mock.timers.tick(elapsed)
+                return { invoice_ready: !retryExport, export_retry_available: retryExport }
+            })
+            const attempt = api.createPaymentWhenReady(payload, { ...options, checkFirst: true, retryExport })
+            if (elapsed === 120_000 || retryExport) await assert.rejects(attempt, api.PaymentPreparationPendingError)
+            else assert.equal((await attempt).invoice_id, "invoice")
+            const body = retryExport ? { ...payload, retry_export: true } : payload
+            assert.deepEqual(posts, elapsed === 120_000 ? [] : [[body, 30_000]])
+        }
+    }
+})
+
+test("pending invoice shows waiting immediately without scheduling a second POST", async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
+    let posts = 0, waiting = 0
+    const api = loadPayments(async () => { posts++; throw pending() })
+    await assert.rejects(api.createPaymentWhenReady(payload, { ...options, onPending: () => { waiting++ } }),
+        api.PaymentPreparationPendingError)
+    t.mock.timers.tick(180_000)
     assert.equal(waiting, 1)
+    assert.equal(posts, 1)
 })
 
 test("does not retry mismatches or ambiguous gateway errors", async () => {
@@ -136,45 +150,42 @@ test("does not retry mismatches or ambiguous gateway errors", async () => {
     }
 })
 
-test("a wait deadline is recoverable and only repeats the same unpaid order", async (t) => {
-    t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
-    const payload = { order_id: 42, payment_method: "sbp" }
-    const calls = []
-    const { createPaymentWhenReady, PaymentPreparationPendingError } = loadPayments(async (_path, body) => {
-        calls.push(body)
-        throw pending()
-    })
-    const result = createPaymentWhenReady(payload, {
-        isActive: () => true, onPending: () => {}, timeoutMessage: "Still preparing",
-    })
-    const check = assert.rejects(result, { constructor: PaymentPreparationPendingError, message: "Still preparing" })
-    await Promise.resolve()
-    t.mock.timers.tick(120_000)
-    await check
-    assert.deepEqual(calls, [payload])
+test("checking a still missing invoice and returning from history only read status (SBP and manager)", async () => {
+    for (const method of ["sbp", "later"]) {
+        let gets = 0
+        const api = loadPayments(() => assert.fail("must not create payment"), async (path, params) => {
+            assert.equal(path, "/payments/status")
+            assert.deepEqual(params, { order_id: 42, check_invoice: true, ...(method === "later" ? { accept_pending_amount: true } : {}) })
+            gets++
+            return { payment_status: method === "sbp" ? "draft" : "pending", invoice_ready: false }
+        })
+        for (let i = 0; i < 2; i++) await assert.rejects(
+            api.createPaymentWhenReady({ ...payload, payment_method: method }, { ...options, checkFirst: true }),
+            api.PaymentPreparationPendingError)
+        assert.equal(gets, 2)
+    }
 })
 
-test("waits out the provider cooldown before starting the same payment again", async (t) => {
-    t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
-    const payload = { order_id: 42, payment_method: "sbp" }
+test("after a read confirms readiness a single POST uses the same order", async () => {
     const calls = []
-    const { createPaymentWhenReady } = loadPayments(async (_path, body) => {
-        calls.push(body)
-        if (calls.length === 1) {
-            throw new ApiError(409, { detail: { code: "settlement_pending", retry_after_seconds: 11 } })
-        }
-        return { order_id: 42, invoice_id: "invoice" }
-    })
-    const result = createPaymentWhenReady(payload, {
-        isActive: () => true, onPending: () => {}, timeoutMessage: "Still preparing",
-    })
-    await Promise.resolve()
-    t.mock.timers.tick(10_999)
-    await Promise.resolve()
-    assert.deepEqual(calls, [payload])
-    t.mock.timers.tick(1)
-    assert.equal((await result).invoice_id, "invoice")
-    assert.deepEqual(calls, [payload, payload])
+    const api = loadPayments(async (path, body) => { calls.push(path); assert.deepEqual(body, payload); return { invoice_id: "invoice" } },
+        async path => { calls.push(path); return { payment_status: "draft", invoice_ready: true } })
+    assert.equal((await api.createPaymentWhenReady(payload, { ...options, checkFirst: true })).invoice_id, "invoice")
+    assert.deepEqual(calls, ["/payments/status", "/payments/create"])
+})
+
+test("already paid, existing QR, canceled, and completed manager orders never start payment again", async () => {
+    for (const state of [{ is_paid: true }, { invoice_id: "qr" }, { payment_status: "canceled" },
+        { payment_status: "refunded" }, { payment_status: "pending", payment_method: "later" }]) {
+        const api = loadPayments(() => assert.fail("duplicate"), async () => state)
+        assert.equal(await api.createPaymentWhenReady(payload, { ...options, checkFirst: true }), state)
+    }
+})
+
+test("a late readiness response after leaving checkout cannot start payment", async () => {
+    let active = true
+    const api = loadPayments(() => assert.fail("stale request"), async () => { active = false; return { invoice_ready: true } })
+    assert.equal(await api.createPaymentWhenReady(payload, { ...options, checkFirst: true, isActive: () => active }), null)
 })
 
 const { laterCheckoutState, mergePaymentState, resolvePaymentPhase, visibleOrderTotal } = loadTs("screens/payment/payment-state.ts")
@@ -200,13 +211,51 @@ test("history and reopened checkout distinguish reservation, calculation and a f
     assert.equal(laterCheckoutState(order), "calculating")
     assert.equal(laterCheckoutState(order, accepted), "calculating")
     assert.equal(resolvePaymentPhase(accepted, "later", order), "pending")
+    assert.equal(resolvePaymentPhase({ ...accepted, invoice_ready: false }, "later", order), "pending")
     assert.equal(visibleOrderTotal(order, accepted), null)
     const ready = { ...accepted, awaiting_settlement: false, amount_rubles: 0 }
     assert.equal(visibleOrderTotal(order, ready), 0)
+    assert.equal(visibleOrderTotal(order, { ...ready, invoice_ready: false }), null)
     assert.equal(laterCheckoutState(order, ready), "ready")
     assert.equal(visibleOrderTotal(order, { ...ready, order_id: 6 }), null)
     assert.equal(resolvePaymentPhase(accepted, "later", { ...order, is_canceled: true }), "failure")
     assert.equal(laterCheckoutState({ ...order, is_canceled: true }), null)
+})
+
+test("a legacy manager reservation can be checked without polling or repeating the POST", async () => {
+    let posts = 0, reads = 0
+    const state = { payment_method: "later", payment_status: "pending", ms_reservation_confirmed: true,
+        awaiting_settlement: true, amount_rubles: null, is_paid: false }
+    const api = loadPayments(async (_, body) => {
+        posts++
+        assert.equal(body.accept_pending_amount, true)
+        throw pending()
+    }, async (_, params) => {
+        reads++
+        assert.equal(params.accept_pending_amount, true)
+        return state
+    })
+    await assert.rejects(api.createPaymentWhenReady({ ...payload, payment_method: "later" }, options),
+        api.PaymentPreparationPendingError)
+    assert.deepEqual([posts, reads], [1, 0])
+    assert.equal(await api.getPaymentStatus(payload.order_id), state)
+    assert.equal(resolvePaymentPhase(state, "later"), "pending")
+    assert.equal(resolvePaymentPhase({ ...state, ms_reservation_confirmed: false }, "later"), "waiting")
+    assert.equal(resolvePaymentPhase({ ...state, payment_status: "canceled" }, "later"), "failure")
+    assert.deepEqual([posts, reads], [1, 1])
+})
+
+test("only an explicit retry resumes the same exhausted export", async () => {
+    const posts = []
+    const api = loadPayments(async (_, body) => { posts.push(body); throw pending() },
+        async () => ({ payment_status: "draft", invoice_ready: false, export_retry_available: true }))
+    for (const retryExport of [false, true]) {
+        await assert.rejects(api.createPaymentWhenReady(payload, { ...options, checkFirst: true, retryExport }),
+            api.PaymentPreparationPendingError)
+    }
+    assert.deepEqual(posts, [{ ...payload, retry_export: true }])
+    assert.equal(resolvePaymentPhase({ payment_status: "draft", payment_method: "later" }, "later"), "waiting")
+    assert.equal(resolvePaymentPhase({ payment_status: "pending", invoice_ready: false }, "later"), "waiting")
 })
 
 test("a pending or late QR keeps SBP open while offline payment still closes checkout", () => {

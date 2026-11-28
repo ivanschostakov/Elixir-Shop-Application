@@ -71,6 +71,27 @@ def test_bonus_points_for_rubles_uses_moysklad_program_rate() -> None:
     assert bonus_points_for_rubles(Decimal("123.45"), 2) == 247
 
 
+def test_ambiguous_partner_credit_waits_for_confirmed_card_then_credits_once(monkeypatch):
+    from src.app.services.referrals import wallet_sync
+    from src.integrations.moysklad.identity import CounterpartyReviewRequired
+    monkeypatch.setattr(wallet_sync, "LOYALTY_USE_SETTLEMENT_BALANCE", False)
+    review = AsyncMock()
+    monkeypatch.setattr(wallet_sync, "queue_counterparty_review", review)
+    accrual = _approved_accrual()
+    user = SimpleNamespace(id=19, email=accrual.beneficiary_email, moysklad_counterparty_id=None)
+    db = SimpleNamespace(get=AsyncMock(return_value=user))
+    client = _client()
+    client.get_counterparty_by_email = AsyncMock(side_effect=CounterpartyReviewRequired("email"))
+    def sync():
+        return asyncio.run(sync_referral_accrual_to_bonus_wallet(db, accrual=accrual, moysklad_client=client))
+    assert sync() == "waiting_for_wallet" and accrual.wallet_sync_status == "identity_review"
+    assert review.await_args.kwargs["user_id"] == user.id and user.moysklad_counterparty_id is None
+    client.resolve_or_create_bonus_transaction.assert_not_awaited()
+    user.moysklad_counterparty_id = COUNTERPARTY_ID
+    assert sync() == sync() == "credited"
+    client.resolve_or_create_bonus_transaction.assert_awaited_once()
+
+
 @pytest.mark.parametrize("status", ["approved", "rejected"])
 def test_settlement_mode_leaves_both_earning_and_reversal_to_ms(monkeypatch, status):
     monkeypatch.setattr("src.app.services.referrals.wallet_sync.LOYALTY_USE_SETTLEMENT_BALANCE", True)

@@ -5,11 +5,13 @@ from typing import Any
 from uuid import UUID
 import httpx
 from fastapi import HTTPException
-from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_INCLUDED_PRODUCT_IDS, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, UFA_TZ
+from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_INCLUDED_PRODUCT_IDS, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, REDIS_URL, UFA_TZ
 from src.normalize import coerce_uuid, optional_str
+from ..identity import AmbiguousCounterpartyCode
 from .common import MOY_SKLAD_API_BASE_URL, logger
+from .rate_limit import PacedMoySkladClient
 from .reference_cache import ReferenceCache, reference_rows
-from .utils import moysklad_money, moysklad_retry_after_seconds
+from .utils import moysklad_money
 
 
 _REFERENCE_LISTS = frozenset({"/entity/organization", "/entity/store", "/entity/country", "/entity/region"})
@@ -62,7 +64,7 @@ class TransportMixin:
 
         async with self._lock:
             if self._client is None or self._client.is_closed:
-                self._client = httpx.AsyncClient(base_url=self._base_url, timeout=httpx.Timeout(self._timeout), limits=httpx.Limits(max_connections=20, max_keepalive_connections=10), headers={
+                self._client = PacedMoySkladClient(credential=self._token, redis_url=REDIS_URL, base_url=self._base_url, timeout=httpx.Timeout(self._timeout), limits=httpx.Limits(max_connections=2, max_keepalive_connections=2), headers={
                     "Authorization": f"Bearer {self._token}",
                     "Accept": "application/json;charset=utf-8",
                     "Content-Type": "application/json;charset=utf-8",
@@ -149,35 +151,33 @@ class TransportMixin:
 
     async def _find_entity_by_external_code(self, entity_type: str, external_code: str) -> dict[str, Any] | None:
         async def lookup(**params):
-            try:
-                return await self.get_page(f"/entity/{entity_type}", limit=100, **params)
-            except httpx.HTTPStatusError as exc:
-                if entity_type != "customerorder" or exc.response.status_code != 429:
-                    raise
-                delay = moysklad_retry_after_seconds(exc.response, default=0.5)
-                if delay > 3:
-                    raise
-                await asyncio.sleep(delay)
-                return await self.get_page(f"/entity/{entity_type}", limit=100, **params)
+            page = await self.get_page(f"/entity/{entity_type}", limit=100, **params)
+            rows = page.get("rows") if isinstance(page, dict) else None
+            meta = page.get("meta", {}) if isinstance(page, dict) else None
+            if (not isinstance(rows, list) or "errors" in page
+                    or any(not isinstance(row, dict) or not row.get("id") or "errors" in row for row in rows)
+                    or not isinstance(meta, dict)):
+                raise HTTPException(503, f"Invalid MoySklad {entity_type} lookup response")
+            size = meta.get("size", len(rows))
+            if type(size) is not int or size < len(rows) or meta.get("offset", 0) != 0:
+                raise HTTPException(503, f"Invalid MoySklad {entity_type} lookup pagination")
+            matches = [row for row in rows if optional_str(row.get("externalCode")) == external_code]
+            if (len(rows) >= 100 or size > len(rows) or meta.get("nextHref")
+                    or len({row.get("id") for row in matches}) > 1):
+                if entity_type == "counterparty":
+                    raise AmbiguousCounterpartyCode(matches)
+                raise HTTPException(409, f"Ambiguous MoySklad {entity_type} external code; manual review required")
+            return matches
 
-        rows: list[dict[str, Any]] = []
         try:
-            filtered = await lookup(filter=f"externalCode={external_code}")
-            candidate_rows = filtered.get("rows")
-            if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
+            matches = await lookup(filter=f"externalCode={external_code}")
         except httpx.HTTPStatusError as exc:
             if entity_type == "counterparty" or exc.response.status_code != 400: raise
             logger.debug("MoySklad %s filter lookup failed: %s", entity_type, exc)
+            matches = []
 
-        if not rows:
-            searched = await lookup(search=external_code)
-            candidate_rows = searched.get("rows")
-            if isinstance(candidate_rows, list): rows.extend(row for row in candidate_rows if isinstance(row, dict))
-
-        matches = [row for row in rows if optional_str(row.get("externalCode")) == external_code]
-        if len({row.get("id") for row in matches}) > 1 or len(rows) >= 100:
-            if entity_type == "counterparty": raise RuntimeError("Ambiguous MoySklad counterparty external code; manual review required")
-            raise HTTPException(status_code=409, detail=f"Ambiguous MoySklad {entity_type} external code; manual review required")
+        if not matches:
+            matches = await lookup(search=external_code)
         if matches: return matches[0]
         return None
 

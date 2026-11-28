@@ -29,18 +29,10 @@ def _compact_sku_search_token(value: str) -> str:
     return "".join(char for char in value.casefold() if char.isalnum())
 
 
-def _normalized_product_sku_expression():
-    expr = func.lower(Product.sku)
-    for token in ("-", "_", " ", ".", "/", "\\"):
-        expr = func.replace(expr, token, "")
-    return expr
-
-
-def _normalized_product_name_expression():
-    expr = func.lower(Product.name)
-    for token in ("-", "_", " ", ".", "/", "\\"):
-        expr = func.replace(expr, token, "")
-    return expr
+def _catalog_search_text(column):
+    # With PostgreSQL LC_CTYPE=C, lower()/ILIKE leave uppercase Cyrillic unchanged.
+    upper = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
+    return func.lower(func.translate(column, upper, upper.lower()))
 
 
 def _has_product_image(*, product_id: int | None = None, system_id) -> bool:
@@ -115,21 +107,15 @@ async def get_products(
         query_variants = build_search_query_variants(q)
         predicates = []
         compact_sku_variants: set[str] = set()
-        normalized_product_sku = _normalized_product_sku_expression()
-        normalized_product_name = _normalized_product_name_expression()
+        sku_text, name_text = _catalog_search_text(Product.sku), _catalog_search_text(Product.name)
+        compact_columns = [func.translate(column, "-_ ./\\", "") for column in (sku_text, name_text)]
         for variant in query_variants:
             pattern = f"%{variant}%"
-            predicates.extend(
-                [
-                    Product.name.ilike(pattern),
-                    Product.sku.ilike(pattern),
-                ]
-            )
+            predicates.extend((name_text.like(pattern), sku_text.like(pattern)))
             compact_sku = _compact_sku_search_token(variant)
             if compact_sku and compact_sku not in compact_sku_variants:
                 compact_sku_variants.add(compact_sku)
-                predicates.append(normalized_product_sku.ilike(f"%{compact_sku}%"))
-                predicates.append(normalized_product_name.ilike(f"%{compact_sku}%"))
+                predicates.extend(column.like(f"%{compact_sku}%") for column in compact_columns)
         if predicates:
             stmt = stmt.where(or_(*predicates))
 

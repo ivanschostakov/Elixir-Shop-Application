@@ -1,4 +1,6 @@
 import logging
+import math
+import re
 import secrets
 import time
 import cbor2
@@ -47,7 +49,15 @@ from .types import AppIntegrityVerifierUnavailable
 log = logging.getLogger(__name__)
 
 _google_credentials: Any | None = None
+_google_quota_until = 0.0
 IOS_ASSERTION_GRANT_PREFIX = "ios-grant:"
+
+
+def _android_unavailable(reason: str, retry_after: int = 30) -> HTTPException:
+    log.warning("Android Play verification unavailable: %s", reason)
+    return HTTPException(503, {"code": "android_verifier_unavailable",
+        "message": "Google Play verification is temporarily unavailable. Please try again later.",
+        "retry_after_seconds": retry_after}, headers={"Retry-After": str(retry_after)})
 
 
 def app_integrity_exempt_for_user(user: User | None) -> bool:
@@ -76,7 +86,11 @@ async def _get_google_access_token() -> str:
 
 
 async def _decode_android_integrity_token(token: str) -> dict[str, Any]:
+    global _google_quota_until
     if not APP_INTEGRITY_ANDROID_PACKAGE_NAME: raise AppIntegrityVerifierUnavailable("android package not configured")
+    remaining = math.ceil(_google_quota_until - time.monotonic())
+    if remaining > 0:
+        raise _android_unavailable("quota cooldown", remaining)
     access_token = await _get_google_access_token()
     package_name = quote(APP_INTEGRITY_ANDROID_PACKAGE_NAME, safe="")
     url = f"https://playintegrity.googleapis.com/v1/{package_name}:decodeIntegrityToken"
@@ -85,12 +99,25 @@ async def _decode_android_integrity_token(token: str) -> dict[str, Any]:
         async with httpx.AsyncClient(timeout=APP_INTEGRITY_VERIFIER_TIMEOUT_SECONDS) as client: response = await client.post(url, headers={"Authorization": f"Bearer {access_token}"}, json={"integrity_token": token})
     except httpx.HTTPError as exc: raise AppIntegrityVerifierUnavailable("google play integrity request failed") from exc
 
-    if response.status_code >= 500: raise AppIntegrityVerifierUnavailable("google play integrity service unavailable")
+    if response.status_code == 429:
+        delay = response.headers.get("Retry-After", "")
+        seconds = int(delay) if delay.isascii() and delay.isdigit() and len(delay) <= 7 else 60
+        seconds = max(5, min(seconds, 86400))
+        _google_quota_until = max(_google_quota_until, time.monotonic() + seconds)
+        raise _android_unavailable("google HTTP 429", seconds)
+    if response.status_code in {401, 403, 404, 408} or response.status_code >= 500:
+        raise _android_unavailable(f"google HTTP {response.status_code}")
     if response.status_code >= 400:
         log.warning("Google Play Integrity rejected token status=%s", response.status_code)
-        return {}
+        raise HTTPException(403, {"code": "android_proof_invalid", "message": "App verification failed."})
 
-    return response.json()
+    try:
+        result = response.json()
+    except ValueError as exc:
+        raise _android_unavailable("invalid Google response") from exc
+    if not isinstance(result, dict) or not isinstance(result.get("tokenPayloadExternal"), dict):
+        raise _android_unavailable("missing Google payload")
+    return result
 
 
 def _is_android_payload_fresh(timestamp_millis: Any) -> bool:
@@ -113,16 +140,28 @@ async def _verify_android_play_integrity(token: str, request_hash: str) -> tuple
     if request_details.get("requestHash") != request_hash: return False, "android request hash mismatch"
     if not _is_android_payload_fresh(request_details.get("timestampMillis")): return False, "android token expired"
 
-    if app_integrity.get("appRecognitionVerdict") != "PLAY_RECOGNIZED": return False, "android app not play recognized"
+    recognition = app_integrity.get("appRecognitionVerdict")
+    if recognition == "UNRECOGNIZED_VERSION":
+        version = str(app_integrity.get("versionCode", ""))
+        log.info("Google Play did not recognize Android build version_code=%s",
+                 version if re.fullmatch(r"[0-9]{1,10}", version) else "unknown")
+        return False, "android app unrecognized version"
+    if recognition != "PLAY_RECOGNIZED": return False, "android app not evaluated"
     if app_integrity.get("packageName") != APP_INTEGRITY_ANDROID_PACKAGE_NAME: return False, "android app package mismatch"
 
     allowed_cert_digests = csv_values(APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS)
-    verdict_cert_digests = set(app_integrity.get("certificateSha256Digest") or [])
-    if not allowed_cert_digests: return False, "android cert digests not configured"
-    if not allowed_cert_digests.intersection(verdict_cert_digests): return False, "android cert digest mismatch"
+    digests = app_integrity.get("certificateSha256Digest")
+    def fingerprints(values):
+        return {d[:43] for d in values if isinstance(d, str) and re.fullmatch(r"[A-Za-z0-9_-]{43}=?", d)}
+    allowed = fingerprints(allowed_cert_digests)
+    if not allowed:
+        raise _android_unavailable("missing or malformed Android signing fingerprint")
+    if not isinstance(digests, list) or allowed.isdisjoint(fingerprints(digests)):
+        return False, "android cert digest mismatch"
 
     allowed_device_verdicts = csv_values(APP_INTEGRITY_ANDROID_ALLOWED_DEVICE_VERDICTS)
-    verdict_device_labels = set(device_integrity.get("deviceRecognitionVerdict") or [])
+    labels = device_integrity.get("deviceRecognitionVerdict")
+    verdict_device_labels = {v for v in labels if isinstance(v, str)} if isinstance(labels, list) else set()
     if allowed_device_verdicts and not allowed_device_verdicts.intersection(verdict_device_labels): return False, "android device integrity failed"
 
     return True, None
@@ -272,12 +311,22 @@ async def verify_app_integrity_request(request: Request, *, action: str, db: Asy
                 verified = await _verify_with_remote_service(request, action=action, token=token, platform=platform, request_hash=request_hash)
                 if not verified and reason is None: reason = "verifier rejected token"
 
-        except (AppIntegrityVerifierUnavailable, httpx.HTTPError):
+        except (AppIntegrityVerifierUnavailable, httpx.HTTPError) as exc:
+            if platform == "android":
+                raise _android_unavailable(type(exc).__name__) from exc
             log.exception("App integrity verifier unavailable action=%s path=%s", action, request.url.path)
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="App integrity verifier is unavailable")
 
     if verified: return
     log.warning("App integrity check failed action=%s path=%s platform=%s reason=%s", action, request.url.path, platform or None, reason)
+    if platform == "android":
+        code, message = {
+            "android app unrecognized version": ("android_app_unrecognized", "Update the app from Google Play."),
+            "android app not evaluated": ("android_app_unevaluated", "Google Play could not evaluate this app."),
+            "android device integrity failed": ("android_device_unverified", "Google Play could not verify this device."),
+            "android cert digest mismatch": ("android_signing_mismatch", "The app signing certificate could not be verified. Contact support."),
+        }.get(reason, ("android_proof_invalid", "App verification failed."))
+        raise HTTPException(403, {"code": code, "message": message})
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="App integrity check failed")
 
 

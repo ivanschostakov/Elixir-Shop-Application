@@ -305,11 +305,11 @@ async def products_get(
     current_user: User | None = Depends(get_optional_current_user),
     scope: CatalogScope = Depends(get_catalog_scope),
 ):
-    normalized_q = normalize_search_text(q) if q is not None else None
+    normalized_q = normalize_search_text(q, strip_punctuation=False) if q is not None else None
     normalized_sku = sku.strip() if sku is not None else None
     cache = get_cache_service()
     base_key = build_cache_key(route="products:list", params={
-        "response_version": 2,
+        "response_version": 3,
         "q": normalized_q,
         "sku": normalized_sku,
         "min_priority": min_priority,

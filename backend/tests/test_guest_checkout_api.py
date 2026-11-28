@@ -3,10 +3,11 @@ import types
 import uuid
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import String, cast, create_engine, delete, select
 from sqlalchemy.orm import Session
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -24,7 +25,7 @@ if "PIL" not in sys.modules:
 
 from config import POSTGRES_DB, POSTGRES_HOST, POSTGRES_PASSWORD, POSTGRES_PORT, POSTGRES_USER
 from src.integrations.amocrm import amocrm_client
-from src.database.models import Order, Product, User, Variant
+from src.database.models import IntegrationRun, Order, Product, User, Variant
 
 SYNC_DB_URL = f"postgresql+psycopg2://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
 sync_engine = create_engine(SYNC_DB_URL, pool_pre_ping=True)
@@ -39,6 +40,9 @@ def _delete_user(user_id: int) -> None:
         user = session.get(User, user_id)
         if user is None:
             return
+        # Outbox targets are strings, not foreign keys; user deletion cannot cascade to them.
+        orders = select(cast(Order.id, String)).where(Order.user_id == user_id)
+        session.execute(delete(IntegrationRun).where(IntegrationRun.target_type == "order", IntegrationRun.target_id.in_(orders)))
         session.delete(user)
         session.commit()
 
@@ -112,7 +116,11 @@ def _build_pickup_payload() -> dict:
     }
 
 
-def _build_guest_order_payload(*, variant_id: int, email: str, phone: str = "+79991234567", quantity: int = 2) -> dict:
+def _new_phone() -> str:
+    return f"+79{uuid.uuid4().int % 10**9:09d}"
+
+
+def _build_guest_order_payload(*, variant_id: int, email: str, phone: str | None = None, quantity: int = 2) -> dict:
     return {
         "buyer_email": email,
         "items": [{"variant_id": variant_id, "quantity": quantity}],
@@ -120,7 +128,7 @@ def _build_guest_order_payload(*, variant_id: int, email: str, phone: str = "+79
         "recipient": {
             "name": "Иван",
             "surname": "Петров",
-            "phone": phone,
+            "phone": _new_phone() if phone is None else phone,
             "email": email,
         },
         "payment_method": "later",
@@ -141,6 +149,15 @@ def variant_factory():
     finally:
         for product_id in reversed(created_product_ids):
             _delete_product(product_id)
+
+
+@pytest.fixture()
+def guest_email():
+    email = f"guest-{uuid.uuid4().hex}@example.com"
+    yield email
+    # The route may commit an account even if response validation or an assertion fails.
+    if user := _get_user_by_email(email):
+        _delete_user(user.id)
 
 
 @pytest.fixture()
@@ -170,22 +187,34 @@ def stub_amocrm(monkeypatch):
     class StubAmoCrmClient:
         STATUS_IDS = amocrm_client.STATUS_IDS
         STATUS_WORDS = amocrm_client.STATUS_WORDS
+        PAID_STATUS_IDS = amocrm_client.PAID_STATUS_IDS
 
         async def find_lead_by_order_number(self, order_number):
             return None
 
         async def find_or_create_contact(self, **kwargs):
-            return {"id": 12345}
+            return {"id": kwargs.get("contact_id") or (uuid.uuid4().int >> 65)}
 
         async def create_lead_with_contact_and_note(self, **kwargs):
-            return {"id": 67890}
+            return {"id": uuid.uuid4().int >> 65}
 
         async def update_lead_status(self, lead_id, status_id):
             return {"id": lead_id, "status_id": status_id}
 
     stub_client = StubAmoCrmClient()
+    monkeypatch.setattr("src.app.services.orders.get_amocrm_client", lambda: stub_client)
+    monkeypatch.setattr("src.app.services.orders.creation.payloads.amocrm_client", stub_client)
     monkeypatch.setattr("src.app.services.guest_checkout.amocrm_client", stub_client)
     monkeypatch.setattr("src.app.services.orders.crm.amocrm_client", stub_client)
+
+
+@pytest.fixture
+def guest_handoff(monkeypatch):
+    export, wake = AsyncMock(), AsyncMock()
+    monkeypatch.setattr("config.MOY_SKLAD_ORDER_SYNC_ENABLED", True)
+    monkeypatch.setattr("src.app.services.guest_checkout.sync_order_to_moysklad_safe", export)
+    monkeypatch.setattr("src.app.services.admin.jobs.enqueue_integration_run", wake)
+    return export, wake
 
 
 def test_guest_basket_quote_returns_hydrated_totals_without_auth(client: TestClient, variant_factory):
@@ -205,102 +234,95 @@ def test_guest_basket_quote_returns_hydrated_totals_without_auth(client: TestCli
     assert _decimal(payload["grand_total"]) == Decimal("25.00")
 
 
+@pytest.mark.parametrize("automatic, expected_status", [(True, "processing"), (False, "preparing")])
 def test_guest_order_creates_user_order_session_with_recovery_email(
     client: TestClient,
     variant_factory,
     stub_amocrm,
+    guest_email,
+    guest_handoff,
+    automatic,
+    expected_status,
 ):
     catalog = variant_factory(stock=5, price=Decimal("19.00"))
-    email = f"guest_order_{uuid.uuid4().hex[:12]}@example.com"
-    phone = "+79991234567"
+    body = _build_guest_order_payload(variant_id=catalog["variant_id"], email=guest_email)
+    if automatic:
+        body["automatic_checkout"] = True
+    response = client.post("/api/v1/guest/orders", json=body)
 
-    response = client.post(
-        "/api/v1/guest/orders",
-        json=_build_guest_order_payload(variant_id=catalog["variant_id"], email=email, phone=phone),
-    )
-
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
     payload = response.json()
+    assert payload["order"]["status_code"] == expected_status
     assert payload["access_token"]
     assert payload["refresh_token"]
     assert payload["session_id"] > 0
-    assert payload["user"]["email"] == email
+    assert payload["user"]["email"] == guest_email
     assert payload["user"]["is_verified"] is False
-    assert payload["user"]["phone_number"] == phone
+    assert payload["user"]["phone_number"] == body["recipient"]["phone"]
     assert payload["order"]["user_id"] == payload["user"]["id"]
-    assert payload["order"]["recipient"]["email"] == email
-
-    _delete_user(payload["user"]["id"])
+    assert payload["order"]["recipient"]["email"] == guest_email
+    export, wake = guest_handoff
+    if automatic:
+        wake.assert_awaited_once()
+        export.assert_not_awaited()
+    else:
+        export.assert_awaited_once()
+        wake.assert_not_awaited()
 
 
 def test_guest_order_existing_phone_returns_409_and_creates_no_order(
     client: TestClient,
-    register_verified_user,
+    registered_user,
+    guest_email,
     variant_factory,
     stub_amocrm,
 ):
     catalog = variant_factory(stock=5, price=Decimal("19.00"))
-    existing_user_payload = register_verified_user({
-        "username": f"gexist_{uuid.uuid4().hex[:8]}",
-        "email": f"guest_existing_{uuid.uuid4().hex[:12]}@example.com",
-        "password": "test-password",
-        "name": "Existing",
-        "surname": "User",
-        "phone_number": "+79991234567",
-    })
-    existing_user_id = existing_user_payload["user"]["id"]
+    phone = _new_phone()
+    updated = client.patch("/api/v1/users/me/profile/personal-data", headers=registered_user["headers"],
+                           json={"phone_number": phone})
+    assert updated.is_success, updated.text
+    existing_user_id = registered_user["user_id"]
     before_count = _count_orders_for_user(existing_user_id)
 
-    try:
-        response = client.post(
-            "/api/v1/guest/orders",
-            json=_build_guest_order_payload(
-                variant_id=catalog["variant_id"],
-                email=f"new_guest_{uuid.uuid4().hex[:12]}@example.com",
-                phone="+79991234567",
-            ),
-        )
-
-        assert response.status_code == 409, response.text
-        assert response.json()["detail"]["code"] == "phone_exists"
-        assert _count_orders_for_user(existing_user_id) == before_count
-    finally:
-        _delete_user(existing_user_id)
+    response = client.post("/api/v1/guest/orders", json=_build_guest_order_payload(
+        variant_id=catalog["variant_id"], email=guest_email, phone=phone))
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["code"] == "phone_exists"
+    assert _count_orders_for_user(existing_user_id) == before_count
+    assert _get_user_by_email(guest_email) is None
 
 
-def test_guest_recovers_same_orders_with_own_email_after_session_loss(client, variant_factory, stub_amocrm, monkeypatch):
-    from unittest.mock import AsyncMock
+def test_guest_recovers_same_orders_with_own_email_after_session_loss(client, variant_factory, stub_amocrm, guest_email, guest_handoff, monkeypatch):
     from src.app.services.auth.service import password_reset
     catalog = variant_factory(stock=5, price=Decimal("19"))
-    buyer_email = f"buyer-{uuid.uuid4().hex}@example.com"
+    buyer_email = guest_email
     recipient_email = f"recipient-{uuid.uuid4().hex}@example.com"
     payload = _build_guest_order_payload(variant_id=catalog["variant_id"], email=recipient_email)
     payload["buyer_email"] = buyer_email
+    payload["automatic_checkout"] = True
     created = client.post("/api/v1/guest/orders", json=payload)
-    assert created.status_code == 201, created.text
+    assert created.status_code == 202, created.text
     customer = created.json()
     uid = customer["user"]["id"]
-    try:
-        mail = AsyncMock()
-        monkeypatch.setattr(password_reset, "generate_email_verification_code", lambda: "345678")
-        monkeypatch.setattr(password_reset, "send_user_password_reset_code_email", mail)
-        assert client.post("/api/v1/auth/password-reset/request", json={"email": buyer_email}).status_code == 200
-        mail.assert_awaited_once_with(to_email=buyer_email, code="345678")
-        reset = client.post("/api/v1/auth/password-reset/confirm", json={"email": buyer_email,
-            "code": "345678", "password": "RecoveredPassword123!"})
-        assert reset.status_code == 200, reset.text
-        login = client.post("/api/v1/auth/login", json={"login": buyer_email, "password": "RecoveredPassword123!"})
-        assert login.status_code == 200, login.text
-        from conftest import TEST_EMAIL_VERIFICATION_CODE
-        login = client.post("/api/v1/auth/login/verify", json={"email": buyer_email, "code": TEST_EMAIL_VERIFICATION_CODE})
-        assert login.status_code == 200, login.text
-        assert login.json()["user"]["id"] == uid
-        order = client.get(f"/api/v1/users/me/orders/{customer['order']['id']}",
-            headers={"Authorization": f"Bearer {login.json()['access_token']}"})
-        assert order.status_code == 200 and order.json()["recipient"]["email"] == recipient_email
-        assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {customer['access_token']}"}).status_code == 401
-    finally:
-        _delete_user(uid)
+    mail = AsyncMock()
+    monkeypatch.setattr(password_reset, "generate_email_verification_code", lambda: "345678")
+    monkeypatch.setattr(password_reset, "send_user_password_reset_code_email", mail)
+    assert client.post("/api/v1/auth/password-reset/request", json={"email": buyer_email}).status_code == 200
+    mail.assert_awaited_once_with(to_email=buyer_email, code="345678")
+    reset = client.post("/api/v1/auth/password-reset/confirm", json={"email": buyer_email,
+        "code": "345678", "password": "RecoveredPassword123!"})
+    assert reset.status_code == 200, reset.text
+    login = client.post("/api/v1/auth/login", json={"login": buyer_email, "password": "RecoveredPassword123!"})
+    assert login.status_code == 200, login.text
+    from conftest import TEST_EMAIL_VERIFICATION_CODE
+    login = client.post("/api/v1/auth/login/verify", json={"email": buyer_email, "code": TEST_EMAIL_VERIFICATION_CODE})
+    assert login.status_code == 200, login.text
+    assert login.json()["user"]["id"] == uid
+    order = client.get(f"/api/v1/users/me/orders/{customer['order']['id']}",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"})
+    assert order.status_code == 200 and order.json()["recipient"]["email"] == recipient_email
+    assert client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {customer['access_token']}"}).status_code == 401
 
 
 def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
@@ -318,6 +340,7 @@ def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
     })
     duplicate_user_id = duplicate_payload["user"]["id"]
     headers = registered_user["headers"]
+    phone = _new_phone()
 
     try:
         update_response = client.patch(
@@ -327,7 +350,7 @@ def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
                 "email": f"guest_updated_{token}@example.com",
                 "name": "Updated",
                 "surname": "Customer",
-                "phone_number": "+79990001122",
+                "phone_number": phone,
                 "password": "new-test-password",
             },
         )
@@ -336,7 +359,7 @@ def test_personal_data_update_changes_account_fields_and_rejects_duplicates(
         assert updated["email"] == f"guest_updated_{token}@example.com"
         assert updated["name"] == "Updated"
         assert updated["surname"] == "Customer"
-        assert updated["phone_number"] == "+79990001122"
+        assert updated["phone_number"] == phone
 
         duplicate_email_response = client.patch(
             "/api/v1/users/me/profile/personal-data",

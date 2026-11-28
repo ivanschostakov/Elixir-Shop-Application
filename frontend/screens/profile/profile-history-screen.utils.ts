@@ -26,7 +26,8 @@ export const COMPLETED_ORDER_STATUS_CODES: readonly OrderStatusCode[] = [
     "refund_declined",
 ]
 
-export const ORDER_STATUS_LABEL_KEYS: Record<OrderStatusCode, TranslationKey> = {
+export const ORDER_STATUS_LABEL_KEYS: Record<OrderStatusCode | "preparing", TranslationKey> = {
+    preparing: "payment.preparingOrder",
     processing: "profile.history.status.processing",
     checkout_failed: "profile.history.status.checkout_failed",
     created: "profile.history.status.created",
@@ -41,7 +42,8 @@ export const ORDER_STATUS_LABEL_KEYS: Record<OrderStatusCode, TranslationKey> = 
     refund_declined: "profile.history.status.refund_declined",
 }
 
-export const ORDER_STATUS_MESSAGE_KEYS: Record<OrderStatusCode, TranslationKey> = {
+export const ORDER_STATUS_MESSAGE_KEYS: Record<OrderStatusCode | "preparing", TranslationKey> = {
+    preparing: "payment.settlementWaitingTimeout",
     processing: "profile.history.statusMessage.processing",
     checkout_failed: "profile.history.statusMessage.checkout_failed",
     created: "profile.history.statusMessage.created",

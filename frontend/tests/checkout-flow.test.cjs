@@ -557,3 +557,44 @@ test("a confirmed created order without an invoice is not adopted as an unschedu
     assert.ok(app.elements().includes("payment.pendingLaterTitle"))
     assert.deepEqual(app.calls.map(c => c[0]), ["/payments/status"])
 })
+
+test("recovering a legacy status read can adopt once; losing the POST response never replays it", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    let reads = 0
+    const app = mount(t, "payment", {
+        params: { orderId: "42" },
+        status: () => {
+            if (++reads === 1) throw Object.assign(new ApiError("Offline"), { status: 0 })
+            if (reads === 2) throw Object.assign(new ApiError("Not ready"), {
+                status: 409, body: { detail: { code: "settlement_pending" } },
+            })
+            return { order_id: 42, payment_status: "draft", payment_method: "sbp" }
+        },
+        onPost: () => { throw Object.assign(new ApiError("Gateway timeout"), { status: 504 }) },
+    })
+    app.render()
+    await tick()
+    app.render()
+    await tick()
+    app.render()
+    for (let poll = 0; poll < 3; poll++) {
+        t.mock.timers.tick(30_000)
+        await tick()
+        app.render()
+    }
+    assert.deepEqual(app.calls.map(c => c[0]), ["/payments/status", "/payments/status", "/payments/create",
+        "/payments/status", "/payments/status"])
+    assert.deepEqual(app.calls[2][1], { order_id: 42, payment_method: "sbp", automatic_checkout: true })
+    assert.equal(app.cta().accessibilityLabel, "route.profileHistory")
+})
+
+test("legacy preparing is localized in history without displaying an unconfirmed total", t => {
+    for (const lang of ["ru", "en", "kz"]) {
+        const tr = key => translate(key, lang)
+        const app = mount(t, "history", { orderFields: { status_code: "preparing", grand_total: "123.45" }, translate: tr })
+        app.render()
+        const card = app.historyCard()
+        assert.ok(card.includes(tr("payment.preparingOrder")))
+        assert.ok(!card.includes(tr("checkout.grandTotalLabel")))
+    }
+})

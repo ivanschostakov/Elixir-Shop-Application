@@ -23,6 +23,7 @@ class CreateOrderPayload(BaseModel):
 class CreatePaymentPayload(BaseModel):
     automatic_checkout: bool = False
     order_id: int = Field(ge=1)
+    retry_export: bool = False
     payment_method: PaymentMethod | None = None
     accept_pending_amount: bool = False
 
@@ -46,3 +47,5 @@ class PaymentStatusRead(BaseModel):
     can_retry: bool
     awaiting_settlement: bool = False
     ms_reservation_confirmed: bool = False
+    invoice_ready: bool | None = None
+    export_retry_available: bool = False

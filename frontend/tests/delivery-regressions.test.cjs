@@ -6,9 +6,8 @@ const { fetchTextWithDeadline, RequestDeadlineError } = loadTs("services/api/req
 
 test("typing does not reapply the selected pickup address or recenter either map", () => {
     const fs = require("node:fs")
-    const path = require("node:path")
     for (const file of ["delivery-screen.tsx", "delivery-screen.web.tsx"]) {
-        const source = fs.readFileSync(path.join(__dirname, "../screens/delivery", file), "utf8")
+        const source = fs.readFileSync(require.resolve("../screens/delivery/" + file), "utf8")
         const effect = source.split("if (!pickupPoint || doorDeliveryPoint)")[1]?.split("])")[0]
         assert.ok(effect?.includes("setSearch(getPickupPointAddress"), file)
         const deps = effect.split("}, [")[1].split(",").map(name => name.trim())
@@ -20,7 +19,7 @@ test("typing does not reapply the selected pickup address or recenter either map
 test("selected pickup stays hidden while editing, including empty results, and returns on dismissal", () => {
     let cursor = 0, response = {}
     const state = []
-    const { useDeliveryFlowController } = loadTs("screens/delivery/use-delivery-flow-controller.ts", {
+    const { useDeliveryFlowController: renderFlow } = loadTs("screens/delivery/use-delivery-flow-controller.ts", {
         react: {
             useMemo: fn => fn(),
             useState(initial) {
@@ -40,7 +39,7 @@ test("selected pickup stays hidden while editing, including empty results, and r
     function render(feedback = {}) {
         cursor = 0
         response = { isLoading: false, results: [], error: null, ...feedback }
-        return useDeliveryFlowController({ selectedDeliveryPoint: point, userPoint: point })
+        return renderFlow({ selectedDeliveryPoint: point, userPoint: point })
     }
     const initial = render()
     assert.equal(initial.shouldShowPickupFooterExtension, true)

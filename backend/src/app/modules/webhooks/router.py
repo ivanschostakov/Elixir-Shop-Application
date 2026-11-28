@@ -26,7 +26,7 @@ from src.integrations.amocrm import get_amocrm_client
 from src.integrations.intellectmoney import get_intellectmoney_client
 
 from .service import _amocrm_payload_int, _amocrm_webhook_verified, _coerce_amocrm_int, _first_payload_value, _header_value, _parse_intellectmoney_payload, _request_client_ip
-from .service import AMO_LINK_WINDOW, amocrm_event_time, amocrm_title_code, amocrm_transition_concern
+from .service import AMO_LINK_WINDOW, amocrm_event_time, amocrm_title_code, amocrm_transition_concern, amocrm_website_order
 from config import TELEGRAM_WEBHOOK_SECRET_TOKEN, WEBHOOK_RATE_LIMIT_MAX_REQUESTS, WEBHOOK_RATE_LIMIT_WINDOW_SECONDS
 
 webhooks_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -104,13 +104,19 @@ async def _apply_amocrm_event(db, payload, received_at):
         lead = await _current_amo_lead(lead_id)
         if lead["pipeline_id"] != amocrm_client.PIPELINE_ID:
             return {"ok": True, "ignored": "pipeline mismatch"}
-        public_code = amocrm_title_code(lead.get("name"))
-        if public_code:
-            order = await get_order_by_code(db, public_code)
-            if order is not None and order.amocrm_lead_id not in (None, lead_id):
-                raise _AmoReview("conflicting_lead_link")
-        if order is None:
-            raise _AwaitingAmoOrder(lead_id, public_code)
+        if amocrm_website_order(lead):
+            # Checkout may have committed the link during the CRM read.
+            order = await get_order_by_amocrm_lead_id(db, lead_id)
+            if order is None:
+                return {"ok": True, "ignored": "website_order"}
+        else:
+            public_code = amocrm_title_code(lead.get("name"))
+            if public_code:
+                order = await get_order_by_code(db, public_code)
+                if order is not None and order.amocrm_lead_id not in (None, lead_id):
+                    raise _AmoReview("conflicting_lead_link")
+            if order is None:
+                raise _AwaitingAmoOrder(lead_id, public_code)
 
     # Read current CRM state *after* taking the same order lock used by the
     # status writer. Two overlapping callbacks cannot apply snapshots in reverse.

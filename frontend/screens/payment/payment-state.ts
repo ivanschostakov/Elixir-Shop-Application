@@ -35,7 +35,7 @@ export function laterCheckoutState(order: OrderRead | null, payment: PaymentStat
     if (current?.is_paid || (current?.payment_status && FINAL_STOP_STATUSES.has(current.payment_status))) return null
     if ((current ? current.ms_reservation_confirmed : order.ms_reservation_confirmed) !== true) return "reserving"
     const settlement = order.checkout_snapshot.settlement_payment as { status?: string } | undefined
-    if (current ? current.awaiting_settlement : settlement && settlement.status !== "confirmed") return "calculating"
+    if (current ? current.awaiting_settlement || current.invoice_ready === false : settlement && settlement.status !== "confirmed") return "calculating"
     return "ready"
 }
 
@@ -44,8 +44,8 @@ export function visibleOrderTotal(order: OrderRead | null, payment: PaymentStatu
     const current = payment?.order_id === order.id ? payment : null
     const state = laterCheckoutState(order, current)
     const { statusCode } = checkoutStatus(order, current)
-    if (statusCode === "processing" || statusCode === "checkout_failed") return null
-    if (current?.checkout_progress || state === "reserving" || state === "calculating" || current?.awaiting_settlement) return null
+    if (statusCode === "processing" || statusCode === "checkout_failed" || statusCode === "preparing") return null
+    if (current?.invoice_ready === false || current?.checkout_progress || state === "reserving" || state === "calculating" || current?.awaiting_settlement) return null
     const settlement = order.checkout_snapshot?.settlement_payment as { status?: string } | undefined
     if (settlement && settlement.status !== "confirmed" && current?.amount_rubles == null) return null
     return current?.amount_rubles ?? order.grand_total
@@ -61,7 +61,12 @@ export function resolvePaymentPhase(payment: PaymentStatusRead, requestedMethod:
     const method = payment.payment_method === "later" || payment.payment_method === "sbp"
         ? payment.payment_method
         : requestedMethod
-    if (method === "later" && laterCheckoutState(order, payment) === "reserving") return "waiting"
+    if (statusCode === "preparing") return "waiting"
+    const managerState = method === "later" ? laterCheckoutState(order, payment) : null
+    if (managerState) return managerState === "reserving" ? "waiting" : "pending"
+    if (method === "later" && payment.ms_reservation_confirmed && payment.invoice_ready !== false) return "pending"
+    if (!payment.invoice_id && !payment.qr_url && !payment.qr_image &&
+        (payment.payment_status === "draft" || payment.awaiting_settlement || payment.invoice_ready === false)) return "waiting"
     if (method === "sbp" && !payment.invoice_id && !payment.qr_url && !payment.qr_image) return "waiting"
     return method === "later" ? "pending" : "sbp"
 }

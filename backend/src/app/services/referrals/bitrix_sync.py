@@ -166,11 +166,11 @@ async def refresh_program_profile_from_bitrix(
         )
     except BitrixPromoError as error:
         profile.bitrix_sync_status = (
-            "unlinked" if error.code == "user_not_found" else "failed"
+            "unlinked" if error.code == "user_not_found" and error.status_code == 404 else "failed"
         )
         profile.bitrix_sync_error = f"{error.code}: {error.message_en}"[:500]
         await db.flush()
-        if strict and error.code != "user_not_found":
+        if strict and profile.bitrix_sync_status != "unlinked":
             raise
         return None
     except (RuntimeError, httpx.HTTPError) as error:

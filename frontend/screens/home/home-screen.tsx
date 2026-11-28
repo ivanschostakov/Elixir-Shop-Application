@@ -85,6 +85,7 @@ function getHomeGradientColors(accentName: ThemeAccentName, isDarkMode: boolean)
     return gradientCombos[accentName]
 }
 const orderStatusColors = {
+    preparing: { bg: "#F3F4F6", text: "#374151" },
     processing: { bg: "#DBEAFE", text: "#1E40AF" },
     checkout_failed: { bg: "#FEE2E2", text: "#991B1B" },
     created: {
@@ -127,7 +128,7 @@ const orderStatusColors = {
         bg: "#FFE4E6",
         text: "#9F1239",
     },
-} satisfies Record<OrderStatusCode, { bg: string; text: string }>
+} satisfies Record<OrderStatusCode | "preparing", { bg: string; text: string }>
 
 function appendImageVersion(uri: string, version: string | null | undefined): string {
     const trimmedVersion = version?.trim()

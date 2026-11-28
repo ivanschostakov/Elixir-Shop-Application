@@ -1,5 +1,6 @@
 from decimal import Decimal
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import config
@@ -156,8 +157,37 @@ def test_ios_rejects_hidden_items_already_in_basket(client, ios_catalog, stub_am
     assert order.json()["detail"] == "Product not found"
 
 
-def test_commerce_does_not_enable_medical_ai(client, ios_catalog):
-    for path in ("/api/v1/users/me/ai-chat", "/api/v1/users/me/companion/actions"):
-        response = client.post(path, headers=_headers(ios_catalog, "regular"), json={})
-        assert response.status_code == 403
-        assert response.json()["detail"]["code"] == "ios_feature_unavailable"
+def test_ios_chat_requires_explicit_consent_even_after_using_shop(client, ios_catalog, monkeypatch):
+    headers = {**_headers(ios_catalog, "regular"), "X-App-Integrity-Platform": "ios"}
+    root = "/api/v1/users/me/ai-chat"
+    send = AsyncMock(return_value=SimpleNamespace(chat=None, basket_updated=False,
+        turn_meta={"selected_bot_model": "premium", "input_tokens": 1, "cached_input_tokens": 0, "output_tokens": 1}))
+    monkeypatch.setattr("src.app.modules.users.me.ai_chat.send_user_chat_message", send)
+    assert client.get("/api/v1/products", headers=headers).status_code == 200
+    form = {"text": "Привет", "chat_mode": "ordinary"}
+    assert client.post(root, headers=headers, json={}).status_code == 422
+    blocked = client.post(root, headers=headers, data=form)
+    assert blocked.status_code == 403 and blocked.json()["detail"]["code"] == "ai_data_consent_required"
+    send.assert_not_awaited()
+
+    consent = client.get(root + "/data-consent", headers=headers).json()
+    assert consent["granted"] is False
+    for granted, expected_status in ((True, 200), (False, 403)):
+        changed = client.post(root + "/data-consent", headers=headers, json={"version": consent["version"], "granted": granted})
+        assert changed.status_code == 200 and changed.json()["granted"] is granted
+        response = client.post(root, headers=headers, data=form)
+        assert response.status_code == expected_status, response.text
+    send.assert_awaited_once()
+
+
+def test_ios_companion_requires_native_client_and_consent(client, ios_catalog):
+    root = "/api/v1/users/me/ai-chat/companion"
+    headers = _headers(ios_catalog, "regular")
+    data = {"text": "Привет", "client_request_id": "ios-test-message", "dialogue_protocol": "2"}
+    response = client.post(root + "/messages", data=data, headers=headers)
+    assert response.status_code == 403 and "мобильном приложении" in response.json()["detail"]
+    native = {**headers, "X-App-Integrity-Platform": "ios"}
+    availability = client.get(root + "/availability", headers=native)
+    assert availability.status_code == 200 and availability.json()["available"]
+    blocked = client.post(root + "/messages", data=data, headers=native)
+    assert blocked.status_code == 403 and blocked.json()["detail"]["code"] == "ai_data_consent_required"

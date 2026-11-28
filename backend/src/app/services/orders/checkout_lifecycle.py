@@ -104,6 +104,9 @@ async def notify_result(db, order_id, state):
     if not order or order.is_canceled:
         return {"sent": False}
     ok = state == "created"
+    if ok:
+        from .checkout_readiness import record_created_when_ready
+        await record_created_when_ready(db, order, verified_checkout=True)
     title = f"Заказ №{order.order_number}"
     body = "Заказ оформлен." if ok else "Не удалось завершить оформление. Причина указана в истории заказов."
     sent = await send_push_to_user(db, user_id=order.user_id, title=title, body=body, checkout_result=True,

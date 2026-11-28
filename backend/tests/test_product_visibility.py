@@ -3,7 +3,7 @@
 import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 from starlette.requests import Request
 from unittest.mock import Mock
@@ -49,6 +49,16 @@ class AsyncSessionAdapter:
 @pytest.fixture
 def catalog():
     engine = create_engine("sqlite://")
+
+    @event.listens_for(engine, "connect")
+    def register_postgres_translate(connection, _):
+        def translate(value, source, target):
+            if value is None:
+                return None
+            return value.translate(str.maketrans(dict.fromkeys(source) | dict(zip(source, target))))
+
+        connection.create_function("translate", 3, translate, deterministic=True)
+
     for model in (Product, Variant, ProductCategory, ProductByCategory, ProductCertificate, FavouredProduct):
         model.__table__.create(engine)
     with Session(engine) as session:

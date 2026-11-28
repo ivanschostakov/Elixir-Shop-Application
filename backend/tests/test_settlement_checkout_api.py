@@ -15,8 +15,8 @@ import config
 from src.database.models import IntegrationRun, Order, OrderDraft, User
 from src.app.services.admin.jobs import execute_integration_run
 from src.app.services.benefits import service as benefits, moysklad_bonus
-from src.app.services.orders import creation, settlement_payment, crm
-from src.integrations.moysklad.settlement_checkout import ORDER_SPENT_ATTRIBUTE, display_spent_rubles
+from src.app.services.orders import settlement_payment, crm
+from src.integrations.moysklad.settlement_checkout import display_spent_rubles
 from test_settlement_checkout import CID, CURRENCY, IID, OID, ORG, documents, ref
 from test_orders_api import (
     registered_user, variant_factory, stub_amocrm, sync_engine,
@@ -33,7 +33,7 @@ def _run_checkout(client, order_id):
 
 @pytest.mark.parametrize("scenario", ["exact", "rounded", "full", "automatic_full", "full_exact_balance", "partial_delivery", "wrong_invoice",
     "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order", "zero_balance", "opt_out", "partial_request",
-    "legacy_cash_order"])
+    "legacy_cash_order", "invalid_open_order", "manager_wait", "export_rate_limit"])
 def test_balance_checkout_api_uses_only_mocked_external_services(
     client, registered_user, variant_factory, stub_amocrm, monkeypatch, scenario,
 ):
@@ -89,7 +89,17 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
 
     async def sync_mock(db, *, order, user):
         # Persistence is real; MoySklad documents and gateway calls are fixtures only.
+        if scenario == "export_rate_limit":
+            db.add(IntegrationRun(provider="moysklad", operation="moysklad_order_sync", status="error",
+                target_type="order", target_id=str(order.id), attempts=3, max_attempts=3,
+                error="Client error '429 Too Many Requests' for /entity/service",
+                idempotency_key=f"order:auto:moysklad:{order.id}"))
+            await db.commit()
+            return
         snapshot = deepcopy(order.checkout_snapshot)
+        if scenario == "manager_wait":
+            # A pre-v2 manager checkout has no worker that can own the pending payment.
+            snapshot.pop("ms_checkout_version", None)
         snapshot["settlement_payment"]["organization_id"] = str(ORG)
         snapshot["stock_reservation"]["status"] = "exported"
         snapshot["stock_reservation"]["remote_quantities"] = {stock_href: 2, delivery_href: 1}
@@ -135,17 +145,37 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         assert preview.json()["use_bonus_rubles"] is True
         assert Decimal(preview.json()["total_after_discounts"]) >= 0
     response = client.post("/api/v1/users/me/orders", headers=headers, json={
-        "draft_id": draft["id"], "payment_method": "sbp", "use_bonus_rubles": scenario != "opt_out",
+        "draft_id": draft["id"], "payment_method": "later" if scenario == "manager_wait" else "sbp", "use_bonus_rubles": scenario != "opt_out",
         "automatic_checkout": scenario == "automatic_full",
         **({"bonus_rubles_to_use": "1.00"} if scenario == "partial_request" else {})})
-    assert response.status_code == 200, response.text
+    assert response.status_code == (200 if scenario == "export_rate_limit" else 202), response.text
     assert Decimal(response.json()["grand_total"]) == max(Decimal("0"), gross - balance)
     order_id = response.json()["id"]
+    expected_state = {"automatic_full": "processing", "export_rate_limit": "checkout_failed"}.get(scenario, "preparing")
+    assert response.json()["status_code"] == expected_state
+    if scenario == "export_rate_limit":
+        params = {"order_id": order_id, "check_invoice": True}
+        def check():
+            result = client.get("/api/v1/payments/status", headers=headers, params=params)
+            assert result.status_code == 200, result.text
+            return result.json()
+        for _ in range(2):
+            probe = check()
+            assert probe["export_retry_available"] and not probe["invoice_ready"]
+        for _ in range(2):
+            retry = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id, "retry_export": True})
+            assert retry.status_code == 409 and retry.json()["detail"]["code"] == "settlement_pending"
+        assert not check()["export_retry_available"]
+        with Session(sync_engine) as db:
+            run = db.query(IntegrationRun).filter_by(idempotency_key=f"order:auto:moysklad:{order_id}").one()
+            assert (run.status, run.attempts, run.max_attempts) == ("retrying", 3, 4)
+        gateway.assert_not_awaited()
+        return
     assert response.json()["checkout_snapshot"]["settlement_payment"]["gross_rubles"] == str(gross.quantize(Decimal("0.01")))
     if scenario == "wrong_invoice": invoice["customerOrder"] = ref(CID)
     if scenario == "balance_changed":
         moysklad_bonus.get_moysklad_settlement_wallet.return_value = SimpleNamespace(balance_rubles=Decimal("0"))
-    if scenario == "not_ready":
+    if scenario in {"not_ready", "manager_wait"}:
         from src.app.services.orders import payment_attempt
         clock = [1000]
         monkeypatch.setattr(payment_attempt, "monotonic", lambda: clock[0])
@@ -155,8 +185,10 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     if scenario == "ambiguous_gateway": gateway.return_value = {"Result": {}}
     if scenario == "cancelled": _update_order(order_id, is_canceled=True)
     if scenario == "other_open_order":
-        ms.get_page.return_value = {"rows": [{"id": str(CID), "agent": ref(CID), "sum": 10000, "shippedSum": 0,
-            "attributes": [{"id": ORDER_SPENT_ATTRIBUTE, "value": 1}]}]}
+        other, _ = documents("100", "90", 10)
+        ms.get_page.return_value = {"rows": [{**other, "id": str(uuid4())}]}
+    if scenario == "invalid_open_order":
+        ms.get_page.return_value = {"rows": [{"id": str(CID), "sum": 10000, "shippedSum": 0}]}
     if scenario == "automatic_full":
         _run_checkout(client, order_id)
         assert _get_order(order_id).is_paid
@@ -169,21 +201,46 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         assert retry.status_code == 409, retry.text
         gateway.assert_awaited_once()
         return
-    if scenario == "not_ready":
+    if scenario in {"not_ready", "manager_wait"}:
         assert response.status_code == 409, response.text
         assert response.json()["detail"]["code"] == "settlement_pending"
         status_response = client.get("/api/v1/payments/status", headers=headers, params={"order_id": order_id})
-        assert status_response.status_code == 409, status_response.text
-        assert status_response.json()["detail"]["code"] == "settlement_pending"
+        if scenario == "not_ready":
+            assert status_response.status_code == 409, status_response.text
+            assert status_response.json()["detail"]["code"] == "settlement_pending"
+            remote["invoicesOut"] = [ref(IID)]
+            reads = ms.get_customer_order.await_count
+            retry = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
+            assert retry.status_code == 409 and ms.get_customer_order.await_count == reads
+        else:
+            assert status_response.status_code == 200, status_response.text
+            assert not status_response.json()["awaiting_settlement"]
+            for expected in (False, False, True):
+                if expected:
+                    remote["invoicesOut"] = [ref(IID)]
+                probe = client.get("/api/v1/payments/status", headers=headers,
+                                   params={"order_id": order_id, "check_invoice": True})
+                assert probe.status_code == 200, probe.text
+                assert probe.json()["invoice_ready"] is expected
+                assert probe.json()["awaiting_settlement"] is not expected
+                assert _get_order(order_id).checkout_snapshot["settlement_payment"]["status"] == "awaiting_invoice"
         assert _get_order(order_id).payment_invoice_id is None
         gateway.assert_not_awaited()
-        remote["invoicesOut"] = [ref(IID)]
-        reads = ms.get_customer_order.await_count
-        retry = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
-        assert retry.status_code == 409 and ms.get_customer_order.await_count == reads
         clock[0] += response.json()["detail"]["retry_after_seconds"]
-        _run_checkout(client, order_id)
+        if scenario == "not_ready":
+            _run_checkout(client, order_id)
         response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
+        if scenario == "manager_wait":
+            assert response.status_code == 200, response.text
+            assert response.json()["payment_status"] == "pending"
+            assert _get_order(order_id).moysklad_invoiceout_id == IID
+            assert client.get(f"/api/v1/users/me/orders/{order_id}", headers=headers).json()["status_code"] != "preparing"
+            gateway.assert_not_awaited()
+            return
+    if scenario == "invalid_open_order":
+        assert response.status_code == 503, response.text
+        gateway.assert_not_awaited()
+        return
     if scenario in {"wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
         assert response.status_code == 409, response.text
         gateway.assert_not_awaited()
@@ -191,6 +248,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         return
     assert response.status_code == 200, response.text
     fields, document_links = [call.args[1] for call in crm_fields.await_args_list[:2]]
+    assert client.get(f"/api/v1/users/me/orders/{order_id}", headers=headers).json()["status_code"] != "preparing"
     assert fields[crm.CF["cash_due"]] == float(cash)
     assert fields[crm.CF["balance_spent"]] == display_spent_rubles(applied)
     assert document_links[crm.CF["ms_invoice_id"]] == str(IID)

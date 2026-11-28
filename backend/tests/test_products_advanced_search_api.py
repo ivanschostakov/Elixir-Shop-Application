@@ -87,7 +87,7 @@ def _seed_search_products() -> dict[str, int]:
 
         product_ru = _create_product(
             session,
-            name=f"Рета Пептид {token}",
+            name=f"Рета Пептид БЕРЁЗА {token}",
             sku=f"RET-RU-{token}",
             category_id=category_peptides.id,
             description="Супер средство для восстановления",
@@ -177,6 +177,11 @@ def test_products_advanced_search_variants_and_regressions(client: TestClient):
         wrong_layout_en_to_ru = client.get("/api/v1/products", params={"q": "htnf"})
         assert wrong_layout_en_to_ru.status_code == 200, wrong_layout_en_to_ru.text
         assert seed["ru_product_id"] in _response_product_ids(wrong_layout_en_to_ru)
+
+        for query in ("берёза", ",th`pf"):
+            response = client.get("/api/v1/products", params={"q": query, "category_id": seed["peptides_category_id"]})
+            assert response.status_code == 200, response.text
+            assert _response_product_ids(response) == [seed["ru_product_id"]]
 
         wrong_layout_ru_to_en = client.get("/api/v1/products", params={"q": "куеф"})
         assert wrong_layout_ru_to_en.status_code == 200, wrong_layout_ru_to_en.text

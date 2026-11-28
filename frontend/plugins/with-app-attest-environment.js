@@ -23,7 +23,10 @@ function getEnvironmentForConfiguration(name) {
 
 function withAppAttestEnvironment(config) {
   config = withEntitlementsPlist(config, (config) => {
-    config.modResults[APP_ATTEST_ENTITLEMENT] = "$(APP_ATTEST_ENVIRONMENT)"
+    // EAS syncs capabilities before Xcode can expand build settings.
+    config.modResults[APP_ATTEST_ENTITLEMENT] = config.modRequest.introspect
+      ? "production"
+      : "$(APP_ATTEST_ENVIRONMENT)"
     return config
   })
 

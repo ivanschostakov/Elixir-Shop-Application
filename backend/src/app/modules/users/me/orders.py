@@ -1,6 +1,5 @@
 from datetime import datetime
-import uuid
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 
@@ -16,7 +15,7 @@ from src.app.services.orders import (
     serialize_order,
     serialize_orders,
 )
-from src.app.services.customer_intelligence import record_customer_event_safe
+from src.app.services.orders.checkout_readiness import record_created_when_ready
 from src.app.services.orders.draft_serialization import serialize_order_draft
 from src.database import get_db
 from src.database.models import User
@@ -26,8 +25,8 @@ from src.database.schemas import OrderDraftRead, OrderRead
 my_orders_router = APIRouter(prefix="/orders", tags=["my_orders"])
 
 
-@my_orders_router.post("", response_model=OrderRead)
-async def create_my_order(payload: CreateOrderPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("orders:create"))) -> OrderRead:
+@my_orders_router.post("", response_model=OrderRead, responses={202: {"model": OrderRead, "description": "Checkout is still being prepared"}})
+async def create_my_order(payload: CreateOrderPayload, request: Request, response: Response, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("orders:create"))) -> OrderRead:
     options = dict(request=request, user=current_user, payment_method=payload.payment_method,
                    automatic_checkout=payload.automatic_checkout, entered_code=payload.code,
                    bonus_rubles_to_use=payload.bonus_rubles_to_use, use_bonus_rubles=payload.use_bonus_rubles,
@@ -36,17 +35,12 @@ async def create_my_order(payload: CreateOrderPayload, request: Request, db: Asy
         order = await create_order_from_basket_for_user(db, **options)
     else:
         order = await create_order_from_draft_for_user(db, draft_id=payload.draft_id, **options)
-    await record_customer_event_safe(
-        db,
-        user_id=current_user.id,
-        event_name="order_created",
-        event_id=uuid.uuid5(uuid.NAMESPACE_URL, f"elixir-shop:user:{current_user.id}:order:{order.id}:created"),
-        entity_type="order",
-        entity_id=order.id,
-        properties={"order_code": order.order_code, "grand_total": str(order.grand_total), "currency": order.currency},
-        commit=True,
-    )
-    return await serialize_order(request, db, order)
+    result = await serialize_order(request, db, order)
+    if result.status_code in {"preparing", "processing"}:
+        response.status_code = status.HTTP_202_ACCEPTED
+    elif not payload.automatic_checkout:
+        await record_created_when_ready(db, order)
+    return result
 
 
 @my_orders_router.get("", response_model=list[OrderRead])

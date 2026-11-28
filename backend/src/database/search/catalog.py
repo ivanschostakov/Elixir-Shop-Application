@@ -98,11 +98,11 @@ def build_search_query_variants(query: str) -> list[str]:
     add(base)
     if _contains_latin(base):
         add(transliterate_latin_to_cyrillic(base))
-        add(convert_keyboard_layout_en_to_ru(base))
+        add(convert_keyboard_layout_en_to_ru(query))
 
     if _contains_cyrillic(base):
         add(transliterate_cyrillic_to_latin(base))
-        add(convert_keyboard_layout_ru_to_en(base))
+        add(convert_keyboard_layout_ru_to_en(query))
 
     for fuzzy in _fuzzy_variants(base):
         add(fuzzy)

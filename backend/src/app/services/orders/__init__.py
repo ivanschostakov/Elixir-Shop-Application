@@ -105,9 +105,9 @@ async def create_payment_for_order(
     )
 
 
-async def get_payment_status_for_order(session: AsyncSession, *, request: Request, order: Order, accept_pending_amount: bool = False) -> dict:
+async def get_payment_status_for_order(session: AsyncSession, *, request: Request, order: Order, accept_pending_amount: bool = False, check_invoice: bool = False) -> dict:
     _sync_runtime_dependencies()
-    return await _order_payments.get_payment_status_for_order(session, request=request, order=order, accept_pending_amount=accept_pending_amount)
+    return await _order_payments.get_payment_status_for_order(session, request=request, order=order, accept_pending_amount=accept_pending_amount, check_invoice=check_invoice)
 
 
 async def recheck_payment_status_for_admin(session: AsyncSession, *, order: Order) -> dict:

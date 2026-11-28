@@ -13,6 +13,8 @@ from src.normalize import coerce_uuid
 from src.integrations.moysklad.client import get_moysklad_client
 from src.integrations.moysklad.idempotency import build_counterparty_external_code, build_customerorder_external_code, build_sync_id
 from src.integrations.moysklad.schemas import MoySkladOrderSyncResult, MoySkladCounterpartySyncResult
+from src.integrations.moysklad.identity import CounterpartyReviewRequired
+from src.app.services.counterparty_review import queue_counterparty_review
 from src.integrations.moysklad.settlement_checkout import order_settlement, entity_id, money
 from .common import log
 from .contacts import _counterparty_email, _counterparty_phone, _full_name
@@ -57,8 +59,12 @@ async def _mark_remote_export(session, order, cid, client):
     hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
     settlement = order_settlement(order)
     mark_stock = hold.get("status") == "held" and not hold.get("remote_export_attempted")
-    claim_balance = (settlement and not order.moysklad_customerorder_id and not settlement.get("export_started")
-                     and money(settlement["maximum_balance_rubles"]) > 0)
+    claim_balance = False
+    if settlement and not order.moysklad_customerorder_id and not settlement.get("export_started"):
+        try:
+            claim_balance = money(settlement.get("maximum_balance_rubles")) > 0
+        except ValueError as exc:
+            raise HTTPException(409, "Не удалось подтвердить лимит списания. Заказ требует сверки.") from exc
     first_send = _customerorder_send_mode(order) == "first"
     if mark_stock or claim_balance or first_send:
         snapshot = dict(order.checkout_snapshot)
@@ -117,7 +123,15 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     elif linked_buyer is not None and (order.checkout_snapshot or {}).get("ms_checkout_version") == 2:
         # No customer update is needed. Validate this identity on the returned document.
         counterparty_result = MoySkladCounterpartySyncResult(linked_buyer, counterparty_external_code)
-    else: counterparty_result = await moysklad_client.resolve_or_sync_counterparty(existing_counterparty_id=user.moysklad_counterparty_id, external_code=counterparty_external_code, sync_id=counterparty_sync_id, name=_full_name(user, order), email=_counterparty_email(user, order), phone=_counterparty_phone(user, order), actual_address=None,)
+    else:
+        try:
+            counterparty_result = await moysklad_client.resolve_or_sync_counterparty(
+                existing_counterparty_id=user.moysklad_counterparty_id, external_code=counterparty_external_code,
+                sync_id=counterparty_sync_id, name=_full_name(user, order), email=_counterparty_email(user, order),
+                phone=_counterparty_phone(user, order), actual_address=None)
+        except CounterpartyReviewRequired as exc:
+            await queue_counterparty_review(exc, user_id=user_id)
+            raise
 
     if user.moysklad_counterparty_id != counterparty_result.counterparty_id:
         user.moysklad_counterparty_id = counterparty_result.counterparty_id
@@ -298,6 +312,11 @@ async def sync_order_to_moysklad_safe(session: AsyncSession, *, order: Order, us
                 counters=result.as_dict(),
             )
         return result
+    except CounterpartyReviewRequired as error:
+        # The manager alert has already been committed. A background retry
+        # cannot decide ownership, so leave the run available for manual retry.
+        await _record_automatic_order_sync(session, order_id=order_id, status="error", error=error.detail)
+        return MoySkladOrderSyncResult(enabled=MOY_SKLAD_ORDER_SYNC_ENABLED, skipped_reason="identity_review")
     except Exception as error:
         order_id = order.__dict__.get("id")
         user_id = user.__dict__.get("id")
@@ -327,8 +346,12 @@ async def _record_automatic_order_sync(session: AsyncSession, *, order_id: int, 
     delay = 0
     if enqueue:
         from src.app.services.admin.jobs import retry_delay_for_error
+        from src.app.services.orders.checkout_lifecycle import WINDOW
         delay = max(60, retry_delay_for_error(retry_error, 1)) if retry_error is not None else 60
-    run = IntegrationRun(provider="moysklad", operation="moysklad_order_sync", status=status, target_type="order", target_id=str(order_id), attempts=0, max_attempts=3, counters_json=jsonable_encoder(counters or {}), error=error, idempotency_key=idempotency_key, finished_at=datetime.now(timezone.utc) if status in {"success", "error"} else None, next_attempt_at=datetime.now(timezone.utc) + timedelta(seconds=delay) if enqueue else None,)
+        # At the deadline the worker expires the intent without another remote attempt.
+        delay = min(delay, int(WINDOW.total_seconds()))
+    now = datetime.now(timezone.utc)
+    run = IntegrationRun(provider="moysklad", operation="moysklad_order_sync", status=status, target_type="order", target_id=str(order_id), attempts=0, max_attempts=3, counters_json=jsonable_encoder(counters or {}), error=error, idempotency_key=idempotency_key, started_at=now, finished_at=now if status in {"success", "error"} else None, next_attempt_at=now + timedelta(seconds=delay) if enqueue else None,)
     session.add(run)
     await session.flush()
     await session.commit()

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, Integer, JSON, String, Text, text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, JSON, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,8 +21,8 @@ class AIChatAccessBan(Base, IdPkMixin, TimestampMixin):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     created_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("admin_identities.id", ondelete="SET NULL"), nullable=True)
-    expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("admin_identities.id", ondelete="SET NULL"), nullable=True)
 
     created_by: Mapped["AdminIdentity | None"] = relationship(foreign_keys=[created_by_user_id])

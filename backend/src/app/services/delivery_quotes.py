@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Iterable
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,17 @@ def _address_value(address: Any, name: str) -> Any:
     if isinstance(address, dict):
         return address.get(name)
     return getattr(address, name, None)
+
+
+async def _lookup_fias_guid(cdek: AsyncCDEKClient, city_code: int) -> str | None:
+    try:
+        return await cdek.city_fias_guid(city_code)
+    except (httpx.HTTPError, HTTPException, ValueError) as exc:
+        logger.warning("CDEK FIAS lookup unavailable city_code=%s error=%s", city_code, type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="Сервис СДЭК временно недоступен. Повторите расчёт доставки позже.",
+        ) from exc
 
 
 async def build_bitrix_delivery_items(
@@ -98,17 +110,32 @@ async def calculate_authoritative_cdek_quote(
         "latitude": float(latitude),
         "longitude": float(longitude),
     }
+    bitrix = BitrixDeliveryClient()
+
+    async def quote(target: dict[str, Any]) -> dict[str, Any]:
+        return await bitrix.quote(mode=mode, destination=target, items=bitrix_items, user_email=user.email)
+
     try:
-        return await BitrixDeliveryClient().quote(
-            mode=mode,
-            destination=destination,
-            items=bitrix_items,
-            user_email=user.email,
-        )
+        try:
+            return await quote(destination)
+        except BitrixDeliveryError as original:
+            if original.code != "destination_not_found" or destination["country_code"] != "RU":
+                raise
+            guid = await _lookup_fias_guid(cdek_client, city_code)
+            if not guid:
+                raise
+            return await quote({**destination, "fias_guid": guid})
     except BitrixDeliveryError as exception:
         logger.warning(
-            "Authoritative Bitrix delivery quote failed code=%s status=%s",
+            "Authoritative Bitrix delivery quote failed code=%s status=%s cdek_city_code=%s mode=%s",
             exception.code,
             exception.status_code,
+            city_code,
+            mode,
         )
+        if exception.code in {"destination_not_found", "calculation_failed"}:
+            raise HTTPException(status_code=exception.status_code, detail=(
+                "Для этого адреса СДЭК не подтвердил стоимость доставки. Выберите другой пункт выдачи "
+                "или способ доставки."
+            )) from exception
         raise HTTPException(status_code=exception.status_code, detail=exception.message_ru) from exception

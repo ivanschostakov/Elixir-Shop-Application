@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import EXPO_PUSH_API_URL, EXPO_PUSH_TIMEOUT_SECONDS
 from src.database.crud import delete_user_push_token, get_user_push_tokens
 from src.database.models import Order, UserPushToken
-from src.database.models.orders.history import get_order_history_bucket, get_order_status_code, normalize_order_status
+from src.database.models.orders.history import get_order_history_bucket, normalize_order_status
 
 log = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ class ExpoPushBatchResult:
     failed_tokens: frozenset[str]
 
 ORDER_STATUS_NOTIFICATION_BODIES = {
+    "preparing": "Оформляем заказ. Готовность можно проверить в истории заказов.",
     "created": "Заказ создан. Мы уже взяли его в работу.",
     "invoice_sent": "Ожидаем оплату по заказу.",
     "paid": "Оплату получили. Спасибо за заказ.",
@@ -33,21 +34,24 @@ ORDER_STATUS_NOTIFICATION_BODIES = {
     "completed": "Заказ завершен.",
     "refund_declined": "Возврат по заказу отклонен.",
 }
-ORDER_STATUS_PAYMENT_CODES = {"created", "invoice_sent"}
+ORDER_STATUS_PAYMENT_CODES = {"preparing", "created", "invoice_sent"}
 
 
 def _build_order_status_body(order: Order) -> str:
-    status_code = get_order_status_code(order)
+    from .orders.checkout_readiness import customer_order_status
+    status_code = customer_order_status(order)
     return ORDER_STATUS_NOTIFICATION_BODIES.get(status_code, f"Новый статус заказа: {order.status}")
 
 
 def _build_order_status_data(order: Order) -> dict[str, Any]:
+    from .orders.checkout_readiness import customer_order_status
+    code = customer_order_status(order)
     return {
         "type": "order_status_changed",
         "order_id": order.id,
         "order_number": order.order_number,
-        "status": order.status,
-        "status_code": get_order_status_code(order),
+        "status": "Оформляем заказ" if code == "preparing" else order.status,
+        "status_code": code,
         "history_bucket": get_order_history_bucket(order),
     }
 

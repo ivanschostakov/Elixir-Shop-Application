@@ -49,7 +49,7 @@ export type OrderRead = {
     delivery_address_id: number
     recipient_id: number
     status: string
-    status_code: OrderStatusCode
+    status_code: OrderStatusCode | "preparing"
     checkout_issue?: CheckoutIssue | null
     history_bucket: OrderHistoryBucket
     items_count: number

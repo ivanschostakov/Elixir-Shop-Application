@@ -8,6 +8,7 @@ from .checkout_lifecycle import public_issue
 from src.database.schemas import OrderItemRead, OrderRead
 from .serialization_utils import build_order_item_image_url, get_products_by_id, get_variants_by_id
 from .stock_reservations import has_exported_reservation
+from .checkout_readiness import customer_order_status
 
 
 def _serialize_order_item(request: Request, item: OrderItem, *, products_by_id: dict[int, Product], variants_by_id: dict[int, Variant]) -> OrderItemRead:
@@ -36,7 +37,7 @@ def _serialize_order_item(request: Request, item: OrderItem, *, products_by_id: 
 
 def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int, Product], variants_by_id: dict[int, Variant], run=None) -> OrderRead:
     items = [_serialize_order_item(request, item, products_by_id=products_by_id, variants_by_id=variants_by_id) for item in order.items]
-    code = get_order_status_code(order)
+    code = get_order_status_code(order) if run else customer_order_status(order)
     issue = None
     if run and not (order.is_paid or order.is_shipped or order.is_canceled) and get_order_history_bucket(order) == "active":
         issue = public_issue(run, order)
@@ -55,7 +56,7 @@ def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int
         user_id=order.user_id,
         delivery_address_id=order.delivery_address_id,
         recipient_id=order.recipient_id,
-        status=STATUS_LABELS_BY_CODE[code][0] if code in {"processing", "checkout_failed"} else order.status,
+        status=STATUS_LABELS_BY_CODE[code][0] if code in {"processing", "checkout_failed"} else "Оформляем заказ" if code == "preparing" else order.status,
         checkout_issue=issue,
         items_count=order.items_count,
         total_quantity=order.total_quantity,

@@ -26,6 +26,7 @@ OrderHistoryBucket = Literal["active", "completed"]
 OrderStatusCode = Literal[
     "processing",
     "checkout_failed",
+    "preparing",
     "created",
     "invoice_sent",
     "paid",

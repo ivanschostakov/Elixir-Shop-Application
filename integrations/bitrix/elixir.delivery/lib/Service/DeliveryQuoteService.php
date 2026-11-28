@@ -28,7 +28,7 @@ final class DeliveryQuoteService
         $personTypeId = max(1, (int)Option::get(self::MODULE_ID, 'person_type_id', '1'));
         $userId = $this->resolveUserId($payload);
 
-        $location = $this->resolveLocation((int)$destination['cdek_city_code']);
+        $location = $this->resolveLocation((int)$destination['cdek_city_code'], $destination['fias_guid']);
         $service = $this->resolveDeliveryService($mode);
         $basket = $this->buildBasket($siteId, $currency, $items);
         $order = Order::create($siteId, $userId, $currency);
@@ -130,6 +130,8 @@ final class DeliveryQuoteService
         }
         return [
             'cdek_city_code' => (int)$cityCode,
+            'fias_guid' => ($rawDestination['country_code'] ?? '') === 'RU'
+                ? $this->boundedString($rawDestination['fias_guid'] ?? '', 64) : '',
             'country_code' => $this->boundedString($rawDestination['country_code'] ?? '', 2),
             'postal_code' => $this->boundedString($rawDestination['postal_code'] ?? '', 20),
             'city' => $this->boundedString($rawDestination['city'] ?? '', 255),
@@ -287,17 +289,25 @@ final class DeliveryQuoteService
         throw new \DomainException('product_not_found:' . ($variantSystemId ?: $productSystemId));
     }
 
-    private function resolveLocation(int $cdekCityCode): array
+    private function resolveLocation(int $cdekCityCode, string $fiasGuid): array
     {
         $cdekCity = \sqlSdekCity::getBySId($cdekCityCode);
-        if (!is_array($cdekCity) || empty($cdekCity['BITRIX_ID'])) {
-            throw new \DomainException('destination_not_found');
+        if (is_array($cdekCity) && !empty($cdekCity['BITRIX_ID'])) {
+            $location = LocationTable::getById((int)$cdekCity['BITRIX_ID'])->fetch();
+            if (!empty($location['CODE'])) {
+                return ['code' => (string)$location['CODE']];
+            }
         }
-        $location = LocationTable::getById((int)$cdekCity['BITRIX_ID'])->fetch();
-        if (!is_array($location) || empty($location['CODE'])) {
-            throw new \DomainException('destination_not_found');
+        if (preg_match('/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/Di', $fiasGuid)) {
+            $locations = LocationTable::getList([
+                'filter' => ['=EXTERNAL.SERVICE.CODE' => 'FIAS', '=EXTERNAL.XML_ID' => $fiasGuid],
+                'select' => ['CODE'], 'group' => ['CODE'], 'limit' => 2,
+            ])->fetchAll();
+            if (count($locations) === 1 && !empty($locations[0]['CODE'])) {
+                return ['code' => (string)$locations[0]['CODE']];
+            }
         }
-        return ['code' => (string)$location['CODE']];
+        throw new \DomainException('destination_not_found');
     }
 
     private function resolveDeliveryService(string $mode): object

@@ -316,23 +316,37 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
     await session.flush()
     return int(order.amocrm_lead_id)
 
-async def _move_lead_to_pending_payment(session: AsyncSession, order: Order) -> Order:
+async def _move_lead_to_pending_payment(session: AsyncSession, order: Order, *, qr_invoice_id: str | None = None) -> Order:
     await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
     await session.refresh(order, attribute_names=["is_paid", "is_canceled", "is_shipped", "payment_status", "status"])
     if order.is_paid or order.is_canceled or order.is_shipped or order.payment_status in {"paid", "refunded"}:
         return order
+    qr_changed = False
+    if qr_invoice_id:
+        await session.refresh(order, attribute_names=["payment_invoice_id", "checkout_snapshot"])
+        if str(order.payment_invoice_id or "") != str(qr_invoice_id):
+            return order
+        snapshot = order.checkout_snapshot or {}
+        if snapshot.get("sbp_ready_invoice_id") != str(qr_invoice_id):
+            order.checkout_snapshot = {**snapshot, "sbp_ready_invoice_id": str(qr_invoice_id)}
+            qr_changed = True
     pending_status_id = amocrm_client.STATUS_IDS.get("pending_payment")
-    if not order.amocrm_lead_id or pending_status_id is None: return order
+    if not order.amocrm_lead_id or pending_status_id is None:
+        if qr_changed: await session.commit()
+        return order
 
     pending_patch = _order_state_patch_for_amocrm_status(pending_status_id)
     pending_patch.pop("is_paid", None)
-    if _order_has_state_patch(order, pending_patch): return order
+    if _order_has_state_patch(order, pending_patch):
+        if qr_changed: await session.commit()
+        return order
 
     previous_status = order.status
 
     try: await amocrm_client.update_lead_status(int(order.amocrm_lead_id), pending_status_id)
     except Exception:
         log.exception("Failed to update amoCRM lead %s to pending payment status", order.amocrm_lead_id)
+        if qr_changed: await session.commit()
         return order
 
     updated_order = await update_order(session, order, OrderUpdate(**pending_patch), commit=True)

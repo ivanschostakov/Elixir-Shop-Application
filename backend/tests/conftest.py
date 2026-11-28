@@ -1,9 +1,9 @@
 import os
 import sys
-import types
 from pathlib import Path
 
 import pytest
+import PIL  # Use the installed image library, including in tests with legacy import shims.
 from fastapi.testclient import TestClient
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -32,16 +32,6 @@ TEST_ENV = {
 }
 for name, value in TEST_ENV.items():
     os.environ.setdefault(name, value)
-
-if "PIL" not in sys.modules:
-    pil_module = types.ModuleType("PIL")
-    pil_module.Image = types.SimpleNamespace(open=None)
-
-    class _UnidentifiedImageError(Exception):
-        pass
-
-    pil_module.UnidentifiedImageError = _UnidentifiedImageError
-    sys.modules["PIL"] = pil_module
 
 from src.app import main as app_main
 

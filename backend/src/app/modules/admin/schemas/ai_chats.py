@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class AdminAIChatListItem(BaseModel):
@@ -214,4 +214,4 @@ class AdminAIChatBanCreate(BaseModel):
     ban_type: Literal["account", "ip"]
     subject: str
     reason: str
-    expires_at: datetime | None = None
+    expires_at: AwareDatetime | None = None

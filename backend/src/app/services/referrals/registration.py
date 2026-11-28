@@ -13,6 +13,8 @@ from src.database.models import User
 from src.integrations.moysklad.client import get_moysklad_client
 from src.integrations.moysklad.client.utils import custom_entity_dictionary_id
 from src.integrations.moysklad.idempotency import build_counterparty_external_code, build_sync_id
+from src.integrations.moysklad.identity import CounterpartyReviewRequired
+from src.app.services.counterparty_review import queue_counterparty_review
 from src.normalize import coerce_uuid, normalize_email, normalize_phone
 
 from .profile import get_or_create_referral_profile, get_referral_profile_by_user_id
@@ -110,25 +112,17 @@ async def _registration_counterparty(user):
         raise HTTPException(503, "Не удалось сохранить программу в МойСклад. Повторите позже.")
     email, phone = normalize_email(user.email), normalize_phone(user.phone_number)
     external = build_counterparty_external_code(user_id=user.id)
-    for identity, matches in ((email, client._counterparty_email_matches), (phone, client._counterparty_phone_matches)):
-        if not identity:
-            continue
-        page = await client.get_page("/entity/counterparty", limit=100, search=identity, expand="contactpersons")
-        rows = page.get("rows")
-        if not isinstance(rows, list) or len(rows) >= 100:
-            raise HTTPException(409, "Нужна сверка существующего клиента МойСклад. Обратитесь в поддержку.")
-        candidates = [row for row in rows if matches(row, identity)]
-        if not candidates:
-            continue
-        # A lost create response can leave our own deterministic card visible
-        # by phone. Any other phone-only match must go through the claim flow.
-        if len(candidates) == 1:
-            card = candidates[0]
-            cid = coerce_uuid(card.get("id"))
-            phone_conflict = phone and normalize_phone(card.get("phone")) and not client._counterparty_phone_matches(card, phone)
-            if cid and not phone_conflict and (identity == email or card.get("externalCode") == external):
-                return cid, False
-        raise HTTPException(409, "Нужна сверка существующего клиента МойСклад. Обратитесь в поддержку.")
+    by_email = await client.get_counterparty_by_email(email) if email else None
+    by_phone = await client.get_counterparty_by_phone(phone) if phone else None
+    if by_email or by_phone:
+        card = by_email or by_phone
+        cid = coerce_uuid(card.get("id"))
+        phone_conflict = (phone and normalize_phone(card.get("phone"))
+                          and not client._counterparty_phone_matches(card, phone))
+        if (cid and not phone_conflict and (not by_phone or card.get("id") == by_phone.get("id"))
+                and (by_email or card.get("externalCode") == external)):
+            return cid, False
+        raise CounterpartyReviewRequired("email и телефону", [by_email, by_phone])
 
     result = await client.resolve_or_sync_counterparty(existing_counterparty_id=None,
         external_code=external, sync_id=build_sync_id(scope="counterparty", key=external),
@@ -159,6 +153,12 @@ async def sync_registration_choice(db, *, user, best_effort=False):
             try:
                 async with asyncio.timeout(AUTH_PROVISION_TIMEOUT_SECONDS if best_effort else None):
                     cid, created = await _registration_counterparty(user)
+            except CounterpartyReviewRequired as exc:
+                await queue_counterparty_review(exc, user_id=user.id)
+                if not best_effort:
+                    raise
+                await db.commit()
+                return
             except Exception:
                 if not best_effort:
                     raise

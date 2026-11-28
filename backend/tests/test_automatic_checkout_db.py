@@ -15,10 +15,9 @@ from src.app.services.admin import jobs
 from src.app.services.orders import automatic_checkout as auto, payment_attempt, payments
 from src.database import SessionLocal
 from src.database.models import IntegrationRun, Order, User
-from test_guest_checkout_api import _build_guest_order_payload
+from test_guest_checkout_api import _build_guest_order_payload, guest_email, registered_user, stub_amocrm
 from test_orders_api import (
-    _build_pickup_payload, _create_ready_draft, _delete_user, _get_order, _update_order,
-    registered_user, stub_amocrm, sync_engine, variant_factory,
+    _build_pickup_payload, _create_ready_draft, _get_order, _update_order, sync_engine, variant_factory,
 )
 
 
@@ -35,12 +34,13 @@ def _due(run_id):
 
 
 @pytest.fixture
-def checkout(client, registered_user, variant_factory, stub_amocrm, monkeypatch):
+def checkout(client, registered_user, guest_email, variant_factory, stub_amocrm, monkeypatch):
     headers = registered_user["headers"]
-    guests = []
     wake = AsyncMock(side_effect=ConnectionError("test Redis unavailable"))
     monkeypatch.setattr(jobs, "enqueue_integration_run", wake)
     monkeypatch.setattr(payments, "MOY_SKLAD_ORDER_SYNC_ENABLED", True)
+    monkeypatch.setattr("src.app.services.orders.creation.draft.sync_order_to_moysklad_safe", AsyncMock())
+    monkeypatch.setattr("src.integrations.moysklad.order_sync.states.MOY_SKLAD_ORDER_SYNC_ENABLED", False)
     monkeypatch.setattr(payment_attempt, "_local_deadlines", {})
     monkeypatch.setattr(payment_attempt, "get_cache_service", lambda: SimpleNamespace(client=None))
     async def export(db, *, order, user):
@@ -63,17 +63,15 @@ def checkout(client, registered_user, variant_factory, stub_amocrm, monkeypatch)
     monkeypatch.setattr(payments.intellectmoney, "get_bank_card_payment_state", AsyncMock(return_value=state))
     monkeypatch.setattr("src.app.services.orders._resolve_payment_qr_image", AsyncMock(return_value=None))
     monkeypatch.setattr(payments, "_resolve_payment_qr_image", AsyncMock(return_value=None))
-    monkeypatch.setattr(payments, "_move_lead_to_pending_payment", AsyncMock(side_effect=lambda _, order: order))
 
     def submit(source="draft", method="sbp", automatic=True):
         variant = variant_factory()["variant_id"]
         payload = {"payment_method": method, "automatic_checkout": automatic}
         if source == "guest":
-            guest = _build_guest_order_payload(variant_id=variant, email=f"{uuid4()}@example.com")
+            guest = _build_guest_order_payload(variant_id=variant, email=guest_email)
             response = client.post("/api/v1/guest/orders", json={**guest, **payload})
             if response.is_success:
                 customer = response.json()
-                guests.append(customer["user"]["id"])
                 return customer["order"]["id"], {"Authorization": f"Bearer {customer['access_token']}"}
         else:
             if source == "draft":
@@ -88,9 +86,7 @@ def checkout(client, registered_user, variant_factory, stub_amocrm, monkeypatch)
             if response.is_success:
                 return response.json()["id"], headers
         return response
-    yield SimpleNamespace(submit=submit, wake=wake, export=exporter, verify=verify, invoice=invoice, sbp=sbp)
-    for uid in guests:
-        _delete_user(uid)
+    return SimpleNamespace(submit=submit, wake=wake, export=exporter, verify=verify, invoice=invoice, sbp=sbp)
 
 
 @pytest.mark.parametrize("source,method", [("guest", "sbp"), ("draft", "sbp"), ("basket", "later")])
@@ -122,7 +118,8 @@ def test_order_commit_recovers_without_any_second_request(client, checkout, sour
         assert len(notices) == 1
     checkout.export.assert_awaited_once()
     if method == "sbp":
-        assert _get_order(oid).payment_invoice_id == "test-invoice"
+        saved = _get_order(oid)
+        assert saved.payment_invoice_id == saved.checkout_snapshot["sbp_ready_invoice_id"] == "test-invoice"
         checkout.invoice.assert_awaited_once()
         checkout.sbp.assert_awaited_once()
         assert checkout.invoice.await_args.kwargs["result_url"] == "https://example.test/api/v1/webhooks/intellectmoney"
@@ -339,11 +336,13 @@ def test_missing_qr_retries_existing_invoice_without_another_sbp_submission(clie
     assert _run(oid).status == "retrying"
     assert _get_order(oid).payment_invoice_id == "test-invoice"
     get_state.return_value = {"Result":{"PaymentStep":"Created", "Form3DS":'{"SbpQrCodeUrl":"https://example.test/qr"}'}}
+    assert _get_order(oid).checkout_snapshot.get("sbp_ready_invoice_id") is None
     _due(rid)
     client.portal.call(jobs.execute_integration_run, rid)
     assert _run(oid).status == "success", _run(oid).error
     checkout.invoice.assert_awaited_once()
     checkout.sbp.assert_awaited_once()
+    assert _get_order(oid).checkout_snapshot["sbp_ready_invoice_id"] == "test-invoice"
 
 
 def test_no_push_uses_only_the_verified_buyer_email(client, checkout, monkeypatch):

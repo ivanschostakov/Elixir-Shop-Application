@@ -1,6 +1,7 @@
 import sys
 import types
 import uuid
+from unittest.mock import AsyncMock, Mock
 from decimal import Decimal
 from pathlib import Path
 
@@ -94,6 +95,29 @@ def registered_user_factory(register_verified_user):
     finally:
         for user_id in reversed(created_user_ids):
             _delete_user(user_id)
+
+
+@pytest.mark.parametrize("status,code,expected", [(404, "user_not_found", "unlinked"), (503, "temporarily_unavailable", "failed")])
+def test_partner_summary_distinguishes_missing_customer_from_outage(
+    client, registered_user_factory, monkeypatch, status, code, expected
+):
+    from src.app.services.referrals import summary
+    from src.integrations.bitrix_promo import BitrixPromoError
+
+    buyer = registered_user_factory()
+    with Session(sync_engine) as session:
+        session.add(ReferralProfile(user_id=buyer["user_id"], reward_program="bonus", reward_program_selection_source="manual"))
+        session.commit()
+
+    remote = AsyncMock(side_effect=BitrixPromoError(status_code=status, code=code, message="test"))
+    monkeypatch.setattr(summary, "bitrix_promo_configured", lambda: True)
+    monkeypatch.setattr(summary, "BitrixPromoClient", Mock(return_value=Mock(partner_summary=remote)))
+    monkeypatch.setattr(summary, "refresh_assigned_referrer_promo", AsyncMock(return_value=None))
+    result = client.get("/api/v1/users/me/referral-profile", headers=buyer["headers"])
+    assert result.status_code == 200, result.text
+    assert result.json()["bitrix_sync_status"] == expected
+    assert result.json()["bitrix_profile_found"] is False
+    remote.assert_awaited_once()
 
 
 def test_personal_discount_requires_program_promo():

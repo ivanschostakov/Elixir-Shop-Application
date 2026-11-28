@@ -79,7 +79,7 @@ async def crm(monkeypatch):
         app.include_router(router.webhooks_router)
         app.dependency_overrides[database.get_db] = get_db
         async with AsyncClient(transport=ASGITransport(app=app, raise_app_exceptions=False), base_url="http://test") as client:
-            async def post(*ids, target=TARGET, previous=MAIN, event_time=None):
+            async def post(*ids, target=TARGET, previous=MAIN, event_time=None, extra_fields=None):
                 fields = {"account[id]": "synthetic", "account[subdomain]": "test-shop"}
                 for idx, lead_id in enumerate(ids):
                     fields[f"leads[status][{idx}][id]"] = str(lead_id)
@@ -89,7 +89,7 @@ async def crm(monkeypatch):
                         fields[f"leads[status][{idx}][old_status_id]"] = str(previous)
                     if event_time is not None:
                         fields[f"leads[status][{idx}][last_modified]"] = str(event_time)
-                return await client.post("/webhooks/amocrm", data=fields)
+                return await client.post("/webhooks/amocrm", data={**fields, **(extra_fields or {})})
 
             yield SimpleNamespace(post=post, create_order=create_order, get_lead=get_lead, apply=apply,
                                   rows=rows, sessions=sessions)
@@ -142,6 +142,66 @@ async def test_unrelated_number_or_conflicting_lead_is_never_applied(crm, name, 
     assert (await crm.post(51)).json()["deferred"] == "awaiting_order"
     assert await router.retry_due_webhook_deliveries() == 0
     crm.apply.assert_not_awaited()
+
+
+@pytest.mark.parametrize("name,tags,expected", [
+    ("[elixirpeptide.ru] 12345", [], True),
+    ("[ElixirPeptide.ru] №12345", [], True),
+    ("Заказ №12345 с сайта elixirpeptide.ru", [], True),
+    ("Renamed", [{"name": " ЗАКАЗ  С САЙТА "}], True),
+    ("Renamed", [{"name": "заказ с elixirpeptide.ru"}], True),
+    ("[elixirpeptide.ru] support", [], False),
+    ("[elıxırpeptıde.ru] 12345", [], False),
+    ("Заказ звонка с сайта", [], False),
+    ("Renamed", [{"name": "не заказ с сайта"}], False),
+    ("Renamed", [{"name": "заказ с сайта"}, {"name": "заказ с приложения"}], False),
+    ("Заказ №12345 с сайта", [{"name": "заказ с приложения"}], False),
+    ("Заказ №EP-SYNTH001 с Приложения", [{"name": "заказ с сайта"}], False),
+    ("Заказ №EP-SYNTH001 с приложения", [{"name": "заказ с сайта"}], False),
+    (None, [None, 123, {"name": ["заказ с сайта"]}], False),
+    (123, {"name": "заказ с сайта"}, False),
+])
+def test_verified_website_source(name, tags, expected):
+    assert service.amocrm_website_order({"name": name, "_embedded": {"tags": tags}}) is expected
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("source", [{"name": "Заказ №12345 с сайта"},
+                                    {"name": "Renamed", "_embedded": {"tags": [{"name": "заказ с сайта"}]}}])
+async def test_verified_website_order_is_not_queued_but_existing_app_link_wins(crm, source):
+    crm.get_lead.return_value = {**source, "status_id": TARGET}
+    assert (await crm.post(51)).json()["ignored"] == "website_order"
+    assert (await crm.rows())[0].status == "processed"
+    assert await router.retry_due_webhook_deliveries() == 0
+    crm.apply.assert_not_awaited()
+    await crm.create_order(lead_id=52)
+    assert (await crm.post(52)).status_code == 200
+    crm.apply.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_callback_website_markers_do_not_override_unclassified_current_lead(crm):
+    crm.get_lead.return_value = {"name": {"invalid": True}, "_embedded": "invalid", "status_id": TARGET}
+    response = await crm.post(51, extra_fields={"leads[status][0][name]": "Заказ №12345 с сайта",
+                                                "leads[status][0][tags][0][name]": "заказ с сайта"})
+    assert response.json()["deferred"] == "awaiting_order"
+    assert (await crm.rows())[0].status == "awaiting_order"
+    crm.apply.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_app_link_committed_during_website_lookup_wins(crm):
+    source = {"name": "Заказ №12345 с сайта", "status_id": TARGET}
+
+    async def link_before_read_returns(lead_id):
+        await crm.create_order(lead_id=lead_id)
+        crm.get_lead.side_effect = None
+        crm.get_lead.return_value = source
+        return source
+
+    crm.get_lead.side_effect = link_before_read_returns
+    assert (await crm.post(51)).json()["order_id"] == 101
+    crm.apply.assert_awaited_once()
 
 
 @pytest.mark.anyio

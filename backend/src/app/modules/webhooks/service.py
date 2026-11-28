@@ -42,11 +42,33 @@ def _amocrm_payload_int(payload: dict[str, list[str]], key: str) -> int:
 # a short reconciliation window, not a policy for importing historical CRM state.
 AMO_LINK_WINDOW = timedelta(hours=1)
 _APP_ORDER_TITLE = re.compile(r"Заказ №(EP-[A-Z0-9]{8}|[0-9]{1,19}) с Приложения", re.I | re.ASCII)
+_WEBSITE_ORDER_TITLE = re.compile(
+    r"(?:\[elixirpeptide\.ru\] [№#]?\s*[0-9]+|заказ №?\s*[0-9]+ с сайта(?: elixirpeptide\.ru)?)"
+)
+_WEBSITE_ORDER_TAGS = {"заказ с сайта", "заказ с elixirpeptide.ru"}
 
 
 def amocrm_title_code(name):
-    match = _APP_ORDER_TITLE.fullmatch((name or "").strip())
+    match = _APP_ORDER_TITLE.fullmatch(name.strip()) if isinstance(name, str) else None
     return match[1].upper() if match else None
+
+
+def amocrm_website_order(lead):
+    title = lead.get("name")
+    title = " ".join(title.casefold().split()) if isinstance(title, str) else ""
+    # A source label can rule out dismissal without being trusted as an order code.
+    if title.endswith(" с приложения"):
+        return False
+    embedded = lead.get("_embedded")
+    tags = embedded.get("tags") if isinstance(embedded, dict) else None
+    names = {
+        " ".join(tag["name"].casefold().split()) for tag in tags
+        if isinstance(tag, dict) and isinstance(tag.get("name"), str)
+    } if isinstance(tags, list) else set()
+    # Mixed sources can be a renamed app checkout whose local link has not committed.
+    if "заказ с приложения" in names:
+        return False
+    return not names.isdisjoint(_WEBSITE_ORDER_TAGS) or _WEBSITE_ORDER_TITLE.fullmatch(title) is not None
 
 
 def amocrm_event_time(payload, received_at):

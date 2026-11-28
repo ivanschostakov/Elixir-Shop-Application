@@ -1,14 +1,15 @@
-import type { CheckoutIssue, OrderStatusCode } from "@/services/api/orders.types"
+import type { CheckoutIssue, OrderRead } from "@/services/api/orders.types"
 
 export type CreatePaymentPayload = {
     automatic_checkout?: boolean
     order_id: number
     payment_method?: "later" | "sbp"
     accept_pending_amount?: boolean
+    retry_export?: boolean
 }
 
 export type PaymentStatusRead = {
-    status_code?: OrderStatusCode
+    status_code?: OrderRead["status_code"]
     checkout_issue?: CheckoutIssue | null
     checkout_progress?: "processing" | "needs_review" | null
     status: string
@@ -27,4 +28,6 @@ export type PaymentStatusRead = {
     can_retry: boolean
     awaiting_settlement?: boolean
     ms_reservation_confirmed?: boolean
+    invoice_ready?: boolean | null
+    export_retry_available?: boolean
 }

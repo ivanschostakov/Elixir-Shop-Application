@@ -23,6 +23,10 @@ def test_keyboard_layout_conversion_between_en_and_ru():
     assert convert_keyboard_layout_ru_to_en("куеф") == "reta"
 
 
+def test_layout_conversion_preserves_keys_that_type_russian_letters():
+    assert "берёза" in build_search_query_variants(",th`pf")
+
+
 def test_build_search_query_variants_contains_translit_layout_and_fuzzy():
     variants = build_search_query_variants("ReTaa")
     assert "retaa" in variants

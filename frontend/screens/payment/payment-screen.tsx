@@ -98,7 +98,8 @@ function getPaymentStateError(payment: PaymentStatusRead | null, fallback: strin
 function isTemporaryStatusError(error: unknown) {
     if (error instanceof ApiError) {
         const code = (error.body as { detail?: { code?: string } } | null)?.detail?.code
-        return code === "settlement_pending" || error.status === 408 || error.status === 429 || error.status >= 500
+        return (error.status === 409 && code === "settlement_pending") || error.status === 0 ||
+            error.status === 408 || error.status === 429 || error.status >= 500
     }
     return error instanceof TypeError
 }
@@ -219,6 +220,7 @@ export default function PaymentScreen() {
     const confettiProgress = useRef(new Animated.Value(0)).current
     const paymentStatusRequestIdRef = useRef(0)
     const startingPaymentRef = useRef(false)
+    const legacyResumeId = useRef<number | null>(null)
     const sectionPositionsRef = useRef<Record<SummarySection, number>>({
         contact: 0,
         items: 0,
@@ -362,7 +364,7 @@ export default function PaymentScreen() {
         : null
     const canContinue = hasResolvedOrderInfo && !submitting
     const canRetry = Boolean(order && payment?.can_retry && !order.is_canceled && !order.is_paid
-        && !payment.checkout_progress && !issue && !checkoutFailed && statusCode !== "processing")
+        && !payment.checkout_progress && !issue && !checkoutFailed && statusCode !== "processing" && statusCode !== "preparing")
     const missingStateMessage = orderLoadError ?? t("payment.orderMissingMessage")
     const shouldShowFooter = hasResolvedOrderInfo || loading || loadingOrder || phase !== "select" || submitting
     const isRepeatableOrder = order?.history_bucket === "completed"
@@ -453,7 +455,7 @@ export default function PaymentScreen() {
         let snapshot = orderAtRead
         // Older status endpoints can clear checkout_progress without returning the final order status.
         if (!next.status_code && !next.checkout_progress && !next.checkout_issue &&
-            (snapshot.status_code === "processing" || snapshot.status_code === "checkout_failed")) {
+            (snapshot.status_code === "processing" || snapshot.status_code === "checkout_failed" || snapshot.status_code === "preparing")) {
             snapshot = await getOrder(snapshot.id)
             if (!active()) return
         }
@@ -468,6 +470,12 @@ export default function PaymentScreen() {
         if (nextPhase === "failure") setErrorMessage(getPaymentStateError(next, t("payment.failureMessage")))
         return nextPhase
     }, [t])
+
+    const readOrResume = useCallback(async (id: number, method: PaymentMethod, active: () => boolean) => {
+        if (legacyResumeId.current !== id) return readSubmittedOrder(id)
+        // A failed read can be retried. Once a POST might have reached the server, only read.
+        return submitCheckout({ order_id: id, payment_method: method }, active, true, () => { legacyResumeId.current = null })
+    }, [])
 
     const handleStartPayment = useCallback(async (methodOverride?: PaymentMethod) => {
         const effectiveMethod = methodOverride ?? selectedMethod
@@ -802,6 +810,7 @@ export default function PaymentScreen() {
 
         const method = resolvePaymentMethod(order.payment_method)
         const readOnly = order.status_code === "processing" || order.status_code === "checkout_failed" || Boolean(order.checkout_issue)
+            || order.is_paid || order.is_shipped || Boolean(order.payment_invoice_id) || order.history_bucket === "completed"
         if (!readOnly && (order.is_canceled || !method)) {
             setPhase("failure")
             setErrorMessage(t("payment.failureMessage"))
@@ -809,11 +818,11 @@ export default function PaymentScreen() {
         }
         const requestId = ++paymentStatusRequestIdRef.current
         const active = () => paymentStatusRequestIdRef.current === requestId
+        legacyResumeId.current = readOnly ? null : order.id
         setPhase("processing")
         void (async () => {
             try {
-                const next = readOnly ? await readSubmittedOrder(order.id)
-                    : await submitCheckout({ order_id: order.id, payment_method: method ?? selectedMethod }, active, true)
+                const next = await readOrResume(order.id, method ?? selectedMethod, active)
                 if (next) await applyPaymentStatus(next, order, method ?? selectedMethod, active)
             } catch (error) {
                 if (!active()) return
@@ -825,7 +834,7 @@ export default function PaymentScreen() {
                 setPhase("failure")
             }
         })()
-    }, [applyPaymentStatus, order, payment, phase, selectedMethod, submitting, t])
+    }, [applyPaymentStatus, order, payment, phase, readOrResume, selectedMethod, submitting, t])
 
     useEffect(() => {
         const orderId = payment?.order_id ?? order?.id
@@ -839,7 +848,8 @@ export default function PaymentScreen() {
                 return
             }
             try {
-                const next = await readSubmittedOrder(orderId)
+                const next = await readOrResume(orderId, resolvedPaymentMethod, () => active)
+                if (!active || !next) return
                 const nextPhase = await applyPaymentStatus(next, order, resolvedPaymentMethod, () => active)
                 if (nextPhase !== phase) return
                 delay = Math.min(15000, delay + 1000)
@@ -856,7 +866,7 @@ export default function PaymentScreen() {
         }
         timer = setTimeout(poll, delay)
         return () => { active = false; clearTimeout(timer) }
-    }, [applyPaymentStatus, order, payment?.order_id, phase, resolvedPaymentMethod, t])
+    }, [applyPaymentStatus, order, payment?.order_id, phase, readOrResume, resolvedPaymentMethod, t])
 
     useEffect(() => {
         if (phase !== "sbp") {
