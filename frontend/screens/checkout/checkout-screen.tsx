@@ -1,5 +1,6 @@
 import { AppFormLayout } from "@/components/platform/app-form-layout"
 import { AppPickerPanel } from "@/components/platform/app-picker"
+import { setGuestCheckoutEmail } from "@/screens/checkout/guest-checkout-email"
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Picker } from "@react-native-picker/picker"
 import {
@@ -13,6 +14,7 @@ import {
     Platform,
     Pressable,
     ScrollView,
+    StyleSheet,
     Text,
     TextInput,
     View,
@@ -78,6 +80,7 @@ import {
     getRecipientFormErrors,
     getRecipientPickerValue,
     hasRecipientErrors,
+    isValidEmail,
     normalizePhoneValue,
     normalizeTextInputValue,
     parseDraftId,
@@ -103,10 +106,20 @@ import { formatAppliedDiscount } from "@/utils/discount-display"
 import { getQuotedItemPrice } from "@/utils/quoted-item-price"
 import { CheckoutAddressPicker } from "@/screens/checkout/checkout-address-picker"
 
+const radioStyles = StyleSheet.create({
+    ring: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+    dot: { width: 12, height: 12, borderRadius: 6 },
+})
+
 export default function CheckoutScreen() {
     const contentStyles = useThemeStyles(createContentStyles)
     const checkoutScreenStyles = useThemeStyles(createCheckoutScreenStyles)
     const { palette } = useTheme()
+    const [method, setMethod] = useState<"sbp" | "later">("sbp")
+    const [buyerEmail, setBuyerEmail] = useState("")
+    const [showEmailError, setShowEmailError] = useState(false)
+    const buyerEmailInput = useRef<TextInput>(null)
+    const navigating = useRef(false)
     const { isAuthenticated, isReady, updatePersonalData, user, milestones } = useAuth()
     const { t, language } = useLanguage()
     const { bottom: bottomInset, top: topInset } = useSafeAreaInsets()
@@ -116,6 +129,8 @@ export default function CheckoutScreen() {
     const { basket, error: basketLoadError, loading: basketLoading, reload: reloadBasket } = useBasket()
     const { error: basketError, restoreDraft, updating: isRestoringDraft } = useBasketMutations()
     const isBasketCheckout = draftId === null
+    const needsBuyerEmail = !isAuthenticated && isBasketCheckout
+    const invalidBuyerEmail = showEmailError && !isValidEmail(buyerEmail)
     const { orderDraft: savedOrderDraft, error, loading, reload } = useOrderDraft(draftId)
     const orderDraft = useMemo(
         () => (isBasketCheckout && basket ? buildCheckoutDraftFromBasket(basket) : savedOrderDraft),
@@ -296,12 +311,14 @@ export default function CheckoutScreen() {
     }, [routePromoCode])
 
     useFocusEffect(
-        useCallback(() => (
-            () => {
+        useCallback(() => {
+            navigating.current = false
+            setGuestCheckoutEmail("")
+            return () => {
                 setOpenPickerSection(null)
                 setIsRecipientEditorOpen(false)
             }
-        ), []),
+        }, []),
     )
 
     useFocusEffect(
@@ -342,9 +359,6 @@ export default function CheckoutScreen() {
     const selectedRecipientForm = useMemo(() => getRecipientFormFromRecipient(currentRecipient), [currentRecipient])
     const selectedRecipientErrors = useMemo(() => getRecipientFormErrors(selectedRecipientForm, t), [selectedRecipientForm, t])
     const needsRecipientCorrection = hasRecipient && hasRecipientErrors(selectedRecipientErrors)
-    const payCtaLabel = grandTotal
-        ? `${t("checkout.payCta")} ${grandTotal}`
-        : t("checkout.payCta")
     const recipientCorrectionLabel = isSelfSelected ? t("checkout.completeProfile") : t("checkout.correctRecipient")
     const paymentFooterCtaLabel = !hasDeliveryAddress
         ? t("checkout.openDelivery")
@@ -352,7 +366,7 @@ export default function CheckoutScreen() {
             ? t("checkout.selectRecipient")
             : needsRecipientCorrection
                 ? recipientCorrectionLabel
-                : payCtaLabel
+                : t("checkout.payCta")
     const checkoutFooterCtaLabel = isCheckingPromoCode
         ? t("checkout.promoCodeChecking")
         : hasUnappliedPromoCode
@@ -427,42 +441,28 @@ export default function CheckoutScreen() {
             setAppliedPromoCode(null)
         }
     }, [appliedPromoCode])
-    const openPaymentFlow = useCallback((paymentMethod: "later" | "sbp") => {
-        if (!orderDraft || !hasDeliveryAddress || !hasRecipient || needsRecipientCorrection || waitingForCheckout || pricingError || optionsError) {
+    const handlePressPay = useCallback(() => {
+        if (navigating.current || !orderDraft || !hasDeliveryAddress || !hasRecipient || needsRecipientCorrection || waitingForCheckout || pricingError || optionsError) {
             return
         }
-
+        if (needsBuyerEmail && !isValidEmail(buyerEmail)) {
+            setShowEmailError(true)
+            buyerEmailInput.current?.focus()
+            return
+        }
+        navigating.current = true
+        setGuestCheckoutEmail(needsBuyerEmail ? buyerEmail : "")
         router.push({
             pathname: ROUTES.payment,
             params: {
-                paymentMethod,
+                paymentMethod: method,
                 ...(isBasketCheckout ? {} : { draftId: String(orderDraft.id) }),
                 ...(activeEnteredPromoCode ? { code: activeEnteredPromoCode } : {}),
                 ...(rewardMode ? { rewardMode } : {}),
             },
         })
-    }, [activeEnteredPromoCode, hasDeliveryAddress, hasRecipient, isBasketCheckout, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, waitingForCheckout])
-
-    const handlePressPay = useCallback(() => {
-        Alert.alert(t("checkout.paymentMethodTitle"), undefined, [
-            {
-                text: t("checkout.paymentMethodCancel"),
-                style: "cancel",
-            },
-            {
-                text: t("payment.methodLaterTitle"),
-                onPress: () => {
-                    openPaymentFlow("later")
-                },
-            },
-            {
-                text: t("payment.methodSbpTitle"),
-                onPress: () => {
-                    openPaymentFlow("sbp")
-                },
-            },
-        ])
-    }, [openPaymentFlow, t])
+    }, [activeEnteredPromoCode, buyerEmail, hasDeliveryAddress, hasRecipient, isBasketCheckout, method,
+        needsBuyerEmail, needsRecipientCorrection, optionsError, orderDraft, pricingError, rewardMode, waitingForCheckout])
     const handleOpenPicker = useCallback((section: Exclude<ExpandedSection, null>) => {
         Keyboard.dismiss()
 
@@ -1233,6 +1233,51 @@ export default function CheckoutScreen() {
                         ) : null}
                     </View>
 
+                    <View style={checkoutScreenStyles.sectionCard}>
+                        <Text style={checkoutScreenStyles.sectionHeaderTitle}>{t("checkout.paymentMethodTitle")}</Text>
+                        <View accessibilityRole="radiogroup" accessibilityLabel={t("checkout.paymentMethodTitle")}>
+                            {(["sbp", "later"] as const).map(option => {
+                                const label = t(option === "sbp" ? "payment.methodSbpTitle" : "payment.methodLaterTitle")
+                                return (
+                                    <Pressable
+                                        key={option}
+                                        accessibilityRole="radio"
+                                        accessibilityLabel={label}
+                                        accessibilityState={{ checked: method === option }}
+                                        style={checkoutScreenStyles.detailsSheetRow}
+                                        onPress={() => setMethod(option)}
+                                    >
+                                        <View style={[radioStyles.ring, { borderColor: palette.text }]}>
+                                            {method === option ? <View style={[radioStyles.dot, { backgroundColor: palette.text }]} /> : null}
+                                        </View>
+                                        <View style={checkoutScreenStyles.bonusToggleCopy}>
+                                            <Text style={checkoutScreenStyles.bonusToggleValue}>{label}</Text>
+                                        </View>
+                                    </Pressable>
+                                )
+                            })}
+                        </View>
+                        {needsBuyerEmail ? (
+                            <View style={checkoutScreenStyles.rewardModeSection}>
+                                <Text style={checkoutScreenStyles.rewardModeTitle}>{t("payment.recoveryEmail")}</Text>
+                                <TextInput
+                                    ref={buyerEmailInput}
+                                    accessibilityLabel={t("payment.recoveryEmail")}
+                                    value={buyerEmail}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    autoComplete="email"
+                                    keyboardType="email-address"
+                                    onChangeText={setBuyerEmail}
+                                    style={[checkoutScreenStyles.recipientEditorInput, invalidBuyerEmail && checkoutScreenStyles.recipientEditorInputError]}
+                                />
+                                {invalidBuyerEmail ? (
+                                    <Text accessibilityRole="alert" style={checkoutScreenStyles.recipientEditorFieldError}>{t("auth.error.invalidEmail")}</Text>
+                                ) : null}
+                                <Text style={checkoutScreenStyles.bonusToggleHint}>{t("payment.recoveryEmailHint")}</Text>
+                            </View>
+                        ) : null}
+                    </View>
                     <View style={[checkoutScreenStyles.sectionCard, checkoutScreenStyles.positionsSectionCard]}>
                         <View style={checkoutScreenStyles.sectionHeader}>
                             <Text style={checkoutScreenStyles.sectionHeaderTitle}>
