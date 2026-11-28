@@ -6,6 +6,20 @@ const path = require("node:path")
 const test = require("node:test")
 const ignore = require("ignore")
 
+test("MapKit prefers Vulkan on physical iOS devices and keeps the simulator architecture check", () => {
+    const view = fs.readFileSync(require.resolve("react-native-yamap/ios/View/RNYMView.m"), "utf8")
+    const init = view.match(/- \(instancetype\)init \{\s*#if TARGET_OS_SIMULATOR\b([\s\S]*?)#else\b([\s\S]*?)#endif/)
+    assert.ok(init, "Missing platform-specific MapKit initializer")
+    assert.match(init[1], /vulkanPreferred:\[cpuArch hasPrefix:@"ARM64"\]/)
+    assert.match(init[2], /\[super initWithFrame:CGRectZero vulkanPreferred:YES\]/)
+})
+
+test("iOS margin changes do not replace the map frame assigned by Fabric", () => {
+    const view = fs.readFileSync(require.resolve("react-native-yamap/ios/View/RNYMView.m"), "utf8")
+    const handler = view.match(/- \(void\)layoutMarginsDidChange\s*\{([^}]*)\}/)
+    assert.equal(handler?.[1].trim(), "[super layoutMarginsDidChange];")
+})
+
 test("tracked Yandex Maps patch templates are not excluded from EAS uploads", () => {
     const root = path.resolve(__dirname, "../..")
     const prefix = "frontend/scripts/react-native-yamap-patches/"

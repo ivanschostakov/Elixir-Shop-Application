@@ -216,6 +216,16 @@ applyReplacements("android/src/main/java/ru/vvdev/yamap/view/YamapView.kt", [
 ]);
 
 applyReplacements("ios/View/RNYMView.m", [
+  // Fabric sets UIView.frame directly; replaying the legacy mapFrame here collapses the map.
+  [
+    "- (void)layoutMarginsDidChange {\n    [super reactSetFrame:self.mapFrame];\n}",
+    "- (void)layoutMarginsDidChange {\n    [super layoutMarginsDidChange];\n}",
+  ],
+  // On physical iPhones the default OpenGL path modifies YRTGLView off the main thread.
+  [
+    "#else\n    self = [super initWithFrame:CGRectZero];\n#endif",
+    "#else\n    self = [super initWithFrame:CGRectZero vulkanPreferred:YES];\n#endif",
+  ],
   [
     [
       `- (void)insertReactSubview:(UIView<RCTComponent> *)subview atIndex:(NSInteger)atIndex {\n    if ([subview isKindOfClass:[YamapPolygonView class]]) {\n        YMKMapObjectCollection *objects = self.mapWindow.map.mapObjects;\n        YamapPolygonView *polygon = (YamapPolygonView *) subview;\n        YMKPolygonMapObject *obj = [objects addPolygonWithPolygon:[polygon getPolygon]];\n        [polygon setMapObject:obj];\n    } else if ([subview isKindOfClass:[YamapPolylineView class]]) {\n        YMKMapObjectCollection *objects = self.mapWindow.map.mapObjects;\n        YamapPolylineView *polyline = (YamapPolylineView*) subview;\n        YMKPolylineMapObject *obj = [objects addPolylineWithPolyline:[polyline getPolyline]];\n        [polyline setMapObject:obj];\n    } else if ([subview isKindOfClass:[YamapMarkerView class]]) {\n        YMKMapObjectCollection *objects = self.mapWindow.map.mapObjects;\n        YamapMarkerView *marker = (YamapMarkerView *) subview;\n        YMKPlacemarkMapObject *obj = [objects addPlacemarkWithPoint:[marker getPoint]];\n        [marker setMapObject:obj];\n    } else if ([subview isKindOfClass:[YamapCircleView class]]) {\n        YMKMapObjectCollection *objects = self.mapWindow.map.mapObjects;\n        YamapCircleView *circle = (YamapCircleView*) subview;\n        YMKCircleMapObject *obj = [objects addCircleWithCircle:[circle getCircle]];\n        [circle setMapObject:obj];\n    } else {\n        NSArray<id<RCTComponent>> *childSubviews = [subview reactSubviews];\n        for (int i = 0; i < childSubviews.count; i++) {\n            [self insertReactSubview:(UIView *)childSubviews[i] atIndex:atIndex];\n        }\n    }\n\n    [_reactSubviews insertObject:subview atIndex:atIndex];\n    [super insertReactSubview:subview atIndex:atIndex];\n}\n`,
