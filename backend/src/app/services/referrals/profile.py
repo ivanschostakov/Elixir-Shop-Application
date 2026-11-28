@@ -11,7 +11,7 @@ from starlette import status
 
 from src.database.models import ReferralProfile, User
 from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
-from src.normalize import optional_str
+from src.normalize import ms_referrer_code, optional_str
 from .calculations import (
     calculate_personal_discount_percent,
     quantize_money,
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_referral_code(code: str | None) -> str | None:
-    code = optional_str(code)
+    code = ms_referrer_code(code)
     return code.upper() if code else None
 
 

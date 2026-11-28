@@ -22,7 +22,7 @@ from src.app.services.referrals.profile import personal_discount_applies
 from src.app.services.referrals.bitrix_sync import refresh_program_profile_from_bitrix
 from src.database.crud import get_basket_by_user_id
 from src.database.models import ReferralProfile, User, Variant, Product, ProductByCategory
-from src.normalize import coerce_uuid
+from src.normalize import coerce_uuid, ms_referrer_code
 from src.integrations.bitrix_promo import (
     BitrixPromoClient,
     BitrixPromoError,
@@ -80,7 +80,9 @@ def _basket_subtotals(basket) -> tuple[Decimal, Decimal]:
 def _build_app_referral_option(profile: ReferralProfile, *, user: User, subtotal: Decimal, discountable_subtotal: Decimal, order_referrer=None, percent=None) -> ResolvedDiscountOption | None:
     if order_referrer is None and not personal_discount_applies(profile):
         return None
-    attached_promo = order_referrer.code if order_referrer else optional_str(user.promo_code)
+    attached_promo = order_referrer.code if order_referrer else None
+    if not attached_promo and not moysklad_program_is_authoritative(profile):
+        attached_promo = ms_referrer_code(user.promo_code)
     authoritative_discount = profile.reward_program_selection_source == "moysklad" and (profile.reward_program_snapshot or {}).get("moysklad_program_code") != 0
     if not attached_promo and not authoritative_discount:
         return None
@@ -330,7 +332,7 @@ async def resolve_benefits_for_user(
     promo_percent = None
     accounting = referral_profile.reward_program_snapshot or {}
     if authoritative and (active_reward_program == "partner" or explicit_referral):
-        attached = optional_str(accounting.get("moysklad_referrer_promo")) or optional_str(user.promo_code)
+        attached = ms_referrer_code(account.referrer_promo_code)
         candidate = trimmed_code or attached
         if candidate:
             if attached and candidate.casefold() != attached.casefold():
@@ -345,7 +347,9 @@ async def resolve_benefits_for_user(
                 promo_percent = max(promo_percent, referral_profile.current_discount_percent)
             active_reward_program = "partner"
             trimmed_code = order_referrer.code
-    effective_code = (trimmed_code or optional_str(user.promo_code)) if active_reward_program == "partner" else None
+    effective_code = None
+    if active_reward_program == "partner":
+        effective_code = trimmed_code if authoritative else (trimmed_code or ms_referrer_code(user.promo_code))
     normalized_code = lower_optional_str(trimmed_code) if active_reward_program == "partner" else None
     resolved_reward_mode = REWARD_MODE_PROMO if active_reward_program == "partner" else REWARD_MODE_CASHBACK
     bitrix_option = None
@@ -526,7 +530,7 @@ async def resolve_benefits_for_user(
         "ms_promo_buyer_id": str(user.moysklad_counterparty_id) if order_referrer else None,
         "ms_promo_buyer_state": ({
             "program": accounting.get("moysklad_program_code"),
-            "incoming": accounting.get("moysklad_referrer_promo"),
+            "incoming": attached,
             "discount": accounting.get("moysklad_discount_percent"),
         } if order_referrer else None),
         "entered_code_matches": serialize_options(code_matches),

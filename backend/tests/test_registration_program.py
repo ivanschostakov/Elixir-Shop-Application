@@ -12,6 +12,7 @@ from src.app.services.referrals import registration
 from src.app.services.benefits import service as benefits
 from src.app.services.benefits.moysklad_bonus import MoySkladBonusWallet
 from src.app.services.benefits.settlement import PROGRAM_ATTRIBUTE_ID, DISCOUNT_ATTRIBUTE_ID, REFERRER_ATTRIBUTE_ID
+from src.app.services.benefits.settlement_schemas import SettlementRead
 from src.database.models import User, ReferralProfile, LoyaltyBonusCredit
 from src.integrations.moysklad.client import MoySkladClient
 from test_orders_api import sync_engine, registered_user
@@ -25,7 +26,7 @@ def test_program_alone_selects_discount_or_cashback(monkeypatch, program, discou
             "moysklad_discount_percent": "4"}, referral_discount_base_total=Decimal("0"), current_discount_percent=Decimal("4"))
     monkeypatch.setattr(benefits, "get_basket_by_user_id", AsyncMock(return_value=None))
     monkeypatch.setattr(benefits, "ensure_default_reward_program", AsyncMock(return_value=profile))
-    monkeypatch.setattr("src.app.services.benefits.settlement.get_account_settlement", AsyncMock(return_value=SimpleNamespace(status="fresh")))
+    monkeypatch.setattr("src.app.services.benefits.settlement.get_account_settlement", AsyncMock(return_value=SettlementRead(status="fresh")))
     monkeypatch.setattr(benefits, "get_user_moysklad_bonus_wallet", AsyncMock(return_value=MoySkladBonusWallet(
         is_loaded=True, is_settlement=program in {1, 2}, counterparty_id=cid, balance_rubles=Decimal("0"))))
     monkeypatch.setattr(benefits, "pending_loyalty_bonus_points", AsyncMock(return_value=0))

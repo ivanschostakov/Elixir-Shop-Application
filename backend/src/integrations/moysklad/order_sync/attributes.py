@@ -1,7 +1,8 @@
 from typing import Any
+from config import LOYALTY_COMPANY_PROMO_CODE
 from config import AMOCRM_BASE_URL, MOY_SKLAD_SALES_CHANNEL_HREF, MOY_SKLAD_IOS_SALES_CHANNEL_HREF, MOY_SKLAD_ANDROID_SALES_CHANNEL_HREF, MOY_SKLAD_TELEGRAM_SALES_CHANNEL_HREF
 from src.database.models import Order
-from src.normalize import extract_dict, lower_optional_str, optional_str
+from src.normalize import coerce_uuid, extract_dict, lower_optional_str, ms_referrer_code, optional_str
 from src.integrations.moysklad.client import MoySkladClient
 from src.integrations.moysklad.client.common import CUSTOMER_ORDER_ATTR_IDS
 from src.integrations.moysklad.idempotency import build_customerorder_external_code
@@ -74,12 +75,17 @@ async def _moysklad_custom_attr_refs(moysklad_client: MoySkladClient, order: Ord
 
 def customerorder_promo_code(snapshot: dict[str, Any]) -> str | None:
     benefits = extract_dict(snapshot.get("benefits"))
-    if "ms_order_promo" in benefits:
-        return optional_str(benefits["ms_order_promo"])
-    # Older order snapshots did not distinguish an entered code from the export code.
-    data = extract_dict(snapshot.get("moysklad"))
-    return (optional_str(extract_dict(data.get("attributes")).get("promo_code"))
-            or optional_str(data.get("promo_code")) or optional_str(benefits.get("entered_code")))
+    # Only the server-side owner lookup populates this tuple. Draft text and
+    # legacy CRM attributes are not proof, including when retrying an old order.
+    code = ms_referrer_code(benefits.get("ms_order_promo"))
+    buyer = coerce_uuid(benefits.get("ms_promo_buyer_id"))
+    if not code or not buyer or "ms_referrer_id" not in benefits:
+        return None
+    if benefits["ms_referrer_id"] is None:
+        company = ms_referrer_code(LOYALTY_COMPANY_PROMO_CODE)
+        return company if company and company.casefold() == code.casefold() else None
+    owner = coerce_uuid(benefits["ms_referrer_id"])
+    return code if owner and owner != buyer else None
 
 
 def _moysklad_attr_values(order: Order) -> dict[str, Any]:

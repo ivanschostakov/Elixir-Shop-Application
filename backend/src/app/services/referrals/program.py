@@ -16,7 +16,7 @@ from src.integrations.bitrix_promo import (
     BitrixPromoError,
     bitrix_promo_configured,
 )
-from src.normalize import optional_str
+from src.normalize import ms_referrer_code, optional_str
 
 from .calculations import MIN_PERSONAL_DISCOUNT_SPEND, quantize_money, quantize_percent
 from .profile import get_or_create_referral_profile, refresh_profile_discount
@@ -75,7 +75,7 @@ async def _refresh_moysklad_program(profile: ReferralProfile, *, user: User) -> 
     if previous != profile.reward_program or profile.reward_program_selected_at is None:
         profile.reward_program_selected_at = datetime.now(timezone.utc)
     profile.referral_discount_base_total = quantize_money(value.total_purchases_rubles)
-    user.promo_code = optional_str(value.referrer_promo_code) if value.loyalty_program == 2 else None
+    user.promo_code = ms_referrer_code(value.referrer_promo_code) if value.loyalty_program == 2 else None
     profile.reward_program_snapshot = dict(profile.reward_program_snapshot or {},
         program_authority="moysklad", moysklad_program_code=value.loyalty_program,
         moysklad_counterparty_id=str(counterparty_id),
@@ -266,13 +266,13 @@ async def select_reward_program(
             profile.current_discount_percent = quantize_percent(
                 max(Decimal("0"), stored_percent, group_percent)
             )
-            user.promo_code = optional_str(bitrix_profile.get("referrer_promo"))
+            user.promo_code = ms_referrer_code(bitrix_profile.get("referrer_promo"))
 
     profile.reward_program = normalized_program
     if normalized_program == "bonus":
-        active_promo = optional_str(user.promo_code)
+        active_promo = ms_referrer_code(user.promo_code)
         if bitrix_profile is not None:
-            active_promo = optional_str(bitrix_profile.get("referrer_promo")) or active_promo
+            active_promo = ms_referrer_code(bitrix_profile.get("referrer_promo")) or active_promo
         if active_promo:
             snapshot["active_base_promo"] = active_promo
         refresh_profile_discount(profile, has_promo_code=bool(active_promo))
