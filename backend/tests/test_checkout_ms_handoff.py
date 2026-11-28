@@ -58,6 +58,7 @@ def checkout(monkeypatch):
             "state": {"stateType": "Regular"}, "rate": {"value": 1, "currency": ref("currency", sku)},
             "attributes": [], "customerOrder": ref("customerorder", oid), "agent": ref("counterparty", buyer),
             "organization": ref("organization", org)}
+        invoice["meta"]["href"] += "?expand=state"
         if path == f"/entity/invoiceout/{iid}":
             return httpx.Response(200, json=invoice)
         assert path == f"/entity/customerorder/{oid}"

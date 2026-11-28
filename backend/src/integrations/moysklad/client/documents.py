@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID
 import httpx
 from fastapi import HTTPException
@@ -16,9 +17,14 @@ def expanded_invoice(row):
     if not isinstance(row, dict):
         return None
     meta = row.get("meta") or {}
+    href = meta.get("href") if isinstance(meta, dict) else None
+    try:
+        path = urlsplit(href).path.rstrip("/").rsplit("/", 3) if isinstance(href, str) else []
+    except ValueError:
+        return None
     required = {"sum", "payedSum", "applicable", "agent", "organization", "customerOrder", "rate", "state", "attributes"}
-    if (meta.get("type") != "invoiceout" or not coerce_uuid(row.get("id"))
-            or entity_id({"meta": meta}) != coerce_uuid(row["id"]) or not required.issubset(row)
+    if (not isinstance(meta, dict) or meta.get("type") != "invoiceout" or not coerce_uuid(row.get("id"))
+            or path[-3:-1] != ["entity", "invoiceout"] or coerce_uuid(path[-1]) != coerce_uuid(row["id"]) or not required.issubset(row)
             or not isinstance(row["attributes"], list) or not isinstance(row["state"], dict)
             or "stateType" not in row["state"]):
         return None
