@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, View } from "react-native"
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, TextInput, View } from "react-native"
 import { router, type Href } from "expo-router"
 
 import { getProductRoute, ROUTES } from "@/constants/routes"
@@ -16,7 +16,8 @@ import { createProfileDiscountsScreenStyles } from "@/screens/profile/profile-di
 import { getMyAppRewards } from "@/services/api/benefits"
 import type { AppRewardsResponse } from "@/services/api/benefits.types"
 import type { SettlementResponse } from "@/services/api/settlement"
-import { detachMyReferrerCode, getMyPromotions } from "@/services/api/users"
+import { bindMyReferrerCode, detachMyReferrerCode, getMyPromotions } from "@/services/api/users"
+import { confirmPromoBinding } from "@/screens/cart/confirm-promo-binding"
 import { getErrorMessage } from "@/utils/errors"
 import { createUuid } from "@/utils/uuid"
 import type { ProfilePromotionResponse } from "@/services/api/users.types"
@@ -31,9 +32,10 @@ type DetailsProps = {
     userId: number
     onClose: () => void
     onUnlinked: () => void
+    onBound: (code: string) => void
 }
 
-export function DiscountsDetails({ section, account, accountStatus, userId, onClose, onUnlinked }: DetailsProps) {
+export function DiscountsDetails({ section, account, accountStatus, userId, onClose, onUnlinked, onBound }: DetailsProps) {
     const styles = useThemeStyles(createProfileDiscountsScreenStyles)
     const { milestones } = useAuth()
     const ownCode = milestones?.data?.own_promo_code ?? account?.own_promo_code
@@ -43,6 +45,7 @@ export function DiscountsDetails({ section, account, accountStatus, userId, onCl
     const [confirm, setConfirm] = useState<{ step: 1 | 2; code: string; id: string } | null>(null)
     const [busy, setBusy] = useState(false)
     const [notice, setNotice] = useState("")
+    const [entry, setEntry] = useState("")
     const submitting = useRef(false)
     const offers = useAsyncData<ProfilePromotionResponse[]>({
         deps: [userId], enabled: section === "offers", fetcher: getMyPromotions, initialData: [], showErrorAlert: false,
@@ -59,6 +62,25 @@ export function DiscountsDetails({ section, account, accountStatus, userId, onCl
     function cancel() {
         if (!submitting.current) setConfirm(null)
     }
+    async function bind() {
+        const code = entry.trim()
+        if (!code || submitting.current || account?.status !== "fresh" || account.referrer_promo_code) return
+        submitting.current = true
+        setBusy(true)
+        setNotice("")
+        try {
+            if (!await confirmPromoBinding(t("cart.applyPromoCode"),
+                t("cart.confirmPartnerOrder").replace("{code}", code), t("common.cancel"))) return
+            const result = await bindMyReferrerCode(code)
+            setEntry("")
+            onBound(result.referrer_promo_code)
+        } catch (error) {
+            setNotice(getErrorMessage(error, t("cart.promoCodeUnavailableMessage")))
+        } finally {
+            setBusy(false)
+            submitting.current = false
+        }
+    }
     async function unlink() {
         if (confirm?.step !== 2 || submitting.current) return
         submitting.current = true
@@ -66,7 +88,7 @@ export function DiscountsDetails({ section, account, accountStatus, userId, onCl
         try {
             await detachMyReferrerCode(confirm.code, confirm.id)
             onUnlinked()
-            setNotice(t("profile.referral.detachSuccessTitle"))
+            setNotice(t("profile.referral.detachSuccessTitle") + ". " + t("profile.referral.detachSuccessMessage"))
         } catch (error) {
             setNotice(getErrorMessage(error, t("profile.referral.detachFailed")))
         } finally {
@@ -151,7 +173,17 @@ export function DiscountsDetails({ section, account, accountStatus, userId, onCl
                                 onPress={() => { setNotice(""); setConfirm({ step: 1, code: account.referrer_promo_code!, id: createUuid() }) }}>
                                 <Text style={[styles.actionLabel, { color: palette.danger }]}>{t("profile.referral.detachAction")}</Text>
                             </Pressable>}
-                        </View> : !accountStatus && <Text style={styles.body}>{t("profile.discounts.noAttachedPromo")}</Text>}
+                        </View> : !accountStatus && account?.status === "fresh" && <View style={styles.detailCard}>
+                            <Text style={styles.body}>{t("profile.discounts.noAttachedPromo")}</Text>
+                            <TextInput value={entry} onChangeText={setEntry} editable={!busy}
+                                accessibilityLabel={t("cart.promoCodePlaceholder")} placeholder={t("cart.promoCodePlaceholder")}
+                                placeholderTextColor={palette.mutedText} autoCapitalize="none" autoCorrect={false}
+                                style={styles.promoInput} returnKeyType="done" onSubmitEditing={() => void bind()} />
+                            <Pressable accessibilityRole="button" disabled={busy || !entry.trim()} onPress={bind}
+                                style={[styles.action, (busy || !entry.trim()) && styles.pressed]}>
+                                {busy ? <ActivityIndicator /> : <Text style={styles.actionLabel}>{t("profile.referral.attachAction")}</Text>}
+                            </Pressable>
+                        </View>}
                         {!!ownCode && <View style={styles.detailCard}>
                             <Text style={styles.rowSubtitle}>{t("profile.referral.ownPromo")}</Text>
                             <Text selectable style={styles.value}>{ownCode}</Text>

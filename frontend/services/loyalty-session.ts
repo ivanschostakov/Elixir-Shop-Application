@@ -61,6 +61,7 @@ export function createLoyaltySession(api: Record<Operation, () => Promise<Loyalt
     }
     return {
         current, check, accept,
+        bindingChanged: () => { if (current()) update({ programRevision: state.programRevision + 1 }) },
         snapshot: () => state,
         subscribe: (fn: () => void) => { listeners.add(fn); return () => { listeners.delete(fn) } },
     }

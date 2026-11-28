@@ -107,6 +107,11 @@ async def attach_referrer_code(
     confirmed: bool = False,
     moysklad_client: MoySkladClient | None = None,
 ) -> ReferralProfile:
+    if LOYALTY_USE_SETTLEMENT_BALANCE and getattr(user, "moysklad_counterparty_id", None):
+        from .bind import bind_referrer
+        from .profile import get_or_create_referral_profile
+        await bind_referrer(db, user=user, code=code)
+        return await get_or_create_referral_profile(db, user=user)
     profile = await _get_program_profile(db, user=user)
     if getattr(profile, "reward_program_selection_source", None) == "registration":
         raise HTTPException(409, "Сначала выберите программу после регистрации.")
@@ -119,9 +124,7 @@ async def attach_referrer_code(
         if not check["is_valid"]:
             raise HTTPException(422, check["reason"] or "Промокод не найден.")
         return profile
-    if moysklad_program_is_authoritative(profile) or (LOYALTY_USE_SETTLEMENT_BALANCE and getattr(user, "moysklad_counterparty_id", None)):
-        if not current_code:
-            raise HTTPException(409, "Введите промокод в корзине. Он будет закреплён при оформлении заказа.")
+    if moysklad_program_is_authoritative(profile):
         raise HTTPException(409, "Программа уже определена в МойСкладе. Для изменения обратитесь в поддержку.")
     if current_code:
         raise HTTPException(

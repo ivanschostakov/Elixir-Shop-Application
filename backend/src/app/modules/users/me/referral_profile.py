@@ -24,6 +24,7 @@ from src.app.modules.users.me.schemas.settlement import SettlementRead
 from src.app.services.benefits.settlement import get_account_settlement
 from pydantic import BaseModel
 from src.app.services.referrals.milestones import check_milestones
+from src.app.services.referrals.bind import bind_referrer
 
 my_referral_profile_router = APIRouter(prefix="/referral-profile", tags=["my_referral_profile"])
 
@@ -78,6 +79,13 @@ async def select_my_reward_program(
 async def check_my_referrer_code(payload: ReferrerCodeCheckPayload, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)) -> ReferrerCodeCheckRead:
     result = await check_referrer_code(db, user=current_user, code=payload.code)
     return ReferrerCodeCheckRead.model_validate(result)
+
+
+@my_referral_profile_router.post("/referrer-code/bind")
+async def bind_my_referrer(payload: ReferrerCodeCheckPayload, db: AsyncSession = Depends(get_db),
+                           current_user: User = Depends(get_current_user)) -> dict[str, str]:
+    code = await bind_referrer(db, user=current_user, code=payload.code)
+    return {"referrer_promo_code": code}
 
 
 @my_referral_profile_router.post("/referrer-code", response_model=ReferralProfileRead, status_code=status.HTTP_200_OK)

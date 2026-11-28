@@ -282,7 +282,8 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         "promo_code": referrer_promo_code,
         "own_promo_code": own_promo_code,
         "suggested_promo_code": suggested_promo_code,
-        "referrer_promo_code": referrer_promo_code,
+        "referrer_promo_code": (profile.reward_program_snapshot.get("moysklad_referrer_promo")
+                               if moysklad_program_is_authoritative(profile) else referrer_promo_code),
         "referral_discount_base_total": total_purchases,
         "created_at": profile.created_at,
         "updated_at": profile.updated_at,

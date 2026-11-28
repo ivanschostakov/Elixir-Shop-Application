@@ -109,6 +109,12 @@ export function attachMyReferrerCode(payload: ReferrerCodeAttachPayload) {
     )
 }
 
+export function bindMyReferrerCode(code: string) {
+    return apiPost<{ referrer_promo_code: string }, { code: string }>(
+        usersPath("/me/referral-profile/referrer-code/bind"), { code },
+    )
+}
+
 export function detachMyReferrerCode(code: string, operationId: string) {
     const body = { code, operation_id: operationId, confirm_loss: true }
     return apiPost<void, typeof body>(usersPath("/me/referral-profile/referrer-code/unlink"), body)

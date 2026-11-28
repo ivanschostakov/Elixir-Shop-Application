@@ -36,7 +36,7 @@ function setup(program, options = {}) {
     const mocks = {
         react: { Fragment: "Fragment", useEffect: () => {}, useCallback: f => f, useRef: current => ({ current }), useState: () => [section, s => { section = s }] },
         "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
-        "react-native": { ...Object.fromEntries(["ActivityIndicator", "Image", "Modal", "Pressable", "ScrollView", "Text", "View"].map(x => [x, x])),
+        "react-native": { ...Object.fromEntries(["ActivityIndicator", "Image", "Modal", "Pressable", "ScrollView", "Text", "TextInput", "View"].map(x => [x, x])),
             useWindowDimensions: () => ({ width: 390, fontScale: 1 }) },
         "expo-router": { useFocusEffect: () => {}, router: { push: href => { destination = href }, dismissTo: href => { destination = href } } },
         "@/components/templates/feed-template": { FeedTemplate: "Feed" },
@@ -50,7 +50,8 @@ function setup(program, options = {}) {
         "@/screens/profile/profile-discounts-screen.styles": {},
         "@/screens/profile/discounts-menu-assets": { discountsIcons: {}, discountsHero: 1 },
         "@/services/api/settlement": { getMySettlement },
-        "@/services/api/users": { getMyPromotions, detachMyReferrerCode: options.unlink },
+        "@/services/api/users": { getMyPromotions, detachMyReferrerCode: options.unlink, bindMyReferrerCode: options.bind },
+        "@/screens/cart/confirm-promo-binding": { confirmPromoBinding: async () => options.confirmBind !== false },
         "@/services/api/benefits": { getMyAppRewards },
         "@/utils/settlement": money,
         "@/utils/uuid": { createUuid: () => "test-op" },
@@ -72,7 +73,8 @@ function setup(program, options = {}) {
         press(menu(), label)
         const child = all(menu(), node => node.type === DiscountsDetails)[0]
         slot = 0
-        return child.type({ ...child.props, onUnlinked: () => { snapshot.referrer_promo_code = null } })
+        return child.type({ ...child.props, onUnlinked: () => { snapshot.referrer_promo_code = null },
+            onBound: code => { snapshot.referrer_promo_code = code } })
     }
     return { screen: Screen, menu, details, setUser: value => { user = value }, destination: () => destination }
 }
@@ -85,6 +87,7 @@ test("unlink needs two confirmations; back or cancel submits nothing, repeated t
     const next = () => press(codes(), "Продолжить")
     start()
     assert.match(textOf(codes()), /COMPANY/)
+    assert.match(textOf(codes()), /прогресс скидки сгорит/)
     press(codes(), "Отмена")
     start(); next()
     assert.match(textOf(codes()), /Вернуть её не получится/)
@@ -95,7 +98,23 @@ test("unlink needs two confirmations; back or cancel submits nothing, repeated t
     await Promise.all([confirm.props.onPress(), confirm.props.onPress()])
     assert.deepEqual(calls, [["COMPANY", "test-op"]])
     assert.ok(!textOf(codes()).includes("COMPANY"))
+    assert.match(textOf(codes()), /прогресс скидки сгорел/)
     assert.match(textOf(codes()), /MYCODE/)
+})
+
+test("profile binds the server-confirmed code without an order; cancel never binds", async () => {
+    for (const confirmBind of [false, true]) {
+        const calls = []
+        const h = setup(1, { account: { referrer_promo_code: null }, confirmBind,
+            bind: async code => { calls.push(code); return { referrer_promo_code: "Хрюн_Слим" } } })
+        const render = () => h.details("Промокоды")
+        all(render(), n => n.type === "TextInput")[0].props.onChangeText("хрюн_слим")
+        const button = all(render(), n => n.type === "Pressable" && textOf(n).includes("Применить промокод"))[0]
+        await button.props.onPress()
+        assert.deepEqual(calls, confirmBind ? ["хрюн_слим"] : [])
+        assert.equal(textOf(render()).includes("Хрюн_Слим"), confirmBind)
+        assert.equal(all(render(), n => n.type === "TextInput").length, confirmBind ? 0 : 1)
+    }
 })
 
 for (const program of [0, null, 1, 2]) {

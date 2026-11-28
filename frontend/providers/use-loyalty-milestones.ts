@@ -73,5 +73,5 @@ export function useLoyaltyMilestones(userId: number | undefined, sessionId: numb
         if (state.data.offer_partner) queueMilestone(session, userId, "partner")
         if (state.data.own_code_eligible && state.data.own_promo_code) queueMilestone(session, userId, "code")
     }, [session, state, userId])
-    return session ? { ...state, check: session.check, accept: session.accept } : null
+    return session ? { ...state, check: session.check, accept: session.accept, bindingChanged: session.bindingChanged } : null
 }

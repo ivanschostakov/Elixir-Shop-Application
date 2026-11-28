@@ -133,7 +133,14 @@ function DiscountsView({ userId }: { userId: number }) {
             onUnlinked={() => {
                 if (lastGood.current) lastGood.current = { ...lastGood.current, referrer_promo_code: null }
                 setData(current => current ? { ...current, referrer_promo_code: null } : null)
+                milestones?.bindingChanged()
                 void reload({ showLoading: false })
+            }}
+            onBound={code => {
+                if (lastGood.current) lastGood.current = { ...lastGood.current, referrer_promo_code: code }
+                setData(current => current ? { ...current, referrer_promo_code: code } : null)
+                if (milestones) milestones.bindingChanged()
+                else void reload({ showLoading: false })
             }}
             onClose={() => setSection(null)} />}
     </FeedTemplate>

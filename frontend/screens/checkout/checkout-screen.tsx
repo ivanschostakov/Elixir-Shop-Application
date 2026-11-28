@@ -88,7 +88,7 @@ import {
     updateSavedRecipientOptions,
 } from "@/screens/checkout/checkout-screen.utils"
 import { getBasketCheckoutOptions, restoreDraftToBasket, updateBasketCheckout, updateBasketItem } from "@/services/api/basket"
-import { checkMyBenefits } from "@/services/api/benefits"
+import { confirmPromoBinding } from "@/screens/cart/confirm-promo-binding"
 import { checkGuestPhone } from "@/services/api/guest"
 import { createOrderDraft, getOrderDraftOptions, updateOrderDraft } from "@/services/api/order-drafts"
 import type {
@@ -97,8 +97,7 @@ import type {
     OrderDraftItemRead,
     OrderDraftRead,
 } from "@/services/api/order-drafts.types"
-import { getMyReferralProfile } from "@/services/api/users"
-import { hasAppliedOrderPromo } from "@/screens/cart/order-promo"
+import { bindMyReferrerCode, getMyReferralProfile } from "@/services/api/users"
 import type { ReferralProfileResponse } from "@/services/api/users.types"
 import { updateGuestBasketCheckout, updateGuestCartItemQuantity } from "@/services/guest-cart"
 import { spacing } from "@/theme/spacing"
@@ -197,6 +196,7 @@ export default function CheckoutScreen() {
     })
     const {
         data: referralProfile,
+        setData: setReferralProfile,
         error: referralError,
         reload: reloadReferralProfile,
     } = useAsyncData<ReferralProfileResponse | null>({
@@ -281,7 +281,7 @@ export default function CheckoutScreen() {
         const trimmedCode = promoCode.trim()
         return trimmedCode ? trimmedCode : null
     }, [promoCode])
-    const attachedPromoCode = referralProfile?.promo_code ?? null
+    const attachedPromoCode = referralProfile?.referrer_promo_code ?? null
     const programLocked = !referralProfile
     const hasAttachedPromoCode = Boolean(attachedPromoCode)
     const displayedPromoCode = attachedPromoCode ?? promoCode
@@ -390,53 +390,20 @@ export default function CheckoutScreen() {
 
         setIsCheckingPromoCode(true)
         try {
-            const nextBenefitCheck = await checkMyBenefits({
-                use_basket: isBasketCheckout, draft_id: isBasketCheckout ? null : orderDraft.id,
-                code: normalizedPromoCode, reward_mode: "order_referral",
-            })
-
-            const hasCodeMatch = Boolean(
-                !nextBenefitCheck.unresolved_code_reason && nextBenefitCheck.entered_code_matches.length,
-            )
-            const isApplicable = nextBenefitCheck.entered_code_matches.some((option) => option.is_applicable)
-            const hasDiscount = hasAppliedOrderPromo(nextBenefitCheck, normalizedPromoCode)
-
-            if (!hasCodeMatch) {
-                setAppliedPromoCode(null)
-                Alert.alert(t("checkout.promoCodeNotFound"), nextBenefitCheck.unresolved_code_reason || t("checkout.promoCodeNotFoundMessage"))
-                return
-            }
-
-            if (!isApplicable || !hasDiscount) {
-                setAppliedPromoCode(null)
-                Alert.alert(t("checkout.promoCodeUnavailable"), t("checkout.promoCodeUnavailableMessage"))
-                return
-            }
-
-            if (referralProfile?.reward_program !== "partner") {
-                Alert.alert(t("cart.applyPromoCode"), t("cart.confirmPartnerOrder"), [
-                    { text: t("common.cancel"), style: "cancel" },
-                    { text: t("cart.applyPromoCode"), onPress: () => setAppliedPromoCode(normalizedPromoCode) },
-                ])
-            } else {
-                setAppliedPromoCode(normalizedPromoCode)
-            }
-        } catch (error) {
+            if (!await confirmPromoBinding(t("cart.applyPromoCode"),
+                t("cart.confirmPartnerOrder").replace("{code}", normalizedPromoCode), t("common.cancel"))) return
+            const { referrer_promo_code } = await bindMyReferrerCode(normalizedPromoCode)
+            setReferralProfile(current => current ? { ...current, referrer_promo_code } : current)
+            setPromoCode("")
             setAppliedPromoCode(null)
+            if (milestones) milestones.bindingChanged()
+            else await reloadReferralProfile()
+        } catch (error) {
             Alert.alert(t("checkout.promoCodeUnavailable"), getDraftUpdateErrorMessage(error, t("checkout.promoCodeUnavailableMessage")))
         } finally {
             setIsCheckingPromoCode(false)
         }
-    }, [
-        hasAttachedPromoCode,
-        isAuthenticated,
-        isCheckingPromoCode,
-        isBasketCheckout,
-        normalizedPromoCode,
-        orderDraft,
-        referralProfile?.reward_program,
-        t,
-    ])
+    }, [orderDraft, hasAttachedPromoCode, isAuthenticated, isCheckingPromoCode, milestones, normalizedPromoCode, reloadReferralProfile, setReferralProfile, t])
     const handlePromoCodeChange = useCallback((value: string) => {
         setPromoCode(value)
         if (appliedPromoCode && value.trim() !== appliedPromoCode) {

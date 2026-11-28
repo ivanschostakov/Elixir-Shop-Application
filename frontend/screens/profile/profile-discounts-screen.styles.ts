@@ -41,6 +41,7 @@ export const createProfileDiscountsScreenStyles = (colors: ThemePalette) => Styl
     sheetTitle: { flex: 1, color: colors.text, fontSize: 22, fontWeight: "700", letterSpacing: -0.5 },
     sheetBody: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 12, gap: 12 },
     body: { color: colors.stateText, fontSize: 15, lineHeight: 22 },
+    promoInput: { minHeight: 44, borderBottomWidth: 1, borderColor: colors.border, color: colors.text, fontSize: 16 },
     detailCard: { borderRadius: 16, gap: 8, padding: 14, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceElevated },
     detailTitle: { fontSize: 17, fontWeight: "700", color: colors.text },
     value: { color: colors.text, fontSize: 23, fontWeight: "700" },

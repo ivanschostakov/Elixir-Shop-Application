@@ -72,7 +72,7 @@ function nodes(root) {
 }
 
 function mount(t, page, { guest = false, platform = "ios", params = {}, status, createError, onPost,
-    orderFields, beforeCreate, readOrder, translate = identity } = {}) {
+    orderFields, beforeCreate, readOrder, promoBinding, translate = identity } = {}) {
     const calls = [], pushes = [], links = [], alerts = []
     const { hooks, render, unmount } = screenHooks()
     t.after(unmount)
@@ -148,11 +148,21 @@ function mount(t, page, { guest = false, platform = "ios", params = {}, status, 
         "components/platform/app-form-layout", "components/platform/app-picker", "hooks/basket/basket-draft-editing-store",
         "hooks/delivery/delivery-address-selection-store", "hooks/delivery/delivery-country-selection-store",
         "hooks/delivery/delivery-point-selection-store", "hooks/order-draft/order-draft-store",
-        "screens/cart/cart-screen.utils", "screens/cart/order-promo", "screens/checkout/checkout-address-picker",
+        "screens/cart/cart-screen.utils", "screens/cart/order-promo", "screens/cart/confirm-promo-binding", "screens/checkout/checkout-address-picker",
         "screens/checkout/checkout-screen.styles", "screens/payment/payment-screen.styles", "components/platform/app-calendar",
         "components/content/content-tab-bar", "components/content/empty-state", "components/templates/catalog-template",
         "services/api/basket", "services/api/benefits", "services/api/order-drafts", "services/api/users", "services/notifications/order-status-notifications",
     ]) mocks["@/" + path] = {}
+    if (promoBinding) {
+        const getProfile = () => {}
+        let profile = { reward_program: "bonus", referrer_promo_code: null }
+        mocks["@/services/api/users"] = { getMyReferralProfile: getProfile,
+            bindMyReferrerCode: async code => { calls.push(["bind", code]); return { referrer_promo_code: "Хрюн_Слим" } } }
+        mocks["@/screens/cart/confirm-promo-binding"] = { confirmPromoBinding: async () => true }
+        mocks["@/hooks/shared/use-async-data"] = { useAsyncData: ({ fetcher }) => fetcher === getProfile
+            ? { data: profile, setData: update => { profile = update(profile) }, reload: noop }
+            : { data: null, reload: noop } }
+    }
     const screen = load(page === "history" ? "screens/profile/profile-history-screen.tsx"
         : "screens/" + page + "/" + page + "-screen.tsx", mocks).default
     return {
@@ -171,6 +181,21 @@ function mount(t, page, { guest = false, platform = "ios", params = {}, status, 
         calls, pushes, links, alerts, email, appState,
     }
 }
+
+test("applying a code directly in checkout binds before choosing payment or creating an order", async t => {
+    const app = mount(t, "checkout", { promoBinding: true })
+    const field = () => app.elements().find(n => n.props?.placeholder === "checkout.promoCodePlaceholder")
+    app.render()
+    field().props.onChangeText("хрюн_слим")
+    app.render()
+    app.cta().onPress()
+    await tick()
+    app.render()
+    assert.deepEqual(app.calls, [["bind", "хрюн_слим"]])
+    assert.equal(field().props.editable, false)
+    assert.equal(field().props.value, "Хрюн_Слим")
+    assert.deepEqual(app.pushes, [])
+})
 
 test("native checkout waits for the method alert, can be cancelled, and proceeds only once", t => {
     for (const platform of ["android", "ios"]) for (const guest of [true, false]) {
