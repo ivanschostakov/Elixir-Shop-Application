@@ -20,6 +20,7 @@ export type GuestBasketQuoteRead = BasketRead
 export type GuestDeliveryAddressPayload = NewDeliveryAddressPayload
 
 export type GuestOrderPayload = {
+    automatic_checkout?: boolean
     buyer_email: string
     items: GuestBasketItemPayload[]
     delivery_address: GuestDeliveryAddressPayload

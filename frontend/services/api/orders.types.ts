@@ -78,6 +78,7 @@ export type OrderRead = {
 }
 
 export type CreateOrderPayload = {
+    automatic_checkout?: boolean
     draft_id?: number | null
     payment_method: "later" | "sbp"
     code?: string | null

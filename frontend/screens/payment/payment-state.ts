@@ -27,7 +27,7 @@ export function visibleOrderTotal(order: OrderRead | null, payment: PaymentStatu
     if (!order) return null
     const current = payment?.order_id === order.id ? payment : null
     const state = laterCheckoutState(order, current)
-    if (state === "reserving" || state === "calculating" || current?.awaiting_settlement) return null
+    if (current?.checkout_progress || state === "reserving" || state === "calculating" || current?.awaiting_settlement) return null
     const settlement = order.checkout_snapshot?.settlement_payment as { status?: string } | undefined
     if (settlement && settlement.status !== "confirmed" && current?.amount_rubles == null) return null
     return current?.amount_rubles ?? order.grand_total
@@ -37,10 +37,13 @@ export function resolvePaymentPhase(payment: PaymentStatusRead, requestedMethod:
     if (order?.is_canceled) return "failure"
     if (payment.payment_status && FINAL_STOP_STATUSES.has(payment.payment_status)) return "failure"
     if (payment.is_paid || payment.payment_status === "paid") return "success"
+    if (payment.checkout_progress === "needs_review") return "failure"
+    if (payment.checkout_progress === "processing") return "waiting"
     const method = payment.payment_method === "later" || payment.payment_method === "sbp"
         ? payment.payment_method
         : requestedMethod
     if (method === "later" && laterCheckoutState(order, payment) === "reserving") return "waiting"
+    if (method === "sbp" && !payment.invoice_id && !payment.qr_url && !payment.qr_image) return "waiting"
     return method === "later" ? "pending" : "sbp"
 }
 

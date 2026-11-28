@@ -1,10 +1,12 @@
 export type CreatePaymentPayload = {
+    automatic_checkout?: boolean
     order_id: number
     payment_method?: "later" | "sbp"
     accept_pending_amount?: boolean
 }
 
 export type PaymentStatusRead = {
+    checkout_progress?: "processing" | "needs_review" | null
     status: string
     order_id: number
     order_code: string

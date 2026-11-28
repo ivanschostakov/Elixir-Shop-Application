@@ -5,6 +5,31 @@ import type { CreatePaymentPayload, PaymentStatusRead } from "@/services/api/pay
 
 const paymentsEndpoint = ENDPOINTS.PAYMENTS
 
+export function readSubmittedOrder(orderId: number): Promise<PaymentStatusRead> {
+    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`,
+        { order_id: orderId, automatic_checkout: true, accept_pending_amount: true },
+        { appIntegrityAction: "payments:status" })
+}
+
+export async function submitCheckout(payload: CreatePaymentPayload, active: () => boolean, resume = false): Promise<PaymentStatusRead | null> {
+    if (!active()) return null
+    if (resume) {
+        try {
+            const state = await readSubmittedOrder(payload.order_id)
+            if (!active()) return null
+            if (state.checkout_progress || state.invoice_id || state.is_paid ||
+                !["draft", "pending"].includes(state.payment_status ?? "") ||
+                (state.payment_method === "later" && state.ms_reservation_confirmed)) return state
+        } catch (error) {
+            if (!(error instanceof ApiError && error.status === 409 &&
+                (error.body as { detail?: { code?: string } } | null)?.detail?.code === "settlement_pending")) throw error
+        }
+    }
+    if (!active()) return null
+    const result = await createPayment({ ...payload, automatic_checkout: true })
+    return active() ? result : null
+}
+
 export class PaymentPreparationPendingError extends Error {}
 
 export function createPayment(payload: CreatePaymentPayload, timeoutMs = REQUEST_TIMEOUT_MS): Promise<PaymentStatusRead> {
