@@ -27,6 +27,7 @@ from src.app.services.orders.creation import (
     _delivery_string,
     _generate_order_code,
 )
+from src.app.services.orders.automatic_checkout import commit_created_order
 from src.app.services.orders.crm import ensure_order_has_amocrm_lead
 from src.app.services.orders.fulfillment_payloads import normalize_address_for_cf
 from src.app.services.recommendations import record_purchase
@@ -374,10 +375,12 @@ async def create_guest_order(session: AsyncSession, request: Request, payload: G
     from src.app.services.orders.stock_reservations import reserve_order_stock
     await reserve_order_stock(session, order)
     for order_item in order_items: await record_purchase(session, user_id=user.id, product_id=order_item.product_id, quantity=order_item.quantity, commit=False)
-    await ensure_order_has_amocrm_lead(session, order, user=user)
-    await session.commit()
+    if not payload.automatic_checkout:
+        await ensure_order_has_amocrm_lead(session, order, user=user)
+    await commit_created_order(session, order, request if payload.automatic_checkout else None)
     await session.refresh(user)
     created_order = await get_order_by_id(session, order.id, user_id=user.id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
-    await sync_order_to_moysklad_safe(session, order=created_order, user=user)
+    if not payload.automatic_checkout:
+        await sync_order_to_moysklad_safe(session, order=created_order, user=user)
     return user, created_order

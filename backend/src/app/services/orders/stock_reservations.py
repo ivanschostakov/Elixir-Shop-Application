@@ -151,6 +151,9 @@ async def expire_local_reservations():
             Order.checkout_snapshot["stock_reservation"]["status"].astext.in_(["held", "exported"]),
             or_(Order.is_canceled.is_(True), Order.checkout_snapshot["stock_reservation"]["expires_at"].astext <= datetime.now(timezone.utc).isoformat()),
             or_(Order.payment_invoice_id.is_(None), Order.payment_status.in_(["canceled", "error"])),
+            # A lost provider reply is not proof that no payable invoice exists.
+            or_(Order.payment_provider.is_distinct_from("intellectmoney"), Order.payment_invoice_id.is_not(None),
+                Order.payment_status.not_in(["created", "error"])),
             or_(Order.moysklad_customerorder_id.is_(None), Order.payment_method != "later", Order.is_canceled.is_(True)),
             or_(Order.moysklad_customerorder_id.is_not(None), Order.checkout_snapshot["stock_reservation"]["remote_export_attempted"].as_boolean().is_not(True)),
         ).order_by(Order.id).limit(100))).scalars().all())
@@ -166,6 +169,9 @@ async def expire_local_reservations():
             now = datetime.now(timezone.utc)
             hold = order.checkout_snapshot["stock_reservation"]
             if order.is_canceled or datetime.fromisoformat(hold["expires_at"]) <= now:
+                if (order.payment_provider == "intellectmoney" and not order.payment_invoice_id
+                        and order.payment_status in {"created", "error"}):
+                    continue
                 if order.payment_invoice_id and order.payment_status not in {"canceled", "error"}: continue
                 # Manager payment can arrive through another channel. Its remote
                 # reservation is released only after a confirmed cancellation.

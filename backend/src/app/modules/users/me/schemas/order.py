@@ -10,6 +10,7 @@ PaymentMethod = Literal["later", "sbp"]
 
 
 class CreateOrderPayload(BaseModel):
+    automatic_checkout: bool = False
     draft_id: int | None = Field(default=None, ge=1)
     payment_method: PaymentMethod
     code: str | None = Field(default=None, max_length=PROMO_CODE_MAX_LENGTH)
@@ -19,12 +20,14 @@ class CreateOrderPayload(BaseModel):
 
 
 class CreatePaymentPayload(BaseModel):
+    automatic_checkout: bool = False
     order_id: int = Field(ge=1)
     payment_method: PaymentMethod | None = None
     accept_pending_amount: bool = False
 
 
 class PaymentStatusRead(BaseModel):
+    checkout_progress: Literal["processing", "needs_review"] | None = None
     status: str = "success"
     order_id: int = Field(ge=1)
     order_code: str = Field(min_length=1, max_length=ORDER_CODE_MAX_LENGTH)

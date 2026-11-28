@@ -28,7 +28,14 @@ my_orders_router = APIRouter(prefix="/orders", tags=["my_orders"])
 
 @my_orders_router.post("", response_model=OrderRead)
 async def create_my_order(payload: CreateOrderPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("orders:create"))) -> OrderRead:
-    order = await create_order_from_draft_for_user(db, request=request, user=current_user, draft_id=payload.draft_id, payment_method=payload.payment_method, entered_code=payload.code, bonus_rubles_to_use=payload.bonus_rubles_to_use, use_bonus_rubles=payload.use_bonus_rubles, reward_mode=payload.reward_mode) if payload.draft_id is not None else await create_order_from_basket_for_user(db, request=request, user=current_user, payment_method=payload.payment_method, entered_code=payload.code, bonus_rubles_to_use=payload.bonus_rubles_to_use, use_bonus_rubles=payload.use_bonus_rubles, reward_mode=payload.reward_mode)
+    options = dict(request=request, user=current_user, payment_method=payload.payment_method,
+                   automatic_checkout=payload.automatic_checkout, entered_code=payload.code,
+                   bonus_rubles_to_use=payload.bonus_rubles_to_use, use_bonus_rubles=payload.use_bonus_rubles,
+                   reward_mode=payload.reward_mode)
+    if payload.draft_id is None:
+        order = await create_order_from_basket_for_user(db, **options)
+    else:
+        order = await create_order_from_draft_for_user(db, draft_id=payload.draft_id, **options)
     await record_customer_event_safe(
         db,
         user_id=current_user.id,

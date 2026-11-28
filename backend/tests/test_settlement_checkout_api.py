@@ -7,11 +7,13 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import create_async_engine
 
 import config
-from src.database.models import Order, OrderDraft, User
+from src.database.models import IntegrationRun, Order, OrderDraft, User
+from src.app.services.admin.jobs import execute_integration_run
 from src.app.services.benefits import service as benefits, moysklad_bonus
 from src.app.services.orders import creation, settlement_payment, crm
 from src.integrations.moysklad.settlement_checkout import ORDER_SPENT_ATTRIBUTE, display_spent_rubles
@@ -22,7 +24,14 @@ from test_orders_api import (
 )
 
 
-@pytest.mark.parametrize("scenario", ["exact", "rounded", "full", "full_exact_balance", "partial_delivery", "wrong_invoice",
+def _run_checkout(client, order_id):
+    with Session(sync_engine) as db:
+        run_id = db.scalar(select(IntegrationRun.id).where(
+            IntegrationRun.idempotency_key == f"app:complete-checkout:{order_id}"))
+    client.portal.call(execute_integration_run, run_id)
+
+
+@pytest.mark.parametrize("scenario", ["exact", "rounded", "full", "automatic_full", "full_exact_balance", "partial_delivery", "wrong_invoice",
     "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order", "zero_balance", "opt_out", "partial_request",
     "legacy_cash_order"])
 def test_balance_checkout_api_uses_only_mocked_external_services(
@@ -53,7 +62,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         user = db.get(User, registered_user["user_id"])
         user.moysklad_counterparty_id = CID
         db.commit()
-    price = Decimal("100") if scenario in {"full", "full_exact_balance", "partial_delivery"} else Decimal("4590")
+    price = Decimal("100") if scenario in {"full", "automatic_full", "full_exact_balance", "partial_delivery"} else Decimal("4590")
     gross = price * 2 + Decimal("199")
     applied = Decimal("999.38") if scenario == "rounded" else min(gross, balance)
     cash = gross - applied
@@ -87,6 +96,8 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         order.checkout_snapshot = snapshot
         order.moysklad_customerorder_id = OID
         await db.commit()
+        return SimpleNamespace(skipped_reason=None)
+    monkeypatch.setattr("src.app.services.orders.automatic_checkout.sync_order_to_moysklad", sync_mock)
     _patched_value_65 = sync_mock
     for target in ('src.app.services.orders.creation.basket.sync_order_to_moysklad_safe', 'src.app.services.orders.creation.draft.sync_order_to_moysklad_safe',):
         monkeypatch.setattr(target, _patched_value_65)
@@ -125,6 +136,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         assert Decimal(preview.json()["total_after_discounts"]) >= 0
     response = client.post("/api/v1/users/me/orders", headers=headers, json={
         "draft_id": draft["id"], "payment_method": "sbp", "use_bonus_rubles": scenario != "opt_out",
+        "automatic_checkout": scenario == "automatic_full",
         **({"bonus_rubles_to_use": "1.00"} if scenario == "partial_request" else {})})
     assert response.status_code == 200, response.text
     assert Decimal(response.json()["grand_total"]) == max(Decimal("0"), gross - balance)
@@ -145,6 +157,10 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     if scenario == "other_open_order":
         ms.get_page.return_value = {"rows": [{"id": str(CID), "agent": ref(CID), "sum": 10000, "shippedSum": 0,
             "attributes": [{"id": ORDER_SPENT_ATTRIBUTE, "value": 1}]}]}
+    if scenario == "automatic_full":
+        _run_checkout(client, order_id)
+        assert _get_order(order_id).is_paid
+        _run_checkout(client, order_id)
     response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
     if scenario == "ambiguous_gateway":
         assert response.status_code >= 500, response.text
@@ -157,8 +173,8 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         assert response.status_code == 409, response.text
         assert response.json()["detail"]["code"] == "settlement_pending"
         status_response = client.get("/api/v1/payments/status", headers=headers, params={"order_id": order_id})
-        assert status_response.status_code == 200, status_response.text
-        assert status_response.json()["awaiting_settlement"] is True
+        assert status_response.status_code == 409, status_response.text
+        assert status_response.json()["detail"]["code"] == "settlement_pending"
         assert _get_order(order_id).payment_invoice_id is None
         gateway.assert_not_awaited()
         remote["invoicesOut"] = [ref(IID)]
@@ -166,6 +182,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         retry = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
         assert retry.status_code == 409 and ms.get_customer_order.await_count == reads
         clock[0] += response.json()["detail"]["retry_after_seconds"]
+        _run_checkout(client, order_id)
         response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
     if scenario in {"wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
         assert response.status_code == 409, response.text
@@ -181,7 +198,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     assert response.json()["awaiting_settlement"] is False
     assert Decimal(str(response.json()["amount_rubles"])) == cash
     assert _get_order(order_id).grand_total == cash
-    if scenario in {"full", "full_exact_balance"}:
+    if scenario in {"full", "automatic_full", "full_exact_balance"}:
         gateway.assert_not_awaited()
         assert response.json()["is_paid"] is True
         assert _get_order(order_id).payment_provider == "moysklad_balance"

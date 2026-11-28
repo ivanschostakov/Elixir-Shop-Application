@@ -39,11 +39,12 @@ async def ensure_order_has_amocrm_lead(session: AsyncSession, order: Order, *, u
     return await _order_crm.ensure_order_has_amocrm_lead(session, order, user=user)
 
 
-async def create_order_from_draft_for_user(session: AsyncSession, *, request: Request, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, request: Request, user: User, draft_id: int, payment_method: str, automatic_checkout: bool = False, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None) -> Order:
     _sync_runtime_dependencies()
     return await _order_creation.create_order_from_draft_for_user(
         session,
         user=user,
+        checkout_request=request if automatic_checkout else None,
         draft_id=draft_id,
         client_platform="ios" if is_ios_request(request.headers) else request.headers.get("X-App-Platform"),
         mobile_welcome=mobile_shop_request(request.headers),
@@ -54,11 +55,12 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, request: Re
     )
 
 
-async def create_order_from_basket_for_user(session: AsyncSession, *, request: Request, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, request: Request, user: User, payment_method: str, automatic_checkout: bool = False, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None) -> Order:
     _sync_runtime_dependencies()
     return await _order_creation.create_order_from_basket_for_user(
         session,
         user=user,
+        checkout_request=request if automatic_checkout else None,
         client_platform="ios" if is_ios_request(request.headers) else request.headers.get("X-App-Platform"),
         mobile_welcome=mobile_shop_request(request.headers),
         payment_method=payment_method,

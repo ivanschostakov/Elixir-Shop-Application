@@ -185,6 +185,10 @@ async def recover_processing_queue() -> int:
         )).scalars().all())
         for row in rows:
             if row.status == "running":
+                last_seen = row.heartbeat_at or row.started_at
+                if last_seen and last_seen > now - timedelta(seconds=ADMIN_JOB_STALE_SECONDS):
+                    # Another worker may still own this shared processing-list entry.
+                    continue
                 if row.attempts >= row.max_attempts:
                     row.status = "error"
                     row.finished_at = now
@@ -401,6 +405,11 @@ async def _execute_operation(run_id: int) -> dict[str, Any]:
             if order is None: return {"skipped": "order_missing"}
             return await apply_payment_effects(db, order, input_json)
 
+    if provider == "app" and operation == "complete_mobile_checkout" and target_type == "order":
+        from src.app.services.orders.automatic_checkout import complete_checkout
+        async with SessionLocal() as db:
+            return await complete_checkout(db, int(target_id), input_json)
+
     if provider == "moysklad" and operation == "mark_invoice_sent" and target_type == "order":
         from src.app.services.orders.invoice_preparation import mark_invoice_sent
         async with SessionLocal() as db:
@@ -444,10 +453,12 @@ async def execute_integration_run(run_id: int) -> None:
         run = (await db.execute(
             select(IntegrationRun).where(IntegrationRun.id == run_id).with_for_update()
         )).scalar_one_or_none()
-        if run is None or run.status not in PENDING_RUN_STATUSES:
+        if (run is None or run.status not in PENDING_RUN_STATUSES
+                or (run.next_attempt_at is not None and run.next_attempt_at > now)):
             return
         run.status = "running"
         run.attempts += 1
+        attempt = run.attempts
         run.heartbeat_at = now
         run.next_attempt_at = None
         run.finished_at = None
@@ -461,8 +472,8 @@ async def execute_integration_run(run_id: int) -> None:
         failed_campaign_id: int | None = None
         failure_alert: dict[str, Any] | None = None
         async with SessionLocal() as db:
-            run = await db.get(IntegrationRun, run_id)
-            if run is None:
+            run = await db.get(IntegrationRun, run_id, with_for_update=True)
+            if run is None or run.status != "running" or run.attempts != attempt:
                 return
             run.error = _error_text(error)
             run.heartbeat_at = datetime.now(timezone.utc)
@@ -516,8 +527,8 @@ async def execute_integration_run(run_id: int) -> None:
 
     success_fingerprint: str | None = None
     async with SessionLocal() as db:
-        run = await db.get(IntegrationRun, run_id)
-        if run is None:
+        run = await db.get(IntegrationRun, run_id, with_for_update=True)
+        if run is None or run.status != "running" or run.attempts != attempt:
             return
         run.status = "success"
         run.counters_json = jsonable_encoder(counters)

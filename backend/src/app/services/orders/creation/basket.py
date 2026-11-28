@@ -1,6 +1,6 @@
 from decimal import Decimal
 from types import SimpleNamespace
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -17,6 +17,7 @@ from src.database.models import BasketItem, Order, User
 from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
 from src.app.services.orders.common import _delivery_string, validate_checkout_recipient
 from src.app.services.orders.recipients import is_profile_recipient
+from src.app.services.orders.automatic_checkout import commit_created_order
 from src.app.services.orders.crm import ensure_order_has_amocrm_lead
 from src.app.services.orders.fulfillment_payloads import normalize_address_for_cf
 from src.app.services.orders.settlement_payment import serialized_settlement_checkout
@@ -28,7 +29,7 @@ from .payloads import _build_order_create_data, _build_order_item_from_basket_ro
 
 
 @serialized_settlement_checkout
-async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None, client_platform: str | None = None, mobile_welcome: bool = False) -> Order:
+async def create_order_from_basket_for_user(session: AsyncSession, *, user: User, payment_method: str, checkout_request: Request | None = None, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None, client_platform: str | None = None, mobile_welcome: bool = False) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     basket = await get_basket_by_user_id(session, user_id, lock=True)
     if basket is None or not basket.items: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Basket is empty")
@@ -109,7 +110,8 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     from src.app.services.orders.stock_reservations import reserve_order_stock
     await reserve_order_stock(session, order)
     for item, _, _ in order_item_rows: await record_purchase(session, user_id=user_id, product_id=item.product_id, quantity=item.quantity, commit=False)
-    await ensure_order_has_amocrm_lead(session, order, user=user)
+    if checkout_request is None:
+        await ensure_order_has_amocrm_lead(session, order, user=user)
     await session.execute(delete(BasketItem).where(BasketItem.basket_id == basket.id))
     basket.delivery_address_id = None
     basket.recipient_id = None
@@ -117,10 +119,12 @@ async def create_order_from_basket_for_user(session: AsyncSession, *, user: User
     basket.currency = "RUB"
     basket.delivery_period_min = None
     basket.delivery_period_max = None
-    await session.commit()
+    await commit_created_order(session, order, checkout_request)
 
     created_order = await get_order_by_id(session, order.id, user_id=user_id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
+    if checkout_request is not None:
+        return created_order
     created_order_id = int(order.__dict__.get("id") or created_order.__dict__.get("id") or created_order.id)
     await redeem_order_bonus_safe(session, order=created_order, user=user)
     created_order = await get_order_by_id(session, created_order_id, user_id=user_id)

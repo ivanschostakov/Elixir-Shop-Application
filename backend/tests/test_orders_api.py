@@ -866,12 +866,25 @@ def test_create_payment_later_marks_order_pending(client: TestClient, registered
     assert payload["payment_method"] == "later"
     assert payload["payment_status"] == "pending"
 
+    # The legacy POST already handed off the delayed payment. Acknowledging an
+    # exported reservation does not have to wait for the worker's local update.
+    from src.app.services.admin.jobs import execute_integration_run
+    from src.database.models import IntegrationRun
+    with Session(sync_engine) as db:
+        run_id = db.scalar(select(IntegrationRun.id).where(
+            IntegrationRun.idempotency_key == f"app:complete-checkout:{order_id}"))
+    client.portal.call(execute_integration_run, run_id)
     stored_order = _get_order(order_id)
     assert stored_order.payment_provider == "manager"
     assert stored_order.payment_status == "pending"
 
+    # A different order was submitted with an as-yet-unconfirmed settlement.
+    other = _create_order_for_history(client, registered_user["headers"], variant_factory()["variant_id"])
+    order_id = other["id"]
+    snapshot = other["checkout_snapshot"]
+    snapshot["stock_reservation"].update(status="exported", remote_quantities={"test-product": 2})
     snapshot["settlement_payment"] = {"version": 1, "status": "awaiting_invoice", "counterparty_id": str(uuid.uuid4())}
-    _update_order(order_id, checkout_snapshot=snapshot)
+    _update_order(order_id, checkout_snapshot=snapshot, moysklad_customerorder_id=uuid.uuid4())
     headers = registered_user["headers"]
     params = {"order_id": order_id, "accept_pending_amount": True}
     read = client.get(f"/api/v1/users/me/orders/{order_id}", headers=headers).json()

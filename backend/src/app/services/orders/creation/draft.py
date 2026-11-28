@@ -1,6 +1,6 @@
 from decimal import Decimal
 from src.app.services.catalog_access import require_catalog_products
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -16,6 +16,7 @@ from src.database.models import Order, User, Variant
 from src.integrations.moysklad.order_sync import sync_order_to_moysklad_safe
 from src.app.services.orders.common import _delivery_string, validate_checkout_recipient
 from src.app.services.orders.recipients import is_profile_recipient
+from src.app.services.orders.automatic_checkout import commit_created_order
 from src.app.services.orders.crm import ensure_order_has_amocrm_lead
 from src.app.services.orders.fulfillment_payloads import normalize_address_for_cf
 from src.app.services.orders.settlement_payment import serialized_settlement_checkout
@@ -27,7 +28,7 @@ from .payloads import _build_order_create_data, _build_order_item_from_draft_ite
 
 
 @serialized_settlement_checkout
-async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None, client_platform: str | None = None, mobile_welcome: bool = False) -> Order:
+async def create_order_from_draft_for_user(session: AsyncSession, *, user: User, draft_id: int, payment_method: str, checkout_request: Request | None = None, entered_code: str | None = None, use_bonus_rubles: bool = False, bonus_rubles_to_use: Decimal | None = None, reward_mode: str | None = None, client_platform: str | None = None, mobile_welcome: bool = False) -> Order:
     user_id = int(user.__dict__.get("id") or user.id)
     draft = await get_order_draft_by_id(session, draft_id, user_id=user_id, lock=True)
     if draft is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order draft not found")
@@ -124,13 +125,16 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     from src.app.services.orders.stock_reservations import reserve_order_stock
     await reserve_order_stock(session, order)
     for item in draft.items: await record_purchase(session, user_id=user_id, product_id=item.product_id, quantity=item.quantity, commit=False)
-    await ensure_order_has_amocrm_lead(session, order, user=user)
+    if checkout_request is None:
+        await ensure_order_has_amocrm_lead(session, order, user=user)
     await _clear_order_draft_references(session, draft_id=draft.id)
     await delete_order_draft(session, draft, commit=False)
-    await session.commit()
+    await commit_created_order(session, order, checkout_request)
 
     created_order = await get_order_by_id(session, order.id, user_id=user_id)
     if created_order is None: raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to load created order")
+    if checkout_request is not None:
+        return created_order
     created_order_id = int(order.__dict__.get("id") or created_order.__dict__.get("id") or created_order.id)
     await redeem_order_bonus_safe(session, order=created_order, user=user)
     created_order = await get_order_by_id(session, created_order_id, user_id=user_id)

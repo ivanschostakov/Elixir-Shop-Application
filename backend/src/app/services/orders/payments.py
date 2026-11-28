@@ -415,8 +415,50 @@ async def _verify_sbp_documents(session, order, settlement):
         await _verify_payment_reserve(order, documents=documents)
 
 
+def checkout_ready(order, method):
+    hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
+    if method == "sbp" and hold.get("expires_at"):
+        try:
+            if datetime.fromisoformat(hold["expires_at"]) <= datetime.now(timezone.utc):
+                return False
+        except (ValueError, TypeError):
+            return False
+    return (method in {"sbp", "later"} and order.payment_method == method
+            and (order.checkout_snapshot or {}).get("ms_checkout_version") == 2
+            and not (order.is_canceled or order.is_paid or order.is_shipped or order.payment_invoice_id)
+            and order.payment_status in {"draft", "pending"}
+            and (order.payment_provider is None or (method == "later" and order.payment_provider == "manager"))
+            and hold.get("status") != "released")
+
+
+async def _lock_payment_state(session, order):
+    await session.refresh(order, attribute_names=[
+        "payment_invoice_id", "payment_provider", "payment_method", "payment_status", "is_canceled", "is_paid",
+        "is_shipped", "grand_total", "checkout_snapshot", "moysklad_customerorder_id", "moysklad_invoiceout_id",
+    ], with_for_update=True)
+
+
+async def lock_checkout_order(session, order, method):
+    await _lock_payment_state(session, order)
+    if not checkout_ready(order, method):
+        raise HTTPException(409, "Checkout intent has been superseded")
+
+
+def _verified_terms(order):
+    return (order.grand_total, order.moysklad_customerorder_id, order.moysklad_invoiceout_id, order.checkout_snapshot)
+
+
+async def _lock_provider_claim(session, order, invoice_id, terms):
+    await _lock_payment_state(session, order)
+    if (order.payment_provider != "intellectmoney" or order.payment_method != "sbp"
+            or order.payment_invoice_id != invoice_id or order.payment_status != "created"
+            or order.is_canceled or order.is_shipped or order.is_paid or _verified_terms(order) != terms):
+        raise HTTPException(409, "Provider attempt has been superseded")
+
+
 async def _create_payment_for_order(session: AsyncSession, *, request: Request, order: Order,
-                                    payment_method: str | None = None, accept_pending_amount: bool = False) -> dict[str, Any]:
+                                    payment_method: str | None = None, accept_pending_amount: bool = False,
+                                    automatic: bool = False) -> dict[str, Any]:
     requested_payment_method = (payment_method or order.payment_method or "later").strip().lower()
     if order.is_canceled or order.payment_status == "refunded":
         raise HTTPException(409, "Заказ отменён или возвращён.")
@@ -456,6 +498,8 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         if settlement and (v2 or _uses_standard_document_export(order)):
             async with payment_backoff(order.id, "later"):
                 await prepare_settlement_payment(session, order=order)
+        if automatic:
+            await lock_checkout_order(session, order, "later")
         order = await update_order(
             session,
             order,
@@ -478,11 +522,22 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         require_exported_reservation(order)
         if not _uses_standard_document_export(order):
             raise settlement_pending()
+    if automatic and not settlement:
+        # Document reads can be slow. A cancellation may land during them;
+        # the row-locked compare below is the actual payment decision.
+        await session.commit()
     async with payment_backoff(order.id, "sbp"):
         await _verify_sbp_documents(session, order, settlement)
+    if automatic:
+        terms = _verified_terms(order)
+        await lock_checkout_order(session, order, "sbp")
+        if terms != _verified_terms(order):
+            raise HTTPException(409, "Verified checkout documents have changed")
+        from .automatic_checkout import claim_payment
+        await claim_payment(session, order)
     if settlement and order.grand_total == 0:
         order = await update_order(session, order, OrderUpdate(
-            payment_method="sbp", payment_provider="moysklad_balance", payment_invoice_id=None), commit=True)
+            payment_method="sbp", payment_provider="moysklad_balance", payment_invoice_id=None), commit=False)
         order = await reconcile_sbp_payment(session, order, payment_status_code=5)
         return _payment_status_payload(order)
 
@@ -502,7 +557,10 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         commit=True,
     )
 
+    invoice_id = None
     try:
+        if automatic:
+            await _lock_provider_claim(session, order, None, terms)
         expires_at = datetime.now() + timedelta(minutes=30)
         create_invoice_result = await intellectmoney.create_invoice(order_id=str(order.order_number), service_name=f"Заказ №{order.order_number}", amount_rub=order.grand_total, user_name=user_name, email=order.recipient.email, success_url=urls["success_url"], fail_url=urls["fail_url"], back_url=urls["back_url"], result_url=urls["result_url"], preference="Sbp")
 
@@ -517,6 +575,8 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         if not invoice_id: raise IntellectMoneyError("IntellectMoney createInvoice succeeded without InvoiceId")
 
         order = await update_order(session, order, OrderUpdate(payment_invoice_id=invoice_id), commit=True)
+        if automatic:
+            await _lock_provider_claim(session, order, invoice_id, terms)
         sbp_result = await intellectmoney.sbp_payment(invoice_id=invoice_id, success_url=urls["success_url"], fail_url=urls["fail_url"], ip_address=ip_address)
         parsed_sbp = intellectmoney.parse_payment_state(sbp_result)
         state_result = await intellectmoney.get_bank_card_payment_state(invoice_id=invoice_id)
@@ -545,11 +605,17 @@ async def _create_payment_for_order(session: AsyncSession, *, request: Request, 
         return _payment_status_payload(order, payment_step=payment_step, qr_url=qr_url, qr_image=saved_qr_image or qr_image, expires_at=expires_at)
 
     except IntellectMoneyError as exc:
+        if automatic:
+            raise HTTPException(409, "Provider submission requires reconciliation") from exc
         await update_order(session, order, OrderUpdate(payment_status="error", payment_error="Платежный провайдер временно недоступен"), commit=True)
         raise external_service_http_exception(service="intellectmoney", operation="create_payment_for_order", public_detail="Payment provider is temporarily unavailable", raw_detail=str(exc), exc=exc) from exc
 
     except Exception as exc:
         log.exception("Failed to initialize SBP payment for order %s", order.order_number)
+        if automatic:
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(409, "Provider submission requires reconciliation") from exc
         await update_order(session, order, OrderUpdate(payment_status="error", payment_error="Не удалось инициализировать СБП"), commit=True)
         raise external_service_http_exception(service="intellectmoney", operation="create_payment_for_order", public_detail="Failed to initialize SBP payment", raw_detail=str(exc), exc=exc) from exc
 

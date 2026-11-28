@@ -58,6 +58,7 @@ class GuestDeliveryAddressPayload(BaseModel):
 
 
 class GuestOrderPayload(BaseModel):
+    automatic_checkout: bool = False
     buyer_email: EmailStr
     items: list[GuestBasketItemPayload] = Field(min_length=1, max_length=100)
     delivery_address: GuestDeliveryAddressPayload
