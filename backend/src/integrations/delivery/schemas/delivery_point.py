@@ -9,6 +9,7 @@ class DeliveryPoint(BaseModel):
     address: str = ""
     address_full: str = ""
     city: str = ""
+    region: str | None = None
     country_code: CountryCode | None = None
     postal_code: str | None = None
     latitude: float = 0.0
@@ -56,6 +57,7 @@ class DeliveryPoint(BaseModel):
             address=location.get("address", ""),
             address_full=location.get("address_full", ""),
             city=location.get("city", ""),
+            region=location.get("region"),
             country_code=location.get("country_code"),
             postal_code=location.get("postal_code"),
             latitude=location.get("latitude", 0.0),

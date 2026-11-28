@@ -107,6 +107,14 @@ def parse_country(address: dict[str, Any]) -> str | None:
 
 
 def parse_region(address: dict[str, Any]) -> str | None:
+    if parse_country_code(address) == "RU":
+        # Yandex may list a federal district before the actual subject, both as province.
+        for component in address.get("Components") or []:
+            if not isinstance(component, dict) or component.get("kind") not in {"province", "area"}: continue
+            name = component.get("name")
+            if isinstance(name, str) and name.strip() and "федеральный округ" not in name.casefold():
+                return name.strip()
+        return None
     return (
         parse_address_component(address, {"province"})
         or parse_address_component(address, {"area"})

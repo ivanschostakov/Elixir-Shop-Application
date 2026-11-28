@@ -1,6 +1,10 @@
 from decimal import Decimal
 import re
+import logging
+import httpx
+from fastapi import HTTPException
 from typing import Any
+from src.integrations.delivery.cdek import get_cdek_client
 from src.database.models import Order
 from src.integrations.delivery.schemas import COUNTRY_NAMES
 from src.normalize import coerce_uuid, extract_dict, optional_str
@@ -98,7 +102,20 @@ async def _shipment_address_full(order: Order, *, moysklad_client: MoySkladClien
     if house: result["house"] = house
     if apartment: result["apartment"] = apartment
     if country_row and isinstance(country_row.get("meta"), dict): result["country"] = {"meta": country_row["meta"]}
-    if region_name:
+    # The MoySklad region dictionary contains Russian federal subjects only.
+    if (country_code or "").upper() == "RU" and getattr(order, "selected_delivery_service", "") == "CDEK" and payload.get("deliveryMode") == "office":
+        code = optional_str(address.get("code")) or optional_str(address.get("provider_reference"))
+        if not code and order.delivery_address is not None:
+            code = optional_str(getattr(order.delivery_address, "provider_reference", None))
+        region_name = None
+        if code:
+            try:
+                point = await get_cdek_client().get_delivery_point(code)
+                if point.code == code and point.country_code == "RU":
+                    region_name = point.region
+            except (HTTPException, httpx.HTTPError, ValueError):
+                logging.getLogger(__name__).warning("Pickup region unavailable for order %s", getattr(order, "order_code", None))
+    if region_name and (country_code or "").upper() == "RU":
         country_id = coerce_uuid(country_row.get("id")) if country_row is not None else None
         region_row = await moysklad_client.find_region_by_name(region_name, country_id=country_id)
         if region_row and isinstance(region_row.get("meta"), dict): result["region"] = {"meta": region_row["meta"]}

@@ -1,7 +1,18 @@
+import re
 from typing import Any
 from uuid import UUID
 from src.normalize import coerce_uuid, optional_str
 from .utils import _customer_order_attr_id, custom_entity_dictionary_id
+
+
+def _region_key(name: str | None) -> tuple[str, ...]:
+    words = re.findall(r"[а-яa-z0-9]+", (name or "").casefold().replace("ё", "е"))
+    if "федеральный" in words and "округ" in words:
+        return ()
+    if words[:1] in (["г"], ["город"]):
+        words = words[1:]
+    aliases = {"республика": "респ", "область": "обл"}
+    return tuple(sorted(aliases.get(word, word) for word in words))
 
 
 class MetadataMixin:
@@ -49,28 +60,17 @@ class MetadataMixin:
 
 
     async def find_region_by_name(self, name: str, *, country_id: UUID | None = None) -> dict[str, Any] | None:
-        normalized_name = optional_str(name)
-        if not normalized_name: return None
-
-        data = await self.get_page("/entity/region", limit=200, search=normalized_name)
-        rows = data.get("rows")
-        if not isinstance(rows, list): return None
-
-        normalized_key = normalized_name.casefold()
-        candidate_rows = [row for row in rows if isinstance(row, dict)]
-        if country_id is not None:
-            filtered: list[dict[str, Any]] = []
-            for row in candidate_rows:
-                country_row = row.get("country")
-                country_meta = country_row.get("meta") if isinstance(country_row, dict) else None
-                country_href = optional_str(country_meta.get("href")) if isinstance(country_meta, dict) else None
-                row_country_id = coerce_uuid(country_href.rsplit("/", 1)[-1]) if country_href else None
-                if row_country_id == country_id: filtered.append(row)
-            if filtered: candidate_rows = filtered
-
-        exact_match = next((row for row in candidate_rows if optional_str(row.get("name")) and optional_str(row.get("name")).casefold() == normalized_key), None,)
-        if exact_match is not None: return exact_match
-        return candidate_rows[0] if candidate_rows else None
+        key = _region_key(name)
+        if not key: return None
+        matches = []
+        # The region API may return the entire dictionary regardless of 'search'.
+        for row in await self.get_all("/entity/region"):
+            if _region_key(row.get("name")) != key: continue
+            if country_id and row.get("country"):
+                href = (row["country"].get("meta") or {}).get("href", "")
+                if coerce_uuid(href.rsplit("/", 1)[-1]) != country_id: continue
+            matches.append(row)
+        return matches[0] if len(matches) == 1 else None
 
 
     async def get_customerorder_metadata(self) -> dict[str, Any]:
