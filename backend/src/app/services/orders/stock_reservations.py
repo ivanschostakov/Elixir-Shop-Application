@@ -2,9 +2,12 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import logging
+import httpx
 from sqlalchemy import select, or_
 from fastapi import HTTPException
 from src.database.models import Variant, Order
+from src.integrations.moysklad.settlement_checkout import entity_id
+from .payment_attempt import PaymentDocuments, settlement_pending
 
 log = logging.getLogger(__name__)
 
@@ -52,17 +55,36 @@ async def acknowledge_remote_reservation(db, order, *, remote_quantities):
     await db.commit()
 
 
-async def verify_remote_reservation(order, *, client=None):
+def has_exported_reservation(order):
+    hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
+    return bool(order.moysklad_customerorder_id and hold.get("status") == "exported" and hold.get("remote_quantities"))
+
+
+def require_exported_reservation(order):
+    hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
+    if hold.get("status") == "released":
+        raise HTTPException(409, "Время резерва истекло. Проверьте остатки и оформите заказ заново.")
+    if not has_exported_reservation(order):
+        raise settlement_pending()
+
+
+async def verify_remote_reservation(order, *, client=None, documents=None):
     hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
     if not hold:
         return  # Existing orders created before stock holds were introduced.
     if hold.get("status") != "exported" or not hold.get("remote_quantities"):
         raise HTTPException(409, "Резерв ещё не подтверждён МойСкладом. Повторите через несколько секунд.")
-    from src.integrations.moysklad.client import get_moysklad_client
-    client = client or get_moysklad_client()
-    remote = await client.get_customer_order(order.moysklad_customerorder_id, expand=True, include_stock=True)
+    documents = documents or PaymentDocuments(client)
+    try:
+        remote = await documents.order(order.moysklad_customerorder_id, stock=True)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise settlement_pending(rate_limit=exc.response) from exc
+        raise
     positions = (remote or {}).get("positions", {}).get("rows", [])
-    if (not positions or len(positions) != (remote or {}).get("positions", {}).get("meta", {}).get("size", len(positions))
+    if (not positions or ((order.checkout_snapshot or {}).get("ms_checkout_version") == 2
+                          and entity_id(remote) != order.moysklad_customerorder_id)
+            or len(positions) != (remote or {}).get("positions", {}).get("meta", {}).get("size", len(positions))
             or remote.get("applicable") is not True or remote.get("deleted")
             or (remote.get("state") or {}).get("stateType") == "Unsuccessful"):
         raise HTTPException(409, "Не удалось подтвердить резерв заказа. Обратитесь в поддержку.")

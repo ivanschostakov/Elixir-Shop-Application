@@ -111,7 +111,7 @@ async def create_order_from_draft_for_user(session: AsyncSession, *, user: User,
     grand_total = (quantize_money(resolved_benefits["cash_total"]) if resolved_benefits.get("cash_total") is not None else (quantize_money(resolved_benefits["total_after_discounts"]) or Decimal("0.00")) + draft.delivery_total)
     from src.app.services.discounts import get_non_discountable_product_ids
     resolved_benefits["discount_excluded_product_ids"] = sorted(await get_non_discountable_product_ids(session, [item.product_id for item in draft.items]))
-    checkout_snapshot = _build_checkout_snapshot(draft, client_platform=client_platform, payment_method=payment_method, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, resolved_benefits=resolved_benefits,)
+    checkout_snapshot = _build_checkout_snapshot(draft, client_platform=client_platform, payment_method=payment_method, selected_delivery_service=selected_delivery_service, selected_delivery_payload=selected_delivery_payload, resolved_benefits=resolved_benefits, linked_buyer_id=user.moysklad_counterparty_id)
     delivery_string = _delivery_string(selected_delivery_service, normalize_address_for_cf(selected_delivery_payload.get("address")))
 
     order_code = await _generate_order_code(session)

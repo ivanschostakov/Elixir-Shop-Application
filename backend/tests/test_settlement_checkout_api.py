@@ -14,7 +14,7 @@ import config
 from src.database.models import Order, OrderDraft, User
 from src.app.services.benefits import service as benefits, moysklad_bonus
 from src.app.services.orders import creation, settlement_payment, crm
-from src.integrations.moysklad.settlement_checkout import display_spent_rubles
+from src.integrations.moysklad.settlement_checkout import ORDER_SPENT_ATTRIBUTE, display_spent_rubles
 from test_settlement_checkout import CID, CURRENCY, IID, OID, ORG, documents, ref
 from test_orders_api import (
     registered_user, variant_factory, stub_amocrm, sync_engine,
@@ -133,11 +133,18 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     if scenario == "wrong_invoice": invoice["customerOrder"] = ref(CID)
     if scenario == "balance_changed":
         moysklad_bonus.get_moysklad_settlement_wallet.return_value = SimpleNamespace(balance_rubles=Decimal("0"))
-    if scenario == "not_ready": remote["invoicesOut"] = []
+    if scenario == "not_ready":
+        from src.app.services.orders import payment_attempt
+        clock = [1000]
+        monkeypatch.setattr(payment_attempt, "monotonic", lambda: clock[0])
+        monkeypatch.setattr(payment_attempt, "get_cache_service", lambda: SimpleNamespace(client=None))
+        monkeypatch.setattr(payment_attempt, "_local_deadlines", payment_attempt.OrderedDict())
+        remote["invoicesOut"] = []
     if scenario == "ambiguous_gateway": gateway.return_value = {"Result": {}}
     if scenario == "cancelled": _update_order(order_id, is_canceled=True)
     if scenario == "other_open_order":
-        ms.get_page.return_value = {"rows": [{"id": str(CID), "sum": 10000, "shippedSum": 0}]}
+        ms.get_page.return_value = {"rows": [{"id": str(CID), "agent": ref(CID), "sum": 10000, "shippedSum": 0,
+            "attributes": [{"id": ORDER_SPENT_ATTRIBUTE, "value": 1}]}]}
     response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
     if scenario == "ambiguous_gateway":
         assert response.status_code >= 500, response.text
@@ -155,6 +162,10 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         assert _get_order(order_id).payment_invoice_id is None
         gateway.assert_not_awaited()
         remote["invoicesOut"] = [ref(IID)]
+        reads = ms.get_customer_order.await_count
+        retry = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
+        assert retry.status_code == 409 and ms.get_customer_order.await_count == reads
+        clock[0] += response.json()["detail"]["retry_after_seconds"]
         response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
     if scenario in {"wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
         assert response.status_code == 409, response.text
@@ -203,6 +214,28 @@ def test_settlement_lock_rejects_overlap_and_releases_after_failure(monkeypatch)
                     raise RuntimeError("test failure")
             async with settlement_payment.settlement_lock(CID):
                 pass
+        finally:
+            await engine.dispose()
+    asyncio.run(check())
+
+
+def test_payment_click_during_worker_lock_makes_no_reads_or_backoff(monkeypatch):
+    from src.app.services.orders import payments, payment_attempt
+    async def check():
+        engine = create_async_engine(settlement_payment.engine.url)
+        monkeypatch.setattr(settlement_payment, "engine", engine)
+        redis = SimpleNamespace(pttl=AsyncMock(), set=AsyncMock())
+        monkeypatch.setattr(payment_attempt, "get_cache_service", lambda: SimpleNamespace(client=redis))
+        session = SimpleNamespace(refresh=AsyncMock())
+        order = SimpleNamespace(id=1, checkout_snapshot={"settlement_payment": {"version": 1, "counterparty_id": str(CID)}})
+        try:
+            async with settlement_payment.settlement_lock(CID, payment=True):
+                with pytest.raises(HTTPException) as error:
+                    await payments.create_payment_for_order(session, request=None, order=order)
+            assert error.value.detail["code"] == "settlement_pending"
+            session.refresh.assert_not_awaited()
+            redis.pttl.assert_not_awaited()
+            redis.set.assert_not_awaited()
         finally:
             await engine.dispose()
     asyncio.run(check())

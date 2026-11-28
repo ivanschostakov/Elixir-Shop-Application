@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from src.database.models import Product, Variant
 from test_catalog_access_scope import scoped_catalog
 from test_guest_checkout_api import _build_guest_order_payload, _delete_user
-from test_orders_api import _build_pickup_payload, _create_ready_draft, stub_amocrm
+from test_orders_api import _build_pickup_payload, _create_ready_draft, _stub_sbp_export, stub_amocrm
 from test_products_advanced_search_api import sync_engine
 
 
@@ -86,7 +86,7 @@ def test_ios_basket_add_read_update_remove(client, ios_catalog, identity):
 
 @pytest.mark.parametrize("identity", ["limited", "regular"])
 @pytest.mark.parametrize("use_draft", [False, True])
-def test_ios_purchase_from_catalog_to_sbp(client, ios_catalog, identity, use_draft, stub_amocrm, payment_provider):
+def test_ios_purchase_from_catalog_to_sbp(client, ios_catalog, identity, use_draft, stub_amocrm, payment_provider, monkeypatch):
     s = ios_catalog
     headers = _headers(s, identity)
     variant_id = _variant(s["en_product_id"])
@@ -109,6 +109,7 @@ def test_ios_purchase_from_catalog_to_sbp(client, ios_catalog, identity, use_dra
     order = client.post("/api/v1/users/me/orders", headers=headers, json=order_payload)
     assert order.status_code == 200, order.text
     order_id = order.json()["id"]
+    _stub_sbp_export(monkeypatch, order_id)
     assert Decimal(order.json()["grand_total"]) == Decimal("239.00")
     payment = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
     assert payment.status_code == 200, payment.text
@@ -131,6 +132,7 @@ def test_ios_guest_checkout_to_sbp(client, ios_catalog, stub_amocrm, payment_pro
     assert response.status_code == 201, response.text
     data = response.json()
     try:
+        _stub_sbp_export(monkeypatch, data["order"]["id"])
         payment = client.post("/api/v1/payments/create",
                               headers={"X-App-Platform": "ios", "Authorization": "Bearer " + data["access_token"]},
                               json={"order_id": data["order"]["id"]})

@@ -241,10 +241,7 @@ async def verify_ruble_currency(client, order):
     currency_id = entity_id((order.get("rate") or {}).get("currency"))
     if currency_id is None:
         raise ValueError("Settlement currency is missing")
-    http = await client.client()
-    response = await http.get(f"/entity/currency/{currency_id}")
-    response.raise_for_status()
-    currency = response.json()
+    currency = await client.get_currency_identity(currency_id)
     if entity_id(currency) != currency_id or currency.get("isoCode") != "RUB" or str(currency.get("code")) != "643":
         raise ValueError("Only RUB settlement is supported")
     return currency_id

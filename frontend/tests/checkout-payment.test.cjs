@@ -176,7 +176,37 @@ test("waits out the provider cooldown before starting the same payment again", a
     assert.deepEqual(calls, [payload, payload])
 })
 
-const { mergePaymentState, resolvePaymentPhase } = loadTs("screens/payment/payment-state.ts")
+const { laterCheckoutState, mergePaymentState, resolvePaymentPhase, visibleOrderTotal } = loadTs("screens/payment/payment-state.ts")
+
+test("only the new later client opts in to an unknown total", async () => {
+    const calls = []
+    const { createPayment } = loadPayments(async (_path, body) => { calls.push(body) })
+    await createPayment({ order_id: 5, payment_method: "later" })
+    await createPayment({ order_id: 5, payment_method: "sbp" })
+    assert.deepEqual(calls, [{ order_id: 5, payment_method: "later", accept_pending_amount: true },
+        { order_id: 5, payment_method: "sbp" }])
+})
+
+test("history and reopened checkout distinguish reservation, calculation and a final zero", () => {
+    const order = { id: 5, payment_method: "later", payment_status: "pending", grand_total: "123.45",
+        checkout_snapshot: { ms_checkout_version: 2, settlement_payment: { status: "awaiting_invoice" } } }
+    const pending = { order_id: 5, payment_method: "later", payment_status: "pending" }
+    assert.equal(laterCheckoutState(order), "reserving")
+    assert.equal(resolvePaymentPhase(pending, "later", order), "waiting")
+    assert.equal(visibleOrderTotal(order), null)
+    order.ms_reservation_confirmed = true
+    const accepted = { ...pending, ms_reservation_confirmed: true, awaiting_settlement: true, amount_rubles: null }
+    assert.equal(laterCheckoutState(order), "calculating")
+    assert.equal(laterCheckoutState(order, accepted), "calculating")
+    assert.equal(resolvePaymentPhase(accepted, "later", order), "pending")
+    assert.equal(visibleOrderTotal(order, accepted), null)
+    const ready = { ...accepted, awaiting_settlement: false, amount_rubles: 0 }
+    assert.equal(visibleOrderTotal(order, ready), 0)
+    assert.equal(laterCheckoutState(order, ready), "ready")
+    assert.equal(visibleOrderTotal(order, { ...ready, order_id: 6 }), null)
+    assert.equal(resolvePaymentPhase(accepted, "later", { ...order, is_canceled: true }), "failure")
+    assert.equal(laterCheckoutState({ ...order, is_canceled: true }), null)
+})
 
 test("a pending or late QR keeps SBP open while offline payment still closes checkout", () => {
     const pendingSbp = { order_id: 42, invoice_id: "first", payment_method: "sbp", payment_status: "pending",

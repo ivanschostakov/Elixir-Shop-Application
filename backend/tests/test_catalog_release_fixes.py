@@ -247,7 +247,8 @@ def test_document_export_preserves_reservation_boundary(client, registered_user,
         return MoySkladCustomerOrderSyncResult(remote_id, "test", created=True)
     monkeypatch.setattr(ms, "resolve_or_sync_customerorder", export_order)
     async def remote_order(*args, **kwargs):
-        return {"positions": {"rows": exported["positions"], "meta": {"size": len(exported["positions"])}}}
+        return {"id": str(remote_id), "sum": 24100, "applicable": True, "agent": {"id": str(cid)}, "organization": {"id": str(org)},
+                "positions": {"rows": exported["positions"], "meta": {"size": len(exported["positions"])}}}
     monkeypatch.setattr(ms, "get_customer_order", remote_order)
     invoice_export = AsyncMock(return_value=MoySkladInvoiceOutSyncResult(invoice_id, "test", created=True))
     monkeypatch.setattr(ms, "resolve_or_sync_invoiceout", invoice_export)

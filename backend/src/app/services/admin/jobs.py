@@ -17,6 +17,7 @@ from config import (
     ADMIN_JOB_STALE_SECONDS,
 )
 from src.app.services.cache import get_cache_service
+from src.app.services.orders.invoice_preparation import InvoicePreparationPending
 from src.app.services.admin.exports import generate_admin_export
 from src.app.services.admin.campaigns import execute_push_campaign, mark_push_campaign_failed
 from src.app.services.admin.alerts import raise_admin_alert, resolve_admin_alert
@@ -75,6 +76,8 @@ def is_retryable_error(error: Exception) -> bool:
 
 def retry_delay_for_error(error: Exception, attempts: int) -> int:
     delay = retry_delay_seconds(attempts)
+    if isinstance(error, InvoicePreparationPending):
+        return max(delay, error.delay)
     if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
         delay = max(delay, 60)
         retry_after = error.response.headers.get("Retry-After", "")
@@ -251,6 +254,10 @@ async def _run_order_operation(operation: str, target_id: str | None) -> dict[st
         if operation == "payment_check":
             return await recheck_payment_status_for_admin(db, order=order)
 
+        if operation == "prepare_robot_invoice":
+            from src.app.services.orders.invoice_preparation import prepare_robot_invoice
+            return await prepare_robot_invoice(db, order)
+
         if operation == "moysklad_order_sync":
             result = await sync_order_to_moysklad(db, order=order, user=order.user)
             if result.skipped_reason:
@@ -393,6 +400,13 @@ async def _execute_operation(run_id: int) -> dict[str, Any]:
             order = await get_order_by_id(db, int(target_id))
             if order is None: return {"skipped": "order_missing"}
             return await apply_payment_effects(db, order, input_json)
+
+    if provider == "moysklad" and operation == "mark_invoice_sent" and target_type == "order":
+        from src.app.services.orders.invoice_preparation import mark_invoice_sent
+        async with SessionLocal() as db:
+            order = await get_order_by_id(db, int(target_id))
+            if order is None: return {"skipped": "order_missing"}
+            return await mark_invoice_sent(db, order, input_json or {})
 
     if provider == "moysklad" and operation == "catalog_sync" and target_type is None:
         stats = await sync_moysklad_product_catalog()

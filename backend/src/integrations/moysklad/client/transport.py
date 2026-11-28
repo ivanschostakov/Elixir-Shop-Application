@@ -8,7 +8,12 @@ from fastapi import HTTPException
 from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_INCLUDED_PRODUCT_IDS, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, UFA_TZ
 from src.normalize import coerce_uuid, optional_str
 from .common import MOY_SKLAD_API_BASE_URL, logger
+from .reference_cache import ReferenceCache, reference_rows
 from .utils import moysklad_money, moysklad_retry_after_seconds
+
+
+_REFERENCE_LISTS = frozenset({"/entity/organization", "/entity/store", "/entity/country", "/entity/region"})
+_DELIVERY_NAME = "Доставка заказа"
 
 
 class TransportMixin:
@@ -20,6 +25,7 @@ class TransportMixin:
         self._included_product_ids = {product_id for value in configured_product_ids if (product_id := coerce_uuid(value)) is not None}
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()
+        self._references = ReferenceCache()
 
 
     def is_configured(self) -> bool: return bool(self._token and self._base_url)
@@ -72,7 +78,50 @@ class TransportMixin:
         return response.json()
 
 
+    async def _reference_pages(self, path: str, **params: Any) -> list[dict[str, Any]]:
+        rows = []
+        size = None
+        next_expected = False
+        while True:
+            offset = len(rows)
+            page = await self.get_page(path, offset=offset, **params)
+            batch = reference_rows(page)
+            if next_expected and not batch:
+                raise ValueError("Incomplete MoySklad reference pages")
+            meta = page.get("meta", {})
+            if not isinstance(meta, dict) or meta.get("offset", offset) != offset:
+                raise ValueError("Invalid MoySklad reference page offset")
+            rows.extend(batch)
+            if "size" in meta:
+                if type(meta["size"]) is not int or (size is not None and meta["size"] != size):
+                    raise ValueError("Invalid MoySklad reference page size")
+                size = meta["size"]
+            if size is not None and size < len(rows):
+                raise ValueError("Inconsistent MoySklad reference page size")
+            next_expected = bool(meta.get("nextHref")) or (size is not None and len(rows) < size)
+            if not next_expected and (size is not None or len(batch) < 100):
+                return rows
+            if not batch:
+                raise ValueError("Incomplete MoySklad reference pages")
+
+
     async def get_all(self, path: str, **params: Any) -> list[dict[str, Any]]:
+        delivery = path == "/entity/service" and params == {"filter": f"name={_DELIVERY_NAME};archived=false"}
+        if delivery or (not params and path in _REFERENCE_LISTS):
+            async def load():
+                rows = await self._reference_pages(path, **params)
+                if delivery and any(row.get("name") != _DELIVERY_NAME or row.get("archived")
+                                    or coerce_uuid(row.get("id")) is None for row in rows):
+                    raise ValueError("Invalid MoySklad delivery service")
+                return rows
+
+            return await self._references.read(("list", path), load,
+                                               cacheable=lambda rows: len(rows) == 1 if delivery else bool(rows))
+
+        # Only the attribute resolver may cache custom dictionaries, after checking their binding.
+        if not params and path.startswith("/entity/customentity/") and coerce_uuid(path.removeprefix("/entity/customentity/")):
+            return await self._reference_pages(path)
+
         rows, offset = [], 0
         while True:
             data = await self.get_page(path, offset=offset, **params)
@@ -155,3 +204,4 @@ class TransportMixin:
         async with self._lock:
             if self._client and not self._client.is_closed: await self._client.aclose()
             self._client = None
+            self._references = ReferenceCache()

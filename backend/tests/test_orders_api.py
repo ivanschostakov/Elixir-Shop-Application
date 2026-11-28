@@ -844,6 +844,16 @@ def test_create_payment_later_marks_order_pending(client: TestClient, registered
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
 
+    snapshot = order_response.json()["checkout_snapshot"]
+    assert snapshot["ms_checkout_version"] == 2
+    for response in (
+        client.post("/api/v1/payments/create", headers=registered_user["headers"], json={"order_id": order_id}),
+        client.get("/api/v1/payments/status", headers=registered_user["headers"], params={"order_id": order_id}),
+    ):
+        assert response.status_code == 409 and response.json()["detail"]["code"] == "settlement_pending"
+    assert _get_order(order_id).payment_provider is None
+    snapshot["stock_reservation"].update(status="exported", remote_quantities={"test-product": 2})
+    _update_order(order_id, moysklad_customerorder_id=uuid.uuid4(), checkout_snapshot=snapshot)
     payment_response = client.post(
         "/api/v1/payments/create",
         headers=registered_user["headers"],
@@ -860,6 +870,46 @@ def test_create_payment_later_marks_order_pending(client: TestClient, registered
     assert stored_order.payment_provider == "manager"
     assert stored_order.payment_status == "pending"
 
+    snapshot["settlement_payment"] = {"version": 1, "status": "awaiting_invoice", "counterparty_id": str(uuid.uuid4())}
+    _update_order(order_id, checkout_snapshot=snapshot)
+    headers = registered_user["headers"]
+    params = {"order_id": order_id, "accept_pending_amount": True}
+    read = client.get(f"/api/v1/users/me/orders/{order_id}", headers=headers).json()
+    assert read["ms_reservation_confirmed"] is True
+    assert read["checkout_snapshot"]["settlement_payment"]["status"] == "awaiting_invoice"
+    legacy_status = client.get("/api/v1/payments/status", headers=headers, params={"order_id": order_id})
+    assert legacy_status.status_code == 409
+    for accepted in (client.post("/api/v1/payments/create", headers=headers, json=params),
+                     client.get("/api/v1/payments/status", headers=headers, params=params)):
+        assert accepted.status_code == 200, accepted.text
+        body = accepted.json()
+        assert body["ms_reservation_confirmed"] and body["awaiting_settlement"]
+        assert not body["is_paid"] and body["amount_rubles"] is body["invoice_id"] is None
+    _update_order(order_id, moysklad_customerorder_id=None)
+    assert not client.get(f"/api/v1/users/me/orders/{order_id}", headers=headers).json()["ms_reservation_confirmed"]
+    assert client.post("/api/v1/payments/create", headers=headers, json=params).status_code == 409
+    assert client.get("/api/v1/payments/status", headers=headers, params=params).status_code == 409
+
+
+def _stub_sbp_export(monkeypatch, order_id):
+    """These gateway tests start after a successful export; document checks still run."""
+    from types import SimpleNamespace
+    from test_settlement_checkout import CID, CURRENCY, IID, OID, ORG, documents, ref
+    order = _get_order(order_id)
+    snapshot = dict(order.checkout_snapshot)
+    href = "https://example.test/entity/product/test"
+    snapshot["stock_reservation"] = {**snapshot["stock_reservation"], "status": "exported", "remote_quantities": {href: 2}}
+    snapshot["moysklad_document_identity"] = {"counterparty_id": str(CID), "organization_id": str(ORG)}
+    remote, invoice = documents(str(order.grand_total), str(order.grand_total), 0)
+    remote.update(invoicesOut=[ref(IID)], positions={"meta": {"size": 1}, "rows": [{"quantity": 2, "reserve": 2,
+        "stock": {"quantity": 5, "reserve": 2}, "assortment": {"meta": {"href": href, "type": "product"}}}]})
+    ms = SimpleNamespace(get_customer_order=AsyncMock(return_value=remote), get_invoiceout=AsyncMock(return_value=invoice),
+        get_currency_identity=AsyncMock(return_value={"id": str(CURRENCY), "isoCode": "RUB", "code": "643"}))
+    monkeypatch.setattr("src.integrations.moysklad.client.get_moysklad_client", lambda: ms)
+    monkeypatch.setattr("src.app.services.orders.payments.MOY_SKLAD_ORDER_SYNC_ENABLED", True)
+    monkeypatch.setattr("config.MOY_SKLAD_ORDER_SYNC_ENABLED", True)
+    _update_order(order_id, moysklad_customerorder_id=OID, moysklad_invoiceout_id=IID, checkout_snapshot=snapshot)
+
 
 def test_create_payment_sbp_returns_qr_payload(client: TestClient, registered_user, variant_factory, stub_amocrm, monkeypatch):
     catalog = variant_factory(stock=5, price=Decimal("25.00"))
@@ -872,6 +922,7 @@ def test_create_payment_sbp_returns_qr_payload(client: TestClient, registered_us
     )
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
+    _stub_sbp_export(monkeypatch, order_id)
 
     async def fake_create_invoice(**kwargs):
         return {"Result": {"InvoiceId": "invoice-1"}}
@@ -932,6 +983,7 @@ def test_create_payment_reuses_active_intellectmoney_invoice(client: TestClient,
         json={"draft_id": draft["id"], "payment_method": "sbp"},
     )
     order_id = order_response.json()["id"]
+    _stub_sbp_export(monkeypatch, order_id)
     calls = {"create_invoice": 0, "sbp_payment": 0, "status": 0}
 
     async def fake_create_invoice(**kwargs):
@@ -989,6 +1041,7 @@ def test_create_payment_replaces_only_provider_confirmed_dead_invoice(client: Te
         json={"draft_id": draft["id"], "payment_method": "sbp"},
     )
     order_id = order_response.json()["id"]
+    _stub_sbp_export(monkeypatch, order_id)
     calls = {"create_invoice": 0, "sbp_payment": 0, "status": 0}
 
     async def fake_create_invoice(**kwargs):
@@ -1040,6 +1093,10 @@ def test_retry_payment_can_switch_method_after_intellectmoney_payment_dies(clien
         json={"draft_id": draft["id"], "payment_method": "sbp"},
     )
     order_id = order_response.json()["id"]
+    # Legacy orders without the versioned export contract can switch methods.
+    snapshot = order_response.json()["checkout_snapshot"]
+    snapshot.pop("ms_checkout_version", None)
+    _update_order(order_id, checkout_snapshot=snapshot)
     status_calls = 0
 
     async def fake_create_invoice(**kwargs):
@@ -1096,6 +1153,7 @@ def test_create_payment_sbp_error_keeps_order_retryable(client: TestClient, regi
     )
     assert order_response.status_code == 200, order_response.text
     order_id = order_response.json()["id"]
+    _stub_sbp_export(monkeypatch, order_id)
 
     async def fake_create_invoice(**kwargs):
         return {"Result": {"InvoiceId": "invoice-error-1"}}

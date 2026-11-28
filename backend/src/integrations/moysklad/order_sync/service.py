@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 from copy import deepcopy
 from decimal import Decimal
 from typing import Any
+import httpx
+from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,35 @@ from .address import _shipment_address, _shipment_address_full
 from .attributes import _invoiceout_external_code, _invoiceout_name, _is_intellectmoney_payment, _moysklad_attr_values, _moysklad_custom_attr_refs, _resolve_customerorder_refs
 
 
+def _customerorder_send_mode(order):
+    snapshot = order.checkout_snapshot or {}
+    if snapshot.get("ms_checkout_version") != 2:
+        return "legacy"
+    if order.moysklad_customerorder_id or snapshot.get("ms_post_status") == "submitted":
+        return "recover"
+    hold = snapshot.get("stock_reservation") or {}
+    if hold.get("status") == "held" and (not hold.get("remote_export_attempted") or snapshot.get("ms_post_status") == "rejected"):
+        return "first"
+    return "recover"
+
+
+def _rejected_post(exc, entity):
+    return (exc.request.method == "POST" and exc.request.url.path.endswith(f"/entity/{entity}")
+            and exc.response.status_code in {400, 401, 403, 422, 429})
+
+
+async def _claim_invoice_post(session, order):
+    # Caller owns the order lock. An unknown POST outcome is recovered by lookup only.
+    if (order.checkout_snapshot or {}).get("ms_invoice_post_status") == "submitted":
+        raise HTTPException(503, "Previous MoySklad invoice submission is awaiting reconciliation")
+    order.checkout_snapshot = {**order.checkout_snapshot, "ms_invoice_post_status": "submitted"}
+    await session.commit()
+    await session.execute(select(Order.id).where(Order.id == order.id).with_for_update())
+    await session.refresh(order, attribute_names=["is_canceled", "checkout_snapshot", "moysklad_invoiceout_id"])
+    if order.is_canceled or order.moysklad_invoiceout_id or (order.checkout_snapshot.get("stock_reservation") or {}).get("status") != "exported":
+        raise ValueError("Order changed before invoice submission")
+
+
 async def _mark_remote_export(session, order, cid, client):
     """Called under the order row lock; commit the handoff before sending the document."""
     hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
@@ -28,8 +59,11 @@ async def _mark_remote_export(session, order, cid, client):
     mark_stock = hold.get("status") == "held" and not hold.get("remote_export_attempted")
     claim_balance = (settlement and not order.moysklad_customerorder_id and not settlement.get("export_started")
                      and money(settlement["maximum_balance_rubles"]) > 0)
-    if mark_stock or claim_balance:
+    first_send = _customerorder_send_mode(order) == "first"
+    if mark_stock or claim_balance or first_send:
         snapshot = dict(order.checkout_snapshot)
+        if first_send:
+            snapshot["ms_post_status"] = "submitted"
         if claim_balance:
             from src.app.services.orders.settlement_payment import check_balance_use
             # Workers retry without the checkout request lock. Serialize the check and
@@ -65,6 +99,9 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     counterparty_external_code = build_counterparty_external_code(user_id=user_id)
     counterparty_sync_id = build_sync_id(scope="counterparty", key=counterparty_external_code)
     settlement = order_settlement(order)
+    linked_buyer = coerce_uuid((order.checkout_snapshot or {}).get("ms_buyer_at_checkout"))
+    if linked_buyer is not None and linked_buyer != user.moysklad_counterparty_id:
+        raise ValueError("MoySklad buyer link changed after checkout; manual review required")
     if settlement:
         expected_id = coerce_uuid(settlement.get("counterparty_id"))
         if expected_id is None or user.moysklad_counterparty_id != expected_id: raise ValueError("Settlement counterparty changed; refuse to relink funds")
@@ -77,6 +114,9 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         snapshot["settlement_payment"]["organization_id"] = str(organization_id)
         order.checkout_snapshot = snapshot
         await session.commit()
+    elif linked_buyer is not None and (order.checkout_snapshot or {}).get("ms_checkout_version") == 2:
+        # No customer update is needed. Validate this identity on the returned document.
+        counterparty_result = MoySkladCounterpartySyncResult(linked_buyer, counterparty_external_code)
     else: counterparty_result = await moysklad_client.resolve_or_sync_counterparty(existing_counterparty_id=user.moysklad_counterparty_id, external_code=counterparty_external_code, sync_id=counterparty_sync_id, name=_full_name(user, order), email=_counterparty_email(user, order), phone=_counterparty_phone(user, order), actual_address=None,)
 
     if user.moysklad_counterparty_id != counterparty_result.counterparty_id:
@@ -126,7 +166,8 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
     if standard_export and ("payment_method" not in custom_refs or "delivery_method" not in custom_refs):
         raise ValueError("MoySklad payment or delivery method is missing from the order directory")
     attributes = moysklad_client.build_customerorder_attributes(values=_moysklad_attr_values(order), custom_refs=custom_refs)
-    if benefits.get("ms_order_promo") and not order.moysklad_customerorder_id:
+    send_mode = _customerorder_send_mode(order)
+    if benefits.get("ms_order_promo") and not order.moysklad_customerorder_id and send_mode != "recover":
         from src.app.services.referrals.ms_codes import verify_referral_export
         await verify_referral_export(benefits, buyer_id=counterparty_result.counterparty_id, client=moysklad_client)
     full_address = await _shipment_address_full(order, moysklad_client=moysklad_client)
@@ -135,14 +176,32 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         await session.refresh(order, attribute_names=["checkout_snapshot", "moysklad_customerorder_id", "is_canceled"])
         if order.is_canceled or (order.checkout_snapshot.get("stock_reservation") or {}).get("status") == "released":
             raise ValueError("Reservation canceled before export")
-    customerorder_result = await moysklad_client.resolve_or_sync_customerorder(existing_customerorder_id=order.moysklad_customerorder_id, external_code=customerorder_external_code, sync_id=customerorder_sync_id, organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, moment=order.created_at, description=_build_order_description(order), shipment_address=_shipment_address(order), shipment_address_full=full_address, attributes=attributes, store=refs["store"], state=refs["state"], sales_channel=refs["sales_channel"],)
+    try:
+        customerorder_result = await moysklad_client.resolve_or_sync_customerorder(existing_customerorder_id=order.moysklad_customerorder_id, external_code=customerorder_external_code, sync_id=customerorder_sync_id, organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, moment=order.created_at, description=_build_order_description(order), shipment_address=_shipment_address(order), shipment_address_full=full_address, attributes=attributes, store=refs["store"], state=refs["state"], sales_channel=refs["sales_channel"], **({"send_mode": send_mode} if send_mode != "legacy" else {}))
+    except httpx.HTTPStatusError as exc:
+        # These replies reject the write. A timeout, 409 or 5xx is ambiguous: only look it up.
+        if send_mode == "first" and _rejected_post(exc, "customerorder"):
+            order.checkout_snapshot = {**order.checkout_snapshot, "ms_post_status": "rejected"}
+            await session.commit()
+        raise
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:
         order.moysklad_customerorder_id = customerorder_result.customerorder_id
         await session.flush()
         await session.commit()
     hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
+    remote = None
     if hold.get("status") == "held":
-        remote = await moysklad_client.get_customer_order(customerorder_result.customerorder_id, expand=True)
+        expand_invoices = send_mode != "legacy" and not settlement and standard_export
+        remote = await moysklad_client.get_customer_order(customerorder_result.customerorder_id, expand=True,
+            **({"expand_invoices": True} if expand_invoices else {}))
+        if send_mode != "legacy" and (
+            entity_id(remote) != customerorder_result.customerorder_id or not remote or remote.get("applicable") is not True or remote.get("sum") is None
+            or remote.get("deleted") or (remote.get("state") or {}).get("stateType") == "Unsuccessful"
+            or entity_id(remote.get("agent")) != counterparty_result.counterparty_id or entity_id(remote.get("organization")) != organization_id
+        ):
+            raise ValueError("MoySklad order changed before reserve confirmation")
+        if send_mode != "legacy":
+            moysklad_client._validate_document_sum(remote, positions)
         remote_positions = (remote or {}).get("positions", {}).get("rows", [])
         reserved = bool(remote_positions) and len(remote_positions) == (remote or {}).get("positions", {}).get("meta", {}).get("size", len(remote_positions)) and all(
             p.get("reserve", 0) >= p.get("quantity", 0) for p in remote_positions
@@ -158,6 +217,9 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         reserved = reserved and expected_quantities == actual_quantities
         if reserved:
             from src.app.services.orders.stock_reservations import acknowledge_remote_reservation
+            if send_mode != "legacy" and settlement:
+                from src.app.services.orders.invoice_preparation import queue_invoice_preparation
+                await queue_invoice_preparation(session, order)
             await acknowledge_remote_reservation(session, order, remote_quantities=expected_quantities)
         else:
             raise ValueError("MoySklad stock reservation has not been confirmed")
@@ -178,7 +240,22 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
                                  ("delivery_method", "c30a00ec-9238-11f1-0a80-1e970007bc2a"))
             if key in custom_refs
         ] if standard_export else None
-        invoiceout_result = await moysklad_client.resolve_or_sync_invoiceout(existing_invoiceout_id=order.moysklad_invoiceout_id, external_code=invoiceout_external_code, sync_id=invoiceout_sync_id, name=_invoiceout_name(order), organization_id=organization_id, counterparty_id=counterparty_result.counterparty_id, positions=positions, customerorder_id=customerorder_result.customerorder_id, moment=order.created_at, description=_build_order_description(order), store=refs["store"], sales_channel=refs["sales_channel"], attributes=invoice_attributes, create_if_missing=_is_intellectmoney_payment(order))
+        optimizations = {}
+        if send_mode != "legacy":
+            optimizations = {"prefetched_order": remote, "before_create": lambda: _claim_invoice_post(session, order)}
+        try:
+            invoiceout_result = await moysklad_client.resolve_or_sync_invoiceout(
+                existing_invoiceout_id=order.moysklad_invoiceout_id, external_code=invoiceout_external_code,
+                sync_id=invoiceout_sync_id, name=_invoiceout_name(order), organization_id=organization_id,
+                counterparty_id=counterparty_result.counterparty_id, positions=positions,
+                customerorder_id=customerorder_result.customerorder_id, moment=order.created_at,
+                description=_build_order_description(order), store=refs["store"], sales_channel=refs["sales_channel"],
+                attributes=invoice_attributes, create_if_missing=_is_intellectmoney_payment(order), **optimizations)
+        except httpx.HTTPStatusError as exc:
+            if send_mode != "legacy" and _rejected_post(exc, "invoiceout"):
+                order.checkout_snapshot = {**order.checkout_snapshot, "ms_invoice_post_status": "rejected"}
+                await session.commit()
+            raise
 
     needs_commit = False
     if order.moysklad_customerorder_id != customerorder_result.customerorder_id:

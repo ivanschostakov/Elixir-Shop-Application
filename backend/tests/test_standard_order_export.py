@@ -168,11 +168,13 @@ async def test_conflicting_sbp_invoice_blocks_the_gateway(monkeypatch):
     monkeypatch.setattr(payments, "verify_standard_sbp_invoice", verify)
     gateway = AsyncMock()
     monkeypatch.setattr(payments.intellectmoney, "create_invoice", gateway)
-    order = SimpleNamespace(checkout_snapshot={"order_export_version": 1}, is_canceled=False, is_paid=False,
+    order = SimpleNamespace(id=42, checkout_snapshot={"order_export_version": 1}, is_canceled=False, is_paid=False,
                             payment_status="draft", payment_provider=None, payment_method="sbp", payment_invoice_id=None)
     with pytest.raises(HTTPException, match="Amount mismatch"):
         await payments._create_payment_for_order(None, request=None, order=order)
-    verify.assert_awaited_once_with(order)
+    verify.assert_awaited_once()
+    assert verify.await_args.args == (order,)
+    assert verify.await_args.kwargs["documents"] is payments.verify_no_unapproved_balance.await_args.kwargs["documents"]
     gateway.assert_not_awaited()
 
 

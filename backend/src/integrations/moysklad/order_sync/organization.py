@@ -16,7 +16,9 @@ async def _resolve_organization_id(moysklad_client: MoySkladClient) -> UUID | No
     organization_name = optional_str(MOY_SKLAD_ORGANIZATION_NAME)
     if configured_id is not None:
         configured_row = await moysklad_client.get_organization(configured_id)
-        if configured_row is not None:
+        if configured_row and configured_row.get("archived"):
+            log.error("Configured MoySklad organization is archived organization_id=%s", configured_id)
+        elif configured_row is not None:
             configured_name = optional_str(configured_row.get("name"))
             if (not organization_name or (configured_name is not None and configured_name.casefold() == organization_name.casefold())): return configured_id
             log.error(
@@ -35,6 +37,10 @@ async def _resolve_organization_id(moysklad_client: MoySkladClient) -> UUID | No
     if not organization_name: return None
     organization_row = await moysklad_client.find_organization_by_name(organization_name)
     organization_id = coerce_uuid((organization_row or {}).get("id"))
+    # The list and the per-ID lookup can have different snapshot times.
+    if configured_id is not None and organization_id == configured_id:
+        log.error("Organization name lookup returned rejected organization_id=%s", configured_id)
+        return None
     if organization_id is None:
         log.error(
             "Configured MoySklad organization was not found organization_name=%s",

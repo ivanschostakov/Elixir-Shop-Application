@@ -55,6 +55,7 @@ export type OrderRead = {
     selected_delivery_service: string
     selected_delivery_payload: Record<string, unknown>
     checkout_snapshot: Record<string, unknown>
+    ms_reservation_confirmed?: boolean
     payment_method: string | null
     payment_provider: string | null
     payment_status: string

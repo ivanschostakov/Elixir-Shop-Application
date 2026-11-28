@@ -27,6 +27,7 @@ async def create_payment(payload: CreatePaymentPayload, request: Request, db: As
         request=request,
         order=order,
         payment_method=payload.payment_method,
+        accept_pending_amount=payload.accept_pending_amount,
     )
     if result.get("is_paid"):
         await record_customer_event_safe(
@@ -43,10 +44,10 @@ async def create_payment(payload: CreatePaymentPayload, request: Request, db: As
 
 
 @payments_router.get("/status", response_model=PaymentStatusRead)
-async def get_payment_status(request: Request, order_id: int = Query(..., ge=1), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:status"))) -> PaymentStatusRead:
+async def get_payment_status(request: Request, order_id: int = Query(..., ge=1), accept_pending_amount: bool = False, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:status"))) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    result = await get_payment_status_for_order(db, request=request, order=order)
+    result = await get_payment_status_for_order(db, request=request, order=order, accept_pending_amount=accept_pending_amount)
     if result.get("is_paid"):
         await record_customer_event_safe(
             db,

@@ -8,7 +8,8 @@ const PAYMENT_PREPARATION_TIMEOUT_MS = 180_000
 export class PaymentPreparationPendingError extends Error {}
 
 export function createPayment(payload: CreatePaymentPayload): Promise<PaymentStatusRead> {
-    return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, payload, { appIntegrityAction: "payments:create" })
+    const body = payload.payment_method === "later" ? { ...payload, accept_pending_amount: true } : payload
+    return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, body, { appIntegrityAction: "payments:create" })
 }
 
 export async function createPaymentWhenReady(
@@ -45,5 +46,5 @@ export async function createPaymentWhenReady(
 }
 
 export function getPaymentStatus(orderId: number): Promise<PaymentStatusRead> {
-    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`, { order_id: orderId }, { appIntegrityAction: "payments:status" })
+    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`, { order_id: orderId, accept_pending_amount: true }, { appIntegrityAction: "payments:status" })
 }

@@ -36,7 +36,7 @@ import {
     parseDraftId,
 } from "@/screens/checkout/checkout-screen.utils"
 import { createPaymentScreenStyles } from "@/screens/payment/payment-screen.styles"
-import { confirmedPaidOrderId, mergePaymentState, resolvePaymentPhase } from "@/screens/payment/payment-state"
+import { confirmedPaidOrderId, laterCheckoutState, mergePaymentState, resolvePaymentPhase, visibleOrderTotal } from "@/screens/payment/payment-state"
 import { useThemeStyles } from "@/hooks/use-theme-styles"
 import { createGuestOrder, isGuestPhoneExistsError } from "@/services/api/guest"
 import { ApiError } from "@/services/api/client"
@@ -299,10 +299,9 @@ export default function PaymentScreen() {
         resolvePaymentMethod(payment?.payment_method)
         ?? resolvePaymentMethod(order?.payment_method)
         ?? selectedMethod
+    const laterState = laterCheckoutState(order, payment)
     const totalLabel = useMemo(() => {
-        const settlement = order?.checkout_snapshot.settlement_payment as { status?: string } | undefined
-        const waitingForBalance = settlement?.status === "awaiting_invoice" && (!payment || payment.awaiting_settlement)
-        const total = waitingForBalance ? null : payment?.amount_rubles ?? order?.grand_total
+        const total = visibleOrderTotal(order, payment)
         const currency = order?.currency ?? orderDraft?.currency
         if (total == null || !currency) {
             return null
@@ -500,7 +499,7 @@ export default function PaymentScreen() {
             if (typeof nextPayment.amount_rubles === "number" && Number.isFinite(nextPayment.amount_rubles)) {
                 setOrder({ ...nextOrder, grand_total: String(nextPayment.amount_rubles) })
             }
-            const nextPhase = resolvePaymentPhase(nextPayment, effectiveMethod)
+            const nextPhase = resolvePaymentPhase(nextPayment, effectiveMethod, nextOrder)
             setPhase(nextPhase)
             if (nextPhase === "failure") {
                 setErrorMessage(getPaymentStateError(nextPayment, t("payment.failureMessage")))
@@ -807,6 +806,10 @@ export default function PaymentScreen() {
 
         const paymentMethod = (order.payment_method || "").toLowerCase()
         if (paymentMethod === "later") {
+            if (order.is_canceled) {
+                setPhase("failure")
+                return
+            }
             if (order.is_paid || order.payment_status === "paid") {
                 setPhase("success")
                 setErrorMessage(null)
@@ -836,7 +839,7 @@ export default function PaymentScreen() {
                 return
             }
 
-            if (order.payment_status === "pending") {
+            if (order.payment_status === "pending" && laterCheckoutState(order) !== "reserving") {
                 setPhase("pending")
                 setErrorMessage(null)
                 return
@@ -856,7 +859,7 @@ export default function PaymentScreen() {
                     })
                     if (!nextPayment) return
                     setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
-                    const nextPhase = resolvePaymentPhase(nextPayment, "later")
+                    const nextPhase = resolvePaymentPhase(nextPayment, "later", order)
                     setPhase(nextPhase)
                     if (nextPhase === "failure") {
                         setErrorMessage(getPaymentStateError(nextPayment, t("payment.failureMessage")))
@@ -966,11 +969,12 @@ export default function PaymentScreen() {
     }, [order, payment, phase, submitting, t])
 
     useEffect(() => {
-        if (phase !== "sbp" || !payment?.order_id) {
+        const calculating = phase === "pending" && laterState === "calculating"
+        const orderId = payment?.order_id ?? order?.id
+        if ((!calculating && phase !== "sbp") || !orderId) {
             return
         }
 
-        const orderId = payment.order_id
         let active = true
         let timer: ReturnType<typeof setTimeout>
         const poll = async () => {
@@ -978,13 +982,23 @@ export default function PaymentScreen() {
                 const nextPayment = await getPaymentStatus(orderId)
                 if (!active) return
                 setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
-                const nextPhase = resolvePaymentPhase(nextPayment, "sbp")
+                const nextPhase = resolvePaymentPhase(nextPayment, calculating ? "later" : "sbp", order)
+                if (calculating && nextPhase === "pending" && nextPayment.awaiting_settlement) {
+                    timer = setTimeout(poll, 4000)
+                    return
+                }
                 if (nextPhase !== "sbp") {
                     setPhase(nextPhase)
                     setErrorMessage(nextPhase === "failure" ? getPaymentStateError(nextPayment, t("payment.failureMessage")) : null)
                     return
                 }
-            } catch {
+            } catch (error) {
+                if (active && calculating && error instanceof ApiError && error.status === 409) {
+                    setPayment(null)
+                    setPhase("waiting")
+                    setErrorMessage(error.message)
+                    return
+                }
                 // A failed status read does not cancel an existing invoice.
             }
             if (active) timer = setTimeout(poll, 4000)
@@ -995,7 +1009,7 @@ export default function PaymentScreen() {
             active = false
             clearTimeout(timer)
         }
-    }, [payment?.order_id, phase, t])
+    }, [payment?.order_id, order, laterState, phase, t])
 
     useEffect(() => {
         if (phase !== "sbp") {
@@ -1193,8 +1207,8 @@ export default function PaymentScreen() {
                             <Text style={paymentScreenStyles.successBadge}>
                                 {resolvedOrderStatusLabel ?? t("payment.pending")}
                             </Text>
-                            <Text style={paymentScreenStyles.successTitle}>{t("payment.pendingLaterTitle")}</Text>
-                            <Text style={paymentScreenStyles.successMessage}>{t("payment.pendingLaterMessage")}</Text>
+                            <Text style={paymentScreenStyles.successTitle}>{t(laterState === "calculating" ? "payment.acceptedCalculating" : "payment.pendingLaterTitle")}</Text>
+                            <Text style={paymentScreenStyles.successMessage}>{t(laterState === "calculating" ? "payment.amountAfterInvoice" : "payment.pendingLaterMessage")}</Text>
                         </View>
                     </View>
                 </View>
@@ -1208,7 +1222,7 @@ export default function PaymentScreen() {
                         <Text style={paymentScreenStyles.sectionTitle}>
                             {t(phase === "waiting" ? "payment.invoiceStillPreparing" : "payment.failureTitle")}
                         </Text>
-                        <Text style={paymentScreenStyles.stateText}>{errorMessage ?? t("payment.failureMessage")}</Text>
+                        <Text style={paymentScreenStyles.stateText}>{errorMessage ?? t(phase === "waiting" ? "payment.reservationWaiting" : "payment.failureMessage")}</Text>
                     </View>
                 </View>
             )

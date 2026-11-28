@@ -7,7 +7,6 @@ from decimal import Decimal
 import hashlib
 import logging
 from functools import wraps
-from math import ceil
 
 import httpx
 from fastapi import HTTPException
@@ -16,22 +15,15 @@ from sqlalchemy import select, text
 from src.database import engine
 from src.database.models import Order, OrderBenefitApplication, User
 from src.integrations.moysklad.client import get_moysklad_client
-from src.integrations.moysklad.client.utils import moysklad_retry_after_seconds
 from src.integrations.moysklad.settlement_checkout import (
     SOURCE_KIND, SettlementNotReady, entity_id, has_unapproved_balance, money, order_bonus_consent, order_settlement,
     validate_settlement_invoice, check_open_settlement_orders, verify_ruble_currency,
 )
 from src.normalize import coerce_uuid
 
+from .payment_attempt import PaymentDocuments, settlement_pending
+
 logger = logging.getLogger(__name__)
-
-
-def settlement_pending(*, rate_limit: httpx.Response | None = None) -> HTTPException:
-    return HTTPException(409, {
-        "code": "settlement_pending",
-        "message": "Рассчитываем оплату. Пожалуйста, подождите",
-        **({"retry_after_seconds": ceil(moysklad_retry_after_seconds(rate_limit, default=4))} if rate_limit is not None else {}),
-    })
 
 
 def serialized_settlement_checkout(function):
@@ -150,7 +142,8 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
     currency_id = None
     automatic = settlement.get("mode") == "automatic"
     for attempt in range(attempts):
-        remote = await client.get_customer_order(order.moysklad_customerorder_id)
+        documents = PaymentDocuments(client, expand_invoices=(order.checkout_snapshot or {}).get("ms_checkout_version") == 2)
+        remote = await documents.order(order.moysklad_customerorder_id)
         if not remote:
             raise ValueError("Settlement order missing in MoySklad")
         if currency_id is None:
@@ -163,7 +156,7 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
             iid = entity_id(ref)
             if iid is None:
                 raise ValueError("Invalid settlement invoice reference")
-            invoice = await client.get_invoiceout(iid)
+            invoice = await documents.invoice(iid)
             if entity_id(invoice) != iid:
                 raise ValueError("Settlement invoice is unavailable")
             if invoice and not invoice.get("deleted") and invoice.get("applicable") is True:
@@ -256,16 +249,16 @@ async def prepare_settlement_payment(session, *, order):
         raise HTTPException(409, "Не удалось сверить счёт с МойСклад. Оплата не создана; обратитесь в поддержку.") from exc
 
 
-async def verify_no_unapproved_balance(order, *, client=None):
+async def verify_no_unapproved_balance(order, *, client=None, documents=None):
     from config import LOYALTY_USE_SETTLEMENT_BALANCE
     if not LOYALTY_USE_SETTLEMENT_BALANCE or order_bonus_consent(order) is not False:
         return
     order_id = order.moysklad_customerorder_id
     if not order_id:
         return
-    client = client or get_moysklad_client()
+    documents = documents or PaymentDocuments(client or get_moysklad_client())
     try:
-        remote = await client.get_customer_order(order_id)
+        remote = await documents.order(order_id)
         if entity_id(remote) != order_id or remote.get("deleted") or remote.get("applicable") is False:
             raise ValueError("MoySklad order is unavailable")
         invoice_ids = {entity_id(ref) for ref in (remote.get("invoicesOut") or [])}
@@ -275,7 +268,7 @@ async def verify_no_unapproved_balance(order, *, client=None):
             invoice_ids.add(order.moysklad_invoiceout_id)
         invoices = []
         for invoice_id in invoice_ids:
-            invoice = await client.get_invoiceout(invoice_id)
+            invoice = await documents.invoice(invoice_id)
             if entity_id(invoice) != invoice_id:
                 raise ValueError("MoySklad invoice is unavailable")
             if not invoice.get("deleted") and invoice.get("applicable") is True:
@@ -290,7 +283,7 @@ async def verify_no_unapproved_balance(order, *, client=None):
         raise HTTPException(409, "В МойСклад сумма счёта изменилась без согласия на списание бонусов. Оплата не создана; обратитесь в поддержку.")
 
 
-async def verify_standard_sbp_invoice(order, *, client=None):
+async def verify_standard_sbp_invoice(order, *, client=None, documents=None):
     from config import MOY_SKLAD_ORDER_SYNC_ENABLED
     if (not MOY_SKLAD_ORDER_SYNC_ENABLED or
             (order.checkout_snapshot or {}).get("order_export_version") != 1):
@@ -299,10 +292,10 @@ async def verify_standard_sbp_invoice(order, *, client=None):
     invoice_id = order.moysklad_invoiceout_id
     if not order_id or not invoice_id:
         raise settlement_pending()
-    client = client or get_moysklad_client()
+    documents = documents or PaymentDocuments(client or get_moysklad_client())
     try:
-        remote = await client.get_customer_order(order_id)
-        invoice = await client.get_invoiceout(invoice_id)
+        remote = await documents.order(order_id)
+        invoice = await documents.invoice(invoice_id)
     except Exception as exc:
         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
             raise settlement_pending(rate_limit=exc.response) from exc
@@ -314,7 +307,7 @@ async def verify_standard_sbp_invoice(order, *, client=None):
         expected_org = coerce_uuid(identity.get("organization_id"))
         if expected_agent is None or expected_org is None:
             raise ValueError("Expected MoySklad identities are missing; export must be verified")
-        currency_id = await verify_ruble_currency(client, remote)
+        currency_id = await verify_ruble_currency(documents.client, remote)
         if entity_id((invoice.get("rate") or {}).get("currency")) != currency_id:
             raise ValueError("Currency mismatch")
         linked = {entity_id(ref) for ref in (remote.get("invoicesOut") or [])}
@@ -330,3 +323,7 @@ async def verify_standard_sbp_invoice(order, *, client=None):
             raise ValueError("MoySklad order or invoice is inconsistent")
     except (AttributeError, ValueError) as exc:
         raise HTTPException(409, "Сумма или связь счёта в МойСклад не совпадает с заказом. Оплата не создана; обратитесь в поддержку.") from exc
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise settlement_pending(rate_limit=exc.response) from exc
+        raise

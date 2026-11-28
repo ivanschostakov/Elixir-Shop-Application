@@ -1,8 +1,13 @@
 from typing import Any
 from uuid import UUID
+import httpx
 from src.normalize import coerce_uuid, optional_str
 from ..regions import moysklad_region_for_cdek, region_name_key
+from .reference_cache import reference_rows
 from .utils import _customer_order_attr_id, custom_entity_dictionary_id
+
+
+_CHECKOUT_METHODS = ("delivery_method", "payment_method")
 
 
 class MetadataMixin:
@@ -13,7 +18,43 @@ class MetadataMixin:
     async def get_organization(self, organization_id: UUID | str) -> dict[str, Any] | None:
         normalized_id = coerce_uuid(organization_id)
         if normalized_id is None: return None
-        return await self._get_entity_by_id("organization", normalized_id)
+
+        async def load():
+            try:
+                row = await self._reference_entity("organization", normalized_id)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 404: return None
+                raise
+            if not isinstance(row.get("name"), str) or not row["name"].strip():
+                raise ValueError("Missing MoySklad organization name")
+            return row
+
+        return await self._references.read(("organization", normalized_id), load)
+
+
+    async def _reference_entity(self, kind: str, entity_id: UUID) -> dict[str, Any]:
+        http_client = await self.client()
+        response = await http_client.get(f"/entity/{kind}/{entity_id}")
+        response.raise_for_status()
+        row = response.json()
+        if not isinstance(row, dict) or "errors" in row or coerce_uuid(row.get("id")) != entity_id:
+            raise ValueError(f"Invalid MoySklad {kind} identity")
+        return row
+
+
+    async def get_currency_identity(self, currency_id: UUID | str) -> dict[str, Any]:
+        """Identity for settlement checks; never cache an exchange rate."""
+        normalized_id = coerce_uuid(currency_id)
+        if normalized_id is None:
+            raise ValueError("Invalid MoySklad currency ID")
+
+        async def load():
+            row = await self._reference_entity("currency", normalized_id)
+            if not isinstance(row.get("isoCode"), str) or not row["isoCode"].strip() or not optional_str(row.get("code")):
+                raise ValueError("Invalid MoySklad currency codes")
+            return {key: row[key] for key in ("id", "isoCode", "code")}
+
+        return await self._references.read(("currency-identity", normalized_id), load)
 
 
     async def get_stores(self) -> list[dict[str, Any]]:
@@ -63,32 +104,32 @@ class MetadataMixin:
         return matches[0] if len(matches) == 1 else None
 
 
+    async def _document_metadata(self, kind: str) -> dict[str, Any]:
+        async def load():
+            http_client = await self.client()
+            response = await http_client.get(f"/entity/{kind}/metadata")
+            response.raise_for_status()
+            data = response.json()
+            reference_rows(data, "states")
+            return data
+
+        return await self._references.read(("metadata", kind), load, cacheable=lambda data: bool(data["states"]))
+
+
     async def get_customerorder_metadata(self) -> dict[str, Any]:
-        http_client = await self.client()
-        response = await http_client.get("/entity/customerorder/metadata")
-        response.raise_for_status()
-        data = response.json()
-        return data if isinstance(data, dict) else {}
+        return await self._document_metadata("customerorder")
 
 
     async def get_customerorder_states(self) -> list[dict[str, Any]]:
-        states = (await self.get_customerorder_metadata()).get("states")
-        if not isinstance(states, list): return []
-        return [row for row in states if isinstance(row, dict)]
+        return (await self.get_customerorder_metadata())["states"]
 
 
     async def get_invoiceout_metadata(self) -> dict[str, Any]:
-        http_client = await self.client()
-        response = await http_client.get("/entity/invoiceout/metadata")
-        response.raise_for_status()
-        data = response.json()
-        return data if isinstance(data, dict) else {}
+        return await self._document_metadata("invoiceout")
 
 
     async def get_invoiceout_states(self) -> list[dict[str, Any]]:
-        states = (await self.get_invoiceout_metadata()).get("states")
-        if not isinstance(states, list): return []
-        return [row for row in states if isinstance(row, dict)]
+        return (await self.get_invoiceout_metadata())["states"]
 
 
     async def get_organization_accounts(self, organization_id: UUID | str) -> list[dict[str, Any]]:
@@ -120,7 +161,14 @@ class MetadataMixin:
 
 
     async def find_organization_by_name(self, *names: str) -> dict[str, Any] | None:
-        return self._find_named_row(await self.get_organizations(), *names)
+        rows = [row for row in await self.get_organizations() if not row.get("archived")]
+        for name in names:
+            key = optional_str(name)
+            if not key: continue
+            matches = [row for row in rows if (optional_str(row.get("name")) or "").casefold() == key.casefold()]
+            if len(matches) > 1: raise ValueError("Ambiguous MoySklad organization name")
+            if matches: return matches[0]
+        return None
 
 
     async def find_saleschannel_by_name(self, *names: str) -> dict[str, Any] | None:
@@ -151,19 +199,30 @@ class MetadataMixin:
 
 
     async def get_customerorder_attribute_metadata(self, *, limit: int = 1000) -> list[dict[str, Any]]:
-        data = await self.get_page("/entity/customerorder/metadata/attributes", limit=limit)
-        rows = data.get("rows")
-        if not isinstance(rows, list): return []
-        return [row for row in rows if isinstance(row, dict)]
+        async def load():
+            return reference_rows(await self.get_page("/entity/customerorder/metadata/attributes", limit=limit))
+
+        def has_bindings(rows):
+            for key in _CHECKOUT_METHODS:
+                matches = [row for row in rows if row.get("id") == _customer_order_attr_id(key)]
+                if len(matches) != 1 or custom_entity_dictionary_id(matches[0]) is None:
+                    return False
+            return True
+
+        return await self._references.read(("attributes", limit), load, cacheable=has_bindings)
 
 
     async def get_customerorder_customentity_values(self, attr_key: str, *, limit: int = 1000) -> list[dict[str, Any]]:
         attr_id = _customer_order_attr_id(attr_key)
-        attr_row = next((row for row in await self.get_customerorder_attribute_metadata(limit=limit) if optional_str(row.get("id")) == attr_id), None)
-        if not isinstance(attr_row, dict): return []
-        custom_entity_id = custom_entity_dictionary_id(attr_row)
+        matches = [row for row in await self.get_customerorder_attribute_metadata(limit=limit) if row.get("id") == attr_id]
+        if not matches: return []
+        if len(matches) != 1: raise ValueError("Ambiguous MoySklad customer order attribute")
+        custom_entity_id = custom_entity_dictionary_id(matches[0])
         if custom_entity_id is None: return []
-        return await self.get_all(f"/entity/customentity/{custom_entity_id}")
+        path = f"/entity/customentity/{custom_entity_id}"
+        if attr_key not in _CHECKOUT_METHODS:
+            return await self.get_all(path)
+        return await self._references.read(("method-values", custom_entity_id), lambda: self.get_all(path))
 
 
     async def find_customerorder_customentity_value(self, attr_key: str, *names: str) -> dict[str, Any] | None:

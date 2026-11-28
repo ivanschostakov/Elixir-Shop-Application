@@ -138,6 +138,7 @@ class OrderUpdate(BaseModel):
 class OrderRead(OrderBase):
     model_config = ConfigDict(from_attributes=True)
 
+    ms_reservation_confirmed: bool = False
     id: int
     order_number: str
     status_code: OrderStatusCode

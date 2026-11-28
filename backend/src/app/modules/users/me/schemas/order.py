@@ -21,6 +21,7 @@ class CreateOrderPayload(BaseModel):
 class CreatePaymentPayload(BaseModel):
     order_id: int = Field(ge=1)
     payment_method: PaymentMethod | None = None
+    accept_pending_amount: bool = False
 
 
 class PaymentStatusRead(BaseModel):
@@ -39,3 +40,4 @@ class PaymentStatusRead(BaseModel):
     is_paid: bool
     can_retry: bool
     awaiting_settlement: bool = False
+    ms_reservation_confirmed: bool = False

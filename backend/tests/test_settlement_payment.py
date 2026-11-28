@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from test_settlement_checkout import CID, CURRENCY, IID, OID, ORG, documents, ref
 from src.app.services.orders import settlement_payment as service
 from src.app.services.benefits import moysklad_bonus
+from src.integrations.moysklad.client import MoySkladClient
 from src.integrations.moysklad.settlement_checkout import (
     INVOICE_PROCESSED_ATTRIBUTE, INVOICE_SPENT_ATTRIBUTE, ORDER_SPENT_ATTRIBUTE, SOURCE_KIND, SettlementNotReady,
     check_open_settlement_orders, verify_ruble_currency,
@@ -128,16 +129,18 @@ def test_zero_checkout_never_reads_other_orders():
 
 
 @pytest.mark.parametrize("iso,code,ok", [("RUB", "643", True), ("USD", "840", False),
-    ("B.RUB", "643", False), (None, None, False)])
+    ("RUB", "840", False), ("B.RUB", "643", False), (None, None, False)])
 def test_currency_check_only_reads(iso, code, ok):
     requests = []
     def handler(request):
         requests.append(request)
         assert request.method == "GET"
+        assert request.url.path == f"/entity/currency/{CURRENCY}"
         return httpx.Response(200, json={"id": str(CURRENCY), "isoCode": iso, "code": code})
     async def check():
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://example.test") as http:
-            client = SimpleNamespace(client=AsyncMock(return_value=http))
+            client = MoySkladClient(token="test", base_url="https://example.test")
+            client._client = http
             return await verify_ruble_currency(client, documents()[0])
     if ok:
         assert run(check()) == CURRENCY

@@ -262,6 +262,7 @@ def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monke
     order = make_order(["4890"], [2], "9195.92", "415.92")
     order.checkout_snapshot["settlement_payment"] = {
         "version": 1, "counterparty_id": str(ENTITY_ID), "gross_rubles": "10195.92",
+        "maximum_balance_rubles": "1000.00", "export_started": True,
     }
     user = SimpleNamespace(id=47, moysklad_counterparty_id=ENTITY_ID)
     session = SimpleNamespace(execute=AsyncMock(), refresh=AsyncMock(), flush=AsyncMock(), commit=AsyncMock())

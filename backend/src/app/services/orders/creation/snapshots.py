@@ -67,12 +67,14 @@ def _checkout_snapshot_item(item) -> dict[str, Any]:
     }
 
 
-def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any], resolved_benefits: dict[str, Any] | None = None, client_platform: str | None = None) -> dict[str, Any]:
+def _build_checkout_snapshot(draft: OrderDraft, *, payment_method: str, selected_delivery_service: str, selected_delivery_payload: dict[str, Any], resolved_benefits: dict[str, Any] | None = None, client_platform: str | None = None, linked_buyer_id=None) -> dict[str, Any]:
     if draft.recipient is None: raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Recipient is required")
     items = [_checkout_snapshot_item(item) for item in draft.items]
     snapshot = {
         "source": "shop_application",
         "order_export_version": 1,
+        "ms_checkout_version": 2,
+        "ms_buyer_at_checkout": str(linked_buyer_id) if linked_buyer_id else None,
         "client_platform": client_platform if client_platform in {"ios", "android", "web"} else "unknown",
         "payment_method": payment_method,
         "contact_info": {

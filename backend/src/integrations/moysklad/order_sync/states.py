@@ -6,7 +6,7 @@ from .common import log
 from .attributes import _href, _invoiceout_external_code, _is_intellectmoney_payment
 
 
-async def sync_moysklad_customerorder_state(order: Order, *, state_name: str, strict: bool = False) -> bool:
+async def sync_moysklad_customerorder_state(order: Order, *, state_name: str, strict: bool = False, only_from: str | None = None) -> bool:
     normalized_state_name = optional_str(state_name)
     if not MOY_SKLAD_ORDER_SYNC_ENABLED or not normalized_state_name: return False
     if order.moysklad_customerorder_id is None:
@@ -28,6 +28,8 @@ async def sync_moysklad_customerorder_state(order: Order, *, state_name: str, st
         current_state_href = _href(current_meta.get("href")) if isinstance(current_meta, dict) else None
         target_state_href = _href((state.get("meta") or {}).get("href"))
         if current_state_href and target_state_href and current_state_href == target_state_href: return False
+        if only_from and ((current_state or {}).get("name") or "").strip().casefold() != only_from.strip().casefold():
+            return False
         if isinstance(current_state, dict) and (
             current_state.get("stateType") in {"Successful", "Unsuccessful"}
             or (current_state.get("name") or "").strip().casefold() in {

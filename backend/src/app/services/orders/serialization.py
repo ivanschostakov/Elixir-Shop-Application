@@ -5,6 +5,7 @@ from src.database.models import Order, OrderItem, Product, Variant
 from src.database.models.orders.history import get_order_history_bucket, get_order_status_code
 from src.database.schemas import OrderItemRead, OrderRead
 from .serialization_utils import build_order_item_image_url, get_products_by_id, get_variants_by_id
+from .stock_reservations import has_exported_reservation
 
 
 def _serialize_order_item(request: Request, item: OrderItem, *, products_by_id: dict[int, Product], variants_by_id: dict[int, Variant]) -> OrderItemRead:
@@ -55,6 +56,7 @@ def _serialize_order(request: Request, order: Order, *, products_by_id: dict[int
         selected_delivery_service=order.selected_delivery_service,
         selected_delivery_payload=order.selected_delivery_payload,
         checkout_snapshot=order.checkout_snapshot,
+        ms_reservation_confirmed=has_exported_reservation(order),
         payment_method=order.payment_method,
         payment_provider=order.payment_provider,
         payment_status=order.payment_status,
