@@ -1,6 +1,7 @@
 const test = require("node:test")
 const assert = require("node:assert/strict")
 const loadTs = require("./load-ts.cjs")
+const deadlines = loadTs("services/api/request-deadline.ts")
 
 const proof = { appIntegrityAction: "payments:create" }
 
@@ -15,7 +16,7 @@ function clientFor(responses) {
         "@/services/app-integrity": integrity,
         "@/services/auth/session": { getAuthTokens: () => ({ sessionId: "test" }) },
         "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
-        "@/services/api/request-deadline": { fetchTextWithDeadline: async () => {
+        "@/services/api/request-deadline": { ...deadlines, fetchTextWithDeadline: async () => {
             const [status, detail] = responses[requests++]
             return { response: { status, ok: status === 200 }, text: JSON.stringify({ detail }) }
         } },
@@ -64,6 +65,7 @@ test("Android shares provider preparation, not tokens; recognizes native invalid
     t.mock.method(global, "fetch", async () => Response.json({ android_cloud_project_number: "123" }))
     let prepares = 0, requests = 0
     const api = loadTs("services/app-integrity.ts", {
+        "@/services/api/request-deadline": deadlines,
         "react-native": { Platform: { OS: "android" } }, "expo-secure-store": {},
         "@/config/env": { API_BASE_URL: "https://example.test" }, "@/services/telegram/telegram-web-app": {},
         "@/services/auth/session": { getAuthTokens: () => null },

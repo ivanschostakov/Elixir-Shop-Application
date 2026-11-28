@@ -3,7 +3,7 @@ import type { QueryParams, RequestOptions } from "@/services/api/client.types"
 import { AppIntegrityUnavailableError, getAppIntegrityHeaders, resetAppIntegrityState } from "@/services/app-integrity"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 import { Platform } from "react-native"
-import { fetchTextWithDeadline, RequestDeadlineError } from "@/services/api/request-deadline"
+import { fetchTextWithDeadline, RequestDeadlineError, REQUEST_TIMEOUT_MS } from "@/services/api/request-deadline"
 import { deviceCompanionTimezone } from "@/screens/chat/companion-timezones"
 
 export class ApiError extends Error {
@@ -132,6 +132,7 @@ async function request<T>(
     init?: RequestInit,
     query?: QueryParams,
     options?: RequestOptions,
+    deadline = Date.now() + REQUEST_TIMEOUT_MS,
     hasRetried = false,
     hasRetriedAppIntegrity = false,
 ): Promise<T> {
@@ -145,12 +146,12 @@ async function request<T>(
     }
 
     try {
-        const startedAt = Date.now()
+        if (Date.now() >= deadline) throw new RequestDeadlineError()
         const headers = await buildHeaders(init, auth, options)
         if (auth && sessionId !== getAuthTokens()?.sessionId) {
             throw new ApiError(409, "Session changed; please try again")
         }
-        const remaining = (options?.timeoutMs ?? 20000) - (Date.now() - startedAt)
+        const remaining = deadline - Date.now()
         if (remaining <= 0) throw new RequestDeadlineError()
         const result = await fetchTextWithDeadline(buildUrl(baseUrl, path, query), {
             ...init,
@@ -181,7 +182,7 @@ async function request<T>(
         if (sessionId !== getAuthTokens()?.sessionId) throw new ApiError(409, "Session changed; please try again")
 
         if (refreshedTokens?.accessToken) {
-            return request<T>(baseUrl, path, init, query, options, true, hasRetriedAppIntegrity)
+            return request<T>(baseUrl, path, init, query, options, deadline, true, hasRetriedAppIntegrity)
         }
     }
 
@@ -203,7 +204,7 @@ async function request<T>(
         ) {
             await resetAppIntegrityState()
             if (auth && sessionId !== getAuthTokens()?.sessionId) throw new ApiError(409, "Session changed; please try again")
-            return request<T>(baseUrl, path, init, query, options, hasRetried, true)
+            return request<T>(baseUrl, path, init, query, options, deadline, hasRetried, true)
         }
 
         throw apiError
@@ -232,7 +233,15 @@ export function apiFetch<T>(
     query?: QueryParams,
     options?: RequestOptions,
 ): Promise<T> {
-    return request<T>(API_BASE_URL, path, init, query, options)
+    const timeoutMs = Math.min(options?.timeoutMs ?? REQUEST_TIMEOUT_MS, REQUEST_TIMEOUT_MS)
+    const deadline = Date.now() + timeoutMs
+    // Native proof and session refresh can stall before fetch has a signal to abort.
+    let timer: ReturnType<typeof setTimeout>
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new ApiError(503, REQUEST_TIMEOUT_MESSAGE)), timeoutMs)
+    })
+    return Promise.race([request<T>(API_BASE_URL, path, init, query, options, deadline), timeout])
+        .finally(() => clearTimeout(timer))
 }
 
 

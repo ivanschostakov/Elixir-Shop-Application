@@ -56,7 +56,7 @@ test("every native API call reads fresh timezone metadata, including multipart c
         "@/services/auth/session": { getAuthTokens: () => null, refreshAuthTokens: async () => null },
         "react-native": { Platform: platform },
         "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => zone },
-        "@/services/api/request-deadline": { RequestDeadlineError: class extends Error {}, fetchTextWithDeadline: async (url, init) => { requests.push(init); return { response: { status: 200, ok: true }, text: "{}" } } },
+        "@/services/api/request-deadline": { ...loadTs("services/api/request-deadline.ts"), RequestDeadlineError: class extends Error {}, fetchTextWithDeadline: async (url, init) => { requests.push(init); return { response: { status: 200, ok: true }, text: "{}" } } },
     })
     await api.apiGet("/v1/users/me/ai-chat/companion")
     zone = "Asia/Kathmandu"

@@ -95,6 +95,7 @@ class ApiError extends Error {
 
 function loadPayments(apiPost, apiGet) {
     return loadTs("services/api/payments.ts", {
+        "@/services/api/request-deadline": loadTs("services/api/request-deadline.ts"),
         "@/services/api/client": { apiPost, apiGet, ApiError },
         "@/services/api/constants": { ENDPOINTS: { PAYMENTS: "/payments" } },
     })
@@ -104,6 +105,28 @@ const pending = () => new ApiError(409, { detail: { code: "settlement_pending" }
 
 const options = { isActive: () => true, onPending: () => {}, timeoutMessage: "Still preparing" }
 const payload = { order_id: 42, payment_method: "sbp" }
+
+test("invoice check and payment creation share two minutes, including manual export retry", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"] })
+    for (const retryExport of [false, true]) {
+        for (const elapsed of [90_000, 120_000]) {
+            const posts = []
+            const api = loadPayments(async (_, body, opts) => {
+                posts.push([body, opts.timeoutMs])
+                return { invoice_id: "invoice" }
+            }, async (_, __, opts) => {
+                assert.equal(opts.timeoutMs, 120_000)
+                t.mock.timers.tick(elapsed)
+                return { invoice_ready: !retryExport, export_retry_available: retryExport }
+            })
+            const attempt = api.createPaymentWhenReady(payload, { ...options, checkFirst: true, retryExport })
+            if (elapsed === 120_000 || retryExport) await assert.rejects(attempt, api.PaymentPreparationPendingError)
+            else assert.equal((await attempt).invoice_id, "invoice")
+            const body = retryExport ? { ...payload, retry_export: true } : payload
+            assert.deepEqual(posts, elapsed === 120_000 ? [] : [[body, 30_000]])
+        }
+    }
+})
 
 test("pending invoice shows waiting immediately without scheduling a second POST", async (t) => {
     t.mock.timers.enable({ apis: ["setTimeout", "Date"] })
