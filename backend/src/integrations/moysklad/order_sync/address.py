@@ -5,6 +5,7 @@ import httpx
 from fastapi import HTTPException
 from typing import Any
 from src.integrations.delivery.cdek import get_cdek_client
+from src.integrations.moysklad.regions import moysklad_region_for_cdek
 from src.database.models import Order
 from src.integrations.delivery.schemas import COUNTRY_NAMES
 from src.normalize import coerce_uuid, extract_dict, optional_str
@@ -112,7 +113,7 @@ async def _shipment_address_full(order: Order, *, moysklad_client: MoySkladClien
             try:
                 point = await get_cdek_client().get_delivery_point(code)
                 if point.code == code and point.country_code == "RU":
-                    region_name = point.region
+                    region_name = moysklad_region_for_cdek(point.region)
             except (HTTPException, httpx.HTTPError, ValueError):
                 logging.getLogger(__name__).warning("Pickup region unavailable for order %s", getattr(order, "order_code", None))
     if region_name and (country_code or "").upper() == "RU":

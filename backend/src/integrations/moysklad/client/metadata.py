@@ -1,18 +1,8 @@
-import re
 from typing import Any
 from uuid import UUID
 from src.normalize import coerce_uuid, optional_str
+from ..regions import moysklad_region_for_cdek, region_name_key
 from .utils import _customer_order_attr_id, custom_entity_dictionary_id
-
-
-def _region_key(name: str | None) -> tuple[str, ...]:
-    words = re.findall(r"[а-яa-z0-9]+", (name or "").casefold().replace("ё", "е"))
-    if "федеральный" in words and "округ" in words:
-        return ()
-    if words[:1] in (["г"], ["город"]):
-        words = words[1:]
-    aliases = {"республика": "респ", "область": "обл"}
-    return tuple(sorted(aliases.get(word, word) for word in words))
 
 
 class MetadataMixin:
@@ -60,12 +50,12 @@ class MetadataMixin:
 
 
     async def find_region_by_name(self, name: str, *, country_id: UUID | None = None) -> dict[str, Any] | None:
-        key = _region_key(name)
+        key = region_name_key(moysklad_region_for_cdek(name) or name)
         if not key: return None
         matches = []
         # The region API may return the entire dictionary regardless of 'search'.
         for row in await self.get_all("/entity/region"):
-            if _region_key(row.get("name")) != key: continue
+            if region_name_key(row.get("name")) != key: continue
             if country_id and row.get("country"):
                 href = (row["country"].get("meta") or {}).get("href", "")
                 if coerce_uuid(href.rsplit("/", 1)[-1]) != country_id: continue

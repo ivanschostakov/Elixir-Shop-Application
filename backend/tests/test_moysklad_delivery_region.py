@@ -9,6 +9,7 @@ import pytest
 from src.integrations.delivery.geo.schemas.code import parse_region
 from src.integrations.delivery.schemas.delivery_point import DeliveryPoint
 from src.integrations.moysklad.client.metadata import MetadataMixin
+from src.integrations.moysklad.regions import CDEK_TO_MOYSKLAD_REGION, moysklad_region_for_cdek
 from src.integrations.moysklad.order_sync import address
 
 
@@ -22,14 +23,26 @@ def test_region_lookup_is_unique_and_type_sensitive():
     foreign = row("Респ Башкортостан", country={"meta": {"href": "country/" + str(uuid4())}})
     c.get_all = AsyncMock(return_value=[adygea, moscow, oblast, foreign])
     lookup = lambda name: asyncio.run(c.find_region_by_name(name, country_id=uuid4()))
-    assert lookup("Республика Адыгея") == adygea
+    assert lookup("Адыгея") == adygea
     assert lookup("Москва") == moscow
     assert lookup("Московская область") == oblast
     assert lookup("Приволжский федеральный округ") is None
     assert lookup("Республика Башкортостан") is None
     assert lookup("Неизвестный край") is None
-    c.get_all.return_value.append(row("Московская область"))
+    c.get_all.return_value.append(row("Московская обл"))
     assert lookup("Московская область") is None
+
+
+def test_verified_dictionary_does_not_guess_or_use_carrier_numeric_codes():
+    assert len(CDEK_TO_MOYSKLAD_REGION) == len(set(CDEK_TO_MOYSKLAD_REGION.values())) == 86
+    for source, target in CDEK_TO_MOYSKLAD_REGION.items():
+        assert moysklad_region_for_cdek(source) == target
+    assert moysklad_region_for_cdek("  республика Башкортостан  ") == "Респ Башкортостан"
+    assert moysklad_region_for_cdek("Республика Алтай") == "Респ Алтай"
+    assert moysklad_region_for_cdek("Алтайский край") == "Алтайский край"
+    assert moysklad_region_for_cdek("Кемеровская область - Кузбасс") == "Кемеровская обл"
+    assert moysklad_region_for_cdek("Фиктивный") is None
+    assert moysklad_region_for_cdek("27") is None
 
 
 @pytest.mark.parametrize("code,country,available,expected", [
