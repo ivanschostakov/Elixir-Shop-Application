@@ -1,4 +1,7 @@
 import time
+from unittest.mock import AsyncMock
+
+import httpx
 
 import pytest
 from cryptography import x509
@@ -19,6 +22,45 @@ def test_bundled_apple_app_attest_root_ca_matches_pinned_fingerprint():
 
     assert certificate.subject == certificate.issuer
     assert certificate.fingerprint(hashes.SHA256()) == ios_verifier._APPLE_APP_ATTEST_ROOT_CA_SHA256
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("verdict,code", [
+    ("UNRECOGNIZED_VERSION", "android_app_unrecognized"),
+    ("UNEVALUATED", "android_app_unevaluated"), (None, "android_app_unevaluated"),
+    ("UNKNOWN", "android_app_unevaluated"),
+])
+async def test_android_verdicts_deny_without_mislabeling(monkeypatch, verdict, code):
+    payload = _android_verdict()
+    payload["tokenPayloadExternal"]["appIntegrity"]["appRecognitionVerdict"] = verdict
+    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
+    monkeypatch.setattr(app_integrity, "_decode_android_integrity_token", AsyncMock(return_value=payload))
+    with pytest.raises(HTTPException) as exc:
+        await app_integrity.verify_app_integrity_request(_request(_integrity_headers(platform="android")), action="orders:create")
+    assert (exc.value.status_code, exc.value.detail["code"]) == (403, code)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status,body,expected", [
+    (400, {}, 403), (401, {}, 503), (403, {}, 503), (429, {}, 503), (500, {}, 503),
+    (200, {}, 503), (200, [], 503), (200, "broken", 503),
+])
+async def test_android_decode_fails_closed_and_respects_quota(monkeypatch, status, body, expected):
+    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
+    monkeypatch.setattr(app_integrity, "_google_quota_until", 0.0)
+    transport = AsyncMock(return_value=httpx.Response(status, headers={"Retry-After": "45"},
+                        **({"content": b"<html>"} if body == "broken" else {"json": body})))
+    monkeypatch.setattr(httpx.AsyncClient, "post", transport)
+    monkeypatch.setattr(app_integrity, "_get_google_access_token", AsyncMock(return_value="test"))
+    calls = 2 if status == 429 else 1
+    for _ in range(calls):
+        with pytest.raises(HTTPException) as exc:
+            await app_integrity.verify_app_integrity_request(_request(_integrity_headers(platform="android")), action="orders:create")
+        assert exc.value.status_code == expected
+        assert exc.value.detail["code"] == ("android_verifier_unavailable" if expected == 503 else "android_proof_invalid")
+        if status == 429:
+            assert exc.value.headers["Retry-After"] == "45"
+    transport.assert_awaited_once()
 
 
 class _ScalarResult:
@@ -98,7 +140,7 @@ def _android_verdict(*, request_hash: str = "test-request-hash", package_name: s
             "appIntegrity": {
                 "appRecognitionVerdict": "PLAY_RECOGNIZED",
                 "packageName": package_name,
-                "certificateSha256Digest": ["cert-digest"],
+                "certificateSha256Digest": ["A" * 43],
                 "versionCode": "1",
             },
             "deviceIntegrity": {
@@ -178,7 +220,7 @@ async def test_app_integrity_enforce_accepts_google_verified_android_token(monke
 
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS", "cert-digest")
+    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS", "A" * 43 + "=")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_ALLOWED_DEVICE_VERDICTS", "MEETS_DEVICE_INTEGRITY")
     monkeypatch.setattr(app_integrity, "_decode_android_integrity_token", fake_decode_android_integrity_token)
 
@@ -195,7 +237,7 @@ async def test_app_integrity_enforce_rejects_android_cert_mismatch(monkeypatch: 
 
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS", "other-cert-digest")
+    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS", "B" * 42 + "A")
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_ALLOWED_DEVICE_VERDICTS", "MEETS_DEVICE_INTEGRITY")
     monkeypatch.setattr(app_integrity, "_decode_android_integrity_token", fake_decode_android_integrity_token)
 
@@ -215,7 +257,7 @@ async def test_app_integrity_enforce_rejects_android_request_hash_mismatch(monke
 
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_VERIFIER_URL", None)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
-    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS", "cert-digest")
+    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_CERT_SHA256_DIGESTS", "A" * 43)
     monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_ALLOWED_DEVICE_VERDICTS", "MEETS_DEVICE_INTEGRITY")
     monkeypatch.setattr(app_integrity, "_decode_android_integrity_token", fake_decode_android_integrity_token)
 

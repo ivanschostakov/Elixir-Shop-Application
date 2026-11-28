@@ -163,7 +163,10 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
     )
 
     remote_monthly_eligible: bool | None = None
-    if bitrix_promo_configured() and user.email and not awaiting_registration:
+    if (
+        bitrix_promo_configured() and user.email and not awaiting_registration
+        and profile.bitrix_sync_status not in {"unlinked", "failed"}
+    ):
         try:
             partner_summary = await BitrixPromoClient().partner_summary(
                 bitrix_user_id=profile.bitrix_user_id,
@@ -234,7 +237,17 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
             profile.bitrix_sync_status = "synced"
             profile.bitrix_synced_at = datetime.now(timezone.utc)
             profile.bitrix_sync_error = None
-        except (BitrixPromoError, RuntimeError, httpx.HTTPError):
+        except BitrixPromoError as exc:
+            if exc.status_code == 404 and exc.code == "user_not_found":
+                profile.bitrix_sync_status = "unlinked"
+                profile.bitrix_sync_error = None
+            else:
+                profile.bitrix_sync_status = "failed"
+                profile.bitrix_sync_error = exc.code[:500]
+                logger.warning("Bitrix partner summary failed user_id=%s code=%s status=%s", user.id, exc.code, exc.status_code)
+        except (RuntimeError, httpx.HTTPError):
+            profile.bitrix_sync_status = "failed"
+            profile.bitrix_sync_error = "partner_summary_unavailable"
             logger.exception("Could not load Bitrix partner summary for user_id=%s", user.id)
 
     if moysklad_program_is_authoritative(profile):
@@ -271,7 +284,9 @@ async def get_referral_profile_summary(db: AsyncSession, *, user: User) -> dict[
         "partner_unlock_remaining": partner_remaining,
         "personal_discount_next_threshold": next_threshold,
         "personal_discount_remaining": next_remaining,
-        "bitrix_profile_found": profile.bitrix_sync_status == "synced",
+        "bitrix_profile_found": profile.bitrix_sync_status == "synced" or (
+            program_profile is not None and profile.bitrix_sync_status == "failed"
+        ),
         "bitrix_sync_status": profile.bitrix_sync_status,
         "bitrix_synced_at": profile.bitrix_synced_at,
         "bitrix_user_id": profile.bitrix_user_id,

@@ -46,10 +46,14 @@ def test_duplicate_phone_cards_are_still_ambiguous():
         {"id": "one", "phone": "79298472035"},
         {"id": "two", "phone": "+79298472035"},
     ]})
-    assert asyncio.run(client.get_counterparty_by_phone("+79298472035")) is None
+    from src.integrations.moysklad.identity import CounterpartyReviewRequired
+    with pytest.raises(CounterpartyReviewRequired):
+        asyncio.run(client.get_counterparty_by_phone("+79298472035"))
 
 
 def test_identity_conflict_is_parked_without_creating_a_contact_or_payment(monkeypatch):
+    review = AsyncMock()
+    monkeypatch.setattr(loyalty, "queue_counterparty_review", review)
     user = SimpleNamespace(id=69, email="customer@example.com", moysklad_counterparty_id=None)
     credit = SimpleNamespace(id=41, user_id=69, status="pending", source_kind="welcome")
     db = SimpleNamespace(get=AsyncMock(side_effect=[user, credit]), rollback=AsyncMock(), commit=AsyncMock())
@@ -61,7 +65,8 @@ def test_identity_conflict_is_parked_without_creating_a_contact_or_payment(monke
     monkeypatch.setattr(loyalty, "create_bonus_balance_payment", payment)
     assert asyncio.run(loyalty._sync_balance_credit(db, credit=credit, client=client)) is False
     assert credit.status == "identity_review"
-    assert "manual identity" in credit.sync_error
+    assert "сверка" in credit.sync_error
+    assert review.await_args.kwargs == {"user_id": 69}
     client.resolve_or_sync_counterparty.assert_not_awaited()
     payment.assert_not_awaited()
 

@@ -3,7 +3,7 @@ import logging
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from email.utils import parsedate_to_datetime
+from math import ceil
 
 import httpx
 
@@ -30,6 +30,7 @@ from src.database.models.orders.history import ORDER_STATUS_CODE_VALUES, get_ord
 from src.integrations.amocrm import get_amocrm_client
 from src.integrations.moysklad import sync_moysklad_product_catalog
 from src.integrations.moysklad.order_sync import sync_order_to_moysklad
+from src.integrations.moysklad.client.utils import moysklad_retry_after_seconds
 
 log = logging.getLogger(__name__)
 amocrm_client = get_amocrm_client()
@@ -70,20 +71,17 @@ def is_retryable_error(error: Exception) -> bool:
         return error.response.status_code == 429 or error.response.status_code >= 500
     if not isinstance(error, HTTPException):
         return True
+    if isinstance(error.__cause__, httpx.HTTPStatusError) and error.__cause__.response.status_code == 429:
+        return True
     return error.status_code == 429 or error.status_code >= 500
 
 
 def retry_delay_for_error(error: Exception, attempts: int) -> int:
     delay = retry_delay_seconds(attempts)
+    if isinstance(error, HTTPException) and isinstance(error.__cause__, httpx.HTTPStatusError):
+        error = error.__cause__
     if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
-        delay = max(delay, 60)
-        retry_after = error.response.headers.get("Retry-After", "")
-        try: delay = max(delay, int(retry_after))
-        except ValueError:
-            try:
-                retry_at = parsedate_to_datetime(retry_after)
-                delay = max(delay, int((retry_at - datetime.now(timezone.utc)).total_seconds()) + 1)
-            except (ValueError, TypeError, OverflowError): pass
+        delay = ceil(moysklad_retry_after_seconds(error.response, default=max(delay, 60)))
     return delay
 
 

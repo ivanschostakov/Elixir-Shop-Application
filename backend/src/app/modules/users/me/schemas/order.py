@@ -39,3 +39,4 @@ class PaymentStatusRead(BaseModel):
     is_paid: bool
     can_retry: bool
     awaiting_settlement: bool = False
+    invoice_ready: bool | None = None

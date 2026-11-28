@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from copy import deepcopy
 from decimal import Decimal
 from typing import Any
+from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +12,8 @@ from src.normalize import coerce_uuid
 from src.integrations.moysklad.client import get_moysklad_client
 from src.integrations.moysklad.idempotency import build_counterparty_external_code, build_customerorder_external_code, build_sync_id
 from src.integrations.moysklad.schemas import MoySkladOrderSyncResult, MoySkladCounterpartySyncResult
+from src.integrations.moysklad.identity import CounterpartyReviewRequired
+from src.app.services.counterparty_review import queue_counterparty_review
 from src.integrations.moysklad.settlement_checkout import order_settlement, entity_id, money
 from .common import log
 from .contacts import _counterparty_email, _counterparty_phone, _full_name
@@ -26,8 +29,12 @@ async def _mark_remote_export(session, order, cid, client):
     hold = (order.checkout_snapshot or {}).get("stock_reservation") or {}
     settlement = order_settlement(order)
     mark_stock = hold.get("status") == "held" and not hold.get("remote_export_attempted")
-    claim_balance = (settlement and not order.moysklad_customerorder_id and not settlement.get("export_started")
-                     and money(settlement["maximum_balance_rubles"]) > 0)
+    claim_balance = False
+    if settlement and not order.moysklad_customerorder_id and not settlement.get("export_started"):
+        try:
+            claim_balance = money(settlement.get("maximum_balance_rubles")) > 0
+        except ValueError as exc:
+            raise HTTPException(409, "Не удалось подтвердить лимит списания. Заказ требует сверки.") from exc
     if mark_stock or claim_balance:
         snapshot = dict(order.checkout_snapshot)
         if claim_balance:
@@ -77,7 +84,15 @@ async def sync_order_to_moysklad(session: AsyncSession, *, order: Order, user: U
         snapshot["settlement_payment"]["organization_id"] = str(organization_id)
         order.checkout_snapshot = snapshot
         await session.commit()
-    else: counterparty_result = await moysklad_client.resolve_or_sync_counterparty(existing_counterparty_id=user.moysklad_counterparty_id, external_code=counterparty_external_code, sync_id=counterparty_sync_id, name=_full_name(user, order), email=_counterparty_email(user, order), phone=_counterparty_phone(user, order), actual_address=None,)
+    else:
+        try:
+            counterparty_result = await moysklad_client.resolve_or_sync_counterparty(
+                existing_counterparty_id=user.moysklad_counterparty_id, external_code=counterparty_external_code,
+                sync_id=counterparty_sync_id, name=_full_name(user, order), email=_counterparty_email(user, order),
+                phone=_counterparty_phone(user, order), actual_address=None)
+        except CounterpartyReviewRequired as exc:
+            await queue_counterparty_review(exc, user_id=user_id)
+            raise
 
     if user.moysklad_counterparty_id != counterparty_result.counterparty_id:
         user.moysklad_counterparty_id = counterparty_result.counterparty_id
@@ -221,6 +236,11 @@ async def sync_order_to_moysklad_safe(session: AsyncSession, *, order: Order, us
                 counters=result.as_dict(),
             )
         return result
+    except CounterpartyReviewRequired as error:
+        # The manager alert has already been committed. A background retry
+        # cannot decide ownership, so leave the run available for manual retry.
+        await _record_automatic_order_sync(session, order_id=order_id, status="error", error=error.detail)
+        return MoySkladOrderSyncResult(enabled=MOY_SKLAD_ORDER_SYNC_ENABLED, skipped_reason="identity_review")
     except Exception as error:
         order_id = order.__dict__.get("id")
         user_id = user.__dict__.get("id")

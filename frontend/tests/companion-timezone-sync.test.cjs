@@ -3,6 +3,25 @@ const assert = require("node:assert/strict")
 const loadTs = require("./load-ts.cjs")
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
+test("Android foreground events respect failure backoff and do not resubmit unchanged timezones", async t => {
+    let now = 100_000, requests = 0, listener, tick, zone = "UTC"
+    t.mock.method(Date, "now", () => now)
+    t.mock.method(global, "setInterval", callback => { tick = callback; return 1 })
+    t.mock.method(global, "clearInterval", () => undefined)
+    const { startCompanionTimezoneSync } = loadTs("services/companion-timezone-sync.ts", {
+        "react-native": { Platform: { OS: "android" }, AppState: { currentState: "active",
+            addEventListener: (_, callback) => { listener = callback; return { remove() {} } } } },
+        "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => zone },
+        "@/services/api/companion": { syncCompanionTimezone: async () => { if (++requests === 1) throw Error("quota") } },
+    })
+    const stop = startCompanionTimezoneSync()
+    await flush(); listener("active"); now += 30_000; tick(); await flush(); assert.equal(requests, 1)
+    now += 30_000; tick(); await flush(); assert.equal(requests, 2)
+    listener("active"); await flush(); assert.equal(requests, 2)
+    zone = "Europe/Moscow"; tick(); await flush(); assert.equal(requests, 3)
+    stop()
+})
+
 test("sync at login, travel and resume; retry offline; stop at logout; never sync web", async t => {
     let tick, listener, removed = false, requests = 0, fail = true, zone = "Europe/Moscow"
     t.mock.method(global, "setInterval", callback => { tick = callback; return 1 })

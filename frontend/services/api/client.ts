@@ -21,6 +21,7 @@ export class ApiError extends Error {
 const SERVICE_UNAVAILABLE_MESSAGE = "Service is temporarily unavailable. Please try again later."
 const INVALID_RESPONSE_MESSAGE = "Unexpected response from server."
 const REQUEST_TIMEOUT_MESSAGE = "The request timed out. Please try again."
+let androidVerifyAfter = 0
 
 function isLikelyHtmlResponse(payload: string) {
     const trimmedPayload = payload.trim().toLowerCase()
@@ -139,6 +140,9 @@ async function request<T>(
     const retryOnUnauthorized = options?.retryOnUnauthorized ?? auth
     let response: Response
     let rawResponse: string
+    if (Platform.OS === "android" && options?.appIntegrityAction && Date.now() < androidVerifyAfter) {
+        throw new ApiError(503, SERVICE_UNAVAILABLE_MESSAGE, { detail: { code: "android_verifier_unavailable" } })
+    }
 
     try {
         const startedAt = Date.now()
@@ -183,9 +187,16 @@ async function request<T>(
 
     if (!response.ok) {
         const apiError = buildApiError(response, rawResponse)
+        const detail = (apiError.body as { detail?: { code?: string; retry_after_seconds?: number } } | null)?.detail
+        if (Platform.OS === "android" && options?.appIntegrityAction && response.status === 503 && detail?.code === "android_verifier_unavailable") {
+            const delay = detail.retry_after_seconds
+            const seconds = typeof delay === "number" && Number.isFinite(delay) ? Math.min(86400, Math.max(1, delay)) : 30
+            androidVerifyAfter = Math.max(androidVerifyAfter, Date.now() + seconds * 1000)
+        }
 
         if (
             response.status === 403 &&
+            Platform.OS === "ios" &&
             options?.appIntegrityAction &&
             !hasRetriedAppIntegrity &&
             isAppIntegrityApiError(apiError)

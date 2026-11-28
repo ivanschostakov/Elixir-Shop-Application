@@ -20,6 +20,8 @@ from config import (
 from src.database.models import LoyaltyBonusCredit, Order, OrderItem, Review, ReviewAttachment, User
 from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
 from src.integrations.moysklad.balance_payments import create_bonus_balance_payment
+from src.integrations.moysklad.identity import CounterpartyReviewRequired
+from src.app.services.counterparty_review import queue_counterparty_review
 from src.integrations.moysklad.idempotency import build_counterparty_external_code, build_sync_id
 from src.normalize import coerce_uuid, normalize_email, optional_str
 
@@ -31,10 +33,6 @@ APP_BALANCE_CREDIT_KINDS = ("welcome", "review_text", "review_photo")
 
 REWARD_MODE_CASHBACK = "cashback"
 REWARD_MODE_PROMO = "promo"
-
-
-class LoyaltyIdentityReviewRequired(RuntimeError):
-    pass
 
 
 def normalize_reward_mode(value: str | None, *, has_entered_code: bool = False) -> str:
@@ -174,7 +172,9 @@ async def sync_loyalty_bonus_credit(
         await db.rollback()
         persisted = await db.get(LoyaltyBonusCredit, credit_id)
         if persisted is not None:
-            persisted.status = "failed"
+            if isinstance(exc, CounterpartyReviewRequired):
+                await queue_counterparty_review(exc, user_id=persisted.user_id)
+            persisted.status = "identity_review" if isinstance(exc, CounterpartyReviewRequired) else "failed"
             persisted.sync_error = _sync_error_message(exc)
             await db.commit()
         logger.exception("Could not sync loyalty bonus credit id=%s: %s", credit_id, _sync_error_message(exc))
@@ -190,6 +190,7 @@ async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, 
         return False
     user = await db.get(User, credit.user_id)
     client = client or get_moysklad_client()
+    reported = None
     try:
         if user is None:
             raise RuntimeError("User not found")
@@ -197,14 +198,15 @@ async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, 
             raise RuntimeError("MoySklad is not configured")
         if user.moysklad_counterparty_id is None:
             from src.app.services.auth.service import _link_moysklad_counterparty_by_email
-            await _link_moysklad_counterparty_by_email(user, db)
+            reported = await _link_moysklad_counterparty_by_email(user, db)
+            if isinstance(reported, CounterpartyReviewRequired):
+                raise reported
         if user.moysklad_counterparty_id is None:
             email = normalize_email(user.email)
             if email:
-                candidates = await client.get_page("/entity/counterparty", limit=100, search=email, expand="contactpersons")
-                rows = candidates.get("rows", [])
-                if len(rows) >= 100 or any(client._counterparty_email_matches(row, email) for row in rows):
-                    raise LoyaltyIdentityReviewRequired("Existing MoySklad contacts require manual identity reconciliation")
+                contact = await client.get_counterparty_by_email(email)
+                if contact:
+                    raise CounterpartyReviewRequired("email", [contact])
             external_code = build_counterparty_external_code(user_id=user.id)
             result = await client.resolve_or_sync_counterparty(
                 existing_counterparty_id=None, external_code=external_code,
@@ -263,10 +265,12 @@ async def _sync_balance_credit(db: AsyncSession, *, credit: LoyaltyBonusCredit, 
         await db.rollback()
         persisted = await db.get(LoyaltyBonusCredit, credit_id)
         if persisted is not None:
-            persisted.status = "identity_review" if isinstance(error, LoyaltyIdentityReviewRequired) else "failed"
+            if isinstance(error, CounterpartyReviewRequired) and error is not reported:
+                await queue_counterparty_review(error, user_id=persisted.user_id)
+            persisted.status = "identity_review" if isinstance(error, CounterpartyReviewRequired) else "failed"
             persisted.sync_error = _sync_error_message(error)
             await db.commit()
-        if isinstance(error, LoyaltyIdentityReviewRequired):
+        if isinstance(error, CounterpartyReviewRequired):
             logger.warning("Loyalty credit requires identity review credit_id=%s; no payment created", credit_id)
         else:
             logger.exception("Could not post loyalty incoming payment credit_id=%s: %s", credit_id, _sync_error_message(error))

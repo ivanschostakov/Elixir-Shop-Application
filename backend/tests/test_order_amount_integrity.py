@@ -260,8 +260,9 @@ def test_customerorder_id_is_committed_before_invoice_failure_and_reused(monkeyp
 
 def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monkeypatch):
     order = make_order(["4890"], [2], "9195.92", "415.92")
+    order.is_canceled = False
     order.checkout_snapshot["settlement_payment"] = {
-        "version": 1, "counterparty_id": str(ENTITY_ID), "gross_rubles": "10195.92",
+        "version": 1, "counterparty_id": str(ENTITY_ID), "gross_rubles": "10195.92", "maximum_balance_rubles": "1000",
     }
     user = SimpleNamespace(id=47, moysklad_counterparty_id=ENTITY_ID)
     session = SimpleNamespace(execute=AsyncMock(), refresh=AsyncMock(), flush=AsyncMock(), commit=AsyncMock())
@@ -294,7 +295,10 @@ def test_settlement_order_preserves_gross_and_delivery_without_own_invoice(monke
     _patched_value_226 = AsyncMock(return_value={})
     for target in ('src.integrations.moysklad.order_sync.address._shipment_address_full', 'src.integrations.moysklad.order_sync.service._shipment_address_full',):
         monkeypatch.setattr(target, _patched_value_226)
+    check_balance = AsyncMock()
+    monkeypatch.setattr("src.app.services.orders.settlement_payment.check_balance_use", check_balance)
     asyncio.run(order_sync.sync_order_to_moysklad(session, order=order, user=user))
+    assert check_balance.await_args.kwargs["amount"] == "1000"
     positions = client.resolve_or_sync_customerorder.call_args.kwargs["positions"]
     assert sum(Decimal(str(p["price"])) * Decimal(str(p["quantity"])) for p in positions) == Decimal("1019592")
     assert positions[-1]["assortment"]["meta"]["type"] == "service"

@@ -1,4 +1,4 @@
-import { Alert } from "react-native"
+import { Alert, Linking } from "react-native"
 
 import { translate } from "@/i18n/translations"
 import { ApiError } from "@/services/api/client"
@@ -8,6 +8,32 @@ const ALERT_DEDUP_WINDOW_MS = 1200
 
 let lastAlertMessage = ""
 let lastAlertAt = 0
+
+function androidIntegrityMessage(error: unknown) {
+    if (error instanceof ApiError) {
+        const code = (error.body as { detail?: { code?: string } } | null)?.detail?.code
+        switch (code) {
+            case "android_app_unrecognized": return "auth.error.playUpdate"
+            case "android_device_unverified": return "auth.error.playDevice"
+            case "android_app_unevaluated": return "auth.error.playUnevaluated"
+            case "android_signing_mismatch": return "auth.error.playSigning"
+            case "android_verifier_unavailable": return "auth.error.playBusy"
+            case "android_proof_invalid": return "auth.error.deviceVerificationUnavailable"
+        }
+    }
+    if (error instanceof AppIntegrityUnavailableError && error.platform === "android") {
+        switch (error.nativeCode) {
+            case "ERR_APP_INTEGRITY_PLAY_STORE_NOT_FOUND":
+            case "ERR_APP_INTEGRITY_PLAY_STORE_OUTDATED":
+            case "ERR_APP_INTEGRITY_PLAY_SERVICES_NOT_FOUND":
+            case "ERR_APP_INTEGRITY_PLAY_SERVICES_OUTDATED": return "auth.error.playUnevaluated"
+            case "ERR_APP_INTEGRITY_GOOGLE_SERVER_UNAVAILABLE":
+            case "ERR_APP_INTEGRITY_TOO_MANY_REQUESTS": return "auth.error.playBusy"
+            case "ERR_APP_INTEGRITY_NETWORK_ERROR": return "network.connectionFailed"
+        }
+    }
+    return null
+}
 
 function getBackendUnavailableMessage() {
     return translate("auth.error.backendUnavailable")
@@ -86,6 +112,8 @@ export function isBackendError(error: unknown) {
 export function getErrorMessage(error: unknown, fallback?: string) {
     const resolvedFallback = fallback ?? translate("common.unknownError")
 
+    const androidMessage = androidIntegrityMessage(error)
+    if (androidMessage) return translate(androidMessage)
     if (error instanceof AppIntegrityUnavailableError) {
         return translate("auth.error.deviceVerificationUnavailable")
     }
@@ -116,11 +144,12 @@ export function getErrorMessage(error: unknown, fallback?: string) {
 }
 
 export function showBackendErrorAlert(error: unknown, fallback?: string) {
-    if (!isBackendError(error)) {
+    const androidMessage = androidIntegrityMessage(error)
+    if (!androidMessage && !isBackendError(error)) {
         return
     }
 
-    if (error instanceof ApiError && [401, 403].includes(error.status)) {
+    if (!androidMessage && error instanceof ApiError && [401, 403].includes(error.status)) {
         return
     }
 
@@ -133,5 +162,15 @@ export function showBackendErrorAlert(error: unknown, fallback?: string) {
 
     lastAlertMessage = message
     lastAlertAt = now
+    if (androidMessage === "auth.error.playUpdate") {
+        Alert.alert(translate("common.errorTitle"), message, [
+            { text: translate("common.cancel"), style: "cancel" },
+            { text: "Google Play", onPress: () => {
+                void Linking.openURL("https://play.google.com/store/apps/details?id=com.elixirpeptide.elixirpeptide")
+                    .catch(() => Alert.alert(translate("common.errorTitle"), message))
+            } },
+        ])
+        return
+    }
     Alert.alert(translate("common.errorTitle"), message)
 }

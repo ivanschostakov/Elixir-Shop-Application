@@ -6,6 +6,7 @@ from copy import deepcopy
 from decimal import Decimal
 import hashlib
 import logging
+from .payment_rejection import PaymentRejected
 from functools import wraps
 from math import ceil
 
@@ -30,7 +31,7 @@ def settlement_pending(*, rate_limit: httpx.Response | None = None) -> HTTPExcep
     return HTTPException(409, {
         "code": "settlement_pending",
         "message": "Рассчитываем оплату. Пожалуйста, подождите",
-        **({"retry_after_seconds": ceil(moysklad_retry_after_seconds(rate_limit, default=4))} if rate_limit is not None else {}),
+        "retry_after_seconds": ceil(moysklad_retry_after_seconds(rate_limit, default=4)) if rate_limit is not None else 30,
     })
 
 
@@ -48,11 +49,11 @@ def serialized_settlement_checkout(function):
         if not LOYALTY_USE_SETTLEMENT_BALANCE or not (automatic or kwargs.get("use_bonus_rubles")):
             return await function(session, **kwargs)
         if not LOYALTY_SETTLEMENT_CHECKOUT_ENABLED:
-            raise HTTPException(409, "Оплата с баланса временно недоступна.")
+            raise PaymentRejected("balance_disabled", "Оплата с баланса временно недоступна.")
         if not automatic and (not coerce_uuid(MOY_SKLAD_BALANCE_CONSENT_ATTRIBUTE_ID) or not coerce_uuid(MOY_SKLAD_BALANCE_AMOUNT_ATTRIBUTE_ID)):
             raise HTTPException(503, "Оплата с баланса ещё не настроена. Выберите оплату без списания или обратитесь в поддержку.")
         if user.moysklad_counterparty_id is None:
-            raise HTTPException(409, "Для оплаты с баланса сначала нужно связать профиль с МойСклад.")
+            raise PaymentRejected("counterparty_unlinked", "Для оплаты с баланса сначала нужно связать профиль с МойСклад.")
         async with settlement_lock(user.moysklad_counterparty_id):
             if kwargs.get("draft_id"):
                 from src.database.crud import get_order_by_draft_id
@@ -72,7 +73,7 @@ async def settlement_lock(counterparty_id, *, payment=False):
         if not acquired:
             if payment:
                 raise settlement_pending()
-            raise HTTPException(409, "Расчёт оплаты уже выполняется. Подождите несколько секунд.")
+            raise PaymentRejected("settlement_busy", "Расчёт оплаты уже выполняется. Подождите несколько секунд.")
         try:
             yield
         finally:
@@ -109,7 +110,7 @@ async def ensure_no_pending_balance_order(session, *, counterparty_id, exclude_o
         elif remote_id:
             processing.add(remote_id)
             continue
-        raise HTTPException(409, f"Баланс уже используется в заказе {code}. Завершите или отмените этот заказ перед новым списанием.")
+        raise PaymentRejected("balance_reserved", f"Баланс уже используется в заказе {code}. Завершите или отмените этот заказ перед новым списанием.")
     return processing
 
 
@@ -121,40 +122,29 @@ async def check_balance_use(session, *, counterparty_id, amount, exclude_order_i
         await check_open_settlement_orders(client or get_moysklad_client(), counterparty_id, exclude_order_id=remote_id,
                                           processing_ids=processing)
     except SettlementNotReady as exc:
-        raise HTTPException(409, str(exc)) from exc
+        raise PaymentRejected("other_settlement_order", str(exc)) from exc
     except (httpx.HTTPError, ValueError, RuntimeError) as exc:
-        if exclude_order_id and isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
-            raise settlement_pending(rate_limit=exc.response) from exc
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            if exclude_order_id:
+                raise settlement_pending(rate_limit=exc.response) from exc
+            delay = ceil(moysklad_retry_after_seconds(exc.response, default=4))
+            raise HTTPException(503, "МойСклад занят. Повторите оформление чуть позже.",
+                                headers={"Retry-After": str(delay)}) from exc
         raise HTTPException(503, "Не удалось проверить списание в МойСкладе. Повторите через несколько секунд.") from exc
 
 
-async def confirm_settlement_invoice(session, *, order, attempts=1, client=None):
-    settlement = order_settlement(order)
-    if settlement is None:
-        return True
-    if order.is_paid:
-        if settlement.get("status") != "confirmed":
-            raise HTTPException(409, "Оплата уже создана, но расчёт баланса не подтверждён. Обратитесь в поддержку.")
-        return True
-    if order.is_canceled or order.payment_status == "refunded":
-        raise HTTPException(409, "Заказ отменён или возвращён.")
-    if order.moysklad_customerorder_id is None:
-        raise SettlementNotReady("Заказ ещё синхронизируется с МойСклад. Повторите оплату через несколько секунд.")
+async def _read_robot_invoice(order, settlement, client, *, attempts=1):
     counterparty_id = coerce_uuid(settlement.get("counterparty_id"))
-    if counterparty_id is None:
-        raise ValueError("Missing settlement counterparty")
-    user = await session.get(User, order.user_id)
-    if user is None or user.moysklad_counterparty_id != counterparty_id:
-        raise ValueError("Settlement customer identity changed")
-    client = client or get_moysklad_client()
+    if not order.moysklad_customerorder_id:
+        raise SettlementNotReady("Order export pending")
     currency_id = None
-    automatic = settlement.get("mode") == "automatic"
     for attempt in range(attempts):
         remote = await client.get_customer_order(order.moysklad_customerorder_id)
         if not remote:
             raise ValueError("Settlement order missing in MoySklad")
-        if currency_id is None:
-            currency_id = await verify_ruble_currency(client, remote)
+        if (entity_id(remote) != order.moysklad_customerorder_id or remote.get("deleted")
+                or remote.get("applicable") is not True or (remote.get("state") or {}).get("stateType") == "Unsuccessful"):
+            raise ValueError("Settlement order is not active")
         if money(remote.get("shippedSum", 0)) > 0:
             raise ValueError("Settlement order has already been shipped; manual reconciliation required")
         refs = remote.get("invoicesOut") or []
@@ -171,6 +161,8 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
         if len(invoices) > 1:
             raise ValueError("Multiple active MoySklad invoices; manual reconciliation required")
         if invoices:
+            if currency_id is None:
+                currency_id = await verify_ruble_currency(client, remote)
             try:
                 result = validate_settlement_invoice(remote, invoices[0],
                     order_id=order.moysklad_customerorder_id, counterparty_id=counterparty_id,
@@ -179,15 +171,52 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
                     gross_rubles=money(settlement["gross_rubles"]),
                     maximum_balance_rubles=money(settlement["maximum_balance_rubles"]),
                     requested_balance_rubles=money(settlement["requested_balance_rubles"]) if settlement.get("requested_balance_rubles") is not None else None,
-                    automatic_balance=automatic,
+                    automatic_balance=settlement.get("mode") == "automatic",
                     position_count=max(1, len(getattr(order, "items", ())) * 2 + (1 if order.delivery_total else 0)))
-                break
+                return result, invoices[0]
             except SettlementNotReady:
                 pass
         if attempt + 1 < attempts:
             await asyncio.sleep(2)
-    else:
-        raise SettlementNotReady("МойСклад ещё рассчитывает оплату с баланса. Повторите через несколько секунд.")
+    raise SettlementNotReady("МойСклад ещё рассчитывает оплату с баланса. Повторите через несколько секунд.")
+
+
+async def robot_invoice_ready(order, settlement, *, client=None):
+    try:
+        await _read_robot_invoice(order, settlement, client or get_moysklad_client())
+        return True
+    except SettlementNotReady:
+        return False
+    except httpx.HTTPError as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            raise settlement_pending(rate_limit=exc.response) from exc
+        raise HTTPException(503, "Не удалось проверить готовность счёта в МойСкладе.") from exc
+    except (ValueError, ArithmeticError) as exc:
+        logger.warning("Settlement invoice inconsistent order_id=%s: %s", order.id, exc)
+        raise PaymentRejected("invoice_not_verified", "Не удалось сверить счёт с МойСклад. Оплата не создана; обратитесь в поддержку.") from exc
+
+
+async def confirm_settlement_invoice(session, *, order, attempts=1, client=None):
+    settlement = order_settlement(order)
+    if settlement is None:
+        return True
+    if order.is_paid:
+        if settlement.get("status") != "confirmed":
+            raise PaymentRejected("previous_settlement_unconfirmed", "Оплата уже создана, но расчёт баланса не подтверждён. Обратитесь в поддержку.")
+        return True
+    if order.is_canceled or order.payment_status == "refunded":
+        raise PaymentRejected("order_closed", "Заказ отменён или возвращён.")
+    if order.moysklad_customerorder_id is None:
+        raise SettlementNotReady("Заказ ещё синхронизируется с МойСклад. Повторите оплату через несколько секунд.")
+    counterparty_id = coerce_uuid(settlement.get("counterparty_id"))
+    if counterparty_id is None:
+        raise ValueError("Missing settlement counterparty")
+    user = await session.get(User, order.user_id)
+    if user is None or user.moysklad_counterparty_id != counterparty_id:
+        raise ValueError("Settlement customer identity changed")
+    client = client or get_moysklad_client()
+    automatic = settlement.get("mode") == "automatic"
+    result, invoice = await _read_robot_invoice(order, settlement, client, attempts=attempts)
 
     if result.balance_rubles > 0:
         await check_balance_use(session, counterparty_id=counterparty_id, amount=result.balance_rubles,
@@ -195,14 +224,14 @@ async def confirm_settlement_invoice(session, *, order, attempts=1, client=None)
         from src.app.services.benefits.moysklad_bonus import get_moysklad_settlement_wallet
         wallet = await get_moysklad_settlement_wallet(counterparty_id, moysklad_client=client)
         if result.balance_rubles > wallet.balance_rubles:
-            raise HTTPException(409, "Баланс изменился. Не оплачивайте старый счёт; обратитесь к менеджеру для перерасчёта.")
+            raise PaymentRejected("balance_changed", "Баланс изменился. Не оплачивайте старый счёт; обратитесь к менеджеру для перерасчёта.")
     if result.balance_rubles == 0 and not automatic:
-        raise HTTPException(409, "МойСклад не применил баланс к счёту. Оплата не создана; обратитесь к менеджеру.")
+        raise PaymentRejected("balance_not_applied", "МойСклад не применил баланс к счёту. Оплата не создана; обратитесь к менеджеру.")
     snapshot = deepcopy(order.checkout_snapshot)
     snapshot["settlement_payment"].update({"status": "confirmed", "invoice_id": str(result.invoice_id),
         "cash_rubles": str(result.cash_rubles), "balance_rubles": str(result.balance_rubles),
         "displayed_spent_rubles": result.displayed_spent_rubles})
-    if invoice_name := invoices[0].get("name"):
+    if invoice_name := invoice.get("name"):
         snapshot["settlement_payment"]["invoice_name"] = invoice_name
     benefits = snapshot["benefits"]
     previous = money(benefits.get("bonus_applied_rubles", 0))
@@ -253,7 +282,7 @@ async def prepare_settlement_payment(session, *, order):
         if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
             raise settlement_pending(rate_limit=exc.response) from exc
         logger.exception("Settlement invoice validation failed order_id=%s", order.id)
-        raise HTTPException(409, "Не удалось сверить счёт с МойСклад. Оплата не создана; обратитесь в поддержку.") from exc
+        raise PaymentRejected("invoice_not_verified", "Не удалось сверить счёт с МойСклад. Оплата не создана; обратитесь в поддержку.") from exc
 
 
 async def verify_no_unapproved_balance(order, *, client=None):
@@ -287,7 +316,7 @@ async def verify_no_unapproved_balance(order, *, client=None):
         logger.exception("MoySklad invoice verification failed order_id=%s", order.id)
         raise HTTPException(503, "Не удалось сверить счёт с МойСклад. Оплата не создана.") from exc
     if unapproved:
-        raise HTTPException(409, "В МойСклад сумма счёта изменилась без согласия на списание бонусов. Оплата не создана; обратитесь в поддержку.")
+        raise PaymentRejected("unauthorized_invoice_change", "В МойСклад сумма счёта изменилась без согласия на списание бонусов. Оплата не создана; обратитесь в поддержку.")
 
 
 async def verify_standard_sbp_invoice(order, *, client=None):
@@ -328,5 +357,9 @@ async def verify_standard_sbp_invoice(order, *, client=None):
                        or money(row.get("payedSum", 0)) > 0 or money(row.get("sum")) != expected
                        for row in (remote, invoice))):
             raise ValueError("MoySklad order or invoice is inconsistent")
+    except httpx.HTTPError as exc:
+        if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+            raise settlement_pending(rate_limit=exc.response) from exc
+        raise HTTPException(503, "Не удалось проверить валюту счёта в МойСклад. Оплата не создана.") from exc
     except (AttributeError, ValueError) as exc:
-        raise HTTPException(409, "Сумма или связь счёта в МойСклад не совпадает с заказом. Оплата не создана; обратитесь в поддержку.") from exc
+        raise PaymentRejected("invoice_mismatch", "Сумма или связь счёта в МойСклад не совпадает с заказом. Оплата не создана; обратитесь в поддержку.") from exc

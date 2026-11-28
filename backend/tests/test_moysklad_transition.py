@@ -51,8 +51,9 @@ def test_channels_use_snapshot_and_keep_legacy_fallback(monkeypatch, platform, e
 def test_duplicate_contacts_are_not_auto_linked(monkeypatch, field, value):
     client = MoySkladClient(token="test")
     monkeypatch.setattr(client, "get_page", AsyncMock(return_value={"rows": [{"id": "1", field: value}, {"id": "2", field: value}]}))
-    result = asyncio.run(getattr(client, f"get_counterparty_by_{field}")(value))
-    assert result is None
+    from src.integrations.moysklad.identity import CounterpartyReviewRequired
+    with pytest.raises(CounterpartyReviewRequired):
+        asyncio.run(getattr(client, f"get_counterparty_by_{field}")(value))
 
 
 def test_phone_search_does_not_use_first_inexact_result(monkeypatch):
@@ -68,6 +69,8 @@ def test_phone_login_does_not_replace_an_existing_customer_link():
 
 
 def test_email_link_rejects_conflicting_phone_without_saving(monkeypatch):
+    review = AsyncMock()
+    monkeypatch.setattr("src.app.services.auth.service.counterparty.queue_counterparty_review", review)
     client = MoySkladClient(token="test")
     monkeypatch.setattr(client, "get_counterparty_by_email", AsyncMock(return_value={"id": str(CID), "phone": "+79990000001"}))
     monkeypatch.setattr('src.app.services.auth.service.counterparty.get_moysklad_client', lambda: client)
@@ -75,6 +78,7 @@ def test_email_link_rejects_conflicting_phone_without_saving(monkeypatch):
     user = SimpleNamespace(id=7, email="a@example.com", phone_number="+79990000000", moysklad_counterparty_id=None)
     asyncio.run(_link_moysklad_counterparty_by_email(user, db))
     assert user.moysklad_counterparty_id is None
+    assert review.await_args.kwargs == {"user_id": 7}
     db.commit.assert_not_awaited()
 
 

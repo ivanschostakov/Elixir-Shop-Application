@@ -56,8 +56,14 @@ def moysklad_money(amount: Decimal) -> int:
 
 
 def moysklad_retry_after_seconds(response: httpx.Response, *, default: float) -> float:
+    delays = [default]
+    for header in ("X-Lognex-Retry-After", "X-Lognex-Reset"):
+        try:
+            seconds = float(response.headers.get(header, "0")) / 1000
+            delays.append(seconds if isfinite(seconds) else 60)
+        except (ValueError, OverflowError):
+            delays.append(60)
     try:
-        lognex_delay = float(response.headers.get("X-Lognex-Retry-After", "0")) / 1000
         retry_after = response.headers.get("Retry-After", "0")
         try:
             delay = float(retry_after)
@@ -65,7 +71,5 @@ def moysklad_retry_after_seconds(response: httpx.Response, *, default: float) ->
             at = parsedate_to_datetime(retry_after)
             delay = (at - datetime.now(timezone.utc)).total_seconds()
     except (TypeError, ValueError, OverflowError):
-        return max(60, default)
-    if not isfinite(lognex_delay) or not isfinite(delay):
-        return max(60, default)
-    return max(default, lognex_delay, delay)
+        delay = 60
+    return max(*delays, delay if isfinite(delay) else 60)

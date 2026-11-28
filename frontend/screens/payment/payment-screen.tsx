@@ -3,10 +3,12 @@ import {
     ActivityIndicator,
     Alert,
     Animated,
+    AppState,
     Easing,
     Image,
     LayoutChangeEvent,
     Linking,
+    Platform,
     Pressable,
     ScrollView,
     Text,
@@ -437,7 +439,7 @@ export default function PaymentScreen() {
         }
     }, [isContactExpanded, isItemsExpanded, scrollToSection])
 
-    const handleStartPayment = useCallback(async (methodOverride?: PaymentMethod) => {
+    const handleStartPayment = useCallback(async (methodOverride?: PaymentMethod, checkFirst = false) => {
         const effectiveMethod = methodOverride ?? selectedMethod
         if (startingPaymentRef.current || (!orderDraft && !order)) {
             return
@@ -492,6 +494,7 @@ export default function PaymentScreen() {
                 payment_method: effectiveMethod,
             }, {
                 isActive,
+                checkFirst,
                 onPending: () => setAwaitingSettlement(true),
                 timeoutMessage: t("payment.settlementWaitingTimeout"),
             })
@@ -559,7 +562,7 @@ export default function PaymentScreen() {
     }, [guestRecoveryEmail, reloadDraft, acceptSession, isAuthenticated, isBasketCheckout, order, orderDraft, rewardMode, routePromoCode, selectedMethod, t])
 
     const handleContinueWaiting = useCallback(() => {
-        void handleStartPayment(resolvedPaymentMethod)
+        void handleStartPayment(resolvedPaymentMethod, true)
     }, [handleStartPayment, resolvedPaymentMethod])
 
     const handleRetryPayment = useCallback(() => {
@@ -806,6 +809,11 @@ export default function PaymentScreen() {
         }
 
         const paymentMethod = (order.payment_method || "").toLowerCase()
+        if (order.is_canceled && !order.is_paid) {
+            setPhase("failure")
+            setErrorMessage(t("payment.failureMessage"))
+            return
+        }
         if (paymentMethod === "later") {
             if (order.is_paid || order.payment_status === "paid") {
                 setPhase("success")
@@ -836,7 +844,8 @@ export default function PaymentScreen() {
                 return
             }
 
-            if (order.payment_status === "pending") {
+            if (order.payment_status === "pending" &&
+                (order.checkout_snapshot?.settlement_payment as { status?: string } | undefined)?.status !== "awaiting_invoice") {
                 setPhase("pending")
                 setErrorMessage(null)
                 return
@@ -850,6 +859,7 @@ export default function PaymentScreen() {
             void (async () => {
                 try {
                     const nextPayment = await createPaymentWhenReady({ order_id: order.id, payment_method: "later" }, {
+                        checkFirst: true,
                         isActive: () => paymentStatusRequestIdRef.current === requestId,
                         onPending: () => setAwaitingSettlement(true),
                         timeoutMessage: t("payment.settlementWaitingTimeout"),
@@ -921,20 +931,13 @@ export default function PaymentScreen() {
 
         void (async () => {
             try {
-                let nextPayment = await getPaymentStatus(order.id)
                 const isActive = () => paymentStatusRequestIdRef.current === requestId
-                if (!isActive()) return
-                if (!nextPayment.is_paid && (nextPayment.awaiting_settlement
-                    || (!nextPayment.invoice_id && nextPayment.payment_status === "draft"))) {
-                    if (nextPayment.awaiting_settlement) setAwaitingSettlement(true)
-                    const resumedPayment = await createPaymentWhenReady({ order_id: order.id, payment_method: "sbp" }, {
-                        isActive,
-                        onPending: () => setAwaitingSettlement(true),
-                        timeoutMessage: t("payment.settlementWaitingTimeout"),
-                    })
-                    if (!resumedPayment) return
-                    nextPayment = resumedPayment
-                }
+                const nextPayment = await createPaymentWhenReady({ order_id: order.id, payment_method: "sbp" }, {
+                    isActive, checkFirst: true,
+                    onPending: () => setAwaitingSettlement(true),
+                    timeoutMessage: t("payment.settlementWaitingTimeout"),
+                })
+                if (!nextPayment) return
                 if (typeof nextPayment.amount_rubles === "number" && Number.isFinite(nextPayment.amount_rubles)) {
                     const amount = String(nextPayment.amount_rubles)
                     setOrder((current) => current?.id === order.id ? { ...current, grand_total: amount } : current)
@@ -972,11 +975,17 @@ export default function PaymentScreen() {
 
         const orderId = payment.order_id
         let active = true
+        let failures = 0
         let timer: ReturnType<typeof setTimeout>
         const poll = async () => {
+            if (Platform.OS === "android" && AppState.currentState !== "active") {
+                timer = setTimeout(poll, 4000)
+                return
+            }
             try {
                 const nextPayment = await getPaymentStatus(orderId)
                 if (!active) return
+                failures = 0
                 setPayment((currentPayment) => mergePaymentState(currentPayment, nextPayment))
                 const nextPhase = resolvePaymentPhase(nextPayment, "sbp")
                 if (nextPhase !== "sbp") {
@@ -986,8 +995,9 @@ export default function PaymentScreen() {
                 }
             } catch {
                 // A failed status read does not cancel an existing invoice.
+                if (Platform.OS === "android") failures = Math.min(4, failures + 1)
             }
-            if (active) timer = setTimeout(poll, 4000)
+            if (active) timer = setTimeout(poll, 4000 * 2 ** failures)
         }
         timer = setTimeout(poll, 4000)
 

@@ -18,6 +18,8 @@ const APP_INTEGRITY_HEADERS = {
 } as const
 
 let preparedAndroidProjectNumber: string | null = null
+let androidPreparation: Promise<void> | null = null
+let androidNativeRetryAt = 0
 let androidProjectNumberRequest: Promise<string> | null = null
 let iosOperationQueue: Promise<unknown> = Promise.resolve()
 function checkDeadline(signal: AbortSignal) {
@@ -60,13 +62,15 @@ export class AppIntegrityUnavailableError extends Error {
     action: string
     platform: string
     reason: string
+    nativeCode?: string
 
-    constructor(action: string, platform: string, reason: string) {
+    constructor(action: string, platform: string, reason: string, nativeCode?: string) {
         super(`App integrity check unavailable: ${reason}`)
         this.name = "AppIntegrityUnavailableError"
         this.action = action
         this.platform = platform
         this.reason = reason
+        this.nativeCode = nativeCode
     }
 }
 
@@ -156,7 +160,8 @@ function createUnavailableError(action: string, platform: string, error: unknown
     if (__DEV__) {
         console.warn("[app-integrity] failed", { action, platform, reason, error })
     }
-    return new AppIntegrityUnavailableError(action, platform, reason)
+    const code = (error as { code?: unknown } | null)?.code
+    return new AppIntegrityUnavailableError(action, platform, reason, typeof code === "string" ? code : undefined)
 }
 
 async function appIntegrityFetch<T>(path: string, init: RequestInit, hasRetried = false): Promise<T> {
@@ -223,8 +228,12 @@ async function ensureAndroidProvider(cloudProjectNumber: string) {
         return
     }
 
-    await AppIntegrity.prepareIntegrityTokenProviderAsync(cloudProjectNumber)
-    preparedAndroidProjectNumber = cloudProjectNumber
+    if (!androidPreparation) {
+        androidPreparation = AppIntegrity.prepareIntegrityTokenProviderAsync(cloudProjectNumber)
+            .then(() => { preparedAndroidProjectNumber = cloudProjectNumber })
+            .finally(() => { androidPreparation = null })
+    }
+    await androidPreparation
 }
 
 async function getAndroidIntegrityHeaders(action: string, requestHash: string): Promise<AppIntegrityHeaders> {
@@ -240,7 +249,8 @@ async function getAndroidIntegrityHeaders(action: string, requestHash: string): 
             [APP_INTEGRITY_HEADERS.token]: token,
         }
     } catch (error) {
-        if (error instanceof Error && error.message.includes("ERR_APP_INTEGRITY_PROVIDER_INVALID")) {
+        if ((error as { code?: string } | null)?.code === "ERR_APP_INTEGRITY_PROVIDER_INVALID"
+            || (error instanceof Error && error.message.includes("ERR_APP_INTEGRITY_PROVIDER_INVALID"))) {
             preparedAndroidProjectNumber = null
             await ensureAndroidProvider(cloudProjectNumber)
             const token = await AppIntegrity.requestIntegrityCheckAsync(requestHash)
@@ -396,8 +406,19 @@ export async function getAppIntegrityHeaders(action?: string): Promise<AppIntegr
 
     try {
         if (Platform.OS === "android") {
+            if (Date.now() < androidNativeRetryAt) {
+                throw Object.assign(new Error("Play Integrity cooldown"), { code: "ERR_APP_INTEGRITY_TOO_MANY_REQUESTS" })
+            }
             const requestHash = buildRequestHash(action)
-            return await getAndroidIntegrityHeaders(action, requestHash)
+            try {
+                return await getAndroidIntegrityHeaders(action, requestHash)
+            } catch (error) {
+                const code = (error as { code?: string } | null)?.code
+                if (code === "ERR_APP_INTEGRITY_TOO_MANY_REQUESTS" || code === "ERR_APP_INTEGRITY_GOOGLE_SERVER_UNAVAILABLE") {
+                    androidNativeRetryAt = Date.now() + (code === "ERR_APP_INTEGRITY_TOO_MANY_REQUESTS" ? 60_000 : 5000)
+                }
+                throw error
+            }
         }
         if (Platform.OS === "ios") {
             return await withIosKeyLock(signal => getIosIntegrityHeaders(action, signal))

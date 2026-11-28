@@ -12,14 +12,17 @@ from src.app.services.orders import create_payment_for_order, get_order_for_user
 from src.app.services.customer_intelligence import record_customer_event_safe
 from src.database import get_db
 from src.database.models import User
+from .diagnostics import PaymentRoute
 
-payments_router = APIRouter(prefix="/payments", tags=["payments"])
+payments_router = APIRouter(prefix="/payments", tags=["payments"], route_class=PaymentRoute)
 
 
 @payments_router.post("/create", response_model=PaymentStatusRead)
 async def create_payment(payload: CreatePaymentPayload, request: Request, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:create"))) -> PaymentStatusRead:
+    request.state.payment_order_id = payload.order_id
     order = await get_order_for_user(db, user_id=current_user.id, order_id=payload.order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
+    request.state.payment_order_code = order.order_code
     await require_catalog_products(db, (item.product_id for item in order.items), user_id=current_user.id,
                                    client_platform="ios" if is_ios_request(request.headers) else None)
     result = await create_payment_for_order(
@@ -43,10 +46,10 @@ async def create_payment(payload: CreatePaymentPayload, request: Request, db: As
 
 
 @payments_router.get("/status", response_model=PaymentStatusRead)
-async def get_payment_status(request: Request, order_id: int = Query(..., ge=1), db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:status"))) -> PaymentStatusRead:
+async def get_payment_status(request: Request, order_id: int = Query(..., ge=1), check_invoice: bool = False, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user), _app_integrity: None = Depends(require_app_integrity("payments:status"))) -> PaymentStatusRead:
     order = await get_order_for_user(db, user_id=current_user.id, order_id=order_id)
     if order is None: raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Order not found")
-    result = await get_payment_status_for_order(db, request=request, order=order)
+    result = await get_payment_status_for_order(db, request=request, order=order, check_invoice=check_invoice)
     if result.get("is_paid"):
         await record_customer_event_safe(
             db,

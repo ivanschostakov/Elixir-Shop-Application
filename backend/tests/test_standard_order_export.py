@@ -12,6 +12,7 @@ from src.app.services.orders import crm, payments, settlement_payment
 from src.integrations.amocrm.client import AsyncAmoCRM
 from src.integrations.amocrm.constants import CF
 from src.integrations.moysklad.client import MoySkladClient
+from src.integrations.moysklad.client.rate_limit import PacedMoySkladClient
 from src.integrations.moysklad.order_sync import attributes, contacts
 
 OID, IID, CID, ORG = (UUID(int=i) for i in range(1, 5))
@@ -182,23 +183,23 @@ async def test_conflicting_sbp_invoice_blocks_the_gateway(monkeypatch):
 ])
 async def test_moysklad_order_lookup_respects_rate_limit_without_creating_documents(monkeypatch, headers, repeat):
     client = MoySkladClient(token="test")
-    request = httpx.Request("GET", "https://example.test/entity/customerorder")
-    response = httpx.Response(429, headers=headers, request=request)
-    error = httpx.HTTPStatusError("rate limit", request=request, response=response)
     row = {"id": str(OID), "externalCode": "app_order:22"}
-    page = AsyncMock(side_effect=[error, {"rows": [row]}])
-    sleep = AsyncMock()
-    monkeypatch.setattr(client, "get_page", page)
-    monkeypatch.setattr("src.integrations.moysklad.client.transport.asyncio.sleep", sleep)
-    if repeat:
-        assert await client._find_entity_by_external_code("customerorder", "app_order:22") == row
-        assert page.await_count == 2
-        sleep.assert_awaited_once_with(0.75)
-    else:
-        with pytest.raises(httpx.HTTPStatusError):
-            await client._find_entity_by_external_code("customerorder", "app_order:22")
-        page.assert_awaited_once()
-        sleep.assert_not_awaited()
+    from time import monotonic
+    calls = []
+    def remote(request):
+        assert request.method == "GET"
+        calls.append(monotonic())
+        return httpx.Response(429, headers=headers) if len(calls) == 1 else httpx.Response(200, json={"rows": [row]})
+    async with PacedMoySkladClient(credential="test", base_url="https://example.test",
+            transport=httpx.MockTransport(remote)) as http:
+        monkeypatch.setattr(client, "client", AsyncMock(return_value=http))
+        if repeat:
+            assert await client._find_entity_by_external_code("customerorder", "app_order:22") == row
+            assert len(calls) == 2 and calls[1] - calls[0] >= 0.74
+        else:
+            with pytest.raises(httpx.HTTPStatusError):
+                await client._find_entity_by_external_code("customerorder", "app_order:22")
+            assert len(calls) == 1
 
 
 async def test_rate_limit_on_invoice_validation_keeps_payment_in_preparation(monkeypatch):

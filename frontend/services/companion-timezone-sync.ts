@@ -7,15 +7,20 @@ import { syncCompanionTimezone } from "@/services/api/companion"
 export function startCompanionTimezoneSync() {
     if (Platform.OS === "web") return () => undefined
     let stopped = false, running = false, lastSynced = ""
+    let retryAt = 0, failures = 0, syncedAt = 0
     const sync = async (force = false) => {
         if (stopped || running || AppState.currentState !== "active") return
         const zone = deviceCompanionTimezone()
+        if (Platform.OS === "android" && (Date.now() < retryAt ||
+            (zone === lastSynced && Date.now() - syncedAt < 15 * 60_000))) return
         if (!force && zone === lastSynced) return
         running = true
         try {
             await syncCompanionTimezone()
-            if (!stopped) lastSynced = zone
-        } catch { /* Retry on the next foreground/tick; never ask the user. */ }
+            if (!stopped) { lastSynced = zone; syncedAt = Date.now(); failures = 0; retryAt = 0 }
+        } catch {
+            if (Platform.OS === "android") retryAt = Date.now() + 30_000 * 2 ** Math.min(++failures, 5)
+        }
         finally { running = false }
     }
     void sync(true)

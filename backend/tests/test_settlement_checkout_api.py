@@ -24,7 +24,7 @@ from test_orders_api import (
 
 @pytest.mark.parametrize("scenario", ["exact", "rounded", "full", "full_exact_balance", "partial_delivery", "wrong_invoice",
     "balance_changed", "not_ready", "cancelled", "retry", "ambiguous_gateway", "other_open_order", "zero_balance", "opt_out", "partial_request",
-    "legacy_cash_order"])
+    "legacy_cash_order", "invalid_open_order", "manager_wait"])
 def test_balance_checkout_api_uses_only_mocked_external_services(
     client, registered_user, variant_factory, stub_amocrm, monkeypatch, scenario,
 ):
@@ -124,7 +124,7 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         assert preview.json()["use_bonus_rubles"] is True
         assert Decimal(preview.json()["total_after_discounts"]) >= 0
     response = client.post("/api/v1/users/me/orders", headers=headers, json={
-        "draft_id": draft["id"], "payment_method": "sbp", "use_bonus_rubles": scenario != "opt_out",
+        "draft_id": draft["id"], "payment_method": "later" if scenario == "manager_wait" else "sbp", "use_bonus_rubles": scenario != "opt_out",
         **({"bonus_rubles_to_use": "1.00"} if scenario == "partial_request" else {})})
     assert response.status_code == 200, response.text
     assert Decimal(response.json()["grand_total"]) == max(Decimal("0"), gross - balance)
@@ -133,10 +133,13 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
     if scenario == "wrong_invoice": invoice["customerOrder"] = ref(CID)
     if scenario == "balance_changed":
         moysklad_bonus.get_moysklad_settlement_wallet.return_value = SimpleNamespace(balance_rubles=Decimal("0"))
-    if scenario == "not_ready": remote["invoicesOut"] = []
+    if scenario in {"not_ready", "manager_wait"}: remote["invoicesOut"] = []
     if scenario == "ambiguous_gateway": gateway.return_value = {"Result": {}}
     if scenario == "cancelled": _update_order(order_id, is_canceled=True)
     if scenario == "other_open_order":
+        other, _ = documents("100", "90", 10)
+        ms.get_page.return_value = {"rows": [{**other, "id": str(uuid4())}]}
+    if scenario == "invalid_open_order":
         ms.get_page.return_value = {"rows": [{"id": str(CID), "sum": 10000, "shippedSum": 0}]}
     response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
     if scenario == "ambiguous_gateway":
@@ -146,16 +149,34 @@ def test_balance_checkout_api_uses_only_mocked_external_services(
         assert retry.status_code == 409, retry.text
         gateway.assert_awaited_once()
         return
-    if scenario == "not_ready":
+    if scenario in {"not_ready", "manager_wait"}:
         assert response.status_code == 409, response.text
         assert response.json()["detail"]["code"] == "settlement_pending"
         status_response = client.get("/api/v1/payments/status", headers=headers, params={"order_id": order_id})
         assert status_response.status_code == 200, status_response.text
-        assert status_response.json()["awaiting_settlement"] is True
+        assert status_response.json()["awaiting_settlement"] is (scenario == "not_ready")
+        for expected in (False, False, True):
+            if expected:
+                remote["invoicesOut"] = [ref(IID)]
+            probe = client.get("/api/v1/payments/status", headers=headers,
+                               params={"order_id": order_id, "check_invoice": True})
+            assert probe.status_code == 200, probe.text
+            assert probe.json()["invoice_ready"] is expected
+            assert probe.json()["awaiting_settlement"] is not expected
+            assert _get_order(order_id).checkout_snapshot["settlement_payment"]["status"] == "awaiting_invoice"
         assert _get_order(order_id).payment_invoice_id is None
         gateway.assert_not_awaited()
-        remote["invoicesOut"] = [ref(IID)]
         response = client.post("/api/v1/payments/create", headers=headers, json={"order_id": order_id})
+        if scenario == "manager_wait":
+            assert response.status_code == 200, response.text
+            assert response.json()["payment_status"] == "pending"
+            assert _get_order(order_id).moysklad_invoiceout_id == IID
+            gateway.assert_not_awaited()
+            return
+    if scenario == "invalid_open_order":
+        assert response.status_code == 503, response.text
+        gateway.assert_not_awaited()
+        return
     if scenario in {"wrong_invoice", "balance_changed", "cancelled", "other_open_order"}:
         assert response.status_code == 409, response.text
         gateway.assert_not_awaited()

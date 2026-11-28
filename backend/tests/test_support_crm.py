@@ -426,6 +426,10 @@ def test_support_to_crm_reply_lead_and_ai_visibility_flow(
         assert all_leads.status_code == 200, all_leads.text
         assert all_leads.json()["total"] == 1
 
+        security = client.get("/api/v1/admin/ai-chats/security/overview")
+        assert security.status_code == 200, security.text
+        assert security.json()["app"]["active_bans"] >= 0
+
         ai_list = client.get(
             "/api/v1/admin/ai-chats",
             params={"user_id": customer_id},

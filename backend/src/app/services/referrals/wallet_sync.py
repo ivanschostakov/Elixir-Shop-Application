@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import String, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from config import LOYALTY_USE_SETTLEMENT_BALANCE
@@ -13,8 +13,10 @@ from src.app.services.benefits.moysklad_bonus import (
     MoySkladBonusWallet,
     get_moysklad_bonus_wallet,
 )
-from src.database.models import AppReferralAccrual, AppReferralPurchase, User
+from src.database.models import AdminAlert, AppReferralAccrual, AppReferralPurchase, User
 from src.integrations.moysklad.client import MoySkladClient, get_moysklad_client
+from src.integrations.moysklad.identity import CounterpartyReviewRequired
+from src.app.services.counterparty_review import queue_counterparty_review
 from src.normalize import coerce_uuid, optional_str
 
 from .calculations import quantize_money
@@ -105,7 +107,11 @@ async def _resolve_wallet(
         user.email if user is not None and user.email else accrual.beneficiary_email
     )
     if counterparty_id is None and email:
-        counterparty = await client.get_counterparty_by_email(email)
+        try:
+            counterparty = await client.get_counterparty_by_email(email)
+        except CounterpartyReviewRequired as exc:
+            await queue_counterparty_review(exc, user_id=user.id if user else None, accrual_id=accrual.id)
+            raise
         counterparty_id = (
             coerce_uuid(counterparty.get("id"))
             if isinstance(counterparty, dict)
@@ -234,6 +240,10 @@ async def sync_referral_accrual_to_bonus_wallet(
     if accrual.status == "approved":
         try:
             return await _credit_accrual(db, accrual, client)
+        except CounterpartyReviewRequired as error:
+            accrual.wallet_sync_status = "identity_review"
+            accrual.wallet_sync_error = error.detail
+            return "waiting_for_wallet"
         except BonusWalletNotReady as error:
             accrual.wallet_sync_status = "waiting_for_wallet"
             accrual.wallet_sync_error = str(error)[:500]
@@ -264,6 +274,17 @@ async def sync_approved_referral_accruals_to_bonus_wallet(
             "failed": 0,
         }
 
+    linked = select(User.id).where(User.id == AppReferralAccrual.beneficiary_user_id,
+                                   User.moysklad_counterparty_id.is_not(None)).exists()
+    reviewed = select(AdminAlert.id).where(
+        AdminAlert.code == "counterparty_identity_review", AdminAlert.resolved_at.is_not(None),
+        or_(and_(AdminAlert.entity_type == "customer",
+                 AdminAlert.entity_id == cast(AppReferralAccrual.beneficiary_user_id, String)),
+            and_(AdminAlert.entity_type == "referral_accrual",
+                 AdminAlert.entity_id == cast(AppReferralAccrual.id, String))),
+    ).exists()
+    retry_approved = or_(AppReferralAccrual.wallet_sync_status.in_(("pending", "waiting_for_wallet", "failed")),
+        and_(AppReferralAccrual.wallet_sync_status == "identity_review", or_(linked, reviewed)))
     row_ids = list(
         (
             await db.execute(
@@ -272,9 +293,7 @@ async def sync_approved_referral_accruals_to_bonus_wallet(
                     or_(
                         and_(
                             AppReferralAccrual.status == "approved",
-                            AppReferralAccrual.wallet_sync_status.in_(
-                                ("pending", "waiting_for_wallet", "failed")
-                            ),
+                            retry_approved,
                         ),
                         and_(
                             AppReferralAccrual.status == "rejected",
@@ -282,6 +301,7 @@ async def sync_approved_referral_accruals_to_bonus_wallet(
                                 (
                                     "pending",
                                     "waiting_for_wallet",
+                                    "identity_review",
                                     "failed",
                                     "credited",
                                     "reversal_failed",

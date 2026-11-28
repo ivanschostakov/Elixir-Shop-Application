@@ -193,6 +193,22 @@ class AsyncCDEKClient:
             )
         return response
 
+    async def city_fias_guid(self, city_code: int) -> str | None:
+        from uuid import UUID
+
+        cities = await self._request("GET", "/v2/location/cities", params={"code": city_code, "country_codes": "RU"})
+        if not isinstance(cities, list):
+            return None
+        matches = [row for row in cities if isinstance(row, dict)
+                   and row.get("code") == city_code and row.get("country_code") == "RU"]
+        if len(matches) != 1:
+            return None
+        try:
+            guid = UUID(str(matches[0].get("fias_guid")))
+        except ValueError:
+            return None
+        return str(guid) if guid.int else None
+
     async def get_delivery_point_city_code(
         self,
         delivery_point_code: str,

@@ -3,7 +3,6 @@ import { ENDPOINTS } from "@/services/api/constants"
 import type { CreatePaymentPayload, PaymentStatusRead } from "@/services/api/payments.types"
 
 const paymentsEndpoint = ENDPOINTS.PAYMENTS
-const PAYMENT_PREPARATION_TIMEOUT_MS = 180_000
 
 export class PaymentPreparationPendingError extends Error {}
 
@@ -13,37 +12,37 @@ export function createPayment(payload: CreatePaymentPayload): Promise<PaymentSta
 
 export async function createPaymentWhenReady(
     payload: CreatePaymentPayload,
-    { isActive, onPending, timeoutMessage }: {
+    { isActive, onPending, timeoutMessage, checkFirst = false }: {
         isActive: () => boolean
         onPending: () => void
         timeoutMessage: string
+        checkFirst?: boolean
     },
 ): Promise<PaymentStatusRead | null> {
-    const deadline = Date.now() + PAYMENT_PREPARATION_TIMEOUT_MS
-    while (isActive()) {
-        try {
-            const payment = await createPayment(payload)
-            return isActive() ? payment : null
-        } catch (error) {
+    if (!isActive()) return null
+    try {
+        if (checkFirst) {
+            const state = await getPaymentStatus(payload.order_id, true)
             if (!isActive()) return null
-            const detail = error instanceof ApiError && error.status === 409
-                ? (error.body as { detail?: { code?: string; retry_after_seconds?: number } } | null)?.detail
-                : null
-            // Only this response guarantees that this request did not start a payment.
-            if (detail?.code !== "settlement_pending") throw error
-            const timeLeft = deadline - Date.now()
-            if (timeLeft <= 0) throw new PaymentPreparationPendingError(timeoutMessage)
-            onPending()
-            const retryDelay = typeof detail.retry_after_seconds === "number" && Number.isFinite(detail.retry_after_seconds)
-                ? Math.max(4_000, detail.retry_after_seconds * 1_000)
-                : 4_000
-            await new Promise((resolve) => setTimeout(resolve, Math.min(retryDelay, timeLeft)))
-            if (isActive() && Date.now() >= deadline) throw new PaymentPreparationPendingError(timeoutMessage)
+            if (state.is_paid || state.invoice_id || ["paid", "refunded", "canceled", "error", "partial", "hold"].includes(state.payment_status ?? "")) return state
+            if (state.invoice_ready === false) {
+                onPending()
+                throw new PaymentPreparationPendingError(timeoutMessage)
+            }
+            if (state.invoice_ready !== true && !state.awaiting_settlement && state.payment_status !== "draft") return state
         }
+        const payment = await createPayment(payload)
+        return isActive() ? payment : null
+    } catch (error) {
+        if (!isActive()) return null
+        const detail = error instanceof ApiError && error.status === 409
+            ? (error.body as { detail?: { code?: string } } | null)?.detail : null
+        if (detail?.code !== "settlement_pending") throw error
+        onPending()
+        throw new PaymentPreparationPendingError(timeoutMessage)
     }
-    return null
 }
 
-export function getPaymentStatus(orderId: number): Promise<PaymentStatusRead> {
-    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`, { order_id: orderId }, { appIntegrityAction: "payments:status" })
+export function getPaymentStatus(orderId: number, checkInvoice = false): Promise<PaymentStatusRead> {
+    return apiGet<PaymentStatusRead>(`${paymentsEndpoint}/status`, { order_id: orderId, ...(checkInvoice ? { check_invoice: true } : {}) }, { appIntegrityAction: "payments:status" })
 }

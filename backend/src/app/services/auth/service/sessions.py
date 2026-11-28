@@ -16,14 +16,16 @@ from src.database.schemas.auth.user_session import UserSessionCreate, UserSessio
 from .common import logger
 from .rate_limits import _apply_auth_rate_limit
 from .counterparty import _link_moysklad_counterparty_by_email
+from src.integrations.moysklad.identity import CounterpartyReviewRequired
 
 
 async def _build_auth_tokens_response(user: User, db: AsyncSession, *, registration: bool = False) -> AuthTokensWithUserResponse:
     user_id = user.id
-    await _link_moysklad_counterparty_by_email(user, db)
+    review = await _link_moysklad_counterparty_by_email(user, db)
     from src.app.services.referrals.registration import sync_registration_choice
     try:
-        await sync_registration_choice(db, user=user, best_effort=True)
+        if not isinstance(review, CounterpartyReviewRequired):
+            await sync_registration_choice(db, user=user, best_effort=True)
     except Exception:
         await db.rollback()
         await db.refresh(user)

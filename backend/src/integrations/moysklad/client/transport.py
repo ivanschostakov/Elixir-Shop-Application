@@ -5,10 +5,11 @@ from typing import Any
 from uuid import UUID
 import httpx
 from fastapi import HTTPException
-from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_INCLUDED_PRODUCT_IDS, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, UFA_TZ
+from config import MOY_SKLAD_BASE_URL, MOY_SKLAD_INCLUDED_PRODUCT_IDS, MOY_SKLAD_TIMEOUT_SECONDS, MOY_SKLAD_TOKEN, REDIS_URL, UFA_TZ
 from src.normalize import coerce_uuid, optional_str
 from .common import MOY_SKLAD_API_BASE_URL, logger
-from .utils import moysklad_money, moysklad_retry_after_seconds
+from .utils import moysklad_money
+from .rate_limit import PacedMoySkladClient
 
 
 class TransportMixin:
@@ -56,7 +57,7 @@ class TransportMixin:
 
         async with self._lock:
             if self._client is None or self._client.is_closed:
-                self._client = httpx.AsyncClient(base_url=self._base_url, timeout=httpx.Timeout(self._timeout), limits=httpx.Limits(max_connections=20, max_keepalive_connections=10), headers={
+                self._client = PacedMoySkladClient(credential=self._token, redis_url=REDIS_URL, base_url=self._base_url, timeout=httpx.Timeout(self._timeout), limits=httpx.Limits(max_connections=2, max_keepalive_connections=2), headers={
                     "Authorization": f"Bearer {self._token}",
                     "Accept": "application/json;charset=utf-8",
                     "Content-Type": "application/json;charset=utf-8",
@@ -100,16 +101,7 @@ class TransportMixin:
 
     async def _find_entity_by_external_code(self, entity_type: str, external_code: str) -> dict[str, Any] | None:
         async def lookup(**params):
-            try:
-                return await self.get_page(f"/entity/{entity_type}", limit=100, **params)
-            except httpx.HTTPStatusError as exc:
-                if entity_type != "customerorder" or exc.response.status_code != 429:
-                    raise
-                delay = moysklad_retry_after_seconds(exc.response, default=0.5)
-                if delay > 3:
-                    raise
-                await asyncio.sleep(delay)
-                return await self.get_page(f"/entity/{entity_type}", limit=100, **params)
+            return await self.get_page(f"/entity/{entity_type}", limit=100, **params)
 
         rows: list[dict[str, Any]] = []
         try:

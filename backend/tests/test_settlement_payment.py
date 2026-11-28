@@ -193,6 +193,32 @@ def test_zero_spend_validates_current_invoice_without_checking_old_orders(monkey
     assert order.grand_total == Decimal("9532.10")
 
 
+@pytest.mark.parametrize("case,expected", [
+    ("not_exported", False), ("no_invoice", False), ("unprocessed", False), ("ready", True),
+    ("two_invoices", 409), ("canceled", 409), ("wrong_order", 409),
+])
+def test_robot_readiness_is_read_only(monkeypatch, case, expected):
+    session, order, application, client = setup_confirmation(monkeypatch)
+    remote, invoice = client.get_customer_order.return_value, client.get_invoiceout.return_value
+    snapshot = deepcopy(order.checkout_snapshot)
+    if case == "not_exported": order.moysklad_customerorder_id = None
+    if case == "no_invoice": remote["invoicesOut"] = []
+    if case == "unprocessed": invoice["attributes"] = []
+    if case == "two_invoices": remote["invoicesOut"] *= 2
+    if case == "canceled": remote["state"] = {"stateType": "Unsuccessful"}
+    if case == "wrong_order": invoice["customerOrder"] = ref(ORG)
+    check = service.robot_invoice_ready(order, snapshot["settlement_payment"], client=client)
+    if expected == 409:
+        with pytest.raises(HTTPException) as error:
+            run(check)
+        assert error.value.status_code == 409
+    else:
+        assert run(check) is expected
+    assert order.checkout_snapshot == snapshot and application.status == "pending"
+    session.commit.assert_not_awaited()
+    moysklad_bonus.get_moysklad_settlement_wallet.assert_not_awaited()
+
+
 @pytest.mark.parametrize("case", ["no_invoice", "multiple", "no_balance", "zero_spent", "wrong_customer", "shipped"])
 def test_failed_reconciliation_does_not_change_db(monkeypatch, case):
     session, order, application, client = setup_confirmation(monkeypatch)

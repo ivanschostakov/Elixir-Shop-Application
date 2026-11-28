@@ -3,6 +3,10 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from math import ceil
+from src.integrations.moysklad.client.rate_limit import MoySkladRateLimited
+from src.integrations.moysklad.client.utils import moysklad_retry_after_seconds
 from starlette.middleware.cors import CORSMiddleware
 from src.app.services.ai.private_attachments import PublicMediaFiles, migrate_legacy_ai_files
 from uvicorn import Config, Server
@@ -45,6 +49,14 @@ app.add_middleware(
 )
 app.mount("/media", PublicMediaFiles(directory="media"), name="media")
 app.include_router(api_router)
+
+
+@app.exception_handler(MoySkladRateLimited)
+async def accounting_busy(_: Request, exc: MoySkladRateLimited):
+    delay = ceil(moysklad_retry_after_seconds(exc.response, default=1))
+    return JSONResponse(status_code=503, headers={"Retry-After": str(delay)}, content={
+        "detail": "МойСклад занят. Повторите запрос чуть позже.",
+    })
 
 
 @app.middleware("http")

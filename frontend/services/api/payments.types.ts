@@ -19,4 +19,5 @@ export type PaymentStatusRead = {
     is_paid: boolean
     can_retry: boolean
     awaiting_settlement?: boolean
+    invoice_ready?: boolean | null
 }

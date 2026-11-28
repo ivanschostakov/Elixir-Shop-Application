@@ -112,6 +112,27 @@ def test_payments_route_rejects_missing_app_integrity(guarded_app_overrides):
     assert response.json()["detail"] == "App integrity check failed"
 
 
+@pytest.mark.parametrize("recognition,code", [
+    ("UNRECOGNIZED_VERSION", "android_app_unrecognized"), ("UNEVALUATED", "android_app_unevaluated")
+])
+def test_android_payment_is_blocked_before_order_lookup(guarded_app_overrides, monkeypatch, recognition, code):
+    import time
+    import src.app.modules.payments.router as payments
+    lookup = AsyncMock()
+    monkeypatch.setattr(payments, "get_order_for_user", lookup)
+    monkeypatch.setattr(app_integrity, "APP_INTEGRITY_ANDROID_PACKAGE_NAME", "com.example.app")
+    monkeypatch.setattr(app_integrity, "_decode_android_integrity_token", AsyncMock(return_value={
+        "tokenPayloadExternal": {"requestDetails": {"requestPackageName": "com.example.app",
+            "timestampMillis": str(int(time.time() * 1000)), "requestHash": "test-request-hash"},
+            "appIntegrity": {"appRecognitionVerdict": recognition}}}))
+    headers = _integrity_headers(action="payments:create")
+    headers[app_integrity.APP_INTEGRITY_PLATFORM_HEADER] = "android"
+    with TestClient(app) as test_client:
+        response = test_client.post("/api/v1/payments/create", json={"order_id": 1}, headers=headers)
+    assert response.status_code == 403 and response.json()["detail"]["code"] == code
+    lookup.assert_not_awaited()
+
+
 def test_ai_chat_route_rejects_missing_app_integrity(guarded_app_overrides):
     with TestClient(app) as test_client:
         response = test_client.post("/api/v1/users/me/ai-chat", data={"text": "hello"})

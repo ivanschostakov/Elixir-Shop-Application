@@ -3,6 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.crud.auth.user import get_user_by_phone_number
 from src.database.models.auth.user import User
 from src.integrations.moysklad import MoySkladClient, get_moysklad_client
+from src.integrations.moysklad.identity import CounterpartyReviewRequired
+from src.app.services.counterparty_review import queue_counterparty_review
 from src.normalize import coerce_uuid, normalize_email, normalize_phone, optional_str
 from .common import logger
 
@@ -19,6 +21,16 @@ async def _resolve_user_for_phone(db: AsyncSession, phone_number: str, moysklad_
     try:
         async with asyncio.timeout(AUTH_CONTACT_TIMEOUT_SECONDS if user and user.is_verified else None):
             counterparty = await _get_counterparty_for_phone(phone_number, moysklad_client)
+            if counterparty and user and not user.moysklad_counterparty_id and user.email:
+                by_email = await moysklad_client.get_counterparty_by_email(user.email)
+                if by_email and by_email.get("id") != counterparty.get("id"):
+                    raise CounterpartyReviewRequired("email и телефону", [by_email, counterparty])
+    except CounterpartyReviewRequired as exc:
+        if user:
+            await queue_counterparty_review(exc, user_id=user.id)
+            if user.is_active and user.is_verified:
+                return user, None
+        raise
     except Exception:
         if not (user and user.is_active and user.is_verified):
             raise
@@ -28,7 +40,7 @@ async def _resolve_user_for_phone(db: AsyncSession, phone_number: str, moysklad_
     return None, counterparty
 
 
-async def _link_moysklad_counterparty_by_email(user: User, db: AsyncSession) -> None:
+async def _link_moysklad_counterparty_by_email(user: User, db: AsyncSession) -> CounterpartyReviewRequired | None:
     linked_id = user.moysklad_counterparty_id
     local_phone = optional_str(getattr(user, "phone_number", None))
     if linked_id is not None and local_phone: return
@@ -42,6 +54,9 @@ async def _link_moysklad_counterparty_by_email(user: User, db: AsyncSession) -> 
     try:
         async with asyncio.timeout(AUTH_CONTACT_TIMEOUT_SECONDS):
             counterparty = (await moysklad_client.get_counterparty(linked_id) if linked_id is not None else await moysklad_client.get_counterparty_by_email(email))
+    except CounterpartyReviewRequired as exc:
+        await queue_counterparty_review(exc, user_id=user.id)
+        return exc
     except Exception:
         logger.exception(
             "Failed to load MoySklad contact during authentication user_id=%s",
@@ -59,6 +74,10 @@ async def _link_moysklad_counterparty_by_email(user: User, db: AsyncSession) -> 
     remote_phone = normalize_phone(counterparty.get("phone"))
     if phone and remote_phone and not moysklad_client._counterparty_phone_matches(counterparty, phone):
         logger.warning("MoySklad email link has a conflicting phone; manual review required user_id=%s", user.id)
+        if linked_id is None:
+            conflict = CounterpartyReviewRequired("email и телефону", [counterparty])
+            await queue_counterparty_review(conflict, user_id=user.id)
+            return conflict
         return
 
     try:
