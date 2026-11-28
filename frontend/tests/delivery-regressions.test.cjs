@@ -124,6 +124,24 @@ test("timeout covers headers", async (t) => {
     await assert.rejects(fetchTextWithDeadline("https://example.test", {}, 15), RequestDeadlineError)
 })
 
+test("ordinary API calls can finish after 22 seconds but stop at two minutes", async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const fetch = t.mock.method(globalThis, "fetch", () => new Promise(resolve =>
+        setTimeout(() => resolve(Response.json({ accepted: true })), 22_000)))
+    const slow = fetchTextWithDeadline("https://example.test/orders", {})
+    t.mock.timers.tick(22_000)
+    assert.equal(JSON.parse((await slow).text).accepted, true)
+
+    fetch.mock.mockImplementation(() => new Promise(() => {}))
+    const stalled = fetchTextWithDeadline("https://example.test/orders", {})
+    const rejected = assert.rejects(stalled, RequestDeadlineError)
+    t.mock.timers.tick(119_999)
+    assert.equal(fetch.mock.calls[1].arguments[1].signal.aborted, false)
+    t.mock.timers.tick(1)
+    await rejected
+    assert.equal(fetch.mock.calls.length, 2)
+})
+
 test("body is returned and deadline cleaned up after success", async (t) => {
     t.mock.method(globalThis, "fetch", async () => ({ status: 200, text: async () => '{"ok":true}' }))
     assert.equal((await fetchTextWithDeadline("https://example.test", {}, 100)).text, '{"ok":true}')

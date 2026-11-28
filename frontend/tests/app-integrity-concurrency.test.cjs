@@ -28,6 +28,7 @@ function setup(t, overrides = {}, fetchOverride) {
         ...overrides,
     }
     const module = loadTs("services/app-integrity.ts", {
+        "@/services/api/request-deadline": loadTs("services/api/request-deadline.ts"),
         "@expo/app-integrity": native,
         "expo-secure-store": {
             getItemAsync: async key => values.get(key) ?? null,
@@ -85,7 +86,7 @@ test("permanent native failure is not bypassed and does not poison the queue", a
 
 test("a hung native call has a deadline and releases the iOS request queue", async t => {
     const originalTimeout = global.setTimeout
-    global.setTimeout = (callback, delay, ...args) => originalTimeout(callback, delay === 20000 ? 30 : delay, ...args)
+    global.setTimeout = (callback, delay, ...args) => originalTimeout(callback, delay === 120_000 ? 30 : delay, ...args)
     t.after(() => { global.setTimeout = originalTimeout })
     let calls = 0
     let finishLate
@@ -172,11 +173,32 @@ test("request client preserves device verification failures instead of inventing
         "@/services/app-integrity": { AppIntegrityUnavailableError: IntegrityError, getAppIntegrityHeaders: async () => { throw failure } },
         "@/services/auth/session": { getAuthTokens: () => null },
         "react-native": { Platform: { OS: "ios" } },
-        "@/services/api/request-deadline": { RequestDeadlineError: class extends Error {}, fetchTextWithDeadline: async () => { fetched = true } },
+        "@/services/api/request-deadline": { ...loadTs("services/api/request-deadline.ts"), RequestDeadlineError: class extends Error {}, fetchTextWithDeadline: async () => { fetched = true } },
         "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
     })
     await assert.rejects(api.apiGet("/mentor", undefined, { appIntegrityAction: "ai-companion" }), error => error === failure)
     assert.equal(fetched, false)
+})
+
+test("a timed out checkout does not send a late POST when device proof finally returns", async t => {
+    t.mock.timers.enable({ apis: ["Date", "setTimeout"] })
+    let finishProof
+    const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({}))
+    const api = loadTs("services/api/client.ts", {
+        "@/services/api/constants": { API_BASE_URL: "https://example.test" },
+        "@/services/app-integrity": { AppIntegrityUnavailableError: class extends Error {},
+            getAppIntegrityHeaders: () => new Promise(resolve => { finishProof = resolve }) },
+        "@/services/auth/session": { getAuthTokens: () => null },
+        "react-native": { Platform: { OS: "android" } },
+        "@/services/api/request-deadline": loadTs("services/api/request-deadline.ts"),
+        "@/screens/chat/companion-timezones": { deviceCompanionTimezone: () => "UTC" },
+    })
+    const rejected = assert.rejects(api.apiPost("/orders", {}, { appIntegrityAction: "orders:create" }), { status: 503 })
+    t.mock.timers.tick(120_000)
+    await rejected
+    finishProof({})
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(fetch.mock.callCount(), 0)
 })
 
 test("device verification is required for every session and platform", async () => {
@@ -197,7 +219,7 @@ test("device verification is required for every session and platform", async () 
                 getAuthTokens: () => ({ accessToken: "access" }),
             },
             "react-native": { Platform: { OS: platform } },
-            "@/services/api/request-deadline": { fetchTextWithDeadline: async (_url, options) => {
+            "@/services/api/request-deadline": { ...loadTs("services/api/request-deadline.ts"), fetchTextWithDeadline: async (_url, options) => {
                 headers = options.headers
                 return { response: new Response(null, { status: 200 }), text: "{}" }
             } },

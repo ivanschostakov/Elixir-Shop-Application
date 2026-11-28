@@ -1,7 +1,9 @@
 export class RequestDeadlineError extends Error {}
 
+export const REQUEST_TIMEOUT_MS = 120_000
+
 /** Bounds headers AND body reading, even if a native fetch ignores abort(). */
-export async function fetchTextWithDeadline(url: string, init: RequestInit, timeoutMs = 20000, binary = false) {
+export async function fetchTextWithDeadline(url: string, init: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS, binary = false) {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     let rejectAbort: (reason: Error) => void = () => undefined

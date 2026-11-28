@@ -16,7 +16,7 @@ export function getMySupportInbox() {
 
 export function downloadSupportAttachment(id: number) {
     return apiGet<Blob>(`${supportPath}/attachments/${id}`, undefined, {
-        appIntegrityAction: "support:read", responseType: "blob", timeoutMs: 60000,
+        appIntegrityAction: "support:read", responseType: "blob",
     })
 }
 

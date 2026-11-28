@@ -41,7 +41,7 @@ export async function sendMyAiChatMessage(text: string, attachments: UploadableC
         )
     }
 
-    return scopedChat(await apiPostMultipart<AIChatResponse>(companionRequestId ? `${aiChatEndpoint}/companion/messages` : aiChatEndpoint, formData, { appIntegrityAction: companionRequestId ? "ai-companion" : "ai-chat:send", ...(companionRequestId ? { timeoutMs: 550000 } : {}) }), !!companionRequestId)
+    return scopedChat(await apiPostMultipart<AIChatResponse>(companionRequestId ? `${aiChatEndpoint}/companion/messages` : aiChatEndpoint, formData, { appIntegrityAction: companionRequestId ? "ai-companion" : "ai-chat:send" }), !!companionRequestId)
 }
 
 export function performAiChatAction(payload: AIChatActionPayload): Promise<AIChatActionResponse> {

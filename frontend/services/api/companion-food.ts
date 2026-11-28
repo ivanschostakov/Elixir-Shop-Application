@@ -20,7 +20,7 @@ export async function estimateCompanionFood(text: string, photo: UploadableChatA
     if (context) for (const [key, value] of Object.entries(context)) if (value != null) form.append(key, String(value))
     if (previousPhotoId && !photo) form.append("photo_attachment_id", String(previousPhotoId))
     if (photo) form.append("attachments", { uri: photo.uri, name: photo.fileName ?? "food.jpg", type: photo.mimeType ?? "image/jpeg" } as unknown as Blob)
-    return apiPostMultipart<FoodEstimate>(`${aiChatEndpoint}/companion/meal-estimate`, form, { appIntegrityAction: "ai-companion", timeoutMs: 550000 })
+    return apiPostMultipart<FoodEstimate>(`${aiChatEndpoint}/companion/meal-estimate`, form, { appIntegrityAction: "ai-companion" })
 }
 
 export async function askNutritionHelp(mode: "suggest" | "product", text: string, photo: UploadableChatAttachment | null, key: string): Promise<FoodEstimate> {
@@ -28,7 +28,7 @@ export async function askNutritionHelp(mode: "suggest" | "product", text: string
     const form = new FormData()
     form.append("mode", mode); form.append("text", text.trim()); form.append("client_request_id", key)
     if (photo) form.append("attachments", { uri: photo.uri, name: photo.fileName ?? "food.jpg", type: photo.mimeType ?? "image/jpeg" } as unknown as Blob)
-    return apiPostMultipart<FoodEstimate>(`${aiChatEndpoint}/companion/nutrition-help`, form, { appIntegrityAction: "ai-companion", timeoutMs: 550000 })
+    return apiPostMultipart<FoodEstimate>(`${aiChatEndpoint}/companion/nutrition-help`, form, { appIntegrityAction: "ai-companion" })
 }
 
 export const markFoodEstimateSeen = (key: string) => apiPost(`${aiChatEndpoint}/companion/meal-estimate/${encodeURIComponent(key)}/seen`, {}, { appIntegrityAction: "ai-companion" })

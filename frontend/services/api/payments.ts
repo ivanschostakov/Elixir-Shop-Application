@@ -1,15 +1,15 @@
 import { ApiError, apiGet, apiPost } from "@/services/api/client"
 import { ENDPOINTS } from "@/services/api/constants"
+import { REQUEST_TIMEOUT_MS } from "@/services/api/request-deadline"
 import type { CreatePaymentPayload, PaymentStatusRead } from "@/services/api/payments.types"
 
 const paymentsEndpoint = ENDPOINTS.PAYMENTS
-const PAYMENT_PREPARATION_TIMEOUT_MS = 180_000
 
 export class PaymentPreparationPendingError extends Error {}
 
-export function createPayment(payload: CreatePaymentPayload): Promise<PaymentStatusRead> {
+export function createPayment(payload: CreatePaymentPayload, timeoutMs = REQUEST_TIMEOUT_MS): Promise<PaymentStatusRead> {
     const body = payload.payment_method === "later" ? { ...payload, accept_pending_amount: true } : payload
-    return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, body, { appIntegrityAction: "payments:create" })
+    return apiPost<PaymentStatusRead, CreatePaymentPayload>(`${paymentsEndpoint}/create`, body, { appIntegrityAction: "payments:create", timeoutMs })
 }
 
 export async function createPaymentWhenReady(
@@ -20,10 +20,12 @@ export async function createPaymentWhenReady(
         timeoutMessage: string
     },
 ): Promise<PaymentStatusRead | null> {
-    const deadline = Date.now() + PAYMENT_PREPARATION_TIMEOUT_MS
+    const deadline = Date.now() + REQUEST_TIMEOUT_MS
     while (isActive()) {
         try {
-            const payment = await createPayment(payload)
+            const remaining = deadline - Date.now()
+            if (remaining <= 0) throw new PaymentPreparationPendingError(timeoutMessage)
+            const payment = await createPayment(payload, remaining)
             return isActive() ? payment : null
         } catch (error) {
             if (!isActive()) return null

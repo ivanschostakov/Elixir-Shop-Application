@@ -4,6 +4,7 @@ import { Platform } from "react-native"
 import { ANDROID_CLOUD_PROJECT_NUMBER, API_BASE_URL } from "@/config/env"
 import { getAuthTokens, refreshAuthTokens } from "@/services/auth/session"
 import { getTelegramInitData } from "@/services/telegram/telegram-web-app"
+import { fetchTextWithDeadline, REQUEST_TIMEOUT_MS } from "@/services/api/request-deadline"
 
 const IOS_APP_ATTEST_KEY_STORAGE_KEY = "elixirpeptide.appIntegrity.iosKeyId"
 const IOS_APP_ATTEST_REGISTERED_STORAGE_KEY = "elixirpeptide.appIntegrity.iosRegisteredKeyId"
@@ -30,7 +31,7 @@ function withIosKeyLock<T>(operation: (signal: AbortSignal) => Promise<T>): Prom
     const timeout = new Promise<never>((_, reject) => {
         controller.signal.addEventListener("abort", () => reject(new Error("integrity_timeout")))
     })
-    const timer = setTimeout(() => controller.abort(), 20000)
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     const result = iosOperationQueue.then(() => {
         checkDeadline(controller.signal)
         return Promise.race([operation(controller.signal), timeout])
@@ -175,12 +176,7 @@ async function appIntegrityFetch<T>(path: string, init: RequestInit, hasRetried 
         headers.set("Authorization", `Bearer ${tokens.accessToken}`)
     }
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 8000)
-    let response
-    try {
-        response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers, signal: controller.signal })
-    } finally { clearTimeout(timer) }
+    const { response, text } = await fetchTextWithDeadline(`${API_BASE_URL}${path}`, { ...init, headers })
 
     if (response.status === 401 && !hasRetried && getAuthTokens()?.refreshToken) {
         const refreshedTokens = await refreshAuthTokens()
@@ -190,11 +186,10 @@ async function appIntegrityFetch<T>(path: string, init: RequestInit, hasRetried 
     }
 
     if (!response.ok) {
-        const message = await response.text().catch(() => "")
-        throw new AppIntegrityApiError(response.status, message || `HTTP ${response.status}`)
+        throw new AppIntegrityApiError(response.status, text || `HTTP ${response.status}`)
     }
 
-    return response.json() as Promise<T>
+    return JSON.parse(text) as T
 }
 
 async function fetchIosChallenge(purpose: "attestation" | "assertion", action?: string) {

@@ -23,5 +23,5 @@ export async function requestWorkoutDraft(request: WorkoutDraftRequest, photos: 
     const form = new FormData()
     form.append("payload", JSON.stringify(request)); form.append("client_request_id", key)
     for (const photo of photos) form.append("attachments", { uri: photo.uri, name: photo.fileName ?? "training.jpg", type: photo.mimeType ?? "image/jpeg" } as unknown as Blob)
-    return apiPostMultipart<WorkoutDraftResult>(`${endpoint}/workout-draft`, form, { ...proof, timeoutMs: 550000 })
+    return apiPostMultipart<WorkoutDraftResult>(`${endpoint}/workout-draft`, form, proof)
 }

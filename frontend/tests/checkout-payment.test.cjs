@@ -95,6 +95,7 @@ class ApiError extends Error {
 
 function loadPayments(apiPost) {
     return loadTs("services/api/payments.ts", {
+        "@/services/api/request-deadline": loadTs("services/api/request-deadline.ts"),
         "@/services/api/client": { apiPost, ApiError },
         "@/services/api/constants": { ENDPOINTS: { PAYMENTS: "/payments" } },
     })
@@ -148,7 +149,7 @@ test("a wait deadline is recoverable and only repeats the same unpaid order", as
     })
     const check = assert.rejects(result, { constructor: PaymentPreparationPendingError, message: "Still preparing" })
     await Promise.resolve()
-    t.mock.timers.tick(180_000)
+    t.mock.timers.tick(120_000)
     await check
     assert.deepEqual(calls, [payload])
 })
